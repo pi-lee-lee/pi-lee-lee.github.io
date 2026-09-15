@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>02 · Docker + ROS 2 Humble 환경 구축</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="02">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">02 · Docker + ROS 2 Humble</p>
+      <h1>컨테이너 안에 ROS 2 를 세우고, Mac 의 Foxglove 를 붙인다</h1>
+      <p class="lead">호스트는 Raspberry Pi OS(Debian 13) 인데 우리가 쓸 ROS 는 Ubuntu 22.04 용 Humble 이다. 이 모순을 Docker 가 푼다.
+      이 단계가 끝나면 이후 모든 단계의 명령이 <strong>컨테이너 안</strong>에서 실행된다.</p>
+
+      <div class="goal">
+        <span class="label">이 단계가 끝나면</span>
+        <p>Pi 의 컨테이너 안에서 <code>ros2 topic list</code> 가 돌고, 두 컨테이너의 talker/listener 가 서로를 찾아 통신하고, Mac 의 Foxglove 가 Pi 의 ROS 그래프에 붙는다.
+        그리고 <strong>03~10 단계에서 필요한 apt 패키지가 전부 이미지 안에 들어가</strong> 있어서, 이후 단계에서 이미지를 다시 빌드할 일은 08(camera_ros)·08c(HailoRT) 두 번뿐이다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">그래프에서의 위치</span>그래프의 바탕 — 모든 노드가 도는 컨테이너 + Foxglove(관측)</div>
+        <div><span class="k">전제</span>01 (ssh 접속, 장치 인식)</div>
+        <div><span class="k">예상 소요</span>1~2시간 (+ 이미지 빌드 10~20분 대기)</div>
+        <div><span class="k">언어</span><span class="tag cli">셸</span> Dockerfile · compose</div>
+      </div>
+
+      <h2>1. 개요</h2>
+      <pre class="diagram"><code>┌─────────────────────────────┐          ┌──────────────────────────────────────┐
+│  개발 PC (macOS)            │          │ Raspberry Pi 5 (RPi OS Trixie, arm64)│
+│                             │          │                                      │
+│  · 코드 편집 / git          │  ssh     │  ┌────────────────────────────────┐  │
+│  · Foxglove Studio (시각화) │ ───────► │  │ Docker: rpi5-ros2:humble       │  │
+│  · rsync 로 소스 동기화     │          │  │  dev      ← 대화형 개발 셸     │  │
+│                             │ ◄─────── │  │  foxglove ← WebSocket :8765    │  │
+│                             │  :8765   │  │  bringup  ← 로봇 본체 (06~10)  │  │
+└─────────────────────────────┘ WebSocket└──┴────────────────────────────────┘  │
+                                         └──────────────────────────────────────┘</code></pre>
+      <p>이 단계에서 만드는 것은 셋이다.</p>
+      <ol class="steps">
+        <li><strong>이미지</strong> <code>rpi5-ros2:humble</code> — <code>docker/Dockerfile</code> 로 정의. ROS 2 Humble + 이 학습에 필요한 패키지 + 호스트와 UID 가 같은 비root 사용자.</li>
+        <li><strong>서비스 3개</strong> — <code>docker/docker-compose.yml</code> 의 <code>dev</code>(일회성 개발 셸), <code>foxglove</code>(상시 브리지), <code>bringup</code>(로봇 본체, 06 단계부터).</li>
+        <li><strong>동기화 흐름</strong> — Mac 에서 편집 → <code>scripts/sync-to-pi.sh</code> → Pi 의 <code>~/ros2_rpi5</code> → 컨테이너의 <code>/ros2_ws</code> 로 마운트.</li>
+      </ol>
+
+      <h2>2. 원리 — 왜</h2>
+
+      <h3>2-1. 왜 Docker 인가 — 이 프로젝트 구조의 핵심 근거</h3>
+      <p>ROS 2 Humble 의 공식 타깃은 <strong>Ubuntu 22.04 (jammy)</strong> 다. Debian 13 에 Humble 을 apt 로 깔 방법은 없다. 소스 빌드는 Pi 5 에서 몇 시간이 걸리고 의존성 지옥이 기다린다.</p>
+      <pre class="diagram"><code>        ┌─────────────────────────────────────────────────┐
+        │  컨테이너: Ubuntu 22.04 (jammy) 유저스페이스    │
+        │   · /opt/ros/humble/...                         │
+        │   · libstdc++, python3.10, DDS 라이브러리       │
+        └───────────────────┬─────────────────────────────┘
+                            │  시스템 콜
+        ┌───────────────────▼─────────────────────────────┐
+        │ 호스트 커널 (Raspberry Pi OS Trixie의 Linux 6.x)│
+        │   · USB serial, V4L2, dma_heap                  │
+        │   · hailo_pci  ← Hailo-8 드라이버도 여기 있다   │
+        └─────────────────────────────────────────────────┘</code></pre>
+      <p><strong>컨테이너는 커널을 공유하고 유저스페이스는 자기 것을 쓴다.</strong> 따라서 호스트가 Raspberry Pi OS 든 Ubuntu 든, <strong>컨테이너 안은 항상 jammy + Humble</strong> 이다.</p>
+      <div class="callout why"><span class="ct">01 단계의 결정과 이 결정은 같은 논리의 앞뒤다</span>
+        <p>ROS 쪽 제약이 Docker 로 사라졌기 때문에, 호스트 선택은 순수하게 드라이버 문제가 되었다. 반대로 말하면 <strong>커널이 제공하는 것(장치 드라이버)은 호스트 것이므로, 호스트에서 안 보이는 장치는 컨테이너에서도 안 보인다.</strong> 01 단계를 먼저 끝내야 하는 이유다.</p>
+      </div>
+      <p>부수적으로 얻는 것:</p>
+      <ul>
+        <li>호스트가 ROS 패키지로 더럽혀지지 않는다 → 언제든 갈아엎을 수 있다</li>
+        <li>환경을 <code>Dockerfile</code> 한 장으로 재현할 수 있다 → "내 Pi 에서만 되는" 현상이 없다</li>
+        <li>나중에 Jazzy 로 옮길 때 베이스 이미지 한 줄만 바꾸면 된다</li>
+      </ul>
+      <p class="small"><strong>참고(비차단):</strong> Humble 은 2027년 5월 EOL, Jazzy(Ubuntu 24.04 기반)가 현행 LTS 다. 지금은 자료가 압도적으로 많은 Humble 로 배우고, 개념을 익힌 뒤 옮기는 것이 낫다. 개념은 그대로이고 바뀌는 것은 일부 API 이름 정도다.</p>
+
+      <h3>2-2. 이미지·컨테이너·볼륨 — 쓰기 레이어는 저장소가 아니다</h3>
+      <pre class="diagram"><code>   Dockerfile ──(docker compose build)──► 이미지 rpi5-ros2:humble   ← 영구. 읽기 전용 레이어들
+                                               │
+                                 docker compose run --rm dev
+                                               ▼
+                                          컨테이너 (쓰기 레이어)   ← 수명 = 컨테이너 수명. 보존을 선언할 방법이 없다
+                                               │
+                                   sudo apt install ros-humble-xxx   ← 여기 설치한 것은 쓰기 레이어에 있다
+                                               ▼
+                               컨테이너 삭제·재생성  →  쓰기 레이어 삭제  →  xxx 는 사라졌다
+             (--rm 종료 · compose run 재실행 · compose 설정/이미지 변경 후 up · down · prune)</code></pre>
+      <p><strong>컨테이너 안에서 <code>apt install</code>·<code>pip install</code> 한 것은 그 컨테이너의 쓰기 레이어에 있고, 컨테이너가 삭제·재생성되면 사라진다.</strong> 이미지는 바뀌지 않았기 때문이다.</p>
+      <p><code>--rm</code> 은 삭제 시점을 "셸 종료"로 정해 줄 뿐, 사라지는 원인이 아니다. <strong><code>--rm</code> 을 빼도 보존은 보장되지 않는다</strong> —
+      <code>docker compose run</code> 은 실행할 때마다 새 컨테이너를 만들고, <code>docker compose up</code> 은 compose 설정이나 이미지가 바뀌면 컨테이너를 재생성하며, <code>down</code>·<code>prune</code> 은 지운다.
+      그래서 남겨야 할 것은 <strong>수명을 선언할 수 있는 곳</strong>에 둔다. 실행 중에 생기는 데이터(코드·빌드 결과·지도·bag)는 볼륨/바인드 마운트에 둔다 — 이것은 아래 두 방식 공통이다.
+      패키지 같은 환경을 남기는 방법은 두 가지이고, <strong>대등한 선택지</strong>다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th></th><th>A. 이미지에 넣는다 (Dockerfile)</th><th>B. 시스템 경로를 볼륨으로 잡는다</th></tr></thead>
+        <tbody>
+          <tr><td>구성</td><td><code>Dockerfile</code> 에 설치 줄을 적는다</td><td>compose <code>volumes:</code> 에 <code>/opt</code> <code>/usr</code> <code>/etc</code> <code>/var</code> 등을 named volume 으로 추가한다. 볼륨이 처음 생성될 때 이미지 내용으로 채워진다</td></tr>
+          <tr><td>패키지 추가·업데이트</td><td><code>Dockerfile</code> 수정 → <code>docker compose build</code> → 새 컨테이너</td><td>컨테이너 셸에서 <code>sudo apt install</code> / <code>sudo dpkg -i</code> / <code>pip install</code> → 볼륨에 남는다. 환경 변경은 컨테이너 안에서 한다(이미 채워진 볼륨에는 이미지 변경이 반영되지 않는다)</td></tr>
+          <tr><td>한 번 바꿀 때 바뀌는 범위</td><td>캐시가 무효화된 줄부터 다시 실행된다. 버전을 고정하지 않은 apt 줄은 그 시점의 버전으로 함께 바뀔 수 있다</td><td>설치한 패키지만 바뀐다. 설치 직후 실제 장치에 붙여 확인할 수 있다</td></tr>
+          <tr><td>설치 목록 확인</td><td><code>Dockerfile</code> 을 읽는다</td><td>컨테이너에서 <code>dpkg -l</code>, <code>pip list</code></td></tr>
+          <tr><td>이미지로 굳히기·배포</td><td>이미지 그 자체 (레지스트리 / <code>docker save</code>)</td><td>필요한 시점에 볼륨을 tar 로 뽑아 이미지로 만든다. <code>docker commit</code> 은 볼륨 내용을 포함하지 않는다</td></tr>
+        </tbody>
+      </table></div>
+      <p>이 가이드의 <code>docker/</code> 구성과 각 단계의 절차는 <strong>A 로 적혀 있다.</strong> B 를 쓴다면 "Dockerfile 에 추가 → 재빌드"라고 적힌 곳을 "컨테이너에서 설치"로 읽으면 된다.</p>
+      <div class="callout tip"><span class="ct">학습 패키지는 §3-3 에서 한 번에 넣는다</span>
+        <p>새 패키지가 필요한지 확실하지 않으면 우선 컨테이너 안에서 <code>sudo apt install</code> 로 써 본다. 계속 쓸 것은 고른 방식으로 남긴다 — A 는 <code>Dockerfile</code> 에 적고 빌드, B 는 그 설치가 그대로 남는다.
+        A 는 Pi 에서 첫 빌드가 10~20분이므로, <strong>이 가이드에서 필요한 apt 패키지는 §3-3 에서 한 번에 넣는다.</strong> B 도 같은 목록을 한 번에 설치해 두면 단계마다 멈추지 않는다.</p>
+      </div>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>단계</th><th>필요한 것</th><th>넣는 곳 (A 기준 — B 는 컨테이너에서 설치)</th></tr></thead>
+        <tbody>
+          <tr><td>02·03</td><td><code>ros-humble-demo-nodes-cpp</code>, <code>-py</code> (talker/listener 실습)</td><td>§3-3 블록 — <strong><code>ros:humble-ros-base</code> 이미지에는 데모 노드가 없다</strong></td></tr>
+          <tr><td>05</td><td><code>liburdfdom-tools</code> (<code>check_urdf</code>)</td><td>§3-3 블록</td></tr>
+          <tr><td>06</td><td><code>ros-humble-robot-localization</code> (EKF 로 odom+IMU 융합), <code>ros-humble-imu-tools</code></td><td>§3-3 블록</td></tr>
+          <tr><td>07</td><td><code>ros-humble-rplidar-ros</code></td><td>§3-3 블록</td></tr>
+          <tr><td>08</td><td><code>camera_ros</code> + Raspberry Pi 포크 libcamera</td><td>소스 빌드. 08 단계에서 Dockerfile 에 별도 단계를 추가하고 재빌드</td></tr>
+          <tr><td>08a·08b</td><td><code>ros-humble-cv-bridge</code>, <code>image-transport(-plugins)</code>, <code>vision-msgs</code>, <code>libopencv-dev</code>, <code>python3-opencv</code></td><td>§3-3 블록</td></tr>
+          <tr><td>08b (Python 트랙)</td><td><code>ultralytics</code> (PyTorch 포함, 수 GB)</td><td><strong>Mac 의 venv</strong>. 모델 확인·ONNX 내보내기는 Mac 에서 하고 결과 파일만 Pi 로</td></tr>
+          <tr><td>08c</td><td>HailoRT .deb + Python wheel — <strong>호스트 드라이버와 같은 버전</strong></td><td>Dockerfile 의 3-B 블록 주석 해제 (08c 단계). §2-5 참조</td></tr>
+          <tr><td>09</td><td><code>ros-humble-slam-toolbox</code>, <code>navigation2</code>, <code>nav2-bringup</code></td><td>§3-3 블록</td></tr>
+          <tr><td>수시</td><td>Python 패키지 (<code>pyserial</code> 등)</td><td>Dockerfile 의 <code>pip3 install</code> 줄</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>2-3. compose 의 항목은 왜 하나라도 빠지면 "조용히" 고장나는가</h3>
+      <p><code>docker/docker-compose.yml</code> 의 아래 항목은 빠져도 에러가 나지 않는다. 증상이 "아무 일도 안 일어남"이라 원인을 찾기 어렵다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>항목</th><th>왜 필요한가</th><th>빠지면 나타나는 증상</th></tr></thead>
+        <tbody>
+          <tr><td><code>network_mode: host</code></td><td>ROS 2 는 DDS 위에서 돌고, DDS 는 <strong>UDP 멀티캐스트</strong>로 서로를 찾는다(디스커버리). Docker 기본 bridge 네트워크는 멀티캐스트를 NAT 너머로 전달하지 못한다</td><td>노드는 떠 있는데 다른 컨테이너에서 <code>ros2 topic list</code> 에 아무것도 안 나온다</td></tr>
+          <tr><td><code>ipc: host</code></td><td>Humble 기본 RMW(Fast DDS)는 같은 머신 안 통신에 <strong>공유 메모리(<code>/dev/shm</code>)</strong> 를 쓴다. IPC 네임스페이스가 분리되면 루프백 UDP 로 조용히 강등된다</td><td>이미지·포인트클라우드 같은 큰 메시지에서 프레임 드롭</td></tr>
+          <tr><td><code>volumes: ../ros2_ws:/ros2_ws</code></td><td>소스는 <strong>호스트</strong>에 두고 컨테이너가 빌드한다</td><td>(없으면) 컨테이너를 지울 때 코드와 빌드 결과가 함께 사라진다</td></tr>
+          <tr><td><code>/dev:/dev</code>, <code>device_cgroup_rules</code></td><td><code>/dev</code> 를 통째로 마운트해도 cgroup 규칙이 없으면 장치 접근이 막힌다. major 번호가 동적인 <code>dma_heap</code>·<code>hailo0</code> 은 01 에서 확인한 값을 직접 적는다</td><td>카메라/Hailo 가 "컨테이너에서만" 안 잡힌다</td></tr>
+          <tr><td><code>ROS_DOMAIN_ID</code></td><td>같은 네트워크에 여러 ROS 시스템이 있으면 서로 섞인다. 도메인 ID(0~101)로 격리한다</td><td>남의 로봇 토픽이 내 목록에 섞여 나온다</td></tr>
+          <tr><td><code>ROS_LOCALHOST_ONLY: "0"</code></td><td>1 이면 localhost 로만 통신한다</td><td>Mac 에서 토픽이 안 보인다 (단, Foxglove 는 WebSocket 이라 영향이 없다)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">Mac 의 Foxglove 는 WebSocket 으로 붙으므로 도메인 ID 와 무관하다. 나중에 Mac 에 ROS 를 깔아 직접 DDS 로 통신할 계획이라면 양쪽 도메인 ID 를 같게 맞춰야 한다.</p>
+
+      <h3>2-4. 비root 사용자와 <code>HOST_UID</code></h3>
+      <p>컨테이너를 root 로 돌리면 마운트된 <code>ros2_ws</code> 에 colcon 이 만드는 <code>build/ install/ log/</code> 가 전부 <strong>root 소유</strong>가 되어 호스트에서 편집·삭제하려면 매번 sudo 가 필요하고 git·rsync 가 꼬인다.
+      그래서 Dockerfile 은 빌드 인자로 호스트 UID/GID 를 받아 같은 번호의 사용자를 만든다.</p>
+      <div class="callout warn"><span class="ct">왜 변수명이 <code>UID</code> 가 아니라 <code>HOST_UID</code> 인가</span>
+        <p>bash 에서 <code>UID</code> 는 <strong>읽기 전용 변수</strong>라 <code>export UID=$(id -u)</code> 가 에러를 낸다. 게다가 export 가 실패해도 compose 는 기본값 1000 으로 조용히 넘어가서,
+        <strong>명령은 실패했는데 결과는 맞아 보이는</strong>(첫 사용자의 UID 가 우연히 1000 인) 최악의 상황이 된다. 변수명을 바꾸고 <code>docker/.env</code> 파일로 관리해 이 함정을 피한다.</p>
+      </div>
+
+      <h3>2-5. Hailo-8 을 컨테이너에서 쓸 때의 함정 — 버전 락</h3>
+      <p>이 프로젝트에만 있는 특수 문제라 미리 짚는다. 08c 단계에서 실제로 부딪힌다.</p>
+      <pre class="diagram"><code>   호스트                              컨테이너
+   ┌──────────────────────┐            ┌─────────────────────────────┐
+   │ hailo_pci (커널 모듈)│◄──────────►│ libhailort (유저 라이브러리)│
+   │  버전 4.x.y          │ /dev/hailo0│  버전 4.x.y                 │
+   └──────────────────────┘            └─────────────────────────────┘
+              ▲                                    ▲
+              └────────── 이 둘이 정확히 같아야 한다 ─────┘</code></pre>
+      <p><strong>드라이버는 호스트에, 런타임 라이브러리는 컨테이너에 있다.</strong> HailoRT 는 이 둘의 버전이 다르면 <strong>장치를 아예 인식하지 않는다.</strong>
+      더 곤란한 점: 호스트에서 <code>sudo apt upgrade</code> 를 하면 <strong>호스트 쪽만 올라간다.</strong> 어제까지 되던 추론이 오늘 갑자기 "No Hailo device found" 를 내고, ROS 코드는 하나도 안 건드렸으므로 원인을 엉뚱한 데서 찾게 된다.</p>
+      <p>대응은 세 줄이다.</p>
+      <pre><code class="lang-bash"># ① 호스트에서 현재 버전을 확인해 기록한다 (01 단계에서 INVENTORY.md 5절에 적었다)
+hailortcli fw-control identify | grep -i version
+
+# ② 컨테이너 쪽 HailoRT 를 그 버전으로 맞춘다 (08c 단계, §2-2 의 A/B 중 쓰는 방식으로)
+#    A: Dockerfile 3-B 블록의 ARG HAILORT_VERSION=4.xx.y  ← 호스트에서 확인한 값 → 빌드
+#    B: 컨테이너에서 같은 버전의 .deb / .whl 을 설치
+
+# ③ 호스트를 업그레이드한 뒤에는 반드시 재확인하고, 다르면 ②를 새 버전으로 다시 한다
+hailortcli fw-control identify                                   # 호스트
+docker compose run --rm dev hailortcli fw-control identify       # 컨테이너 → 두 출력의 버전이 같아야 한다</code></pre>
+      <div class="callout note"><span class="ct"><code>devices:</code> 로 <code>/dev/hailo0</code> 을 못박지 않은 것은 의도적이다</span>
+        <p>compose 는 <code>/dev</code> 전체를 마운트하므로 노드 자체는 보인다. <code>devices:</code> 에 명시하면 HAT 을 아직 장착하지 않았거나 DKMS 빌드가 실패한 상태에서
+        <code>dev</code>, <code>foxglove</code> 를 포함한 <strong>모든 서비스가 뜨지 않는다</strong>(그리고 compose 의 에러 메시지는 원인을 알려 주지 않는다).
+        컨테이너에서 장치가 안 잡히면 <code>ls -l /dev/hailo0</code> 의 major 번호를 <code>device_cgroup_rules</code> 에 추가한다. 이 보드의 실측은 <code>238, 0</code> → <code>'c 238:* rmw'</code> 이고,
+        media 237·dma_heap 252 와 함께 compose 에 이미 들어 있다 (INVENTORY 8절). 셋 다 부팅 시 동적으로 배정되므로 호스트 커널이 올라가면 다시 확인한다.</p>
+      </div>
+      <p class="small">대안(더 단순하지만 덜 깔끔한 길): 추론을 <strong>호스트에서</strong> 돌리고 결과만 ROS 로 넘기는 방법도 있다. 버전 락이 사라지지만 시스템이 컨테이너 안팎으로 쪼개진다. 08c 에서 두 방식을 비교한다.</p>
+
+      <h3>2-6. 왜 RViz 가 아니라 Foxglove 인가</h3>
+      <p>RViz 를 Pi 에서 띄우고 macOS 로 X11 포워딩하는 방법은 XQuartz 설정, OpenGL 미지원, 극심한 지연 때문에 실용성이 없다.
+      Foxglove 는 <code>foxglove_bridge</code>(ROS 노드)가 WebSocket 으로 데이터만 내보내고, Mac 에서 네이티브로 렌더링하므로 Pi 의 CPU 를 거의 쓰지 않는다.
+      그래서 Dockerfile 은 <code>ros:humble-ros-base</code>(RViz/Gazebo 없는 이미지) 를 쓴다 — <code>-desktop</code> 은 2 GB 가 더 크고 헤드리스 Pi 에서 한 번도 쓰지 않는다.</p>
+
+      <h2>3. 실습</h2>
+
+      <h3>3-1. Docker 설치 <span class="tag pi">Pi 호스트</span></h3>
+      <pre><code class="lang-bash">ssh pi5
+
+# 공식 설치 스크립트 (Debian 13 trixie 를 인식한다)
+curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+sudo sh /tmp/get-docker.sh
+
+# sudo 없이 쓰기 위해 docker 그룹에 추가
+sudo usermod -aG docker $USER
+exit &amp;&amp; ssh pi5          # 재접속해야 그룹이 적용된다
+
+docker run --rm hello-world                  # 동작 확인
+docker info --format '{{.Architecture}}'     # aarch64 확인</code></pre>
+
+      <h3>3-2. 프로젝트 동기화 <span class="tag mac">Mac</span></h3>
+      <pre><code class="lang-bash">cd ~/ros2_rpi5
+./scripts/sync-to-pi.sh --dry-run    # 무엇이 복사되는지 먼저 본다
+./scripts/sync-to-pi.sh              # rsync 로 ~/ros2_rpi5 를 Pi 에 복사</code></pre>
+      <div class="callout why"><span class="ct">왜 Pi 에서 직접 편집하지 않는가</span>
+        <p>로봇은 자주 껐다 켜지고, SD 카드는 언젠가 죽는다. 원본은 Mac(+git)에 두고 Pi 는 "실행 사본"으로 취급하는 것이 안전하다. Pi 를 새로 굽더라도 rsync 한 번이면 복구된다.
+        스크립트는 <code>build/ install/ log/</code> 를 제외하므로(<code>--delete</code> 가 빌드 산출물을 지우지 않도록) 동기화해도 매번 풀빌드가 되지 않는다.</p>
+      </div>
+
+      <h3>3-3. 학습 단계 패키지 추가 <span class="tag mac">Mac</span></h3>
+      <p>03~09 단계에서 쓸 apt 패키지를 <strong>지금 한 번에</strong> 넣는다(§2-2). 아래는 A(Dockerfile) 절차다 — <code>docker/Dockerfile</code> 을 열고, <code># ── 2. ROS 2 공통 패키지</code> 블록의 끝(<code># ── 3. 파이썬 의존성</code> 바로 앞)에 아래 블록을 추가한다.
+      B(시스템 경로 볼륨)를 쓴다면 §3-4 빌드 후 컨테이너에서 같은 목록을 <code>sudo apt-get update &amp;&amp; sudo apt-get install -y …</code> 로 설치한다.</p>
+      <pre><code class="lang-bash"># ── 2-B. 학습 단계별 추가 패키지 (02단계에서 한 번에 넣고 재빌드) ─────────
+RUN apt-get update &amp;&amp; apt-get install -y --no-install-recommends \
+      ros-humble-demo-nodes-cpp ros-humble-demo-nodes-py \
+      liburdfdom-tools \
+      ros-humble-rplidar-ros \
+      ros-humble-cv-bridge ros-humble-image-transport ros-humble-image-transport-plugins \
+      ros-humble-vision-msgs libopencv-dev python3-opencv \
+      ros-humble-robot-localization ros-humble-imu-tools \
+      ros-humble-slam-toolbox ros-humble-navigation2 ros-humble-nav2-bringup \
+    &amp;&amp; rm -rf /var/lib/apt/lists/*</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>줄</th><th>쓰는 단계</th><th>없으면</th></tr></thead>
+        <tbody>
+          <tr><td><code>demo-nodes-cpp / -py</code></td><td>02, 03</td><td><code>ros2 run demo_nodes_cpp talker</code> 가 "package not found"</td></tr>
+          <tr><td><code>liburdfdom-tools</code></td><td>05</td><td><code>check_urdf</code> 없음</td></tr>
+          <tr><td><code>robot-localization, imu-tools</code></td><td>06 (IMU 융합 EKF)</td><td>EKF 없음 → 브리지 TF 만 쓴다</td></tr>
+          <tr><td><code>rplidar-ros</code></td><td>07</td><td>라이다 드라이버 없음</td></tr>
+          <tr><td><code>cv-bridge, image-transport(-plugins), vision-msgs, libopencv-dev, python3-opencv</code></td><td>08a, 08b, 08c</td><td>C++ 영상 노드가 빌드되지 않음, 압축 영상 토픽 없음</td></tr>
+          <tr><td><code>slam-toolbox, navigation2, nav2-bringup</code></td><td>09, 10 (03 에서 <code>nav2_msgs</code> 인터페이스 조회에도 쓴다)</td><td>SLAM/Nav2 없음</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">A 에서는 이미지가 1 GB 남짓 커진다. 학습 중에는 그 비용이 "단계마다 20분씩 재빌드"보다 훨씬 싸다. 완성 후 운용 이미지를 줄이고 싶으면 그때 빼면 된다. 편집이 끝나면 <code>./scripts/sync-to-pi.sh</code> 로 Pi 에 반영한다.</p>
+
+      <h3>3-4. 이미지 빌드 <span class="tag pi">Pi 호스트</span></h3>
+      <pre><code class="lang-bash">ssh pi5
+cd ~/ros2_rpi5/docker
+
+# 호스트 UID/GID 를 .env 에 적어 둔다 (compose 가 자동으로 읽는다)
+cp .env.example .env
+printf 'HOST_UID=%s\nHOST_GID=%s\n' "$(id -u)" "$(id -g)" &gt;&gt; .env
+cat .env                       # HOST_UID/HOST_GID 가 id -u / id -g 와 같은지 눈으로 확인
+
+docker compose build           # Pi 5 에서 10~20분</code></pre>
+      <p>빌드가 끝나면:</p>
+      <pre><code class="lang-bash">docker images | grep rpi5-ros2</code></pre>
+      <p class="small"><code>.env</code> 는 <code>.gitignore</code> 에 있다 — 사람마다 UID 가 다르므로 저장소에 올리지 않는다. <code>.env.example</code> 의 기본값(1000)은 Raspberry Pi OS 첫 사용자와 우연히 같지만, 그것에 의존하지 말고 반드시 위 명령으로 채운다.</p>
+
+      <h3>3-5. Dockerfile 에서 눈여겨볼 지점 — 읽기 과제</h3>
+      <p><code>docker/Dockerfile</code> 을 열어 아래 네 가지가 왜 있는지 확인한다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>지점</th><th>이유</th></tr></thead>
+        <tbody>
+          <tr><td><code>FROM ros:humble-ros-base</code></td><td><code>-desktop</code> 이 아니다. RViz/Gazebo 는 헤드리스 Pi 에서 무용지물이고 이미지가 2 GB 커진다 (§2-6)</td></tr>
+          <tr><td>비root 사용자 (<code>USER_UID</code> 빌드 인자)</td><td>root 로 돌리면 마운트된 <code>ros2_ws</code> 의 빌드 산출물이 전부 root 소유가 된다 (§2-4)</td></tr>
+          <tr><td><code>usermod -aG dialout,video</code></td><td>컨테이너 사용자도 시리얼/카메라 장치에 접근해야 한다. 01 에서 호스트 사용자에게 준 것과 같은 그룹</td></tr>
+          <tr><td><code>.bashrc</code> 의 <code>source</code> 2줄 + <code>entrypoint.sh</code></td><td>ROS 는 환경변수 기반이다. source 를 잊어 <code>ros2: command not found</code> 를 보는 일이 가장 흔한 첫 실수다 (04 단계 §1)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>3-6. 첫 실행 <span class="tag pi">Pi 호스트</span> → <span class="tag cli">컨테이너</span></h3>
+      <pre><code class="lang-bash">cd ~/ros2_rpi5/docker
+docker compose run --rm dev</code></pre>
+      <p>프롬프트가 <code>humble:/ros2_ws$</code> 로 바뀌면 컨테이너 안이다.</p>
+      <pre><code class="lang-bash">printenv | grep ROS          # ROS_DISTRO=humble, ROS_DOMAIN_ID=30 확인
+whoami &amp;&amp; id -u              # root 가 아니고, 호스트의 id -u 와 같은 번호
+ros2 --help
+ros2 topic list              # /parameter_events, /rosout 두 개가 기본</code></pre>
+
+      <h3>3-7. 노드 2개로 통신 확인 — DDS 디스커버리</h3>
+      <p>터미널 A (위 컨테이너):</p>
+      <pre><code class="lang-bash">ros2 run demo_nodes_cpp talker</code></pre>
+      <p>터미널 B (Pi 에 새로 ssh 한 뒤):</p>
+      <pre><code class="lang-bash">cd ~/ros2_rpi5/docker &amp;&amp; docker compose run --rm dev
+ros2 run demo_nodes_py listener</code></pre>
+      <p>B 에 <code>I heard: [Hello World: 1]</code> 이 찍히면 <strong>서로 다른 두 컨테이너의 노드가 DDS 로 서로를 찾은 것</strong>이다. 안 되면 <code>network_mode: host</code> 와 양쪽의 <code>ROS_DOMAIN_ID</code> 를 확인한다 (§2-3).
+      C++ 발행자와 Python 구독자가 통신하고 있다는 점도 눈여겨 두자 — 언어는 DDS 위에서 사라진다.</p>
+
+      <h3>3-8. Foxglove 연결 — Mac 에서 Pi 의 데이터 보기</h3>
+      <p><span class="tag pi">Pi 호스트</span> 브리지를 백그라운드로 상시 실행한다.</p>
+      <pre><code class="lang-bash">cd ~/ros2_rpi5/docker
+docker compose up -d foxglove
+docker compose logs -f foxglove      # "Server started" 확인 후 Ctrl+C (로그만 끊기고 컨테이너는 계속 돈다)</code></pre>
+      <p><span class="tag mac">Mac</span> Foxglove 에서 (무료 플랜. 첫 실행 때 계정 로그인을 요구하고, 그 뒤로는 로컬 파일과 WebSocket 연결이 오프라인에서도 된다. 유료 플랜은 클라우드 저장·팀 기능용이라 이 프로젝트에는 필요 없다):</p>
+      <ol class="steps">
+        <li><strong>Open connection</strong> → <strong>Foxglove WebSocket</strong></li>
+        <li>주소: <code>ws://192.168.50.97:8765</code> (이 프로젝트의 Pi. mDNS 를 쓰면 <code>ws://roshost.local:8765</code>)</li>
+        <li>연결되면 좌측에 토픽 목록이 보인다. <strong>Raw Messages</strong> 패널에 <code>/rosout</code> 을 띄워 talker 의 로그가 흐르는지 확인한다.</li>
+        <li><strong>Topic Graph</strong> 패널을 추가한다 — 03 단계부터 "그래프를 보는" 습관의 도구다.</li>
+      </ol>
+
+      <h3>3-9. 장치가 컨테이너에 보이는가 <span class="tag cli">컨테이너</span></h3>
+      <pre><code class="lang-bash">ls -l /dev/lidar /dev/mcu /dev/video* /dev/hailo0 2&gt;&amp;1     # 01 에서 만든 링크와 장치가 그대로 보이는가
+ls -l /dev/dma_heap/                                          # Pi 5 카메라에 필수 (08 단계)
+touch /ros2_ws/test.txt &amp;&amp; ls -l /ros2_ws/test.txt &amp;&amp; rm /ros2_ws/test.txt</code></pre>
+      <p>마지막 줄의 소유자가 컨테이너 사용자(<code>ros</code>, UID 는 호스트와 같음)이면 §2-4 가 제대로 동작한 것이다. 호스트에서 <code>ls -l ~/ros2_rpi5/ros2_ws/</code> 로 보면 내 계정 소유로 보인다.
+      Hailo 의 <strong>버전 일치</strong> 확인은 컨테이너에 <code>libhailort</code> 가 들어가는 08c 에서 한다 — 지금은 장치 노드가 보이는지만 본다.</p>
+
+      <h3>3-10. 자주 쓸 명령 정리</h3>
+      <pre><code class="lang-bash">cd ~/ros2_rpi5/docker
+
+docker compose run --rm dev            # 일회성 개발 셸 (종료 시 컨테이너 삭제 — §2-2)
+docker compose up -d foxglove          # 시각화 브리지 상시 실행
+docker compose logs -f foxglove        # 로그 보기
+docker compose down                    # 모두 정지
+docker exec -it ros2_foxglove bash     # 이미 떠 있는 컨테이너에 들어가기
+
+docker compose build                   # Dockerfile 수정 후 재빌드 (캐시 사용)
+docker compose build --no-cache        # 캐시까지 버리고 처음부터 (apt 미러가 바뀌었을 때 등)
+
+docker compose --profile robot up      # 로봇 본체 기동 (bringup 서비스, 06 단계부터)</code></pre>
+      <div class="callout tip"><span class="ct">팁</span>
+        <p>컨테이너 셸을 여러 개 띄울 때는 <code>docker compose run --rm dev</code> 를 여러 번 호출해도 된다. <code>network_mode: host</code> 이므로 서로 같은 ROS 그래프를 본다.
+        각 단계의 "터미널 A / 터미널 B" 는 전부 이 방식이다.</p>
+      </div>
+
+      <h2>✅ 검증 체크포인트</h2>
+      <ul class="checklist">
+        <li><label><input type="checkbox"><span><span class="tag pi">Pi</span> <code>docker run --rm hello-world</code> 가 동작하고 <code>docker info --format '{{.Architecture}}'</code> 가 aarch64 다</span></label></li>
+        <li><label><input type="checkbox"><span>§3-3 의 학습 패키지를 넣었다 (A: <code>Dockerfile</code> 2-B 블록 추가 + <code>sync-to-pi.sh</code>, B: 컨테이너에서 설치)</span></label></li>
+        <li><label><input type="checkbox"><span><span class="tag pi">Pi</span> <code>docker/.env</code> 의 HOST_UID/HOST_GID 가 <code>id -u</code>/<code>id -g</code> 와 같다</span></label></li>
+        <li><label><input type="checkbox"><span><span class="tag pi">Pi</span> <code>docker images | grep rpi5-ros2</code> — 이미지가 있다</span></label></li>
+        <li><label><input type="checkbox"><span><span class="tag cli">컨테이너</span> <code>ros2 topic list</code> 에 <code>/rosout</code> 이 보인다</span></label></li>
+        <li><label><input type="checkbox"><span><span class="tag cli">컨테이너</span> <code>whoami &amp;&amp; id -u</code> — root 가 아니고 UID 가 호스트와 같다</span></label></li>
+        <li><label><input type="checkbox"><span><span class="tag cli">컨테이너</span> <code>/ros2_ws</code> 에 만든 파일이 호스트에서 내 계정 소유로 보인다 (root 면 실패)</span></label></li>
+        <li><label><input type="checkbox"><span><span class="tag cli">컨테이너</span> <code>ls -l /dev/lidar /dev/mcu /dev/video* /dev/hailo0 /dev/dma_heap/</code> — 장치가 보인다</span></label></li>
+        <li><label><input type="checkbox"><span>서로 다른 두 컨테이너에서 <code>demo_nodes_cpp talker</code> 와 <code>demo_nodes_py listener</code> 가 통신한다</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 pkg list | grep -E 'rplidar|slam_toolbox|nav2_bringup|cv_bridge|vision_msgs|robot_localization'</code> — §3-3 목록의 패키지가 전부 나온다</span></label></li>
+        <li><label><input type="checkbox"><span><span class="tag mac">Mac</span> Foxglove 가 <code>ws://192.168.50.97:8765</code> 에 연결되어 토픽 목록과 <code>/rosout</code> 이 보인다</span></label></li>
+        <li><label><input type="checkbox"><span>(시스템 경로 볼륨이 없는 기본 구성에서) 컨테이너 안에서 <code>sudo apt install</code> 한 것이 <code>exit</code> 후 새 컨테이너에서 사라지는 것을 직접 확인했다 (예: <code>sudo apt install -y sl</code> → exit → 재진입 → <code>which sl</code>)</span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2>🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. 호스트가 Debian 13 인데 컨테이너 안은 왜 Ubuntu 22.04 인가? 문제되지 않는가?</summary>
+        <div class="ans">컨테이너는 커널만 공유하고 유저스페이스(libc, 라이브러리, 패키지)는 자기 이미지의 것을 쓴다. Humble 이 필요로 하는 jammy 유저스페이스가 이미지 안에 그대로 있으므로 문제가 없다.
+        단 <strong>커널이 제공하는 것</strong>(장치 드라이버)은 호스트 것이므로, 호스트에서 안 보이는 장치는 컨테이너에서도 안 보인다.</div></details>
+      <details class="quiz"><summary>2. <code>network_mode: host</code> 를 빼면 정확히 어떤 증상이 나타나는가?</summary>
+        <div class="ans">노드는 정상적으로 뜨지만 서로를 발견하지 못한다. 다른 컨테이너에서 <code>ros2 node list</code> 가 비거나 자기 자신만 보인다. 에러 메시지가 없어서 코드를 의심하게 되는 것이 함정이다.
+        원인은 DDS 디스커버리가 쓰는 UDP 멀티캐스트가 bridge 네트워크를 넘지 못하는 것.</div></details>
+      <details class="quiz"><summary>3. 컨테이너를 root 로 돌리면 무엇이 곤란해지는가?</summary>
+        <div class="ans">마운트된 <code>/ros2_ws</code> 에 colcon 이 생성하는 build/install/log 디렉터리가 root 소유가 된다. 호스트에서 편집·삭제하려면 매번 sudo 가 필요하고, git 이나 rsync 도 꼬인다.
+        그래서 빌드 인자로 호스트 UID/GID 를 주입한다 — 그리고 그 변수명이 <code>UID</code> 가 아니라 <code>HOST_UID</code> 인 이유는 bash 의 <code>UID</code> 가 읽기 전용이기 때문이다.</div></details>
+      <details class="quiz"><summary>4. Foxglove 가 <code>ROS_DOMAIN_ID</code> 의 영향을 받지 않는 이유는?</summary>
+        <div class="ans"><code>foxglove_bridge</code> 노드 자체는 ROS 그래프 안에 있고 도메인 ID 를 따르지만, Mac 의 Foxglove Studio 는 <strong>DDS 가 아니라 WebSocket</strong> 으로 그 브리지에 붙는다.
+        Mac 은 ROS 그래프의 참여자가 아니라 브리지의 클라이언트다.</div></details>
+      <details class="quiz"><summary>5. 컨테이너 안에서 <code>sudo apt install ros-humble-slam-toolbox</code> 를 했는데 다음 날 없다. 왜이고, 어떻게 해야 하는가?</summary>
+        <div class="ans"><code>docker compose run --rm dev</code> 는 매번 이미지에서 새 컨테이너를 만들고 종료 시 지운다. apt 가 쓴 것은 그 컨테이너의 쓰기 레이어에 있었으므로 함께 사라졌다. 이미지는 바뀌지 않았다.
+        <code>--rm</code> 을 빼는 것은 해법이 아니다 — <code>compose run</code> 은 실행마다 새 컨테이너를 만들고, 설정·이미지가 바뀌면 <code>up</code> 도 재생성한다. 쓰기 레이어는 보존 수단이 아니다.
+        계속 필요한 패키지를 남기는 방법은 §2-2 의 두 가지다 — A: <code>Dockerfile</code> 에 적고 <code>docker compose build</code>, B: 시스템 경로를 볼륨으로 잡은 컨테이너에서 설치.</div></details>
+      <details class="quiz"><summary>6. <code>docs</code> 초안대로 <code>ros2 run demo_nodes_cpp talker</code> 를 쳤는데 "package 'demo_nodes_cpp' not found" 가 났다. 원인은?</summary>
+        <div class="ans"><code>ros:humble-ros-base</code> 이미지의 <code>ros_base</code> 메타패키지에는 데모 노드가 들어 있지 않다(그것은 desktop 변형의 일부다). §3-3 목록의 <code>ros-humble-demo-nodes-cpp</code>/<code>-py</code> 를 넣었어야 한다 (A: 2-B 블록 + 재빌드, B: 컨테이너에서 설치).
+        "패키지가 이미지에 있는가"는 <code>ros2 pkg list | grep …</code> 로 바로 확인할 수 있다.</div></details>
+      <details class="quiz"><summary>7. 호스트를 <code>apt upgrade</code> 한 뒤 컨테이너에서 Hailo 가 "No Hailo device found" 를 낸다. ROS 코드는 안 건드렸다. 무엇을 보는가?</summary>
+        <div class="ans">호스트의 <code>hailo_pci</code> 드라이버/HailoRT 가 올라갔지만 컨테이너의 <code>libhailort</code> 는 그대로라 버전이 어긋난 것. 호스트와 컨테이너에서 각각 <code>hailortcli fw-control identify</code> 를 쳐 비교하고,
+        다르면 컨테이너 쪽을 호스트 버전으로 맞춘다 — A: Dockerfile 의 <code>HAILORT_VERSION</code> 을 새 값으로 바꿔 재빌드, B: 컨테이너에서 같은 버전 .deb/.whl 설치. <code>/dev/hailo0</code> 이 보이는 것과 장치를 "인식"하는 것은 다른 문제다.</div></details>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>08 · 카메라 — libcamera와 IMX708</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="08">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">08 · 카메라 연결</p>
+      <h1>카메라 — libcamera 와 IMX708</h1>
+      <p class="lead"><strong>이 프로젝트에서 기술적 위험이 가장 큰 단계다.</strong> 천천히, 순서대로 간다. 여기서 만드는 <code>/camera/image_raw</code> 와 <code>/camera/camera_info</code> 두 토픽 위에 08a(OpenCV), 08b(YOLO), 08c(Hailo) 가 전부 올라간다.
+      그리고 카메라 내부 파라미터(캘리브레이션)를 여기서 얻어 두어야 10 단계에서 "화면 속 사람이 어느 방향에 있는가"를 계산할 수 있다.</p>
+
+      <div class="goal">
+        <span class="label">이 단계가 끝나면</span>
+        <p><code>/camera/image_raw</code> 가 ROS 토픽으로 흐르고 Foxglove 에서 영상이 보인다. <code>frame_id</code> 가 <code>camera_optical_link</code> 로 TF 트리에 붙어 있고,
+        헤드리스로 캘리브레이션한 <code>camera_info.yaml</code> 이 <code>/camera/camera_info</code> 로 발행된다. 호스트와 컨테이너의 libcamera 버전을 어떻게 맞췄는지 설명할 수 있다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">그래프에서의 위치</span><code>camera</code> 상자(센서 계층) → <code>/camera/image_raw</code> → <code>image_proc_node</code>(08a) / <code>detector</code>(08b·08c)</div>
+        <div><span class="k">전제</span>02 (<code>/dev/dma_heap</code> cgroup 규칙), 05 (<code>camera_optical_link</code> 프레임), 01 §3-5 (호스트에서 카메라 인식)</div>
+        <div><span class="k">예상 소요</span>3~6시간 (libcamera 빌드 20~40분 포함)</div>
+        <div><span class="k">언어</span><span class="tag cli">CLI</span> + Dockerfile + <span class="tag py">Python</span> (캘리브레이션 스크립트, Mac 에서)</div>
+      </div>
+
+      <h2>1. 개요</h2>
+      <h3>1-1. Pi 5 카메라 스택의 구조</h3>
+      <pre class="diagram"><code>   ┌──────────────────────────────────────────────────────────┐
+   │  애플리케이션 (rpicam-apps, camera_ros, picamera2)       │  ← 우리는 camera_ros (컨테이너 안)
+   ├──────────────────────────────────────────────────────────┤
+   │  libcamera          ← 센서 튜닝, AE/AWB, 파이프라인 구성 │  ← 유저스페이스! 컨테이너 것을 쓴다
+   ├──────────────────────────────────────────────────────────┤
+   │  V4L2 subdev + media controller                          │
+   │   /dev/video*  /dev/media*  /dev/dma_heap                │  ← 컨테이너에 전달해야 하는 장치들
+   ├──────────────────────────────────────────────────────────┤
+   │  커널: PiSP (Pi 5 ISP) + imx708 센서 드라이버            │  ← 호스트 커널 (컨테이너와 공유)
+   └──────────────────────────────────────────────────────────┘</code></pre>
+
+      <h3>1-2. 핵심 사실 세 가지</h3>
+      <p><strong>① IMX708 은 libcamera 전용이다.</strong> <code>v4l2_camera</code> 같은 전통적 ROS 드라이버로 <code>/dev/video0</code> 을 직접 열면 <strong>PiSP subdev 의 raw Bayer 데이터</strong>가 나온다. 디모자이킹도, 화이트밸런스도, 노출 제어도 안 된 상태다. 사실상 쓸 수 없다.
+      → <strong><code>v4l2_camera</code> 는 함정이다. 쓰지 않는다.</strong></p>
+      <p><strong>② <code>/dev/dma_heap</code> 이 필요하다.</strong> Pi 5 는 카메라 버퍼를 DMA heap 으로 할당한다. 컨테이너에 이 경로가 없으면 libcamera 가 카메라를 열지 못한다. 흔히 빠뜨리는 항목이다.</p>
+      <p><strong>③ 호스트와 컨테이너의 libcamera 버전이 맞아야 한다.</strong> libcamera 는 API/ABI 가 자주 바뀐다. 호스트(Raspberry Pi OS Trixie)의 libcamera 와 컨테이너(Ubuntu 22.04)의 libcamera 는 버전이 다르다. <strong>이것이 이 단계의 진짜 난관이다.</strong></p>
+
+      <h3>1-3. 이 단계의 산출물</h3>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>산출물</th><th>어디에</th><th>누가 쓰는가</th></tr></thead>
+        <tbody>
+          <tr><td><code>/camera/image_raw</code> (+ <code>/compressed</code>)</td><td>토픽</td><td>08a image_proc, 08b/08c detector, Foxglove</td></tr>
+          <tr><td><code>/camera/camera_info</code></td><td>토픽</td><td>10 단계의 카메라-라이다 융합 (픽셀 → 방위각)</td></tr>
+          <tr><td><code>camera_info.yaml</code></td><td><code>ros2_ws/src/rpi5_bringup/config/</code></td><td><code>camera_info_url</code> 파라미터로 로드</td></tr>
+          <tr><td>Dockerfile 3-C 블록, <code>drivers.repos</code></td><td><code>docker/</code>, <code>ros2_ws/src/</code></td><td>재현 가능한 환경</td></tr>
+          <tr><td><code>robot.launch.py</code> 의 camera 블록</td><td><code>rpi5_bringup</code></td><td>09, 10 의 전체 기동</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>2. 원리 — 왜</h2>
+
+      <h3>2-1. 왜 libcamera 전용인가</h3>
+      <p>예전 카메라 스택은 ISP(이미지 신호 처리)가 GPU 펌웨어 안에 있어서 V4L2 로 열면 완성된 영상이 나왔다. Pi 5 의 PiSP 는 <strong>ISP 제어가 유저스페이스(libcamera)로 올라왔다.</strong>
+      노출·화이트밸런스·렌즈 셰이딩·디모자이킹 알고리즘이 libcamera 의 IPA 모듈에 있고, 커널 드라이버는 raw 버퍼만 나른다. 그래서 libcamera 없이는 "영상"이 아니라 "센서 값"만 얻는다.</p>
+
+      <h3>2-2. 02 단계의 논리가 역으로 물리는 곳</h3>
+      <p>02 단계에서 "컨테이너는 커널만 공유하고 유저스페이스는 자기 것을 쓴다"고 했다. 카메라에서는 <strong>커널 드라이버(호스트) ↔ libcamera(컨테이너)</strong> 가 media controller/V4L2 인터페이스로 만난다.
+      libcamera 의 파이프라인 핸들러(<code>rpi/pisp</code>)는 커널 드라이버가 노출하는 subdev 구조를 정확히 알아야 하므로, 컨테이너의 libcamera 가 호스트 커널과 <strong>같은 세대</strong>여야 한다.
+      구조적으로 Hailo 의 버전 락(02 §2-5)과 같은 문제다: <em>드라이버는 호스트에, 런타임은 컨테이너에.</em></p>
+
+      <h3>2-3. 픽셀 포맷과 ROS 인코딩 — 이름이 뒤집혀 보이는 이유</h3>
+      <p><code>camera_ros</code> 는 복사 없이 libcamera 버퍼를 ROS 메시지에 그대로 매핑한다. 그래서 libcamera 의 <code>format</code> 이 곧 ROS 의 <code>encoding</code> 을 결정한다. 매핑(원문 <code>format_mapping.cpp</code> 에서 확인):</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>libcamera <code>format</code></th><th>ROS <code>encoding</code></th><th>메모리 순서</th><th>비고</th></tr></thead>
+        <tbody>
+          <tr><td><code>RGB888</code></td><td><strong><code>bgr8</code></strong></td><td>B, G, R</td><td><strong>OpenCV 기본 순서와 일치</strong> — 08a 에서 변환 없이 쓴다</td></tr>
+          <tr><td><code>BGR888</code></td><td><code>rgb8</code></td><td>R, G, B</td><td></td></tr>
+          <tr><td><code>XRGB8888</code></td><td><code>bgra8</code></td><td>B, G, R, X</td><td>32 bit/픽셀 — 대역폭 1/3 증가</td></tr>
+          <tr><td><code>YUYV</code></td><td><code>yuv422_yuy2</code></td><td>Y U Y V</td><td>16 bit/픽셀. 대역폭 절약, OpenCV 에서 변환 필요</td></tr>
+          <tr><td><code>MJPEG</code></td><td><code>jpeg</code></td><td>압축</td><td><code>image_raw</code> 자체가 압축됨</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout why"><span class="ct">왜 RGB888 이 bgr8 인가</span>
+        <p>libcamera 는 DRM fourcc 이름 규약을 따르는데, DRM 의 <code>RGB888</code> 은 "32비트 워드 안에서 [23:0] = R:G:B, 리틀엔디안"이라 <strong>메모리에 놓이는 바이트 순서는 B, G, R</strong> 이다. ROS/OpenCV 는 메모리 순서로 이름을 붙이므로 <code>bgr8</code> 이 된다.
+        이름을 외우지 말고 <strong><code>ros2 topic echo /camera/image_raw --field encoding --once</code> 로 확인하는 습관</strong>을 들인다. 색이 뒤집혀(얼굴이 파랗게) 보이면 이 매핑을 잘못 가정한 것이다.</p>
+      </div>
+
+      <h3>2-4. 해상도와 대역폭</h3>
+      <p>640×480 × 3 바이트 × 30 fps = <strong>약 27 MB/s (216 Mbps)</strong>. 실사용 Wi-Fi 대역폭을 넘는다. 그래서 <strong>해상도는 낮게 시작</strong>(640×480 이면 자율주행 인지에 충분하고 Hailo 파이프라인에 여유가 생긴다)하고, Mac 으로 보내는 것은 <code>compressed</code>(JPEG) 를 쓴다.
+      추론은 Pi 위에서 하고 <strong>결과(<code>/detections</code>, 수 KB/s)만</strong> 보내는 것이 올바른 설계다 — 08b 에서 그렇게 만든다.</p>
+
+      <h3>2-5. 타임스탬프와 프레임</h3>
+      <ul>
+        <li><code>header.stamp</code> 는 <strong>촬영 시각</strong>이어야 한다. <code>camera_ros</code> 는 기본적으로 센서 타임스탬프를 쓰고, <code>use_node_time: true</code> 로 두면 노드가 수신한 시각을 쓴다. 센서 시계와 시스템 시계가 어긋나 TF 조회가 실패하면 그때 <code>use_node_time</code> 을 켜 본다.</li>
+        <li><code>header.frame_id</code> 는 <strong><code>camera_optical_link</code></strong> 다. 영상 좌표계(x 오른쪽, y 아래, z 광축)는 로봇 규약(x 앞)과 다르므로 URDF 에 광학 프레임을 따로 두었다(05 단계 §2-2). 이미지 관련 메시지는 전부 광학 프레임을 쓴다.</li>
+      </ul>
+
+      <h3>2-6. 카메라 모델 — 왜 <code>camera_info</code> 가 필요한가</h3>
+      <p>영상만으로는 "화면 속 물체가 실제 어느 방향인가"를 알 수 없다. 핀홀 모델의 <strong>내부 파라미터</strong>가 필요하다.</p>
+      <pre class="diagram"><code>        ┌ fx   0  cx ┐        fx, fy : 초점거리 [픽셀]   (렌즈 + 해상도에 종속)
+   K =  │  0  fy  cy │        cx, cy : 주점(광축이 지나는 픽셀) — 보통 화면 중앙 근처
+        └  0   0   1 ┘
+
+   픽셀 u(가로) 에 보이는 물체의 수평 시선 각도:
+        θ = atan( (u − cx) / fx )      ← 오른쪽이 +. 광학 프레임 기준
+
+   예) 표준 렌즈: 640×480, fx ≈ 500 이면 화면 가장자리(u=0) 는 θ = atan(−320/500) ≈ −32.6° → 수평 시야각 약 65°
+   예) 광각(이 프로젝트, Wide NoIR): fx ≈ 260 이면 θ = atan(−320/260) ≈ −50.9° → 수평 시야각 약 102°
+       → 광각은 한 픽셀이 더 넓은 각을 덮고 가장자리 왜곡이 커서, 왜곡 계수(D)와 08a 의 보정이 실제로 중요하다</code></pre>
+      <p>10 단계에서 <strong>검출 박스 중심의 u → θ → 그 방향의 <code>/scan</code> 거리</strong>로 "전방 1.2 m 에 사람"을 만든다. 카메라는 "무엇인가", 라이다는 "얼마나 먼가"를 맡는다. 그 다리가 이 <code>K</code> 다.
+      <strong><code>K</code> 는 해상도에 종속된다.</strong> 640×480 으로 캘리브레이션했으면 640×480 으로 운용해야 한다 (해상도를 바꾸면 fx, cx 가 비례해 바뀐다).</p>
+
+      <h2>3. 실습</h2>
+
+      <h3>3-1. 먼저 호스트에서 확인 (반드시) <span class="tag pi">Pi 호스트</span></h3>
+      <pre><code class="lang-bash">rpicam-hello --list-cameras                # imx708_wide_noir 가 보이는가 (01 §3-5)
+rpicam-hello -t 5000 -n                    # 5초 캡처 (-n: 헤드리스, 미리보기 없음)
+rpicam-jpeg -o /tmp/test.jpg --width 1280 --height 720 -n</code></pre>
+      <div class="callout warn"><span class="ct">여기서 안 되면 ROS 단계로 넘어가지 않는다</span>
+        <p>01 단계 §3-5 로 돌아가 케이블(Pi 5 는 <strong>22핀 미니 FPC</strong>)과 <code>config.txt</code> 를 먼저 해결한다. ROS 를 끼워 넣으면 문제의 원인이 두 배로 늘어난다.</p>
+      </div>
+      <p>Mac 으로 가져와 눈으로 확인: <span class="tag mac">Mac</span></p>
+      <pre><code class="lang-bash">scp pi5:/tmp/test.jpg /tmp/ &amp;&amp; open /tmp/test.jpg</code></pre>
+      <div class="callout note"><span class="ct">Wide NoIR 카메라다 — 색과 왜곡 두 가지가 다르다</span>
+        <p>IR 필터가 없어 낮에는 전체적으로 <strong>붉게/뿌옇게</strong> 나온다. 고장이 아니다. 야간에 적외선 LED 와 쓰기 위한 물건이다. 주행용이라면 색 정확도보다 <strong>노출 안정성</strong>이 중요하다.
+        (YOLO 의 COCO 모델은 색이 틀어진 영상에서도 사람·의자 정도는 잘 잡는다 — 08b 에서 확인한다.)
+        그리고 <strong>광각 렌즈</strong>라 수평 시야각이 약 102° 로 표준형(66°)보다 훨씬 넓고 <strong>배럴 왜곡</strong>이 크다. 가장자리의 물체가 늘어져 보이는 것도 정상이다.
+        그 대신 3-9 의 캘리브레이션에서 왜곡 계수가 실제로 의미를 갖고, 10 단계의 픽셀 → 방위각 변환은 왜곡 보정 뒤에 해야 맞는다. AWB 는 <code>imx708_wide_noir.json</code> 튜닝에 이미 반영되어 있어 손댈 것이 없다.</p>
+      </div>
+      <p>호스트의 libcamera 버전을 지금 기록해 둔다. 3-4 에서 컨테이너를 이 값에 맞춘다:</p>
+      <pre><code class="lang-bash">dpkg -l | grep -E "libcamera|rpicam" | awk '{print $2, $3}'
+#   → hardware/INVENTORY.md 4절 "호스트 libcamera 버전" 에 기록</code></pre>
+
+      <h3>3-2. 세 가지 접근법 — 선택</h3>
+      <div class="tbl"><table>
+        <thead><tr><th></th><th>A. <code>camera_ros</code> 컨테이너</th><th>B. 호스트 브리지</th><th>C. 스트림 중계</th></tr></thead>
+        <tbody>
+          <tr><td>구조</td><td>컨테이너 안에서 libcamera 직접 사용</td><td>호스트에서 캡처 → ROS 로 전달</td><td><code>rpicam-vid</code> → UDP → 컨테이너</td></tr>
+          <tr><td>장점</td><td>ROS 표준, TF/타임스탬프 정확, rosbag 재현</td><td>libcamera 버전 문제 없음</td><td>단순</td></tr>
+          <tr><td>단점</td><td><strong>libcamera 버전 맞추기가 어려움</strong></td><td>시스템이 컨테이너 안팎으로 쪼개짐</td><td>지연, 타임스탬프 부정확</td></tr>
+          <tr><td>권장도</td><td>★★★ (되면 최선)</td><td>★★ (확실한 대안)</td><td>★ (임시방편)</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>A 를 먼저 시도하고, 막히면 B 로 간다.</strong> C 는 SLAM/Nav2 와 궁합이 나쁘다.</p>
+
+      <h3>3-3. 접근법 A ① — 컨테이너에 장치 전달 확인 <span class="tag pi">Pi 호스트</span></h3>
+      <pre><code class="lang-bash">ls -l /dev/dma_heap/
+#   예) crw-rw---- 1 root video 254, 0 … system
+#                              ^^^ 이 숫자가 major
+ls -l /dev/video* /dev/media*
+#   /dev/media* 의 major 도 확인한다 (compose 에는 245 로 적혀 있지만 호스트 값이 우선)</code></pre>
+      <p><code>docker/docker-compose.yml</code> 의 <code>device_cgroup_rules</code> 에 확인한 major 를 추가한다(주석에 자리가 마련되어 있다):</p>
+      <pre><code class="lang-yaml">  device_cgroup_rules:
+    - 'c 81:* rmw'     # video4linux
+    - 'c 245:* rmw'    # media controller — 호스트에서 확인한 값으로
+    - 'c 254:* rmw'    # dma_heap — 위에서 확인한 major (예시값. 반드시 실측)</code></pre>
+      <pre><code class="lang-bash"># 컨테이너 안에서 확인
+cd ~/ros2_rpi5/docker &amp;&amp; docker compose run --rm dev ls -l /dev/video0 /dev/media0 /dev/dma_heap/</code></pre>
+      <p>컨테이너 사용자가 <code>video</code> 그룹인 것은 Dockerfile 이 보장한다(<code>usermod -aG dialout,video</code>). <code>/run/udev</code> 를 읽기 전용으로 마운트하는 이유는 libcamera 가 장치 열거에 udev 를 쓰기 때문이다 — compose 에 이미 있다.</p>
+
+      <h3>3-4. 접근법 A ② — libcamera 버전 맞추기</h3>
+      <p>Ubuntu 22.04 의 apt libcamera 는 Pi 5 의 PiSP 를 모른다. <strong>Raspberry Pi 포크를 호스트와 같은 세대로 소스 빌드</strong>하는 것이 확실하다. 절차는 표의 순서대로, 값은 <strong>실측</strong>으로.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>순서</th><th>어디서</th><th>무엇을</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><span class="tag pi">Pi</span></td><td><code>dpkg -l | grep libcamera</code> → 패키지 버전 (3-1 에서 기록한 값 — 이 프로젝트: <code>0.7.2+rpt20260817-1</code>, libpisp v1.7.0)</td></tr>
+          <tr><td>2</td><td><span class="tag mac">Mac</span></td><td><code>git ls-remote --tags https://github.com/raspberrypi/libcamera.git | tail -20</code> → 호스트 버전에 대응하는 태그 이름을 찾는다 (이 프로젝트: <code>v0.7.2+rpt20260817</code> — 패키지 버전에서 <code>-1</code> 을 뗀 이름의 태그가 존재한다)</td></tr>
+          <tr><td>3</td><td><span class="tag mac">Mac</span></td><td><code>docker/Dockerfile</code> 의 <code>ARG LIBCAMERA_TAG=…</code> 에 그 태그를 적는다 (아래 블록 — 현재 값 <code>v0.7.2+rpt20260817</code>)</td></tr>
+          <tr><td>4</td><td><span class="tag pi">Pi</span></td><td><code>./scripts/sync-to-pi.sh</code>(Mac) → <code>docker compose build</code> (20~40분)</td></tr>
+          <tr><td>5</td><td><span class="tag cli">컨테이너</span></td><td><code>cam -l</code> 로 <code>imx708_wide_noir</code> 가 열거되는지, <code>find / -name imx708_wide_noir.json</code> 으로 튜닝 파일이 설치됐는지, 또는 3-6 의 노드 기동 로그로 검증</td></tr>
+          <tr><td>6</td><td>호스트 <code>apt upgrade</code> 후</td><td>1 부터 다시. 호스트만 올라가면 컨테이너 libcamera 가 커널과 어긋난다 (Hailo 와 같은 버전 락)</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><span class="ct">버전 추측은 이 단계 실패의 주원인이다</span>
+        <p>"최신 태그면 되겠지"가 아니다. 호스트 커널의 PiSP 드라이버와 libcamera 의 파이프라인 핸들러가 같은 세대여야 한다. 태그가 정확히 일치하는 것이 없으면 호스트 패키지 버전과 <em>가장 가까운 상위</em>가 아니라 <em>같은 릴리스 라인</em>을 고르고, 안 되면 B 로 간다.</p>
+      </div>
+      <p><code>docker/Dockerfile</code> 의 3-B(Hailo) 블록 뒤에 <strong>3-C 블록</strong>을 추가한다 (비root 사용자 절 <em>앞</em>에 두어야 root 로 설치된다):</p>
+      <pre><code class="lang-bash"># ── 3-C. libcamera (Raspberry Pi 포크) 소스 빌드 — 08단계 ───────────────────
+#  !! 태그를 추측해서 넣지 말 것 !!  호스트 `dpkg -l | grep libcamera` 버전에 맞춘다.
+ARG LIBCAMERA_TAG=v0.7.2+rpt20260817          # ← INVENTORY.md 4절 (2026-09-13 실측). 호스트 업그레이드 후 재확인
+# ★ libpisp: Pi 5 PiSP 파이프라인 핸들러가 쓰는 라이브러리. 컨테이너에는 없으므로 meson 이 subprojects/libpisp.wrap 으로
+#   자동으로 받아 함께 빌드한다. 그런데 이 태그의 wrap 은 v1.5.0 을 가리키고 호스트는 v1.7.0 이다 (INVENTORY 4절).
+#   "드라이버(호스트) ↔ 런타임(컨테이너) 는 같은 세대" 원칙대로 wrap 의 revision 을 호스트 값으로 바꿔 빌드한다.
+ARG LIBPISP_TAG=v1.7.0
+RUN apt-get update &amp;&amp; apt-get install -y --no-install-recommends \
+      python3-jinja2 python3-yaml python3-ply python3-pip \
+      libssl-dev openssl libdw-dev libunwind-dev \
+      libudev-dev libyaml-dev pkg-config \
+      libgnutls28-dev libtiff-dev libevent-dev \
+    &amp;&amp; rm -rf /var/lib/apt/lists/*
+
+# ★ jammy 의 apt meson 은 0.61 이라 Raspberry Pi libcamera 빌드에 부족하다.
+#   apt 로 설치하지 말고 pip 로 최신을 넣는다. (이 줄을 빼면 meson setup 에서 실패)
+RUN pip3 install --no-cache-dir --upgrade meson ninja
+
+RUN git clone --depth 1 -b ${LIBCAMERA_TAG} \
+      https://github.com/raspberrypi/libcamera.git /tmp/libcamera \
+ &amp;&amp; cd /tmp/libcamera \
+ &amp;&amp; sed -i "s/^revision = .*/revision = ${LIBPISP_TAG}/" subprojects/libpisp.wrap \
+ &amp;&amp; meson setup build --buildtype=release \
+      -Dpipelines=rpi/vc4,rpi/pisp -Dipas=rpi/vc4,rpi/pisp \
+      -Dv4l2=true -Dgstreamer=disabled -Dtest=false -Dlc-compliance=disabled \
+      -Dcam=enabled -Dqcam=disabled -Ddocumentation=disabled \
+ &amp;&amp; ninja -C build install &amp;&amp; ldconfig \
+ &amp;&amp; rm -rf /tmp/libcamera
+#   -Dcam=enabled : 진단용 `cam -l` 을 남긴다. 이 부분에서 빌드가 실패하면 disabled 로.
+#   빌드 후 확인: find / -name imx708_wide_noir.json   ← 튜닝 파일이 없으면 IPA 초기화가 실패해 카메라가 열리지 않는다</code></pre>
+      <div class="callout note"><span class="ct">대안: colcon-meson 으로 워크스페이스 안에서 빌드</span>
+        <p><code>camera_ros</code> README 는 <code>python3-colcon-meson</code> 을 설치하고 libcamera 소스를 <code>src/</code> 에 두어 <strong>colcon 이 libcamera 까지 빌드</strong>하게 하는 방법을 권한다. 동작하지만, <code>rm -rf build install</code> 할 때마다 libcamera 를 다시 빌드하게 된다.
+        환경(이미지)과 코드(워크스페이스)를 분리하는 이 프로젝트의 원칙에 따라 Dockerfile 쪽을 택했다.</p>
+      </div>
+
+      <h3>3-5. 접근법 A ③ — <code>camera_ros</code> 빌드 <span class="tag cli">컨테이너</span></h3>
+      <p>07 단계 3-3 에서 만든 <code>ros2_ws/src/drivers.repos</code> 를 쓴다. 손으로 <code>git clone</code> 하지 않는다.</p>
+      <pre><code class="lang-bash">cd /ros2_ws
+vcs import src &lt; src/drivers.repos                  # camera_ros 를 src/ 로
+rosdep install --from-paths src --ignore-src -r -y --skip-keys=libcamera
+#   --skip-keys=libcamera : apt 의 libcamera 를 깔지 못하게 한다. 우리는 3-C 에서 빌드한 것을 쓴다
+colcon build --symlink-install --packages-select camera_ros --parallel-workers 2
+source install/setup.bash</code></pre>
+      <p><code>.gitignore</code> 에 <code>ros2_ws/src/camera_ros/</code> 를 추가한다. 저장소에는 <code>drivers.repos</code> 만 남긴다.</p>
+      <div class="callout tip"><span class="ct">빌드 중 libcamera 헤더를 못 찾으면</span>
+        <p><code>pkg-config --modversion libcamera</code> 가 값을 내는지 본다. 3-C 블록의 <code>ninja install</code> 은 <code>/usr/local</code> 에 넣으므로 <code>ldconfig</code> 가 돌았는지, <code>PKG_CONFIG_PATH</code> 에 <code>/usr/local/lib/aarch64-linux-gnu/pkgconfig</code> 가 있는지 확인한다.</p>
+      </div>
+
+      <h3>3-6. 접근법 A ④ — 실행과 확인</h3>
+      <div class="callout warn"><span class="ct">토픽 이름은 노드 이름에서 나온다 — 노드 이름을 <code>camera</code> 로 띄운다</span>
+        <p><code>camera_ros</code> 는 <code>~/image_raw</code>, <code>~/camera_info</code>, <code>~/image_raw/compressed</code> 로 발행한다. <code>~</code> 는 노드의 이름으로 바뀐다.
+        기본 노드 이름 <code>camera_node</code> 로 띄우면 <code>/camera_node/image_raw</code> 가 되어 이 가이드의 모든 하위 노드(08a/08b/08c/10)와 이름이 어긋난다.
+        <strong><code>-r __node:=camera</code>(런치에서는 <code>name='camera'</code>)로 띄워 <code>/camera/image_raw</code> 를 만든다.</strong></p>
+      </div>
+      <pre><code class="lang-bash">ros2 run camera_ros camera_node --ros-args \
+  -r __node:=camera \
+  -p camera:=0 \
+  -p width:=640 -p height:=480 \
+  -p format:=RGB888 \
+  -p frame_id:=camera_optical_link</code></pre>
+      <p>기동 로그를 읽는다. 노드는 시작할 때 <strong>사용 가능한 카메라 목록과 픽셀 포맷 목록</strong>을 출력한다. <code>imx708</code> 이 보이고 <code>RGB888</code> 이 목록에 있으면 스택이 맞은 것이다. 여기서 <code>Failed to acquire camera</code> / 심볼 오류가 나면 3-11 표로.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>파라미터</th><th>의미</th><th>우리 값</th></tr></thead>
+        <tbody>
+          <tr><td><code>camera</code></td><td>카메라 인덱스 또는 id 문자열</td><td><code>0</code> (CAM0)</td></tr>
+          <tr><td><code>role</code></td><td>libcamera 스트림 역할 (viewfinder/video/still/raw)</td><td>기본값</td></tr>
+          <tr><td><code>format</code></td><td>픽셀 포맷 → ROS 인코딩 (2-3 표)</td><td><code>RGB888</code> → <code>bgr8</code></td></tr>
+          <tr><td><code>width</code>, <code>height</code></td><td>해상도. 센서 모드에 맞춰 스케일된다</td><td>640, 480</td></tr>
+          <tr><td><code>sensor_mode</code></td><td>센서 원본 모드 지정 (비워 두면 자동)</td><td>기본값</td></tr>
+          <tr><td><code>frame_id</code></td><td>header.frame_id. <strong>기본값 "camera" 는 URDF 에 없다</strong></td><td><code>camera_optical_link</code></td></tr>
+          <tr><td><code>orientation</code></td><td>0/90/180/270 회전</td><td>거꾸로 달았으면 180</td></tr>
+          <tr><td><code>camera_info_url</code></td><td>캘리브레이션 파일. <strong><code>file://</code> URL 형식</strong>이어야 한다. 없으면 0 으로 채워 발행</td><td>3-9 에서 채움</td></tr>
+          <tr><td><code>jpeg_quality</code></td><td>노드가 직접 발행하는 <code>~/image_raw/compressed</code> 의 품질</td><td>기본값</td></tr>
+          <tr><td><code>use_node_time</code></td><td>true 면 센서 타임스탬프 대신 노드 수신 시각</td><td>기본 false. TF 시계 문제가 있을 때만</td></tr>
+          <tr><td>libcamera 컨트롤</td><td><code>AeEnable</code>, <code>AwbEnable</code>, <code>ExposureTime</code>, <code>AnalogueGain</code>, <code>FrameDurationLimits</code> 등 — 이름 그대로 파라미터</td><td><code>FrameDurationLimits:="[33333,33333]"</code> = 30 fps 고정</td></tr>
+        </tbody>
+      </table></div>
+      <p>다른 터미널에서 확인:</p>
+      <pre><code class="lang-bash">ros2 topic list | grep camera
+#   /camera/camera_info  /camera/image_raw  /camera/image_raw/compressed
+ros2 topic hz /camera/image_raw                            # 목표 FPS 가 나오는가
+ros2 topic echo /camera/image_raw --field encoding --once  # bgr8 (RGB888 을 줬을 때)
+ros2 topic echo /camera/image_raw --field header.frame_id --once   # camera_optical_link
+ros2 topic bw /camera/image_raw                            # ≈ 27 MB/s @640×480×30fps
+ros2 topic info /camera/image_raw -v                       # QoS 확인 (BEST_EFFORT 인가)
+ros2 run tf2_ros tf2_echo base_link camera_optical_link    # TF 에 붙었는가</code></pre>
+      <div class="callout note"><span class="ct">frame_id 가 TF 에 붙는다는 것의 의미</span>
+        <p><code>tf2_echo</code> 가 값을 내면 "이 영상의 픽셀이 로봇 몸통 기준 어느 방향인가"를 TF 가 답할 수 있다는 뜻이다. 05 단계에서 <code>cam_x/cam_z/cam_pitch</code> 를 실측해 넣었어야 한다. 카메라를 아래로 기울여 달았다면 <code>cam_pitch</code> 가 그 값이다.</p>
+      </div>
+
+      <h3>3-7. 접근법 B — 호스트에서 캡처, ROS 로 전달</h3>
+      <p>A 가 막히면 이 방법이 확실하다. 호스트에서 <code>picamera2</code> 로 프레임을 얻어 <strong>컨테이너와 공유하는 경로</strong>(공유 메모리/유닉스 소켓)에 쓰고, 컨테이너의 ROS 노드가 읽어 발행한다. 또는 호스트에 최소한의 ROS 를 둔다.</p>
+      <pre><code class="lang-bash"># Pi 호스트 — picamera2 는 Raspberry Pi OS 에 기본 설치되어 있다
+python3 -c "from picamera2 import Picamera2; print('OK')"</code></pre>
+      <p><strong>단점을 분명히 알고 선택한다.</strong> 시스템이 컨테이너 안팎으로 쪼개지면 재현성과 관리가 나빠지고, 타임스탬프가 부정확해진다. A 를 충분히 시도한 뒤의 차선책이다. (08c 의 Hailo 도 같은 구조의 "B 안"이 있다 — 둘 다 B 로 가면 호스트 쪽 파이썬 프로세스가 두 개가 된다.)</p>
+
+      <h3>3-8. Foxglove 에서 보기 <span class="tag mac">Mac</span></h3>
+      <ol class="steps">
+        <li><strong>Image 패널</strong> 추가 → Topic: <code>/camera/image_raw/compressed</code> (Wi-Fi 라면 raw 대신 compressed 를 고른다)</li>
+        <li>QoS 를 <code>Best Effort</code> 로 (영상은 재전송이 오히려 해롭다)</li>
+        <li>3D 패널에 카메라 프레임(<code>camera_optical_link</code>)의 축이 로봇 앞에 보이는지 확인 — z(파랑)가 앞을 향해야 광학 규약이 맞은 것</li>
+      </ol>
+      <p><strong>영상이 뚝뚝 끊기면</strong> ① 해상도를 낮추고 ② compressed 를 쓴다. 노드가 <code>~/image_raw/compressed</code> 를 직접 발행하므로 별도 republish 노드가 필요 없다. 그래도 부족하면 <code>jpeg_quality</code> 를 낮춘다.
+      raw 640×480×30 fps = 27 MB/s 는 Wi-Fi 로 무리다. 압축은 선택이 아니라 필수다.</p>
+
+      <h3>3-9. <code>camera_info</code> — 헤드리스 캘리브레이션 <span class="tag py">Python</span> <span class="tag mac">Mac</span></h3>
+      <p>ROS 의 <code>camera_calibration cameracalibrator</code> 는 Qt GUI 가 필요해 헤드리스 Pi 에서 불편하다. 대신 <strong>Pi 에서 사진만 찍고, Mac 의 OpenCV 로 계산</strong>한다. OpenCV 를 ROS 밖에서 독립적으로 쓰는 첫 경험이기도 하다 (부록 <a href="ref-opencv.html">B · OpenCV 사용법</a> 의 캘리브레이션 절과 함께 본다).</p>
+      <ol class="steps">
+        <li><strong>체커보드 준비.</strong> 예: 내부 코너 8×6 (칸 수가 아니라 <em>코너</em> 수), 한 칸 25 mm. 인쇄 후 <strong>자로 한 칸을 실측</strong>해 값을 적는다 (프린터가 축소 인쇄하는 일이 흔하다). 판판한 판에 붙인다.</li>
+        <li><strong>Pi 호스트에서 촬영.</strong> 운용 해상도(640×480)와 <strong>같은 해상도</strong>로, 3초 간격 타임랩스로 20~30장. 매 장마다 보드의 위치·각도·거리를 바꾼다(화면 구석까지, 기울여서, 가까이·멀리).
+          <pre><code class="lang-bash">mkdir -p /tmp/calib
+rpicam-still -n --width 640 --height 480 -t 75000 --timelapse 3000 -o /tmp/calib/calib_%02d.jpg
+#   -t 75000 --timelapse 3000 : 75초 동안 3초마다 한 장 → 25장. 셔터 소리가 없으니 시계를 본다
+ls /tmp/calib | wc -l</code></pre></li>
+        <li><strong>Mac 으로 복사.</strong> <span class="tag mac">Mac</span>
+          <pre><code class="lang-bash">mkdir -p ~/ros2_rpi5/calib &amp;&amp; scp 'pi5:/tmp/calib/*.jpg' ~/ros2_rpi5/calib/
+open ~/ros2_rpi5/calib        # 흐릿하거나 보드가 잘린 사진은 지운다</code></pre></li>
+        <li><strong>Mac 에서 계산.</strong> <code>pip install opencv-python numpy pyyaml</code> 후 아래 스크립트를 <code>scripts/calibrate_camera.py</code> 로 저장해 실행한다.
+          <pre><code class="lang-bash">cd ~/ros2_rpi5
+python3 scripts/calibrate_camera.py --images 'calib/*.jpg' --cols 8 --rows 6 --square 0.025 \
+    --out ros2_ws/src/rpi5_bringup/config/camera_info.yaml</code></pre></li>
+        <li><strong>로봇에 싣는다.</strong> <code>rpi5_bringup</code> 의 CMake 가 <code>config/</code> 를 통째로 설치하므로 <code>./scripts/sync-to-pi.sh</code> → 컨테이너에서 <code>colcon build --symlink-install --packages-select rpi5_bringup</code> 뒤에 파일이 <code>/ros2_ws/install/rpi5_bringup/share/rpi5_bringup/config/camera_info.yaml</code> 에 있다.
+          <code>camera_info_url</code> 은 <strong>URL 형식</strong>이어야 한다 (경로만 주면 무시된다):
+          <pre><code class="lang-bash">ros2 run camera_ros camera_node --ros-args -r __node:=camera \
+  -p camera:=0 -p width:=640 -p height:=480 -p format:=RGB888 -p frame_id:=camera_optical_link \
+  -p camera_info_url:="file:///ros2_ws/install/rpi5_bringup/share/rpi5_bringup/config/camera_info.yaml"
+#   install 경로를 쓰는 이유: 컨테이너 안에서 유효한 경로이고, --symlink-install 이면 src 를 가리키는 링크라
+#   Mac 에서 파일을 고쳐 sync 만 해도 반영된다. (package://rpi5_bringup/config/camera_info.yaml 형식도 시도해 볼 만하다)</code></pre></li>
+        <li><strong>확인.</strong>
+          <pre><code class="lang-bash">ros2 topic echo /camera/camera_info --once
+#   k: [fx, 0, cx, 0, fy, cy, 0, 0, 1]  ← 전부 0 이면 파일을 못 찾은 것 (URL 형식, 경로, 노드 로그 확인)
+#   width/height 가 640/480 인가, distortion_model 이 plumb_bob 인가</code></pre>
+          노드 로그에 "camera name mismatch" 류의 경고가 나오면 YAML 의 <code>camera_name</code> 을 로그에 찍힌 이름으로 맞춘다 (경고만 나고 로드는 되는 경우가 많다).</li>
+      </ol>
+      <p><code>scripts/calibrate_camera.py</code> — 읽고 각 단계가 무엇을 하는지 이해한 뒤 실행한다:</p>
+      <pre><code class="lang-python">#!/usr/bin/env python3
+"""calibrate_camera.py — 체커보드 사진들로 카메라 내부 파라미터를 구해 ROS camera_info YAML 로 저장한다.
+
+Mac 에서:
+    pip install opencv-python numpy pyyaml
+    python3 scripts/calibrate_camera.py --images 'calib/*.jpg' --cols 8 --rows 6 --square 0.025 \
+        --out ros2_ws/src/rpi5_bringup/config/camera_info.yaml
+
+  cols/rows = 체커보드 '내부 코너' 개수 (칸 수가 아니다).  square = 한 칸의 실측 길이 [m].
+  ★ 사진은 운용 해상도(640x480)와 같은 해상도로 찍어야 한다. K 는 해상도에 종속된다.
+"""
+import argparse
+import glob
+import sys
+
+import cv2
+import numpy as np
+import yaml
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--images', required=True, help="glob, 예: 'calib/*.jpg'")
+    ap.add_argument('--cols', type=int, default=8, help='가로 내부 코너 수')
+    ap.add_argument('--rows', type=int, default=6, help='세로 내부 코너 수')
+    ap.add_argument('--square', type=float, default=0.025, help='한 칸 길이 [m]')
+    ap.add_argument('--out', default='camera_info.yaml')
+    ap.add_argument('--name', default='imx708')
+    args = ap.parse_args()
+
+    pattern = (args.cols, args.rows)
+    # 체커보드 좌표계의 3D 점: (0,0,0), (s,0,0), (2s,0,0) … z=0 평면 위
+    objp = np.zeros((args.cols * args.rows, 3), np.float32)
+    objp[:, :2] = np.mgrid[0:args.cols, 0:args.rows].T.reshape(-1, 2) * args.square
+
+    obj_points, img_points = [], []
+    size = None
+    files = sorted(glob.glob(args.images))
+    if not files:
+        sys.exit(f'이미지가 없습니다: {args.images}')
+
+    for f in files:
+        img = cv2.imread(f)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        size = gray.shape[::-1]                           # (width, height)
+        ok, corners = cv2.findChessboardCorners(gray, pattern, None)
+        if not ok:
+            print(f'  코너 검출 실패: {f}')
+            continue
+        # 서브픽셀 정밀도로 코너를 다듬는다 — 이 한 줄이 재투영 오차를 크게 줄인다
+        corners = cv2.cornerSubPix(
+            gray, corners, (11, 11), (-1, -1),
+            (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001))
+        obj_points.append(objp)
+        img_points.append(corners)
+        print(f'  OK: {f}')
+
+    if len(obj_points) &lt; 10:
+        sys.exit(f'검출된 이미지가 {len(obj_points)}장 — 최소 10장, 권장 20장 이상')
+
+    # 3D 점 ↔ 2D 픽셀 대응으로 K 와 왜곡계수를 최적화한다
+    rms, K, dist, _rvecs, _tvecs = cv2.calibrateCamera(obj_points, img_points, size, None, None)
+    print(f'\n사용한 이미지: {len(obj_points)}장, RMS 재투영 오차: {rms:.3f} px  (0.5 px 이하면 좋음)')
+    print('K =\n', K)
+    print('dist =', dist.ravel())
+
+    fx, fy, cx, cy = K[0, 0], K[1, 1], K[0, 2], K[1, 2]
+    info = {
+        'image_width': int(size[0]),
+        'image_height': int(size[1]),
+        'camera_name': args.name,
+        'camera_matrix': {'rows': 3, 'cols': 3, 'data': [float(v) for v in K.ravel()]},
+        'distortion_model': 'plumb_bob',                        # k1 k2 p1 p2 k3
+        'distortion_coefficients': {'rows': 1, 'cols': 5, 'data': [float(v) for v in dist.ravel()[:5]]},
+        'rectification_matrix': {'rows': 3, 'cols': 3,
+                                 'data': [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]},   # 단안: 단위행렬
+        'projection_matrix': {'rows': 3, 'cols': 4,
+                              'data': [float(fx), 0.0, float(cx), 0.0,
+                                       0.0, float(fy), float(cy), 0.0,
+                                       0.0, 0.0, 1.0, 0.0]},
+    }
+    with open(args.out, 'w') as fp:
+        yaml.safe_dump(info, fp, sort_keys=False)
+    print(f'\n저장: {args.out}')
+    print(f'수평 시야각 ≈ {2 * np.degrees(np.arctan(size[0] / (2 * fx))):.1f} deg')
+
+
+if __name__ == '__main__':
+    main()</code></pre>
+      <div class="callout why"><span class="ct">결과를 읽는 법</span>
+        <p><strong>RMS 재투영 오차</strong>는 "구한 K 로 3D 코너를 다시 픽셀에 투영했을 때 실제 검출 위치와 평균 몇 픽셀 어긋나는가"다. 0.5 px 이하면 좋고, 1 px 을 넘으면 흐릿한 사진이 섞였거나 <code>--square</code>·코너 수가 틀린 것이다.
+        <strong>수평 시야각</strong>이 렌즈 스펙과 비슷하게 나오면 fx 가 말이 되는 값이다 — 표준형은 약 66°, <strong>이 프로젝트의 Wide 는 약 102°</strong> 다. 66° 근처가 나오면 fx 를 두 배쯤 잘못 구한 것이다. 이 두 숫자를 <code>hardware/INVENTORY.md</code> 4절에 적어 둔다.
+        그리고 <code>θ = atan((u − cx)/fx)</code> 에 화면 가장자리 u=0 을 넣어 본다 — 시야각의 절반이 나와야 한다.</p>
+      </div>
+
+      <h3>3-10. 런치파일에 통합</h3>
+      <p><code>ros2_ws/src/rpi5_bringup/launch/robot.launch.py</code> 의 주석 처리된 camera 블록을 <strong>직접</strong> 살린다. 두 가지를 반드시 고친다.</p>
+      <pre><code class="lang-python">    # ── 4. 카메라 (08단계) ───────────────────────────────────────────────
+    #    name='camera' 인 이유: camera_ros 는 ~/image_raw 로 발행한다. 노드 이름이 곧 토픽 접두어다.
+    #    그리고 파라미터 YAML 은 노드 이름으로 매칭되므로 robot_params.yaml 의 키도 camera: 여야 한다.
+    camera = Node(
+        package='camera_ros', executable='camera_node',
+        name='camera',
+        output='screen',
+        parameters=[params_file],
+        condition=IfCondition(LaunchConfiguration('use_camera')),
+    )
+    # … return LaunchDescription([...]) 의 목록에도 camera 를 넣는다 (주석 해제)</code></pre>
+      <p><code>robot_params.yaml</code> 의 <code>camera_node:</code> 키를 <strong><code>camera:</code></strong> 로 바꾸고 값을 채운다. 07 단계의 함정 ②(노드 이름 ≠ YAML 키 → 조용히 무시)와 정확히 같은 규칙이다.</p>
+      <pre><code class="lang-yaml">camera:                              # ← 런치의 name='camera' 와 같아야 이 블록이 적용된다
+  ros__parameters:
+    camera: 0                        # CAM0 포트
+    width: 640
+    height: 480
+    format: "RGB888"                 # → ROS 인코딩 bgr8. OpenCV 기본 순서와 같아 08a 에서 변환이 없다
+    frame_id: "camera_optical_link"  # ★ 기본값 "camera" 는 URDF 에 없다
+    camera_info_url: "file:///ros2_ws/install/rpi5_bringup/share/rpi5_bringup/config/camera_info.yaml"
+    # libcamera 제어값도 이름 그대로 파라미터다.
+    # NoIR 은 IR 필터가 없어 색이 붉게 틀어진다. 주행용이라면 색보다 노출 안정성이 중요하다.
+    AeEnable: true
+    AwbEnable: true
+    # FrameDurationLimits: [33333, 33333]    # 30 fps 고정이 필요하면 (마이크로초)</code></pre>
+      <p>노드 이름을 바꾸기 싫다면 리매핑으로도 된다: <code>remappings=[('~/image_raw', '/camera/image_raw'), ('~/camera_info', '/camera/camera_info')]</code>. 다만 <code>~/image_raw/compressed</code> 까지 세 줄이 되고 YAML 키는 여전히 노드 이름이어야 하므로, 이름을 <code>camera</code> 로 두는 쪽이 단순하다.</p>
+      <pre><code class="lang-bash">colcon build --symlink-install --packages-select rpi5_bringup &amp;&amp; source install/setup.bash
+ros2 launch rpi5_bringup robot.launch.py use_camera:=true use_lidar:=true
+ros2 node list          # /camera 가 보이는가
+ros2 topic hz /camera/image_raw</code></pre>
+
+      <h3>3-11. 자주 겪는 문제</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>조치</th></tr></thead>
+        <tbody>
+          <tr><td>호스트에서 <code>--list-cameras</code> 에 안 보임</td><td>케이블/오버레이</td><td>01 단계 §3-5. <strong>여기서 해결</strong></td></tr>
+          <tr><td>컨테이너에서만 안 보임</td><td><code>/dev/dma_heap</code> 누락</td><td>compose 의 <code>device_cgroup_rules</code> (3-3)</td></tr>
+          <tr><td><code>Failed to acquire camera</code></td><td>다른 프로세스가 점유</td><td>호스트의 <code>rpicam-*</code>/picamera2 프로세스 종료. 카메라는 한 번에 한 프로세스만</td></tr>
+          <tr><td>라이브러리 심볼 오류, 파이프라인을 못 찾음</td><td>libcamera 버전 불일치</td><td>호스트 버전에 맞춰 3-C 블록의 태그를 바꿔 재빌드 (3-4)</td></tr>
+          <tr><td>토픽이 <code>/camera_node/image_raw</code> 로 나옴</td><td>노드 이름이 기본값</td><td><code>-r __node:=camera</code> / <code>name='camera'</code> (3-6)</td></tr>
+          <tr><td>파라미터가 무시됨</td><td>YAML 키 ≠ 노드 이름</td><td><code>camera:</code> 키로 (3-10)</td></tr>
+          <tr><td><code>camera_info</code> 의 K 가 전부 0</td><td><code>camera_info_url</code> 이 URL 형식이 아니거나 경로가 틀림</td><td><code>file:///…</code> 로, 컨테이너 안 경로인지 확인, 노드 로그</td></tr>
+          <tr><td>얼굴이 파랗게(색 반전)</td><td>인코딩 가정 오류 (rgb8 ↔ bgr8)</td><td><code>--field encoding</code> 으로 확인. 2-3 표</td></tr>
+          <tr><td>영상이 붉고 뿌옇다</td><td><strong>NoIR 정상 동작</strong></td><td><code>imx708_wide_noir.json</code> 튜닝이 이미 적용됨. 그대로 사용</td></tr>
+          <tr><td>가장자리가 늘어지고 직선이 휜다</td><td><strong>Wide 렌즈의 배럴 왜곡 — 정상</strong></td><td>캘리브레이션의 D 계수 + 08a <code>image_proc</code> rectify. 원본을 그대로 쓰면 가장자리 각도가 틀어진다</td></tr>
+          <tr><td>FPS 가 안 나옴 / 끊김</td><td>해상도·대역폭</td><td>해상도 축소 + compressed 로 보기</td></tr>
+          <tr><td>영상이 어둡다</td><td>노출 설정</td><td><code>AeEnable: true</code>, 게인 상한 조정</td></tr>
+          <tr><td>TF 조회 실패(<code>extrapolation</code>)</td><td>센서 타임스탬프와 시스템 시계 불일치</td><td><code>timedatectl</code>, 그래도 안 되면 <code>use_node_time: true</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>✅ 검증 체크포인트</h2>
+      <ul class="checklist">
+        <li><label><input type="checkbox"><span>호스트에서 <code>rpicam-hello --list-cameras</code> 에 <code>imx708</code> 이 보이고, <code>rpicam-jpeg</code> 로 찍은 사진을 Mac 에서 눈으로 확인했다</span></label></li>
+        <li><label><input type="checkbox"><span>호스트 libcamera 버전을 INVENTORY.md 4절에 적고, 그에 대응하는 태그를 Dockerfile 3-C 의 <code>LIBCAMERA_TAG</code> 에 넣었다 (추측하지 않았다)</span></label></li>
+        <li><label><input type="checkbox"><span><code>/dev/dma_heap</code> 과 <code>/dev/media*</code> 의 major 를 실측해 compose 의 cgroup 규칙에 넣었고, 컨테이너 안에서 <code>/dev/video*</code>, <code>/dev/media*</code>, <code>/dev/dma_heap</code> 이 보인다</span></label></li>
+        <li><label><input type="checkbox"><span><code>drivers.repos</code> + <code>vcs import</code> + <code>rosdep --skip-keys=libcamera</code> 로 <code>camera_ros</code> 를 빌드했다</span></label></li>
+        <li><label><input type="checkbox"><span>노드를 이름 <code>camera</code> 로 띄워 <code>/camera/image_raw</code> 가 나오고, <code>ros2 topic hz</code> 가 목표 FPS 를 보인다</span></label></li>
+        <li><label><input type="checkbox"><span><code>--field encoding</code> 으로 인코딩이 <code>bgr8</code> 인 것을 확인했고, 그 이유(RGB888 → bgr8)를 설명할 수 있다</span></label></li>
+        <li><label><input type="checkbox"><span><code>frame_id</code> 가 <code>camera_optical_link</code> 이고 <code>tf2_echo base_link camera_optical_link</code> 가 값을 반환한다</span></label></li>
+        <li><label><input type="checkbox"><span>Foxglove Image 패널에서 영상이 보인다 (compressed, QoS Best Effort)</span></label></li>
+        <li><label><input type="checkbox"><span>체커보드 20장 이상을 640×480 으로 찍어 Mac 에서 캘리브레이션했고, RMS 재투영 오차가 1 px 미만이다</span></label></li>
+        <li><label><input type="checkbox"><span><code>camera_info.yaml</code> 을 <code>rpi5_bringup/config/</code> 에 두고 <code>camera_info_url</code> 로 로드해 <code>/camera/camera_info</code> 의 K 가 0 이 아닌 것을 봤다</span></label></li>
+        <li><label><input type="checkbox"><span>fx, cx 로 화면 가장자리의 시선 각도를 손으로 계산해 시야각의 절반과 맞는 것을 확인했다</span></label></li>
+        <li><label><input type="checkbox"><span><code>robot.launch.py</code> 의 camera 블록을 <code>name='camera'</code> 로 살리고 <code>robot_params.yaml</code> 의 키를 <code>camera:</code> 로 바꿔 <code>use_camera:=true</code> 로 기동된다</span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2>🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. <code>v4l2_camera</code> 로 <code>/dev/video0</code> 을 열면 왜 안 되는가?</summary>
+        <div class="ans">Pi 5 에서 그 노드는 PiSP(ISP) 파이프라인의 subdev 이고, 나오는 것은 <strong>디모자이킹 전 raw Bayer</strong> 다. 색 변환, 화이트밸런스, 노출 제어가 전부 libcamera(유저스페이스) 쪽에 있어서 V4L2 로 직접 열면 쓸 수 있는 영상이 나오지 않는다.</div></details>
+      <details class="quiz"><summary>2. 호스트에서는 카메라가 보이는데 컨테이너에서만 안 보인다. 1순위 원인은?</summary>
+        <div class="ans"><code>/dev/dma_heap</code> 이 컨테이너에 전달되지 않은 것. Pi 5 는 카메라 버퍼를 DMA heap 으로 할당하므로 이 경로 없이는 libcamera 가 카메라를 열지 못한다. major 번호가 동적이라 <code>device_cgroup_rules</code> 에 실측값을 명시해야 한다.</div></details>
+      <details class="quiz"><summary>3. Wi-Fi 로 raw 영상을 보내면 왜 끊기는가? 해결책은?</summary>
+        <div class="ans">640×480 RGB 30 fps = 약 27 MB/s(216 Mbps). 실사용 Wi-Fi 대역폭을 넘는다. <code>camera_ros</code> 가 직접 발행하는 <code>~/image_raw/compressed</code>(JPEG) 를 보면 10~20배 줄어든다.
+        더 나은 설계는 추론을 Pi 위에서 하고 <strong>결과만</strong> 보내는 것이다(08b).</div></details>
+      <details class="quiz"><summary>4. NoIR 카메라의 영상이 붉은 것은 고장인가?</summary>
+        <div class="ans">아니다. IR 차단 필터가 없어 적외선이 센서에 들어오기 때문이다. 야간에 IR LED 와 함께 쓰기 위한 설계다. 주행 인지 용도라면 색보다 노출 안정성이 중요하므로 대개 그대로 써도 된다. 이 프로젝트의 카메라는 Wide NoIR 라 붉은 색감에 더해 가장자리의 배럴 왜곡도 정상이다.</div></details>
+      <details class="quiz"><summary>5. <code>format: RGB888</code> 을 줬는데 <code>encoding</code> 이 <code>bgr8</code> 로 나온다. 버그인가?</summary>
+        <div class="ans">아니다. libcamera 는 DRM fourcc 규약을 따라 "리틀엔디안 워드 안의 R:G:B" 를 <code>RGB888</code> 이라 부르고, 그것이 메모리에 놓이는 순서는 B, G, R 이다. ROS/OpenCV 는 메모리 순서로 이름을 붙이므로 <code>bgr8</code> 이 맞다.
+        오히려 OpenCV 의 기본 순서와 같아서 08a 의 cv_bridge 가 변환 없이 그대로 쓴다. 인코딩은 외우지 말고 <code>--field encoding</code> 으로 확인한다.</div></details>
+      <details class="quiz"><summary>6. 노드 이름을 <code>camera</code> 로 띄우는 이유는? 파라미터 YAML 에는 어떤 영향이 있는가?</summary>
+        <div class="ans"><code>camera_ros</code> 는 <code>~/image_raw</code>(프라이빗 이름)로 발행하고 <code>~</code> 는 노드 이름으로 바뀐다. 이름이 <code>camera</code> 여야 <code>/camera/image_raw</code> 가 된다.
+        파라미터 YAML 은 노드 이름을 키로 매칭하므로 <code>robot_params.yaml</code> 의 키도 <code>camera:</code> 여야 한다. 어긋나면 파라미터가 에러 없이 무시된다 — 07 의 함정 ② 와 같은 규칙.</div></details>
+      <details class="quiz"><summary>7. 640×480 으로 캘리브레이션한 <code>camera_info.yaml</code> 을 1280×720 운용에 그대로 쓰면?</summary>
+        <div class="ans">fx, fy, cx, cy 는 픽셀 단위라 해상도에 비례한다. 그대로 쓰면 시선 각도 계산이 약 2배 틀어져 10 단계의 융합에서 사람이 엉뚱한 방향에 놓인다. 해상도를 바꾸면 다시 캘리브레이션하거나 K 를 비례 스케일한다(cx, fx 는 가로 배율, cy, fy 는 세로 배율).</div></details>
+      <details class="quiz"><summary>8. 카메라 캘리브레이션이 왜 라이다 융합에 필요한가? 라이다만으로 부족한 것은 무엇인가?</summary>
+        <div class="ans">라이다는 "그 방향에 무언가가 1.2 m 에 있다"는 알지만 그것이 사람인지 의자인지 모른다. 카메라는 "사람"인 줄 알지만 거리를 모른다. 둘을 잇는 것이 <code>θ = atan((u − cx)/fx)</code> 로 얻는 <strong>방위각</strong>이고, 그 θ 를 TF(<code>camera_optical_link</code> → <code>laser_link</code>)로 옮겨 같은 방향의 <code>/scan</code> 을 읽는다. K 가 없으면 픽셀을 각도로 바꿀 수 없다.</div></details>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

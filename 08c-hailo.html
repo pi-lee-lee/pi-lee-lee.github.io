@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>08c · Hailo-8 가속 — 같은 /detections 를 실시간으로</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="08c">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">08c · Hailo-8 가속</p>
+      <h1>Hailo-8 영상 추론 — 같은 <code>/detections</code> 를 실시간으로, CPU 는 비운 채로</h1>
+      <p class="lead">08b 에서 만든 C++ CPU 검출기는 <em>파이프라인이 맞다</em>는 것을 증명했다. 그러나 1~3 FPS 이고 CPU 를 다 먹는다.
+      이 단계는 새 기능을 붙이는 단계가 아니라 <strong>같은 인터페이스를 내는 다른 백엔드</strong>를 만드는 단계다.
+      overlay 노드도, 10 단계의 감독 노드도, 런치파일도 하나도 바뀌지 않는다 — 그것이 03 단계에서 배운 "느슨한 결합"의 실물이다.</p>
+
+      <div class="goal">
+        <span class="label">이 단계가 끝나면</span>
+        <p>호스트와 컨테이너의 HailoRT 버전을 일치시키고, 카메라 영상에서 객체를 검출해 <code>/detections</code> (<code>vision_msgs/Detection2DArray</code>) 를
+        <strong>08b 와 같은 토픽·같은 메시지·같은 파라미터 이름</strong>으로 실시간(15~30 FPS) 발행한다. 추론 중에도 CPU 사용률이 50% 미만이고,
+        08b 의 <code>detection_overlay</code> 가 아무 수정 없이 박스를 그린다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">그래프에서의 위치</span>detector 상자(인지 계층). 08b 의 <code>yolo_detector</code> 와 같은 자리, 같은 <code>/detections</code> 를 실시간으로</div>
+        <div><span class="k">전제</span>01 §3-4 (hailo-all + 데모 성공), 02 §2-5 (버전 락), 08b (<code>/detections</code> 인터페이스와 overlay)</div>
+        <div><span class="k">예상 소요</span>4~8시간 (버전 맞추기가 절반)</div>
+        <div><span class="k">언어</span><span class="tag py">Python</span> (HailoRT API) · C++ 은 선택</div>
+      </div>
+
+      <h2>1. 개요</h2>
+
+      <h3>1-1. 08b 가 남긴 것과 남기지 못한 것</h3>
+      <p>08b 의 <code>yolo_detector</code> 는 ONNX 모델을 OpenCV DNN 으로 돌려 <code>/detections</code> 를 냈다. 전처리·출력 텐서 해석·NMS·좌표 역변환을 <strong>직접 구현</strong>했기 때문에
+      "검출 결과가 무엇으로 이루어져 있는가"는 이미 안다. 남은 문제는 두 가지다.</p>
+      <ul>
+        <li><strong>속도.</strong> Pi 5 CPU 에서 YOLOv8n 640×640 은 1~3 FPS 다. 주행 중 장애물 인지로는 쓸 수 없다.</li>
+        <li><strong>자원.</strong> 추론이 CPU 4코어를 점유하면 SLAM 과 제어 루프까지 같이 느려진다. 이것이 진짜 문제다.</li>
+      </ul>
+
+      <h3>1-2. 왜 Hailo 가 필요한가 — 숫자로</h3>
+      <pre class="diagram"><code>   CPU 만 쓸 때 (08b)                     Hailo 를 쓸 때 (08c)
+   ┌─────────────────────┐                ┌────────────────────┐
+   │ CPU 4코어           │                │ CPU 4코어          │
+   │  ├ 추론 ████████ 95%│                │  ├ SLAM    ███ 30% │
+   │  ├ SLAM  ░ (굶음)   │                │  ├ Nav2    ██ 20%  │
+   │  └ Nav2  ░ (굶음)   │                │  └ 여유    █████   │
+   └─────────────────────┘                └────────────────────┘
+                                          ┌────────────────────┐
+                                          │ Hailo-8: 추론 전담 │  26 TOPS, PCIe
+                                          └────────────────────┘</code></pre>
+      <p><strong>핵심 가치는 FPS 자체가 아니라 "CPU 를 비워 주는 것"이다.</strong> 자율주행은 인지·계획·제어가 동시에 돌아야 하고,
+      그 중 하나라도 굶으면 전체가 실패한다. Hailo-8 은 추론을 전용 칩으로 옮겨 CPU 가 나머지 일에 집중하게 한다.</p>
+
+      <h3>1-3. 이 단계의 형태 — 백엔드 교체</h3>
+      <pre class="diagram"><code>                     08b                                   08c
+  /camera/image_raw ──► [ yolo_detector (C++) ] ──┐    /camera/image_raw ──► [ hailo_detect (Python) ] ──┐
+                          OpenCV DNN · CPU        │                            HailoRT · /dev/hailo0     │
+                                                  ▼                                                     ▼
+                                          /detections  (vision_msgs/Detection2DArray)  ← 같은 토픽, 같은 메시지
+                                                  │
+                          ┌───────────────────────┼──────────────────────────┐
+                          ▼                       ▼                          ▼
+                 detection_overlay (08a)   mission_supervisor (10)      rosbag / Foxglove
+                          "이 셋은 백엔드가 무엇인지 모른다. 알 필요도 없다."</code></pre>
+      <p>두 노드는 <strong>파라미터 이름까지 같다</strong>(<code>model_path</code>, <code>names_path</code>, <code>conf_threshold</code>, <code>nms_threshold</code>, <code>input_size</code>, <code>class_filter</code>).
+      그래서 10 단계의 런치파일은 <code>detector:=yolo</code> / <code>detector:=hailo</code> 인자 하나로 백엔드를 고른다.</p>
+
+      <h3>1-4. 01 단계에서 이미 확인한 것</h3>
+      <pre><code class="lang-bash"># Pi 호스트에서 — 01단계 §3-4 에서 했던 것
+rpicam-hello -t 10s --post-process-file \
+  /usr/share/rpi-camera-assets/hailo_yolov8_inference.json</code></pre>
+      <p>이게 돌아갔다면 <strong>하드웨어와 드라이버는 이미 검증된 것</strong>이다. 남은 일은 "그 결과를 ROS 토픽으로 만드는 것"뿐이다.
+      막혔을 때 "Hailo 가 고장났나"를 의심하기 전에 이 명령을 다시 쳐 보면 의심 범위가 절반으로 줄어든다.</p>
+
+      <h2>2. 원리 — 왜</h2>
+
+      <h3>2-1. 버전 락 — 이 단계 최대의 함정</h3>
+      <p>02 단계 §2-5 에서 예고한 문제를 여기서 만난다.</p>
+      <pre class="diagram"><code>   호스트 (Raspberry Pi OS)                 컨테이너 (Ubuntu 22.04 jammy)
+   ┌──────────────────────┐                ┌────────────────────────────┐
+   │ hailo_pci (커널 모듈)│◄ /dev/hailo0 ─►│ libhailort + hailort wheel │
+   │  버전 4.x.y (DKMS)   │                │  버전 4.x.y                │
+   └──────────────────────┘                └────────────────────────────┘
+              └──────────── 이 둘이 정확히 같아야 한다 ─────────────────┘</code></pre>
+      <p><strong>드라이버는 호스트에, 런타임 라이브러리는 컨테이너에 있다.</strong> HailoRT 는 이 둘의 버전이 다르면 <strong>장치를 아예 인식하지 않는다.</strong>
+      "사소한 버전 차이만 있어도 SDK 가 하드웨어를 감지하지 못한다"가 공식 문서의 표현이다. <code>/dev/hailo0</code> 이 보여도 "No Hailo device found" 가 난다.</p>
+      <div class="callout warn"><span class="ct">호스트를 <code>apt upgrade</code> 하면 호스트 쪽만 올라간다</span>
+        <p>어제까지 되던 추론이 오늘 갑자기 "No Hailo device found" 를 내고, ROS 코드는 하나도 안 건드렸으므로 원인을 엉뚱한 데서 찾게 된다.
+        호스트를 업그레이드한 뒤에는 반드시 §3-1 의 양쪽 검증을 다시 하고, 다르면 컨테이너 이미지를 다시 빌드한다.</p>
+      </div>
+
+      <h3>2-2. 두 가지 아키텍처 — 선택</h3>
+      <h4>A. ROS 노드에서 HailoRT 직접 호출 (권장)</h4>
+      <pre class="diagram"><code>  /camera/image_raw ──► [ hailo_detect 노드 ] ──► /detections
+                              │
+                              └─► HailoRT (hailo_platform) ──► /dev/hailo0</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>장점</th><th>단점</th></tr></thead>
+        <tbody>
+          <tr><td>ROS 표준 구조, 타임스탬프/TF 정확</td><td>버전 락 관리 필요</td></tr>
+          <tr><td>런치파일로 통합 관리, 백엔드 교체가 인자 하나</td><td>전처리·후처리를 직접 구현 (08b 에서 이미 했다)</td></tr>
+          <tr><td>rosbag 으로 기록·재생·재현 가능</td><td>컨테이너용 Python wheel 을 별도로 확보해야 함 (§2-8)</td></tr>
+        </tbody>
+      </table></div>
+      <h4>B. 호스트 <code>rpicam-apps</code> / <code>picamera2</code> 파이프라인 + 결과 전달</h4>
+      <pre class="diagram"><code>  [ 호스트: picamera2 + Hailo 후처리 ] ──JSON (UDP/유닉스 소켓)──► [ 컨테이너: 브리지 노드 ] ──► /detections</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>장점</th><th>단점</th></tr></thead>
+        <tbody>
+          <tr><td>버전 락 문제 없음 (호스트 Python 이 호스트 드라이버와 함께 apt 로 맞춰짐)</td><td>시스템이 컨테이너 안팎으로 쪼개짐</td></tr>
+          <tr><td>RPi 가 제공하는 파이프라인 그대로, 빠른 시작</td><td>타임스탬프 동기가 부정확 (촬영 시각을 ROS 시계로 옮겨야 함)</td></tr>
+          <tr><td>카메라를 호스트가 잡으므로 08 의 libcamera 문제와 무관</td><td>rosbag 재생으로 재현 불가, 카메라를 컨테이너와 동시에 못 씀</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>A 를 목표로 하되, 막히면 B 로 먼저 동작시키고 나중에 옮긴다.</strong> "일단 돌아가는 것"이 "완벽한 구조"보다 학습에 유리하다. B 의 개요는 §3-6 에 있다.</p>
+
+      <h3>2-3. 메시지 타입 — 왜 <code>vision_msgs</code> 인가 (다시)</h3>
+      <pre><code class="lang-bash">ros2 interface show vision_msgs/msg/Detection2DArray
+ros2 interface show vision_msgs/msg/Detection2D</code></pre>
+      <pre class="diagram"><code>Detection2DArray
+  std_msgs/Header header                 ← 촬영 시각 + camera_optical_link
+  Detection2D[] detections
+      std_msgs/Header header
+      ObjectHypothesisWithPose[] results
+          ObjectHypothesis hypothesis
+              string class_id            ← "person", "car" ...
+              float64 score              ← 신뢰도 0~1
+          geometry_msgs/PoseWithCovariance pose   (2D 검출에서는 비워 둔다)
+      BoundingBox2D bbox
+          vision_msgs/Pose2D center
+              vision_msgs/Point2D position   ← x, y (픽셀, 박스 중심)
+              float64 theta
+          float64 size_x                 ← 박스 너비 (픽셀)
+          float64 size_y                 ← 박스 높이
+      string id</code></pre>
+      <div class="callout why"><span class="ct">왜 커스텀 메시지를 만들지 않는가</span>
+        <p>표준 타입을 쓰면 08a 의 overlay 노드가 그대로 박스를 그리고, 10 의 감독 노드가 그대로 사람을 세며, 나중에 다른 인지 노드로 교체해도 하위 노드가 그대로 동작한다.
+        <strong>인터페이스가 계약이고 구현은 그 계약을 채우는 일</strong>이다 — 이 페이지 전체가 그 문장의 증명이다.
+        Humble 의 필드 경로는 <code>results[i].hypothesis.class_id</code>, <code>bbox.center.position.x</code> 다(<code>results[i].class_id</code> 가 아니다).</p>
+      </div>
+
+      <h3>2-4. 노드가 해야 할 일 — 다섯 단계와 반드시 지킬 것</h3>
+      <pre class="diagram"><code>  ① /camera/image_raw 구독  (센서 QoS, depth 1)
+       ↓
+  ② 전처리: 모델 입력 크기로 리사이즈, RGB uint8      ← .hef 가 요구하는 입력 규격에 맞춘다 (§3-2 parse-hef)
+       ↓
+  ③ HailoRT 추론 실행                                ← 여기만 08b 와 다르다
+       ↓
+  ④ 후처리: 박스 디코드 (NMS 포함 출력이면 그대로, raw 면 08b 처럼 NMS), 원본 좌표로 역변환
+       ↓
+  ⑤ Detection2DArray 발행 — header.stamp 는 입력 이미지의 stamp 그대로</code></pre>
+      <div class="tbl"><table>
+        <thead><tr><th>항목</th><th>이유</th></tr></thead>
+        <tbody>
+          <tr><td><strong><code>header</code> 는 입력 이미지의 것을 복사</strong></td><td>추론 시점이 아니라 <strong>촬영 시점</strong>이 기준. TF 조회가 이 값을 쓴다. 100 ms 뒤의 로봇 자세로 물체 위치를 계산하면 수십 cm 가 틀어진다</td></tr>
+          <tr><td><strong>프레임 드롭 허용</strong></td><td>추론이 카메라보다 느리면 최신 프레임만 처리. 큐에 쌓으면 지연이 무한 증가 — 1분 뒤에는 30초 전 영상을 보고 판단한다</td></tr>
+          <tr><td><strong>QoS 는 BEST_EFFORT</strong></td><td>오래된 프레임을 재전송받아 봐야 쓸모없다. 발행도 같은 QoS — 10 의 감독 노드도 BEST_EFFORT 로 구독해야 연결된다</td></tr>
+          <tr><td><strong>모델 로딩은 생성자에서 1회</strong></td><td>콜백마다 로드하면 매번 수백 ms. 장치 핸들(VDevice)도 노드 수명 동안 하나</td></tr>
+          <tr><td><strong>입력 해상도를 파라미터로</strong></td><td>모델 교체 시 코드 수정 없이 대응. 08b 와 같은 파라미터 이름을 쓴다</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>2-5. 모델 — <code>.hef</code> 와 Model Zoo</h3>
+      <p>Hailo 는 <code>.hef</code>(Hailo Executable Format) 파일을 쓴다. ONNX/TFLite 를 그대로 쓸 수 없고 <strong>컴파일이 필요</strong>하다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>경로</th><th>내용</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Hailo Model Zoo</strong></td><td>이미 컴파일된 <code>.hef</code> 제공 (YOLOv8, YOLOv11 등, Hailo-8 용과 Hailo-8L 용이 다르다) — <strong>여기서 시작</strong></td></tr>
+          <tr><td><code>hailo-all</code> 설치본</td><td><code>/usr/share/hailo-models/</code> 에 기본 모델이 들어 있다 (호스트)</td></tr>
+          <tr><td>직접 컴파일</td><td>Dataflow Compiler 필요. x86 리눅스에서만 동작. 08b 에서 만든 ONNX 를 넣는 길이지만 별도의 큰 주제</td></tr>
+        </tbody>
+      </table></div>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>용도</th><th>모델 계열</th><th>비고</th></tr></thead>
+        <tbody>
+          <tr><td>장애물/사람 검출</td><td>YOLOv8n / YOLOv11n</td><td>가장 무난. COCO 80종. 08b 와 같은 모델을 고르면 결과를 1:1 비교할 수 있다</td></tr>
+          <tr><td>주행 가능 영역</td><td>세그멘테이션</td><td>출력 처리가 무겁다</td></tr>
+          <tr><td>거리 보조</td><td>단안 깊이 추정</td><td>라이다가 있으므로 우선순위 낮음</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>우리 목표(자율주행)에는 객체 검출이면 충분하다.</strong> 거리는 라이다가 훨씬 정확하게 알려 준다. 처음에는 Model Zoo 의 기성 <code>.hef</code> 를 쓴다.
+      <code>.hef</code> 는 Hailo-8(26 TOPS) 용과 Hailo-8L(13 TOPS) 용이 따로 있다 — AI HAT+ 26 TOPS 는 Hailo-8 이다. <code>hailortcli fw-control identify</code> 의 Device Architecture 로 확인한다.</p>
+
+      <h3>2-6. ONNX 와 HEF 의 출력은 다르다 — 그래서 어댑터가 필요하다</h3>
+      <div class="tbl"><table>
+        <thead><tr><th></th><th>08b · ONNX (OpenCV DNN)</th><th>08c · HEF (HailoRT)</th></tr></thead>
+        <tbody>
+          <tr><td>출력 형태</td><td>raw 텐서 <code>[1, 84, 8400]</code> — 8400개 후보 × (4 좌표 + 80 클래스 점수)</td><td>대개 <strong>NMS 후처리가 포함</strong>되어 "클래스별 박스 리스트"가 바로 나온다 (정규화된 <code>[y_min, x_min, y_max, x_max, score]</code> 형태가 흔함)</td></tr>
+          <tr><td>NMS</td><td>노드가 직접 (<code>cv::dnn::NMSBoxes</code>)</td><td>칩/런타임이 이미 했음 — 다시 하면 안 됨. NMS 없는 <code>.hef</code> 라면 08b 와 같은 절차 필요</td></tr>
+          <tr><td>좌표</td><td>중심+크기, 입력 픽셀</td><td>모서리, 0~1 정규화인 경우가 많음 (<code>parse-hef</code> 와 실제 출력을 찍어 확인)</td></tr>
+          <tr><td>신뢰도/클래스 임계</td><td>노드가 적용</td><td>컴파일 시 임계값이 박혀 있을 수 있음 — <code>conf_threshold</code> 파라미터는 그 위에서 한 번 더 거른다</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout why"><span class="ct">노드 구조에 주는 영향</span>
+        <p>08b 의 파서를 그대로 재사용할 수 없다. 그래서 노드를 <strong>"ROS 배선(구독·발행·드롭·헤더)" + "백엔드(프레임 → 박스 리스트)"</strong> 두 층으로 나누고,
+        백엔드가 지켜야 할 계약을 하나로 고정한다: <code>infer(rgb_frame) → [(x1, y1, x2, y2, score, class_id), ...]</code> <strong>원본 프레임 픽셀 좌표</strong>.
+        좌표 순서와 정규화 해제는 백엔드 안에서 끝낸다. 이 계약 덕분에 §3-4 의 <code>FakeBackend</code> 로 하드웨어 없이 ROS 쪽을 먼저 검증할 수 있다.</p>
+      </div>
+
+      <h3>2-7. 왜 이 노드만 Python 인가</h3>
+      <p>이 프로젝트의 주 언어는 C++ 이다. 그런데 이 노드는 Python 으로 쓴다. 이유는 언어 성능이 아니라 <strong>벤더 SDK 의 형편</strong>이다.</p>
+      <ul>
+        <li>HailoRT 의 예제·문서·커뮤니티 코드는 Python 이 압도적으로 많다 (<code>hailo-rpi5-examples</code>, <code>Hailo-Application-Code-Examples</code>). API 가 버전마다 바뀔 때 Python 예제가 가장 먼저 갱신된다.</li>
+        <li>연산은 칩이 한다. 노드가 하는 일은 리사이즈·박스 디코드·메시지 채우기뿐이라 Python 으로도 30 FPS 를 넘긴다. CPU 사용률이 높다면 언어가 아니라 리사이즈가 병목이다(§3-8).</li>
+        <li>C++ API(<code>libhailort</code>)도 있다. 이 노드가 안정된 뒤 C++ 로 옮기는 것은 좋은 확장 과제이고, 계약(§2-6)이 같으므로 하위 노드는 여전히 모른다.</li>
+      </ul>
+
+      <h3>2-8. 컨테이너의 Python 은 호스트의 Python 이 아니다</h3>
+      <p>호스트(Raspberry Pi OS Trixie)의 <code>hailo-all</code> 은 <strong>호스트 Python(3.13)</strong> 용 <code>hailo_platform</code> 을 설치한다.
+      컨테이너(Ubuntu 22.04)의 Python 은 <strong>3.10</strong> 이다. 같은 HailoRT 버전이라도 wheel 은 Python 버전별로 다르다.</p>
+      <pre class="diagram"><code>   호스트:   hailort  4.x.y  +  python3-hailort (cp313)        ← apt 가 드라이버와 함께 맞춰 줌
+   컨테이너: hailort_4.x.y_arm64.deb  +  hailort-4.x.y-cp310-cp310-linux_aarch64.whl   ← 직접 확보
+                      ▲ 버전 같아야 함                ▲ cp310 이어야 import 됨</code></pre>
+      <p>그래서 Dockerfile 에 <strong>버전이 같은 .deb 와 cp310 wheel</strong> 두 파일이 필요하다. Hailo Developer Zone(계정 필요)에서 받는다.
+      "호스트에서는 <code>import hailo_platform</code> 이 되는데 컨테이너에서는 안 된다"의 원인이 이것이다.</p>
+
+      <h3>2-9. 검출 결과를 주행에 쓰려면 — 08d 예고</h3>
+      <pre class="diagram"><code>   검출 박스 (픽셀)  ─┐
+                      ├──► 같은 방향의 /scan 거리 ──► "전방 1.2 m 에 사람"
+   camera_info ───────┘        (라이다와 융합, 08d)
+   (초점거리, 주점)</code></pre>
+      <p><strong>카메라와 라이다를 융합하는 것이 실전 설계다.</strong> 카메라(+Hailo)는 <em>무엇인가</em>(사람/차/개)를 알고 거리는 부정확하다.
+      라이다는 <em>얼마나 먼가</em>를 정확히 알고 무엇인지는 모른다. 두 센서의 TF(<code>camera_optical_link</code> ↔ <code>laser_link</code>)가 정확해야 한다 — 05 단계의 실측이 여기서 효력을 발휘한다.
+      지금은 <code>/detections</code> 를 안정적으로 <strong>초당 10장 이상</strong> 내는 것이 목표다 — 08d 의 추적은 프레임 사이 IoU 에 기대므로 08b 의 2 fps 로는 성립하지 않는다(08d §2-1). <code>Detection2D.id</code> 는 비워 둔다. 추적기가 채운다.</p>
+
+      <h2>3. 실습</h2>
+
+      <h3>3-1. 버전 맞추기 <span class="tag pi">Pi 호스트</span> → <span class="tag mac">Mac</span> → <span class="tag pi">Pi 호스트</span></h3>
+      <ol class="steps">
+        <li><strong>호스트 버전 확인·기록.</strong>
+          <pre><code class="lang-bash"># Pi 호스트에서
+hailortcli fw-control identify          # HailoRT 버전, Firmware 버전, Device Architecture (HAILO8 / HAILO8L)
+hailortcli scan
+sudo /usr/sbin/modinfo hailo_pci | grep -E '^version'   # modinfo 는 /usr/sbin (일반 사용자 PATH 에 없다)
+dpkg -l | grep -i hailo | awk '{print $2, $3}'
+ls -l /dev/hailo0                       # major 번호 (이 보드: 238, 0 → major 238)</code></pre>
+          출력의 HailoRT 버전을 <code>hardware/INVENTORY.md</code> 5절에 <strong>그대로</strong> 붙여 넣는다.</li>
+        <li><strong>같은 버전의 컨테이너용 패키지 확보.</strong> Hailo Developer Zone 에서 HailoRT <em>정확히 같은 버전</em>의 <code>hailort_&lt;ver&gt;_arm64.deb</code> 와 <code>hailort-&lt;ver&gt;-cp310-cp310-linux_aarch64.whl</code> 을 받아 Mac 의 <code>docker/</code> 아래에 둔다.
+          (<code>.gitignore</code> 에 <code>docker/*.deb</code>, <code>docker/*.whl</code> 을 추가한다 — 수십 MB 짜리 바이너리를 커밋하지 않는다.)</li>
+        <li><strong>Dockerfile 3-B 블록 되살리기.</strong> <em>(02 단계 §2-2 의 A 절차. B 는 이 항목과 5번의 빌드 대신 아래 팁대로 컨테이너에서 설치한다.)</em> <span class="tag mac">Mac</span> 에서 <code>docker/Dockerfile</code> 의 주석 블록을 아래로 바꾼다. 비root 사용자 전환(§4) <em>앞</em>에 있어야 한다.
+          <pre><code class="lang-bash"># ── 3-B. HailoRT (08c단계) ───────────────────────────────────────────────
+#  !! 버전을 추측해서 넣지 말 것 !!  호스트 `hailortcli fw-control identify` 와 정확히 일치.
+ARG HAILORT_VERSION=4.23.0                       # ← INVENTORY.md 5절의 값 (2026-09-13 실측). 호스트 업그레이드 후 재확인
+COPY hailort_${HAILORT_VERSION}_arm64.deb /tmp/hailort.deb
+COPY hailort-${HAILORT_VERSION}-cp310-cp310-linux_aarch64.whl /tmp/hailort.whl
+RUN apt-get update &amp;&amp; apt-get install -y --no-install-recommends /tmp/hailort.deb \
+ &amp;&amp; pip3 install --no-cache-dir /tmp/hailort.whl \
+ &amp;&amp; rm -f /tmp/hailort.deb /tmp/hailort.whl &amp;&amp; rm -rf /var/lib/apt/lists/*</code></pre>
+          받은 파일 이름이 다르면 <code>COPY</code> 줄을 실제 이름에 맞춘다. 파일 이름을 짐작해서 쓰지 않는다.</li>
+        <li><strong>cgroup 규칙.</strong> <code>docker/docker-compose.yml</code> 의 <code>device_cgroup_rules</code> 에 1번에서 확인한 major 로 한 줄 추가한다.
+          <pre><code class="lang-yaml">  device_cgroup_rules:
+    - 'c 234:* rmw'    # hailo — 호스트 `ls -l /dev/hailo0` 에서 확인한 major 로 바꾼다</code></pre></li>
+        <li><strong>동기화 → 빌드 → 양쪽 검증.</strong>
+          <pre><code class="lang-bash"># Mac
+./scripts/sync-to-pi.sh
+
+# Pi 호스트
+cd ~/ros2_rpi5/docker &amp;&amp; docker compose build
+hailortcli fw-control identify                                   # 호스트
+docker compose run --rm dev hailortcli fw-control identify       # 컨테이너
+docker compose run --rm dev hailortcli scan                      # 컨테이너에서 장치가 보이는가
+docker compose run --rm dev python3 -c "import hailo_platform as hp; print(hp.__version__)"</code></pre>
+          <strong>세 출력의 버전이 전부 같아야 한다.</strong> 다르면 이 단계는 진행할 수 없다.</li>
+      </ol>
+      <div class="callout note"><span class="ct">컨테이너에서 <code>hailortcli scan</code> 이 permission denied 를 내면</span>
+        <p>호스트에서 <code>ls -l /dev/hailo0</code> 의 소유자·권한을 본다. root 전용이면 <code>hardware/udev/99-ros2-devices.rules</code> 에
+        <code>KERNEL=="hailo*", GROUP="video", MODE="0660"</code> 같은 줄을 추가해 컨테이너 사용자(video 그룹)가 열 수 있게 한다 (01 단계 udev 적용 절차 반복).
+        <code>/dev</code> 전체가 마운트되므로 노드 자체는 보이지만, <strong>보이는 것과 열 수 있는 것은 다르다.</strong></p>
+      </div>
+      <div class="callout tip"><span class="ct">B(시스템 경로 볼륨)로 할 때 — 컨테이너 안에서 .deb/.whl 을 직접 설치</span>
+        <p>3번(3-B 블록)과 5번의 빌드 대신, 받은 두 파일을 컨테이너에서 보이는 마운트 경로(예: <code>/ros2_ws</code> 아래)에 두고 컨테이너에서
+        <code>sudo apt-get install -y ./hailort_&lt;ver&gt;_arm64.deb</code> 와 <code>pip3 install ./hailort-&lt;ver&gt;-cp310-cp310-linux_aarch64.whl</code> 로 설치한다. 검증(양쪽 <code>identify</code> 비교)은 같다.
+        시스템 경로 볼륨이 없는 기본 구성에서는 이 설치가 컨테이너 재생성 시 사라진다 (02 단계 §2-2).</p>
+      </div>
+
+      <h3>3-2. 모델 확보와 <code>parse-hef</code> — 내 모델의 입출력을 먼저 읽는다</h3>
+      <pre><code class="lang-bash"># Pi 호스트
+ls /usr/share/hailo-models/                     # hailo-all 이 넣어 둔 기본 모델
+# 없거나 다른 것을 원하면 Hailo Model Zoo 에서 yolov8n (Hailo-8 용) .hef 를 받아 ~/ros2_rpi5/models/ 에 둔다
+
+# 이 파일이 무엇을 받고 무엇을 내는지 — 코드보다 먼저 이것을 읽는다
+hailortcli parse-hef /usr/share/hailo-models/____.hef</code></pre>
+      <p>출력에서 아래를 찾아 <strong>표로 옮겨 적는다.</strong> 이 표가 §3-4 백엔드 구현의 명세다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>항목</th><th>내 .hef 의 값</th><th>노드에서 쓰이는 곳</th></tr></thead>
+        <tbody>
+          <tr><td>파일 / 네트워크 그룹 이름</td><td><code>____</code></td><td><code>model_path</code> 파라미터</td></tr>
+          <tr><td>입력 vstream 이름 · shape · 포맷</td><td><code>____</code> (예: 640×640×3, UINT8, RGB)</td><td>② 전처리 — <code>input_size</code>, 색 순서</td></tr>
+          <tr><td>출력 vstream 이름 · shape · 포맷</td><td><code>____</code></td><td>④ 후처리</td></tr>
+          <tr><td>출력에 NMS 후처리가 포함되어 있는가</td><td><code>____</code> (yes / no)</td><td>④ — yes 면 박스 리스트 디코드, no 면 08b 식 NMS</td></tr>
+          <tr><td>클래스 수</td><td><code>____</code> (COCO 면 80)</td><td><code>names_path</code> — 08b 의 <code>coco.names</code> 재사용</td></tr>
+        </tbody>
+      </table></div>
+      <p>컨테이너에서 접근하려면 모델 파일이 마운트되어 있어야 한다. <code>~/ros2_rpi5/models/</code> 에 두면 <code>ros2_ws</code> 와 같은 방식으로 <code>docker-compose.yml</code> 의 <code>volumes</code> 에 <code>- ../models:/models:ro</code> 한 줄을 추가해 <code>/models/____.hef</code> 로 읽는다. <code>.gitignore</code> 에 <code>models/*.hef</code> 를 추가한다.</p>
+
+      <h3>3-3. 설치된 HailoRT 의 Python API 를 찾는 법</h3>
+      <div class="callout warn"><span class="ct">이 가이드는 HailoRT API 호출을 코드에 박지 않는다</span>
+        <p>HailoRT Python API 는 버전에 따라 클래스 이름과 호출 순서가 달라져 왔다(스트림 기반 API 와 그 이후의 추론 모델 API 가 공존한다).
+        여기에 특정 버전의 코드를 적어 두면 <strong>당신의 버전에서 틀린 코드</strong>가 될 확률이 높고, 그 오류는 "Hailo 가 안 된다"로 보여 버전 락 문제와 구분되지 않는다.
+        대신 <strong>자기 버전의 예제를 찾아 읽는 절차</strong>를 익힌다. 이것은 다른 벤더 SDK 를 만날 때도 그대로 쓰는 기술이다.</p>
+      </div>
+      <pre><code class="lang-bash"># 컨테이너 안
+python3 -c "import hailo_platform as hp; print(hp.__version__); print([n for n in dir(hp) if not n.startswith('_')])"
+python3 -m pydoc hailo_platform | less          # 모듈 문서 — 클래스 목록과 요약
+python3 -m pydoc hailo_platform.VDevice         # 특정 클래스의 메서드와 docstring
+python3 -c "import hailo_platform, os; print(os.path.dirname(hailo_platform.__file__))"   # 설치 경로 → 소스/예제 확인</code></pre>
+      <ol class="steps">
+        <li><strong>버전 태그로 예제를 연다.</strong> <code>hailo-ai/hailo-rpi5-examples</code> 와 <code>hailo-ai/Hailo-Application-Code-Examples</code>(<code>runtime/python/object_detection</code>) 저장소에서
+          <strong>내 HailoRT 버전에 맞는 태그/브랜치</strong>를 고른다. main 브랜치는 최신 버전을 전제로 하므로 그대로 쓰면 import 부터 실패할 수 있다.</li>
+        <li><strong>예제에서 여섯 단계를 찾아 표시한다.</strong> §3-4 백엔드 docstring 의 ①~⑥ 각각이 예제의 어느 줄인지 찾는다. 장치 열기 → HEF 로드/구성 → 입력 쓰기 → 출력 읽기 → 디코드 → 좌표 변환. 이 대응이 되면 옮겨 적을 수 있다.</li>
+        <li><strong>ROS 없이 먼저 돌린다.</strong> 예제를 정지 이미지 한 장으로 실행해 박스 좌표가 찍히는지 확인한다. 그 뒤에 노드로 옮긴다 — 06 단계에서 시리얼을 pyserial 로 먼저 확인했던 것과 같은 순서다.</li>
+        <li><strong>출력 한 개를 통째로 <code>print</code> 한다.</strong> 좌표가 <code>[y, x, y, x]</code> 인지 <code>[x, y, x, y]</code> 인지, 0~1 인지 픽셀인지는 문서가 아니라 <em>출력</em>이 알려 준다.</li>
+      </ol>
+
+      <h3>3-4. 패키지와 노드 — <code>rpi5_hailo_detect</code> <span class="tag py">Python</span> <span class="tag cli">컨테이너</span></h3>
+      <pre><code class="lang-bash">cd /ros2_ws/src
+ros2 pkg create --build-type ament_python --license Apache-2.0 \
+    --node-name hailo_detect rpi5_hailo_detect</code></pre>
+      <p><code>package.xml</code> 에 의존성을 적는다.</p>
+      <pre><code class="lang-xml">&lt;exec_depend&gt;rclpy&lt;/exec_depend&gt;
+&lt;exec_depend&gt;sensor_msgs&lt;/exec_depend&gt;
+&lt;exec_depend&gt;vision_msgs&lt;/exec_depend&gt;
+&lt;exec_depend&gt;cv_bridge&lt;/exec_depend&gt;
+&lt;exec_depend&gt;python3-numpy&lt;/exec_depend&gt;</code></pre>
+      <p><code>rpi5_hailo_detect/hailo_detect.py</code> — 골격 전체다. <strong>ROS 배선은 완성되어 있고, 백엔드 한 곳만 비어 있다.</strong> 직접 치면서 08b 의 C++ 노드와 한 줄씩 대응시켜 보십시오.</p>
+      <pre><code class="lang-python">#!/usr/bin/env python3
+"""hailo_detect — /camera/image_raw → Hailo-8 → /detections (vision_msgs/Detection2DArray)
+
+08b 의 yolo_detector(C++) 와 같은 토픽·같은 메시지·같은 파라미터 이름을 쓴다.
+하위 노드(detection_overlay, mission_supervisor)는 이 둘을 구분하지 못한다 — 그것이 목표다.
+"""
+import time
+
+import numpy as np
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
+from cv_bridge import CvBridge
+from sensor_msgs.msg import Image
+from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
+
+
+class HailoBackend:
+    """HailoRT 백엔드 — 설치된 버전의 API 로 채운다.
+
+    계약: infer(rgb_frame) 는 (x1, y1, x2, y2, score, class_id) 튜플 리스트를
+          **원본 프레임 픽셀 좌표**로 돌려준다. 이 계약만 지키면 노드의 나머지는 백엔드가 무엇이든 동일하다.
+
+    구현에 들어가야 할 단계 (3-3 에서 찾은 자기 버전의 예제를 여기에 옮긴다):
+      ① 장치 핸들(VDevice)을 연다 — 노드 수명 동안 1회
+      ② HEF 를 로드하고 네트워크를 구성한다 — 입력/출력 스트림 정보(이름·shape)를 얻는다 (3-2 표와 대조)
+      ③ 입력: 프레임을 모델 입력 크기(예: 640×640, RGB, uint8)로 리사이즈해 넣는다
+      ④ 출력: 스트림을 읽는다
+      ⑤ NMS 포함 출력이면 클래스별 박스 리스트를 디코드, raw 텐서이면 08b 와 같은 방식으로 NMS
+      ⑥ 좌표를 원본 프레임 크기로 되돌린다 (정규화 해제 + 리사이즈 비율 역변환, 좌표 순서 [x,y,x,y] 로 통일)
+    """
+
+    def __init__(self, hef_path: str, input_size: int):
+        self.input_size = input_size
+        # TODO(you): 설치된 HailoRT 버전의 API 로 구현 — 3-3 에서 찾은 예제를 여기에 옮긴다 (①②)
+        raise NotImplementedError('HailoBackend: 3-3 절을 보고 구현하십시오')
+
+    def infer(self, rgb_frame: np.ndarray):
+        # TODO(you): ③④⑤⑥
+        raise NotImplementedError
+
+
+class FakeBackend:
+    """하드웨어 없이 ROS 쪽 배선을 검증하기 위한 가짜 백엔드 (06 단계의 simulate:=true 와 같은 발상).
+    항상 화면 중앙에 class_id 0 ('person') 박스 하나를 돌려준다."""
+
+    def __init__(self, hef_path: str, input_size: int):
+        pass
+
+    def infer(self, rgb_frame):
+        h, w = rgb_frame.shape[:2]
+        time.sleep(0.02)                                     # 추론 시간 흉내 (20 ms)
+        return [(w * 0.3, h * 0.3, w * 0.7, h * 0.9, 0.9, 0)]
+
+
+class HailoDetect(Node):
+    def __init__(self):
+        super().__init__('hailo_detect')
+        # 08b 의 yolo_detector 와 같은 파라미터 이름 — 런치파일이 백엔드를 구분할 필요가 없다
+        self.declare_parameter('model_path', '')
+        self.declare_parameter('names_path', '')
+        self.declare_parameter('conf_threshold', 0.4)
+        self.declare_parameter('nms_threshold', 0.5)       # NMS 포함 .hef 라면 백엔드가 무시한다
+        self.declare_parameter('input_size', 640)
+        self.declare_parameter('class_filter', [''])       # 빈 문자열 하나 = 필터 없음
+        self.declare_parameter('fake_backend', False)
+
+        g = lambda n: self.get_parameter(n).value  # noqa: E731
+        self.conf = float(g('conf_threshold'))
+        self.class_filter = [c for c in g('class_filter') if c]
+        self.names = self._load_names(g('names_path'))
+
+        backend_cls = FakeBackend if bool(g('fake_backend')) else HailoBackend
+        self.backend = backend_cls(g('model_path'), int(g('input_size')))   # ★ 모델 로딩은 여기서 1회
+
+        self.bridge = CvBridge()
+        self.busy = False
+
+        # 센서 QoS(BEST_EFFORT) + depth 1 → DDS 큐에 항상 최신 프레임 하나만 남는다
+        qos = QoSProfile(reliability=QoSReliabilityPolicy.BEST_EFFORT,
+                         history=QoSHistoryPolicy.KEEP_LAST, depth=1)
+        self.sub = self.create_subscription(Image, '/camera/image_raw', self.on_image, qos)
+        self.pub = self.create_publisher(Detection2DArray, '/detections', qos)
+        self.get_logger().info(
+            f'hailo_detect 시작 | backend={backend_cls.__name__} model={g("model_path")}')
+
+    @staticmethod
+    def _load_names(path):
+        if not path:
+            return {}
+        with open(path, encoding='utf-8') as f:
+            return {i: line.strip() for i, line in enumerate(f) if line.strip()}
+
+    def on_image(self, msg: Image):
+        if self.busy:            # 프레임 드롭: 처리 중에 들어온 프레임은 버린다
+            return               # (기본 실행기는 단일 스레드라 depth=1 만으로도 충분하지만,
+        self.busy = True         #  나중에 MultiThreadedExecutor 로 바꿔도 안전하도록 둔다)
+        try:
+            # 카메라(camera_ros)는 format RGB888 을 ROS 인코딩 'bgr8' 로 발행한다. Hailo 모델이 RGB 를 원하면
+            # 원본 인코딩이 무엇이든 'rgb8' 을 명시적으로 요청해 cv_bridge 가 변환하게 한다 (parse-hef 로 입력 포맷 확인).
+            rgb = self.bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
+            t0 = time.perf_counter()
+            boxes = self.backend.infer(rgb)
+            dt_ms = (time.perf_counter() - t0) * 1000.0
+
+            out = Detection2DArray()
+            out.header = msg.header          # ★ 촬영 시각·프레임 그대로 — 추론 시각이 아니다
+            for (x1, y1, x2, y2, score, cls_id) in boxes:
+                if score &lt; self.conf:
+                    continue
+                name = self.names.get(int(cls_id), str(int(cls_id)))
+                if self.class_filter and name not in self.class_filter:
+                    continue
+                det = Detection2D()
+                det.header = msg.header
+                hyp = ObjectHypothesisWithPose()
+                hyp.hypothesis.class_id = name              # Humble: results[i].hypothesis.class_id
+                hyp.hypothesis.score = float(score)
+                det.results.append(hyp)
+                det.bbox.center.position.x = float((x1 + x2) / 2.0)   # Humble: bbox.center.position.x
+                det.bbox.center.position.y = float((y1 + y2) / 2.0)
+                det.bbox.size_x = float(x2 - x1)
+                det.bbox.size_y = float(y2 - y1)
+                out.detections.append(det)
+            self.pub.publish(out)
+            self.get_logger().info(f'{len(out.detections)} det, {dt_ms:.1f} ms',
+                                   throttle_duration_sec=2.0)
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().error(f'추론 실패: {exc}', throttle_duration_sec=2.0)
+        finally:
+            self.busy = False
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = HailoDetect()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()</code></pre>
+      <div class="callout note"><span class="ct">색 순서 — 카메라가 보내는 인코딩과 모델이 원하는 인코딩은 다를 수 있다</span>
+        <p><code>camera_ros</code> 는 <code>format: RGB888</code> 로 설정해도 ROS 메시지의 <code>encoding</code> 은 <strong><code>bgr8</code></strong> 이다(DRM fourcc 의 리틀엔디안 명명 때문에 이름과 바이트 순서가 반대로 읽힌다).
+        그래서 "카메라가 rgb8 로 보낸다"고 가정하지 말고, <code>imgmsg_to_cv2(msg, 'rgb8')</code> 처럼 <strong>원하는 인코딩을 명시적으로 요청</strong>해 cv_bridge 가 변환하게 한다 — 원본이 무엇이든 결과는 RGB 다.
+        실제 인코딩은 <code>ros2 topic echo /camera/image_raw --field encoding --once</code> 로 확인한다. 색 순서가 바뀌면 검출률이 눈에 띄게 떨어지는데 에러는 나지 않는다 — 08a 에서 다룬 함정이다.</p>
+      </div>
+      <p><code>setup.py</code> 의 <code>entry_points</code> 는 <code>--node-name</code> 이 만든 한 줄(<code>'hailo_detect = rpi5_hailo_detect.hailo_detect:main'</code>)이면 된다.</p>
+      <pre><code class="lang-bash">cd /ros2_ws
+colcon build --symlink-install --packages-select rpi5_hailo_detect
+source install/setup.bash</code></pre>
+
+      <h4>먼저 가짜 백엔드로 — ROS 쪽이 맞는지</h4>
+      <pre><code class="lang-bash"># 터미널 1: 카메라 (08)
+ros2 launch rpi5_bringup robot.launch.py use_mcu:=false use_camera:=true
+
+# 터미널 2: 가짜 백엔드
+ros2 run rpi5_hailo_detect hailo_detect --ros-args \
+  -p fake_backend:=true -p names_path:=/ros2_ws/src/rpi5_vision/models/coco.names
+
+# 터미널 3
+ros2 topic hz /detections                       # 카메라 FPS 근처
+ros2 topic echo /detections --once              # class_id: person, bbox 중앙
+ros2 run rpi5_vision detection_overlay          # 08a/08b 의 overlay — 수정 없이 박스가 그려져야 한다</code></pre>
+      <p>Foxglove Image 패널에서 <code>/camera/annotated</code> 를 열어 화면 중앙에 박스가 보이면 <strong>ROS 배선은 끝난 것</strong>이다. 이제부터 문제가 나면 백엔드만 의심한다.</p>
+
+      <h4>그 다음 진짜 백엔드로</h4>
+      <pre><code class="lang-bash">ros2 run rpi5_hailo_detect hailo_detect --ros-args \
+  -p model_path:=/models/____.hef \
+  -p names_path:=/ros2_ws/src/rpi5_vision/models/coco.names \
+  -p input_size:=640 -p conf_threshold:=0.4</code></pre>
+      <p>카메라 앞에 사람이 지나가면 박스가 실시간으로 따라가야 한다. 좌우가 바뀌거나 박스가 한쪽으로 몰리면 ⑥(좌표 순서·정규화)을 의심한다 — 출력 한 개를 <code>print</code> 해서 확인한다.</p>
+
+      <h4>런치에서 백엔드 고르기 (10 단계 <code>perception.launch.py</code> 에 들어갈 조각)</h4>
+      <pre><code class="lang-python">DeclareLaunchArgument('detector', default_value='hailo', description='yolo (CPU, C++) | hailo (Hailo-8, Python)')
+
+Node(package='rpi5_vision', executable='yolo_detector', name='detector', output='screen',
+     parameters=[params_file],
+     condition=IfCondition(PythonExpression(["'", LaunchConfiguration('detector'), "' == 'yolo'"]))),
+Node(package='rpi5_hailo_detect', executable='hailo_detect', name='detector', output='screen',
+     parameters=[params_file],
+     condition=IfCondition(PythonExpression(["'", LaunchConfiguration('detector'), "' == 'hailo'"]))),</code></pre>
+      <p>두 노드의 이름을 똑같이 <code>detector</code> 로 두면 <code>robot_params.yaml</code> 의 <code>detector:</code> 블록 하나가 둘 다에 적용된다 — 파라미터 이름을 같게 맞춘 이유다.</p>
+
+      <h3>3-5. 비교 실험 — 같은 장면, 두 백엔드</h3>
+      <p>같은 위치에 카메라를 두고 <code>yolo_detector</code>(08b) 와 <code>hailo_detect</code> 를 <strong>번갈아</strong>(동시에 띄우면 둘 다 <code>/detections</code> 를 쏘아 섞인다) 띄우고 기록한다.</p>
+      <pre><code class="lang-bash"># 컨테이너                                  # Pi 호스트 (다른 ssh)
+ros2 topic hz /detections                  top -d 1            # 노드 프로세스의 %CPU
+ros2 topic echo /detections --once         HAILO_MONITOR=1 …   # ↓ 아래 참고
+                                           hailortcli monitor  # Hailo 사용률 (추론 프로세스에 HAILO_MONITOR=1 환경변수가 있어야 표시된다)</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>측정값</th><th>yolo_detector (C++, CPU)</th><th>hailo_detect (Python, Hailo-8)</th><th>기대</th></tr></thead>
+        <tbody>
+          <tr><td><code>/detections</code> Hz</td><td><code>____</code></td><td><code>____</code></td><td>1~3 → 15~30</td></tr>
+          <tr><td>노드 %CPU</td><td><code>____</code></td><td><code>____</code></td><td>300%+ → 50% 미만</td></tr>
+          <tr><td>같은 장면의 검출 개수·클래스</td><td><code>____</code></td><td><code>____</code></td><td>거의 같아야 함 (같은 모델·같은 임계값이면)</td></tr>
+          <tr><td>온도 (<code>vcgencmd measure_temp</code>)</td><td><code>____</code></td><td><code>____</code></td><td>70℃ 이하</td></tr>
+          <tr><td>overlay 가 그대로 동작하는가</td><td colspan="2"><code>____</code></td><td>예 — 느슨한 결합의 확인</td></tr>
+        </tbody>
+      </table></div>
+      <p>검출 개수가 크게 다르면 두 백엔드의 임계값이 다르게 적용된 것이다(§2-6 — <code>.hef</code> 에 박힌 임계값 + 노드의 <code>conf_threshold</code>). 그 차이를 설명할 수 있어야 이 단계가 끝난다.</p>
+
+      <h3>3-6. 대안 B — 호스트 파이프라인 + 브리지 (막혔을 때의 우회로)</h3>
+      <pre class="diagram"><code>  [ Pi 호스트 ]                                            [ 컨테이너 ]
+  picamera2 로 캡처 ──► Hailo 추론 (호스트 python3-hailort) ──► JSON 한 줄/프레임 ──UDP 127.0.0.1:5005──► 브리지 노드 ──► /detections
+                                                              {"t": 촬영시각, "w":.., "h":.., "boxes": [[x1,y1,x2,y2,score,cls], ...]}</code></pre>
+      <ol class="steps">
+        <li>호스트에서 <code>python3 -c "from picamera2.devices import Hailo; print('OK')"</code> 로 picamera2 의 Hailo 헬퍼가 설치본에 있는지 확인한다. 있으면 <code>/usr/share/</code> 아래 picamera2 예제(<code>examples/hailo/detect.py</code>)를 출발점으로 쓴다.</li>
+        <li>호스트 스크립트는 프레임마다 검출 결과를 JSON 으로 UDP 에 쏜다 (<code>network_mode: host</code> 이므로 컨테이너가 127.0.0.1 로 받는다).</li>
+        <li>컨테이너의 브리지 노드는 §3-4 노드에서 <code>on_image</code> 대신 UDP 수신 스레드를 두고, 같은 방식으로 <code>Detection2DArray</code> 를 채운다. <code>header.stamp</code> 는 호스트가 보낸 촬영 시각을 쓴다 — 두 시계가 같은 시스템 시계이므로 맞는다.</li>
+      </ol>
+      <p>단점을 분명히 알고 선택한다: 카메라를 호스트가 점유하므로 <strong>08 의 <code>camera_ros</code> 와 동시에 쓸 수 없고</strong>, 영상 자체는 ROS 토픽으로 나오지 않아 overlay·rosbag 재현이 안 된다. A 를 충분히 시도한 뒤의 차선책이다.</p>
+
+      <h3>3-7. 기록 — <code>hardware/INVENTORY.md</code> 5절</h3>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>항목</th><th>값</th></tr></thead>
+        <tbody>
+          <tr><td>사용할 모델 (.hef)</td><td><code>____</code></td></tr>
+          <tr><td>입력 해상도</td><td><code>____</code></td></tr>
+          <tr><td>목표 / 실측 추론 FPS</td><td><code>____</code> / <code>____</code></td></tr>
+          <tr><td>HailoRT 버전 (호스트 = 컨테이너)</td><td><code>____</code></td></tr>
+          <tr><td>추론 용도</td><td>객체 검출 (YOLOv8n) — 장애물/사람 인지</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>3-8. 성능 확인</h3>
+      <pre><code class="lang-bash">ros2 topic hz /detections               # 추론 FPS
+htop                                    # CPU 사용률 — Hailo 를 제대로 쓰고 있다면 낮아야 한다
+vcgencmd measure_temp                   # Pi 호스트
+hailortcli monitor                      # Pi 호스트 — 추론 프로세스에 HAILO_MONITOR=1 필요</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>측정값</th><th>기대치</th></tr></thead>
+        <tbody>
+          <tr><td><code>/detections</code> FPS</td><td>15~30 (모델/해상도에 따라)</td></tr>
+          <tr><td>추론 중 CPU</td><td><strong>50% 미만</strong> — 높으면 전처리가 병목</td></tr>
+          <tr><td>온도</td><td>70℃ 이하 (액티브 쿨러 권장)</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout tip"><span class="ct">CPU 가 여전히 높다면</span>
+        <p>전처리(리사이즈, 색공간 변환)가 병목이다. 카메라 노드에서 애초에 모델 입력 크기(예: 640×480 → 640×640 에 가깝게)로 받아오면 리사이즈가 가벼워진다.
+        <code>cv2.resize</code> 의 보간을 <code>INTER_NEAREST</code>/<code>INTER_AREA</code> 로 바꾸는 것만으로도 차이가 난다. 언어를 바꾸기 전에 이것부터 잰다.</p>
+      </div>
+
+      <h2>✅ 검증 체크포인트</h2>
+      <ul class="checklist">
+        <li><label><input type="checkbox"><span>호스트와 컨테이너의 <code>hailortcli fw-control identify</code> 버전이 같고, 컨테이너의 <code>hailo_platform.__version__</code> 도 같다</span></label></li>
+        <li><label><input type="checkbox"><span>컨테이너 안에서 <code>hailortcli scan</code> 이 장치를 찾는다 (cgroup 규칙·권한 해결)</span></label></li>
+        <li><label><input type="checkbox"><span><code>/usr/share/hailo-models/</code> 또는 Model Zoo 에서 Hailo-8 용 <code>.hef</code> 를 확보하고 <code>/models</code> 로 마운트했다</span></label></li>
+        <li><label><input type="checkbox"><span><code>hailortcli parse-hef</code> 출력을 §3-2 표에 옮겨 적었다 — 입력 shape, 출력 형식, NMS 포함 여부</span></label></li>
+        <li><label><input type="checkbox"><span>내 HailoRT 버전의 Python 예제를 찾아 정지 이미지 한 장으로 박스 좌표를 찍어 봤다 (ROS 없이)</span></label></li>
+        <li><label><input type="checkbox"><span><code>rpi5_hailo_detect</code> 패키지를 만들고 <code>fake_backend:=true</code> 로 <code>/detections</code> 가 카메라 FPS 로 나오며 overlay 가 중앙 박스를 그린다</span></label></li>
+        <li><label><input type="checkbox"><span>진짜 백엔드로 <code>ros2 topic hz /detections</code> 가 목표 FPS 를 보인다</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 topic echo /detections --once</code> 의 <code>header.stamp</code> 가 입력 이미지의 stamp 와 같다 (추론 시점이 아님)</span></label></li>
+        <li><label><input type="checkbox"><span>추론 중 <code>htop</code> 의 CPU 사용률이 50% 미만이다</span></label></li>
+        <li><label><input type="checkbox"><span>Foxglove Image 패널의 <code>/camera/annotated</code> 에서 영상 위에 검출 박스가 그려진다 — overlay 노드를 한 줄도 고치지 않았다</span></label></li>
+        <li><label><input type="checkbox"><span>카메라 앞에 사람이 지나가면 실시간으로 박스가 따라간다</span></label></li>
+        <li><label><input type="checkbox"><span>§3-5 비교 실험 표를 채웠고, 검출 개수 차이를 임계값으로 설명할 수 있다</span></label></li>
+        <li><label><input type="checkbox"><span><code>hardware/INVENTORY.md</code> 5절에 모델명/입력 해상도/실측 FPS/HailoRT 버전을 기록했다</span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2>🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. Hailo 를 쓰는 진짜 이유가 "FPS 향상"이 아니라 무엇인가?</summary>
+        <div class="ans"><strong>CPU 를 비워 주는 것.</strong> 자율주행은 인지·SLAM·경로계획·제어가 동시에 돌아야 한다. CPU 로 추론하면 4코어가 포화되어 SLAM 과 제어 루프가 굶고, 전체 시스템이 실패한다.
+        추론을 전용 칩으로 옮기면 CPU 가 나머지 일에 집중할 수 있다.</div></details>
+      <details class="quiz"><summary>2. 검출 결과의 <code>header.stamp</code> 에 추론 완료 시각을 넣으면 무엇이 잘못되는가?</summary>
+        <div class="ans">TF 는 그 타임스탬프 시점의 로봇 자세를 조회한다. 추론에 100 ms 가 걸렸다면 로봇은 이미 그만큼 이동했고, 검출된 물체의 위치를 <strong>100 ms 뒤의 로봇 자세</strong> 기준으로 계산하게 된다.
+        이동 중이라면 수십 cm 오차가 난다. 촬영 시각을 써야 한다. 그래서 노드는 <code>out.header = msg.header</code> 로 입력 헤더를 통째로 복사한다.</div></details>
+      <details class="quiz"><summary>3. 카메라 30 FPS, 추론 15 FPS 일 때 모든 프레임을 처리하면?</summary>
+        <div class="ans">큐에 초당 15프레임씩 쌓여 지연이 무한히 증가한다. 1분 뒤에는 30초 전 영상을 보고 판단하게 된다. 주행 중이면 사고다.
+        구독 depth 를 1 로 두고 처리 중 들어온 프레임은 버려서 <strong>항상 최신 프레임만</strong> 처리해야 한다.</div></details>
+      <details class="quiz"><summary>4. 호스트를 <code>apt upgrade</code> 했더니 "No Hailo device found" 가 났다. 원인은?</summary>
+        <div class="ans">호스트의 <code>hailo_pci</code> 드라이버와 HailoRT 가 업그레이드됐지만 컨테이너의 <code>libhailort</code>/wheel 은 그대로라 버전이 어긋난 것.
+        같은 버전의 .deb/.whl 을 받아 컨테이너 쪽을 맞춘다 — A: Dockerfile 의 <code>HAILORT_VERSION</code> 을 바꿔 재빌드, B: 컨테이너에서 설치 (02 단계 §2-2). ROS 코드는 원인이 아니다.</div></details>
+      <details class="quiz"><summary>5. "전방 1.2 m 에 사람이 있다"를 알려면 카메라와 라이다는 각각 무엇을 담당하는가?</summary>
+        <div class="ans">카메라(+Hailo)는 <strong>"무엇인가"</strong>(사람)를, 라이다는 <strong>"얼마나 먼가"</strong>(1.2 m)를 담당한다. 두 정보를 합치려면 <code>camera_optical_link</code> 와 <code>laser_link</code> 사이 TF 가 정확해야 한다 — 05 단계의 실측이 여기서 쓰인다. 10 단계에서 다룬다.</div></details>
+      <details class="quiz"><summary>6. <code>.hef</code> 와 ONNX 의 출력 형식 차이가 노드 구조에 어떤 영향을 주는가?</summary>
+        <div class="ans">ONNX 는 raw 텐서(<code>[1,84,8400]</code>)라 노드가 NMS 를 해야 하고, <code>.hef</code> 는 대개 NMS 가 포함되어 박스 리스트가 나온다(좌표 순서·정규화도 다를 수 있다).
+        그래서 08b 의 파서를 재사용할 수 없고, 노드를 "ROS 배선"과 "백엔드"로 나눈 뒤 백엔드 계약을 <code>infer(rgb) → [(x1,y1,x2,y2,score,cls)]</code> 원본 픽셀 좌표로 고정한다.
+        차이는 백엔드 안에서 흡수되고, 그 덕분에 <code>FakeBackend</code> 로 ROS 쪽을 먼저 검증할 수 있다.</div></details>
+      <details class="quiz"><summary>7. 호스트에서는 <code>import hailo_platform</code> 이 되는데 컨테이너에서는 안 된다. 왜인가?</summary>
+        <div class="ans">호스트 <code>hailo-all</code> 이 설치한 Python 바인딩은 호스트 Python(3.13) 용이고, 컨테이너는 Ubuntu 22.04 의 Python 3.10 이다.
+        wheel 은 Python 버전별로 다르므로 <strong>같은 HailoRT 버전의 cp310 wheel</strong> 을 따로 받아 Dockerfile 에서 설치해야 한다. 버전은 같되 빌드 대상이 다른 파일이다.</div></details>
+      <details class="quiz"><summary>8. 이 단계에서 overlay 노드와 감독 노드를 한 줄도 고치지 않은 것이 왜 중요한가?</summary>
+        <div class="ans">인터페이스(<code>/detections</code>, <code>vision_msgs/Detection2DArray</code>, 같은 파라미터 이름)가 계약이고 백엔드는 그 계약의 구현이기 때문이다.
+        하위 노드가 백엔드를 모르므로 CPU ↔ Hailo 교체가 런치 인자 하나로 끝난다. 03 단계의 "느슨한 결합"이 실제로 시간을 절약해 준 첫 사례다. 나중에 C++ HailoRT 나 다른 가속기로 옮겨도 마찬가지다.</div></details>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

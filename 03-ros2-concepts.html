@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>03 · ROS 2 핵심 개념 — 노드·토픽·서비스·액션·파라미터·QoS</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="03">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">03 · ROS 2 핵심 개념</p>
+      <h1>노드·토픽·서비스·액션·파라미터 — 그래프의 화살표를 읽는 법</h1>
+      <p class="lead">이 단계는 코드를 거의 쓰지 않는다. <strong>CLI 로 만져 보면서 구조를 몸에 익히는 단계</strong>다.
+      여기를 대충 넘기면 06 단계 이후 "왜 안 되는지 모르겠는" 상황이 계속 반복된다. 그리고 여기서 배우는 것이 곧 <a href="index.html">로드맵</a> 그래프의 화살표 전부다.</p>
+
+      <div class="goal">
+        <span class="label">이 단계가 끝나면</span>
+        <p>노드/토픽/서비스/액션/파라미터가 각각 무엇이고 <strong>언제 어느 것을 써야 하는지</strong> 스스로 판단할 수 있다. QoS 불일치가 왜 "에러 없는 침묵"으로 나타나는지 설명하고
+        <code>ros2 topic info -v</code> 로 찾아낼 수 있다. 그리고 문제가 생겼을 때 로그보다 그래프를 먼저 보는 습관이 생긴다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">그래프에서의 위치</span>그래프의 화살표 전부 — 상자 사이를 잇는 규약</div>
+        <div><span class="k">전제</span>02 (컨테이너, 2-B 패키지 블록이 들어간 이미지)</div>
+        <div><span class="k">예상 소요</span>3~4시간</div>
+        <div><span class="k">언어</span><span class="tag cli">CLI</span> (C++ 대응은 각 절 끝에 한 줄씩)</div>
+      </div>
+
+      <p>모든 실습은 컨테이너 안에서 한다. <span class="tag pi">Pi 호스트</span> → <span class="tag cli">컨테이너</span></p>
+      <pre><code class="lang-bash">ssh pi5 &amp;&amp; cd ~/ros2_rpi5/docker &amp;&amp; docker compose run --rm dev</code></pre>
+      <p class="small">데모 노드(<code>demo_nodes_cpp</code>, <code>demo_nodes_py</code>)는 02 단계 §3-3 에서 Dockerfile 에 넣었다. <code>ros2 pkg list | grep demo_nodes</code> 에 안 나오면 02 로 돌아간다.</p>
+
+      <h2>1. 개요</h2>
+      <div class="callout why"><span class="ct">ROS 2 는 무엇인가 — 한 문장</span>
+        <p><strong>ROS 2 는 "여러 프로그램이 이름으로 서로를 찾아 데이터를 주고받게 해 주는 규약과 도구 모음"이다.</strong></p>
+      </div>
+      <p>로봇 프로그램은 원래 하나의 거대한 <code>main()</code> 으로 짤 수 있다. 그런데 그렇게 하면 라이다 드라이버를 고치려고 전체를 다시 컴파일해야 하고,
+      카메라가 죽으면 모터 제어까지 같이 죽고, 남이 만든 SLAM 코드를 가져다 붙일 수가 없다. ROS 2 는 이것을 <strong>작은 프로그램(노드) 여러 개 + 이름 붙은 통신 채널</strong>로 쪼갠다.</p>
+      <pre class="diagram"><code>        ros2 run demo_nodes_cpp talker         ros2 run demo_nodes_py listener
+                  ↓                                       ↓
+            ┌───────────┐        "/chatter"         ┌───────────┐
+            │  노드 A   │ ──────────────────────►   │  노드 B   │
+            │ (발행자)  │      String 메시지        │ (구독자)  │
+            └───────────┘                           └───────────┘
+                  ↑                                       ↑
+                  └───── 서로의 존재를 모른다. 토픽 이름만 안다 ─┘</code></pre>
+      <p><strong>핵심:</strong> A 는 B 가 있는지 모른다. B 가 3개여도, 0개여도 A 는 똑같이 동작한다. 이 느슨한 결합이 ROS 의 전부라고 해도 과언이 아니다.</p>
+
+      <h3>당신의 추상 구조는 어느 통신 방식이 되는가</h3>
+      <p><a href="index.html">로드맵</a>의 다섯 단위를 통신 방식에 대응시키면, 이 단계에서 무엇을 왜 배우는지가 분명해진다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>추상 단위</th><th>통신 방식</th><th>실제 이름</th><th>왜 그 방식인가</th></tr></thead>
+        <tbody>
+          <tr><td>① 라이다로 공간 스캔</td><td><strong>토픽</strong></td><td><code>/scan</code> → <code>/map</code></td><td>초당 5~10번 끊임없이 흐른다. 받는 쪽이 몇 개든 상관없다</td></tr>
+          <tr><td>② 카메라로 물체 판정</td><td><strong>토픽</strong></td><td><code>/camera/image_raw</code> → <code>/detections</code></td><td>영상과 검출 결과도 스트림이다. 놓친 프레임은 재전송받을 가치가 없다 (QoS)</td></tr>
+          <tr><td>③ 요청에 대한 계획</td><td><strong>액션</strong> (goal)</td><td><code>/navigate_to_pose</code></td><td>"저기로 가라"는 수십 초가 걸리고 중간에 취소할 수 있어야 한다</td></tr>
+          <tr><td>④ 이동 (세부는 MCU)</td><td><strong>토픽</strong></td><td><code>/cmd_vel</code>, <code>/odom</code></td><td>속도 명령과 위치 추정값이 초당 수십 번 흐른다</td></tr>
+          <tr><td>⑤ 수행 정도의 지속 판정</td><td><strong>액션</strong> (feedback · result · cancel)</td><td><code>distance_remaining</code>, <code>number_of_recoveries</code></td><td>진행 상황을 받아 판단하고, 필요하면 취소한다 — 10 단계의 감독 노드가 하는 일</td></tr>
+          <tr><td>일회성 명령·질의</td><td><strong>서비스</strong></td><td><code>/lidar_node/stop_motor</code>, 지도 저장</td><td>즉시 끝나고 성공 여부만 알면 된다</td></tr>
+          <tr><td>현장에서 조절할 값</td><td><strong>파라미터</strong></td><td><code>wheel_radius</code>, <code>max_vel_x</code></td><td>코드를 고치지 않고 동작을 바꾼다</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>2. 원리 — 왜</h2>
+
+      <h3>2-1. 노드 (Node) — 왜 쪼개는가</h3>
+      <p><strong>노드 = 하나의 일을 하는 실행 단위.</strong> 우리 로봇의 노드 구성을 미리 그려 보면:</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>노드</th><th>하는 일</th><th>단계</th></tr></thead>
+        <tbody>
+          <tr><td><code>mcu_bridge</code></td><td>시리얼로 MCU 와 대화, <code>/cmd_vel</code> ↔ <code>/odom</code></td><td>06</td></tr>
+          <tr><td><code>lidar_node</code></td><td>라이다에서 스캔을 읽어 <code>/scan</code> 발행</td><td>07</td></tr>
+          <tr><td><code>camera</code></td><td>카메라 프레임을 <code>/camera/image_raw</code> 로 발행</td><td>08</td></tr>
+          <tr><td><code>image_proc_node</code>, <code>yolo_detector</code>, <code>hailo_detect</code></td><td>프레임 처리 / 객체 검출 → <code>/detections</code></td><td>08a~08c</td></tr>
+          <tr><td><code>robot_state_publisher</code></td><td>URDF 로 TF 발행</td><td>05</td></tr>
+          <tr><td><code>slam_toolbox</code></td><td>지도 작성, <code>map→odom</code> TF</td><td>09</td></tr>
+          <tr><td><code>controller_server</code> 등</td><td>Nav2 구성요소들</td><td>09</td></tr>
+          <tr><td><code>mission_supervisor</code></td><td>목표 지시, 수행 판정</td><td>10</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>왜 이렇게 쪼개는가?</strong> 라이다를 다른 모델로 바꿔도 <code>lidar_node</code> 만 교체하면 된다. 나머지는 <code>/scan</code> 토픽만 보면 되므로 아무것도 바뀌지 않는다.
+      노드가 세상과 소통하는 수단은 네 가지뿐이다 — <strong>Publishers / Subscribers / Service Servers·Clients / Action Servers·Clients</strong>. <code>ros2 node info</code> 의 출력이 정확히 이 넷으로 나뉜다.</p>
+      <p class="small"><strong>C++ 에서는:</strong> <code>class MyNode : public rclcpp::Node</code> 를 상속한 클래스 하나가 노드다 (04 단계).</p>
+
+      <h3>2-2. 토픽 (Topic) — 가장 많이 쓰는 통신</h3>
+      <p><strong>단방향, 비동기, 다대다 방송.</strong> 라디오 방송과 같다.</p>
+      <pre class="diagram"><code>  발행자가 보낸다  ──►  [ 토픽 이름 ]  ──►  구독자 0개~N개가 받는다
+                        (예: /scan)
+       ↑                                          ↑
+   응답을 기다리지 않는다              못 받아도 발행자는 모른다</code></pre>
+      <p><strong>언제 쓰는가:</strong> 끊임없이 흐르는 데이터. 센서 값, 로봇 상태, 속도 명령. <code>/scan</code>(초당 5~10번), <code>/odom</code>(초당 50번), <code>/cmd_vel</code>.</p>
+      <h4>메시지 타입 — 토픽에는 정해진 모양의 데이터만 흐른다</h4>
+      <p>발행자와 구독자는 토픽 이름뿐 아니라 <strong>메시지 타입</strong>도 같아야 연결된다. 표준 타입(<code>sensor_msgs</code>, <code>geometry_msgs</code>, <code>nav_msgs</code>, <code>vision_msgs</code>…)을 쓰는 이유는
+      남이 만든 노드(SLAM, Nav2, Foxglove)가 그 타입을 알기 때문이다. 커스텀 타입은 정말 필요할 때만 만든다.</p>
+      <p><code>geometry_msgs/msg/Twist</code> 를 꼭 직접 확인해 보자:</p>
+      <pre class="diagram"><code>Vector3 linear    # x(앞뒤) y(좌우) z(상하)  [m/s]
+Vector3 angular   # x(roll) y(pitch) z(yaw)  [rad/s]</code></pre>
+      <p>차동구동 로봇은 <code>linear.x</code> 와 <code>angular.z</code> <strong>두 개만</strong> 쓴다. 옆으로 못 가고 날지 못하기 때문이다. 메카넘 휠이면 <code>linear.y</code> 도 쓴다. 이 두 숫자가 06 단계에서 좌/우 바퀴 속도로 번역된다.</p>
+      <p class="small"><strong>C++ 에서는:</strong> <code>create_publisher&lt;geometry_msgs::msg::Twist&gt;("cmd_vel", 10)</code>, <code>create_subscription&lt;sensor_msgs::msg::LaserScan&gt;("scan", qos, callback)</code>. 메시지 헤더는 <code>&lt;pkg&gt;/msg/&lt;snake_case&gt;.hpp</code> (04, <a href="ref-rclcpp.html">부록 A</a>).</p>
+
+      <h3>2-3. 서비스 (Service) — 요청과 응답</h3>
+      <p><strong>양방향, 1:1, 동기.</strong> 전화 통화와 같다.</p>
+      <pre class="diagram"><code>   클라이언트  ──── 요청(Request) ────►  서버
+              ◄─── 응답(Response) ────
+              (그동안 기다린다)</code></pre>
+      <p><strong>언제 쓰는가:</strong> 즉시 끝나는 일회성 질의/명령. "지도를 파일로 저장해라", "라이다 모터를 멈춰라", "현재 파라미터 값이 뭐냐".</p>
+      <p><strong>쓰면 안 되는 경우:</strong> 오래 걸리는 일(응답이 올 때까지 호출자가 멈춘다), 주기적으로 반복되는 일(토픽을 쓴다).</p>
+      <p class="small"><strong>C++ 에서는:</strong> 서버 <code>create_service&lt;T&gt;("name", handler)</code>, 클라이언트 <code>create_client&lt;T&gt;("name")</code> → <code>async_send_request()</code>. 07 단계의 <code>stop_motor</code> 가 우리 로봇의 첫 실제 서비스다.</p>
+
+      <h3>2-4. 액션 (Action) — 오래 걸리는 목표</h3>
+      <p><strong>요청 + 진행상황 피드백 + 결과 + 중간 취소.</strong> 택배 배송과 같다.</p>
+      <pre class="diagram"><code>   클라이언트 ──── 목표(Goal) ────► 서버
+             ◄─── 피드백 ────      (진행 중... 30%... 60%...)
+             ◄─── 피드백 ────
+             ──── 취소 요청 ───►   (원하면 중간에 취소 가능)
+             ◄─── 결과(Result) ──  (성공 / 실패 / 취소됨)</code></pre>
+      <p><strong>언제 쓰는가:</strong> 시간이 걸리고, 진행 상황을 알아야 하고, 취소할 수 있어야 하는 일. 우리 프로젝트에서 가장 중요한 액션은 <strong>Nav2 의 <code>/navigate_to_pose</code></strong> 다. "저 지점까지 가라"는 명령은</p>
+      <ul>
+        <li>수십 초가 걸리고</li>
+        <li>지금 얼마나 갔는지 알아야 하고 — 이것이 당신의 ⑤ "수행 정도 판정"의 재료다</li>
+        <li>사람이 뛰어들면 취소해야 한다</li>
+      </ul>
+      <p>→ 서비스로는 불가능하다. 그래서 액션이다. 액션은 내부적으로 <strong>서비스 3개(goal/cancel/result) + 토픽 2개(feedback/status)</strong> 로 구현되어 있다. <code>ros2 topic list</code> 에 <code>/navigate_to_pose/_action/feedback</code> 같은 이름이 보이는 이유다.</p>
+      <p class="small"><strong>C++ 에서는:</strong> <code>rclcpp_action::create_client&lt;nav2_msgs::action::NavigateToPose&gt;(this, "navigate_to_pose")</code> → <code>async_send_goal(goal, options)</code>, options 에 feedback/result 콜백을 건다. 10 단계의 <code>mission_supervisor</code> 가 정확히 이것이다 (<a href="ref-rclcpp.html">부록 A</a>).</p>
+
+      <h3>2-5. 세 가지 통신 방식 — 언제 무엇을?</h3>
+      <div class="tbl"><table>
+        <thead><tr><th></th><th><strong>토픽</strong></th><th><strong>서비스</strong></th><th><strong>액션</strong></th></tr></thead>
+        <tbody>
+          <tr><td>방향</td><td>단방향</td><td>왕복</td><td>왕복 + 피드백</td></tr>
+          <tr><td>관계</td><td>다대다</td><td>1:1</td><td>1:1</td></tr>
+          <tr><td>응답 대기</td><td>없음</td><td>있음 (짧게)</td><td>있음 (길게, 비동기)</td></tr>
+          <tr><td>취소</td><td>—</td><td>불가</td><td><strong>가능</strong></td></tr>
+          <tr><td>쓰는 때</td><td>계속 흐르는 데이터</td><td>즉시 끝나는 질의</td><td>오래 걸리는 목표</td></tr>
+          <tr><td>예</td><td><code>/scan</code> <code>/cmd_vel</code></td><td><code>/lidar_node/stop_motor</code> <code>/map_saver/save_map</code></td><td><code>/navigate_to_pose</code></td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout tip"><span class="ct">판단 기준 — 세 질문</span>
+        <ol>
+          <li>계속 흐르는가? → <strong>토픽</strong></li>
+          <li>한 번 묻고 바로 답이 오는가? → <strong>서비스</strong></li>
+          <li>오래 걸리고 중간에 취소할 수 있어야 하는가? → <strong>액션</strong></li>
+        </ol>
+      </div>
+
+      <h3>2-6. 파라미터 (Parameter)</h3>
+      <p><strong>노드의 설정값.</strong> 코드를 고치지 않고 동작을 바꾸는 수단. 우리 프로젝트에서는 <code>rpi5_bringup/config/robot_params.yaml</code> 이 이 역할을 한다. 바퀴 반지름을 바꿀 때 코드를 건드리지 않고 YAML 만 고친다.</p>
+      <div class="callout why"><span class="ct">왜 하드코딩하면 안 되는가</span>
+        <p>바퀴를 갈아 끼웠는데 소스를 고치고 다시 빌드해야 한다면, 로봇 위에서 튜닝을 할 수 없다. 파라미터는 "현장에서 조절할 것"을 담는다.
+        그리고 ROS 2 는 <strong>선언하지 않은 파라미터를 거부한다</strong> — 선언이 곧 그 노드의 설정 인터페이스다. YAML 은 <strong>노드 이름</strong>을 키로 매칭되므로 노드 이름이 어긋나면 파라미터가 에러 없이 통째로 무시된다 (07 단계에서 실물을 만난다).</p>
+      </div>
+      <p class="small"><strong>C++ 에서는:</strong> <code>declare_parameter&lt;double&gt;("wheel_radius", 0.0)</code> → <code>get_parameter("wheel_radius").as_double()</code>. 04 단계 §3-6.</p>
+
+      <h3>2-7. QoS — 조용히 통신을 막는 범인</h3>
+      <p>ROS 2 는 DDS 위에 있고, DDS 에는 <strong>QoS(Quality of Service) 설정</strong>이 있다. <strong>발행자와 구독자의 QoS 가 호환되지 않으면 연결 자체가 안 된다.</strong> 에러도 안 난다. 그냥 데이터가 안 온다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>설정</th><th>값</th><th>의미</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Reliability</strong></td><td><code>RELIABLE</code></td><td>못 받으면 재전송. 확실하지만 느려질 수 있음</td></tr>
+          <tr><td></td><td><code>BEST_EFFORT</code></td><td>놓치면 그만. 최신 데이터가 중요한 센서용</td></tr>
+          <tr><td><strong>Durability</strong></td><td><code>VOLATILE</code></td><td>구독 시작 이후 것만 받음</td></tr>
+          <tr><td></td><td><code>TRANSIENT_LOCAL</code></td><td>구독 전에 발행된 마지막 값도 받음 (지도, URDF 처럼 가끔 바뀌는 것)</td></tr>
+          <tr><td><strong>History / Depth</strong></td><td><code>KEEP_LAST</code> + 깊이 N</td><td>큐에 최근 N 개를 보관. 영상 추론 노드는 1 로 두어 "항상 최신 프레임"만 본다 (08b)</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>호환 규칙: 구독자가 요구하는 것 ≤ 발행자가 제공하는 것.</strong></p>
+      <div class="two">
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>발행자 Reliability</th><th>구독자</th><th>결과</th></tr></thead>
+          <tbody>
+            <tr><td>RELIABLE</td><td>RELIABLE</td><td>✓</td></tr>
+            <tr><td>RELIABLE</td><td>BEST_EFFORT</td><td>✓</td></tr>
+            <tr><td><strong>BEST_EFFORT</strong></td><td><strong>RELIABLE</strong></td><td><strong>✗ 연결 안 됨</strong></td></tr>
+            <tr><td>BEST_EFFORT</td><td>BEST_EFFORT</td><td>✓</td></tr>
+          </tbody>
+        </table></div>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>발행자 Durability</th><th>구독자</th><th>결과</th></tr></thead>
+          <tbody>
+            <tr><td>TRANSIENT_LOCAL</td><td>VOLATILE</td><td>✓</td></tr>
+            <tr><td>TRANSIENT_LOCAL</td><td>TRANSIENT_LOCAL</td><td>✓ (마지막 값 수신)</td></tr>
+            <tr><td><strong>VOLATILE</strong></td><td><strong>TRANSIENT_LOCAL</strong></td><td><strong>✗ 연결 안 됨</strong></td></tr>
+            <tr><td>VOLATILE</td><td>VOLATILE</td><td>✓</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+      <div class="callout note"><span class="ct">관례 — 무엇을 어느 QoS 로</span>
+        <ul>
+          <li><strong>센서 스트림</strong>(<code>/scan</code>, <code>/camera/image_raw</code>, <code>/detections</code>) → <code>BEST_EFFORT</code>. 재전송된 옛 프레임은 쓸모없고 지연만 쌓는다. C++ 프리셋 <code>rclcpp::SensorDataQoS()</code>.</li>
+          <li><strong>명령·상태</strong>(<code>/cmd_vel</code>, <code>/odom</code>) → <code>RELIABLE</code>. 작은 메시지라 비용이 없고, Nav2 의 구독자가 RELIABLE 을 요구한다. 참고 구현 <code>mcu_bridge_node.py</code> 의 주석에 이 이유가 적혀 있다.</li>
+          <li><strong>가끔 바뀌는 큰 것</strong>(<code>/map</code>, <code>/robot_description</code>, <code>/tf_static</code>) → <code>TRANSIENT_LOCAL</code>. 늦게 뜬 노드도 마지막 값을 받아야 한다.</li>
+        </ul>
+      </div>
+      <p><strong>실전 증상:</strong> "Foxglove 에서 <code>/scan</code> 이 안 보여요" → 대부분 QoS 불일치다. 센서 드라이버는 BEST_EFFORT 로 발행하는데 시각화 도구가 기본 RELIABLE 로 구독하면 연결되지 않는다. Foxglove 는 패널 설정에서 바꿀 수 있다.</p>
+      <p class="small"><strong>C++ 에서는:</strong> <code>rclcpp::QoS(10).best_effort()</code>, <code>rclcpp::QoS(1).transient_local()</code>, <code>rclcpp::SensorDataQoS()</code>. 04 단계 §3-6 에서 불일치를 직접 재현한다.</p>
+
+      <h3>2-8. Executor 와 콜백 — 노드 안에서 일이 처리되는 방식</h3>
+      <p>노드를 <code>spin</code> 하면 Executor 가 무한 루프를 돌며 "타이머가 만료됐나, 메시지가 왔나, 요청이 왔나"를 확인하고 해당 <strong>콜백을 한 번에 하나씩</strong> 호출한다.
+      그래서 콜백 하나가 오래 걸리면(무거운 추론, sleep) 그 노드의 다른 모든 콜백이 밀린다. 04 단계에서 코드로 보고, 08b 에서 "추론 콜백이 파라미터 서비스를 막지 않게" 설계한다.</p>
+      <p class="small"><strong>예고:</strong> Nav2 의 노드들은 <em>lifecycle 노드</em>라서 떠 있어도 <code>configure → activate</code> 를 거쳐야 동작한다. <code>ros2 node list</code> 에 보이는데 아무 일도 안 하는 이유가 될 수 있다 — 09 단계.</p>
+
+      <h3>2-9. 이름 — 네임스페이스와 리매핑</h3>
+      <p>같은 노드를 여러 개 띄우거나, 토픽 이름을 바꿔 붙일 때 쓴다. 노드 이름·토픽 이름은 전부 <strong>실행 시점에</strong> 바꿀 수 있다 — 코드를 고치지 않고.
+      로봇 두 대를 같은 네트워크에서 돌릴 때, 실제 카메라와 녹화 재생을 동시에 비교할 때 이름 충돌을 피한다. 런치파일에서 자주 쓴다. 08 단계의 <code>camera</code> 노드는 <code>~/image_raw</code>(노드 이름 기준 상대 경로) 로 발행하므로 노드 이름이 <code>camera</code> 일 때 <code>/camera/image_raw</code> 가 된다 — 이름이 곧 토픽 경로인 예다.</p>
+
+      <h3>2-10. rosbag — 기록과 재생</h3>
+      <p><strong>이것이 로봇 디버깅의 핵심 도구다.</strong> 로봇이 복도에서 이상하게 돌았을 때, 그 순간을 다시 만들기는 거의 불가능하다. 하지만 bag 이 있으면 책상에서 100번이고 재생하며 분석할 수 있다.
+      <strong>09 단계 SLAM 튜닝은 bag 없이는 사실상 불가능하다.</strong> 지금 익혀 둔다. 저장 형식은 <code>mcap</code> 을 쓴다(Dockerfile 에 <code>rosbag2-storage-mcap</code> 이 있다) — Foxglove 가 파일을 직접 열 수 있어서 Mac 에서 바로 분석할 수 있다.</p>
+
+      <h2>3. 실습</h2>
+
+      <h3>3-1. 노드 관찰</h3>
+      <pre><code class="lang-bash"># 터미널 A
+ros2 run demo_nodes_cpp talker
+
+# 터미널 B (새 ssh + docker compose run --rm dev)
+ros2 node list                    # /talker 가 보인다
+ros2 node info /talker            # 이 노드의 모든 인터페이스</code></pre>
+      <p><code>ros2 node info</code> 출력을 읽어 보자. Publishers / Subscribers / Service Servers / Service Clients / Action Servers / Action Clients 로 나뉘어 있다.
+      <strong>이것이 노드가 세상과 소통하는 전부</strong>다. <code>/talker/get_parameters</code> 같은 서비스가 자동으로 달려 있는 것도 눈여겨 두자 — 모든 노드가 파라미터 서비스를 기본으로 갖는다.</p>
+
+      <h3>3-2. 토픽</h3>
+      <pre><code class="lang-bash">ros2 topic list                       # 현재 존재하는 토픽
+ros2 topic list -t                    # 메시지 타입까지
+ros2 topic info /chatter -v           # 발행자/구독자 수, 각각의 QoS 설정 ← 가장 중요한 명령
+ros2 topic echo /chatter              # 내용 훔쳐보기 (Ctrl+C 로 중단)
+ros2 topic hz /chatter                # 초당 몇 번 오는가
+ros2 topic bw /chatter                # 대역폭
+
+# 직접 발행해 보기 — listener 가 이것도 받는다 (발행자가 둘이 됐다)
+ros2 topic pub /chatter std_msgs/msg/String "{data: '내가 보낸 메시지'}" --once
+ros2 topic pub /chatter std_msgs/msg/String "{data: 'ten times'}" -r 10     # 10 Hz 로 계속</code></pre>
+      <div class="callout warn"><span class="ct"><code>ros2 topic hz</code> 를 습관으로 만드십시오</span>
+        <p>Hz 는 "초당 몇 번"이고 주기는 그 역수다 — 5 Hz 는 200 ms 마다 한 번. 이 가이드의 모든 주기는 이 단위로 적고, 처음 나올 때 ms 를 병기한다. "노드가 떴는데 동작을 안 한다"의 절반은 "토픽이 안 나오고 있다"이고, 나머지 절반은 "나오긴 하는데 5 Hz 여야 할 게 0.2 Hz 다"이다. 눈으로는 구분이 안 된다.</p>
+      </div>
+
+      <h3>3-3. 메시지 타입</h3>
+      <pre><code class="lang-bash">ros2 interface list | grep sensor_msgs           # 표준 메시지 목록
+ros2 interface show sensor_msgs/msg/LaserScan    # 라이다 메시지의 구조 (07)
+ros2 interface show geometry_msgs/msg/Twist      # 속도 명령의 구조 (06)
+ros2 interface show nav_msgs/msg/Odometry        # 위치 추정 (06) — header 와 frame_id 를 눈여겨 둔다
+ros2 interface show vision_msgs/msg/Detection2DArray   # 검출 결과 (08b) — results[].hypothesis.class_id 의 중첩 구조
+ros2 interface proto geometry_msgs/msg/Twist     # pub 명령에 붙일 YAML 뼈대를 만들어 준다</code></pre>
+      <p>거의 모든 메시지가 <code>std_msgs/Header header</code>(<code>stamp</code>, <code>frame_id</code>)로 시작한다. <strong>"언제, 어느 좌표계에서"</strong> — 05 단계 TF 가 이 두 필드를 먹는다.</p>
+
+      <h3>3-4. 서비스</h3>
+      <pre><code class="lang-bash">ros2 service list
+ros2 service list -t
+ros2 service type /talker/get_parameters
+ros2 interface show rcl_interfaces/srv/GetParameters      # --- 위가 요청, 아래가 응답
+
+# 직접 호출 — 모든 노드가 갖는 파라미터 서비스
+ros2 service call /talker/get_parameters rcl_interfaces/srv/GetParameters "{names: ['use_sim_time']}"
+
+# 진짜 요청/응답 — demo 의 덧셈 서버 (터미널 C 에서 서버를 띄운 뒤)
+ros2 run demo_nodes_cpp add_two_ints_server
+ros2 service call /add_two_ints example_interfaces/srv/AddTwoInts "{a: 2, b: 3}"    # sum: 5</code></pre>
+      <p>서버를 끄고 <code>service call</code> 을 다시 쳐 보자. <strong>서버가 나타날 때까지 기다린다</strong>("waiting for service to become available"). 서비스는 1:1 이라 상대가 없으면 진행이 안 된다 — 토픽과 다른 점이다.</p>
+
+      <h3>3-5. 액션</h3>
+      <pre><code class="lang-bash">ros2 action list                                         # talker 만 떠 있으면 비어 있다
+ros2 interface show nav2_msgs/action/NavigateToPose      # 09 단계에서 다시 본다</code></pre>
+      <p><code>NavigateToPose</code> 정의는 <code>---</code> 로 세 부분이 나뉘어 있다:</p>
+      <pre class="diagram"><code>#goal definition
+geometry_msgs/PoseStamped pose            # Goal:     어디로 갈 것인가
+string behavior_tree
+---
+std_msgs/Empty result                     # Result:   최종 결과 (성공/실패는 상태 코드로 온다)
+---
+geometry_msgs/PoseStamped current_pose    # Feedback: 지금 어디쯤인가
+builtin_interfaces/Duration navigation_time
+builtin_interfaces/Duration estimated_time_remaining
+int16 number_of_recoveries                #   몇 번 막혀서 복구 행동을 했는가
+float32 distance_remaining                #   남은 거리 [m] ← 10 단계 감독 노드가 "수행 정도"로 쓰는 값</code></pre>
+      <p>액션을 실제로 만져 보려면 서버가 필요하다. 일회성 실습이므로 컨테이너 안에 튜토리얼 서버를 <strong>임시로</strong> 설치해 본다(기본 구성에서는 컨테이너가 재생성되면 사라진다 — 02 단계 §2-2).</p>
+      <pre><code class="lang-bash">sudo apt update &amp;&amp; sudo apt install -y ros-humble-action-tutorials-cpp
+
+# 터미널 A: 피보나치 액션 서버
+ros2 run action_tutorials_cpp fibonacci_action_server
+
+# 터미널 B: 목표를 보내고 피드백을 본다
+ros2 action list -t                                      # /fibonacci [action_tutorials_interfaces/action/Fibonacci]
+ros2 action send_goal /fibonacci action_tutorials_interfaces/action/Fibonacci "{order: 8}" --feedback</code></pre>
+      <p>출력은 이 순서로 온다: <code>Waiting for an action server to become available...</code>(서버가 없으면 여기서 계속 기다린다) → <code>Sending goal</code> → <code>Goal accepted with ID</code> → <code>Feedback:</code> 이 여러 번(진행 중인 부분 수열) → <code>Result:</code> → <code>Goal finished with status: SUCCEEDED</code>.
+      <kbd>Ctrl</kbd>+<kbd>C</kbd> 를 중간에 누르면 <strong>취소 요청</strong>이 가고 상태가 <code>CANCELED</code> 가 된다. 09 단계에서 <code>/navigate_to_pose</code> 에 같은 명령을 쓰면 <code>distance_remaining</code> 이 줄어드는 것을 본다.</p>
+
+      <h3>3-6. 파라미터</h3>
+      <pre><code class="lang-bash">ros2 param list
+ros2 param list /talker
+ros2 param get /talker use_sim_time
+ros2 param set /talker use_sim_time false
+ros2 param dump /talker                  # 현재 값을 YAML 로 덤프 — robot_params.yaml 의 형식이 이것이다
+ros2 param set /talker no_such_param 1   # 선언되지 않은 파라미터 → 거부된다</code></pre>
+      <p>덤프된 YAML 의 <code>&lt;노드이름&gt;: ros__parameters:</code> 구조를 눈에 담아 두자. 07 단계에서 "노드 이름이 YAML 키와 다르면 파라미터가 조용히 무시된다"는 함정을 실물로 만난다.</p>
+
+      <h3>3-7. QoS 실습 — 침묵을 눈으로 본다</h3>
+      <pre><code class="lang-bash"># talker 의 /chatter 는 어떤 QoS 로 발행되는가
+ros2 topic info /chatter -v          # Publishers 아래 QoS profile: Reliability RELIABLE, Durability VOLATILE …
+
+# 구독 QoS 를 바꿔서 echo
+ros2 topic echo --qos-reliability best_effort /chatter        # RELIABLE 발행자 + BEST_EFFORT 구독자 = ✓ 받는다
+
+# Durability 실험 — 5초마다 한 번 발행하는 "가끔 바뀌는 값" 을 흉내 낸다 (터미널 A)
+ros2 topic pub -r 0.2 --qos-durability transient_local /latched std_msgs/msg/String "{data: 'last value'}"
+
+# 터미널 B: 두 가지로 구독해 비교
+ros2 topic echo --qos-durability transient_local /latched     # 시작 즉시 마지막 값을 받는다
+ros2 topic echo /latched                                      # (volatile) 다음 발행까지 최대 5초 기다린다</code></pre>
+      <p>발행자 BEST_EFFORT + 구독자 RELIABLE 의 "연결 안 됨"은 04 단계 §3-6 에서 C++ 코드로 직접 재현한다. 여기서는 <code>ros2 topic info -v</code> 가 <strong>양쪽 QoS 를 나란히 보여 주는 유일한 도구</strong>라는 것을 기억한다.</p>
+
+      <h3>3-8. 네임스페이스와 리매핑</h3>
+      <pre><code class="lang-bash"># 노드 이름 바꾸기 — 같은 실행파일을 두 개 띄울 수 있다
+ros2 run demo_nodes_cpp talker --ros-args -r __node:=talker2
+
+# 토픽 이름 바꾸기 (리매핑) — 코드는 /chatter 인데 실제로는 /my_chatter 로 나간다
+ros2 run demo_nodes_cpp talker --ros-args -r /chatter:=/my_chatter
+
+# 네임스페이스 붙이기 → 노드 /robot1/talker, 토픽 /robot1/chatter
+ros2 run demo_nodes_cpp talker --ros-args -r __ns:=/robot1
+ros2 node list &amp;&amp; ros2 topic list</code></pre>
+      <p>리매핑은 런치파일에서 <code>remappings=[('/cmd_vel', '/cmd_vel_nav')]</code> 형태로 쓴다 — <code>rpi5_bringup/launch/robot.launch.py</code> 에 주석으로 예가 있다.</p>
+
+      <h3>3-9. rosbag</h3>
+      <pre><code class="lang-bash">cd /ros2_ws
+ros2 bag record -a -o my_run -s mcap              # 모든 토픽 기록 (mcap 형식), 10초 뒤 Ctrl+C
+ros2 bag record /scan /odom /tf /tf_static -o run2 -s mcap   # 특정 토픽만 (09 단계 패턴)
+ros2 bag info my_run
+ros2 bag play my_run                             # talker 를 끈 채로 재생하면 listener 가 과거 메시지를 받는다
+ros2 bag play my_run --rate 0.5                  # 절반 속도로</code></pre>
+      <p><code>my_run/</code> 디렉터리는 호스트의 <code>~/ros2_rpi5/ros2_ws/my_run/</code> 이다. <code>scp</code> 로 Mac 에 가져와 Foxglove 의 <strong>Open local file</strong> 로 열면 Pi 없이도 분석할 수 있다. <code>.gitignore</code> 가 <code>rosbag2_*/</code> 와 <code>*.bag</code> 을 제외하므로 저장소에는 들어가지 않는다 — 이름을 <code>rosbag2_</code> 로 시작하게 두는 것이 안전하다.</p>
+
+      <h3>3-10. 그래프를 그림으로</h3>
+      <p>Pi 는 헤드리스라 <code>rqt_graph</code> 를 띄울 수 없다. Mac 의 Foxglove 에서 <strong>Topic Graph</strong> 패널을 연다(02 단계에서 브리지를 띄워 두었다). talker / listener / 직접 띄운 pub 이 <code>/chatter</code> 로 이어진 그림이 보인다.
+      <strong>문제가 생기면 로그보다 이 그림을 먼저 본다.</strong> 화살표가 없는 곳이 문제다.</p>
+
+      <h2>✅ 검증 체크포인트</h2>
+      <p>아무것도 보고 베끼지 말고 직접 쳐서 통과하십시오.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox"><span>talker/listener 를 띄우고 <code>ros2 node list</code> 로 둘 다 확인했고, <code>ros2 node info /talker</code> 의 여섯 구역(Pub/Sub/Service Server·Client/Action Server·Client)을 읽었다</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 topic hz /chatter</code> 로 발행 주파수를 측정했다</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 topic pub</code> 로 <code>/chatter</code> 에 직접 메시지를 쏴서 listener 에 찍히게 했다</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 interface show geometry_msgs/msg/Twist</code> 의 여섯 필드 중 차동구동이 쓰는 두 개를 말할 수 있다</span></label></li>
+        <li><label><input type="checkbox"><span><code>add_two_ints_server</code> 에 <code>ros2 service call</code> 로 요청해 <code>sum</code> 을 받았고, 서버를 끈 뒤 호출이 대기하는 것을 봤다</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 action send_goal … --feedback</code> 으로 피드백이 여러 번 오는 것과, <kbd>Ctrl</kbd>+<kbd>C</kbd> 로 취소되는 것을 봤다</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 interface show nav2_msgs/action/NavigateToPose</code> 의 Goal / Result / Feedback 세 부분을 구분해 읽었다</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 param set</code> 으로 실행 중인 노드의 파라미터를 바꿨고, 선언되지 않은 파라미터가 거부되는 것을 봤다</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 topic info /chatter -v</code> 에서 발행자와 구독자의 QoS 를 나란히 읽을 수 있다</span></label></li>
+        <li><label><input type="checkbox"><span><code>transient_local</code> 발행자에 늦게 붙은 구독자가 마지막 값을 즉시 받는 것을 확인했다</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 bag record -s mcap</code> 로 10초 기록 후 <code>ros2 bag play</code> 로 재생해 listener 가 반응하는 것을 확인했다</span></label></li>
+        <li><label><input type="checkbox"><span>Foxglove Topic Graph 패널에서 talker → /chatter → listener 그림을 봤다</span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2>🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. 라이다 스캔을 보내는 데 서비스를 쓰면 안 되는 이유는?</summary>
+        <div class="ans">스캔은 초당 5~10회 이상 <strong>계속 흐르는</strong> 데이터다. 서비스는 요청이 있을 때만 응답하고 호출자가 대기한다. 초당 10번 서비스를 호출하면 오버헤드가 크고, 구독자가 여러 개면 각각 호출해야 한다.
+        토픽은 한 번 발행하면 N 명이 동시에 받는다.</div></details>
+      <details class="quiz"><summary>2. "목표 지점까지 이동"을 서비스로 만들면 무엇이 곤란한가?</summary>
+        <div class="ans">① 도착까지 수십 초 동안 호출자가 블로킹된다. ② 진행 상황을 알 수 없다 — 당신의 ⑤ "수행 정도 판정"이 불가능해진다. ③ 사람이 뛰어들어도 취소할 방법이 없다. 그래서 액션을 쓴다.</div></details>
+      <details class="quiz"><summary>3. 발행자는 <code>BEST_EFFORT</code>, 구독자는 <code>RELIABLE</code> 일 때 무슨 일이 일어나는가?</summary>
+        <div class="ans"><strong>연결되지 않는다.</strong> 구독자가 요구하는 품질을 발행자가 보장할 수 없기 때문이다. 에러 메시지 없이 그냥 데이터가 안 온다. <code>ros2 topic info -v</code> 로 양쪽 QoS 를 비교해야 알 수 있다.
+        반대(발행 RELIABLE, 구독 BEST_EFFORT)는 연결된다.</div></details>
+      <details class="quiz"><summary>4. <code>/map</code> 이나 <code>/robot_description</code> 을 <code>TRANSIENT_LOCAL</code> 로 발행하는 이유는?</summary>
+        <div class="ans">이 값들은 가끔만 바뀌고(지도는 몇 초에 한 번, URDF 는 한 번), 늦게 뜬 노드(Foxglove, Nav2 의 costmap)도 <strong>마지막 값</strong>을 받아야 한다. VOLATILE 이면 구독 시작 이후 발행된 것만 받으므로, 다음 발행까지 지도가 없는 상태가 된다.
+        대신 구독자도 TRANSIENT_LOCAL 로 맞춰야 한다 — <code>nav2_params.yaml</code> 의 <code>map_subscribe_transient_local: true</code> 가 그것이다.</div></details>
+      <details class="quiz"><summary>5. 라이다를 다른 모델로 교체하면 SLAM 노드를 고쳐야 하는가?</summary>
+        <div class="ans">아니다. SLAM 은 <code>/scan</code> 토픽의 <code>sensor_msgs/LaserScan</code> 만 본다. 드라이버 노드만 교체하면 된다. 이것이 노드를 쪼개는 이유다.
+        단, 새 라이다의 <code>frame_id</code> 가 URDF 의 링크 이름과 맞아야 한다(05 단계).</div></details>
+      <details class="quiz"><summary>6. 라이다 모터 정지(<code>stop_motor</code>)가 토픽도 액션도 아닌 서비스인 이유는?</summary>
+        <div class="ans">"모터를 멈춰라"는 <strong>즉시 끝나는 일회성 명령</strong>이고 성공했는지 확인이 필요하다. 계속 흐르는 데이터가 아니므로 토픽이 아니고, 오래 걸리지도 취소할 일도 없으므로 액션도 아니다. §2-5 의 세 질문을 그대로 적용한 결과다.</div></details>
+      <details class="quiz"><summary>7. 노드는 <code>ros2 node list</code> 에 보이는데 토픽이 하나도 안 나온다. 코드 외에 의심할 것 두 가지는?</summary>
+        <div class="ans">① 노드가 lifecycle 노드라서 아직 <code>activate</code> 되지 않았다(Nav2, 09 단계). ② 콜백 하나가 블로킹되어 Executor 가 멈춰 있다(무거운 처리나 sleep). 둘 다 "에러 없는 침묵"으로 나타난다.
+        그리고 늘 그렇듯 QoS 와 이름(네임스페이스·리매핑)을 <code>ros2 node info</code> 로 확인한다.</div></details>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

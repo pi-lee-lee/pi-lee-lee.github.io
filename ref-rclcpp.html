@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>부록 A · rclcpp 레퍼런스</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="ref-rclcpp">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">부록 A · rclcpp 레퍼런스</p>
+      <h1>C++ 로 ROS 2 노드를 쓰는 패턴 모음</h1>
+      <p class="lead">04·06·07·08a·08b·10 단계에서 반복해서 쓰는 rclcpp 패턴을 한 곳에 모았다.
+      각 패턴은 <strong>그대로 복사해서 쓸 수 있는 형태</strong>이고, 그 아래 한두 줄로 <em>왜 그렇게 쓰는지</em>를 붙였다.
+      단계 페이지에서 "부록 A 참조"라고 나오면 여기다. 처음부터 끝까지 읽는 문서가 아니라 필요한 절을 찾아 보는 문서다.</p>
+
+      <div class="goal">
+        <span class="label">이 부록의 쓰임</span>
+        <p>ROS 2 Humble(rclcpp 16.x, Ubuntu 22.04 컨테이너) 기준이다. Jazzy 이후에는 일부 헤더 확장자(<code>.h</code> → <code>.hpp</code>)와
+        멤버 함수가 달라진다. 이 문서의 코드는 04 단계의 <code>rpi5_hello_cpp</code> 처럼 <code>ament_cmake</code> 패키지 안에서 빌드하는 것을 전제로 한다.
+        C++ 문법 자체는 ROS 에 필요한 만큼만 다룬다(§1).</p>
+      </div>
+
+      <h2>1. ROS 를 위한 C++ 최소 문법</h2>
+      <p>rclcpp 코드가 낯설게 보이는 이유의 대부분은 ROS 가 아니라 <strong>현대 C++ 관용구</strong> 때문이다. 아래 열 가지만 알면 단계 페이지의 코드를 전부 읽을 수 있다.</p>
+
+      <h3>1-1. <code>std::shared_ptr</code> 와 <code>::SharedPtr</code> 관례</h3>
+      <pre><code class="lang-cpp">#include &lt;memory&gt;
+
+auto node = std::make_shared&lt;MyNode&gt;();            // 힙에 만들고 참조 카운트로 수명 관리
+rclcpp::Publisher&lt;std_msgs::msg::String&gt;::SharedPtr pub_;   // = std::shared_ptr&lt;Publisher&lt;...&gt;&gt;
+sensor_msgs::msg::Image::ConstSharedPtr msg;        // = std::shared_ptr&lt;const Image&gt;
+std_msgs::msg::String::UniquePtr m;                 // = std::unique_ptr&lt;String&gt; (소유권 이전)</code></pre>
+      <p>ROS 2 의 거의 모든 타입은 <code>T::SharedPtr</code>, <code>T::ConstSharedPtr</code>, <code>T::UniquePtr</code> 별칭을 갖는다.
+      참조 카운트가 0 이 되면 객체가 소멸하므로, <strong>발행자·구독자·타이머는 반드시 멤버 변수로 잡아 둔다</strong>(지역 변수면 생성자가 끝나는 순간 사라진다 — 04 단계 이해 확인 2번).</p>
+
+      <h3>1-2. <code>std::bind</code> 와 람다</h3>
+      <div class="two">
+        <div><pre><code class="lang-cpp">// std::bind — 멤버 함수를 콜백으로
+timer_ = create_wall_timer(
+  1s, std::bind(&amp;MyNode::on_timer, this));
+
+sub_ = create_subscription&lt;std_msgs::msg::String&gt;(
+  "hello", 10,
+  std::bind(&amp;MyNode::on_msg, this,
+            std::placeholders::_1));</code></pre></div>
+        <div><pre><code class="lang-cpp">// 람다 — 권장. 인자 개수를 틀릴 수 없고 짧다
+timer_ = create_wall_timer(
+  1s, [this]() { on_timer(); });
+
+sub_ = create_subscription&lt;std_msgs::msg::String&gt;(
+  "hello", 10,
+  [this](const std_msgs::msg::String &amp; msg) {
+    on_msg(msg);
+  });</code></pre></div>
+      </div>
+      <p><code>[this]</code> 는 "이 노드 객체를 캡처한다"는 뜻이다. 콜백 안에서 멤버(<code>pub_</code>, <code>get_logger()</code>)를 쓰려면 필요하다.
+      <code>std::bind</code> 는 <code>_1</code> 개수를 틀리면 컴파일 에러 메시지가 수백 줄이라 초보에게 불친절하다. 이 가이드는 람다를 기본으로 쓴다.</p>
+
+      <h3>1-3. 나머지 관용구 표</h3>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>관용구</th><th>예</th><th>왜 쓰는가</th></tr></thead>
+        <tbody>
+          <tr><td><code>auto</code></td><td><code>auto msg = std_msgs::msg::String();</code></td><td>긴 타입 이름 생략. 타입은 컴파일 시점에 확정된다</td></tr>
+          <tr><td><code>const T &amp;</code> 인자</td><td><code>void cb(const sensor_msgs::msg::LaserScan &amp; scan)</code></td><td>복사 없이 읽기 전용으로 받는다. 메시지는 수 KB~MB 라 값 전달은 낭비</td></tr>
+          <tr><td><code>using namespace std::chrono_literals;</code></td><td><code>1s</code>, <code>20ms</code>, <code>500us</code></td><td>타이머 주기·타임아웃을 단위 붙여 쓴다</td></tr>
+          <tr><td><code>std::optional&lt;T&gt;</code></td><td><code>std::optional&lt;McuState&gt; read_state();</code></td><td>"값이 없을 수도 있다"를 타입으로 표현. 06 의 프레임 읽기</td></tr>
+          <tr><td><code>std::atomic&lt;bool&gt;</code></td><td><code>std::atomic&lt;bool&gt; busy_{false};</code></td><td>스레드가 둘 이상일 때 락 없이 안전한 플래그. 08b 의 프레임 드롭</td></tr>
+          <tr><td><code>override</code></td><td><code>void on_activate() override;</code></td><td>부모 가상함수를 덮어쓴다는 선언. 오타를 컴파일 에러로 잡아 준다</td></tr>
+          <tr><td>RAII</td><td>소멸자에서 <code>close(fd_)</code>, <code>worker_.join()</code></td><td>객체가 사라질 때 자원이 자동으로 정리된다. 06 의 시리얼 포트</td></tr>
+          <tr><td><code>static_cast&lt;int&gt;(x)</code></td><td><code>static_cast&lt;int16_t&gt;(v * 1000.0)</code></td><td>C 스타일 캐스트보다 의도가 드러나고 검색이 된다</td></tr>
+          <tr><td><code>std::string::c_str()</code></td><td><code>RCLCPP_INFO(get_logger(), "%s", s.c_str())</code></td><td>로깅 매크로는 printf 형식이라 C 문자열이 필요하다</td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="callout warn"><span class="ct"><code>shared_from_this()</code> 는 생성자 안에서 못 쓴다</span>
+        <p><code>rclcpp::Node</code> 는 <code>enable_shared_from_this</code> 를 상속한다. 하지만 생성자가 실행되는 동안에는 아직 <code>shared_ptr</code> 가 이 객체를 가리키지 않으므로
+        <code>shared_from_this()</code> 가 <code>bad_weak_ptr</code> 예외를 던진다. <strong><code>image_transport::ImageTransport</code> 클래스가 <code>rclcpp::Node::SharedPtr</code> 를 요구해서
+        생성자 안에서 못 만드는 이유가 이것이다.</strong> 그래서 08a 는 raw 포인터 <code>this</code> 를 받는 자유 함수 <code>image_transport::create_subscription(this, …)</code> 를 쓴다.</p>
+      </div>
+      <p class="small">이 프로젝트에서 쓰는 곳: 04(첫 노드), 06(optional·RAII), 08a(자유 함수), 08b(atomic).</p>
+
+      <h2>2. 노드 해부</h2>
+      <pre><code class="lang-cpp">#include &lt;chrono&gt;
+#include &lt;memory&gt;
+#include "rclcpp/rclcpp.hpp"
+
+using namespace std::chrono_literals;
+
+class MyNode : public rclcpp::Node
+{
+public:
+  MyNode()
+  : Node("my_node")                        // ① 노드 이름 — YAML 파라미터 키와 매칭된다
+  {
+    // ② 파라미터 선언 → ③ 인터페이스 생성(발행/구독/서비스/타이머) → ④ 초기 로그
+    declare_parameter&lt;double&gt;("rate_hz", 10.0);
+    timer_ = create_wall_timer(
+      std::chrono::duration&lt;double&gt;(1.0 / get_parameter("rate_hz").as_double()),
+      [this]() { on_timer(); });
+    RCLCPP_INFO(get_logger(), "my_node started");
+  }
+
+  ~MyNode() override
+  {
+    // ⑤ 정리: 모터 정지 프레임 전송, 스레드 join, 파일 닫기 (RAII)
+  }
+
+private:
+  void on_timer() { /* 주기 작업 */ }
+
+  rclcpp::TimerBase::SharedPtr timer_;    // ⑥ 인터페이스는 멤버로 유지
+};
+
+int main(int argc, char ** argv)
+{
+  rclcpp::init(argc, argv);                // --ros-args 를 여기서 파싱한다
+  auto node = std::make_shared&lt;MyNode&gt;();
+  rclcpp::on_shutdown([node]() { /* Ctrl+C 시 한 번 호출 — 정지 명령 등 */ });
+  rclcpp::spin(node);                      // 콜백 루프 (블로킹)
+  rclcpp::shutdown();
+  return 0;
+}</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th><code>--ros-args</code> 뒤 인자</th><th>예</th><th>효과</th></tr></thead>
+        <tbody>
+          <tr><td><code>-p name:=value</code></td><td><code>-p rate_hz:=5.0 -p port:=/dev/mcu</code></td><td>파라미터 덮어쓰기(YAML 보다 우선)</td></tr>
+          <tr><td><code>--params-file f.yaml</code></td><td><code>--params-file robot_params.yaml</code></td><td>노드 이름 키 아래 값을 주입</td></tr>
+          <tr><td><code>-r old:=new</code></td><td><code>-r /cmd_vel:=/cmd_vel_nav</code></td><td>토픽·서비스 리매핑</td></tr>
+          <tr><td><code>-r __node:=name</code></td><td><code>-r __node:=camera</code></td><td>노드 이름 변경(08 의 camera_ros)</td></tr>
+          <tr><td><code>-r __ns:=/ns</code></td><td><code>-r __ns:=/robot1</code></td><td>네임스페이스</td></tr>
+          <tr><td><code>--log-level L</code></td><td><code>--log-level debug</code>, <code>--log-level mcu_bridge:=debug</code></td><td>로그 레벨(전체 또는 노드별)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">이 프로젝트에서 쓰는 곳: 모든 C++ 노드. 종료 시 정지 명령은 06.</p>
+
+      <h2>3. 발행 · 구독 · 타이머</h2>
+      <pre><code class="lang-cpp">#include "std_msgs/msg/string.hpp"
+#include "sensor_msgs/msg/laser_scan.hpp"
+
+// 발행자: &lt;타입&gt;(토픽, QoS)
+pub_ = create_publisher&lt;std_msgs::msg::String&gt;("hello", 10);
+auto msg = std_msgs::msg::String();
+msg.data = "hi";
+pub_-&gt;publish(msg);
+
+// 구독자 — 콜백 시그니처는 세 가지 중 하나
+sub_a_ = create_subscription&lt;sensor_msgs::msg::LaserScan&gt;(
+  "/scan", rclcpp::SensorDataQoS(),
+  [this](const sensor_msgs::msg::LaserScan &amp; scan) { /* ① 참조: 가장 단순 */ });
+
+sub_b_ = create_subscription&lt;sensor_msgs::msg::LaserScan&gt;(
+  "/scan", rclcpp::SensorDataQoS(),
+  [this](sensor_msgs::msg::LaserScan::ConstSharedPtr scan) { /* ② 공유 포인터: 보관·큐잉할 때 */ });
+
+sub_c_ = create_subscription&lt;sensor_msgs::msg::LaserScan&gt;(
+  "/scan", rclcpp::SensorDataQoS(),
+  [this](sensor_msgs::msg::LaserScan::UniquePtr scan) { /* ③ 단독 소유: 프로세스 내 무복사 전달 */ });
+
+// 타이머 ① 벽시계(wall clock) — 대부분의 주기 작업
+timer_ = create_wall_timer(20ms, [this]() { on_timer(); });
+
+// 타이머 ② ROS 시계 — use_sim_time / rosbag 재생 시간을 따른다 (Humble 은 자유 함수)
+#include "rclcpp/create_timer.hpp"
+ros_timer_ = rclcpp::create_timer(
+  this, get_clock(), rclcpp::Duration::from_seconds(0.02), [this]() { on_timer(); });</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>메시지 타입</th><th>헤더 파일</th><th>규칙</th></tr></thead>
+        <tbody>
+          <tr><td><code>std_msgs::msg::String</code></td><td><code>std_msgs/msg/string.hpp</code></td><td rowspan="5">CamelCase → snake_case. 숫자 뒤 대문자는 <code>_</code> 로 끊긴다:<br><code>Detection2DArray</code> → <code>detection2_d_array</code></td></tr>
+          <tr><td><code>geometry_msgs::msg::PoseStamped</code></td><td><code>geometry_msgs/msg/pose_stamped.hpp</code></td></tr>
+          <tr><td><code>sensor_msgs::msg::LaserScan</code></td><td><code>sensor_msgs/msg/laser_scan.hpp</code></td></tr>
+          <tr><td><code>vision_msgs::msg::Detection2DArray</code></td><td><code>vision_msgs/msg/detection2_d_array.hpp</code></td></tr>
+          <tr><td><code>nav2_msgs::action::NavigateToPose</code></td><td><code>nav2_msgs/action/navigate_to_pose.hpp</code></td></tr>
+        </tbody>
+      </table></div>
+      <pre><code class="lang-cpp">// 시간
+rclcpp::Time now = this-&gt;now();                 // use_sim_time 을 따르는 ROS 시각
+msg.header.stamp = now;                          // builtin_interfaces/Time 으로 자동 변환
+double age = (now - rclcpp::Time(msg.header.stamp)).seconds();   // 메시지 나이 [s]
+int64_t ns = now.nanoseconds();
+rclcpp::Duration d = rclcpp::Duration::from_seconds(0.5);
+if (now - last_cmd_time_ &gt; d) { /* 워치독 */ }</code></pre>
+      <div class="callout note"><span class="ct">헤더 파일 이름이 안 맞을 때</span>
+        <p><code>fatal error: vision_msgs/msg/detection2d_array.hpp: No such file</code> 처럼 나오면 규칙을 잘못 적용한 것이다.
+        컨테이너에서 <code>ls /opt/ros/humble/include/vision_msgs/vision_msgs/msg/ | grep -i detection</code> 으로 실제 이름을 본다.</p>
+      </div>
+      <p class="small">이 프로젝트에서 쓰는 곳: 04(첫 pub/sub), 06(타이머 50 Hz), 07(scan_watch), 08a(이미지 콜백).</p>
+
+      <h2>4. 파라미터</h2>
+      <pre><code class="lang-cpp">// 선언 — 선언하지 않은 파라미터는 거부된다 (선언이 곧 인터페이스)
+declare_parameter&lt;std::string&gt;("port", "/dev/mcu");
+declare_parameter&lt;int&gt;("baudrate", 115200);
+declare_parameter&lt;double&gt;("wheel_radius", 0.0);
+declare_parameter&lt;bool&gt;("simulate", true);
+declare_parameter&lt;std::vector&lt;double&gt;&gt;("waypoints", std::vector&lt;double&gt;{});
+declare_parameter&lt;std::vector&lt;std::string&gt;&gt;("class_filter", std::vector&lt;std::string&gt;{});
+
+// 읽기 — 타입별 as_*()
+const auto port  = get_parameter("port").as_string();
+const int  baud  = get_parameter("baudrate").as_int();          // int64_t
+const auto r     = get_parameter("wheel_radius").as_double();
+const bool sim   = get_parameter("simulate").as_bool();
+const auto wps   = get_parameter("waypoints").as_double_array();
+const auto names = get_parameter("class_filter").as_string_array();
+
+// 선언과 읽기를 한 줄로
+const double rate = declare_parameter&lt;double&gt;("rate_hz", 50.0);</code></pre>
+      <div class="callout warn"><span class="ct">YAML 의 타입은 선언 타입과 정확히 같아야 한다</span>
+        <p><code>declare_parameter&lt;int&gt;("encoder_cpr", 0)</code> 인데 YAML 에 <code>encoder_cpr: 3960.0</code> 이라고 쓰면 시작할 때
+        <code>rclcpp::exceptions::InvalidParameterTypeException</code> 으로 죽는다. 반대로 <code>double</code> 선언에 <code>0.0325</code> 대신 <code>1</code> 을 쓰면 정수로 해석되어 역시 예외다.
+        <code>double</code> 은 항상 소수점을 붙여 쓴다.</p>
+      </div>
+      <h3>런타임 변경 받기 — <code>add_on_set_parameters_callback</code></h3>
+      <pre><code class="lang-cpp">#include "rcl_interfaces/msg/set_parameters_result.hpp"
+
+// 멤버: 핸들을 잡고 있어야 콜백이 유지된다
+rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_cb_;
+
+// 생성자 안
+param_cb_ = add_on_set_parameters_callback(
+  [this](const std::vector&lt;rclcpp::Parameter&gt; &amp; params) {
+    rcl_interfaces::msg::SetParametersResult result;
+    result.successful = true;
+    for (const auto &amp; p : params) {
+      if (p.get_name() == "conf_threshold") {
+        const double v = p.as_double();
+        if (v &lt; 0.0 || v &gt; 1.0) { result.successful = false; result.reason = "0~1"; }
+        else { conf_threshold_ = v; }              // ros2 param set 이 여기로 들어온다
+      }
+    }
+    return result;
+  });</code></pre>
+      <p>콜백을 등록하지 않으면 <code>ros2 param set</code> 은 값을 바꾸지만 노드는 <em>생성자에서 읽어 둔 옛 값</em>을 계속 쓴다. 매 콜백에서 <code>get_parameter()</code> 를 다시 읽는 방법(단순, 약간의 비용)도 있다 — 08a 가 그 방식이다.</p>
+      <div class="callout why"><span class="ct"><code>--params-file</code> 은 노드 이름으로 매칭한다</span>
+        <p>YAML 의 최상위 키(<code>mcu_bridge:</code>)와 실행 중인 노드 이름이 다르면 <strong>에러 없이 통째로 무시</strong>되고 기본값이 쓰인다.
+        런치의 <code>name=</code>, <code>-r __node:=</code>, 생성자의 <code>Node("…")</code> 세 곳 중 무엇이 최종 이름인지 <code>ros2 node list</code> 로 확인한다. 07 단계의 함정 ②가 이것이다.</p>
+      </div>
+      <p class="small">이 프로젝트에서 쓰는 곳: 06(제원 파라미터), 08a(mode), 08b(임계값), 10(waypoints 배열).</p>
+
+      <h2>5. QoS</h2>
+      <pre><code class="lang-cpp">// 빌더 — 깊이 10 에서 시작해 정책을 바꿔 나간다
+auto qos_cmd  = rclcpp::QoS(10).reliable();                          // /cmd_vel, /odom
+auto qos_sens = rclcpp::QoS(10).best_effort();                       // 센서 스트림
+auto qos_last = rclcpp::QoS(1).best_effort();                        // 최신 프레임만 (08b /detections)
+auto qos_map  = rclcpp::QoS(1).reliable().transient_local();         // 늦게 구독해도 마지막 값 수신 (/map, /tf_static)
+auto qos_all  = rclcpp::QoS(rclcpp::KeepAll()).reliable();
+
+// 프리셋
+rclcpp::SensorDataQoS()          // best_effort + volatile + keep_last(5)  ← /scan, /camera/* 구독
+rclcpp::SystemDefaultsQoS()      // rmw 기본
+rclcpp::ParametersQoS(), rclcpp::ServicesQoS()
+
+// image_transport 처럼 rmw 프로파일을 요구하는 API
+rmw_qos_profile_t p = rmw_qos_profile_sensor_data;
+p.depth = 1;
+image_transport::create_subscription(this, "/camera/image_raw", cb, "raw", p);
+
+// rmw 프로파일 → rclcpp::QoS
+rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(p), p);</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>발행자 \ 구독자</th><th>RELIABLE</th><th>BEST_EFFORT</th></tr></thead>
+        <tbody>
+          <tr><th>RELIABLE</th><td>연결</td><td>연결</td></tr>
+          <tr><th>BEST_EFFORT</th><td><strong>연결 안 됨 (침묵)</strong></td><td>연결</td></tr>
+        </tbody>
+      </table></div>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>발행자 \ 구독자</th><th>VOLATILE</th><th>TRANSIENT_LOCAL</th></tr></thead>
+        <tbody>
+          <tr><th>VOLATILE</th><td>연결</td><td><strong>연결 안 됨</strong></td></tr>
+          <tr><th>TRANSIENT_LOCAL</th><td>연결</td><td>연결</td></tr>
+        </tbody>
+      </table></div>
+      <p>규칙: <strong>구독자가 요구하는 것을 발행자가 보장할 수 있어야 연결된다.</strong> 에러 메시지는 없다. <code>ros2 topic info /토픽 -v</code> 가 유일한 진단 도구다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>토픽</th><th>발행 QoS</th><th>구독 시</th><th>이유</th></tr></thead>
+        <tbody>
+          <tr><td><code>/scan</code></td><td>BEST_EFFORT (드라이버)</td><td><code>SensorDataQoS()</code></td><td>재전송된 옛 스캔은 쓸모없다</td></tr>
+          <tr><td><code>/camera/image_raw</code></td><td>BEST_EFFORT</td><td><code>rmw_qos_profile_sensor_data</code>, depth 1</td><td>최신 프레임만</td></tr>
+          <tr><td><code>/detections</code></td><td>BEST_EFFORT, depth 1</td><td><code>QoS(1).best_effort()</code></td><td>결과도 프레임과 같은 성질</td></tr>
+          <tr><td><code>/odom</code></td><td><strong>RELIABLE</strong></td><td>RELIABLE</td><td>Nav2·EKF 구독자가 RELIABLE 을 요구한다</td></tr>
+          <tr><td><code>/cmd_vel</code></td><td>RELIABLE</td><td>RELIABLE</td><td>명령은 잃으면 안 된다</td></tr>
+          <tr><td><code>/tf_static</code>, <code>/map</code></td><td>TRANSIENT_LOCAL</td><td>TRANSIENT_LOCAL</td><td>늦게 뜬 노드도 마지막 값을 받아야 한다</td></tr>
+          <tr><td><code>/mission/state</code></td><td>RELIABLE, TRANSIENT_LOCAL 도 무방</td><td>기본</td><td>드물게 바뀌는 상태</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">이 프로젝트에서 쓰는 곳: 03(개념), 04(실험), 06(/odom RELIABLE), 07·08a·08b(센서 QoS).</p>
+
+      <h2>6. 로깅</h2>
+      <pre><code class="lang-cpp">RCLCPP_DEBUG(get_logger(), "tick %d", i);              // --log-level debug 일 때만
+RCLCPP_INFO (get_logger(), "port=%s", port.c_str());
+RCLCPP_WARN (get_logger(), "battery %.2f V", v);
+RCLCPP_ERROR(get_logger(), "serial open failed: %s", strerror(errno));
+
+// 주기 콜백에서는 반드시 THROTTLE — 50 Hz 로 로그를 찍으면 터미널과 CPU 가 죽는다
+RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000, "front min %.2f m", d);   // 1000 ms 에 한 번
+RCLCPP_WARN_ONCE(get_logger(), "simulate:=true — fake MCU");                     // 딱 한 번
+RCLCPP_INFO_STREAM(get_logger(), "shape " &lt;&lt; rows &lt;&lt; "x" &lt;&lt; cols);             // iostream 식
+
+// 조건부
+RCLCPP_ERROR_EXPRESSION(get_logger(), state.fault != 0, "MCU fault 0x%02X", state.fault);</code></pre>
+      <pre><code class="lang-bash"># 실행 중 레벨 변경 (Humble: 노드가 logger 서비스를 켰을 때) / 시작 시 지정
+ros2 run rpi5_mcu_bridge_cpp mcu_bridge_node --ros-args --log-level mcu_bridge:=debug
+# 출력 형식은 compose 의 RCUTILS_CONSOLE_OUTPUT_FORMAT 이 정한다 (02 단계)</code></pre>
+      <p class="small">이 프로젝트에서 쓰는 곳: 전부. THROTTLE 은 06·07·08a·08b 의 주기 콜백.</p>
+
+      <h2>7. TF2</h2>
+      <pre><code class="lang-cmake"># CMakeLists.txt / package.xml 양쪽에
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+ament_target_dependencies(my_node rclcpp tf2 tf2_ros tf2_geometry_msgs geometry_msgs)</code></pre>
+      <h3>7-1. 발행 (동적 · 정적)</h3>
+      <pre><code class="lang-cpp">#include "tf2_ros/transform_broadcaster.h"
+#include "tf2_ros/static_transform_broadcaster.h"
+#include "tf2/LinearMath/Quaternion.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"     // tf2::toMsg / fromMsg
+#include "geometry_msgs/msg/transform_stamped.hpp"
+
+std::unique_ptr&lt;tf2_ros::TransformBroadcaster&gt; tf_bc_;
+std::shared_ptr&lt;tf2_ros::StaticTransformBroadcaster&gt; static_bc_;
+
+// 생성자
+tf_bc_ = std::make_unique&lt;tf2_ros::TransformBroadcaster&gt;(*this);
+static_bc_ = std::make_shared&lt;tf2_ros::StaticTransformBroadcaster&gt;(this);
+
+// 매 주기: odom → base_link
+geometry_msgs::msg::TransformStamped t;
+t.header.stamp = now();
+t.header.frame_id = "odom";            // 부모
+t.child_frame_id = "base_link";        // 자식 — 부모는 하나뿐 (05 철칙)
+t.transform.translation.x = x_;
+t.transform.translation.y = y_;
+tf2::Quaternion q;
+q.setRPY(0.0, 0.0, theta_);
+t.transform.rotation = tf2::toMsg(q);
+tf_bc_-&gt;sendTransform(t);              // /tf 로 나간다
+
+// 한 번만: 고정 관계는 /tf_static (TRANSIENT_LOCAL)
+static_bc_-&gt;sendTransform(t_fixed);</code></pre>
+      <h3>7-2. 조회</h3>
+      <pre><code class="lang-cpp">#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_listener.h"
+#include "tf2/exceptions.h"
+#include "tf2/utils.h"                                   // tf2::getYaw
+#include "geometry_msgs/msg/point_stamped.hpp"
+
+std::unique_ptr&lt;tf2_ros::Buffer&gt; tf_buffer_;
+std::shared_ptr&lt;tf2_ros::TransformListener&gt; tf_listener_;
+
+// 생성자 — 리스너는 /tf, /tf_static 을 구독해 버퍼(기본 10 s)를 채운다
+tf_buffer_ = std::make_unique&lt;tf2_ros::Buffer&gt;(get_clock());
+tf_listener_ = std::make_shared&lt;tf2_ros::TransformListener&gt;(*tf_buffer_);
+
+// 조회 ① 가장 최근 값
+try {
+  auto tf = tf_buffer_-&gt;lookupTransform("base_link", "camera_optical_link", tf2::TimePointZero);
+  //                                     target(기준)   source(변환할 것)
+  double yaw = tf2::getYaw(tf.transform.rotation);
+} catch (const tf2::TransformException &amp; ex) {
+  RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "TF: %s", ex.what());
+  return;                                                // 이번 주기는 건너뛴다
+}
+
+// 조회 ② 메시지 시각 기준 + 타임아웃 (센서 데이터를 변환할 때 — 촬영 시점의 자세를 쓴다)
+auto tf = tf_buffer_-&gt;lookupTransform(
+  "map", scan.header.frame_id, rclcpp::Time(scan.header.stamp), rclcpp::Duration::from_seconds(0.1));
+
+// 점 하나를 다른 프레임으로
+geometry_msgs::msg::PointStamped p_in, p_out;
+p_in.header = scan.header;                               // frame_id = laser_link, stamp = 측정 시각
+p_in.point.x = range * std::cos(angle);
+p_in.point.y = range * std::sin(angle);
+tf2::doTransform(p_in, p_out, tf);                       // 또는 tf_buffer_-&gt;transform(p_in, "base_link", tf2::durationFromSec(0.1))</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>예외 메시지</th><th>뜻</th><th>보통의 원인</th></tr></thead>
+        <tbody>
+          <tr><td><code>"…" passed to lookupTransform argument target_frame does not exist</code></td><td>그 프레임을 아무도 발행 안 함</td><td>이름 오타, 드라이버 frame_id ≠ URDF</td></tr>
+          <tr><td><code>Lookup would require extrapolation into the future</code></td><td>요청 시각이 버퍼의 최신 값보다 미래</td><td>시계 불일치, TF 발행 지연 → 타임아웃을 주거나 TimePointZero</td></tr>
+          <tr><td><code>… into the past</code></td><td>버퍼(10 s)보다 오래된 시각</td><td>처리가 너무 늦음, rosbag 재생 시 use_sim_time 누락</td></tr>
+          <tr><td><code>Could not find a connection between …</code></td><td>트리가 끊김</td><td><code>view_frames</code> 로 조각 확인(05)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">이 프로젝트에서 쓰는 곳: 05(개념·미리보기), 06(브로드캐스트), 07 확장 과제와 10(조회·doTransform).</p>
+
+      <h2>8. 서비스</h2>
+      <pre><code class="lang-cpp">#include "std_srvs/srv/trigger.hpp"
+
+// ── 서버: 즉시 끝나는 일회성 명령 (03 단계 판단 기준)
+rclcpp::Service&lt;std_srvs::srv::Trigger&gt;::SharedPtr srv_;
+
+srv_ = create_service&lt;std_srvs::srv::Trigger&gt;(
+  "reset_odom",
+  [this](const std::shared_ptr&lt;std_srvs::srv::Trigger::Request&gt; req,
+         std::shared_ptr&lt;std_srvs::srv::Trigger::Response&gt; res) {
+    (void)req;                                 // Trigger 요청은 비어 있다
+    x_ = y_ = theta_ = 0.0;
+    res-&gt;success = true;
+    res-&gt;message = "odom reset";
+  });
+
+// ── 클라이언트: 반드시 비동기로
+rclcpp::Client&lt;std_srvs::srv::Trigger&gt;::SharedPtr client_;
+client_ = create_client&lt;std_srvs::srv::Trigger&gt;("reset_odom");
+
+void call_reset()
+{
+  if (!client_-&gt;wait_for_service(2s)) {
+    RCLCPP_ERROR(get_logger(), "reset_odom service not available");
+    return;
+  }
+  auto req = std::make_shared&lt;std_srvs::srv::Trigger::Request&gt;();
+  client_-&gt;async_send_request(
+    req,
+    [this](rclcpp::Client&lt;std_srvs::srv::Trigger&gt;::SharedFuture fut) {
+      auto res = fut.get();                    // 응답이 도착한 뒤에 불린다
+      RCLCPP_INFO(get_logger(), "reset: %s", res-&gt;message.c_str());
+    });
+}</code></pre>
+      <div class="callout warn"><span class="ct">콜백 안에서 <code>future.get()</code> 으로 기다리면 교착된다</span>
+        <p>단일 스레드 실행기는 콜백을 하나씩 돌린다. 구독 콜백 안에서 서비스 응답을 <em>동기</em>로 기다리면, 그 응답을 처리할 콜백이 <strong>같은 스레드에서 영원히 차례를 못 받는다.</strong>
+        응답은 항상 콜백으로 받는다. (<code>rclcpp::spin_until_future_complete</code> 는 <code>main</code> 처럼 spin 바깥에서만 쓴다.)</p>
+      </div>
+      <pre><code class="lang-bash">ros2 service call /reset_odom std_srvs/srv/Trigger        # 07 의 /lidar_node/stop_motor 와 같은 형식</code></pre>
+      <p class="small">이 프로젝트에서 쓰는 곳: 07(라이다 모터 서비스 호출), 06 확장(odom 리셋 서비스).</p>
+
+      <h2>9. 액션 클라이언트 — NavigateToPose</h2>
+      <pre><code class="lang-cmake">find_package(rclcpp_action REQUIRED)
+find_package(nav2_msgs REQUIRED)
+ament_target_dependencies(mission_supervisor rclcpp rclcpp_action nav2_msgs geometry_msgs tf2 tf2_geometry_msgs)</code></pre>
+      <pre><code class="lang-cpp">#include "rclcpp_action/rclcpp_action.hpp"
+#include "nav2_msgs/action/navigate_to_pose.hpp"
+#include "tf2/LinearMath/Quaternion.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+
+using NavigateToPose = nav2_msgs::action::NavigateToPose;
+using GoalHandle = rclcpp_action::ClientGoalHandle&lt;NavigateToPose&gt;;
+
+rclcpp_action::Client&lt;NavigateToPose&gt;::SharedPtr nav_client_;
+GoalHandle::SharedPtr goal_handle_;
+
+// 생성자
+nav_client_ = rclcpp_action::create_client&lt;NavigateToPose&gt;(this, "navigate_to_pose");
+
+void send_goal(double x, double y, double yaw)
+{
+  if (!nav_client_-&gt;wait_for_action_server(std::chrono::seconds(5))) {
+    RCLCPP_ERROR(get_logger(), "Nav2 action server not available — lifecycle active 인가? (09)");
+    return;
+  }
+  NavigateToPose::Goal goal;
+  goal.pose.header.frame_id = "map";
+  goal.pose.header.stamp = now();
+  goal.pose.pose.position.x = x;
+  goal.pose.pose.position.y = y;
+  tf2::Quaternion q;
+  q.setRPY(0.0, 0.0, yaw);
+  goal.pose.pose.orientation = tf2::toMsg(q);
+
+  auto options = rclcpp_action::Client&lt;NavigateToPose&gt;::SendGoalOptions();
+
+  options.goal_response_callback = [this](GoalHandle::SharedPtr handle) {
+    if (!handle) { RCLCPP_ERROR(get_logger(), "goal rejected"); return; }
+    goal_handle_ = handle;                                       // 취소할 때 필요
+  };
+
+  options.feedback_callback =
+    [this](GoalHandle::SharedPtr, const std::shared_ptr&lt;const NavigateToPose::Feedback&gt; fb) {
+      // ⑤ "계획 대비 수행 정도" 가 여기로 들어온다
+      RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
+        "remaining %.2f m, recoveries %d, t=%.1f s",
+        fb-&gt;distance_remaining, fb-&gt;number_of_recoveries,
+        rclcpp::Duration(fb-&gt;navigation_time).seconds());
+    };
+
+  options.result_callback = [this](const GoalHandle::WrappedResult &amp; result) {
+    goal_handle_.reset();
+    switch (result.code) {
+      case rclcpp_action::ResultCode::SUCCEEDED: RCLCPP_INFO(get_logger(), "arrived"); break;
+      case rclcpp_action::ResultCode::ABORTED:   RCLCPP_WARN(get_logger(), "aborted by Nav2"); break;
+      case rclcpp_action::ResultCode::CANCELED:  RCLCPP_WARN(get_logger(), "canceled"); break;
+      default:                                    RCLCPP_ERROR(get_logger(), "unknown result"); break;
+    }
+  };
+
+  nav_client_-&gt;async_send_goal(goal, options);
+}
+
+void cancel_goal()
+{
+  if (goal_handle_) { nav_client_-&gt;async_cancel_goal(goal_handle_); }
+}</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>피드백 필드</th><th>타입</th><th>감독 노드에서의 쓰임</th></tr></thead>
+        <tbody>
+          <tr><td><code>current_pose</code></td><td>PoseStamped</td><td>지도 기준 현재 위치(로그·시각화)</td></tr>
+          <tr><td><code>navigation_time</code></td><td>Duration</td><td>이 목표에 쓴 시간 — 상한 초과 시 취소</td></tr>
+          <tr><td><code>estimated_time_remaining</code></td><td>Duration</td><td>참고값(경로 길이/속도 추정)</td></tr>
+          <tr><td><code>number_of_recoveries</code></td><td>int16</td><td>복구 행동 횟수 — 급증하면 막혔다는 신호</td></tr>
+          <tr><td><code>distance_remaining</code></td><td>float32</td><td>남은 경로 길이[m] — 일정 시간 줄지 않으면 정체(stall)</td></tr>
+        </tbody>
+      </table></div>
+      <p>액션 <em>서버</em>는 목표 수락(<code>handle_goal</code>)·취소(<code>handle_cancel</code>)·실행(<code>handle_accepted</code> → 별도 스레드에서 <code>publish_feedback</code>/<code>succeed</code>) 세 콜백으로 만든다. 이 프로젝트에서는 Nav2 가 서버이고 우리는 클라이언트만 쓴다.</p>
+      <p class="small">이 프로젝트에서 쓰는 곳: 09(CLI 로 같은 액션), 10(mission_supervisor).</p>
+
+      <h2>10. 실행기와 콜백 그룹</h2>
+      <pre class="diagram"><code>  SingleThreadedExecutor (rclcpp::spin 의 기본)
+    큐: [scan 콜백][timer][image 콜백(300 ms 추론)][param 서비스] …  ← 한 스레드가 순서대로
+                                          └── 이 300 ms 동안 나머지 전부 대기
+
+  MultiThreadedExecutor + 콜백 그룹
+    스레드 1: [image 콜백(추론)]                ← Reentrant 또는 전용 MutuallyExclusive 그룹
+    스레드 2: [scan][timer][param][scan] …      ← 나머지는 계속 돈다</code></pre>
+      <pre><code class="lang-cpp">// main — 스레드 2개짜리 실행기
+int main(int argc, char ** argv)
+{
+  rclcpp::init(argc, argv);
+  auto node = std::make_shared&lt;YoloDetector&gt;();
+  rclcpp::executors::MultiThreadedExecutor exec(rclcpp::ExecutorOptions(), 2);
+  exec.add_node(node);
+  exec.spin();
+  rclcpp::shutdown();
+  return 0;
+}
+
+// 노드 안 — 무거운 콜백을 전용 그룹에 넣는다
+rclcpp::CallbackGroup::SharedPtr infer_group_;
+
+infer_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+//   MutuallyExclusive: 이 그룹 안의 콜백은 동시에 하나만 (자기 자신과 겹치지 않음)
+//   Reentrant        : 같은 콜백이 동시에 여러 개 돌 수 있음 (데이터 경쟁 주의)
+
+rclcpp::SubscriptionOptions opts;
+opts.callback_group = infer_group_;
+sub_ = create_subscription&lt;sensor_msgs::msg::Image&gt;(
+  "/camera/image_raw", rclcpp::SensorDataQoS().keep_last(1),
+  [this](sensor_msgs::msg::Image::ConstSharedPtr msg) { infer(msg); }, opts);
+
+// 타이머도 그룹을 받는다 (세 번째 인자)
+timer_ = create_wall_timer(500ms, [this]() { publish_state(); }, state_group_);</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th></th><th>① 콜백 그룹 + MultiThreadedExecutor</th><th>② 워커 스레드 + 최신 프레임 슬롯</th></tr></thead>
+        <tbody>
+          <tr><td>구조</td><td>ROS 가 스레드를 준다. 코드 변경 최소</td><td>내가 <code>std::thread</code> 를 만들고 콜백은 슬롯에 넣기만</td></tr>
+          <tr><td>프레임 드롭</td><td>큐 깊이 1 + <code>busy_</code> 플래그로 직접</td><td>슬롯이 하나라 자연스럽게 최신만 남는다</td></tr>
+          <tr><td>공유 데이터</td><td>다른 그룹 콜백과 동시에 돌 수 있다 → <code>mutex</code>/<code>atomic</code> 필요</td><td>슬롯 접근만 <code>mutex</code></td></tr>
+          <tr><td>종료</td><td>실행기가 처리</td><td>소멸자에서 <code>running_=false; join()</code></td></tr>
+          <tr><td>적합</td><td>대부분의 경우. 08b 의 1단계</td><td>추론 라이브러리가 자체 스레드를 요구하거나 주기와 무관할 때</td></tr>
+        </tbody>
+      </table></div>
+      <pre><code class="lang-cpp">// ② 워커 스레드 패턴의 핵심
+std::mutex mtx_;
+sensor_msgs::msg::Image::ConstSharedPtr latest_;
+std::thread worker_;
+std::atomic&lt;bool&gt; running_{true};
+
+// 구독 콜백: 넣기만 한다 (수 μs)
+void on_image(sensor_msgs::msg::Image::ConstSharedPtr msg)
+{
+  std::lock_guard&lt;std::mutex&gt; lk(mtx_);
+  latest_ = msg;                                   // 이전 프레임은 버려진다
+}
+
+// 워커: 꺼내서 처리
+void worker_loop()
+{
+  while (running_ &amp;&amp; rclcpp::ok()) {
+    sensor_msgs::msg::Image::ConstSharedPtr frame;
+    { std::lock_guard&lt;std::mutex&gt; lk(mtx_); frame.swap(latest_); }
+    if (!frame) { std::this_thread::sleep_for(5ms); continue; }
+    process(frame);                                // 여기서 publish 해도 된다 (publisher 는 스레드 안전)
+  }
+}
+// 생성자 끝: worker_ = std::thread([this]() { worker_loop(); });
+// 소멸자:    running_ = false; if (worker_.joinable()) worker_.join();</code></pre>
+      <div class="callout why"><span class="ct">언제 락이 필요해지는가</span>
+        <p>단일 스레드 실행기에서는 콜백이 겹치지 않으므로 멤버 변수를 그냥 써도 된다(06 의 C++ 브리지에 Python 판의 <code>Lock</code> 이 없는 이유).
+        <strong>스레드가 둘 이상이 되는 순간</strong>(MultiThreaded 실행기, 워커 스레드, Reentrant 그룹) 같은 변수를 두 곳에서 읽고 쓰면 데이터 경쟁이다.
+        플래그 하나면 <code>std::atomic</code>, 구조체·포인터·컨테이너면 <code>std::mutex</code> + <code>lock_guard</code>. 락을 잡은 채로 publish 나 추론처럼 오래 걸리는 일을 하지 않는다.</p>
+      </div>
+      <p class="small">이 프로젝트에서 쓰는 곳: 04(spin 의 원리), 08a(단일 스레드 캐시), 08b(추론 분리).</p>
+
+      <h2>11. 라이프사이클 노드와 컴포넌트 (개요)</h2>
+      <pre class="diagram"><code>  unconfigured ──configure──► inactive ──activate──► active ──deactivate──► inactive
+        ▲                                                │
+        └──────────── cleanup ◄──────────────────────────┘        (어느 상태에서든 shutdown → finalized)</code></pre>
+      <p>Nav2 의 서버들(<code>controller_server</code>, <code>planner_server</code>, <code>bt_navigator</code>…)은 <code>rclcpp_lifecycle::LifecycleNode</code> 다.
+      <strong>파라미터 로드(configure)와 실제 동작(activate)을 분리</strong>해서, 시스템 전체를 정해진 순서로 켜고 끌 수 있게 한다. <code>lifecycle_manager</code> 가 그 순서를 지휘하고 <code>autostart</code> 가 자동으로 activate 까지 올린다.
+      "노드는 떠 있는데 아무것도 안 한다"는 대개 <code>inactive</code> 상태다(09 단계).</p>
+      <pre><code class="lang-bash">ros2 lifecycle list /controller_server        # 가능한 전이
+ros2 lifecycle get  /controller_server        # 현재 상태
+ros2 lifecycle set  /controller_server activate</code></pre>
+      <p><strong>컴포넌트</strong>는 노드를 공유 라이브러리로 만들어 한 프로세스에 여러 노드를 적재하는 방식이다(프로세스 내 통신으로 이미지 복사를 없앤다).
+      CMake 에 <code>rclcpp_components_register_node(my_lib PLUGIN "ns::MyNode" EXECUTABLE my_node)</code> 한 줄이 추가된다.
+      이 가이드에서는 쓰지 않는다 — 노드가 프로세스 하나씩일 때 <code>ros2 node list</code>·로그·크래시 격리가 단순해서 <em>학습에 유리</em>하기 때문이다. 10 단계 이후의 최적화 항목이다.</p>
+      <p class="small">이 프로젝트에서 쓰는 곳: 09(Nav2 상태 확인).</p>
+
+      <h2>12. CMake 치트시트</h2>
+      <pre><code class="lang-cmake">cmake_minimum_required(VERSION 3.8)
+project(rpi5_vision)
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+# Release 를 기본으로 (OpenCV 는 Debug 에서 수 배 느리다). colcon --cmake-args 가 우선한다.
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(vision_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(image_transport REQUIRED)
+find_package(OpenCV REQUIRED)                 # ROS 패키지가 아닌 일반 CMake 패키지
+
+# 헤더 전용 라이브러리를 include/&lt;pkg&gt;/ 에 두는 구조
+include_directories(include)
+
+# 실행파일 1
+add_executable(image_proc_node src/image_proc_node.cpp)
+ament_target_dependencies(image_proc_node rclcpp sensor_msgs cv_bridge image_transport)   # ROS 의존성
+target_include_directories(image_proc_node PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(image_proc_node ${OpenCV_LIBS})                                     # 일반 라이브러리
+
+# 실행파일 2
+add_executable(yolo_detector src/yolo_detector.cpp)
+ament_target_dependencies(yolo_detector rclcpp sensor_msgs vision_msgs cv_bridge image_transport)
+target_include_directories(yolo_detector PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(yolo_detector ${OpenCV_LIBS})
+
+install(TARGETS image_proc_node yolo_detector
+  DESTINATION lib/${PROJECT_NAME})                          # ros2 run 이 찾는 위치
+
+install(DIRECTORY launch config models
+  DESTINATION share/${PROJECT_NAME})                        # ros2 launch / FindPackageShare 가 찾는 위치
+
+ament_package()</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>package.xml 태그</th><th>뜻</th><th>예</th></tr></thead>
+        <tbody>
+          <tr><td><code>&lt;buildtool_depend&gt;</code></td><td>빌드 도구</td><td><code>ament_cmake</code></td></tr>
+          <tr><td><code>&lt;build_depend&gt;</code></td><td>컴파일에만 필요</td><td>헤더 전용 라이브러리</td></tr>
+          <tr><td><code>&lt;exec_depend&gt;</code></td><td>실행에만 필요</td><td>런치가 띄우는 다른 패키지(<code>rplidar_ros</code>)</td></tr>
+          <tr><td><code>&lt;depend&gt;</code></td><td>둘 다 — 대부분 이것</td><td><code>rclcpp</code>, <code>sensor_msgs</code>, <code>libopencv-dev</code></td></tr>
+          <tr><td><code>&lt;test_depend&gt;</code></td><td>테스트</td><td><code>ament_lint_auto</code></td></tr>
+        </tbody>
+      </table></div>
+      <p><code>rosdep</code> 은 <code>package.xml</code> 의 키를 apt 이름으로 바꿔 설치한다(<code>libopencv-dev</code> → <code>libopencv-dev</code>, <code>cv_bridge</code> → <code>ros-humble-cv-bridge</code>). colcon 은 같은 파일에서 빌드 순서를 정한다.</p>
+      <p class="small">이 프로젝트에서 쓰는 곳: 04(최소 파일), 06(tf2 의존), 08a·08b(OpenCV 링크), 10(rclcpp_action).</p>
+
+      <h2>13. 런치에서 C++ 노드 띄우기</h2>
+      <pre><code class="lang-python">from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
+
+
+def generate_launch_description():
+    params = PathJoinSubstitution([FindPackageShare('rpi5_bringup'), 'config', 'robot_params.yaml'])
+    return LaunchDescription([
+        DeclareLaunchArgument('use_mcu', default_value='true'),
+        Node(
+            package='rpi5_mcu_bridge_cpp',
+            executable='mcu_bridge_node',
+            name='mcu_bridge',                  # ← YAML 의 최상위 키와 같아야 한다
+            output='screen',
+            emulate_tty=True,                   # 색·버퍼링 없는 즉시 출력
+            parameters=[params, {'simulate': False}],   # 뒤 dict 가 YAML 을 덮어쓴다
+            remappings=[('/cmd_vel', '/cmd_vel')],
+            arguments=['--ros-args', '--log-level', 'info'],
+            condition=IfCondition(LaunchConfiguration('use_mcu')),
+        ),
+    ])</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th><code>Node(…)</code> 인자</th><th>뜻</th><th>주의</th></tr></thead>
+        <tbody>
+          <tr><td><code>package</code>, <code>executable</code></td><td>어느 패키지의 어느 실행파일</td><td><code>install(TARGETS … lib/pkg)</code> 된 이름</td></tr>
+          <tr><td><code>name</code></td><td>노드 이름 덮어쓰기</td><td>생성자의 이름보다 우선. YAML 키 매칭</td></tr>
+          <tr><td><code>namespace</code></td><td>네임스페이스</td><td>토픽 앞에 붙는다</td></tr>
+          <tr><td><code>parameters</code></td><td>YAML 경로와 dict 의 리스트</td><td>뒤가 앞을 덮는다. 문자열 <code>'false'</code> 가 아니라 <code>False</code></td></tr>
+          <tr><td><code>remappings</code></td><td><code>[('from', 'to'), …]</code></td><td>노드가 쓰는 이름 기준(<code>~/image_raw</code> 도 가능)</td></tr>
+          <tr><td><code>arguments</code></td><td>실행파일 인자</td><td><code>--ros-args</code> 뒤에 로그 레벨 등</td></tr>
+          <tr><td><code>output='screen'</code>, <code>emulate_tty=True</code></td><td>로그를 터미널로</td><td>없으면 로그가 파일로만 가거나 늦게 뜬다</td></tr>
+          <tr><td><code>condition</code></td><td><code>IfCondition</code>/<code>UnlessCondition</code></td><td>런치 인자로 켜고 끄기</td></tr>
+          <tr><td><code>respawn=True, respawn_delay=2.0</code></td><td>죽으면 재시작</td><td>드라이버에 유용. 디버깅 중에는 끈다</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">이 프로젝트에서 쓰는 곳: 04(읽기), 06·07·08(robot.launch.py 편집), 10(계층 런치).</p>
+
+      <h2>14. 자주 나는 컴파일·런타임 오류</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>조치</th></tr></thead>
+        <tbody>
+          <tr><td><code>undefined reference to rclcpp::…</code> / <code>tf2::toMsg</code> / <code>cv::dnn::…</code></td><td>링크 누락</td><td>ROS 패키지는 <code>ament_target_dependencies</code> 에, OpenCV 는 <code>target_link_libraries(${OpenCV_LIBS})</code> 에 추가</td></tr>
+          <tr><td><code>fatal error: xxx.hpp: No such file or directory</code></td><td><code>find_package</code>·<code>package.xml</code> 누락, 또는 헤더 이름 규칙(§3) 오류</td><td>두 파일 모두에 추가. 실제 헤더 경로를 <code>ls /opt/ros/humble/include/…</code> 로 확인</td></tr>
+          <tr><td><code>ros2 run … No executable found</code></td><td><code>install(TARGETS … DESTINATION lib/${PROJECT_NAME})</code> 누락, 또는 <code>source install/setup.bash</code> 안 함</td><td>04 §2-3</td></tr>
+          <tr><td><code>InvalidParameterTypeException</code> / <code>ParameterNotDeclaredException</code></td><td>YAML 타입 불일치 / 선언 안 한 파라미터 읽기</td><td>§4. double 에는 소수점</td></tr>
+          <tr><td>콜백이 한 번도 안 불림</td><td>인터페이스를 지역 변수로 만듦 / spin 안 함 / QoS 불일치</td><td>§1-1, §2, §5. <code>ros2 topic info -v</code></td></tr>
+          <tr><td>데이터가 안 오는데 에러 없음</td><td>QoS 비호환 / 이름·네임스페이스 불일치</td><td><code>ros2 topic info -v</code>, <code>ros2 node info</code></td></tr>
+          <tr><td><code>TransformException … extrapolation</code></td><td>시계·타이밍</td><td>§7 표. 타임아웃 또는 TimePointZero</td></tr>
+          <tr><td><code>bad_weak_ptr</code> 예외</td><td>생성자에서 <code>shared_from_this()</code></td><td>§1 콜아웃. 자유 함수 API 사용</td></tr>
+          <tr><td>실행 중 갑자기 느려짐(타이머 지연)</td><td>콜백 하나가 오래 걸림</td><td>§10. THROTTLE 로 처리 시간 기록 후 분리</td></tr>
+          <tr><td>Pi 에서 빌드 중 멈춤/OOM</td><td>병렬 컴파일 메모리</td><td><code>--parallel-workers 2</code>, 큰 소스는 <code>MAKEFLAGS=-j2</code></td></tr>
+          <tr><td>warning: unused parameter</td><td>인자 미사용</td><td><code>(void)req;</code> 또는 이름 생략 — 경고를 0 으로 유지하는 습관</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>관련 단계</h2>
+      <ul>
+        <li><a href="04-workspace-packages.html">04 · 워크스페이스와 패키지</a> — 첫 C++ 노드, CMake 의 뜻</li>
+        <li><a href="05-tf2-urdf.html">05 · TF2와 URDF</a> — §7 의 개념</li>
+        <li><a href="06-mcu-bridge.html">06 · MCU 브리지 (C++)</a> — 타이머·파라미터·TF 브로드캐스트·시리얼</li>
+        <li><a href="07-lidar.html">07 · LiDAR</a> — 센서 QoS 구독, scan_watch</li>
+        <li><a href="08a-opencv.html">08a · OpenCV와 cv_bridge</a>, <a href="08b-yolo.html">08b · YOLO</a> — 이미지 콜백, 프레임 드롭, 실행기</li>
+        <li><a href="09-slam-nav2.html">09 · SLAM과 Nav2</a> — lifecycle, 액션을 CLI 로</li>
+        <li><a href="10-autonomy.html">10 · 자율주행 노드 구성</a> — 액션 클라이언트, TF 조회, 상태기계</li>
+        <li><a href="99-troubleshooting.html">99 · 트러블슈팅</a> — §14 의 확장판</li>
+        <li><a href="ref-opencv.html">부록 B · OpenCV 사용법</a>, <a href="ref-yolo.html">부록 C · YOLO 사용법</a></li>
+      </ul>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

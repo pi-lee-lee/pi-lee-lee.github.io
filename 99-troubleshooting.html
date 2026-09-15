@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>99 · 트러블슈팅 — 원인을 스스로 좁히는 법</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="99">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">99 · 트러블슈팅</p>
+      <h1>막혔을 때 — 원인을 스스로 좁히는 법</h1>
+      <p class="lead"><strong>먼저 읽으십시오:</strong> ROS 2 문제의 대부분은 "코드가 틀렸다"가 아니라 <strong>"연결이 안 되어 있다"</strong>다.
+      로그를 읽기 전에 그래프를 본다. 그리고 ROS 2 는 틀린 것을 에러로 알려 주지 않는 경우가 많다 — <strong>증상은 에러가 아니라 침묵</strong>이다.</p>
+
+      <div class="goal">
+        <span class="label">이 페이지를 쓰는 법</span>
+        <p>① §0 의 만능 진단 순서를 먼저 친다 — 어느 단계에서 멈추는지가 곧 문제의 범위다. ② 그 범위의 표에서 증상을 찾아 "첫 확인" 명령을 친다.
+        ③ 그래도 안 되면 §10 대로 정리한다. 정리하는 동안 답이 나오는 경우가 절반이다. 이 페이지는 순서대로 읽는 곳이 아니라 <strong>증상으로 뛰어드는 곳</strong>이다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">그래프에서의 위치</span>그래프 전체 — 어느 화살표(토픽·TF)가 끊겼는지 찾는 법</div>
+        <div><span class="k">전제</span>없음. 어느 단계에서든 수시 참조</div>
+        <div><span class="k">예상 소요</span>수시</div>
+        <div><span class="k">언어</span><span class="tag cli">CLI</span></div>
+      </div>
+
+      <h2>0. 만능 진단 순서</h2>
+      <p>무슨 문제든 이 순서로 좁힌다. <span class="tag cli">컨테이너</span></p>
+      <pre><code class="lang-bash"># ① 노드가 떠 있는가
+ros2 node list
+
+# ② 토픽이 존재하는가
+ros2 topic list
+
+# ③ 데이터가 실제로 흐르는가 (이게 핵심)
+ros2 topic hz /문제의_토픽
+
+# ④ 내용이 말이 되는가
+ros2 topic echo /문제의_토픽 --once
+
+# ⑤ 연결되어 있는가 (발행자/구독자 수, QoS)
+ros2 topic info /문제의_토픽 -v
+
+# ⑥ 좌표 변환이 되는가
+ros2 run tf2_tools view_frames
+
+# ⑦ 전체 그림
+ros2 run rqt_graph rqt_graph     # 또는 Foxglove 의 Topic Graph 패널</code></pre>
+      <p><strong>③에서 멈추면 발행 쪽 문제, ⑤에서 구독자가 0 이면 이름/QoS 문제다.</strong> ①에서 노드가 없으면 런치·빌드·source 문제(§1)고, ⑥에서 트리가 끊겨 있으면 §4 다.</p>
+      <div class="callout tip"><span class="ct">한 줄 자가 진단</span>
+        <p><code>ros2 doctor</code> (별칭 <code>ros2 wtf</code>) 는 네트워크·환경변수·패키지 버전의 흔한 문제를 한 번에 점검한다. <code>ros2 doctor --report</code> 는 §10 의 질문 정리에 붙일 환경 보고서를 만들어 준다.</p>
+      </div>
+
+      <h3>0-B. 증상으로 바로 찾기</h3>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>증상의 키워드</th><th>먼저 볼 절</th></tr></thead>
+        <tbody>
+          <tr><td><code>command not found</code>, 패키지가 안 보임, 빌드 실패, 반영 안 됨</td><td>§1</td></tr>
+          <tr><td><code>undefined reference</code>, 헤더 없음, <code>No executable found</code>, 콜백 안 불림, 파라미터 타입 예외</td><td>§1-B</td></tr>
+          <tr><td>토픽 목록이 빔, 다른 터미널이 안 보임, 장치가 컨테이너에 없음, 어제 깐 패키지가 사라짐</td><td>§2, §2-B</td></tr>
+          <tr><td>데이터가 안 옴(에러 없이), Foxglove 에 안 보임, 구독자 0</td><td>§3</td></tr>
+          <tr><td><code>No transform</code>, <code>extrapolation</code>, TF 떨림, 지도가 회전</td><td>§4</td></tr>
+          <tr><td>시리얼·CRC·ttyACM·GND, IMU 값 이상·EKF 튐, 카메라 안 보임, Hailo 안 잡힘, 끊김·재부팅</td><td>§5</td></tr>
+          <tr><td><code>Read-only file system</code>, <code>emergency_ro</code>, 루트 SSD 가 사라짐, HAT 주황 LED, <code>modinfo: command not found</code></td><td>§5 호스트 OS / 저장장치, §5 Hailo</td></tr>
+          <tr><td>지도 휨, <code>/map</code> 없음, Nav2 반응 없음, 벽에 긁힘, 덜컥거림</td><td>§6</td></tr>
+          <tr><td>느림, 발열, 지연이 점점 커짐</td><td>§7</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>1. 환경 / 빌드</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+        <tbody>
+          <tr><td><code>ros2: command not found</code></td><td>source 안 함</td><td><code>source /opt/ros/humble/setup.bash</code> — 컨테이너 셸은 자동이지만 <code>docker exec</code> 로 들어간 셸은 아닐 수 있다</td></tr>
+          <tr><td>내 패키지가 <code>ros2 pkg list</code> 에 없음</td><td>빌드 후 source 안 함</td><td><code>source /ros2_ws/install/setup.bash</code></td></tr>
+          <tr><td>코드를 고쳤는데 반영 안 됨</td><td><code>--symlink-install</code> 미사용, 또는 <code>entry_points</code>/<code>package.xml</code> 변경, 또는 C++ 이다</td><td>다시 빌드 (C++ 은 항상 재컴파일)</td></tr>
+          <tr><td><code>colcon build</code> 가 멈춤 / OOM</td><td>Pi RAM 부족 (기본 병렬 4)</td><td><code>--parallel-workers 2</code></td></tr>
+          <tr><td>이상한 링크 에러</td><td>빌드 캐시 꼬임</td><td><code>rm -rf build install log</code> 후 재빌드</td></tr>
+          <tr><td><code>package not found</code> (의존성)</td><td>rosdep 미실행, 또는 Dockerfile 에 없음</td><td><code>rosdep install --from-paths src --ignore-src -r -y</code> — 단, 컨테이너가 끝나면 사라지므로 <strong>Dockerfile 에 넣는다</strong> (§2-B)</td></tr>
+          <tr><td><code>install/</code> 디렉터리가 root 소유</td><td>컨테이너 사용자 UID 가 호스트와 다름</td><td><code>docker/.env</code> 에 <code>HOST_UID=$(id -u)</code>, <code>HOST_GID=$(id -g)</code> 를 적고 <code>docker compose build</code> 로 이미지를 다시 만든다. (<code>UID</code> 는 bash 의 읽기 전용 변수라 <code>export UID=…</code> 는 실패한다 — 02 단계 §2-4.) 이미 root 소유가 된 파일은 호스트에서 <code>sudo chown -R $USER:$USER ros2_ws</code></td></tr>
+          <tr><td>파이썬 로그가 한참 뒤에 몰려서 뜸</td><td>stdout 버퍼링</td><td>런치의 <code>Node(..., emulate_tty=True)</code> 또는 <code>PYTHONUNBUFFERED=1</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>1-B. C++ 빌드·링크·실행 오류</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+        <tbody>
+          <tr><td><code>undefined reference to rclcpp::…</code> / <code>cv::…</code></td><td>링크 누락. ROS 패키지는 <code>ament_target_dependencies</code> 에 없고, OpenCV 는 <code>target_link_libraries</code> 에 없다</td><td>ROS 패키지 → <code>ament_target_dependencies(exe rclcpp …)</code>, OpenCV → <code>target_link_libraries(exe ${OpenCV_LIBS})</code> (04 §2-3)</td></tr>
+          <tr><td><code>fatal error: xxx/msg/yyy.hpp: No such file or directory</code></td><td>① <code>find_package</code> 와 <code>package.xml</code> 의 <code>&lt;depend&gt;</code> 누락 ② 메시지 헤더 파일명 규칙 오해</td><td>① 둘 다 추가 ② 파일명은 snake_case 다: <code>Detection2DArray</code> → <code>vision_msgs/msg/detection2_d_array.hpp</code>, <code>LaserScan</code> → <code>sensor_msgs/msg/laser_scan.hpp</code>. <code>ls /opt/ros/humble/include/&lt;pkg&gt;/&lt;pkg&gt;/msg/</code> 로 확인</td></tr>
+          <tr><td><code>ros2 run pkg exe</code> → <code>No executable found</code></td><td>① <code>install(TARGETS … DESTINATION lib/${PROJECT_NAME})</code> 누락(또는 <code>bin/</code> 에 설치) ② 빌드 후 source 안 함</td><td><code>ls install/&lt;pkg&gt;/lib/&lt;pkg&gt;/</code> 에 실행파일이 있는가 → 없으면 ①, 있으면 ②</td></tr>
+          <tr><td>실행 직후 <code>InvalidParameterTypeException</code> 으로 죽음</td><td>선언한 타입과 YAML/CLI 값의 타입이 다름 (<code>int</code> 로 선언했는데 <code>3960.0</code>, <code>double</code> 배열인데 <code>[1, 0, 0]</code>)</td><td>YAML 의 숫자 표기를 선언 타입에 맞춘다. 배열은 원소 하나만 정수여도 정수 배열이 된다 — <code>1.0</code> 으로</td></tr>
+          <tr><td>노드는 뜨는데 콜백이 한 번도 안 불림</td><td>① 발행자/구독자/타이머를 지역 변수로 만들어 생성자 끝에서 소멸 ② <code>rclcpp::spin</code> 을 호출하지 않음 ③ 콜백 하나가 블로킹되어 실행기가 멈춤</td><td>① 멤버(<code>SharedPtr</code>)로 보관 ② spin 확인 ③ 무거운 일은 별도 스레드/<code>MultiThreadedExecutor</code> (부록 A)</td></tr>
+          <tr><td><code>cv_bridge::Exception: Unsupported conversion</code> / <code>Unrecognized image encoding</code></td><td>인코딩 이름 오타, 또는 지원하지 않는 변환 조합</td><td>지원되는 것: <code>rgb8↔bgr8</code>, <code>mono8↔bgr8</code>(채널 수가 달라도 색↔흑백은 된다), Bayer → 색. 안 되는 것: <code>32FC1</code> 같은 깊이 포맷 → <code>bgr8</code>. 입력의 <code>msg-&gt;encoding</code> 을 먼저 로그로 찍는다 (08a)</td></tr>
+          <tr><td><code>cv::dnn::readNetFromONNX</code> 가 <code>Unsupported layer</code> / <code>Can't create layer</code></td><td>jammy 의 OpenCV 4.5.4 가 최신 opset 의 연산을 모른다</td><td><code>opset=12, simplify=True, dynamic=False</code> 로 다시 내보낸다. 그래도 안 되면 OpenCV 를 더 새 버전으로 빌드하거나 ONNX Runtime 으로 (08b, 부록 C)</td></tr>
+          <tr><td>C++ 영상/추론 노드가 Python 보다도 느림</td><td><code>CMAKE_BUILD_TYPE</code> 미지정 → 최적화 없는 Debug 빌드</td><td><code>colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release</code> (08a 이후 기본으로)</td></tr>
+          <tr><td><code>different time sources</code> 예외</td><td>초기화하지 않은 <code>rclcpp::Time</code>(SYSTEM_TIME) 과 <code>now()</code>(ROS_TIME) 을 뺌</td><td>시각 멤버는 생성자에서 <code>now()</code> 로 초기화한다 (10 §3-3)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>2. Docker / 컨테이너</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+        <tbody>
+          <tr><td><strong>노드는 뜨는데 <code>ros2 topic list</code> 가 빔</strong></td><td><code>network_mode: host</code> 누락 → DDS 멀티캐스트 디스커버리가 bridge 네트워크를 넘지 못함</td><td>compose 확인</td></tr>
+          <tr><td>큰 메시지(이미지)가 뚝뚝 끊김</td><td><code>ipc: host</code> 누락 → Fast DDS 공유메모리 전송이 조용히 실패</td><td>compose 확인</td></tr>
+          <tr><td>다른 터미널의 노드가 안 보임</td><td><code>ROS_DOMAIN_ID</code> 불일치</td><td><code>printenv ROS_DOMAIN_ID</code> 양쪽 비교</td></tr>
+          <tr><td>자기 노드만 보임</td><td><code>ROS_LOCALHOST_ONLY=1</code></td><td><code>0</code> 으로</td></tr>
+          <tr><td>일부 노드만 서로 안 보임</td><td><code>RMW_IMPLEMENTATION</code> 불일치 — 모든 프로세스가 같은 RMW 여야 한다</td><td><code>printenv RMW_IMPLEMENTATION</code> 을 모든 터미널·compose 서비스에서 비교</td></tr>
+          <tr><td>장치가 컨테이너에 없음</td><td><code>/dev</code> 마운트 또는 cgroup 규칙</td><td>compose 의 <code>devices</code>, <code>device_cgroup_rules</code> (major 번호는 호스트에서 <code>ls -l /dev/…</code> 로 확인)</td></tr>
+          <tr><td><code>permission denied</code> (시리얼)</td><td>그룹</td><td>컨테이너 사용자가 <code>dialout</code> 인가 — <code>groups</code></td></tr>
+          <tr><td>컨테이너가 안 뜸 (<code>/dev/hailo0</code>)</td><td>HAT 미장착인데 <code>devices:</code> 에 명시</td><td>해당 줄 주석 처리 (우리 compose 는 의도적으로 <code>/dev</code> 전체 마운트 + cgroup 규칙만 쓴다)</td></tr>
+          <tr><td>저장한 지도가 다음 날 없어짐</td><td><code>/maps</code> 가 마운트되지 않은 컨테이너 내부 경로였다</td><td>compose <code>volumes:</code> 에 <code>../maps:/maps</code> 추가 (09) — 마운트된 경로(<code>/ros2_ws</code>, <code>/maps</code>)만 살아남는다</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>2-B. 쓰기 레이어는 보존되지 않는다 — apt / pip 로 설치한 것이 사라진다</h3>
+      <div class="callout warn"><span class="ct">"어제는 됐는데 오늘 패키지가 없다"</span>
+        <p><code>docker compose run --rm dev</code> 로 띄운 컨테이너는 <strong>나가는 순간 삭제</strong>된다. 그 안에서 <code>sudo apt install</code>, <code>pip install</code> 로 넣은 것은 이미지에 남지 않는다.
+        <strong><code>--rm</code> 을 빼도 해결되지 않는다</strong> — <code>compose run</code> 은 실행마다 새 컨테이너를 만들고, compose 설정·이미지가 바뀐 뒤 <code>up</code> 하면 컨테이너가 재생성된다 (02 단계 §2-2).
+        계속 필요한 패키지를 남기는 방법은 둘이다 (02 단계 §2-2) — A: <code>docker/Dockerfile</code> 에 넣고 <code>docker compose build</code>, B: compose 에서 <code>/opt /usr /etc /var</code> 를 볼륨으로 잡고 컨테이너에서 설치.
+        반대로 <code>/ros2_ws</code>(마운트)와 <code>/maps</code>(마운트)는 살아남는다 — "어디가 마운트인가"가 곧 "무엇이 남는가"다.</p>
+      </div>
+
+      <h2>3. 통신 — 토픽이 안 흐른다</h2>
+
+      <h3>QoS 불일치 — 가장 흔하고 가장 안 보이는 원인</h3>
+      <pre><code class="lang-bash">ros2 topic info /scan -v        # Publishers 와 Subscribers 의 QoS Profile 을 비교한다</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>발행자</th><th>구독자</th><th>결과</th></tr></thead>
+        <tbody>
+          <tr><td>RELIABLE</td><td>RELIABLE</td><td>✅</td></tr>
+          <tr><td>RELIABLE</td><td>BEST_EFFORT</td><td>✅ — 그래서 "무엇이든 받고 싶은" 구독자는 BEST_EFFORT 로 둔다</td></tr>
+          <tr><td>BEST_EFFORT</td><td>RELIABLE</td><td>❌ <strong>연결 안 됨</strong> (센서 드라이버 ↔ 기본값 구독자의 전형)</td></tr>
+          <tr><td>BEST_EFFORT</td><td>BEST_EFFORT</td><td>✅</td></tr>
+          <tr><td>TRANSIENT_LOCAL</td><td>VOLATILE</td><td>✅</td></tr>
+          <tr><td>VOLATILE</td><td>TRANSIENT_LOCAL</td><td>❌ 연결 안 됨 (<code>/map</code>, <code>/robot_description</code> 같은 "가끔 한 번" 토픽의 전형)</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>규칙 하나로 외운다: 구독자가 요구하는 품질 ≤ 발행자가 제공하는 품질.</strong> 증상은 에러가 아니라 침묵이다.
+      Foxglove/RViz 에서 센서 데이터가 안 보이면 패널 QoS 를 <code>Best Effort</code> 로 바꿔 본다.</p>
+      <pre><code class="lang-bash"># CLI 도 구독자다. Humble 의 echo 는 발행자 QoS 에 맞추려 시도하지만, 명시하면 확실하다.
+ros2 topic echo /scan --qos-reliability best_effort --once
+ros2 topic echo /map --qos-durability transient_local --once</code></pre>
+
+      <h3>토픽 이름 / 네임스페이스</h3>
+      <pre><code class="lang-bash">ros2 node info /내_노드        # 실제로 어떤 이름으로 구독·발행 중인가</code></pre>
+      <p>런치파일의 리매핑이나 네임스페이스 때문에 <code>/cmd_vel</code> 이 아니라 <code>/robot/cmd_vel</code> 을 구독하고 있을 수 있다.
+      노드가 <code>~/image_raw</code> 처럼 <strong>프라이빗 이름</strong>으로 발행하면 토픽은 <code>/&lt;노드이름&gt;/image_raw</code> 가 된다 — 노드 이름이 토픽 이름의 일부다(§5 카메라).</p>
+
+      <h3>액션이 안 될 때</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인</th></tr></thead>
+        <tbody>
+          <tr><td><code>ros2 action list</code> 에 <code>/navigate_to_pose</code> 가 없음</td><td>서버 노드(<code>bt_navigator</code>)가 lifecycle <code>active</code> 가 아님</td><td><code>ros2 lifecycle get /bt_navigator</code>, Nav2 런치의 <code>autostart</code></td></tr>
+          <tr><td>goal 이 즉시 거부됨</td><td>목표의 <code>frame_id</code> 가 TF 에 없음(초기 위치 미설정), 또는 서버가 준비 전</td><td><code>view_frames</code> 에 map 이 있는가, <code>/initialpose</code></td></tr>
+          <tr><td>피드백이 안 옴</td><td>클라이언트가 <code>SendGoalOptions.feedback_callback</code> 을 등록하지 않음</td><td>CLI 로 <code>ros2 action send_goal … --feedback</code> 이 오면 코드 쪽 문제다</td></tr>
+          <tr><td>취소해도 로봇이 계속 감</td><td>취소한 goal handle 이 현재 goal 이 아님 / 다른 클라이언트가 새 goal 을 보냄</td><td><code>ros2 action info /navigate_to_pose</code> 로 클라이언트 수 확인 — 감독 노드와 CLI 가 동시에 goal 을 보내고 있지 않은가</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>4. TF</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인</th></tr></thead>
+        <tbody>
+          <tr><td><code>No transform from [X] to [Y]</code></td><td>그 프레임을 아무도 발행 안 함 / 이름 오타</td><td><code>view_frames</code> PDF</td></tr>
+          <tr><td>센서 <code>frame_id</code> 가 트리에 없음</td><td>드라이버 <code>frame_id</code> ≠ URDF 링크명</td><td><code>ros2 topic echo /scan --field header.frame_id --once</code></td></tr>
+          <tr><td><code>extrapolation into the future</code></td><td>시계 불일치, TF 발행 지연</td><td><code>timedatectl</code>, <code>ros2 topic hz /tf</code></td></tr>
+          <tr><td><code>extrapolation into the past</code></td><td>TF 버퍼가 짧음 / 센서 지연</td><td>버퍼 크기 파라미터, 센서 타임스탬프</td></tr>
+          <tr><td>TF 가 떨림</td><td><strong>두 노드가 같은 TF 발행</strong> (mcu_bridge <code>publish_tf</code> 와 EKF, 또는 joint_state_publisher 와 mcu_bridge 의 <code>/joint_states</code>)</td><td><code>ros2 topic echo /tf</code> 에서 같은 child_frame 을 누가 쏘는가</td></tr>
+          <tr><td>로봇이 지면에 파묻힘/떠 있음</td><td><code>base_footprint→base_link</code> z 값</td><td><code>wheel_radius</code></td></tr>
+          <tr><td>지도가 통째로 회전</td><td>라이다 yaw 오차</td><td>URDF <code>lidar_yaw</code></td></tr>
+          <tr><td>map 에서 트리가 끊김 (Nav2 가 반응 없음)</td><td>AMCL 이 초기 위치를 몰라 <code>map→odom</code> 을 발행하지 않음</td><td><code>/initialpose</code> 발행 (09)</td></tr>
+        </tbody>
+      </table></div>
+      <pre><code class="lang-bash">ros2 run tf2_ros tf2_monitor                    # 모든 TF 의 지연/주파수
+ros2 run tf2_ros tf2_echo base_link laser_link  # 변환 값 직접 조회</code></pre>
+
+      <h2>5. 하드웨어</h2>
+
+      <h3>호스트 OS / 저장장치 (Pi 5, USB SSD 부팅)</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>확인</th></tr></thead>
+        <tbody>
+          <tr><td>apt/dpkg 가 <code>Read-only file system</code> 으로 실패</td><td>루트 파일시스템이 읽기 전용이 된 것. <code>mount | grep ' / '</code> 에 <code>ro,</code> 또는 <code>emergency_ro</code>. apt 는 피해자다 — <strong><code>mount -o remount,rw /</code> 로 되돌리지 않는다</strong> (손상만 는다)</td></tr>
+          <tr><td><code>mount</code> 에 <code>emergency_ro</code></td><td>ext4 가 오류를 감지해 스스로 응급 읽기 전용에 들어갔다. 재부팅 전에 <code>sudo dmesg | grep -iE 'EXT4-fs|I/O error|usb|uas'</code> 로 증거를 남긴다. <code>cmdline.txt</code> 한 줄 끝에 <code>fsck.mode=force fsck.repair=yes</code> 를 덧붙여 재부팅 → <code>sudo tune2fs -l /dev/sda2 | grep -iE 'state|checked'</code> 가 <code>clean</code> 이면 복구. 이후 <code>sudo dpkg --configure -a</code>, <code>sudo apt --fix-broken install</code>, <code>full-upgrade</code> 재실행. 로그에 <code>Data will be lost</code> 가 있었고 01 단계라면 다시 굽는 편이 빠르다</td></tr>
+          <tr><td>같은 순간 흩어진 수십 블록의 <code>Buffer I/O error … lost async page write</code></td><td>배드섹터가 아니라 <strong>USB 저장장치가 통째로 끊긴 것</strong>. 직전 줄이 원인이다: <code>reset SuperSpeed USB device</code> / <code>uas_eh_abort_handler</code> → UAS 브리지 (<code>cmdline.txt</code> 에 <code>usb-storage.quirks=VID:PID:u</code>), <code>USB disconnect</code> 만 → 전원·케이블 (정품 27W, 셀프파워 허브), USB 흔적 없음 → 매체 불량. 재현할 때는 다른 SSH 세션에 <code>sudo dmesg -w</code> 를 띄워 두면 루트가 죽어도 직전 줄이 남는다</td></tr>
+          <tr><td>리포트 스크립트에서 <code>modinfo</code> / <code>dkms</code> / <code>i2cdetect</code> 가 <code>command not found</code></td><td>Trixie 는 <code>/usr/sbin</code> 이 일반 사용자 PATH 에 없다. <code>sudo /usr/sbin/modinfo …</code> 처럼 절대 경로로 (스크립트는 PATH 를 보강해 두었다)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>시리얼 (LiDAR / MCU)</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>확인 순서</th></tr></thead>
+        <tbody>
+          <tr><td>장치가 안 보임</td><td>① <code>lsusb</code> ② <code>ls /dev/serial/by-id/</code> ③ udev 규칙 ④ 케이블(데이터용인가?)</td></tr>
+          <tr><td>ttyUSB 만 찾고 있음</td><td><strong>Nucleo 는 <code>ttyACM</code></strong> 이다 (ST-LINK VCP). A1M8 만 <code>ttyUSB</code></td></tr>
+          <tr><td>열리지 않음</td><td><code>groups</code> 에 dialout, 컨테이너 패스스루</td></tr>
+          <tr><td>바이트가 깨짐 (CRC 오류)</td><td>① <strong>ModemManager (ttyACM 일 때)</strong> ② 보드레이트 ③ <strong>GND 공통 연결</strong> ④ 모터선과 이격 ⑤ 양쪽 CRC 구현의 다항식·초기값이 같은가 (06)</td></tr>
+          <tr><td>간헐적으로 되다 안 됨 (ttyACM)</td><td><strong>ModemManager 가 AT 명령으로 탐색 중</strong> — 아래 참조</td></tr>
+          <tr><td><code>systemctl is-enabled ModemManager</code> → <code>not-found</code></td><td>정상. Trixie Lite 이미지에는 ModemManager 가 없다. udev 규칙의 <code>ID_MM_DEVICE_IGNORE</code> 는 보험으로 둔다</td></tr>
+          <tr><td>간헐적으로 끊김</td><td><strong>전원 부족</strong> (<code>vcgencmd get_throttled</code>)</td></tr>
+          <tr><td>부팅마다 장치가 바뀜</td><td>udev 심볼릭 링크(<code>/dev/lidar</code>, <code>/dev/mcu</code>) 사용</td></tr>
+          <tr><td>프레임이 어긋난 채 영원히 파싱됨</td><td>헤더 동기 로직 누락 — 스트림 중간부터 읽기 시작하면 헤더 바이트를 만날 때까지 버려야 한다 (06 §3-2)</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><span class="ct">GND 공통 연결은 초심자가 가장 오래 헤매는 문제다</span>
+        <p>Pi 와 MCU 가 다른 전원을 쓰면서 GND 를 안 묶으면 통신이 되다 말다 한다.</p>
+      </div>
+      <div class="callout note"><span class="ct">ModemManager — <code>/dev/ttyACM*</code> 을 쓸 때만 나타나는 함정</span>
+        <p>STM32 Nucleo 의 ST-LINK VCP 는 <code>ttyACM</code> 이다. ModemManager 가 이 장치를 모뎀으로 오인해 AT 명령을 쏘며 탐색하고, 그 사이 우리 프레임이 깨진다.
+        <strong>증상이 GND 문제와 똑같이 보인다.</strong> 배선을 뒤지기 전에 먼저 확인한다.</p>
+        <pre><code class="lang-bash">systemctl status ModemManager          # 돌고 있는가
+journalctl -u ModemManager -n 30       # 우리 장치를 건드렸는가</code></pre>
+        <p>해결: udev 규칙에 <code>ENV{ID_MM_DEVICE_IGNORE}="1"</code> (이미 <code>hardware/udev/99-ros2-devices.rules</code> 에 포함), 또는 <code>sudo systemctl disable --now ModemManager</code>.</p>
+      </div>
+
+      <h3>MCU 펌웨어 (NUCLEO-H723ZG) — 06a §3 의 함정들이 증상으로 나타날 때</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인 1순위</th><th>조치</th></tr></thead>
+        <tbody>
+          <tr><td>UART DMA 는 도는데 수신 버퍼 내용이 안 바뀜 / 가끔 옛 프레임이 섞임</td><td><strong>D-Cache</strong> — CPU 가 캐시의 옛 데이터를 읽는다. 또는 버퍼가 <strong>DTCM</strong> 에 있어 DMA 가 접근 못 함</td><td>버퍼를 AXI/D2 SRAM 에 배치 + MPU 로 non-cacheable, 또는 <code>SCB_InvalidateDCache_by_Addr()</code>. 초기엔 D-Cache 를 끄는 것도 방법</td></tr>
+          <tr><td>오도메트리가 가끔 순간이동함</td><td>16비트 타이머 랩어라운드 보정 버그</td><td>엔코더는 32비트 타이머(TIM2/TIM5) 엔코더 모드로</td></tr>
+          <tr><td>고속 회전에서 엔코더 카운트가 빠짐</td><td>인터럽트(EXTI)로 직접 세고 있음</td><td>TIM 엔코더 모드 — 하드웨어가 4체배로 센다</td></tr>
+          <tr><td>속도 PID 가 진동하거나 느림</td><td>제어 주기를 <code>delay()</code> 로 만들어 <code>dt</code> 가 흔들림 / 블로킹 수신이 루프를 밀어냄</td><td>타이머 인터럽트로 고정 주기, UART 는 DMA + IDLE 인터럽트로 논블로킹</td></tr>
+          <tr><td>Pi 를 껐는데 로봇이 계속 달림</td><td>MCU 쪽 워치독 없음(ROS 워치독만 믿음)</td><td>펌웨어에 "N ms 무프레임 → 정지" + IWDG (06 §3-6)</td></tr>
+          <tr><td>보드가 뜨겁거나 핀이 죽음</td><td>5 V 엔코더/드라이버 신호를 5V 비허용 핀에 직결</td><td>데이터시트의 FT 표기 확인, 레벨 시프터/분압 (06a §3-3)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>IMU · EKF (06)</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인 1순위</th><th>조치</th></tr></thead>
+        <tbody>
+          <tr><td>정지 상태인데 <code>angular_velocity.z</code> 가 0 이 아님</td><td>자이로 바이어스 미보정</td><td>정지 N 초 평균을 펌웨어에서 빼거나 BNO055 는 CALIB_STAT 의 GYR 이 3 이 될 때까지 정지</td></tr>
+          <tr><td>정지 상태의 <code>linear_acceleration.z</code> 가 −9.81 이거나 다른 축에 나옴</td><td>장착 축 불일치, 축 재매핑·부호 오류</td><td>REP-103 기준으로 z 위가 +9.81. BNO055 AXIS_MAP_CONFIG/SIGN, WT901 은 장착 방향, 펌웨어 변환식</td></tr>
+          <tr><td>WT901 체크섬 오류 연발</td><td>보드레이트 설정 불일치, 배선</td><td>센서 설정값과 USART 설정 비교, 저장 명령 후 재부팅</td></tr>
+          <tr><td>BNO055 CALIB_STAT 이 3 이 안 됨</td><td>자기 캘리브레이션 미완 / 모터·철제 프레임의 자기 간섭</td><td>8자 동작·6방향 정지, 센서를 모터에서 떨어뜨림. 실내에서는 어차피 자력계 방위를 쓰지 않는다</td></tr>
+          <tr><td><code>/imu/data_raw</code> 가 TF 에 안 붙음</td><td>URDF 에 <code>imu_link</code> 없음 / frame_id 불일치</td><td>05 의 imu_link 블록, <code>imu_frame</code> 파라미터</td></tr>
+          <tr><td>EKF 출력(<code>/odometry/filtered</code>)이 없거나 튐</td><td><code>odom0/imu0_config</code> 오류, <code>two_d_mode</code> 미설정, TF 발행자 둘(브리지 <code>publish_tf: true</code> + EKF)</td><td>ekf.yaml 재확인, 브리지 <code>publish_tf: false</code>, <code>ros2 topic echo /tf</code> 로 발행자 확인</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>카메라</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>확인</th></tr></thead>
+        <tbody>
+          <tr><td>호스트에서도 안 보임</td><td>케이블(Pi 5 는 <strong>22핀</strong>), <code>config.txt</code>, 접점 방향 — 01 단계에서 해결</td></tr>
+          <tr><td>컨테이너에서만 안 보임</td><td><strong><code>/dev/dma_heap</code></strong> ← 1순위. cgroup 규칙의 major 번호</td></tr>
+          <tr><td>심볼 오류 / <code>Failed to acquire camera</code></td><td>libcamera 버전 불일치 / 호스트의 <code>rpicam-*</code> 프로세스가 점유 중</td></tr>
+          <tr><td>토픽이 <code>/camera/image_raw</code> 가 아니라 <code>/camera_node/image_raw</code> 로 나온다</td><td><code>camera_ros</code> 는 <code>~/image_raw</code>(프라이빗 이름)로 발행한다 → 런치에서 <code>name='camera'</code> 로 띄운다 (08). YAML 키도 노드 이름과 같아야 파라미터가 먹는다</td></tr>
+          <tr><td><code>frame_id</code> 가 <code>camera</code> 로 나와 TF 에 안 붙음</td><td><code>frame_id</code> 파라미터 기본값이 <code>"camera"</code> 다 → <code>camera_optical_link</code> 로 지정 (08)</td></tr>
+          <tr><td>영상이 붉음</td><td><strong>NoIR 정상</strong></td></tr>
+          <tr><td><code>--list-cameras</code> 에 <code>imx708</code> 이 아니라 <code>imx708_wide_noir</code> 로 나옴</td><td>정상. 드라이버가 모듈 ID 로 변형을 구분한다(<code>_wide</code>, <code>_noir</code>). 튜닝 파일도 그 이름으로 자동 선택 — 컨테이너 libcamera 에 <code>imx708_wide_noir.json</code> 이 있어야 한다</td></tr>
+          <tr><td><code>No static properties available for 'imx708_wide_noir'</code>, <code>Unsupported V4L2 pixel format Nc30</code></td><td>무시해도 되는 경고 (센서 속성 DB 미등록 / PiSP 전용 포맷)</td></tr>
+          <tr><td>가장자리가 늘어지고 직선이 휨</td><td><strong>Wide 렌즈 정상</strong>. 캘리브레이션 D 계수 + 08a rectify</td></tr>
+          <tr><td>FPS 부족</td><td>해상도 축소 + <code>compressed</code> transport</td></tr>
+          <tr><td>cv_bridge 에서 색이 뒤집힘 (파랑↔빨강)</td><td>인코딩을 가정했다. 우리 <code>camera_ros</code>(<code>RGB888</code>)는 <code>bgr8</code> 로 발행하지만 드라이버·설정이 바뀌면 <code>rgb8</code> 일 수 있다 — <code>ros2 topic echo /camera/image_raw --field encoding --once</code> 로 확인하고, 코드에서는 원하는 인코딩을 항상 명시한다 (<code>toCvShare(msg, "bgr8")</code>, 08a)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Hailo</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>확인</th></tr></thead>
+        <tbody>
+          <tr><td>HAT 의 주황 LED 만 켜져 있다</td><td><strong>정상</strong> — 전원 표시등이다. 추론 활동을 표시하는 LED 는 없다. <code>hailortcli fw-control identify</code> 와 01 §3-4 데모로 판단한다</td></tr>
+          <tr><td><code>/dev/hailo0</code> 없음</td><td><code>lspci | grep -i hailo</code>, <code>sudo /usr/sbin/dkms status</code>, 재부팅</td></tr>
+          <tr><td>"No Hailo device found" (컨테이너)</td><td><strong>호스트/컨테이너 HailoRT 버전 불일치</strong> ← 1순위. <code>hailortcli fw-control identify</code> 를 양쪽에서 비교</td></tr>
+          <tr><td>갑자기 안 됨</td><td>호스트 <code>apt upgrade</code> 후인가? → 컨테이너 쪽 HailoRT 를 새 버전으로 맞춘다 (A: <code>HAILORT_VERSION</code> 갱신 + 재빌드, B: 컨테이너에서 .deb/.whl 설치)</td></tr>
+          <tr><td>추론이 느림 / CPU 가 높음</td><td>전처리(리사이즈·색변환)가 CPU 병목. <code>htop</code>. 카메라 해상도를 모델 입력에 맞춘다</td></tr>
+          <tr><td>PCIe Gen1 로 떨어짐</td><td><code>sudo lspci -vv -s 0001:01:00.0 | grep LnkSta</code> (sudo 없이는 LnkSta 줄이 안 보인다). <code>8GT/s</code> 가 Gen 3</td></tr>
+          <tr><td>Python 에서 <code>import hailo_platform</code> 실패</td><td>컨테이너의 Python 3.10 용 wheel 이 설치되지 않았다 (호스트 패키지는 호스트 Python 용) — 08c</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>전원 — 모든 이상한 증상의 숨은 원인</h3>
+      <pre><code class="lang-bash">vcgencmd get_throttled      # 0x0 이어야 정상
+vcgencmd measure_temp</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>비트</th><th>의미</th></tr></thead>
+        <tbody>
+          <tr><td>bit 0</td><td>현재 저전압</td></tr>
+          <tr><td>bit 1</td><td>현재 ARM 주파수 제한</td></tr>
+          <tr><td>bit 2</td><td>현재 스로틀링</td></tr>
+          <tr><td>bit 16</td><td>저전압 <strong>이력</strong></td></tr>
+          <tr><td>bit 18</td><td>스로틀링 이력</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><span class="ct">"모터가 돌면 라이다가 끊긴다", "추론을 켜면 재부팅된다"</span>
+        <p>이런 증상은 거의 전부 전원 문제다. 27W PD 어댑터를 쓰고, 라이다는 셀프파워 USB 허브를 통해 급전한다. Pi 5 + Hailo + 모터 구성에서 전력은 늘 빠듯하다.</p>
+      </div>
+
+      <h2>6. 주행 / SLAM / Nav2</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인 1순위</th><th>조치</th></tr></thead>
+        <tbody>
+          <tr><td>직진인데 휨</td><td>오픈루프 PWM</td><td>MCU 에 속도 PID (06a §3-2)</td></tr>
+          <tr><td>odom 거리가 틀림</td><td><code>wheel_radius</code></td><td>2 m 직진 캘리브레이션</td></tr>
+          <tr><td>odom 회전이 틀림</td><td><code>wheel_separation</code></td><td>360도 회전 캘리브레이션</td></tr>
+          <tr><td>회전 캘리브레이션을 해도 스키드 스티어에서 회전량이 안 맞음</td><td>4륜 미끄러짐 — 휠 오도메트리의 한계</td><td>IMU 요 각속도를 EKF 로 융합하고 <code>/odometry/filtered</code> 를 쓴다 (06)</td></tr>
+          <tr><td>odom 이 4배 / 1/4 로 틀림</td><td>엔코더 CPR 의 4체배 누락/중복</td><td>CPR = PPR × 4 × 기어비 재계산 (06a)</td></tr>
+          <tr><td><strong>지도가 휨 / 두 겹</strong></td><td><strong>오도메트리 부정확</strong></td><td>SLAM 파라미터 말고 06 단계로</td></tr>
+          <tr><td>slam_toolbox 가 떠 있는데 <code>/map</code> 이 안 나옴</td><td><code>use_sim_time</code> 이 <code>true</code> (런치 기본값!) → 시계가 0 에 멈춰 스캔을 전부 버림</td><td><code>use_sim_time:=false</code> 명시. <code>ros2 param get /slam_toolbox use_sim_time</code> 으로 확인</td></tr>
+          <tr><td>지도에 유령 벽</td><td><code>max_laser_range</code> 과대</td><td>실측 <code>max_distance</code> 의 0.7~0.8 배</td></tr>
+          <tr><td>루프 클로저 실패</td><td>특징 부족, 너무 빠른 주행</td><td>천천히, 벽 따라</td></tr>
+          <tr><td>Nav2 노드가 떠 있는데 아무 반응 없음</td><td>① lifecycle 이 <code>inactive</code>/<code>unconfigured</code> ② <strong>초기 위치 미설정</strong></td><td>① <code>ros2 lifecycle get /bt_navigator</code> → <code>autostart:=true</code> 또는 lifecycle_manager 확인 ② <code>/initialpose</code> 발행</td></tr>
+          <tr><td>goal 이 즉시 거부됨 (감독 노드 "거부")</td><td><code>map→odom</code> TF 없음 / 목표 frame_id 오타</td><td><code>view_frames</code> 에 map 이 있는가, <code>frame_id: map</code></td></tr>
+          <tr><td><code>Failed to create plan</code></td><td>목표가 장애물 안 / 도달 불가</td><td>코스트맵 확인</td></tr>
+          <tr><td>벽에 긁힘</td><td><code>inflation_radius</code> 부족</td><td>로봇 반지름 + 5~10 cm</td></tr>
+          <tr><td>좁은 통로 통과 못 함</td><td><code>inflation_radius</code> 과대</td><td>줄이되 반지름보다는 크게</td></tr>
+          <tr><td>목표 근처에서 맴돎</td><td><code>xy_goal_tolerance</code> 과소</td><td>키움</td></tr>
+          <tr><td>주행이 진동함</td><td>가속 한계 과대</td><td><code>acc_lim_*</code> 줄임</td></tr>
+          <tr><td>로봇이 덜컥거리며 전진</td><td><code>/cmd_vel</code> 발행자가 둘 (Nav2 + 다른 노드)</td><td><code>ros2 topic info /cmd_vel -v</code> 로 발행자 수 확인 → 하나만 남긴다 (10 §2-4)</td></tr>
+          <tr><td>코스트맵에 <code>/scan</code> 이 안 찍힘</td><td>코스트맵 구독자와 드라이버의 QoS 불일치, 또는 <code>obstacle_max_range</code> 가 0</td><td><code>ros2 topic info /scan -v</code> 로 costmap 구독자의 QoS 를 발행자와 비교하고 (§3), <code>nav2_params.yaml</code> 의 <code>____</code> 가 채워졌는지 본다 (09 §3-6)</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><span class="ct">지도 문제에서 SLAM 파라미터를 먼저 만지지 마십시오</span>
+        <p>원인 1위는 오도메트리다. 06 단계 캘리브레이션을 먼저 검증한다. 파라미터로 덮으려 하면 근본 문제가 남아 Nav2 에서 다시 터진다.</p>
+      </div>
+
+      <h2>7. 성능</h2>
+      <pre><code class="lang-bash">htop                          # CPU / 메모리
+vcgencmd measure_temp         # 온도 (70℃ 넘으면 스로틀링)
+vcgencmd measure_clock arm    # 클럭이 떨어졌는가
+ros2 topic hz /scan /odom /camera/image_raw /detections   # 각 파이프라인 주파수
+hailortcli monitor            # Hailo 사용률 (호스트)</code></pre>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>조치</th></tr></thead>
+        <tbody>
+          <tr><td>CPU 포화</td><td>카메라 해상도 ↓, 추론을 Hailo 로, SLAM <code>resolution</code> ↑, C++ 노드는 Release 빌드</td></tr>
+          <tr><td>온도 70℃+</td><td>액티브 쿨러, 케이스 통풍</td></tr>
+          <tr><td>Wi-Fi 지연</td><td><code>compressed</code> transport, 유선 연결, Foxglove 토픽 선별 (raw 영상을 Mac 으로 보내지 않는다)</td></tr>
+          <tr><td>메모리 부족</td><td>지도 <code>resolution</code> ↑, 불필요 노드 종료, <code>colcon --parallel-workers 2</code></td></tr>
+          <tr><td>검출 지연이 점점 커짐</td><td>프레임을 큐에 쌓고 있다 → 구독 큐 깊이 1 + 처리 중 프레임 버림 (08b)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>8. 로그 읽기</h2>
+      <pre><code class="lang-bash"># 로그 레벨 조정
+ros2 run &lt;pkg&gt; &lt;node&gt; --ros-args --log-level debug
+ros2 run &lt;pkg&gt; &lt;node&gt; --ros-args --log-level rcl:=debug
+
+# 특정 노드만 디버그
+--ros-args --log-level mcu_bridge:=debug
+
+# 컨테이너 로그
+docker compose logs -f foxglove
+docker compose logs --tail 100 bringup
+
+# systemd 로그
+sudo journalctl -u rpi5-robot -f
+
+# 파라미터가 실제로 무엇으로 들어갔는가 (YAML 키 ≠ 노드 이름이면 조용히 무시된다 — 07 의 함정)
+ros2 param dump /lidar_node</code></pre>
+
+      <h2>9. 초기화 — 정말 막혔을 때</h2>
+      <pre><code class="lang-bash"># 빌드 캐시만
+cd /ros2_ws &amp;&amp; rm -rf build install log &amp;&amp; colcon build --symlink-install --parallel-workers 2
+
+# 컨테이너 재생성 (Pi 호스트)
+cd ~/ros2_rpi5/docker &amp;&amp; docker compose down &amp;&amp; docker compose build --no-cache
+
+# Mac 에서 다시 동기화
+./scripts/sync-to-pi.sh
+
+# 하드웨어 상태 재확인 (Pi 호스트)
+ssh pi5 'bash ~/detect-hardware.sh'</code></pre>
+
+      <h2>10. 질문을 잘 하는 법</h2>
+      <p>막혔을 때 아래를 정리하면 답을 훨씬 빨리 찾는다 (남에게 묻든, 스스로 정리하든).</p>
+      <ol class="steps">
+        <li><strong>무엇을 기대했고 무엇이 일어났는가</strong> (에러 메시지 원문 포함)</li>
+        <li><code>ros2 node list</code>, <code>ros2 topic list</code> 출력</li>
+        <li>문제 토픽의 <code>ros2 topic info -v</code> (QoS 포함)</li>
+        <li><code>view_frames</code> PDF 또는 TF 트리 구조</li>
+        <li>어느 단계까지 정상이었는가 (<strong>마지막으로 성공한 체크포인트</strong>)</li>
+        <li>하드웨어: <code>detect-hardware.sh</code> 출력, <code>ros2 doctor --report</code></li>
+      </ol>
+      <div class="callout why"><span class="ct">5번이 가장 중요하다</span>
+        <p>"어디까지는 됐다"를 알면 문제 범위가 절반 이하로 줄어든다. 각 단계의 검증 체크포인트를 실제로 통과하며 온 이유가 이것이다.
+        이 가이드의 체크포인트 기록(왼쪽 목차의 진행률)이 그 답이다.</p>
+      </div>
+
+      <h2>✅ 진단 습관 체크리스트</h2>
+      <p>이 페이지는 "통과"하는 곳이 아니라 습관을 점검하는 곳이다. 아래가 몸에 붙었는가.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox"><span>§0 의 7단계 진단 순서를 보지 않고 칠 수 있다</span></label></li>
+        <li><label><input type="checkbox"><span>데이터가 안 올 때 코드보다 먼저 <code>ros2 topic info -v</code> 로 발행자·구독자 수와 QoS 를 본다</span></label></li>
+        <li><label><input type="checkbox"><span>QoS 행렬(신뢰성·내구성)을 설명할 수 있고 "구독자 요구 ≤ 발행자 제공" 규칙을 안다</span></label></li>
+        <li><label><input type="checkbox"><span>TF 문제가 의심되면 <code>view_frames</code> 로 트리를 그림으로 먼저 본다</span></label></li>
+        <li><label><input type="checkbox"><span>주행 중 이상 동작은 <code>ros2 bag record</code> 로 기록해 두고 책상에서 재생하며 본다</span></label></li>
+        <li><label><input type="checkbox"><span>"마지막으로 성공한 체크포인트"를 항상 말할 수 있다</span></label></li>
+        <li><label><input type="checkbox"><span>이상한 증상(끊김·재부팅·간헐 오류)에서 전원(<code>get_throttled</code>)과 ModemManager 를 배선보다 먼저 확인한다</span></label></li>
+        <li><label><input type="checkbox"><span>쓰기 레이어에 설치한 것은 사라진다는 것을 알고, 계속 쓸 패키지는 이미지(A) 또는 시스템 경로 볼륨(B)에 남긴다</span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2>🤔 이해 확인</h2>
+      <p>증상을 보고 <strong>무엇부터</strong> 보는가.</p>
+      <details class="quiz"><summary>1. <code>/scan</code> 은 <code>ros2 topic hz</code> 로 나오는데 Foxglove 3D 에 아무것도 안 보인다.</summary>
+        <div class="ans">① 패널 QoS 를 Best Effort 로 (드라이버가 BEST_EFFORT 로 발행) ② <code>frame_id</code> 가 TF 트리에 있는가 (<code>view_frames</code>) ③ 3D 패널의 기준 Frame 이 그 프레임과 연결되어 있는가. 데이터는 흐르고 있으므로(③ 통과) 문제는 ⑤ 연결 또는 ⑥ TF 다.</div></details>
+      <details class="quiz"><summary>2. 노드는 <code>ros2 node list</code> 에 떠 있는데 <code>ros2 topic list</code> 가 <code>/rosout</code>, <code>/parameter_events</code> 뿐이다.</summary>
+        <div class="ans">디스커버리 문제다. compose 의 <code>network_mode: host</code>, 양쪽의 <code>ROS_DOMAIN_ID</code>, <code>ROS_LOCALHOST_ONLY=0</code>, <code>RMW_IMPLEMENTATION</code> 일치를 순서대로 본다. 코드가 아니라 환경이다.</div></details>
+      <details class="quiz"><summary>3. SLAM 지도가 휘거나 두 겹으로 보인다.</summary>
+        <div class="ans">SLAM 파라미터가 아니라 <strong>오도메트리</strong>를 먼저 본다. 06 의 2 m 직진·360도 회전 캘리브레이션을 다시 하고, 07 의 라이다 장착 방향(yaw, 뒤집힘)을 확인한다. 창가에서만 이상하면 햇빛(삼각측량 한계)이다.</div></details>
+      <details class="quiz"><summary>4. 어제까지 되던 Hailo 추론이 오늘 "No Hailo device found" 를 낸다. ROS 코드는 안 건드렸다.</summary>
+        <div class="ans">호스트를 <code>apt upgrade</code> 했는가. 호스트 드라이버(<code>hailo_pci</code>)만 올라가고 컨테이너의 <code>libhailort</code> 는 그대로라 버전이 어긋난 것. 양쪽에서 <code>hailortcli fw-control identify</code> 를 비교하고 컨테이너 쪽을 호스트 버전으로 맞춘다 (A: Dockerfile 의 버전을 바꿔 재빌드, B: 컨테이너에서 설치).</div></details>
+      <details class="quiz"><summary>5. 모터가 돌기 시작하면 라이다 스캔이 끊긴다.</summary>
+        <div class="ans">전원이다. <code>vcgencmd get_throttled</code> 의 bit 0/16 을 보고, 27W PD 어댑터와 라이다용 셀프파워 USB 허브를 쓴다. 모터 기동 전류가 Pi 의 USB 전류 한계를 넘는 순간 라이다가 리셋된다. 두 번째 의심은 모터선과 시리얼선이 붙어 있는 노이즈다.</div></details>
+      <details class="quiz"><summary>6. 내가 쓴 C++ 노드가 떠 있는데 구독 콜백이 한 번도 찍히지 않는다. 발행자는 <code>ros2 topic hz</code> 로 데이터를 내고 있다.</summary>
+        <div class="ans">① <code>ros2 node info /내_노드</code> 에 그 구독이 보이는가 — 안 보이면 구독 객체가 지역 변수로 만들어져 소멸했거나 토픽 이름/네임스페이스가 다르다. ② 보이면 <code>ros2 topic info -v</code> 로 QoS 를 비교한다(발행자 BEST_EFFORT + 구독자 기본 RELIABLE = 침묵). ③ <code>rclcpp::spin</code> 을 호출했는가, 다른 콜백이 블로킹하고 있지 않은가.</div></details>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

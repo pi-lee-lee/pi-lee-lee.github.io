@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>09 · SLAM과 Nav2 — 지도와 경로</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="09">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">09 · SLAM과 Nav2</p>
+      <h1>SLAM과 Nav2 — 지도를 만들고, 계획하고, 스스로 간다</h1>
+      <p class="lead">여기서 당신의 추상 구조 ①(스캔으로 공간을 안다), ③(요청에 대해 계획한다), ④(이동한다), ⑤(수행 정도를 판정한다)가 한꺼번에 실물이 된다.
+      새 코드를 많이 쓰는 단계가 아니다. <strong>남이 만든 두 덩어리(slam_toolbox, Nav2)를 구조를 이해한 채로 붙이는 단계</strong>다.
+      그래서 03 단계의 액션·파라미터·QoS 와 05 단계의 TF 가 전부 회수된다.</p>
+
+      <div class="goal">
+        <span class="label">이 단계가 끝나면</span>
+        <p>방 지도를 직접 만들어 저장하고, 저장한 지도로 Nav2 를 띄워 Foxglove 에서 목표점을 찍으면 로봇이 스스로 그곳까지 주행한다.
+        주행 중 액션 피드백(<code>distance_remaining</code> 등)을 읽어 "지금 계획 대비 얼마나 왔는가"를 판정할 수 있고, 사람이 앞을 막으면 멈추거나 우회하는 것을 본다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">그래프에서의 위치</span><code>slam_toolbox</code> 상자 + Nav2 상자(인지·계획·제어). <code>/scan</code>, <code>/odom</code>, TF 를 받아 <code>/map</code> 과 <code>/cmd_vel</code> 을 낸다</div>
+        <div><span class="k">전제</span>05 (TF 트리), 06 (<code>/odom</code> 캘리브레이션과 IMU EKF 융합 완료), 07 (<code>/scan</code> 장착 방향 검증). 08 계열은 불필요</div>
+        <div><span class="k">예상 소요</span>6~10시간</div>
+        <div><span class="k">언어</span><span class="tag cli">YAML</span> · <span class="tag py">런치</span> · <span class="tag cli">CLI (액션)</span></div>
+      </div>
+
+      <div class="callout warn"><span class="ct">전제 조건 — 하나라도 빠지면 여기서 반드시 막힌다</span>
+        <ul>
+          <li><code>/odom</code> 이 정확하다 (06 단계 직진 2 m / 360도 캘리브레이션 완료)</li>
+          <li><code>/scan</code> 이 정확하고 방향이 맞다 (07 단계 벽 1 m 검증 완료)</li>
+          <li>TF 트리가 <code>odom → base_footprint → base_link → laser_link</code> 로 이어진다 (<code>ros2 run tf2_tools view_frames</code>)</li>
+        </ul>
+        <p>이 단계에서 "지도가 이상하다"의 원인 1위는 SLAM 파라미터가 아니라 위 셋 중 하나다.</p>
+      </div>
+
+      <h2>1. 개요</h2>
+      <pre class="diagram"><code>                  ── 지도 작성 모드 (mapping) ──                    ── 항법 모드 (navigation) ──
+
+   /scan ──┐                                                  저장된 지도 ──► map_server ──► /map
+   /odom ──┼──► slam_toolbox ──► /map  +  TF map→odom         /scan ──┐
+   TF    ──┘        │                                         /odom ──┼──► amcl ──► TF map→odom
+                    └── map_saver_cli ──► my_room.pgm/.yaml    TF   ──┘            │
+                                                                                   ▼
+                                                                 목표점 ──► Nav2 ──► /cmd_vel ──► mcu_bridge (06)</code></pre>
+      <p>이 단계는 두 부분으로 나뉜다. 먼저 <strong>지도를 만들고</strong>(slam_toolbox), 그 다음 <strong>그 지도 위에서 주행한다</strong>(Nav2 + AMCL).
+      두 모드는 같은 TF(<code>map → odom</code>)를 <em>서로 다른 노드</em>가 발행하므로 동시에 띄우지 않는다 — §2-3.</p>
+      <p>이 단계에 필요한 패키지(<code>slam_toolbox</code>, <code>navigation2</code>, <code>nav2_bringup</code>)는 02 단계 §3-3 에서 이미 넣었다.
+      컨테이너 안에서 <code>ros2 pkg list | grep -E 'slam_toolbox|nav2_bringup'</code> 로 확인하고, 없으면 02 단계 §2-2 의 방식으로 추가한다 (A: Dockerfile 을 고쳐 재빌드, B: 컨테이너에서 설치).</p>
+
+      <h2>2. 원리 — 왜</h2>
+
+      <h3>2-1. SLAM 이란 무엇인가</h3>
+      <p><strong>SLAM = Simultaneous Localization And Mapping (동시적 위치추정 및 지도작성)</strong>. 닭과 달걀 문제다.</p>
+      <ul>
+        <li>지도를 만들려면 <strong>내가 어디 있는지</strong> 알아야 한다</li>
+        <li>내가 어디 있는지 알려면 <strong>지도가</strong> 있어야 한다</li>
+      </ul>
+      <p>SLAM 은 이 둘을 <strong>동시에</strong> 푼다.</p>
+      <pre class="diagram"><code>   t=0    ┌─────┐        아무것도 모름. 여기를 원점(map 프레임의 원점)으로 삼는다
+          │  🤖 │
+          └─────┘
+
+   t=1    스캔을 찍는다 → 주변 벽 모양 기록
+          오도메트리: "0.3 m 전진했다"                    ← /odom (06단계)
+          새 스캔을 이전 스캔과 맞춰 본다 (스캔 매칭)
+            → "실제로는 0.28 m 갔구나"                     ← 오도메트리 보정 = TF map→odom 의 갱신
+            → 보정된 위치에 새 벽을 그려 넣는다
+
+   t=N    루프 클로저: "여기 아까 왔던 곳이다!"
+            → 그동안 쌓인 오차를 전체 지도에 분산시켜 보정 (지도가 한 번 "출렁"인다)</code></pre>
+      <p><strong>오도메트리가 정확할수록 스캔 매칭이 쉬워진다.</strong> 매칭은 "오도메트리가 말한 위치 근처"에서 정답을 찾기 때문이다. 06 단계 캘리브레이션이 여기서 값을 한다.
+      그리고 SLAM 이 계산한 "오도메트리가 얼마나 틀렸는가"가 바로 05 단계에서 배운 <code>map → odom</code> 변환이다.</p>
+
+      <h3>2-2. slam_toolbox — 동작 모드</h3>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>모드</th><th>런치파일</th><th>용도</th></tr></thead>
+        <tbody>
+          <tr><td><code>online_async</code></td><td><code>online_async_launch.py</code></td><td><strong>실시간 지도 작성</strong> (가장 많이 씀). 스캔을 처리하는 동안 새 스캔이 오면 건너뛴다 — Pi 5 에 맞다</td></tr>
+          <tr><td><code>online_sync</code></td><td><code>online_sync_launch.py</code></td><td>모든 스캔을 처리. 더 정확하지만 밀리면 지연이 쌓인다</td></tr>
+          <tr><td><code>localization</code></td><td><code>localization_launch.py</code></td><td>이미 만든 지도에서 위치만 추정 (AMCL 의 대안)</td></tr>
+          <tr><td><code>lifelong</code></td><td><code>lifelong_launch.py</code></td><td>지도를 계속 갱신</td></tr>
+        </tbody>
+      </table></div>
+      <p><code>online_async_launch.py</code> 의 런치 인자는 두 개다: <code>use_sim_time</code> (기본값 <strong><code>true</code></strong>) 과 <code>slam_params_file</code> (기본값은 패키지의 <code>config/mapper_params_online_async.yaml</code>).
+      노드 이름은 <code>slam_toolbox</code>, 실행파일은 <code>async_slam_toolbox_node</code> 다. 기본값이 <code>true</code> 인 것이 이 단계의 첫 번째 함정이다 — §3-3.</p>
+
+      <h3>2-3. 지도 작성 모드와 항법 모드를 나누는 이유 — 05 의 철칙</h3>
+      <pre class="diagram"><code>   mapping 모드:     slam_toolbox ──► TF map→odom      (스캔 매칭으로 실시간 보정)
+   navigation 모드:  amcl         ──► TF map→odom      (저장된 지도 위에서 파티클 필터로 추정)
+                                        ▲
+                     둘 다 띄우면 같은 자식 프레임(odom)의 부모를 두 노드가 쏜다 → TF 가 떨리고 모든 것이 망가진다</code></pre>
+      <p>05 단계의 철칙 "하나의 좌표계에는 부모가 하나뿐이다"가 여기서 다시 나온다. 지도를 만들 때는 slam_toolbox 만, 주행할 때는 AMCL(또는 slam_toolbox 의 localization 모드) 만 <code>map → odom</code> 을 발행해야 한다.
+      그래서 이 가이드는 두 모드를 <strong>별도의 런치</strong>로 띄운다. 10 단계의 <code>autonomy.launch.py</code> 가 <code>mode:=mapping|navigation</code> 인자로 이 선택을 고정한다.</p>
+      <div class="callout note"><span class="ct"><code>nav2_bringup</code> 에도 SLAM 옵션이 있다</span>
+        <p><code>ros2 launch nav2_bringup bringup_launch.py slam:=True …</code> 로 띄우면 AMCL+map_server 대신 slam_toolbox 를 함께 띄워 준다.
+        편리하지만 무엇이 무엇을 발행하는지가 런치 안에 감춰진다. <strong>이 단계에서는 이해를 위해 slam_toolbox 를 따로 띄운다.</strong> 구조를 안 뒤에는 어느 쪽을 써도 된다.</p>
+      </div>
+
+      <h3>2-4. Nav2 의 구조 — 노드 구성을 이해한다</h3>
+      <pre class="diagram"><code>                    ┌───────────────────────────────────┐
+   목표점 ────────► │  bt_navigator                     │  행동 트리(BT)로 전체 흐름 지휘
+ (/navigate_to_pose)└───────┬──────────────┬────────────┘   ← 이것이 액션 서버다 (03단계 §2-4)
+    액션                    │              │
+              ┌─────────────▼───┐    ┌─────▼─────────────┐
+              │ planner_server  │    │ controller_server │
+              │ 전역 경로 계획  │    │ 지역 경로 추종    │
+              │ (NavFn:         │    │ (DWB, RPP)        │
+              │  Dijkstra/A*)   │    │                   │
+              └────────┬────────┘    └─────┬─────────────┘
+                       │  /plan            │  /cmd_vel_nav
+              ┌────────▼───────────────────▼─────┐
+              │  global_costmap / local_costmap  │  장애물을 격자(비용)로
+              │   ← /map, /scan, TF              │
+              └──────────────────────────────────┘
+                                                 │
+                       ┌─────────────────────────▼──┐
+                       │ behavior_server            │  막혔을 때 복구 (spin, backup, wait)
+                       └────────────────────────────┘
+                                                 │
+                       ┌─────────────────────────▼──┐
+                       │ velocity_smoother          │  가감속을 부드럽게 → /cmd_vel
+                       └────────────────────────────┘
+                                                 │
+                                          /cmd_vel ──► mcu_bridge (06단계) ──► 모터</code></pre>
+      <p><strong>여기서 03 단계가 회수된다.</strong></p>
+      <ul>
+        <li><code>/navigate_to_pose</code> 는 <strong>액션</strong>이다 — 오래 걸리고, 피드백이 있고, 취소 가능. 서비스로는 불가능했던 이유를 03 §2-4 에서 봤다.</li>
+        <li>각 서버는 <strong>별도 노드</strong>이고 토픽/TF/액션으로 연결된다. <code>ros2 node list</code> 로 확인할 수 있다.</li>
+        <li>수백 개의 값이 전부 <strong>파라미터</strong>다. 코드를 고치지 않고 YAML 로 로봇에 맞춘다.</li>
+        <li>이것이 "동작 구조에 맞는 노드 구성"의 실제 모습이다. 당신의 ③(계획)·④(이동)·⑤(판정)가 planner / controller / bt_navigator 피드백으로 나뉘어 있다.</li>
+      </ul>
+      <div class="callout note"><span class="ct"><code>/cmd_vel</code> 의 발행자는 누구인가</span>
+        <p>Humble 의 <code>nav2_bringup</code> 은 controller_server 의 출력을 <code>/cmd_vel_nav</code> 로 리매핑하고 <code>velocity_smoother</code> 가 다듬어 <code>/cmd_vel</code> 로 낸다.
+        Nav2 를 띄운 뒤 <code>ros2 topic info /cmd_vel -v</code> 로 발행자 노드 이름을 직접 확인하십시오. "누가 <code>/cmd_vel</code> 을 쏘는가"를 알아야 10 단계에서 감독 노드가 개입할 자리를 정할 수 있다.</p>
+      </div>
+
+      <h3>2-5. 두 개의 코스트맵</h3>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th></th><th><code>global_costmap</code></th><th><code>local_costmap</code></th></tr></thead>
+        <tbody>
+          <tr><td>범위</td><td>지도 전체</td><td>로봇 주변 3 m 정도 (<code>rolling_window</code>)</td></tr>
+          <tr><td>기준 프레임</td><td><code>map</code> (정적 지도)</td><td><code>odom</code> (센서 실시간, 연속적)</td></tr>
+          <tr><td>용도</td><td>전체 경로 계획 (planner)</td><td>즉각적 장애물 회피 (controller)</td></tr>
+          <tr><td>갱신</td><td>느림 (1 Hz)</td><td>빠름 (5~10 Hz)</td></tr>
+          <tr><td>레이어</td><td>static + obstacle + inflation</td><td>obstacle + inflation</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout why"><span class="ct">왜 두 개인가</span>
+        <p>전체 경로는 지도로 미리 계획하고, 갑자기 나타난 사람은 지역 코스트맵이 즉시 피한다. 요구되는 갱신 주기와 범위가 달라서 하나로 합치면 둘 중 하나가 망가진다.
+        지역 코스트맵이 <code>odom</code> 기준인 이유는 05 단계 그대로다 — 제어기는 <strong>튀지 않는</strong> 좌표계를 써야 한다.</p>
+      </div>
+
+      <h3>2-6. <code>inflation_radius</code> — 초보자가 가장 많이 틀리는 값</h3>
+      <pre><code class="lang-yaml">inflation_layer:
+  plugin: "nav2_costmap_2d::InflationLayer"
+  inflation_radius: 0.25        # 장애물 주변을 이만큼 부풀린다 [m]
+  cost_scaling_factor: 3.0      # 클수록 비용이 장애물에서 급격히 떨어진다</code></pre>
+      <p>경로 계획기는 로봇을 <strong>점</strong>으로 취급한다. 그래서 장애물을 로봇 반지름만큼 부풀려야 "점이 지나갈 수 있는 곳 = 로봇이 지나갈 수 있는 곳"이 된다.
+      <strong>로봇 반지름보다 커야 한다.</strong> 작으면 벽에 긁히고, 너무 크면 좁은 통로를 "못 지나간다"고 판단해서 경로를 못 찾는다. <strong>권장: 로봇 반지름 + 5~10 cm.</strong></p>
+
+      <h3>2-7. Nav2 노드는 lifecycle 노드다 — "떠 있는데 아무 일도 안 한다"의 정체</h3>
+      <pre class="diagram"><code>   unconfigured ──configure──► inactive ──activate──► active ──deactivate──► inactive
+        ▲                                               │
+        └───────────────── cleanup ◄────────────────────┘
+
+   Nav2 의 모든 서버(planner, controller, bt_navigator, costmap, amcl, map_server…)는 이 상태기계를 가진다.
+   inactive 상태에서는 노드가 떠 있고 ros2 node list 에도 보이지만, 토픽을 발행하지도 액션을 받지도 않는다.</code></pre>
+      <p>일반 노드는 프로세스가 뜨는 순간 동작한다. lifecycle 노드는 <strong>configure → activate</strong> 를 거쳐야 동작한다.
+      이렇게 하는 이유는 10개 넘는 노드가 서로의 파라미터·TF·지도를 필요로 하므로 <strong>"모두 준비된 뒤 한꺼번에 켜는"</strong> 순서 제어가 필요하기 때문이다.
+      그 일을 <code>lifecycle_manager</code> 가 한다. <code>nav2_bringup</code> 의 런치는 <code>lifecycle_manager_localization</code> 과 <code>lifecycle_manager_navigation</code> 을 포함하고, <code>autostart:=true</code>(기본값)면 뜨자마자 전부 activate 한다.</p>
+      <pre><code class="lang-bash">ros2 lifecycle nodes                              # lifecycle 노드 목록
+ros2 lifecycle get /controller_server              # 현재 상태: active [3] 이어야 정상
+ros2 lifecycle list /controller_server             # 지금 가능한 전이
+ros2 service list | grep lifecycle_manager         # manage_nodes / is_active 서비스</code></pre>
+      <div class="callout warn"><span class="ct">증상: 노드는 전부 떠 있는데 <code>/plan</code> 도 <code>/cmd_vel</code> 도 안 나온다</span>
+        <p>① <code>ros2 lifecycle get</code> 으로 <code>inactive</code> 인 노드를 찾는다. ② 대개 원인은 <strong>의존하는 것이 없어서 activate 에 실패</strong>한 것이다 — 지도 파일 경로가 틀려 <code>map_server</code> 가 configure 에 실패하거나, TF 가 끊겨 costmap 이 기다리거나.
+        lifecycle_manager 로그에 "Failed to bring up" 이 남는다. ③ 03 단계에서 "ROS 문제는 에러가 아니라 침묵"이라고 한 것의 또 다른 예다.</p>
+      </div>
+
+      <h3>2-8. 액션 피드백 — 당신의 ⑤ "수행 정도 판정"은 여기서 나온다</h3>
+      <pre><code class="lang-bash">ros2 interface show nav2_msgs/action/NavigateToPose</code></pre>
+      <pre class="diagram"><code>geometry_msgs/PoseStamped pose         # Goal:     어디로 갈 것인가 (frame_id 는 map)
+string behavior_tree                   #           비워 두면 기본 BT
+---
+std_msgs/Empty result                  # Result:   내용은 비어 있고, 상태 코드(SUCCEEDED/ABORTED/CANCELED)가 결과다
+---
+geometry_msgs/PoseStamped current_pose # Feedback: 지금 어디인가 (map 기준)
+builtin_interfaces/Duration navigation_time        # 출발 후 경과 시간
+builtin_interfaces/Duration estimated_time_remaining
+int16 number_of_recoveries             # 막혀서 복구 행동(spin/backup/wait)을 몇 번 했는가
+float32 distance_remaining             # 남은 경로 길이 [m]</code></pre>
+      <p>피드백은 목표를 보낸 클라이언트에게 <strong>주기적으로</strong> 온다. 이것이 "계획 대비 이동의 수행 정도"의 원천이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>피드백 필드</th><th>판정에 쓰는 법</th></tr></thead>
+        <tbody>
+          <tr><td><code>distance_remaining</code></td><td>시간이 지나도 줄지 않으면 <strong>정체(stall)</strong>. 장애물·미끄러짐·위치추정 실패를 의심한다</td></tr>
+          <tr><td><code>number_of_recoveries</code></td><td>계속 늘어나면 경로가 실제로 막힌 것. 목표를 취소하고 다른 목표/우회를 결정한다</td></tr>
+          <tr><td><code>navigation_time</code></td><td>예상 시간의 몇 배가 지나면 타임아웃으로 취소</td></tr>
+          <tr><td><code>current_pose</code></td><td>Foxglove 에 궤적으로 그려 계획(<code>/plan</code>)과 비교한다</td></tr>
+        </tbody>
+      </table></div>
+      <p>10 단계의 <code>mission_supervisor</code>(C++ 액션 클라이언트)가 이 피드백을 받아 <strong>취소·재전송·대기</strong>를 결정한다. 이 단계에서는 CLI 로 피드백을 눈으로 읽는 것까지 한다 (§3-9).</p>
+
+      <h2>3. 실습</h2>
+
+      <h3>3-1. 지도 저장 경로를 컨테이너에 마운트 <span class="tag mac">Mac</span></h3>
+      <p>저장소의 <code>maps/</code> 디렉터리가 지도 보관 위치다 (<code>.gitignore</code> 가 <code>maps/*.pgm</code>, <code>maps/*.yaml</code> 을 제외한다). 그런데 <code>docker-compose.yml</code> 은 <code>../ros2_ws</code> 만 마운트한다.
+      <code>docker/docker-compose.yml</code> 의 <code>x-ros-common</code> → <code>volumes</code> 에 한 줄을 추가한다 (볼륨 변경은 이미지 재빌드가 필요 없다 — 컨테이너를 다시 띄우면 된다).</p>
+      <pre><code class="lang-yaml">  volumes:
+    - ../ros2_ws:/ros2_ws:rw
+    - ../maps:/maps:rw                 # ← 추가: 지도 저장 위치 (호스트 ~/ros2_rpi5/maps)</code></pre>
+      <pre><code class="lang-bash">./scripts/sync-to-pi.sh              # Mac
+docker compose run --rm dev ls -ld /maps    # Pi 호스트 — 디렉터리가 보이고 쓰기 가능해야 한다</code></pre>
+
+      <h3>3-2. SLAM 파라미터 파일 만들기 <span class="tag mac">Mac</span></h3>
+      <p>slam_toolbox 의 기본 파라미터 파일을 복사해서 시작한다. 수십 개의 값 중 우리가 손댈 것은 몇 개뿐이고, 나머지(solver, 스캔 매처 세부값)는 기본값이 합리적이다.</p>
+      <pre><code class="lang-bash"># 컨테이너 안 — 기본 파일을 우리 패키지로 복사
+cp $(ros2 pkg prefix slam_toolbox)/share/slam_toolbox/config/mapper_params_online_async.yaml \
+   /ros2_ws/src/rpi5_bringup/config/slam_params.yaml</code></pre>
+      <p>복사한 <code>ros2_ws/src/rpi5_bringup/config/slam_params.yaml</code> 에서 아래 키를 찾아 <strong>우리 로봇의 값으로 고친다.</strong> (호스트에 마운트되어 있으므로 Mac 에서 편집해도 된다.) 키 이름은 파일에 이미 있는 것이고, 새로 추가하는 것이 아니다.</p>
+      <pre><code class="lang-yaml">slam_toolbox:
+  ros__parameters:
+    use_sim_time: false             # ★ 실제 로봇. 런치 인자로도 한 번 더 false 를 준다 (§3-3)
+
+    # ── 프레임 / 토픽 ── 05·07 단계와 정확히 일치해야 한다
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_footprint      # ← URDF 의 루트 링크 이름
+    scan_topic: /scan
+    mode: mapping                   # 지도 작성
+
+    # ── 지도 ──
+    resolution: 0.05                # 격자 크기 [m/px]. 실내는 5 cm 면 충분
+    max_laser_range: 0.0            # ____ 07단계 실측 max_distance 보다 약간 작게 (예: 실측 12 → 8~10)
+    map_update_interval: 5.0        # /map 발행 주기 [s]. 자주 낼수록 CPU 를 먹는다
+    transform_publish_period: 0.02  # map→odom TF 발행 주기 [s]. 0 이면 TF 를 발행하지 않는다
+
+    # ── 키프레임 / 루프 클로저 ──
+    minimum_travel_distance: 0.2    # 이만큼 움직여야 새 키프레임
+    minimum_travel_heading: 0.2     # 또는 이만큼 회전해야 [rad]
+    do_loop_closing: true
+    loop_search_maximum_distance: 3.0
+
+    # (나머지 키는 기본 파일의 값을 그대로 둔다)</code></pre>
+      <div class="callout warn"><span class="ct"><code>resolution</code> 을 너무 작게 하지 마십시오</span>
+        <p>0.01 m 로 하면 지도 격자 수가 25배가 되어 Pi 5 의 메모리와 CPU 를 잡아먹는다. 실내 주행에는 <strong>0.05 m 면 충분</strong>하다.</p>
+      </div>
+      <div class="callout why"><span class="ct"><code>max_laser_range</code> 를 스펙보다 작게 두는 이유</span>
+        <p>최대 거리 근처의 측정값은 노이즈가 크고 반사 오류가 많다. 이 값들이 지도에 <strong>유령 벽</strong>을 만든다. 07 단계에서 드라이버 로그로 확인한 <code>max_distance</code> 의 0.7~0.8 배가 관례다.
+        A1M8 은 삼각측량이라 원거리 정밀도 저하가 특히 크다 (07 §2-2).</p>
+      </div>
+      <p><code>rpi5_bringup</code> 의 <code>CMakeLists.txt</code> 는 <code>config/</code> 디렉터리 전체를 설치하므로 새 파일을 위해 고칠 것은 없다. 빌드만 다시 한다.</p>
+      <pre><code class="lang-bash">cd /ros2_ws &amp;&amp; colcon build --symlink-install --packages-select rpi5_bringup &amp;&amp; source install/setup.bash
+ls $(ros2 pkg prefix rpi5_bringup)/share/rpi5_bringup/config/     # slam_params.yaml 이 보여야 한다</code></pre>
+
+      <h3>3-3. SLAM 실행 <span class="tag cli">컨테이너</span></h3>
+      <pre><code class="lang-bash"># 터미널 1: 로봇 기동 (TF + mcu_bridge + LiDAR)
+ros2 launch rpi5_bringup robot.launch.py use_lidar:=true
+
+# 터미널 2: SLAM
+ros2 launch slam_toolbox online_async_launch.py \
+  use_sim_time:=false \
+  slam_params_file:=$(ros2 pkg prefix rpi5_bringup)/share/rpi5_bringup/config/slam_params.yaml
+
+# 터미널 3: 확인
+ros2 topic hz /map                                 # map_update_interval 마다
+ros2 run tf2_ros tf2_echo map base_footprint       # 변환이 나오면 SLAM 이 위치를 잡은 것
+ros2 run tf2_tools view_frames                     # map → odom → base_footprint 가 이어지는가
+ros2 topic info /scan -v                           # slam_toolbox 구독자의 QoS 가 발행자와 호환되는가</code></pre>
+      <div class="callout warn"><span class="ct"><code>use_sim_time:=false</code> 는 생략할 수 없다</span>
+        <p><code>online_async_launch.py</code> 의 <code>use_sim_time</code> 기본값은 <strong><code>true</code></strong> 다(시뮬레이터 사용을 전제로 만들어졌다). 실제 로봇에서 <code>true</code> 로 두면 노드는 <code>/clock</code> 토픽을 기다리며 시계가 0 에 멈춘다.
+        스캔의 타임스탬프(실제 시각)와 노드의 시계(0)가 맞지 않아 TF 조회가 전부 실패하고, <strong>에러 없이 지도가 안 그려진다.</strong> 파라미터 파일에도 <code>false</code> 를 적어 두지만, 런치 인자가 우선하므로 명령에도 반드시 붙인다.</p>
+      </div>
+      <div class="callout note"><span class="ct"><code>/scan</code> 의 QoS 를 다시 본다</span>
+        <p>07 단계에서 라이다 드라이버의 발행 QoS 를 확인했다. <code>ros2 topic info /scan -v</code> 에서 slam_toolbox 구독자의 Reliability 가 발행자와 호환되는지(발행 BEST_EFFORT ↔ 구독 RELIABLE 이면 연결 안 됨) 지금 확인한다.
+        호환되지 않으면 <code>/map</code> 은 영원히 나오지 않고 로그는 조용하다.</p>
+      </div>
+
+      <h3>3-4. 지도 만들기 — 실전 요령</h3>
+      <p>Foxglove 3D 패널 설정:</p>
+      <ul>
+        <li>Frame: <code>map</code></li>
+        <li>Topics: <code>/map</code>(지도), <code>/scan</code>(QoS Best Effort), <code>/robot_description</code>, Transforms 켜기</li>
+      </ul>
+      <p>키보드로 조종하며 방을 돈다. <span class="tag cli">컨테이너</span> <code>ros2 run teleop_twist_keyboard teleop_twist_keyboard</code></p>
+      <div class="tbl"><table>
+        <thead><tr><th>규칙</th><th>이유</th></tr></thead>
+        <tbody>
+          <tr><td><strong>천천히 움직인다</strong> (0.15 m/s 정도)</td><td>빠르면 스캔 매칭이 실패한다. A1M8 은 초당 5.5장이라 0.15 m/s 에서도 스캔 한 장 사이에 3 cm 를 움직인다</td></tr>
+          <tr><td><strong>회전은 더 천천히</strong></td><td>회전 중 스캔 왜곡이 가장 크다 (한 바퀴 스캔의 앞과 뒤가 다른 자세에서 찍힌다)</td></tr>
+          <tr><td><strong>벽을 따라 돈다</strong></td><td>특징이 많은 곳이 매칭이 잘 된다</td></tr>
+          <tr><td><strong>출발점으로 돌아온다</strong></td><td>루프 클로저가 전체 오차를 보정한다</td></tr>
+          <tr><td>긴 복도는 주의</td><td>특징이 없어 매칭이 미끄러진다 (앞뒤로 움직여도 스캔이 같아 보인다)</td></tr>
+          <tr><td>유리/거울/창가 주의</td><td>라이다가 통과하거나 엉뚱하게 반사된다. 직사광선은 <code>inf</code> 를 만든다 (07 §2-2)</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><span class="ct">지도가 두 겹으로 보이거나 휘면</span>
+        <p>SLAM 파라미터를 만지기 전에 <strong>06 단계 오도메트리 캘리브레이션을 의심하십시오.</strong> 원인 1위다. 특히 <code>wheel_separation</code> 이 틀리면 회전량이 계속 어긋나고, SLAM 은 이를 보정하려다 지도를 뭉갠다.
+        두 번째는 07 의 <code>lidar_yaw</code>(지도 전체가 회전) 와 뒤집힘(좌우 반전)이다.</p>
+      </div>
+
+      <h3>3-5. 지도 저장</h3>
+      <pre><code class="lang-bash"># 컨테이너 안 — /maps 는 3-1 에서 마운트한 호스트의 ~/ros2_rpi5/maps
+ros2 run nav2_map_server map_saver_cli -f /maps/my_room
+ls -l /maps          # my_room.pgm (이미지) + my_room.yaml (메타데이터)
+cat /maps/my_room.yaml</code></pre>
+      <pre class="diagram"><code>image: my_room.pgm
+mode: trinary
+resolution: 0.05          # ← slam_params 의 resolution
+origin: [-3.2, -1.7, 0]   # 이미지 좌하단 픽셀이 map 프레임의 어디인가 [m, m, rad]
+negate: 0
+occupied_thresh: 0.65     # 이 확률 이상이면 벽
+free_thresh: 0.25         # 이 확률 이하면 빈 공간</code></pre>
+      <pre><code class="lang-bash"># Mac 에서 눈으로 확인
+scp pi5:~/ros2_rpi5/maps/my_room.pgm /tmp/ &amp;&amp; open /tmp/my_room.pgm</code></pre>
+      <p>검은 선이 벽, 흰색이 빈 공간, 회색이 미지 영역이다. 방이 <strong>닫힌 다각형</strong>으로 보이고 벽이 한 겹이면 성공이다.</p>
+
+      <h3>3-6. <code>nav2_params.yaml</code> 의 빈칸 채우기 <span class="tag mac">Mac</span></h3>
+      <p><code>ros2_ws/src/rpi5_bringup/config/nav2_params.yaml</code> 은 "우리 로봇에서 반드시 손대야 하는 값"만 추린 뼈대다. Nav2 전체 파라미터는 수백 개이고 나머지는 <code>nav2_bringup</code> 의 기본 파일이 채운다.
+      <code>____</code> 로 표시된 값을 <strong>실측값</strong>으로 채운다. 채우지 않은 채 그대로 쓰면 로봇이 너무 빠르거나 벽에 긁힌다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>키</th><th>어디에</th><th>값의 출처</th><th>지침</th></tr></thead>
+        <tbody>
+          <tr><td><code>laser_max_range</code></td><td><code>amcl</code></td><td>07 실측 <code>max_distance</code></td><td>실측값 그대로</td></tr>
+          <tr><td><code>raytrace_max_range</code></td><td>양쪽 costmap <code>obstacle_layer</code></td><td>07 실측 <code>max_distance</code></td><td>실측값 그대로 (이 거리까지 "비어 있음"을 지운다)</td></tr>
+          <tr><td><code>obstacle_max_range</code></td><td>양쪽 costmap <code>obstacle_layer</code></td><td>07 실측 <code>max_distance</code></td><td>실측의 0.7~0.8 배 (먼 점은 장애물로 안 찍는다)</td></tr>
+          <tr><td><code>robot_radius</code></td><td>양쪽 costmap</td><td>INVENTORY 6절 (섀시 실측)</td><td>로봇을 감싸는 원의 반지름. local/global 같은 값</td></tr>
+          <tr><td><code>inflation_radius</code></td><td>양쪽 costmap <code>inflation_layer</code></td><td><code>robot_radius</code> + 5~10 cm</td><td>§2-6</td></tr>
+          <tr><td><code>max_vel_x</code>, <code>max_vel_theta</code></td><td><code>controller_server.FollowPath</code></td><td>06 <code>max_linear_vel</code> / <code>max_angular_vel</code></td><td>브리지의 제한 <strong>이하</strong>로. 첫 주행은 0.15 m/s</td></tr>
+          <tr><td><code>acc_lim_x</code></td><td><code>controller_server.FollowPath</code></td><td>실험</td><td>크면 바퀴가 헛돈다 → 오도메트리가 틀어진다</td></tr>
+          <tr><td><code>odom_topic</code></td><td><code>bt_navigator</code>, <code>controller_server</code>, <code>velocity_smoother</code></td><td>06 의 EKF 사용 여부</td><td>EKF 를 쓰면 <code>/odometry/filtered</code>, 아니면 <code>/odom</code>. TF <code>odom→base_footprint</code> 는 어느 쪽이든 하나의 노드만 발행한다</td></tr>
+          <tr><td><code>max_velocity</code> 등</td><td><code>velocity_smoother</code></td><td>위와 같은 값</td><td>controller 와 다르면 smoother 가 잘라내며 예측이 어긋난다</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout note"><span class="ct">코스트맵의 <code>/scan</code> 구독 QoS 도 확인한다</span>
+        <p><code>nav2_params.yaml</code> 의 obstacle_layer 주석은 "기본은 RELIABLE" 이라고 적혀 있지만, Humble 의 costmap 은 센서 QoS(BEST_EFFORT)로 구독하는 것으로 알려져 있다. 주석을 믿지 말고 Nav2 를 띄운 뒤
+        <code>ros2 topic info /scan -v</code> 로 <strong>costmap 구독자의 실제 QoS</strong> 를 확인하고, 발행자와 호환되지 않으면 그때 대응한다. 확인하지 않고 넘어가면 코스트맵에 장애물이 안 찍히고 로봇이 벽으로 간다 — 로그는 조용하다.</p>
+      </div>
+      <pre><code class="lang-bash">./scripts/sync-to-pi.sh                                                     # Mac
+cd /ros2_ws &amp;&amp; colcon build --symlink-install --packages-select rpi5_bringup &amp;&amp; source install/setup.bash   # 컨테이너</code></pre>
+
+      <h3>3-7. Nav2 실행과 lifecycle 확인 <span class="tag cli">컨테이너</span></h3>
+      <pre><code class="lang-bash"># 터미널 1: 로봇 (SLAM 은 띄우지 않는다 — §2-3)
+ros2 launch rpi5_bringup robot.launch.py use_lidar:=true
+
+# 터미널 2: Nav2 (저장한 지도로)
+ros2 launch nav2_bringup bringup_launch.py \
+  use_sim_time:=false \
+  map:=/maps/my_room.yaml \
+  params_file:=$(ros2 pkg prefix rpi5_bringup)/share/rpi5_bringup/config/nav2_params.yaml
+
+# 터미널 3: 상태 확인
+ros2 node list                                   # amcl, map_server, planner_server, controller_server, bt_navigator, …
+ros2 lifecycle nodes
+ros2 lifecycle get /map_server                   # active
+ros2 lifecycle get /controller_server            # active
+ros2 lifecycle get /amcl                         # active
+ros2 topic hz /map                               # map_server 가 지도를 발행 (TRANSIENT_LOCAL 이라 --once 로 받힌다)
+ros2 topic info /cmd_vel -v                      # 발행자가 누구인가 (§2-4)</code></pre>
+      <p>하나라도 <code>inactive</code>/<code>unconfigured</code> 면 터미널 2 의 로그에서 그 노드의 실패 원인을 찾는다. 가장 흔한 것은 <code>map:=</code> 경로 오타(<code>map_server</code> configure 실패)다.</p>
+      <div class="callout note"><span class="ct">전체 기본값이 궁금하면</span>
+        <p><code>$(ros2 pkg prefix nav2_bringup)/share/nav2_bringup/params/nav2_params.yaml</code> 을 연다. 우리 파일에 없는 키는 여기 값이 쓰인다.
+        (정확히는 <code>bringup_launch.py</code> 가 <code>params_file</code> 로 준 파일만 노드에 전달하므로, 우리 파일에 없는 키는 <em>노드의 내장 기본값</em>이 쓰인다. 두 값이 다른 경우가 있으니 이상하면 기본 파일의 키를 우리 파일로 옮겨 명시한다.)</p>
+      </div>
+
+      <h3>3-8. 초기 위치 설정 — 필수</h3>
+      <p>Nav2(AMCL) 는 로봇이 지도상 어디에 있는지 모른다. 알려 줘야 한다. <strong>초기 위치를 안 주면 아무 일도 일어나지 않는다.</strong> AMCL 이 위치를 모르니 <code>map → odom</code> TF 를 발행하지 않고, 따라서 코스트맵도 경로 계획도 시작되지 않는다.</p>
+      <h4>Foxglove 에서 (권장)</h4>
+      <ol class="steps">
+        <li>3D 패널 → Frame 을 <code>map</code> 으로. Topics 에 <code>/map</code>, <code>/scan</code>, <code>/robot_description</code>, <code>/particle_cloud</code>(AMCL 파티클) 를 켠다.</li>
+        <li>패널 설정의 <strong>Publish</strong> 항목에서 토픽을 확인한다: pose estimate → <code>/initialpose</code> (<code>geometry_msgs/PoseWithCovarianceStamped</code>), pose → <code>/goal_pose</code>. 발행 프레임은 패널의 Frame(<code>map</code>)이다.</li>
+        <li>3D 패널 상단 툴바의 Publish 도구에서 <strong>Publish pose estimate</strong> 를 고르고, 지도 위에서 로봇이 실제로 있는 곳을 <strong>클릭한 채 로봇이 보는 방향으로 드래그</strong>한다.</li>
+        <li><code>/scan</code> 점들이 지도의 벽과 겹치면 성공이다. 어긋나면 다시 찍는다. 파티클 구름이 로봇 주변으로 모여드는 것이 보인다.</li>
+      </ol>
+      <h4>CLI 로 (Foxglove 가 안 될 때)</h4>
+      <pre><code class="lang-bash">ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+  "{header: {frame_id: 'map'}, pose: {pose: {position: {x: 0.0, y: 0.0}, orientation: {w: 1.0}}}}"
+ros2 run tf2_ros tf2_echo map odom          # 이제 값이 나와야 한다</code></pre>
+      <p>지도를 만들 때 출발한 자리에 로봇을 두면 <code>(0, 0, yaw 0)</code> 이 초기 위치다 — 지도의 원점은 SLAM 을 시작한 자리이기 때문이다.</p>
+
+      <h3>3-9. 목표점 주기 — 세 가지 방법과 피드백 읽기</h3>
+      <div class="callout warn"><span class="ct">첫 자율주행은 반드시 받침대 위에서</span>
+        <p>바퀴를 띄운 상태로 <code>/cmd_vel</code> 이 상식적인 값(0.15 m/s 이하)으로 나오는 것을 먼저 본다. 바닥에서 처음 돌리면 예상치 못한 방향으로 돌진한다. 비상 정지는 <code>ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{}"</code> 가 아니라 <strong>목표 취소</strong>(Ctrl+C 또는 아래)와 <strong>물리 전원 차단</strong>이다 — Nav2 가 계속 <code>/cmd_vel</code> 을 쏘는 동안 0 을 한 번 보내는 것은 의미가 없다.</p>
+      </div>
+      <h4>① Foxglove — Publish pose</h4>
+      <p>3D 패널 Publish 도구에서 <strong>Publish pose</strong> 를 고르고 목표 지점을 클릭·드래그(방향)한다. <code>/goal_pose</code> 로 발행되고 <code>bt_navigator</code> 가 이를 받아 액션을 시작한다. <code>/plan</code> 을 3D 패널에 켜면 계획된 경로가 그려진다.</p>
+      <h4>② 토픽으로</h4>
+      <pre><code class="lang-bash">ros2 topic pub --once /goal_pose geometry_msgs/msg/PoseStamped \
+  "{header: {frame_id: 'map'}, pose: {position: {x: 2.0, y: 1.0}, orientation: {w: 1.0}}}"</code></pre>
+      <h4>③ 액션으로 — 피드백이 보인다 (이 단계의 핵심 실습)</h4>
+      <pre><code class="lang-bash">ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
+  "{pose: {header: {frame_id: 'map'}, pose: {position: {x: 2.0, y: 1.0}, orientation: {w: 1.0}}}}" --feedback</code></pre>
+      <pre class="diagram"><code>Waiting for an action server to become available...
+Sending goal: ...
+Goal accepted with ID: 3f2a...
+
+Feedback:
+  current_pose: {header: {frame_id: map}, pose: {position: {x: 0.41, y: 0.12 ...
+  navigation_time: {sec: 2, nanosec: ...}
+  estimated_time_remaining: ...
+  number_of_recoveries: 0
+  distance_remaining: 1.83          ← 줄어드는가?
+
+Feedback: ... distance_remaining: 1.21
+Feedback: ... distance_remaining: 0.44
+Result: {}
+Goal finished with status: SUCCEEDED</code></pre>
+      <p>읽는 법:</p>
+      <ul>
+        <li><code>distance_remaining</code> 이 <strong>단조롭게 줄어들면</strong> 계획대로 수행되고 있는 것이다.</li>
+        <li>줄지 않는데 <code>number_of_recoveries</code> 가 늘어나면 막힌 것이다 — 로봇이 spin/backup/wait 을 반복한다.</li>
+        <li><kbd>Ctrl</kbd>+<kbd>C</kbd> 를 누르면 클라이언트가 <strong>cancel 요청</strong>을 보내고, 서버가 받아들이면 <code>CANCELED</code> 로 끝나며 로봇이 멈춘다. 서비스였다면 불가능했을 일이다.</li>
+        <li>경로를 못 찾으면 <code>ABORTED</code> 로 끝난다. 로그의 <code>Failed to create plan</code> — 목표가 장애물/미지 영역 안인지 확인한다.</li>
+      </ul>
+      <p>주행 중 사람이 앞을 막아 보면 로봇이 멈추거나 우회하는 것을 관찰한다. 지역 코스트맵(<code>/local_costmap/costmap</code>)을 Foxglove 에 켜면 사람이 장애물로 찍히는 것이 보인다.</p>
+
+      <h3>3-10. 튜닝 — 차동구동 로봇 기준</h3>
+      <pre><code class="lang-yaml">controller_server:
+  ros__parameters:
+    FollowPath:
+      # 차동구동은 옆으로 못 가므로 y 속도는 0
+      max_vel_x: 0.25            # ← 06단계 max_linear_vel 이하로
+      min_vel_x: -0.15
+      max_vel_y: 0.0             # 차동구동: 반드시 0
+      max_vel_theta: 1.0
+      acc_lim_x: 0.5
+      acc_lim_theta: 2.0
+
+      xy_goal_tolerance: 0.15    # 목표점 도달 판정 [m]
+      yaw_goal_tolerance: 0.25   # [rad]</code></pre>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>조치</th></tr></thead>
+        <tbody>
+          <tr><td>로봇이 너무 조심스러워 느림</td><td><code>max_vel_x</code> ↑, <code>inflation_radius</code> ↓</td></tr>
+          <tr><td>벽에 긁힘</td><td><code>inflation_radius</code> ↑, <code>robot_radius</code> 재확인</td></tr>
+          <tr><td>좁은 통로를 못 지나감</td><td><code>inflation_radius</code> ↓ (로봇 반지름보다는 크게)</td></tr>
+          <tr><td>목표 근처에서 계속 맴돎</td><td><code>xy_goal_tolerance</code> ↑</td></tr>
+          <tr><td>경로를 못 찾음 (<code>Failed to create plan</code>)</td><td>코스트맵 확인. 목표가 장애물 안인가? 초기 위치가 틀렸는가?</td></tr>
+          <tr><td>진동하며 주행</td><td><code>acc_lim_*</code> ↓, <code>controller_frequency</code> 확인 (Pi 5 는 10 Hz)</td></tr>
+          <tr><td>위치가 자꾸 튄다 (AMCL)</td><td>초기 위치를 정확히 다시, <code>laser_max_range</code>, 지도 품질</td></tr>
+        </tbody>
+      </table></div>
+      <p>파라미터를 바꾸면 <code>colcon build</code>(symlink 라 파일 복사는 불필요하지만 install 에 반영되는지 확인) 후 Nav2 를 다시 띄운다. 실행 중 <code>ros2 param set /controller_server FollowPath.max_vel_x 0.2</code> 로 바꿔 볼 수도 있다 — 03 단계의 파라미터가 여기서 쓸모를 보인다.</p>
+
+      <h3>3-11. 디버깅 — rosbag 이 필수</h3>
+      <p>주행 중 이상 동작은 재현이 거의 불가능하다. <strong>기록해서 책상에서 분석한다.</strong> 03 §2-10 에서 rosbag 을 익히라고 한 이유가 이것이다.</p>
+      <pre><code class="lang-bash">ros2 bag record -s mcap -o /maps/nav_test \
+  /scan /odom /tf /tf_static /map /cmd_vel /plan \
+  /global_costmap/costmap /local_costmap/costmap /particle_cloud
+
+ros2 bag info /maps/nav_test
+ros2 bag play /maps/nav_test --rate 0.3 --clock      # 천천히 재생하며 Foxglove 로 관찰</code></pre>
+      <div class="callout note"><span class="ct"><code>--clock</code> 과 <code>use_sim_time</code> 의 관계</span>
+        <p>재생할 때 <code>--clock</code> 을 주면 bag 의 시각을 <code>/clock</code> 으로 발행한다. 이때 재생된 데이터를 <em>처리하는 노드</em>(예: bag 위에서 SLAM 을 다시 돌려 튜닝할 때)는 <code>use_sim_time:=true</code> 로 띄워야 bag 의 시각을 따라 TF 조회가 맞는다.
+        즉 <strong>실제 로봇에서는 항상 <code>false</code>, 기록 재생 때만 <code>true</code></strong> 다. §3-3 의 함정과 정확히 반대 방향의 같은 원리다. <code>-s mcap</code> 은 Foxglove 가 직접 여는 포맷이다 (Dockerfile 에 <code>rosbag2-storage-mcap</code> 이 들어 있다).</p>
+      </div>
+      <p>Foxglove 는 mcap 파일을 <strong>Open local file</strong> 로 직접 연다. <code>scp pi5:~/ros2_rpi5/maps/nav_test/*.mcap /tmp/</code> 로 가져와 Mac 에서 타임라인을 앞뒤로 움직이며 본다 — Nav2 튜닝은 bag 없이는 사실상 불가능하다.</p>
+
+      <h2>✅ 검증 체크포인트</h2>
+      <ul class="checklist">
+        <li><label><input type="checkbox"><span><code>ros2 pkg list</code> 에 <code>slam_toolbox</code>, <code>nav2_bringup</code> 이 보인다 (Dockerfile 2-B 블록 반영)</span></label></li>
+        <li><label><input type="checkbox"><span><code>/maps</code> 가 컨테이너에 마운트되어 쓰기가 된다</span></label></li>
+        <li><label><input type="checkbox"><span><code>rpi5_bringup/config/slam_params.yaml</code> 을 기본 파일에서 복사해 프레임·<code>max_laser_range</code>·<code>use_sim_time: false</code> 를 고쳤고 install 에 보인다</span></label></li>
+        <li><label><input type="checkbox"><span>SLAM 을 <code>use_sim_time:=false</code> 로 띄웠고 <code>ros2 param get /slam_toolbox use_sim_time</code> 이 <code>False</code> 다</span></label></li>
+        <li><label><input type="checkbox"><span><code>slam_toolbox</code> 로 <code>/map</code> 이 발행되고 Foxglove 에 지도가 그려진다</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 topic info /scan -v</code> 에서 slam_toolbox 와 costmap 구독자의 QoS 가 발행자와 호환됨을 확인했다</span></label></li>
+        <li><label><input type="checkbox"><span>방을 한 바퀴 돌아 닫힌(구멍 없는) 지도를 만들었다</span></label></li>
+        <li><label><input type="checkbox"><span>출발점 복귀 시 지도가 겹치지 않고 하나로 맞는다 (루프 클로저 성공)</span></label></li>
+        <li><label><input type="checkbox"><span><code>map_saver_cli</code> 로 <code>/maps/my_room</code> 을 저장하고 <code>.pgm</code> 을 Mac 에서 눈으로 확인했다</span></label></li>
+        <li><label><input type="checkbox"><span><code>view_frames</code> 에 <code>map → odom → base_footprint</code> 가 이어진다 (mapping 에서는 slam_toolbox 가, navigation 에서는 amcl 이 발행)</span></label></li>
+        <li><label><input type="checkbox"><span><code>nav2_params.yaml</code> 의 <code>____</code> 를 전부 실측값으로 채웠다</span></label></li>
+        <li><label><input type="checkbox"><span>Nav2 를 띄우고 <code>ros2 lifecycle get</code> 으로 주요 노드가 전부 <code>active</code> 임을 확인했다</span></label></li>
+        <li><label><input type="checkbox"><span>Foxglove 의 Publish pose estimate 로 초기 위치를 설정했고 <code>/scan</code> 이 지도 벽과 겹친다</span></label></li>
+        <li><label><input type="checkbox"><span>Foxglove 의 Publish pose 로 목표점을 주면 <code>/plan</code> 에 경로가 그려진다</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 action send_goal … --feedback</code> 으로 <code>distance_remaining</code> 이 줄어드는 것을 읽었고, Ctrl+C 로 취소해 로봇이 멈추는 것을 봤다</span></label></li>
+        <li><label><input type="checkbox"><span>로봇이 실제로 목표까지 주행해 도착한다 (<code>SUCCEEDED</code>)</span></label></li>
+        <li><label><input type="checkbox"><span>주행 중 사람이 앞을 막으면 멈추거나 우회한다</span></label></li>
+        <li><label><input type="checkbox"><span>rosbag(mcap) 으로 주행을 기록하고 Foxglove 에서 재생해 봤다</span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2>🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. SLAM 지도가 휘거나 두 겹으로 보인다. SLAM 파라미터부터 만지면 안 되는 이유는?</summary>
+        <div class="ans">원인 1위가 <strong>오도메트리 부정확</strong>이기 때문이다. 특히 <code>wheel_separation</code> 이 틀리면 회전량이 계속 어긋나고, SLAM 은 이를 보정하려다 지도를 뭉갠다.
+        06 단계 캘리브레이션을 먼저 검증해야 한다. 파라미터로 덮으려 하면 근본 문제가 남아 Nav2(AMCL)에서 다시 터진다.</div></details>
+      <details class="quiz"><summary>2. 전역/지역 코스트맵을 나누는 이유는?</summary>
+        <div class="ans">전역은 정적 지도 기준으로 <strong>전체 경로</strong>를 계획하고(느려도 됨), 지역은 실시간 센서로 <strong>갑자기 나타난 장애물</strong>을 즉시 피한다(빨라야 함).
+        요구되는 갱신 주기와 범위가 달라서 하나로 합치면 둘 다 나빠진다. 지역이 <code>odom</code> 기준인 것은 제어기가 튀지 않는 좌표계를 써야 하기 때문이다.</div></details>
+      <details class="quiz"><summary>3. 초기 위치(<code>/initialpose</code>)를 안 주면 왜 아무 일도 안 일어나는가?</summary>
+        <div class="ans">AMCL 이 로봇 위치를 모르면 <code>map → odom</code> TF 를 발행하지 않는다. 그러면 TF 트리가 map 에서 끊겨서 코스트맵이 로봇 위치를 알 수 없고, 경로 계획 자체가 시작되지 않는다.
+        에러가 아니라 <strong>침묵</strong>이라 헷갈린다.</div></details>
+      <details class="quiz"><summary>4. <code>inflation_radius</code> 를 로봇 반지름보다 작게 하면?</summary>
+        <div class="ans">경로 계획기는 로봇을 점으로 취급하므로, 부풀림이 부족하면 벽에서 로봇 반지름보다 가까운 경로를 만든다. 결과적으로 <strong>벽에 긁히거나 끼인다</strong>.
+        반대로 너무 크면 좁은 통로를 통과 불가로 판단해 경로를 못 찾는다.</div></details>
+      <details class="quiz"><summary>5. <code>use_sim_time</code> 을 <code>true</code> 로 둔 채 실제 로봇에서 SLAM 을 띄우면 무슨 일이 일어나는가?</summary>
+        <div class="ans">노드가 <code>/clock</code> 토픽을 시계로 삼는데 아무도 발행하지 않으므로 시계가 0 에 멈춘다. 스캔의 타임스탬프(실제 시각)와 노드의 "지금"(0)이 맞지 않아 TF 조회가 전부 실패하고 지도가 안 그려진다.
+        에러 메시지는 거의 없다. <code>online_async_launch.py</code> 의 기본값이 <code>true</code> 라서 반드시 <code>use_sim_time:=false</code> 를 붙여야 한다. 반대로 bag 을 <code>--clock</code> 으로 재생할 때는 <code>true</code> 가 맞다.</div></details>
+      <details class="quiz"><summary>6. lifecycle 노드가 <code>inactive</code> 상태면 어떤 증상이 나타나고, 무엇을 확인하는가?</summary>
+        <div class="ans">프로세스는 떠 있고 <code>ros2 node list</code> 에도 보이지만 토픽 발행도 액션 처리도 하지 않는다 — <code>/plan</code>, <code>/cmd_vel</code> 이 안 나온다.
+        <code>ros2 lifecycle get /노드</code> 로 상태를 보고, lifecycle_manager 로그에서 어느 노드가 configure/activate 에 실패했는지 찾는다. 흔한 원인은 지도 파일 경로 오타(map_server), TF 끊김(costmap), 파라미터 오타다.</div></details>
+      <details class="quiz"><summary>7. 액션 피드백의 <code>distance_remaining</code> 이 줄지 않는다. 무엇을 의심하고, 감독 노드는 무엇을 해야 하는가?</summary>
+        <div class="ans">의심 순서: ① 장애물에 막힘(<code>number_of_recoveries</code> 증가, 지역 코스트맵 확인) ② 바퀴 헛돎/미끄러짐(<code>/odom</code> 은 움직이는데 실제는 정지) ③ 위치추정 실패(AMCL 파티클이 흩어짐, <code>map→odom</code> 이 튐).
+        감독 노드(10 단계)는 일정 시간 동안 거리가 줄지 않으면 <strong>목표를 취소</strong>하고, 잠시 대기 후 재전송하거나 다음 목표로 넘어가거나 사람에게 알린다. 액션이 취소 가능하기 때문에 이 설계가 성립한다 — 03 단계에서 액션을 고른 이유다.</div></details>
+      <details class="quiz"><summary>8. 지도 작성 모드와 항법 모드를 동시에 띄우면 무엇이 망가지는가?</summary>
+        <div class="ans">slam_toolbox 와 AMCL 이 둘 다 <code>map → odom</code> TF 를 발행한다. 같은 자식 프레임의 부모를 두 노드가 쏘면 TF 가 두 값 사이에서 떨리고, 코스트맵·경로·로봇 위치가 전부 흔들린다.
+        05 단계의 철칙 "하나의 좌표계에는 부모가 하나뿐"의 실물이다. 그래서 두 모드를 별도 런치로 나누고 10 단계에서 <code>mode:=</code> 인자로 고정한다.</div></details>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

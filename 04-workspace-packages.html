@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>04 · 워크스페이스와 패키지 — C++ 노드 작성</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="04">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">04 · 워크스페이스와 패키지</p>
+      <h1>내 손으로 노드 만들기 — C++ 주, Python 보조</h1>
+      <p class="lead">03 단계가 "남이 만든 노드를 관찰"이었다면 여기부터는 <strong>내가 만든다.</strong>
+      이 단계에서 익히는 패턴(패키지 → 노드 클래스 → 빌드 → 실행)은 06, 08a, 08b, 10 단계에서 그대로 반복된다.</p>
+
+      <div class="goal">
+        <span class="label">이 단계가 끝나면</span>
+        <p><code>ament_cmake</code> 패키지를 만들고, <code>rclcpp</code> 로 발행자·구독자·타이머·파라미터가 있는 노드를 작성해 <code>colcon</code> 으로 빌드·실행할 수 있다.
+        같은 노드를 <code>rclpy</code> 로도 써서 두 언어의 대응 관계를 설명할 수 있다. 그리고 저장소의 <code>rpi5_*</code> 패키지 3개를 빌드해 가짜 MCU 로 <code>/odom</code> 이 흐르는 것을 본다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">그래프에서의 위치</span>모든 상자. 이 단계는 상자 하나를 <em>만드는 법</em>이다</div>
+        <div><span class="k">전제</span>02 (컨테이너), 03 (토픽·파라미터 개념)</div>
+        <div><span class="k">예상 소요</span>5~7시간</div>
+        <div><span class="k">언어</span><span class="tag cpp">C++</span> 주 · <span class="tag py">Python</span> 보조</div>
+      </div>
+
+      <p>모든 실습은 컨테이너 안에서 한다. <span class="tag pi">Pi 호스트</span></p>
+      <pre><code class="lang-bash">ssh pi5
+cd ~/ros2_rpi5/docker &amp;&amp; docker compose run --rm dev      # 프롬프트가 humble:/ros2_ws$ 로 바뀐다</code></pre>
+
+      <h2>1. 개요 — 워크스페이스는 왜 이렇게 생겼는가</h2>
+      <pre class="diagram"><code>/ros2_ws/                  ← 컨테이너 안 경로 (호스트의 ~/ros2_rpi5/ros2_ws 와 같은 디렉터리)
+├── src/                   ← 내가 쓰는 곳. git 에 올라가는 유일한 디렉터리
+│   ├── rpi5_bringup/        · 런치 + 파라미터 (시스템 조립)          ament_cmake
+│   ├── rpi5_description/    · URDF (형상 + TF 트리)                 ament_cmake
+│   ├── rpi5_mcu_bridge/     · MCU 브리지 참고 구현 (Python)         ament_python
+│   └── rpi5_hello_cpp/      · ★ 이 단계에서 만든다                  ament_cmake
+├── build/                 ← colcon 의 중간 산출물           (.gitignore)
+├── install/               ← 빌드 결과. ros2 가 실제로 실행하는 것 (.gitignore)
+└── log/                   ← 빌드 로그                      (.gitignore)</code></pre>
+
+      <h3>overlay / underlay — ROS 환경의 핵심 개념</h3>
+      <pre><code class="lang-bash">source /opt/ros/humble/setup.bash     # ① underlay: ROS 본체
+source /ros2_ws/install/setup.bash    # ② overlay:  내 패키지</code></pre>
+      <p><strong>순서가 중요하다.</strong> overlay 는 underlay 위에 얹힌다. 같은 이름의 패키지가 양쪽에 있으면 <strong>overlay(내 것)가 이긴다.</strong>
+      이 프로젝트의 컨테이너는 <code>.bashrc</code> 와 <code>entrypoint.sh</code> 에서 이 두 줄을 자동으로 실행한다. 그래서 셸을 열면 바로 <code>ros2</code> 가 동작한다.</p>
+      <div class="callout warn"><span class="ct">"ros2: command not found", "내 패키지가 안 보여요"의 99%</span>
+        <p>source 문제다. 새 터미널을 열면 환경은 초기화된다. 그리고 <strong>빌드 직후에도</strong> <code>source install/setup.bash</code> 를 다시 해야 새 실행파일이 보인다.
+        빌드는 <code>install/</code> 에 파일을 만들 뿐, 현재 셸의 <code>PATH</code>·<code>AMENT_PREFIX_PATH</code> 는 건드리지 않기 때문이다.</p>
+      </div>
+
+      <h2>2. 원리 — 왜 C++ 이고, 빌드 시스템은 무엇을 하는가</h2>
+
+      <h3>2-1. 이 프로젝트에서 C++ 을 주 언어로 쓰는 이유</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>이유</th><th>어느 노드에서 체감하는가</th></tr></thead>
+        <tbody>
+          <tr><td><strong>고정 주기 루프의 결정성.</strong> 인터프리터와 GC 가 없어 50 Hz 타이머의 지터가 작다</td><td>06 <code>mcu_bridge</code></td></tr>
+          <tr><td><strong>영상은 복사가 비용이다.</strong> <code>cv_bridge</code> → <code>cv::Mat</code> 이 같은 메모리를 가리킨다. Python 은 numpy 로 한 번 더 감싼다</td><td>08a, 08b</td></tr>
+          <tr><td><strong>ROS 2 생태계의 언어.</strong> Nav2·드라이버·tf2·image_transport 가 전부 C++ 이다. 소스를 읽어야 할 때 C++ 을 알아야 한다</td><td>07, 09</td></tr>
+          <tr><td><strong>컴포넌트와 프로세스 내 통신.</strong> 노드를 하나의 프로세스에 합쳐 복사 없이 메시지를 넘기는 기능은 C++ 에만 있다</td><td>(10 이후 확장)</td></tr>
+        </tbody>
+      </table></div>
+      <p>반대로 <strong>Python 이 맞는 곳</strong>도 분명하다. 런치파일(선언), 일회성 스크립트(캘리브레이션·분석), 그리고 벤더 SDK 가 Python 을 우선 지원하는 곳(08c HailoRT).
+      두 언어를 "어느 쪽이 좋은가"로 고르지 않고 <strong>노드가 요구하는 것</strong>으로 고른다.</p>
+
+      <h3>2-2. ament_cmake 와 ament_python</h3>
+      <div class="tbl"><table>
+        <thead><tr><th></th><th><code>ament_cmake</code> (C++)</th><th><code>ament_python</code> (Python)</th></tr></thead>
+        <tbody>
+          <tr><td>빌드 정의</td><td><code>CMakeLists.txt</code></td><td><code>setup.py</code></td></tr>
+          <tr><td>실행파일 등록</td><td><code>add_executable</code> + <code>install(TARGETS …)</code></td><td><code>entry_points['console_scripts']</code></td></tr>
+          <tr><td>코드 수정 후</td><td>다시 컴파일 (수 초 ~ 수십 초)</td><td><code>--symlink-install</code> 이면 즉시 반영</td></tr>
+          <tr><td>런치·설정 전용 패키지</td><td><strong>권장</strong> — <code>install(DIRECTORY launch config …)</code> 한 줄</td><td><code>data_files</code> 에 일일이 등록</td></tr>
+          <tr><td>우리 프로젝트</td><td><code>rpi5_bringup</code>, <code>rpi5_description</code>, <code>rpi5_hello_cpp</code>, 06 이후 C++ 노드</td><td><code>rpi5_mcu_bridge</code>(참고), 08c <code>rpi5_hailo_detect</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>2-3. colcon → CMake → ament — 빌드가 하는 일</h3>
+      <pre class="diagram"><code>  colcon build
+    │  src/ 의 package.xml 을 전부 읽어 의존 순서를 정한다 (bringup 은 description 뒤에)
+    ├─► 패키지마다 build/&lt;pkg&gt;/ 에서 cmake 를 돌린다
+    │      find_package(rclcpp)          ← /opt/ros/humble 에서 헤더·라이브러리 위치를 찾는다
+    │      add_executable(hello_node …)  ← 컴파일할 소스
+    │      ament_target_dependencies(…)  ← include 경로 + 링크 + 컴파일 옵션을 한 번에 붙인다
+    │      install(TARGETS … lib/pkg)    ← ros2 run 이 찾는 위치로 복사
+    └─► install/&lt;pkg&gt;/ 에 결과 + setup.bash 를 만든다</code></pre>
+      <div class="callout why"><span class="ct">왜 <code>lib/${PROJECT_NAME}</code> 인가</span>
+        <p><code>ros2 run &lt;pkg&gt; &lt;exe&gt;</code> 는 <code>install/&lt;pkg&gt;/lib/&lt;pkg&gt;/&lt;exe&gt;</code> 를 찾는다. <code>bin/</code> 에 넣으면 셸에서 직접 실행은 되지만 <code>ros2 run</code> 은 못 찾는다.
+        이 규칙 하나가 "빌드는 됐는데 <code>ros2 run</code> 이 no executable found 를 낸다"의 원인 대부분이다.</p>
+      </div>
+      <div class="callout why"><span class="ct"><code>ament_target_dependencies</code> 와 <code>target_link_libraries</code> 의 차이</span>
+        <p><code>ament_target_dependencies(node rclcpp std_msgs)</code> 는 ROS 패키지의 include 경로·라이브러리·컴파일 정의를 <strong>패키지 단위로</strong> 통째로 붙인다.
+        <code>target_link_libraries(node ${OpenCV_LIBS})</code> 는 일반 CMake 라이브러리를 붙인다. 08a 에서 OpenCV 를 쓸 때 둘을 같이 쓴다.</p>
+      </div>
+
+      <h2>3. 실습</h2>
+
+      <h3>3-1. C++ 패키지 만들기 <span class="tag cpp">C++</span> <span class="tag cli">컨테이너</span></h3>
+      <pre><code class="lang-bash">cd /ros2_ws/src
+ros2 pkg create --build-type ament_cmake --license Apache-2.0 \
+    --dependencies rclcpp std_msgs \
+    rpi5_hello_cpp
+
+tree rpi5_hello_cpp</code></pre>
+      <pre class="diagram"><code>rpi5_hello_cpp/
+├── CMakeLists.txt        ← 빌드 정의 (무엇을 컴파일하고 어디에 설치할지)
+├── package.xml           ← 메타데이터 + 의존성 (colcon 이 빌드 순서를 여기서 정한다)
+├── include/rpi5_hello_cpp/   ← 공개 헤더 (지금은 비어 있음)
+└── src/                  ← ★ 소스는 여기</code></pre>
+      <p><code>--dependencies</code> 로 준 이름은 <code>package.xml</code> 의 <code>&lt;depend&gt;</code> 와 <code>CMakeLists.txt</code> 의 <code>find_package</code> 에 자동으로 들어간다. 열어서 확인한다.</p>
+
+      <h3>3-2. 첫 노드 — 발행자</h3>
+      <p><code>src/hello_publisher.cpp</code> 를 만든다. <strong>복사하지 말고 직접 치십시오.</strong> 손으로 쳐야 구조가 남는다.</p>
+      <pre><code class="lang-cpp">#include &lt;chrono&gt;
+#include &lt;memory&gt;
+#include &lt;string&gt;
+
+#include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/string.hpp"       // 메시지 헤더 경로: &lt;pkg&gt;/msg/&lt;snake_case&gt;.hpp
+
+using namespace std::chrono_literals;  // 1s, 500ms 같은 리터럴
+
+// 노드 = rclcpp::Node 를 상속한 클래스. 생성자에서 인터페이스(발행자/타이머)를 만든다.
+class HelloPublisher : public rclcpp::Node
+{
+public:
+  HelloPublisher()
+  : Node("hello_publisher"), count_(0)          // "hello_publisher" 가 노드 이름
+  {
+    // 발행자: &lt;메시지 타입&gt;("토픽 이름", 큐 깊이)
+    pub_ = this-&gt;create_publisher&lt;std_msgs::msg::String&gt;("hello", 10);
+
+    // 타이머: 1초마다 on_timer 를 부른다. std::bind 로 멤버 함수를 콜백으로 넘긴다.
+    timer_ = this-&gt;create_wall_timer(1s, std::bind(&amp;HelloPublisher::on_timer, this));
+  }
+
+private:
+  void on_timer()
+  {
+    auto msg = std_msgs::msg::String();
+    msg.data = "hello " + std::to_string(count_++);
+    RCLCPP_INFO(this-&gt;get_logger(), "publish: '%s'", msg.data.c_str());
+    pub_-&gt;publish(msg);
+  }
+
+  // 멤버로 잡고 있어야 한다. 지역 변수로 만들면 생성자가 끝나는 순간 소멸해 아무 일도 안 일어난다.
+  rclcpp::Publisher&lt;std_msgs::msg::String&gt;::SharedPtr pub_;
+  rclcpp::TimerBase::SharedPtr timer_;
+  size_t count_;
+};
+
+int main(int argc, char ** argv)
+{
+  rclcpp::init(argc, argv);                          // ① ROS 컨텍스트 초기화
+  rclcpp::spin(std::make_shared&lt;HelloPublisher&gt;());   // ② 노드 생성 + ③ 콜백 루프 (여기서 블로킹)
+  rclcpp::shutdown();                                // ④ 정리
+  return 0;
+}</code></pre>
+
+      <h4><code>rclcpp::spin()</code> 이 하는 일</h4>
+      <pre class="diagram"><code>   spin() 내부 ─ 무한 루프 (Executor)
+      ├─ 타이머가 만료됐나?               → on_timer() 호출
+      ├─ 구독한 토픽에 새 메시지가 왔나?   → 구독 콜백 호출
+      ├─ 서비스 요청 / 액션 피드백이 왔나? → 핸들러 호출
+      └─ 반복  (기본 SingleThreadedExecutor: 콜백은 한 번에 하나씩 순서대로)</code></pre>
+      <p><strong>spin 을 호출하지 않으면 콜백이 하나도 실행되지 않는다.</strong> 그리고 <strong>콜백 안에서 오래 걸리는 일(sleep, 무거운 추론)을 하면 다른 콜백이 전부 밀린다.</strong>
+      이 사실이 08b 에서 "추론 중에도 파라미터 서비스가 응답해야 한다"는 설계로 이어진다 (부록 A 의 MultiThreadedExecutor).</p>
+
+      <div class="callout note"><span class="ct">Python 과 무엇이 대응되는가</span>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>rclcpp (C++)</th><th>rclpy (Python)</th></tr></thead>
+          <tbody>
+            <tr><td><code>class X : public rclcpp::Node</code></td><td><code>class X(Node)</code></td></tr>
+            <tr><td><code>create_publisher&lt;T&gt;("topic", 10)</code></td><td><code>create_publisher(T, 'topic', 10)</code></td></tr>
+            <tr><td><code>create_wall_timer(1s, std::bind(&amp;X::cb, this))</code></td><td><code>create_timer(1.0, self.cb)</code></td></tr>
+            <tr><td><code>RCLCPP_INFO(get_logger(), "%s", s.c_str())</code></td><td><code>self.get_logger().info(f'{s}')</code></td></tr>
+            <tr><td><code>rclcpp::spin(std::make_shared&lt;X&gt;())</code></td><td><code>rclpy.spin(X())</code></td></tr>
+            <tr><td><code>Publisher&lt;T&gt;::SharedPtr</code> 멤버</td><td><code>self.pub = …</code> (참조가 유지됨)</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+
+      <h3>3-3. CMakeLists.txt 와 package.xml</h3>
+      <p><code>CMakeLists.txt</code> 를 아래처럼 만든다. 생성된 파일의 테스트 블록은 지워도 된다.</p>
+      <pre><code class="lang-cmake">cmake_minimum_required(VERSION 3.8)
+project(rpi5_hello_cpp)
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)   # 경고를 켜 둔다. 경고는 미래의 버그다
+endif()
+
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+
+add_executable(hello_publisher src/hello_publisher.cpp)
+ament_target_dependencies(hello_publisher rclcpp std_msgs)
+
+install(TARGETS
+  hello_publisher
+  DESTINATION lib/${PROJECT_NAME})      # ← ros2 run 이 찾는 위치
+
+ament_package()</code></pre>
+      <p><code>package.xml</code> 은 <code>ros2 pkg create</code> 가 만든 그대로 두되, <code>&lt;depend&gt;rclcpp&lt;/depend&gt;</code> 와 <code>&lt;depend&gt;std_msgs&lt;/depend&gt;</code> 가 있는지, 그리고 <code>&lt;build_type&gt;ament_cmake&lt;/build_type&gt;</code> 인지 확인한다.</p>
+      <div class="callout why"><span class="ct">의존성을 두 곳(package.xml, CMakeLists.txt)에 적는 이유</span>
+        <p>역할이 다르다. <code>package.xml</code> 은 <strong>colcon 이 빌드 순서를 정하고 rosdep 이 apt 패키지를 설치</strong>하는 데 쓴다.
+        <code>CMakeLists.txt</code> 의 <code>find_package</code> 는 <strong>컴파일러에게 헤더와 라이브러리 위치를 알려 준다.</strong> 한쪽만 적으면 "내 PC 에서만 빌드되는" 패키지가 된다.</p>
+      </div>
+
+      <h3>3-4. 빌드와 실행</h3>
+      <pre><code class="lang-bash">cd /ros2_ws
+colcon build --symlink-install --packages-select rpi5_hello_cpp --parallel-workers 2
+source install/setup.bash                  # ← 빌드 후 반드시!
+
+ros2 run rpi5_hello_cpp hello_publisher</code></pre>
+      <p>다른 터미널(새 ssh → <code>docker compose run --rm dev</code>)에서:</p>
+      <pre><code class="lang-bash">ros2 node list                 # /hello_publisher
+ros2 topic echo /hello         # data: hello 12 …
+ros2 topic hz /hello           # average rate: 1.000</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>옵션</th><th>의미</th></tr></thead>
+        <tbody>
+          <tr><td><code>--symlink-install</code></td><td>Python 파일·런치·YAML 을 복사하지 않고 링크한다. 고치면 즉시 반영. C++ 은 어차피 재컴파일이므로 무관하지만 <strong>항상 켜 둔다</strong></td></tr>
+          <tr><td><code>--packages-select</code></td><td>그 패키지만. 전체 빌드는 Pi 에서 오래 걸린다</td></tr>
+          <tr><td><code>--packages-up-to X</code></td><td>X 와 X 가 의존하는 것까지</td></tr>
+          <tr><td><code>--parallel-workers 2</code></td><td>Pi 5 의 RAM 보호. 기본값(코어 수 4)이면 큰 패키지에서 OOM 으로 죽는다</td></tr>
+          <tr><td><code>--cmake-args -DCMAKE_BUILD_TYPE=Release</code></td><td>최적화. 08b 의 추론 노드부터는 켠다 (Debug 는 OpenCV 코드가 수 배 느리다)</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout tip"><span class="ct">캐시가 꼬였을 때</span>
+        <p>증상: 고친 게 반영 안 됨, 이상한 링크 에러. <code>rm -rf build install log &amp;&amp; colcon build --symlink-install</code>. 그리고 <code>rosdep install --from-paths src --ignore-src -r -y</code> 로 빠진 의존성을 설치한다 — 기본 구성에서 컨테이너 안 apt 설치는 컨테이너가 재생성되면 사라지므로, 계속 필요한 것은 02 단계 §2-2 의 방식으로 남긴다 (A: <code>docker/Dockerfile</code> 에 넣고 재빌드, B: 시스템 경로 볼륨이 있는 컨테이너에서 설치).</p>
+      </div>
+
+      <h3>3-5. 구독자 노드 추가</h3>
+      <p><code>src/hello_subscriber.cpp</code>:</p>
+      <pre><code class="lang-cpp">#include &lt;memory&gt;
+
+#include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/string.hpp"
+
+class HelloSubscriber : public rclcpp::Node
+{
+public:
+  HelloSubscriber()
+  : Node("hello_subscriber")
+  {
+    // 구독: &lt;타입&gt;("토픽", 큐 깊이, 콜백). 람다로 쓰면 std::bind 가 필요 없다.
+    sub_ = this-&gt;create_subscription&lt;std_msgs::msg::String&gt;(
+      "hello", 10,
+      [this](const std_msgs::msg::String &amp; msg) {
+        RCLCPP_INFO(this-&gt;get_logger(), "received: '%s'", msg.data.c_str());
+      });
+  }
+
+private:
+  rclcpp::Subscription&lt;std_msgs::msg::String&gt;::SharedPtr sub_;
+};
+
+int main(int argc, char ** argv)
+{
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared&lt;HelloSubscriber&gt;());
+  rclcpp::shutdown();
+  return 0;
+}</code></pre>
+      <p><code>CMakeLists.txt</code> 에 실행파일을 <strong>추가</strong>한다 (기존 줄은 그대로):</p>
+      <pre><code class="lang-cmake">add_executable(hello_subscriber src/hello_subscriber.cpp)
+ament_target_dependencies(hello_subscriber rclcpp std_msgs)
+
+install(TARGETS
+  hello_publisher
+  hello_subscriber                       # ← 추가
+  DESTINATION lib/${PROJECT_NAME})</code></pre>
+      <pre><code class="lang-bash">colcon build --symlink-install --packages-select rpi5_hello_cpp --parallel-workers 2
+source install/setup.bash
+
+# 터미널 A
+ros2 run rpi5_hello_cpp hello_publisher
+# 터미널 B
+ros2 run rpi5_hello_cpp hello_subscriber</code></pre>
+      <p>B 에 <code>received: 'hello N'</code> 이 찍히면 두 프로세스가 DDS 로 연결된 것이다. <code>ros2 topic info /hello -v</code> 로 발행자 1, 구독자 1 과 양쪽 QoS 를 확인한다.</p>
+
+      <h3>3-6. 파라미터와 QoS — 06 단계에서 바로 쓰는 두 가지</h3>
+      <p>발행 주기를 파라미터로 빼 보자. <code>hello_publisher.cpp</code> 의 생성자를 고친다.</p>
+      <pre><code class="lang-cpp">// 생성자 안. ROS 2 는 "선언하지 않은 파라미터"를 거부한다 — 선언이 곧 인터페이스다.
+this-&gt;declare_parameter&lt;double&gt;("rate_hz", 1.0);
+const double rate = this-&gt;get_parameter("rate_hz").as_double();
+
+// 주기 = 1/rate. std::chrono::duration&lt;double&gt; 로 만들어 넘긴다.
+timer_ = this-&gt;create_wall_timer(
+  std::chrono::duration&lt;double&gt;(1.0 / rate),
+  std::bind(&amp;HelloPublisher::on_timer, this));</code></pre>
+      <pre><code class="lang-bash">colcon build --symlink-install --packages-select rpi5_hello_cpp --parallel-workers 2 &amp;&amp; source install/setup.bash
+ros2 run rpi5_hello_cpp hello_publisher --ros-args -p rate_hz:=5.0
+ros2 topic hz /hello                      # 5 Hz
+ros2 param get /hello_publisher rate_hz   # 5.0</code></pre>
+      <p>QoS 는 <code>rclcpp::QoS</code> 객체로 준다. 센서 스트림은 <code>BEST_EFFORT</code>, 상태·명령은 <code>RELIABLE</code> 이 관례다 (03 단계 §2-7).</p>
+      <pre><code class="lang-cpp">// 큐 깊이 10 + 신뢰성 BEST_EFFORT (센서 데이터용 프리셋도 있다: rclcpp::SensorDataQoS())
+auto qos = rclcpp::QoS(10).best_effort();
+pub_ = this-&gt;create_publisher&lt;std_msgs::msg::String&gt;("hello", qos);</code></pre>
+      <div class="callout warn"><span class="ct">지금 직접 확인해 보십시오</span>
+        <p>발행자를 <code>best_effort()</code> 로 바꿔 빌드하고, 구독자는 그대로(기본 <code>RELIABLE</code>) 띄운다. <strong>메시지가 오지 않는다. 에러도 없다.</strong>
+        <code>ros2 topic info /hello -v</code> 로 양쪽 QoS 를 비교해 보고, 구독자도 <code>rclcpp::QoS(10).best_effort()</code> 로 바꾸면 다시 연결된다.
+        07 단계에서 라이다가 Foxglove 에 안 보일 때 이 경험이 답을 준다.</p>
+      </div>
+
+      <h3>3-7. Python 보조 트랙 — 같은 노드를 rclpy 로 <span class="tag py">Python</span></h3>
+      <pre><code class="lang-bash">cd /ros2_ws/src
+ros2 pkg create --build-type ament_python --license Apache-2.0 \
+    --node-name hello_node rpi5_hello_py
+tree rpi5_hello_py</code></pre>
+      <pre class="diagram"><code>rpi5_hello_py/
+├── package.xml
+├── setup.py                 ← 빌드/설치 정의, 실행파일 등록 (entry_points)
+├── setup.cfg
+├── resource/rpi5_hello_py   ← ament 인덱스용 빈 파일 (지우면 패키지를 못 찾는다)
+└── rpi5_hello_py/
+    ├── __init__.py
+    └── hello_node.py</code></pre>
+      <p><code>rpi5_hello_py/hello_node.py</code>:</p>
+      <pre><code class="lang-python">import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+
+
+class HelloPublisher(Node):
+    def __init__(self):
+        super().__init__('hello_publisher_py')
+        self.declare_parameter('rate_hz', 1.0)
+        rate = self.get_parameter('rate_hz').value
+        self.pub = self.create_publisher(String, 'hello', 10)
+        self.timer = self.create_timer(1.0 / rate, self.on_timer)
+        self.count = 0
+
+    def on_timer(self):
+        msg = String()
+        msg.data = f'hello(py) {self.count}'
+        self.pub.publish(msg)
+        self.get_logger().info(f'publish: {msg.data}')
+        self.count += 1
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = HelloPublisher()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()</code></pre>
+      <p><code>setup.py</code> 의 <code>entry_points</code> 가 실행파일 이름을 정한다. <code>--node-name</code> 으로 이미 한 줄이 들어가 있다.</p>
+      <pre><code class="lang-python">entry_points={
+    'console_scripts': [
+        'hello_node = rpi5_hello_py.hello_node:main',
+    ],
+},</code></pre>
+      <pre><code class="lang-bash">cd /ros2_ws
+colcon build --symlink-install --packages-select rpi5_hello_py
+source install/setup.bash
+ros2 run rpi5_hello_py hello_node --ros-args -p rate_hz:=2.0
+# 다른 터미널: C++ 구독자가 Python 발행자의 메시지를 받는다 — 언어는 DDS 위에서 사라진다
+ros2 run rpi5_hello_cpp hello_subscriber</code></pre>
+      <div class="callout note"><span class="ct"><code>--symlink-install</code> 이어도 다시 빌드해야 하는 경우</span>
+        <p><code>setup.py</code> 의 <code>entry_points</code>·<code>data_files</code> 를 바꿨을 때, <code>package.xml</code> 을 바꿨을 때, 새 파일을 추가했을 때, C++ 코드를 고쳤을 때.
+        심볼릭 링크는 "이미 등록된 파일의 내용"만 즉시 반영한다.</p>
+      </div>
+
+      <h3>3-8. 우리 프로젝트 패키지 빌드 — 가짜 MCU 로 <code>/odom</code> 보기</h3>
+      <p>연습이 끝났으면 저장소의 패키지 3개를 빌드한다.</p>
+      <pre><code class="lang-bash">cd /ros2_ws
+colcon build --symlink-install --parallel-workers 2
+source install/setup.bash
+ros2 pkg list | grep rpi5
+#   rpi5_bringup  rpi5_description  rpi5_hello_cpp  rpi5_hello_py  rpi5_mcu_bridge</code></pre>
+      <p>MCU 프로토콜이 아직 확정되지 않았어도 <strong>ROS 쪽 데이터 흐름은 지금 확인할 수 있다.</strong> 참고 구현(Python)을 시뮬레이션 모드로 띄운다.</p>
+      <pre><code class="lang-bash">ros2 launch rpi5_mcu_bridge mcu_bridge.launch.py simulate:=true</code></pre>
+      <p>다른 터미널에서:</p>
+      <pre><code class="lang-bash">ros2 topic list                  # /cmd_vel /odom /joint_states /battery_state /tf
+ros2 topic hz /odom              # 50 Hz 근처
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.2}, angular: {z: 0.0}}" -r 10
+ros2 topic echo /odom --field pose.pose.position</code></pre>
+      <p><code>x</code> 가 초당 0.2 씩 증가하면 가짜 MCU 가 전진하고 있는 것이다. <kbd>Ctrl</kbd>+<kbd>C</kbd> 로 pub 을 멈추면 0.5초 뒤 워치독이 정지시킨다 — <code>twist.twist.linear.x</code> 가 0 이 되는 것을 확인한다.</p>
+      <div class="callout why"><span class="ct">이 시뮬레이션의 의미 — 문제의 범위를 미리 좁혀 두는 것</span>
+        <p>하드웨어 없이 <code>cmd_vel → 운동학 → odom → TF</code> 사슬을 검증해 둔다. 나중에 실제 MCU 에서 문제가 나면 "ROS 쪽은 이미 맞다"를 알고 있으므로 시리얼/펌웨어만 의심하면 된다.
+        06 단계에서 이 Python 노드를 <strong>C++ 로 다시 쓸 때</strong>, 같은 명령으로 두 구현의 <code>/odom</code> 을 비교하는 것이 검증 방법이 된다.</p>
+      </div>
+
+      <h3>3-9. 읽기 숙제 — 이 단계의 진짜 과제</h3>
+      <p>직접 만든 것이 아닌 패키지 3개를 열어서 <strong>주석을 끝까지 읽으십시오.</strong> 06 단계에서 이 코드를 C++ 로 옮기려면 지금 이해해야 한다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>파일</th><th>무엇을 배울 것인가</th></tr></thead>
+        <tbody>
+          <tr><td><code>ros2_ws/src/rpi5_mcu_bridge/rpi5_mcu_bridge/protocol.py</code></td><td>시리얼 프레임 설계(헤더·길이·CRC8·엔디안), 왜 CRC 가 안전 문제인가, 가짜 MCU(<code>LoopbackProtocol</code>)의 구조</td></tr>
+          <tr><td><code>ros2_ws/src/rpi5_mcu_bridge/rpi5_mcu_bridge/mcu_bridge_node.py</code></td><td>파라미터 선언, <code>/odom</code> 을 RELIABLE 로 두는 이유, 워치독, 차동구동 운동학, TF 브로드캐스트, <code>publish_tf</code> 의 존재 이유</td></tr>
+          <tr><td><code>ros2_ws/src/rpi5_bringup/launch/robot.launch.py</code></td><td>런치 인자, 조건부 실행(<code>IfCondition</code>), 패키지 경로 찾기, 노드 이름과 YAML 키의 매칭</td></tr>
+          <tr><td><code>ros2_ws/src/rpi5_bringup/config/robot_params.yaml</code></td><td><code>&lt;노드이름&gt;: ros__parameters:</code> 구조, 비워 둔 <code>____</code> 가 왜 비어 있는가</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>✅ 검증 체크포인트</h2>
+      <p>아무것도 보고 베끼지 말고 직접 쳐서 통과하십시오.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox"><span><code>ros2 pkg create --build-type ament_cmake</code> 로 <code>rpi5_hello_cpp</code> 를 만들었다</span></label></li>
+        <li><label><input type="checkbox"><span>C++ 발행 노드를 직접 작성해 빌드하고 <code>ros2 run</code> 으로 실행했다 — <code>ros2 topic hz /hello</code> 가 1 Hz 를 보인다</span></label></li>
+        <li><label><input type="checkbox"><span>C++ 구독 노드를 추가하고 <code>CMakeLists.txt</code> 의 <code>add_executable</code> / <code>install</code> 에 등록해 두 노드가 통신하는 것을 봤다</span></label></li>
+        <li><label><input type="checkbox"><span><code>rate_hz</code> 파라미터를 선언하고 <code>--ros-args -p rate_hz:=5.0</code> 으로 주기가 바뀌는 것을 <code>ros2 topic hz</code> 로 확인했다</span></label></li>
+        <li><label><input type="checkbox"><span>발행자만 <code>best_effort()</code> 로 바꿔서 <strong>연결이 조용히 끊기는 것</strong>과, <code>ros2 topic info -v</code> 로 그 원인이 보이는 것을 확인했다</span></label></li>
+        <li><label><input type="checkbox"><span>같은 발행자를 rclpy 로 써서 C++ 구독자가 Python 메시지를 받는 것을 봤다</span></label></li>
+        <li><label><input type="checkbox"><span><code>colcon build --symlink-install</code> → <code>source install/setup.bash</code> → <code>ros2 run</code> 흐름을 보지 않고 칠 수 있다</span></label></li>
+        <li><label><input type="checkbox"><span><code>rpi5_*</code> 패키지가 전부 빌드되고 <code>ros2 pkg list</code> 에 나온다</span></label></li>
+        <li><label><input type="checkbox"><span>참고 구현을 <code>simulate:=true</code> 로 띄워 <code>/odom</code> 의 x 가 증가하는 것과, pub 을 멈췄을 때 워치독이 속도를 0 으로 만드는 것을 봤다</span></label></li>
+        <li><label><input type="checkbox"><span><code>protocol.py</code>, <code>mcu_bridge_node.py</code>, <code>robot.launch.py</code> 의 주석을 끝까지 읽었다</span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2>🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. <code>colcon build</code> 후에 왜 <code>source install/setup.bash</code> 를 해야 하는가?</summary>
+        <div class="ans">빌드는 <code>install/</code> 에 실행파일과 환경 스크립트를 만들 뿐이다. 현재 셸의 <code>PATH</code>, <code>AMENT_PREFIX_PATH</code>, <code>PYTHONPATH</code> 는 그대로다.
+        source 가 그 환경변수들을 갱신해서 <code>ros2 run</code> 이 새 패키지를 찾을 수 있게 한다.</div></details>
+      <details class="quiz"><summary>2. 발행자를 지역 변수로 만들면 무슨 일이 일어나는가?</summary>
+        <div class="ans"><code>SharedPtr</code> 의 참조 카운트가 생성자 끝에서 0 이 되어 발행자가 <strong>즉시 소멸</strong>한다. 타이머도 마찬가지다.
+        노드는 떠 있는데 <code>ros2 topic list</code> 에 토픽이 없거나 콜백이 한 번도 안 불린다. 인터페이스 객체는 반드시 멤버로 잡는다.</div></details>
+      <details class="quiz"><summary>3. <code>ament_target_dependencies</code> 와 <code>target_link_libraries</code> 는 언제 각각 쓰는가?</summary>
+        <div class="ans">ROS 패키지(<code>rclcpp</code>, <code>sensor_msgs</code>, <code>cv_bridge</code>…)는 <code>ament_target_dependencies</code> 로 include·링크·정의를 통째로 붙인다.
+        일반 CMake 라이브러리(OpenCV 의 <code>${OpenCV_LIBS}</code>, 시스템 라이브러리)는 <code>target_link_libraries</code> 로 붙인다. 08a 에서 둘을 같이 쓴다.</div></details>
+      <details class="quiz"><summary>4. 실행파일을 <code>bin/</code> 에 설치하면 왜 <code>ros2 run</code> 이 못 찾는가?</summary>
+        <div class="ans"><code>ros2 run &lt;pkg&gt; &lt;exe&gt;</code> 는 <code>install/&lt;pkg&gt;/lib/&lt;pkg&gt;/</code> 만 뒤진다. 셸에서 직접 실행은 되므로 "빌드는 됐는데 ros2 run 만 안 된다"로 나타난다.
+        <code>install(TARGETS … DESTINATION lib/${PROJECT_NAME})</code> 이 규칙이다.</div></details>
+      <details class="quiz"><summary>5. 발행자는 <code>BEST_EFFORT</code>, 구독자는 <code>RELIABLE</code> 일 때 무슨 일이 일어나는가?</summary>
+        <div class="ans"><strong>연결되지 않는다.</strong> 구독자가 요구하는 품질을 발행자가 보장할 수 없기 때문이다. 에러 없이 데이터가 안 온다.
+        <code>ros2 topic info -v</code> 로 양쪽 QoS 를 비교해야 알 수 있다. 3-6 에서 직접 재현했어야 한다.</div></details>
+      <details class="quiz"><summary>6. <code>rclcpp::spin()</code> 의 콜백 안에서 500 ms 짜리 추론을 돌리면 무엇이 곤란한가?</summary>
+        <div class="ans">기본 실행기는 콜백을 한 번에 하나씩 처리하므로 그 500 ms 동안 타이머·다른 구독·파라미터 서비스가 전부 멈춘다.
+        해결은 ① 무거운 일을 별도 스레드/실행기로 분리하거나(<code>MultiThreadedExecutor</code> + 콜백 그룹) ② 큐 깊이를 1 로 두고 최신 프레임만 처리하는 것이다. 08b 에서 다룬다.</div></details>
+      <details class="quiz"><summary>7. <code>simulate:=true</code> 로 돌리는 것이 왜 학습에 도움이 되는가?</summary>
+        <div class="ans">하드웨어가 준비되기 전에 ROS 쪽 배선(토픽 이름, 메시지 타입, 운동학, TF)을 검증해 둘 수 있다.
+        나중에 실제 MCU 에서 문제가 생겼을 때 "ROS 쪽은 이미 맞다"를 알고 있으므로 <strong>의심 범위가 시리얼/펌웨어로 좁혀진다.</strong></div></details>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

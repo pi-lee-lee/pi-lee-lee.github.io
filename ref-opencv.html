@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>부록 B · OpenCV 사용법</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="ref-opencv">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">부록 B · OpenCV 사용법</p>
+      <h1>OpenCV — cv::Mat 에서 DNN 까지, C++ 과 Python 을 나란히</h1>
+      <p class="lead">08·08a·08b·10 단계에서 쓰는 OpenCV 기능을 ROS 와 무관한 순수 라이브러리 관점에서 정리했다.
+      C++ 이 원본 API 이고 Python(<code>cv2</code>)은 같은 함수의 바인딩이므로 <strong>두 언어를 나란히</strong> 놓았다.
+      한쪽을 알면 다른 쪽은 이름만 바꾸면 된다. 영상 처리 이론서가 아니라 <em>이 로봇에서 실제로 쓰는 것</em>만 담았다.</p>
+
+      <div class="goal">
+        <span class="label">이 부록의 쓰임</span>
+        <p>컨테이너(Ubuntu 22.04)의 apt OpenCV 는 <strong>4.5.4</strong>, Mac 의 <code>pip install opencv-python</code> 은 4.x 최신이다.
+        두 버전에서 공통으로 동작하는 API 만 쓰고, 버전에 민감한 부분(DNN 의 ONNX 지원)은 따로 표시했다.
+        설치된 버전은 항상 §1 의 명령으로 확인하고 시작한다.</p>
+      </div>
+
+      <h2>1. OpenCV 란, 설치와 버전 확인</h2>
+      <p>OpenCV 는 <code>cv::Mat</code>(행렬 = 영상)을 중심으로 한 영상 처리·컴퓨터 비전 라이브러리다. 모듈(<code>core</code>, <code>imgproc</code>, <code>imgcodecs</code>, <code>calib3d</code>, <code>dnn</code>…)로 나뉘어 있고 헤더도 모듈별이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>어디서</th><th>설치</th><th>버전 확인</th></tr></thead>
+        <tbody>
+          <tr><td><span class="tag cli">컨테이너</span></td><td>02 단계 Dockerfile 블록의 <code>libopencv-dev python3-opencv</code> (4.5.4)</td><td><code>pkg-config --modversion opencv4</code>, <code>python3 -c "import cv2; print(cv2.__version__)"</code></td></tr>
+          <tr><td><span class="tag mac">Mac</span></td><td><code>python3 -m venv ~/cv &amp;&amp; source ~/cv/bin/activate &amp;&amp; pip install opencv-python numpy</code></td><td><code>python3 -c "import cv2; print(cv2.__version__)"</code></td></tr>
+          <tr><td>C++ 코드 안</td><td>—</td><td><code>std::cout &lt;&lt; cv::getVersionString();</code>, <code>CV_VERSION</code> 매크로</td></tr>
+        </tbody>
+      </table></div>
+      <div class="two">
+        <div><pre><code class="lang-cpp">// 모듈별 헤더 — 필요한 것만 포함하면 컴파일이 빠르다
+#include &lt;opencv2/core.hpp&gt;        // cv::Mat, cv::Rect, cv::Scalar
+#include &lt;opencv2/imgproc.hpp&gt;     // cvtColor, resize, Canny, 그리기
+#include &lt;opencv2/imgcodecs.hpp&gt;   // imread, imwrite, imencode
+#include &lt;opencv2/calib3d.hpp&gt;     // calibrateCamera, undistort
+#include &lt;opencv2/dnn.hpp&gt;         // readNet, blobFromImage, NMSBoxes
+// #include &lt;opencv2/opencv.hpp&gt;  // 전부 (편하지만 느림)</code></pre></div>
+        <div><pre><code class="lang-python">import cv2          # 모듈 구분 없이 전부 cv2.* 로 접근
+import numpy as np  # cv2 의 영상 = numpy 배열
+
+print(cv2.__version__)
+print(cv2.getBuildInformation()[:400])   # 어떤 모듈/백엔드가 빌드됐나</code></pre></div>
+      </div>
+      <pre><code class="lang-cmake"># CMake (ament_cmake 패키지 안)
+find_package(OpenCV REQUIRED)                       # 모듈을 좁히려면: find_package(OpenCV REQUIRED COMPONENTS core imgproc dnn)
+target_include_directories(my_node PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(my_node ${OpenCV_LIBS})
+message(STATUS "OpenCV ${OpenCV_VERSION}")           # 빌드 로그에 버전이 찍힌다</code></pre>
+      <p class="small">이 프로젝트에서 쓰는 곳: 08a(첫 링크), 08b(dnn), 08(Mac 캘리브레이션).</p>
+
+      <h2>2. cv::Mat 핵심</h2>
+      <h3>2-1. 생성과 속성</h3>
+      <div class="two">
+        <div><pre><code class="lang-cpp">cv::Mat a(480, 640, CV_8UC3);                    // rows, cols, type (초기화 안 됨)
+cv::Mat b = cv::Mat::zeros(480, 640, CV_8UC1);   // 0 으로
+cv::Mat c(480, 640, CV_8UC3, cv::Scalar(114, 114, 114));  // 회색 채움 (B,G,R)
+
+a.rows, a.cols            // 높이, 너비  (주의: rows 가 먼저)
+a.size()                  // cv::Size(width, height) — 순서가 반대다!
+a.channels()              // 3
+a.type() == CV_8UC3       // 타입 비교
+a.depth() == CV_8U        // 채널당 깊이
+a.step                    // 한 행의 바이트 수 (= sensor_msgs/Image.step)
+a.empty()                 // 비었는가 (imread 실패 검사)
+a.total()                 // 픽셀 수</code></pre></div>
+        <div><pre><code class="lang-python">a = np.empty((480, 640, 3), np.uint8)         # (rows, cols, ch)
+b = np.zeros((480, 640), np.uint8)
+c = np.full((480, 640, 3), 114, np.uint8)
+
+h, w = a.shape[:2]        # 높이, 너비
+a.shape                   # (480, 640, 3)
+a.ndim == 3 and a.shape[2] # 채널
+a.dtype == np.uint8
+a.strides[0]              # 한 행의 바이트 수
+a.size == 0               # 비었는가
+a.size                    # 전체 원소 수 (픽셀 × 채널)</code></pre></div>
+      </div>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>OpenCV 타입</th><th>numpy dtype · shape</th><th>ROS 인코딩</th><th>쓰임</th></tr></thead>
+        <tbody>
+          <tr><td><code>CV_8UC1</code></td><td><code>uint8 (h,w)</code></td><td><code>mono8</code></td><td>그레이스케일, 마스크, Canny 결과</td></tr>
+          <tr><td><code>CV_8UC3</code></td><td><code>uint8 (h,w,3)</code></td><td><code>bgr8</code> / <code>rgb8</code></td><td>컬러 영상 (바이트 순서가 다르다)</td></tr>
+          <tr><td><code>CV_8UC4</code></td><td><code>uint8 (h,w,4)</code></td><td><code>bgra8</code> / <code>rgba8</code></td><td>알파 포함 (XRGB8888 카메라 포맷)</td></tr>
+          <tr><td><code>CV_16UC1</code></td><td><code>uint16 (h,w)</code></td><td><code>16UC1</code> / <code>mono16</code></td><td>깊이 영상 [mm]</td></tr>
+          <tr><td><code>CV_32FC1</code></td><td><code>float32 (h,w)</code></td><td><code>32FC1</code></td><td>깊이 [m], 연산 중간값</td></tr>
+          <tr><td><code>CV_32FC3</code></td><td><code>float32 (h,w,3)</code></td><td>—</td><td>DNN 입력 blob 의 원소 타입</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>2-2. 공유와 복사 — 성능의 핵심</h3>
+      <div class="two">
+        <div><pre><code class="lang-cpp">cv::Mat a = cv::imread("x.jpg");
+cv::Mat b = a;            // 헤더만 복사. 같은 픽셀을 가리킨다 (참조 카운트 +1)
+cv::Mat c = a.clone();    // 픽셀까지 복사 — 비용 O(픽셀 수)
+a.copyTo(d);              // d 에 복사 (크기가 맞으면 재할당 없음)
+
+cv::Rect roi(100, 50, 200, 150);         // x, y, w, h
+cv::Mat view = a(roi);                   // ROI 는 뷰 — 복사 없음, 쓰면 원본이 바뀐다
+view.isContinuous();                     // false — 행 사이에 간격이 있다
+cv::Mat view_copy = a(roi).clone();      // 연속 메모리가 필요하면 clone
+
+// 함수 인자는 const 참조로 — 복사 없음
+void process(const cv::Mat &amp; in, cv::Mat &amp; out);</code></pre></div>
+        <div><pre><code class="lang-python">a = cv2.imread('x.jpg')
+b = a                     # 같은 객체
+c = a.copy()              # 복사
+
+view = a[50:200, 100:300]       # 슬라이스는 뷰 — [y0:y1, x0:x1] 순서!
+view[:] = 0                     # 원본이 바뀐다
+view.flags['C_CONTIGUOUS']      # False
+view_copy = a[50:200, 100:300].copy()
+np.ascontiguousarray(view)      # 연속으로 만들어야 하는 API 가 있다</code></pre></div>
+      </div>
+      <div class="callout why"><span class="ct">왜 C++ 에서 이것이 중요한가</span>
+        <p>640×480×3 = 921,600 바이트다. 30 fps 면 복사 한 번마다 초당 27 MB 를 옮긴다. <code>cv_bridge::toCvShare</code> 가 "share" 인 이유, 함수 인자를 <code>const cv::Mat &amp;</code> 로 받는 이유, ROI 로 잘라 처리하는 이유가 전부 이 숫자다.
+        Python 은 numpy 가 같은 모델(뷰/복사)을 따르지만 원소 접근 루프가 느려서 "루프 대신 함수 한 번"이 원칙이 된다.</p>
+      </div>
+
+      <h3>2-3. 픽셀 접근</h3>
+      <div class="two">
+        <div><pre><code class="lang-cpp">// 느림(검사 있음, 디버깅용)
+cv::Vec3b px = img.at&lt;cv::Vec3b&gt;(y, x);     // (row, col) — B,G,R
+uchar g = gray.at&lt;uchar&gt;(y, x);
+
+// 빠름 — 행 포인터
+for (int y = 0; y &lt; img.rows; ++y) {
+  const cv::Vec3b * row = img.ptr&lt;cv::Vec3b&gt;(y);
+  for (int x = 0; x &lt; img.cols; ++x) {
+    int b = row[x][0], g = row[x][1], r = row[x][2];
+  }
+}
+// 가장 빠름 — 루프를 쓰지 말고 OpenCV 함수(cvtColor, inRange, threshold)를 쓴다</code></pre></div>
+        <div><pre><code class="lang-python">b, g, r = img[y, x]             # (row, col)
+g = gray[y, x]
+
+# Python 에서 픽셀 루프는 금지 수준으로 느리다. 벡터화:
+mask = (img[:, :, 2] &gt; 150) &amp; (img[:, :, 1] &lt; 100)   # 붉은 픽셀
+img[mask] = (0, 0, 255)
+mean_bgr = img.reshape(-1, 3).mean(axis=0)</code></pre></div>
+      </div>
+      <p class="small">이 프로젝트에서 쓰는 곳: 08a(ROI·복사 회피), 08b(blob 생성).</p>
+
+      <h2>3. 입출력</h2>
+      <div class="two">
+        <div><pre><code class="lang-cpp">cv::Mat img = cv::imread("test.jpg");            // BGR 로 읽는다 (실패하면 empty)
+if (img.empty()) { /* 경로 확인 */ }
+cv::Mat gray = cv::imread("test.jpg", cv::IMREAD_GRAYSCALE);
+cv::imwrite("out.png", img);
+cv::imwrite("out.jpg", img, {cv::IMWRITE_JPEG_QUALITY, 80});
+
+// 메모리 안에서 JPEG 인코딩/디코딩 (compressed 토픽의 원리)
+std::vector&lt;uchar&gt; buf;
+cv::imencode(".jpg", img, buf, {cv::IMWRITE_JPEG_QUALITY, 80});
+cv::Mat back = cv::imdecode(buf, cv::IMREAD_COLOR);
+
+// 웹캠/동영상 — Mac 에서 실험용
+cv::VideoCapture cap(0);                         // 또는 cap("video.mp4")
+cv::Mat frame;
+while (cap.read(frame)) { /* ... */ }</code></pre></div>
+        <div><pre><code class="lang-python">img = cv2.imread('test.jpg')                     # BGR. 실패하면 None
+if img is None: raise SystemExit('경로 확인')
+gray = cv2.imread('test.jpg', cv2.IMREAD_GRAYSCALE)
+cv2.imwrite('out.png', img)
+cv2.imwrite('out.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+
+ok, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+back = cv2.imdecode(buf, cv2.IMREAD_COLOR)
+
+cap = cv2.VideoCapture(0)
+while True:
+    ok, frame = cap.read()
+    if not ok: break</code></pre></div>
+      </div>
+      <div class="callout warn"><span class="ct">Pi 5 의 IMX708 은 <code>cv::VideoCapture(0)</code> 로 열지 않는다</span>
+        <p>08 단계에서 본 대로 이 카메라는 libcamera 전용이다. V4L2 로 <code>/dev/video0</code> 을 열면 ISP 를 거치지 않은 raw Bayer 가 나온다.
+        영상을 얻는 경로는 두 가지만이다: <strong>호스트에서</strong> <code>picamera2</code> → numpy 배열 → <code>cv2</code>, 또는 <strong>ROS 에서</strong> <code>camera_ros</code> → <code>/camera/image_raw</code> → <code>cv_bridge</code>.
+        Mac 에서 알고리즘을 실험할 때만 웹캠 <code>VideoCapture(0)</code> 을 쓴다.</p>
+      </div>
+      <p><strong>색 순서는 BGR 이 기본</strong>이다. <code>imread</code>, <code>imshow</code>, <code>rectangle</code> 의 <code>cv::Scalar(b, g, r)</code> 전부 BGR 이다. matplotlib 나 RGB 기반 라이브러리로 넘길 때 <code>cvtColor(…, COLOR_BGR2RGB)</code> 를 잊으면 파란 얼굴이 된다.</p>
+      <p class="small">이 프로젝트에서 쓰는 곳: 08(캘리브레이션 사진 읽기), 08b(Mac 테스트 이미지).</p>
+
+      <h2>4. 기본 처리 — C++ | Python 나란히</h2>
+      <h3>4-1. 색공간 · 크기 · 자르기 · 뒤집기</h3>
+      <div class="two">
+        <div><pre><code class="lang-cpp">cv::Mat gray, rgb, hsv, small, big, flipped, rot;
+cv::cvtColor(img, gray, cv::COLOR_BGR2GRAY);
+cv::cvtColor(img, rgb,  cv::COLOR_BGR2RGB);
+cv::cvtColor(img, hsv,  cv::COLOR_BGR2HSV);     // H 0~179, S/V 0~255
+
+cv::resize(img, small, cv::Size(), 0.5, 0.5, cv::INTER_AREA);   // 축소는 AREA
+cv::resize(img, big,   cv::Size(1280, 960), 0, 0, cv::INTER_LINEAR);  // 확대는 LINEAR
+
+cv::Mat crop = img(cv::Rect(100, 50, 300, 200)).clone();        // x,y,w,h
+cv::flip(img, flipped, 1);          // 1: 좌우, 0: 상하, -1: 둘 다
+cv::rotate(img, rot, cv::ROTATE_90_CLOCKWISE);</code></pre></div>
+        <div><pre><code class="lang-python">gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+rgb  = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+hsv  = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+small = cv2.resize(img, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
+big   = cv2.resize(img, (1280, 960), interpolation=cv2.INTER_LINEAR)  # (w, h)
+
+crop = img[50:250, 100:400].copy()   # [y0:y1, x0:x1]
+flipped = cv2.flip(img, 1)
+rot = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)</code></pre></div>
+      </div>
+
+      <h3>4-2. 블러 · 이진화 · 색 검출 · 에지 · 모폴로지</h3>
+      <div class="two">
+        <div><pre><code class="lang-cpp">cv::Mat blur, med, bin, abin, mask, edges, opened;
+cv::GaussianBlur(gray, blur, cv::Size(5, 5), 0);        // 커널은 홀수
+cv::medianBlur(gray, med, 5);                           // 소금-후추 노이즈에 강함
+
+cv::threshold(gray, bin, 128, 255, cv::THRESH_BINARY);
+cv::threshold(gray, bin, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);  // 자동 임계
+cv::adaptiveThreshold(gray, abin, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C,
+                      cv::THRESH_BINARY, 21, 5);        // 조명 불균일에 강함
+
+// HSV 색 범위로 마스크 (예: 주황 콘)
+cv::inRange(hsv, cv::Scalar(5, 120, 120), cv::Scalar(20, 255, 255), mask);
+
+cv::Canny(blur, edges, 50, 150);                        // low, high (1:2 ~ 1:3)
+
+cv::Mat k = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
+cv::morphologyEx(mask, opened, cv::MORPH_OPEN, k);      // 작은 점 제거
+cv::morphologyEx(mask, opened, cv::MORPH_CLOSE, k);     // 작은 구멍 메움
+cv::erode(mask, mask, k);  cv::dilate(mask, mask, k);</code></pre></div>
+        <div><pre><code class="lang-python">blur = cv2.GaussianBlur(gray, (5, 5), 0)
+med  = cv2.medianBlur(gray, 5)
+
+_, bin_ = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY)
+_, bin_ = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+abin = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                             cv2.THRESH_BINARY, 21, 5)
+
+mask = cv2.inRange(hsv, (5, 120, 120), (20, 255, 255))
+
+edges = cv2.Canny(blur, 50, 150)
+
+k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+opened = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k)
+closed = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k)
+mask = cv2.dilate(cv2.erode(mask, k), k)</code></pre></div>
+      </div>
+
+      <h3>4-3. 컨투어 · 박스 · 중심 · 직선</h3>
+      <div class="two">
+        <div><pre><code class="lang-cpp">std::vector&lt;std::vector&lt;cv::Point&gt;&gt; contours;
+cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+// 주의: 4.x 는 입력을 바꾸지 않지만, 이진(CV_8UC1) 영상이어야 한다
+
+for (const auto &amp; c : contours) {
+  double area = cv::contourArea(c);
+  if (area &lt; 500.0) continue;                       // 작은 잡음 버림
+  cv::Rect box = cv::boundingRect(c);               // 축 정렬 박스
+  cv::Moments m = cv::moments(c);
+  cv::Point center(static_cast&lt;int&gt;(m.m10 / m.m00), static_cast&lt;int&gt;(m.m01 / m.m00));
+  std::vector&lt;cv::Point&gt; poly;
+  cv::approxPolyDP(c, poly, 0.02 * cv::arcLength(c, true), true);   // 꼭짓점 수 → 사각형 판별
+}
+
+// 직선 (복도 벽, 차선) — 개요만
+std::vector&lt;cv::Vec4i&gt; lines;
+cv::HoughLinesP(edges, lines, 1, CV_PI / 180, 80, 50, 10);   // (x1,y1,x2,y2)</code></pre></div>
+        <div><pre><code class="lang-python">contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+for c in contours:
+    if cv2.contourArea(c) &lt; 500: continue
+    x, y, w, h = cv2.boundingRect(c)
+    m = cv2.moments(c)
+    cx, cy = int(m['m10'] / m['m00']), int(m['m01'] / m['m00'])
+    poly = cv2.approxPolyDP(c, 0.02 * cv2.arcLength(c, True), True)
+
+lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 80, minLineLength=50, maxLineGap=10)</code></pre></div>
+      </div>
+
+      <h3>4-4. 그리기와 합성</h3>
+      <div class="two">
+        <div><pre><code class="lang-cpp">// 색은 BGR. 두께 -1 은 채움
+cv::rectangle(img, cv::Rect(x, y, w, h), cv::Scalar(0, 255, 0), 2);
+cv::rectangle(img, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 255, 0), 2);
+cv::circle(img, cv::Point(cx, cy), 5, cv::Scalar(0, 0, 255), -1);
+cv::line(img, p1, p2, cv::Scalar(255, 0, 0), 1);
+cv::putText(img, "person 0.87", cv::Point(x, y - 6),
+            cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1, cv::LINE_AA);
+
+cv::Mat blended;
+cv::addWeighted(img, 0.7, overlay, 0.3, 0.0, blended);   // 반투명 합성
+img.setTo(cv::Scalar(0, 0, 255), mask);                   // 마스크 영역만 칠하기</code></pre></div>
+        <div><pre><code class="lang-python">cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+cv2.circle(img, (cx, cy), 5, (0, 0, 255), -1)
+cv2.line(img, p1, p2, (255, 0, 0), 1)
+cv2.putText(img, 'person 0.87', (x, y - 6),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+
+blended = cv2.addWeighted(img, 0.7, overlay, 0.3, 0)
+img[mask &gt; 0] = (0, 0, 255)</code></pre></div>
+      </div>
+      <p class="small">이 프로젝트에서 쓰는 곳: 08a(mode 별 처리·overlay 그리기), 08b(박스·라벨), 10(상태 텍스트).</p>
+
+      <h2>5. cv_bridge 와 인코딩</h2>
+      <p><code>cv_bridge</code> 는 <code>sensor_msgs/msg/Image</code> 와 <code>cv::Mat</code> 사이의 다리다. 메시지 자체는 <code>height, width, encoding(문자열), is_bigendian, step, data(바이트 배열)</code> 이고 cv_bridge 는 <code>encoding</code> 문자열을 보고 <code>Mat</code> 타입을 정한다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>ROS 인코딩</th><th>Mat 타입</th><th>비고</th></tr></thead>
+        <tbody>
+          <tr><td><code>bgr8</code></td><td>CV_8UC3</td><td>OpenCV 관례. <strong>우리 카메라(camera_ros, <code>format: RGB888</code>)의 <code>/camera/image_raw</code> 가 이것</strong>이다 — camera_ros 는 libcamera 포맷을 DRM fourcc 리틀엔디안 규칙으로 매핑하므로 <code>RGB888</code> → <code>bgr8</code>, <code>BGR888</code> → <code>rgb8</code> 이 된다(이름이 반대로 보인다)</td></tr>
+          <tr><td><code>rgb8</code></td><td>CV_8UC3</td><td>바이트 순서만 다름. <code>toCvShare(msg, "bgr8")</code> 로 받으면 변환 복사가 일어난다</td></tr>
+          <tr><td><code>bgra8</code> / <code>rgba8</code></td><td>CV_8UC4</td><td>camera_ros <code>XRGB8888</code> → <code>bgra8</code></td></tr>
+          <tr><td><code>mono8</code></td><td>CV_8UC1</td><td>그레이. Canny 결과를 발행할 때</td></tr>
+          <tr><td><code>mono16</code> / <code>16UC1</code></td><td>CV_16UC1</td><td>깊이 [mm]</td></tr>
+          <tr><td><code>32FC1</code></td><td>CV_32FC1</td><td>깊이 [m]</td></tr>
+          <tr><td><code>yuv422_yuy2</code></td><td>CV_8UC2</td><td>camera_ros <code>YUYV</code>. cv_bridge 가 <code>bgr8</code> 로 변환해 준다</td></tr>
+          <tr><td>(CompressedImage) <code>jpeg</code></td><td>—</td><td>camera_ros <code>MJPEG</code> / <code>~/image_raw/compressed</code>. <code>cv_bridge::toCvCopy(compressed_msg)</code> 가 디코드</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout tip"><span class="ct">실제 인코딩은 추측하지 말고 확인한다</span>
+        <p><code>ros2 topic echo /camera/image_raw --field encoding --once</code> 한 줄이면 끝난다. 이 값이 <code>bgr8</code> 이면 <code>toCvShare(msg, "bgr8")</code> 는 <strong>복사 없이 공유</strong>되고, 다른 값이면 요청한 인코딩으로 변환하느라 한 번 복사한다.
+        처리 시간이 기대보다 몇 ms 크면 먼저 이것을 본다.</p>
+      </div>
+      <div class="two">
+        <div><pre><code class="lang-cpp">#include &lt;cv_bridge/cv_bridge.h&gt;          // Humble 은 .h
+#include &lt;sensor_msgs/msg/image.hpp&gt;
+
+// 읽기 전용 공유 — 같은 인코딩이면 복사 없음
+cv_bridge::CvImageConstPtr cv = cv_bridge::toCvShare(msg, "bgr8");
+const cv::Mat &amp; in = cv-&gt;image;            // 절대 수정하지 않는다 (메시지 메모리)
+
+// 수정할 거면 복사
+cv_bridge::CvImagePtr cvp = cv_bridge::toCvCopy(msg, "bgr8");
+cv::rectangle(cvp-&gt;image, ...);
+
+// 인코딩을 비워 두면 메시지의 인코딩 그대로 (변환 없음)
+auto raw = cv_bridge::toCvShare(msg);
+RCLCPP_INFO(get_logger(), "enc=%s", raw-&gt;encoding.c_str());
+
+// Mat → 메시지. header 는 입력의 것을 복사 (촬영 시각·frame_id 유지)
+sensor_msgs::msg::Image::SharedPtr out =
+  cv_bridge::CvImage(msg-&gt;header, "bgr8", result).toImageMsg();
+pub_.publish(out);                          // image_transport::Publisher
+
+// 예외
+try { ... } catch (const cv_bridge::Exception &amp; e) {
+  RCLCPP_ERROR(get_logger(), "cv_bridge: %s", e.what());
+}</code></pre></div>
+        <div><pre><code class="lang-python">from cv_bridge import CvBridge, CvBridgeError
+bridge = CvBridge()
+
+# 메시지 → numpy (desired_encoding 이 다르면 변환)
+img = bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+# 'passthrough' 면 그대로
+
+out = bridge.cv2_to_imgmsg(result, encoding='bgr8')
+out.header = msg.header              # 잊기 쉽다
+pub.publish(out)
+
+# 압축 메시지
+img = bridge.compressed_imgmsg_to_cv2(cmsg)
+cmsg = bridge.cv2_to_compressed_imgmsg(result, dst_format='jpeg')
+
+try:
+    ...
+except CvBridgeError as e:
+    node.get_logger().error(str(e))</code></pre></div>
+      </div>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>예외/증상</th><th>원인</th></tr></thead>
+        <tbody>
+          <tr><td><code>Unrecognized image encoding [RGB888]</code></td><td>인코딩 문자열 오타 — ROS 이름(<code>bgr8</code>)을 써야 한다</td></tr>
+          <tr><td><code>[mono8] is not a color format. but [bgr8] is</code> 류</td><td>채널 수가 다른 변환 요청. <code>mono8</code>→<code>bgr8</code> 은 지원되지만 지원 안 되는 조합도 있다 — 직접 <code>cvtColor</code></td></tr>
+          <tr><td>색이 뒤집힘(파란 얼굴)</td><td>실제 인코딩과 가정이 다름. 위 확인 명령</td></tr>
+          <tr><td>발행했는데 Foxglove 가 못 그림</td><td><code>CvImage</code> 인코딩 문자열과 실제 Mat 타입 불일치(예: CV_8UC1 에 "bgr8")</td></tr>
+          <tr><td>처리 후 영상이 깨짐/줄무늬</td><td>ROI(비연속 Mat)를 그대로 <code>toImageMsg</code> — <code>clone()</code> 후 발행</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">이 프로젝트에서 쓰는 곳: 08a(전부), 08b·08c(입력 변환), 10(상태 오버레이).</p>
+
+      <h2>6. 카메라 캘리브레이션</h2>
+      <h3>6-1. 핀홀 모델</h3>
+      <pre class="diagram"><code>        [u]   [fx  0  cx] [X/Z]        u = fx·X/Z + cx      (u,v): 픽셀 좌표
+        [v] = [ 0 fy  cy] [Y/Z]        v = fy·Y/Z + cy      (X,Y,Z): 카메라(광학) 좌표, Z 가 광축
+        [1]   [ 0  0   1] [ 1 ]
+
+   K = 카메라 행렬 (내부 파라미터)     fx, fy: 초점거리[px]   cx, cy: 주점(광축이 지나는 픽셀)
+   D = 왜곡 계수 plumb_bob [k1 k2 p1 p2 k3]   k: 방사 왜곡(광각 렌즈의 술통 모양), p: 접선 왜곡
+
+   역으로 — 픽셀 u 가 가리키는 수평 방위각:   θ = atan( (u − cx) / fx )      ← 10 단계 융합에서 쓴다</code></pre>
+      <p>캘리브레이션은 <strong>알려진 패턴(체커보드)의 3D 점과 그것이 찍힌 2D 픽셀</strong>을 여러 장 모아 K 와 D 를 푸는 일이다. 코너가 많고, 각도·거리·위치가 다양할수록 좋다. 재투영 오차(RMS) 가 0.5 px 이하면 양호, 1 px 을 넘으면 사진을 다시 찍는다(흔들림, 패턴 치수 오류, 코너 오검출).</p>
+
+      <h3>6-2. 스크립트 — Mac 에서 실행, ROS camera_info YAML 로 저장 <span class="tag mac">Mac</span></h3>
+      <p>08 단계에서 쓰는 것과 같은 스크립트다. 입력은 Pi 에서 <code>rpicam-still</code> 로 찍어 scp 한 20~30 장, 출력은 <code>camera_ros</code> 의 <code>camera_info_url</code> 로 읽히는 YAML 이다.</p>
+      <pre><code class="lang-python">#!/usr/bin/env python3
+"""체커보드 사진으로 카메라 내부 파라미터를 구해 ROS camera_info YAML 로 저장한다.
+사용:
+  python3 calibrate.py 'calib_*.jpg' --cols 8 --rows 6 --square 0.025 --name imx708 --out camera_info.yaml
+  --cols/--rows 는 '내부 코너' 개수(칸 수 - 1). --square 는 한 칸의 실측 크기 [m].
+"""
+import argparse, glob, sys
+import cv2
+import numpy as np
+import yaml
+
+ap = argparse.ArgumentParser()
+ap.add_argument('pattern')
+ap.add_argument('--cols', type=int, default=8)
+ap.add_argument('--rows', type=int, default=6)
+ap.add_argument('--square', type=float, default=0.025)
+ap.add_argument('--name', default='camera')
+ap.add_argument('--out', default='camera_info.yaml')
+args = ap.parse_args()
+
+# 체커보드의 3D 점: z=0 평면 위 격자 (단위 m). 모든 사진에 같은 objp 를 쓴다.
+objp = np.zeros((args.rows * args.cols, 3), np.float32)
+objp[:, :2] = np.mgrid[0:args.cols, 0:args.rows].T.reshape(-1, 2) * args.square
+
+obj_points, img_points, size = [], [], None
+criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+
+for f in sorted(glob.glob(args.pattern)):
+    img = cv2.imread(f)
+    if img is None:
+        continue
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    size = gray.shape[::-1]                                   # (w, h)
+    ok, corners = cv2.findChessboardCorners(gray, (args.cols, args.rows), None)
+    if not ok:
+        print('코너 못 찾음:', f)
+        continue
+    corners = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)   # 서브픽셀 정밀화
+    obj_points.append(objp)
+    img_points.append(corners)
+    print('OK', f)
+
+if len(obj_points) &lt; 10:
+    sys.exit(f'유효한 사진 {len(obj_points)}장 — 최소 10장, 권장 20장 이상')
+
+rms, K, D, rvecs, tvecs = cv2.calibrateCamera(obj_points, img_points, size, None, None)
+print(f'재투영 오차 RMS = {rms:.3f} px  (0.5 이하면 좋음, 1.0 이상이면 재촬영)')
+print('K =\n', K)
+print('D =', D.ravel())
+
+w, h = size
+fx, fy, cx, cy = K[0, 0], K[1, 1], K[0, 2], K[1, 2]
+info = {
+    'image_width': int(w),
+    'image_height': int(h),
+    'camera_name': args.name,
+    'camera_matrix': {'rows': 3, 'cols': 3, 'data': [float(v) for v in K.ravel()]},
+    'distortion_model': 'plumb_bob',
+    'distortion_coefficients': {'rows': 1, 'cols': 5, 'data': [float(v) for v in D.ravel()[:5]]},
+    'rectification_matrix': {'rows': 3, 'cols': 3,
+                             'data': [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]},
+    'projection_matrix': {'rows': 3, 'cols': 4,
+                          'data': [fx, 0.0, cx, 0.0, 0.0, fy, cy, 0.0, 0.0, 0.0, 1.0, 0.0]},
+}
+with open(args.out, 'w') as fp:
+    yaml.safe_dump(info, fp, sort_keys=False)
+print('저장:', args.out, '→ rpi5_bringup/config/ 로 옮기고 camera_info_url 파라미터로 지정')</code></pre>
+      <h3>6-3. 왜곡 보정과 활용</h3>
+      <div class="two">
+        <div><pre><code class="lang-cpp">// 한 장씩 (느림)
+cv::Mat undist;
+cv::undistort(img, undist, K, D);
+
+// 매 프레임이면 맵을 한 번 만들어 remap (빠름) — 노드 생성자에서 1회
+cv::Mat map1, map2;
+cv::initUndistortRectifyMap(K, D, cv::Mat(), K, img.size(), CV_16SC2, map1, map2);
+cv::remap(img, undist, map1, map2, cv::INTER_LINEAR);
+
+// 픽셀 → 방위각 (10 단계: 검출 박스 중심 u)
+double theta = std::atan((u - cx) / fx);   // 왼쪽이 +? → 광학 좌표는 x 가 오른쪽이므로
+                                            //   로봇 규약(y 왼쪽 +)으로 넘길 때 부호를 뒤집는다</code></pre></div>
+        <div><pre><code class="lang-python">undist = cv2.undistort(img, K, D)
+
+map1, map2 = cv2.initUndistortRectifyMap(K, D, None, K, (w, h), cv2.CV_16SC2)
+undist = cv2.remap(img, map1, map2, cv2.INTER_LINEAR)
+
+import math
+theta = math.atan((u - cx) / fx)</code></pre></div>
+      </div>
+      <p>검출만 할 때는 보정하지 않아도 된다(YOLO 는 약간의 왜곡에 강하다). 방위각을 정밀하게 쓰거나 직선 검출을 할 때 보정한다. Camera Module 3 의 표준 렌즈는 왜곡이 작은 편이다.</p>
+      <p class="small">이 프로젝트에서 쓰는 곳: 08(camera_info 만들기), 10(카메라-라이다 융합).</p>
+
+      <h2>7. DNN 모듈</h2>
+      <p><code>cv::dnn</code> 은 학습은 못 하고 <strong>추론만</strong> 한다. ONNX·TensorFlow·Caffe·Darknet 모델을 읽어 CPU(또는 지원되는 가속기)에서 돌린다. 의존성이 OpenCV 하나라 Pi 에서 가장 가벼운 추론 경로다.</p>
+      <div class="two">
+        <div><pre><code class="lang-cpp">#include &lt;opencv2/dnn.hpp&gt;
+
+cv::dnn::Net net = cv::dnn::readNetFromONNX("yolov8n.onnx");   // 또는 readNet(path)
+if (net.empty()) { /* 실패 */ }
+net.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
+net.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
+
+// 전처리: 1/255 스케일, 640×640, 평균 빼기 없음, BGR→RGB(swapRB), crop 없음
+cv::Mat blob = cv::dnn::blobFromImage(
+  letterboxed, 1.0 / 255.0, cv::Size(640, 640), cv::Scalar(), /*swapRB=*/true, /*crop=*/false);
+// blob: 4D, [1, 3, 640, 640], CV_32F
+
+net.setInput(blob);
+std::vector&lt;cv::Mat&gt; outs;
+net.forward(outs, net.getUnconnectedOutLayersNames());    // 출력이 여러 개일 수 있다
+
+const cv::Mat &amp; out = outs[0];
+// 모양 읽기 — 첫 프레임에 꼭 찍어 본다
+std::cout &lt;&lt; "dims=" &lt;&lt; out.dims;
+for (int i = 0; i &lt; out.dims; ++i) std::cout &lt;&lt; " " &lt;&lt; out.size[i];   // 예: 3  1 84 8400
+
+// [1,84,8400] → 84×8400 2D → 전치 → 8400×84 (행 = 후보 하나)
+cv::Mat m = out.reshape(1, out.size[1]).t();
+
+// NMS: 박스·점수 → 남길 인덱스
+std::vector&lt;int&gt; keep;
+cv::dnn::NMSBoxes(boxes, scores, 0.25f, 0.45f, keep);
+
+// 추론 시간
+std::vector&lt;double&gt; layer_times;
+double t_ms = net.getPerfProfile(layer_times) * 1000.0 / cv::getTickFrequency();</code></pre></div>
+        <div><pre><code class="lang-python">net = cv2.dnn.readNetFromONNX('yolov8n.onnx')
+net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+
+blob = cv2.dnn.blobFromImage(letterboxed, 1 / 255.0, (640, 640),
+                             swapRB=True, crop=False)
+print(blob.shape)           # (1, 3, 640, 640)
+
+net.setInput(blob)
+outs = net.forward(net.getUnconnectedOutLayersNames())
+out = outs[0]
+print(out.shape)            # (1, 84, 8400)
+
+m = out[0].T                # (8400, 84)
+
+keep = cv2.dnn.NMSBoxes(boxes, scores, 0.25, 0.45)   # 인덱스 배열
+
+t, _ = net.getPerfProfile()
+print(t * 1000.0 / cv2.getTickFrequency(), 'ms')</code></pre></div>
+      </div>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th><code>blobFromImage</code> 인자</th><th>뜻</th><th>YOLO 에서</th></tr></thead>
+        <tbody>
+          <tr><td><code>scalefactor</code></td><td>픽셀에 곱하는 값</td><td><code>1/255</code> (0~1 정규화)</td></tr>
+          <tr><td><code>size</code></td><td>네트워크 입력 크기로 리사이즈</td><td><code>(640, 640)</code> — 레터박스를 직접 했다면 같은 크기</td></tr>
+          <tr><td><code>mean</code></td><td>빼는 값(채널별)</td><td><code>Scalar()</code> = 0 (YOLO 는 평균 빼기 없음)</td></tr>
+          <tr><td><code>swapRB</code></td><td>BGR ↔ RGB</td><td><code>true</code> (모델은 RGB 로 학습됨)</td></tr>
+          <tr><td><code>crop</code></td><td>비율 유지하며 중앙 자르기</td><td><code>false</code> (가장자리 물체를 잃는다)</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><span class="ct">버전 주의 — 4.5.4 와 ONNX</span>
+        <p>컨테이너의 OpenCV 4.5.4 는 최신 opset 의 일부 연산자를 모른다. YOLOv8 ONNX 는 <strong><code>opset=12, simplify=True, dynamic=False</code></strong> 로 내보내는 것이 안전하고,
+        그래도 <code>readNetFromONNX</code> 가 <code>Unsupported</code>/<code>Can't create layer</code> 를 내면 ① Dockerfile 에서 OpenCV 4.8+ 를 소스 빌드(Pi 에서 1시간 이상) ② ONNX Runtime C++(aarch64 tgz) 중 하나다.
+        에러 문구를 보고 판단한다 — 08b 에 표가 있다.</p>
+      </div>
+      <p class="small">이 프로젝트에서 쓰는 곳: 08b(전부), ref-yolo.html(출력 텐서 해석).</p>
+
+      <h2>8. Pi 5 성능 팁</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>팁</th><th>효과</th><th>어떻게</th></tr></thead>
+        <tbody>
+          <tr><td><strong>해상도를 먼저 줄인다</strong></td><td>픽셀 수에 선형(또는 그 이상)으로 빨라진다. 640→320 이면 4배</td><td>카메라에서부터 낮게 받거나 콜백 첫 줄에서 <code>resize(INTER_AREA)</code></td></tr>
+          <tr><td>Release 빌드</td><td>Debug 대비 수 배</td><td><code>--cmake-args -DCMAKE_BUILD_TYPE=Release</code> 또는 CMake 기본값 설정(부록 A §12)</td></tr>
+          <tr><td>복사 제거</td><td>프레임당 수 ms</td><td><code>toCvShare</code>, <code>const cv::Mat &amp;</code>, 불필요한 <code>clone()</code> 삭제, 출력 Mat 을 멤버로 재사용</td></tr>
+          <tr><td>ROI 처리</td><td>관심 영역만</td><td>바닥 절반만 보는 차선·장애물 처리는 <code>img(cv::Rect(...))</code> 뷰에 적용</td></tr>
+          <tr><td>스레드 수 조절</td><td>SLAM·Nav2 와의 CPU 경합 완화</td><td><code>cv::setNumThreads(2)</code> — 4코어 전부 쓰면 나머지 노드가 굶는다(08c 의 논지)</td></tr>
+          <tr><td>측정 습관</td><td>추측 대신 숫자</td><td><code>cv::TickMeter tm; tm.start(); …; tm.stop(); tm.getTimeMilli()</code> 또는 <code>std::chrono::steady_clock</code>; Python 은 <code>time.perf_counter()</code></td></tr>
+          <tr><td>Python 은 벡터화</td><td>루프 100배</td><td>픽셀 루프 금지. numpy 불리언 마스크·<code>cv2</code> 함수 한 번</td></tr>
+          <tr><td>프레임 드롭</td><td>지연이 쌓이지 않음</td><td>큐 깊이 1 + busy 플래그(08b). 30 fps 를 전부 처리할 필요는 없다</td></tr>
+        </tbody>
+      </table></div>
+      <pre><code class="lang-cpp">// 처리 시간 측정 패턴 (08a 의 콜백)
+const auto t0 = std::chrono::steady_clock::now();
+// ... 처리 ...
+const double ms = std::chrono::duration&lt;double, std::milli&gt;(std::chrono::steady_clock::now() - t0).count();
+RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 2000, "%s: %.1f ms", mode_.c_str(), ms);</code></pre>
+      <p class="small">이 프로젝트에서 쓰는 곳: 08a(측정 표), 08b(입력 크기 실험), 08c(CPU 비교).</p>
+
+      <h2>관련 단계</h2>
+      <ul>
+        <li><a href="08-camera.html">08 · 카메라</a> — 인코딩, §6 의 캘리브레이션 절차</li>
+        <li><a href="08a-opencv.html">08a · OpenCV와 cv_bridge</a> — §2, §4, §5 를 ROS 노드로</li>
+        <li><a href="08b-yolo.html">08b · YOLO 객체 검출</a> — §7 의 DNN 으로 검출기 구현</li>
+        <li><a href="10-autonomy.html">10 · 자율주행 노드 구성</a> — §6-3 의 방위각으로 카메라-라이다 융합</li>
+        <li><a href="ref-rclcpp.html">부록 A · rclcpp 레퍼런스</a> — CMake 링크, 실행기</li>
+        <li><a href="ref-yolo.html">부록 C · YOLO 사용법</a> — 출력 텐서·NMS·내보내기</li>
+      </ul>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

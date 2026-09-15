@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>07 · LiDAR — /scan 띄우기</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="07">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">07 · LiDAR 연결</p>
+      <h1>LiDAR — /scan 띄우기</h1>
+      <p class="lead">로봇이 처음으로 <strong>세상을 재는</strong> 단계다. 장비는 <strong>Slamtec RPLIDAR A1M8</strong> 로 확정되어 있고, 이 페이지는 A1M8 기준으로 쓰여 있다.
+      드라이버는 남이 만든 것을 쓰지만, <em>파라미터·프레임·QoS 를 맞추는 것</em>과 <em>센서의 한계를 아는 것</em>이 이 단계의 학습 내용이다. 그리고 <code>/scan</code> 을 소비하는 <strong>첫 C++ 노드</strong>를 직접 쓴다.</p>
+
+      <div class="goal">
+        <span class="label">이 단계가 끝나면</span>
+        <p>Foxglove 에서 실시간 라이다 스캔이 로봇 모형 주위에 그려지고, 그 점들이 실제 벽 위치와 일치한다.
+        드라이버 로그에서 내 장비의 실측 최대 거리를 읽어 두 곳에 기록했고, <code>/scan</code> 을 구독해 정면 최소 거리를 <code>/scan_front_min</code> 으로 내는 C++ 노드 <code>scan_watch</code> 를 직접 작성해 동작시켰다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">그래프에서의 위치</span><code>lidar_node</code> 상자(센서 계층) → <code>/scan</code> → <code>slam_toolbox</code>·Nav2 코스트맵 (+ 이 단계의 <code>scan_watch</code>)</div>
+        <div><span class="k">전제</span>05 (TF 트리에 <code>laser_link</code> 가 있어야 한다). 06 은 이 단계 자체에는 필요 없다 — <code>/odom</code> 은 09 부터 필요하다</div>
+        <div><span class="k">예상 소요</span>2~4시간</div>
+        <div><span class="k">언어</span><span class="tag cli">CLI</span> + <span class="tag cpp">C++</span> (연습 노드)</div>
+      </div>
+
+      <h2>1. 개요</h2>
+      <pre class="diagram"><code>   [ A1M8 ] ──USB 시리얼(115200)──► lidar_node (rplidar_ros) ──/scan───┬──► slam_toolbox     (09) 지도
+   /dev/lidar                        frame_id = laser_link             ├──► Nav2 local/global costmap (09) 장애물
+                                                                       └──► scan_watch (07 연습) ──► /scan_front_min ──► mission_supervisor (10)</code></pre>
+      <p>드라이버 노드는 <strong>하드웨어를 표준 메시지로 번역만</strong> 한다. 판단은 하지 않는다. 그래서 라이다를 다른 모델로 바꿔도 <code>/scan</code> 만 같으면 하위 노드는 하나도 바뀌지 않는다.</p>
+
+      <h3>1-1. LaserScan 메시지 이해</h3>
+      <pre><code class="lang-bash">ros2 interface show sensor_msgs/msg/LaserScan</code></pre>
+      <pre class="diagram"><code>std_msgs/Header header
+    stamp          # 언제 측정했는가 → TF 조회에 쓰임
+    frame_id       # 어느 좌표계인가 → URDF 의 laser_link 와 일치해야 함
+float32 angle_min        # 스캔 시작 각도 [rad]
+float32 angle_max        # 끝 각도
+float32 angle_increment  # 점 사이 각도 간격
+float32 time_increment   # 점 사이 시간 간격
+float32 scan_time        # 한 바퀴에 걸린 시간
+float32 range_min        # 유효 최소 거리 [m]
+float32 range_max        # 유효 최대 거리
+float32[] ranges         # ★ 실제 거리 배열
+float32[] intensities    # 반사 강도 (모델에 따라 비어 있음)</code></pre>
+      <p><strong><code>ranges[i]</code> 가 가리키는 각도:</strong></p>
+      <pre class="diagram"><code>   angle(i) = angle_min + i × angle_increment        (라이다 자기 기준, 반시계 +)</code></pre>
+      <p><code>ranges</code> 길이가 360 이고 <code>angle_increment</code> 가 1° 라면 한 바퀴를 1° 씩 훑은 것이다. 이 식은 3-10 의 C++ 노드에서 직접 코드로 쓴다.</p>
+      <div class="callout warn"><span class="ct"><code>frame_id</code> 가 이 단계의 핵심이다</span>
+        <p>드라이버가 <code>frame_id: "laser"</code> 로 발행하는데 URDF 에는 <code>laser_link</code> 로 적혀 있으면, 스캔은 나오지만 <strong>TF 트리에 붙지 못해서</strong> Foxglove/SLAM 어디에서도 쓸 수 없다.
+        이름을 반드시 맞춘다. 이 프로젝트의 이름은 <code>laser_link</code> 다 (URDF 와 <code>robot_params.yaml</code> 양쪽).</p>
+      </div>
+
+      <h2>2. 원리 — 왜</h2>
+
+      <h3>2-1. RPLIDAR A1M8 — 센서의 성질을 먼저 이해한다</h3>
+      <p>명령어보다 <strong>센서의 한계를 아는 것이 먼저</strong>다. 09 단계에서 SLAM 이 안 될 때, 그것이 파라미터 문제인지 센서 한계인지 구분할 수 있어야 하기 때문이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>항목</th><th>A1M8</th><th>이것이 학습에 주는 의미</th></tr></thead>
+        <tbody>
+          <tr><td>측정 방식</td><td><strong>레이저 삼각측량</strong> (TOF 아님)</td><td>거리가 멀수록 정확도가 급격히 떨어진다. TOF 라이다와 근본적으로 다르다</td></tr>
+          <tr><td>회전 속도</td><td><strong>약 5.5 Hz</strong> (2~10 Hz 가변)</td><td><strong>초당 5.5장.</strong> 빠르게 움직이면 스캔이 뭉개진다 → 09 단계 "천천히"의 물리적 근거 (2-3 에서 숫자로)</td></tr>
+          <tr><td>샘플링</td><td>초당 수천 점</td><td>한 바퀴 당 점 개수 = 샘플링 ÷ 회전수. 빠르게 돌릴수록 해상도가 낮아지는 교환관계</td></tr>
+          <tr><td>각 분해능</td><td>약 1°</td><td>멀리 있는 가는 물체(의자 다리)를 놓칠 수 있다</td></tr>
+          <tr><td>최대 거리</td><td><strong>개정판에 따라 다름</strong></td><td>3-5 참조 — <strong>드라이버 로그로 확인한다.</strong> 카탈로그 숫자를 믿지 않는다</td></tr>
+          <tr><td>최소 거리</td><td>약 0.15 m</td><td>이보다 가까운 것은 안 보인다. 로봇 몸통이 이 안에 있으면 문제 없음</td></tr>
+          <tr><td>인터페이스</td><td>USB 시리얼 <strong>115200</strong> (CP2102 어댑터)</td><td>udev 실습 대상. <code>/dev/lidar</code> 로 고정한다</td></tr>
+          <tr><td>모터</td><td>어댑터의 DTR 핀으로 PWM 제어</td><td><strong>드라이버가 서비스로 제어한다</strong> — 3-8 참조</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>2-2. 삼각측량 라이다의 한계 — 반드시 알아야 할 것</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>상황</th><th>증상</th><th>이유</th></tr></thead>
+        <tbody>
+          <tr><td><strong>직사광선 / 밝은 조명</strong></td><td>측정값이 <code>inf</code> 로 튐</td><td>주변광이 레이저 반사점을 덮는다</td></tr>
+          <tr><td><strong>검은색·무광 표면</strong></td><td>거리가 안 잡힘</td><td>반사광이 부족하다</td></tr>
+          <tr><td><strong>유리 / 거울</strong></td><td>통과하거나 엉뚱한 곳에 점이 찍힘</td><td>반사·투과</td></tr>
+          <tr><td>원거리</td><td>오차가 커짐</td><td>삼각측량은 거리 제곱에 반비례해 정밀도가 떨어진다</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout why"><span class="ct">이것은 고장이 아니라 이 가격대 센서의 물리적 한계다</span>
+        <p>09 단계에서 "창가 쪽만 지도가 이상해요"가 나오면 SLAM 파라미터가 아니라 <strong>햇빛</strong>을 의심해야 한다. 센서의 한계를 아는 것이 곧 설계 능력이다.
+        3-10 의 C++ 노드가 <code>inf</code>/<code>NaN</code> 을 걸러내야 하는 이유도 여기에 있다 — 이 값들은 "물체가 없다"가 아니라 "측정 실패"다.</p>
+      </div>
+
+      <h3>2-3. 숫자로 보는 제약 — 5.5 Hz 가 주행 속도에 주는 의미</h3>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>조건</th><th>계산</th><th>의미</th></tr></thead>
+        <tbody>
+          <tr><td>스캔 주기</td><td>1 / 5.5 Hz ≈ <strong>0.18 s</strong></td><td>한 바퀴를 훑는 데 0.18 초. 첫 점과 마지막 점은 0.18 초 차이가 난다</td></tr>
+          <tr><td>직진 0.3 m/s</td><td>0.3 × 0.18 ≈ <strong>5.5 cm</strong></td><td>스캔 한 장 사이에 로봇이 5.5 cm 이동. 한 장 안에서도 앞뒤 점이 5.5 cm 어긋난 위치에서 찍힌다</td></tr>
+          <tr><td>직진 0.15 m/s</td><td>≈ 2.7 cm</td><td>09 단계에서 "지도 작성은 0.15 m/s" 라고 하는 근거</td></tr>
+          <tr><td>회전 0.5 rad/s</td><td>0.5 × 0.18 ≈ 0.09 rad ≈ <strong>5°</strong></td><td>한 장 안에서 벽이 5° 비틀려 찍힌다(모션 왜곡). 회전 중 스캔 매칭이 가장 자주 실패하는 이유</td></tr>
+          <tr><td>대역폭</td><td><code>ros2 topic bw /scan</code> 로 실측 — 수십 KB/s 수준</td><td>08 단계 영상(640×480 raw ≈ 27 MB/s)의 약 1/1000. Wi-Fi 로 그냥 보내도 된다</td></tr>
+        </tbody>
+      </table></div>
+      <p>드라이버의 <code>angle_compensate</code> 는 점 개수를 각도에 맞춰 <em>재배열</em>할 뿐, 로봇이 움직여서 생기는 왜곡은 보정하지 못한다. 그래서 "천천히"는 튜닝이 아니라 <strong>물리</strong>다.</p>
+
+      <h3>2-4. 파라미터가 조용히 무시되는 두 가지 경로</h3>
+      <p>03 단계에서 배운 두 가지 원리가 이 드라이버에서 실물로 나타난다.</p>
+      <pre class="diagram"><code>  ① 파라미터 YAML 은 "노드 이름" 을 키로 매칭한다
+        robot_params.yaml 의 키 = lidar_node:
+        런치에서 name='lidar_node' 를 안 주면 → 노드 이름이 rplidar_node → 블록 전체가 에러 없이 무시됨
+
+  ② 적지 않은 파라미터는 "노드 소스의 기본값" 이 적용된다 (Slamtec 런치파일의 값이 아니다)
+        serial_baudrate 노드 기본값 1000000  ← A1 에 1 Mbaud 를 쓰면 연결 실패
+        frame_id        노드 기본값 "laser_frame" ← URDF 와 다르면 TF 가 끊긴다</code></pre>
+      <p>우리는 Slamtec 의 런치파일을 include 하지 않고 <strong>직접 <code>Node(...)</code> 를 띄운다.</strong> 그래서 <code>robot_params.yaml</code> 의 <code>lidar_node:</code> 블록에 <code>serial_baudrate</code>, <code>frame_id</code> 를 <strong>반드시 명시</strong>한다.
+      "기본값이겠지" 하고 비워 두는 것이 이 드라이버에서 가장 흔한 실패다. 그리고 그 실패는 <strong>에러가 아니라 침묵</strong>으로 나타난다.</p>
+
+      <h3>2-5. QoS — 센서 스트림은 BEST_EFFORT</h3>
+      <p>대부분의 라이다 드라이버는 <code>/scan</code> 을 <code>BEST_EFFORT</code> 로 발행한다. 놓친 스캔을 재전송받아 봐야 이미 옛 것이고 지연만 쌓이기 때문이다.
+      03 단계 §2-7 의 규칙에 따라 <strong>구독자가 <code>RELIABLE</code> 을 요구하면 연결이 되지 않는다.</strong> 그래서 Foxglove 패널은 Best Effort 로 바꿔야 하고, 3-10 의 C++ 노드는 <code>rclcpp::SensorDataQoS()</code>(BEST_EFFORT + 작은 큐) 로 구독한다.
+      04 단계 3-6 에서 직접 재현해 봤던 바로 그 현상이다.</p>
+
+      <h2>3. 실습</h2>
+
+      <h3>3-1. 드라이버 준비 <span class="tag cli">컨테이너</span></h3>
+      <p>드라이버는 apt 바이너리 <code>ros-humble-rplidar-ros</code>(Humble 공식 저장소, 2.1.x) 를 쓴다. 02 단계 §3-3 에서 넣었으므로 컨테이너에 이미 들어 있다. 확인만 한다.</p>
+      <pre><code class="lang-bash">ros2 pkg list | grep rplidar          # rplidar_ros 가 나와야 한다
+ros2 pkg executables rplidar_ros      # rplidar_ros rplidar_node …</code></pre>
+      <div class="callout note"><span class="ct">안 나온다면</span>
+        <p>02 단계 §3-3 에서 빠진 것이다. A(Dockerfile): <code>docker/Dockerfile</code> 의 2-B 블록에 <code>ros-humble-rplidar-ros</code> 가 있는지 확인하고 <code>docker compose build</code>.
+        B(시스템 경로 볼륨): 컨테이너에서 <code>sudo apt-get install -y ros-humble-rplidar-ros</code>.
+        시스템 경로 볼륨이 없는 기본 구성에서 컨테이너 안에 설치한 것은 다음 셸에서 없다 (02 단계 §2-2).</p>
+      </div>
+      <p><strong>소스 빌드가 필요 없다.</strong> 빌드 단계 하나와 실패 가능성 한 종류가 사라진다. apt 버전에 문제가 있을 때만 소스로 간다:</p>
+      <pre><code class="lang-bash"># 대안 — apt 버전에 문제가 있을 때만
+cd /ros2_ws/src
+git clone -b ros2 https://github.com/Slamtec/rplidar_ros.git
+cd /ros2_ws &amp;&amp; colcon build --symlink-install --packages-select rplidar_ros --parallel-workers 2
+source install/setup.bash</code></pre>
+
+      <h3>3-2. 노드와 파라미터 — 여기에 함정이 있다</h3>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th></th><th>값</th></tr></thead>
+        <tbody>
+          <tr><td>패키지</td><td><code>rplidar_ros</code></td></tr>
+          <tr><td>실행파일</td><td><code>rplidar_node</code></td></tr>
+          <tr><td>기본 노드 이름</td><td><code>rplidar_node</code> → 우리는 <code>lidar_node</code> 로 바꿔 띄운다</td></tr>
+          <tr><td>발행 토픽</td><td><code>/scan</code> (<code>topic_name</code> 파라미터로 변경 가능)</td></tr>
+          <tr><td>서비스</td><td><code>start_motor</code>, <code>stop_motor</code> (<code>std_srvs/srv/Empty</code>)</td></tr>
+        </tbody>
+      </table></div>
+      <p><code>ros2_ws/src/rpi5_bringup/config/robot_params.yaml</code> 의 <code>lidar_node:</code> 블록을 열어 읽는다. 주석에 <strong>왜 모든 값을 명시했는지</strong>가 적혀 있다.</p>
+      <pre><code class="lang-yaml">lidar_node:                       # ← 런치의 name='lidar_node' 와 같아야 이 블록이 적용된다
+  ros__parameters:
+    channel_type: "serial"
+    serial_port: "/dev/lidar"      # udev 심볼릭 링크 (ttyUSB0 을 직접 쓰지 않는다)
+    serial_baudrate: 115200        # ★ A1M8 고정값. 노드 기본값 1000000 을 반드시 덮어쓸 것
+    frame_id: "laser_link"         # ★ URDF 의 링크 이름과 정확히 일치해야 한다
+    topic_name: "scan"
+    inverted: false                # 라이다를 뒤집어 장착했다면 true
+    angle_compensate: true
+    scan_mode: ""                  # 빈 값 = 드라이버가 typical scan mode 를 자동 선택
+    auto_standby: false</code></pre>
+      <div class="callout warn"><span class="ct"><code>scan_mode</code> 는 비워 둔다</span>
+        <p>Slamtec 의 <code>rplidar_a1_launch.py</code> 는 <code>'Sensitivity'</code> 를 기본값으로 넣는다. 그런데 <strong>펌웨어가 그 모드를 지원하지 않으면 노드가 에러를 내고 뜨지 않는다.</strong>
+        빈 값은 어떤 개정판에서도 동작한다. (실패 시 로그에 지원 모드 목록이 출력되므로, 원하면 그때 골라 넣는다.)</p>
+      </div>
+
+      <h3>3-3. (참고) 소스로 받는 드라이버의 재현성 — <code>.repos</code></h3>
+      <p>A1M8 은 apt 로 해결되므로 지금 당장은 필요 없다. 다만 <strong>08 단계의 <code>camera_ros</code> 는 소스 빌드가 필요</strong>하므로 기법을 여기서 익혀 둔다.
+      <code>git clone</code> 을 손으로 하면 Pi 를 새로 구웠을 때 재현이 안 된다. <strong><code>.repos</code> 파일로 고정</strong>한다.</p>
+      <p><code>ros2_ws/src/drivers.repos</code>:</p>
+      <pre><code class="lang-yaml">repositories:
+  camera_ros:
+    type: git
+    url: https://github.com/christianrauch/camera_ros.git
+    version: main            # ← 가능하면 태그나 커밋 해시로 고정</code></pre>
+      <pre><code class="lang-bash">cd /ros2_ws
+vcs import src &lt; src/drivers.repos      # 한 번에 모두 받기
+vcs status src                          # 현재 상태 확인</code></pre>
+      <p><code>.gitignore</code> 에 외부 드라이버 소스 디렉터리를 추가하고 <strong><code>.repos</code> 파일만 커밋</strong>한다. 남의 코드를 내 저장소에 복사해 넣으면 업데이트가 안 되고 라이선스도 꼬인다.</p>
+
+      <h3>3-4. 장치 확인 — udev 링크가 양쪽에서 보이는가 <span class="tag pi">Pi 호스트</span></h3>
+      <pre><code class="lang-bash">ls -l /dev/serial/by-id/                 # CP2102 (usb-Silicon_Labs_CP2102…) 가 보이는가
+ls -l /dev/lidar                         # → ttyUSB0 (udev 규칙, 01단계)
+cd ~/ros2_rpi5/docker &amp;&amp; docker compose run --rm dev ls -l /dev/lidar    # 컨테이너 안에서도</code></pre>
+      <p>여기서 <code>by-id</code> 경로와 <code>lsusb</code> 의 VID:PID 를 <code>hardware/INVENTORY.md</code> 3절에 적는다. A1M8 의 CP2102 는 보통 <code>10c4:ea60</code> 이지만 <strong>직접 확인한 값</strong>을 적는다.</p>
+
+      <h3>3-5. 실행과 확인 <span class="tag cli">컨테이너</span></h3>
+      <p><code>robot.launch.py</code> 에 A1M8 블록이 이미 들어 있다. <code>use_lidar:=true</code> 로 켠다. (06 이 아직이라면 <code>mcu_bridge</code> 는 시뮬레이션으로 뜨므로 그대로 두어도 된다.)</p>
+      <pre><code class="lang-bash">ros2 launch rpi5_bringup robot.launch.py use_lidar:=true</code></pre>
+      <p>기동 로그에서 <strong>이 줄을 찾는다</strong>:</p>
+      <pre class="diagram"><code>[rplidar_node]: current scan mode: Standard, sample rate: 8 Khz,
+                max_distance: 12.0 m, scan frequency: 10.0 Hz
+                             ^^^^^^^^  ← 이 값이 내 장비의 진짜 최대 거리</code></pre>
+      <div class="callout why"><span class="ct">최대 거리는 스펙이 아니라 드라이버 로그로 확인한다</span>
+        <p>A1M8 은 개정판(R4/R6 등)에 따라 최대 거리가 다르다. 이 값을 <strong>두 곳</strong>에 기록한다:
+        ① <code>hardware/INVENTORY.md</code> 3절의 기록란 ② <code>nav2_params.yaml</code> 의 <code>laser_max_range</code> / <code>raytrace_max_range</code> / <code>obstacle_max_range</code> (09 단계, 현재 <code>0.0</code> 으로 비어 있다).
+        <strong>왜 스펙보다 약간 작게 쓰는가:</strong> 최대 거리 근처의 측정값은 노이즈가 크고 반사 오류가 많아 지도에 <strong>유령 벽</strong>을 만든다. 관례적으로 실측 최대값의 0.7~0.8 배를 <code>obstacle_max_range</code> 로 쓴다.</p>
+      </div>
+      <p>다른 터미널에서 데이터가 실제로 흐르는지 본다:</p>
+      <pre><code class="lang-bash">ros2 topic list | grep scan
+ros2 topic hz /scan                                     # A1M8 은 5.5 Hz 근처가 정상
+ros2 topic echo /scan --field header.frame_id --once    # laser_link 인가?
+ros2 topic echo /scan --field range_max --once          # 로그의 max_distance 와 같은가
+ros2 topic echo /scan --field ranges --once | head -20
+ros2 topic bw /scan                                     # 대역폭 (2-3 의 숫자와 비교)</code></pre>
+      <p><code>ranges</code> 값이 전부 <code>inf</code> 나 <code>0.0</code> 이면 물리적 문제(모터 미회전, 렌즈 가림)다.</p>
+      <p><strong>QoS 를 눈으로 확인한다.</strong> 이 습관이 Foxglove 와 09 단계의 침묵을 미리 막는다:</p>
+      <pre><code class="lang-bash">ros2 topic info /scan -v</code></pre>
+      <pre class="diagram"><code>Publisher count: 1
+  Node name: lidar_node
+  ...
+  QoS profile:
+    Reliability: BEST_EFFORT        ← 이것을 확인한다. 구독자는 이보다 강한 것을 요구할 수 없다
+    History (Depth): KEEP_LAST (…)
+    Durability: VOLATILE</code></pre>
+
+      <h3>3-6. TF 에 붙었는가</h3>
+      <pre><code class="lang-bash">ros2 run tf2_ros tf2_echo base_link laser_link      # 변환이 나오는가 (URDF 의 lidar_x/y/z/yaw 와 같은가)
+ros2 run tf2_tools view_frames                      # 트리에 laser_link 가 있는가</code></pre>
+      <p>변환이 안 나오면 05 단계의 <code>description.launch.py</code> 가 떠 있는지(<code>use_description:=true</code> 기본값), 그리고 <code>frame_id</code> 철자를 다시 본다.</p>
+
+      <h3>3-7. Foxglove 에서 보기 <span class="tag mac">Mac</span></h3>
+      <ol class="steps">
+        <li>Pi 에서 <code>docker compose up -d foxglove</code> 가 떠 있는지 확인, Mac Foxglove → <code>ws://192.168.50.97:8765</code></li>
+        <li>3D 패널 → Frame: <code>base_link</code></li>
+        <li>Topics 에서 <code>/scan</code> 켜기</li>
+        <li><strong>점이 안 보이면 <code>/scan</code> 패널 설정에서 QoS 를 <code>Best Effort</code> 로 바꾼다</strong> (2-5)</li>
+      </ol>
+      <p>점이 안 보일 때 확인 순서는 항상 같다: ① 패널 QoS Best Effort → ② <code>frame_id</code> 가 TF 트리에 있는가 (<code>view_frames</code>) → ③ 패널의 Frame 이 그 프레임과 연결된 좌표계인가. 대부분 ① 아니면 ② 다.</p>
+
+      <h3>3-8. 모터 서비스 — 03 단계에서 배운 "서비스"의 실물</h3>
+      <p>A1M8 의 회전 모터는 드라이버가 <strong>서비스</strong>로 제어한다. 우리 로봇 안에 존재하는 첫 번째 진짜 서비스다.</p>
+      <pre><code class="lang-bash">ros2 service list | grep motor
+#   /lidar_node/start_motor
+#   /lidar_node/stop_motor
+
+ros2 service type /lidar_node/stop_motor      # std_srvs/srv/Empty
+
+ros2 service call /lidar_node/stop_motor std_srvs/srv/Empty
+#   → 모터가 멈추고 /scan 이 끊긴다 (ros2 topic hz /scan 으로 확인)
+
+ros2 service call /lidar_node/start_motor std_srvs/srv/Empty
+#   → 다시 돈다</code></pre>
+      <p><strong>왜 이것이 토픽이 아니라 서비스인가 — 직접 생각해 본 뒤 펼친다.</strong></p>
+      <details class="quiz"><summary>답 보기</summary>
+        <div class="ans">"모터를 멈춰라"는 <strong>즉시 끝나는 일회성 명령</strong>이고, 성공했는지 확인이 필요하다. 계속 흐르는 데이터가 아니므로 토픽이 아니고, 오래 걸리지도 취소할 일도 없으므로 액션도 아니다.
+        03 단계 §2-5 의 판단 기준을 그대로 적용한 결과다.</div></details>
+      <p>배터리 로봇에서는 <code>auto_standby: true</code> 로 두면 <code>/scan</code> 구독자가 없을 때 모터를 자동 정지한다. 전력과 베어링 수명에 유리하지만, 이 모드에서는 위 서비스 호출이 무시된다.
+      주행 중에 라이다를 멈출 일은 없지만, 정지 대기 중이나 Hailo 추론만 돌릴 때 모터를 끄면 전력 예산에 여유가 생긴다. Pi 5 + Hailo + 모터 구성에서 전력은 늘 빠듯하다.</p>
+
+      <h3>3-9. 장착 방향 검증 — 이 단계에서 가장 중요</h3>
+      <p>스캔이 나온다고 끝이 아니다. <strong>점들이 실제 벽 위치와 맞는지</strong> 확인해야 한다. 로봇을 <strong>벽에서 1 m 떨어진 곳에 벽을 정면으로 보게</strong> 놓는다.</p>
+      <pre><code class="lang-bash"># 정면(0도)과 90도 간격의 거리를 인덱스로 확인
+ros2 topic echo /scan --once | python3 -c "
+import sys, yaml
+d = yaml.safe_load(sys.stdin.read())
+r = d['ranges']
+n = len(r)
+print(f'점 개수: {n}')
+print(f'ranges[0]      (angle_min 방향): {r[0]:.3f} m')
+print(f'ranges[{n//4}]  : {r[n//4]:.3f} m')
+print(f'ranges[{n//2}]  : {r[n//2]:.3f} m')
+print(f'ranges[{3*n//4}]: {r[3*n//4]:.3f} m')
+"</code></pre>
+      <p>Foxglove 3D 패널에서 보는 것이 더 직관적이다. 로봇을 90° 돌렸을 때 스캔도 같은 방향으로 90° 돌아야 한다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>조치</th></tr></thead>
+        <tbody>
+          <tr><td>벽이 로봇 <strong>뒤쪽</strong>에 그려짐</td><td>라이다가 180° 돌아 장착됨</td><td>URDF <code>lidar_yaw</code> 에 <code>${PI}</code></td></tr>
+          <tr><td>벽이 <strong>좌우 반전</strong>됨</td><td>라이다를 <strong>뒤집어</strong> 장착</td><td>URDF <code>rpy="${PI} 0 0"</code> 또는 드라이버 <code>inverted: true</code></td></tr>
+          <tr><td>벽이 45° 기울어 그려짐</td><td>라이다 0° 방향이 어긋남</td><td><code>lidar_yaw</code> 를 실측 각도로</td></tr>
+          <tr><td>거리가 일정 비율로 틀림</td><td>단위 문제 (mm vs m)</td><td>드라이버 설정 확인</td></tr>
+          <tr><td>로봇 자기 몸통이 스캔에 찍힘</td><td>장착 높이 문제</td><td><code>angle_min/max</code> 로 마스킹하거나 라이다를 높임</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><span class="ct">이 검증을 건너뛰면 09 단계에서 "SLAM 이 지도를 못 만들어요"로 돌아온다</span>
+        <p>그때는 SLAM 파라미터를 의심하느라 며칠을 쓴다. <strong>지금 10분 쓰는 것이 훨씬 싸다.</strong> 라이다 장착 위치(x/y/z/yaw)를 자로 재서 URDF 의 <code>lidar_*</code> 속성에 반영하고, <code>INVENTORY.md</code> 3절 장착 정보란도 채운다.</p>
+      </div>
+
+      <h3>3-10. C++ 연습 — <code>/scan</code> 을 소비하는 첫 노드 <span class="tag cpp">C++</span></h3>
+      <p>04 단계의 패턴을 <strong>실제 센서 데이터</strong>에 적용한다. 새 패키지 <code>rpi5_lidar_tools</code> 에 <code>scan_watch</code> 노드를 직접 쓴다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>항목</th><th>사양</th></tr></thead>
+        <tbody>
+          <tr><td>구독</td><td><code>/scan</code> (<code>sensor_msgs/msg/LaserScan</code>) — QoS 는 <code>rclcpp::SensorDataQoS()</code></td></tr>
+          <tr><td>파라미터</td><td><code>sector_deg</code> (기본 30.0 → 정면 ±15°), <code>min_valid</code> (기본 0.0 = 메시지의 <code>range_min</code> 을 사용)</td></tr>
+          <tr><td>계산</td><td>각 인덱스의 각도 = <code>angle_min + i·angle_increment</code> → <code>atan2(sin, cos)</code> 로 [−π, π) 정규화 → <code>|angle| ≤ sector/2</code> 인 점만 → <code>inf</code>·NaN·<code>range_min</code> 미만·<code>range_max</code> 초과 제외 → 최소값</td></tr>
+          <tr><td>발행</td><td><code>/scan_front_min</code> (<code>std_msgs/msg/Float32</code>). 유효한 점이 없으면 <code>inf</code> 그대로</td></tr>
+          <tr><td>로그</td><td><code>RCLCPP_INFO_THROTTLE</code> 로 1초에 한 번</td></tr>
+        </tbody>
+      </table></div>
+      <pre><code class="lang-bash">cd /ros2_ws/src
+ros2 pkg create --build-type ament_cmake --license Apache-2.0 \
+    --dependencies rclcpp sensor_msgs std_msgs \
+    rpi5_lidar_tools</code></pre>
+      <p><code>rpi5_lidar_tools/src/scan_watch.cpp</code>:</p>
+      <pre><code class="lang-cpp">#include &lt;algorithm&gt;
+#include &lt;cmath&gt;
+#include &lt;limits&gt;
+#include &lt;memory&gt;
+
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/laser_scan.hpp"
+#include "std_msgs/msg/float32.hpp"
+
+class ScanWatch : public rclcpp::Node
+{
+public:
+  ScanWatch()
+  : Node("scan_watch")
+  {
+    // 정면 ±(sector_deg/2) 안의 점만 본다. 기본 30° → ±15°
+    this-&gt;declare_parameter&lt;double&gt;("sector_deg", 30.0);
+    this-&gt;declare_parameter&lt;double&gt;("min_valid", 0.0);   // 0 이면 메시지의 range_min 을 쓴다
+    sector_rad_ = this-&gt;get_parameter("sector_deg").as_double() * M_PI / 180.0;
+    min_valid_ = this-&gt;get_parameter("min_valid").as_double();
+
+    // 드라이버는 BEST_EFFORT 로 발행한다 → 구독도 SensorDataQoS (BEST_EFFORT, 작은 큐).
+    // 기본 QoS(RELIABLE) 로 구독하면 연결이 안 되고, 에러도 없다 (03 §2-7, 04 §3-6).
+    sub_ = this-&gt;create_subscription&lt;sensor_msgs::msg::LaserScan&gt;(
+      "scan", rclcpp::SensorDataQoS(),
+      std::bind(&amp;ScanWatch::on_scan, this, std::placeholders::_1));
+
+    pub_ = this-&gt;create_publisher&lt;std_msgs::msg::Float32&gt;("scan_front_min", 10);
+  }
+
+private:
+  void on_scan(const sensor_msgs::msg::LaserScan &amp; scan)
+  {
+    float best = std::numeric_limits&lt;float&gt;::infinity();
+    const double half = sector_rad_ / 2.0;
+    const float lo = (min_valid_ &gt; 0.0) ? static_cast&lt;float&gt;(min_valid_) : scan.range_min;
+
+    for (size_t i = 0; i &lt; scan.ranges.size(); ++i) {
+      // ① 이 인덱스의 각도. 라이다 자기 기준(laser_link) 이다 — "로봇 정면" 이 아니다!
+      double angle = scan.angle_min + static_cast&lt;double&gt;(i) * scan.angle_increment;
+      // ② [-π, π) 로 정규화. angle_min=0, angle_max=2π 로 발행하는 드라이버도 있어서
+      //    이 한 줄이 없으면 "정면" 이 인덱스 0 근처 반쪽만 잡힌다.
+      angle = std::atan2(std::sin(angle), std::cos(angle));
+      if (std::fabs(angle) &gt; half) {
+        continue;
+      }
+      // ③ 측정 실패값 제거: inf/NaN(햇빛·검은 표면), range_min 미만, range_max 초과
+      const float r = scan.ranges[i];
+      if (!std::isfinite(r) || r &lt; lo || r &gt; scan.range_max) {
+        continue;
+      }
+      best = std::min(best, r);
+    }
+
+    std_msgs::msg::Float32 out;
+    out.data = best;   // 섹터에 유효한 점이 없으면 inf 그대로 — "모름" 을 0 으로 속이지 않는다
+    pub_-&gt;publish(out);
+
+    RCLCPP_INFO_THROTTLE(
+      this-&gt;get_logger(), *this-&gt;get_clock(), 1000,
+      "front min = %.3f m  (sector +/-%.1f deg, %zu pts)",
+      best, half * 180.0 / M_PI, scan.ranges.size());
+  }
+
+  double sector_rad_;
+  double min_valid_;
+  rclcpp::Subscription&lt;sensor_msgs::msg::LaserScan&gt;::SharedPtr sub_;
+  rclcpp::Publisher&lt;std_msgs::msg::Float32&gt;::SharedPtr pub_;
+};
+
+int main(int argc, char ** argv)
+{
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared&lt;ScanWatch&gt;());
+  rclcpp::shutdown();
+  return 0;
+}</code></pre>
+      <p><code>rpi5_lidar_tools/CMakeLists.txt</code>:</p>
+      <pre><code class="lang-cmake">cmake_minimum_required(VERSION 3.8)
+project(rpi5_lidar_tools)
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+
+add_executable(scan_watch src/scan_watch.cpp)
+ament_target_dependencies(scan_watch rclcpp sensor_msgs std_msgs)
+
+install(TARGETS scan_watch DESTINATION lib/${PROJECT_NAME})
+
+ament_package()</code></pre>
+      <pre><code class="lang-bash">cd /ros2_ws
+colcon build --symlink-install --packages-select rpi5_lidar_tools --parallel-workers 2
+source install/setup.bash
+
+# 라이다가 떠 있는 상태(3-5)에서
+ros2 run rpi5_lidar_tools scan_watch
+# 다른 터미널
+ros2 topic echo /scan_front_min
+ros2 run rpi5_lidar_tools scan_watch --ros-args -p sector_deg:=60.0     # 섹터를 넓혀 본다</code></pre>
+      <p><strong>검증:</strong> 라이다 정면 30~50 cm 앞에 손이나 책을 가져가면 <code>data</code> 가 그 거리로 떨어지고, 치우면 벽 거리로 돌아온다. 옆(±90°)에 손을 대면 값이 바뀌지 <em>않아야</em> 한다.</p>
+      <div class="callout warn"><span class="ct">이 노드의 "정면"은 <code>laser_link</code> 기준이다</span>
+        <p>라이다가 뒤집혀 있거나 돌아가 있어도 <strong>TF 가 보정해 주는 것은 Foxglove·SLAM 처럼 TF 를 조회하는 소비자뿐</strong>이다. 이 노드는 메시지의 각도만 보므로 URDF 의 <code>lidar_yaw</code> 와 무관하게 <em>라이다의 0°</em> 를 정면으로 취급한다.
+        그래서 3-9 의 장착 방향 검증이 끝난 뒤 이 값이 "로봇 정면"과 맞는지 다시 본다. 라이다 0° 가 로봇 뒤를 향하면 이 노드는 <em>뒤쪽</em> 최소 거리를 낸다.
+        확장 과제: <code>tf2_ros::Buffer::lookupTransform("base_link", scan.header.frame_id, …)</code> 로 각 점을 <code>base_link</code> 로 옮긴 뒤 섹터를 자르면 장착과 무관해진다 — 부록 A 의 TF 조회 절 참조.</p>
+      </div>
+      <div class="callout note"><span class="ct">이 값은 10 단계에서 쓴다</span>
+        <p><code>mission_supervisor</code> 가 "전방 장애물이 임계 거리 안 → 목표 취소(급정지)" 판단에 <code>/scan_front_min</code> 을 쓴다. Nav2 의 코스트맵이 있는데 왜 또 필요한가는 10 단계에서 다룬다 — 힌트: Nav2 는 "우회"를, 이 값은 "멈춤"을 담당한다.</p>
+      </div>
+
+      <h3>3-11. 런치파일 통합 — 읽기 포인트</h3>
+      <p><code>ros2_ws/src/rpi5_bringup/launch/robot.launch.py</code> 의 A1M8 블록을 열어 <strong>왜 그렇게 되어 있는지</strong> 확인한다.</p>
+      <ul>
+        <li><code>executable='rplidar_node'</code> — 드라이버의 실행파일 이름</li>
+        <li><code>name='lidar_node'</code> — <strong>YAML 키와 맞추기 위해 이름을 바꾼 것</strong> (2-4 함정 ①)</li>
+        <li><code>parameters=[params_file]</code> — <code>robot_params.yaml</code> 의 <code>lidar_node:</code> 블록이 주입됨</li>
+        <li><code>condition=IfCondition(LaunchConfiguration('use_lidar'))</code> — <code>use_lidar:=false</code> 면 아예 안 뜸. 단계별로 하나씩 켜 가며 학습하기 위한 스위치</li>
+      </ul>
+      <p>연습 노드 <code>scan_watch</code> 도 같은 방식으로 이 런치에 추가해 본다(<code>package='rpi5_lidar_tools'</code>, 인자 <code>use_scan_watch</code>). 10 단계에서 어차피 필요하다.</p>
+
+      <h3>3-12. 전원 주의</h3>
+      <p>라이다는 모터로 회전하므로 <strong>기동 전류가 크다</strong> (보통 400~600 mA, 순간 더).</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>증상</th><th>원인</th></tr></thead>
+        <tbody>
+          <tr><td>라이다가 돌다 멈춤</td><td>전원 부족</td></tr>
+          <tr><td>모터가 돌 때만 스캔이 끊김</td><td>Pi 의 USB 전류 한계 (5 V/5 A 협상이 안 되면 600 mA 로 제한)</td></tr>
+          <tr><td><code>vcgencmd get_throttled</code> 가 0 이 아님</td><td>어댑터 용량 부족</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>해결:</strong> 27 W PD 어댑터 사용, 또는 <strong>셀프 파워 USB 허브</strong>를 통해 라이다에 별도 급전. Hailo 까지 달려 있으면 전력 여유가 더 줄어든다.</p>
+
+      <h2>✅ 검증 체크포인트</h2>
+      <ul class="checklist">
+        <li><label><input type="checkbox"><span>삼각측량 라이다의 한계 3가지(햇빛/검은 표면/유리)와 그 이유를 말할 수 있다</span></label></li>
+        <li><label><input type="checkbox"><span>회전수 5.5 Hz 가 주행 속도에 주는 제약을 숫자(0.3 m/s → 5.5 cm/스캔)로 설명할 수 있다</span></label></li>
+        <li><label><input type="checkbox"><span>파라미터가 무시되는 두 가지 경로(노드 이름 불일치, 값 생략 → 노드 기본값)를 안다</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 pkg list | grep rplidar</code> 로 드라이버가 컨테이너 이미지에 들어 있는 것을 확인했다</span></label></li>
+        <li><label><input type="checkbox"><span>udev 로 <code>/dev/lidar</code> 가 호스트와 컨테이너 양쪽에서 보이고, INVENTORY.md 3절에 by-id 경로와 VID:PID 를 적었다</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 topic hz /scan</code> 이 5.5 Hz 근처를 보인다</span></label></li>
+        <li><label><input type="checkbox"><span>드라이버 로그의 <code>max_distance</code> 를 INVENTORY.md 3절과 <code>nav2_params.yaml</code> 에 기록했다</span></label></li>
+        <li><label><input type="checkbox"><span><code>/scan</code> 의 <code>frame_id</code> 가 URDF 의 <code>laser_link</code> 와 정확히 같고, <code>tf2_echo base_link laser_link</code> 가 값을 반환한다</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 topic info /scan -v</code> 로 발행자 QoS 가 BEST_EFFORT 인 것을 눈으로 확인했다</span></label></li>
+        <li><label><input type="checkbox"><span>Foxglove 3D 에서 스캔 점이 보인다 (QoS Best Effort)</span></label></li>
+        <li><label><input type="checkbox"><span><code>start_motor</code> / <code>stop_motor</code> 서비스를 직접 호출해 <code>/scan</code> 이 끊겼다 이어지는 것을 <code>topic hz</code> 로 봤다</span></label></li>
+        <li><label><input type="checkbox"><span>벽에서 1 m 떨어져 정면을 봤을 때 정면 거리가 ~1.0 m 로 나오고, 로봇을 90° 돌렸을 때 스캔도 같은 방향으로 90° 돈다</span></label></li>
+        <li><label><input type="checkbox"><span>라이다 장착 위치(x/y/z/yaw)를 자로 재서 URDF 와 INVENTORY.md 에 반영했다</span></label></li>
+        <li><label><input type="checkbox"><span><code>rpi5_lidar_tools/scan_watch</code> 를 직접 작성·빌드해 <code>/scan_front_min</code> 이 정면의 손 거리에 반응하고 옆의 손에는 반응하지 않는 것을 봤다</span></label></li>
+        <li><label><input type="checkbox"><span><code>scan_watch</code> 의 구독 QoS 를 기본값(<code>10</code>)으로 바꿔 빌드하면 콜백이 한 번도 안 불리는 것을 확인하고, 다시 <code>SensorDataQoS()</code> 로 되돌렸다</span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2>🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. <code>/scan</code> 은 나오는데 Foxglove 3D 에 아무것도 안 보인다. 무엇부터 확인하는가?</summary>
+        <div class="ans">① 패널의 <strong>QoS 를 Best Effort</strong> 로 바꿨는가 (드라이버가 BEST_EFFORT 로 발행). ② <code>frame_id</code> 가 TF 트리에 존재하는가 (<code>view_frames</code>). ③ 3D 패널의 Frame 이 그 프레임과 연결된 좌표계인가. 대부분 ① 이나 ② 다.</div></details>
+      <details class="quiz"><summary>2. 라이다를 뒤집어 달았을 때 왜 "좌우 반전"으로 나타나는가?</summary>
+        <div class="ans">라이다는 자기 기준으로 반시계 방향으로 각도를 증가시키며 스캔한다. 물리적으로 뒤집으면(x축 기준 180° 회전) 그 회전 방향이 로봇 기준으로는 시계 방향이 된다. 결과적으로 좌우가 뒤집힌 스캔이 된다.
+        URDF 의 <code>rpy</code> 로 이 회전을 기술하면 TF 를 조회하는 소비자는 알아서 보정한다. 단, 메시지의 각도만 보는 <code>scan_watch</code> 같은 노드는 보정되지 않는다.</div></details>
+      <details class="quiz"><summary>3. 창가 쪽에서만 지도가 이상하게 그려진다. SLAM 파라미터 문제인가?</summary>
+        <div class="ans">아닐 가능성이 높다. A1M8 은 <strong>삼각측량</strong> 방식이라 직사광선에 약하다. 주변광이 레이저 반사점을 덮어 측정이 <code>inf</code> 로 튄다. 센서의 물리적 한계이므로 파라미터로 해결되지 않는다.
+        커튼을 치거나, 그 시간대를 피하거나, TOF 라이다로 교체해야 한다. <strong>센서 한계를 아는 것이 곧 설계 능력이다.</strong></div></details>
+      <details class="quiz"><summary>4. <code>robot_params.yaml</code> 에 <code>serial_baudrate</code> 를 적지 않으면 어떻게 되는가?</summary>
+        <div class="ans">드라이버 노드가 자체 기본값 <strong>1000000 (1 Mbaud)</strong> 을 쓴다. A1M8 은 115200 이므로 연결에 실패한다. Slamtec 런치파일은 115200 으로 덮어쓰지만, 우리는 그 런치파일을 include 하지 않고 직접 Node 를 띄우므로 <strong>적지 않은 값은 노드 기본값이 적용된다.</strong></div></details>
+      <details class="quiz"><summary>5. 라이다를 다른 모델로 교체하면 SLAM 설정을 바꿔야 하는가?</summary>
+        <div class="ans">대부분 아니다. SLAM 은 <code>/scan</code> 과 TF 만 본다. 다만 ① 새 모델의 <code>range_max</code> 가 다르면 SLAM 과 Nav2 의 최대 사용 거리 파라미터를 맞추는 것이 좋고, ② 스캔 주파수가 크게 다르면 SLAM 갱신 주기도 조정한다. ③ 장착 위치가 바뀌었다면 URDF 를 고친다. <code>scan_watch</code> 는 메시지 필드만 쓰므로 그대로 동작한다.</div></details>
+      <details class="quiz"><summary>6. <code>scan_watch</code> 에서 구독 QoS 를 <code>rclcpp::SensorDataQoS()</code> 로 준 이유는? 큐 깊이 <code>10</code> 만 주면 무엇이 달라지는가?</summary>
+        <div class="ans">숫자만 주면 기본 프로파일(<strong>RELIABLE</strong>)로 구독한다. 드라이버는 BEST_EFFORT 로 발행하므로 구독자가 요구하는 신뢰성을 보장할 수 없어 <strong>연결이 성립하지 않는다.</strong> 에러 없이 콜백이 영원히 안 불린다.
+        <code>SensorDataQoS()</code> 는 BEST_EFFORT + 작은 큐로, "최신 값만 중요하고 놓친 것은 버려도 되는" 센서 스트림에 맞는 프리셋이다.</div></details>
+      <details class="quiz"><summary>7. 각도를 <code>atan2(sin, cos)</code> 로 정규화하는 줄이 없으면 어떤 드라이버에서 무엇이 잘못되는가?</summary>
+        <div class="ans"><code>angle_min = 0</code>, <code>angle_max ≈ 2π</code> 로 발행하는 드라이버에서는 각도가 0 ~ 2π 범위라 <code>|angle| ≤ 15°</code> 조건이 0°~15° 쪽 반만 잡고 345°~360° 쪽(=−15°~0°)은 놓친다.
+        정규화하면 두 표현이 같은 [−π, π) 로 모여 정면 섹터가 대칭이 된다. 라이다를 바꿔도 코드가 그대로 동작하게 하는 습관이다.</div></details>
+      <details class="quiz"><summary>8. 섹터 안에 유효한 점이 하나도 없을 때 <code>0.0</code> 이 아니라 <code>inf</code> 를 발행하는 이유는?</summary>
+        <div class="ans"><code>0.0</code> 은 "코앞에 물체가 있다"로 읽힌다 — 10 단계의 감독 노드가 이것을 보면 급정지한다. 반면 <code>inf</code> 는 "이 방향에서 측정된 것이 없다"는 뜻으로, <code>range_max</code> 밖이거나 측정 실패다.
+        <strong>모르는 것을 위험한 값으로 속이지 않는다</strong>는 센서 처리의 기본 원칙이다. 소비자 쪽에서 <code>isfinite</code> 로 구분한다.</div></details>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

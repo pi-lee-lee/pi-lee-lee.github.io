@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>05 · TF2와 URDF — 로봇의 좌표계 세우기</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="05">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">05 · TF2와 URDF</p>
+      <h1>로봇의 좌표계 세우기 — TF2와 URDF</h1>
+      <p class="lead">라이다가 "전방 2.3 m 에 물체"라고 말해도, 그 점이 <em>로봇 기준 어디인지, 지도 기준 어디인지</em> 모르면 아무것도 할 수 없다.
+      그 변환 사슬을 시간과 함께 관리하는 것이 TF2 이고, 사슬의 고정된 부분(몸통에 볼트로 붙은 관계)을 기술하는 파일이 URDF 다.
+      <strong>TF 는 자율주행의 키스톤이다.</strong> 07~10 단계에서 막히는 사람의 대부분이 여기를 대충 넘긴 사람이다.</p>
+
+      <div class="goal">
+        <span class="label">이 단계가 끝나면</span>
+        <p>로봇의 TF 트리를 그림(<code>view_frames</code> PDF)으로 확인하고, 임의의 두 좌표계 사이 변환을 <code>tf2_echo</code> 로 조회할 수 있다.
+        <code>map → odom → base_link</code> 가 왜 나뉘어 있는지 남에게 설명할 수 있고, 06 단계에서 쓸 C++ TF 브로드캐스트/조회 코드의 모양을 알고 있다.
+        그리고 섀시를 <strong>자로 재서</strong> URDF 의 빈칸을 채웠다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">그래프에서의 위치</span><code>robot_state_publisher</code> 상자(형상·TF) — 그래프의 점선 전부</div>
+        <div><span class="k">전제</span>04 (패키지 빌드, <code>rpi5_description</code> 이 빌드됨)</div>
+        <div><span class="k">예상 소요</span>3~5시간 (실측 포함)</div>
+        <div><span class="k">언어</span><span class="tag cli">XML (xacro)</span> + CLI · <span class="tag cpp">C++</span> 미리보기</div>
+      </div>
+
+      <div class="callout warn"><span class="ct">이 단계를 건너뛰지 마십시오</span>
+        <p>"TF 는 나중에 필요할 때 보면 되지"가 가장 비싼 오해다. 07 의 <code>/scan</code> 이 Foxglove 에 안 보이는 이유, 09 의 지도가 휘는 이유, 10 의 카메라-라이다 융합이 틀리는 이유가 전부 이 단계의 실측값과 프레임 이름이다.
+        여기서 30분 재는 것이 뒤에서 3일을 아낀다.</p>
+      </div>
+
+      <h2>1. 개요 — 왜 TF 가 필요한가</h2>
+      <p>라이다가 "전방 2.3 m 지점에 물체가 있다"고 알려 줬다고 하자. 이것만으로는 아무것도 할 수 없다. 질문이 줄줄이 따라온다.</p>
+      <ul>
+        <li>라이다의 "전방"은 로봇의 전방과 같은가? (뒤집어 달았을 수도 있다)</li>
+        <li>라이다는 로봇 중심에서 앞으로 5 cm, 위로 9 cm 에 있다. 그럼 <strong>로봇 중심 기준</strong>으로는?</li>
+        <li>로봇은 지금 지도상 (3.2, 1.7) 지점에서 45도 돌아 있다. 그럼 <strong>지도 기준</strong>으로는?</li>
+      </ul>
+      <pre class="diagram"><code>     "라이다 기준 (2.3, 0)"
+              ↓  laser_link → base_link 변환        ← URDF (고정, 이 단계)
+     "로봇 기준 (2.35, 0)"
+              ↓  base_link → odom 변환              ← mcu_bridge (06단계, 엔코더 적분)
+     "출발점 기준 (5.1, 3.2)"
+              ↓  odom → map 변환                    ← SLAM (09단계, 스캔 매칭 보정)
+     "지도 기준 (5.3, 3.0)"  ← 이제서야 "저기에 벽이 있다"고 말할 수 있다</code></pre>
+      <p><strong>TF2 는 이 변환 사슬을 시간과 함께 관리하는 시스템이다.</strong> 각 노드는 자기가 아는 변환만 발행하고, TF2 가 그것들을 이어 붙여
+      "임의의 A 기준에서 본 B" 를 <em>특정 시각에 대해</em> 계산해 준다. "시간과 함께"가 중요하다 — 0.1초 전 스캔은 0.1초 전 로봇 자세로 변환해야 한다.</p>
+
+      <h3>표준 TF 트리 — 우리가 만들 것</h3>
+      <pre class="diagram"><code>   map                      ← SLAM / AMCL 이 발행 (09단계)
+    │                          "출발점이 지도상 어디였는지" 보정값
+    │                          드물게, 튀듯이 갱신됨
+    └── odom                 ← mcu_bridge 가 발행 (06단계)
+         │                     "출발점 기준 현재 위치" 엔코더 적분
+         │                     연속적, 부드러움. 하지만 오차가 누적됨
+         └── base_footprint   ← URDF (지면 투영점, z=0 이 바닥)
+              └── base_link   ← URDF (로봇 몸통 기준, 바퀴 축 높이)
+                   ├── laser_link              ← /scan 의 frame_id
+                   ├── imu_link                ← /imu/data_raw 의 frame_id (06, MCU 가 IMU 를 읽는다)
+                   ├── camera_link
+                   │    └── camera_optical_link ← /camera/image_raw 의 frame_id
+                   ├── left_wheel_link          ← /joint_states 로 회전
+                   ├── right_wheel_link
+                   └── caster_link</code></pre>
+      <p>이 트리에서 <strong>URDF 가 책임지는 부분은 <code>base_footprint</code> 이하 전부</strong>다. <code>map → odom</code>, <code>odom → base_footprint</code> 는 다른 노드가 실시간으로 발행한다.
+      그래서 이 단계가 끝나도 <code>view_frames</code> 에는 <code>odom</code> 이 보이지 않는다 — 06 단계에서 붙는다.</p>
+
+      <h2>2. 원리 — 왜</h2>
+
+      <h3>2-1. 왜 <code>map</code> 과 <code>odom</code> 을 나누는가 — 가장 중요한 설계</h3>
+      <div class="tbl"><table>
+        <thead><tr><th></th><th><code>odom → base_link</code></th><th><code>map → odom</code></th></tr></thead>
+        <tbody>
+          <tr><td>발행자</td><td>휠 오도메트리 (mcu_bridge)</td><td>SLAM / AMCL</td></tr>
+          <tr><td>성질</td><td><strong>연속적</strong> (튀지 않음)</td><td><strong>불연속</strong> (보정 시 튐)</td></tr>
+          <tr><td>정확도</td><td>단기 정확, 장기 누적오차</td><td>장기 정확</td></tr>
+          <tr><td>용도</td><td>제어 루프 (부드러워야 함)</td><td>전역 위치</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>핵심:</strong> 제어기는 부드러운 <code>odom</code> 을 쓰고, 경로 계획은 정확한 <code>map</code> 을 쓴다.
+      만약 SLAM 이 <code>map → base_link</code> 를 직접 발행하면, 위치 보정이 일어날 때마다 로봇 위치가 순간이동해서 제어기가 미쳐 버린다.
+      그래서 <strong>보정량을 <code>map → odom</code> 에 몰아넣는다.</strong> 이것이 ROS 의 표준 설계
+      (<a href="https://ros.org/reps/rep-0105.html">REP-105</a>)다. 두 변환을 곱하면 결국 <code>map</code> 기준 위치가 나오므로 정보는 잃지 않는다.</p>
+
+      <div class="callout warn"><span class="ct">철칙: 하나의 좌표계에는 부모가 하나뿐이다</span>
+        <p>두 노드가 같은 자식 프레임의 TF 를 동시에 발행하면 TF 트리가 떨리면서 모든 것이 망가진다. 06 단계의 <code>mcu_bridge</code> 에 <code>publish_tf</code> 파라미터가 있는 이유가 이것이다 —
+        나중에 IMU 를 융합하는 EKF 가 <code>odom → base_link</code> 를 대신 발행하게 되면 브리지 쪽을 꺼야 한다. 3-8 에서 이 떨림을 직접 재현해 본다.</p>
+      </div>
+
+      <h3>2-2. 좌표 규약 — 외워야 하는 것</h3>
+      <h4>REP-103: 로봇 본체 좌표계</h4>
+      <pre class="diagram"><code>        z (위)
+        │
+        │
+        └────── x (앞)
+       ╱
+      y (왼쪽)</code></pre>
+      <ul>
+        <li><strong>오른손 좌표계</strong>, 단위는 <strong>미터</strong>와 <strong>라디안</strong></li>
+        <li><code>yaw</code> = z축 회전, <strong>반시계가 +</strong></li>
+        <li>로봇이 정면을 보고 있으면 yaw = 0</li>
+      </ul>
+      <h4>광학 좌표계는 다르다</h4>
+      <p>카메라 영상 처리(OpenCV) 관례는 전혀 다르다.</p>
+      <pre class="diagram"><code>        ┌──────── x (오른쪽)
+        │
+        │  z = 광축 방향 (화면 안쪽)
+        y (아래)</code></pre>
+      <p>그래서 URDF 에 <code>camera_link</code>(로봇 규약)와 <code>camera_optical_link</code>(광학 규약)를 <strong>둘 다</strong> 두고,
+      그 사이를 <code>rpy = (-π/2, 0, -π/2)</code> 로 연결한다. 이미지 관련 메시지(<code>camera_info</code>, 포인트클라우드, 08b 의 검출 결과를 3D 로 올릴 때)는 <code>camera_optical_link</code> 를 쓴다.</p>
+      <div class="callout why"><span class="ct">이 값을 왜 외우는가</span>
+        <p>직접 유도하려면 회전행렬 두 번을 곱해야 한다. 실무에서는 그냥 관례로 쓴다. 다만 <strong>왜 두 개가 필요한지</strong>는 이해해야 한다 —
+        두 규약을 한 프레임에 섞으면 어느 쪽 코드가 봐도 축이 틀린다. 08a 에서 OpenCV 로 "화면 오른쪽 아래"의 픽셀을 다룰 때 이 z-전방 규약을 다시 만난다.</p>
+      </div>
+
+      <h3>2-3. URDF — 로봇의 형상을 XML 로</h3>
+      <p>우리 URDF: <code>ros2_ws/src/rpi5_description/urdf/rpi5_robot.urdf.xacro</code>. 구성 요소는 두 가지뿐이다.</p>
+      <pre><code class="lang-xml">&lt;link name="laser_link"&gt;     &lt;!-- 물체 (좌표계를 가진 강체) --&gt;
+  &lt;visual&gt;   ... &lt;/visual&gt;     &lt;!-- 눈에 보이는 모양 (Foxglove/RViz 용) --&gt;
+  &lt;collision&gt;... &lt;/collision&gt;  &lt;!-- 충돌 판정용 모양 --&gt;
+  &lt;inertial&gt; ... &lt;/inertial&gt;   &lt;!-- 질량/관성 (시뮬레이션용) --&gt;
+&lt;/link&gt;
+
+&lt;joint name="laser_joint" type="fixed"&gt;   &lt;!-- 두 링크의 관계 --&gt;
+  &lt;parent link="base_link"/&gt;
+  &lt;child  link="laser_link"/&gt;
+  &lt;origin xyz="0.05 0 0.09" rpy="0 0 0"/&gt;  &lt;!-- 부모 기준 자식의 위치/자세 --&gt;
+&lt;/joint&gt;</code></pre>
+      <div class="tbl"><table>
+        <thead><tr><th>joint type</th><th>의미</th><th>우리 로봇에서</th><th>TF 로 나가는 곳</th></tr></thead>
+        <tbody>
+          <tr><td><code>fixed</code></td><td>고정. 절대 안 움직임</td><td>라이다, 카메라 마운트, 캐스터</td><td><code>/tf_static</code> (한 번 발행)</td></tr>
+          <tr><td><code>continuous</code></td><td>무한 회전</td><td>바퀴</td><td><code>/tf</code> (<code>/joint_states</code> 가 올 때마다)</td></tr>
+          <tr><td><code>revolute</code></td><td>각도 제한 있는 회전</td><td>(아커만 조향이면 사용)</td><td><code>/tf</code></td></tr>
+          <tr><td><code>prismatic</code></td><td>직선 이동</td><td>(해당 없음)</td><td><code>/tf</code></td></tr>
+        </tbody>
+      </table></div>
+      <p><code>robot_state_publisher</code> 는 URDF 를 읽어 <strong>고정 조인트는 <code>/tf_static</code> 에 한 번</strong>, <strong>움직이는 조인트는 <code>/joint_states</code> 를 받을 때마다 <code>/tf</code> 에</strong> 발행한다.
+      따라서 <code>/joint_states</code> 를 아무도 발행하지 않으면 바퀴 링크가 TF 트리에서 빠진다 — 3-9 의 <code>use_fake_joints</code> 가 그 빈자리를 채우는 장치다.</p>
+
+      <h4>xacro — URDF 의 매크로 확장</h4>
+      <p>순수 URDF 는 반복이 심하다. 바퀴 4개를 쓰려면 똑같은 XML 을 4번 쓴다. <code>xacro</code> 는 변수와 매크로를 제공한다.</p>
+      <pre><code class="lang-xml">&lt;xacro:property name="wheel_radius" value="0.0325"/&gt;
+...
+&lt;origin xyz="0 0 ${wheel_radius}"/&gt;                       &lt;!-- 변수 사용 --&gt;
+&lt;origin xyz="0 ${reflect * wheel_separation/2} 0"/&gt;       &lt;!-- 수식도 가능 --&gt;
+
+&lt;xacro:macro name="wheel" params="prefix reflect"&gt; ... &lt;/xacro:macro&gt;
+&lt;xacro:wheel prefix="left"  reflect="1"/&gt;
+&lt;xacro:wheel prefix="right" reflect="-1"/&gt;</code></pre>
+      <p><strong>바퀴 반지름을 바꿀 때 한 곳만 고치면 된다.</strong> 이것이 xacro 를 쓰는 이유다. 런치 시점에 <code>xacro</code> 명령이 이 파일을 순수 URDF 로 전개해서 <code>robot_state_publisher</code> 에 넘긴다(3-9).</p>
+
+      <h3>2-4. <code>/tf</code> 와 <code>/tf_static</code> 의 QoS 가 다른 이유</h3>
+      <p>03 단계 §2-7 의 QoS 가 여기서 실물로 나온다. <code>/tf_static</code> 은 <strong>Durability = TRANSIENT_LOCAL</strong> 로 발행된다.
+      고정 변환은 시작할 때 <em>한 번만</em> 발행되는데, 그 뒤에 뜬 노드(SLAM, Foxglove)도 그 값을 받아야 하기 때문이다 — "구독 전에 발행된 마지막 값도 받는다"가 TRANSIENT_LOCAL 의 뜻이다.
+      반대로 <code>/tf</code> 는 초당 수십 번 갱신되므로 기본 VOLATILE 로 충분하다. <code>ros2 topic info /tf_static -v</code> 로 직접 확인한다(3-6). 직접 TF 를 구독하는 코드를 쓸 일은 거의 없고, <code>tf2_ros::Buffer</code> 가 이 QoS 를 알아서 맞춰 준다.</p>
+
+      <h2>3. 실습</h2>
+      <p>모든 명령은 컨테이너 안에서 한다. <span class="tag pi">Pi 호스트</span> → <code>cd ~/ros2_rpi5/docker &amp;&amp; docker compose run --rm dev</code></p>
+
+      <h3>3-1. 실측 — 이 단계에서 가장 중요한 작업 <span class="tag hw">HW</span></h3>
+      <p>URDF 의 <code>____</code> 자리를 <strong>자로 재서</strong> 채운다. 추측하지 않는다. 측정값은 <code>hardware/INVENTORY.md</code> 3절(라이다 장착)과 6절(구동계)에 먼저 적고, 그 다음 xacro 로 옮긴다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>값</th><th>재는 법</th><th>틀리면 생기는 일</th></tr></thead>
+        <tbody>
+          <tr><td><code>wheel_radius</code></td><td>바퀴 지름 ÷ 2. <strong>로봇을 올려놓은 상태</strong>에서 눌린 높이 기준(고무 바퀴는 하중으로 1~2 mm 눌린다)</td><td>오도메트리 거리가 비례해서 틀림 (1 m 갔는데 0.9 m 로 기록)</td></tr>
+          <tr><td><code>wheel_separation</code></td><td>좌우 바퀴의 <strong>접지점</strong> 사이 거리 (바퀴 폭의 중앙끼리)</td><td>회전량이 틀림. 90도 돌렸는데 85도로 기록 → SLAM 지도가 휜다</td></tr>
+          <tr><td><code>lidar_x / y / z</code></td><td><code>base_link</code> 원점(바퀴 축 중점, 축 높이)에서 라이다 <strong>회전축</strong>까지. z 는 바닥이 아니라 바퀴 축 높이 기준</td><td>벽이 실제보다 안쪽/바깥쪽에 그려짐</td></tr>
+          <tr><td><code>lidar_yaw</code></td><td>라이다의 0° 방향과 로봇 정면의 각도 차. 0° 방향은 모델마다 다르므로 <strong>07 단계의 벽 실험</strong>으로 확정하고 여기로 돌아와 적는다</td><td><strong>지도가 전체적으로 회전</strong>해서 그려짐</td></tr>
+          <tr><td><code>cam_x / y / z / pitch</code></td><td>렌즈 중심까지. 아래로 기울였으면 pitch 가 + 값</td><td>08b 검출 결과를 3D 로 올릴 때 방향이 틀림</td></tr>
+          <tr><td><code>imu_x / y / z</code></td><td>IMU 칩 중심까지. 칩의 축이 REP-103(x 앞, y 왼쪽, z 위)과 맞게 장착하거나 06 의 펌웨어에서 축을 재매핑한다. URDF 의 주석 처리된 <code>imu_link</code> 블록을 살려 쓴다</td><td>기울기 판정과 EKF 의 각속도 부호가 뒤집힌다</td></tr>
+          <tr><td><code>base_length / width / height</code></td><td>몸통 외곽. Nav2 의 <code>robot_radius</code> 계산 근거(09)</td><td>코스트맵 부풀림이 틀려 벽에 긁히거나 통로를 못 지남</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><span class="ct"><code>wheel_separation</code> 이 5 mm 틀리면</span>
+        <p>간격이 145 mm 라면 3.5 % 오차다. 회전량은 <code>Δθ = (Δd_right − Δd_left) / L</code> 이므로 L 이 3.5 % 틀리면 회전량도 3.5 % 틀린다.
+        로봇이 한 바퀴(360도) 돌면 12.6도가 어긋난다. SLAM 이 이를 보정하려 애쓰다가 지도가 뭉개진다. <strong>"SLAM 지도가 휘어요"의 원인 1위</strong>가 이것이다.
+        06 단계의 360도 회전 캘리브레이션으로 미세 조정하지만, 출발점은 자로 잰 값이어야 한다.</p>
+      </div>
+      <h4><code>base_link</code> 원점을 어디에 둘 것인가</h4>
+      <p><strong>차동구동 로봇은 좌우 바퀴 축의 중점</strong>에 두는 것이 관례다. 이 점이 제자리 회전의 중심이기 때문에 운동학 수식이 가장 단순해진다.
+      <code>base_footprint</code> 는 그 점을 지면에 투영한 것이고, URDF 에서 <code>base_footprint → base_link</code> 는 z 로 <code>wheel_radius</code> 만큼 띄워 놓았다. 그래서 바퀴 반지름이 틀리면 로봇 모형이 지면에 파묻히거나 떠 보인다.</p>
+
+      <h3>3-2. xacro 에 실측값 반영 <span class="tag mac">Mac</span></h3>
+      <p><code>ros2_ws/src/rpi5_description/urdf/rpi5_robot.urdf.xacro</code> 상단의 property 블록을 Mac 에서 편집한다. 값은 <strong>미터</strong>다. 145 mm 면 <code>0.145</code>.</p>
+      <pre><code class="lang-xml">&lt;xacro:property name="wheel_radius"     value="____"/&gt;  &lt;!-- m, 하중 상태 지름 ÷ 2 --&gt;
+&lt;xacro:property name="wheel_separation" value="____"/&gt;  &lt;!-- m, 접지점 사이 --&gt;
+&lt;xacro:property name="lidar_x"   value="____"/&gt;
+&lt;xacro:property name="lidar_y"   value="____"/&gt;
+&lt;xacro:property name="lidar_z"   value="____"/&gt;  &lt;!-- base_link(바퀴 축 높이) 기준 --&gt;
+&lt;xacro:property name="lidar_yaw" value="0.0"/&gt;   &lt;!-- 07 단계 벽 실험 후 확정 --&gt;</code></pre>
+      <p>편집 후 Pi 로 동기화한다: <code>./scripts/sync-to-pi.sh</code> (02 단계 §3-2).</p>
+      <div class="callout tip"><span class="ct">단위 실수를 잡는 습관</span>
+        <p>cm 를 m 자리에 적는 실수가 가장 흔하다(<code>14.5</code> → 로봇이 14.5 m 짜리가 된다). 3-6 의 <code>tf2_echo</code> 출력이 자로 잰 값과 <em>소수점 자리까지</em> 맞는지 본다. Foxglove 3D 에서 로봇이 화면을 꽉 채우면 100배 틀린 것이다.</p>
+      </div>
+
+      <h3>3-3. 빌드와 기동 <span class="tag cli">컨테이너</span></h3>
+      <pre><code class="lang-bash">cd /ros2_ws &amp;&amp; colcon build --symlink-install --packages-select rpi5_description
+source install/setup.bash
+
+ros2 launch rpi5_description description.launch.py</code></pre>
+      <p><code>robot_state_publisher</code> 와 <code>joint_state_publisher</code> 두 노드가 뜬다. 다른 터미널에서 <code>ros2 node list</code>, <code>ros2 topic list</code> 로 <code>/robot_description</code>, <code>/tf</code>, <code>/tf_static</code>, <code>/joint_states</code> 가 있는지 본다.</p>
+
+      <h3>3-4. 확인 1: URDF 문법 검사</h3>
+      <pre><code class="lang-bash"># xacro 전개가 되는가 (여기서 실패하면 XML 문법 또는 변수 이름 오타)
+xacro /ros2_ws/install/rpi5_description/share/rpi5_description/urdf/rpi5_robot.urdf.xacro \
+  &gt; /tmp/robot.urdf
+
+# URDF 구조가 유효한가 (liburdfdom-tools — 02단계 Dockerfile 블록에 포함)
+check_urdf /tmp/robot.urdf</code></pre>
+      <p><code>check_urdf</code> 는 링크 트리를 텍스트로 출력한다. <strong>부모 없는 링크, 두 부모를 가진 링크, 순환이 있으면 여기서 잡힌다.</strong>
+      루트가 <code>base_footprint</code> 이고 그 아래에 모든 링크가 들여쓰기로 매달려 있어야 한다.</p>
+
+      <h3>3-5. 확인 2: TF 트리 그림</h3>
+      <pre><code class="lang-bash">cd /ros2_ws
+ros2 run tf2_tools view_frames
+# 5초간 /tf, /tf_static 을 듣고 frames_&lt;시각&gt;.pdf 를 현재 디렉터리에 만든다</code></pre>
+      <p>Mac 으로 가져와서 본다. <span class="tag mac">Mac</span></p>
+      <pre><code class="lang-bash">scp pi5:~/ros2_rpi5/ros2_ws/frames_*.pdf /tmp/ &amp;&amp; open /tmp/frames_*.pdf</code></pre>
+      <div class="callout note"><span class="ct">이 PDF 가 이 단계의 산출물이다</span>
+        <p>트리가 <code>base_footprint</code> 를 루트로 <strong>한 덩어리</strong>로 이어져 있어야 한다. 끊어진 조각이 보이면 어딘가 joint 가 빠진 것이다.
+        각 화살표에 적힌 <em>Broadcaster</em>(어느 노드가 발행하는가), <em>Average rate</em>, <em>Most recent transform</em> 을 읽어 보라 — 고정 조인트는 rate 가 10000 (static 표시), 바퀴는 <code>joint_state_publisher</code> 의 주기로 나온다.
+        바퀴 링크가 없다면 <code>/joint_states</code> 가 안 나오는 것이다(3-9).</p>
+      </div>
+
+      <h3>3-6. 확인 3: 변환 값 직접 조회</h3>
+      <pre><code class="lang-bash">ros2 run tf2_ros tf2_echo base_link laser_link</code></pre>
+      <pre class="diagram"><code>At time 0.0
+- Translation: [0.000, 0.000, 0.090]
+- Rotation: in Quaternion [0.000, 0.000, 0.000, 1.000]
+- Rotation: in RPY (radian) [0.000, -0.000, 0.000]
+- Rotation: in RPY (degree) [0.000, -0.000, 0.000]</code></pre>
+      <p><strong>URDF 에 적은 값과 일치하는지 확인한다.</strong> 다르면 단위(cm 를 m 로 적었다든가)를 의심한다. <code>At time 0.0</code> 은 고정 변환이라 시간이 무의미하다는 뜻이다.</p>
+      <pre><code class="lang-bash">ros2 topic echo /tf_static --once          # 고정 변환들 — 한 번만 발행됨
+ros2 topic echo /tf --once                 # 동적 변환들 (바퀴)
+ros2 topic info /tf_static -v              # Durability: TRANSIENT_LOCAL 을 확인 (2-4 절)
+ros2 topic info /tf -v                     # Durability: VOLATILE</code></pre>
+
+      <h3>3-7. 확인 4: Foxglove 에서 3D 로 보기 <span class="tag mac">Mac</span></h3>
+      <ol class="steps">
+        <li>Pi 에서 <code>docker compose up -d foxglove</code> (02 단계에서 이미 떠 있으면 생략)</li>
+        <li>Mac Foxglove → <code>ws://192.168.50.97:8765</code></li>
+        <li><strong>3D 패널</strong> 추가</li>
+        <li>좌측 설정에서: <code>Frame</code> → <code>base_footprint</code> (또는 <code>base_link</code>) · <strong>Topics → <code>/robot_description</code></strong> 켜기 → 로봇 모델이 그려진다 · <strong>Transforms</strong> 켜기 → 각 좌표축이 표시된다</li>
+      </ol>
+      <p>로봇 모형과 좌표축들이 보이면 성공이다. 축 색은 <strong>x=빨강, y=초록, z=파랑</strong> (RGB ↔ XYZ 순서, 외워 두면 편하다).
+      라이다의 빨간 축(x)이 로봇 정면을 가리키는가, 카메라의 <code>camera_optical_link</code> 파란 축(z)이 렌즈 방향을 가리키는가를 눈으로 확인한다. 이것이 2-2 의 두 규약을 한 화면에서 보는 방법이다.</p>
+
+      <h3>3-8. 실험: 정적 변환을 손으로 붙이고, 부모 둘을 만들어 보기</h3>
+      <p>TF 트리는 여러 노드가 낸 조각을 이어 붙인 것이다. 그 사실을 손으로 확인한다. Humble 의 <code>static_transform_publisher</code> 는 이름 있는 인자를 쓴다.</p>
+      <pre><code class="lang-bash"># 터미널 A: base_link 아래에 test_link 를 붙인다 (x 0.1 m 앞, z 0.05 m 위)
+ros2 run tf2_ros static_transform_publisher \
+  --x 0.1 --y 0 --z 0.05 --yaw 0 --pitch 0 --roll 0 \
+  --frame-id base_link --child-frame-id test_link
+
+# 터미널 B
+ros2 run tf2_ros tf2_echo base_footprint test_link
+#   → Translation: [0.100, 0.000, wheel_radius + 0.050] ← 두 변환이 합성된 값이 나온다
+ros2 run tf2_tools view_frames               # 트리에 test_link 가 매달려 있다</code></pre>
+      <p>이제 철칙을 깨 본다. 터미널 C 에서 <strong>같은 자식</strong>에 다른 부모를 붙인다.</p>
+      <pre><code class="lang-bash">ros2 run tf2_ros static_transform_publisher \
+  --x 0 --y 0 --z 0 --yaw 0 --pitch 0 --roll 0 \
+  --frame-id laser_link --child-frame-id test_link
+
+ros2 run tf2_ros tf2_echo base_footprint test_link   # 값이 두 가지 사이에서 흔들리거나 경고가 섞인다</code></pre>
+      <p>이것이 "TF 가 떨린다"의 실체다. 어느 쪽이 맞는지 TF2 는 판단하지 않고 <strong>마지막으로 들어온 부모</strong>를 쓴다. 실험이 끝나면 세 터미널을 모두 <kbd>Ctrl</kbd>+<kbd>C</kbd> 로 끝낸다.</p>
+      <div class="callout tip"><span class="ct">static_transform_publisher 는 언제 실무에서 쓰는가</span>
+        <p>URDF 를 고치기 전에 "센서를 여기에 달면 어떻게 보일까"를 빠르게 시험할 때, 또는 URDF 에 넣기 애매한 외부 장치(삼각대 위 카메라)를 붙일 때다. 로봇 몸에 고정된 것은 전부 URDF 에 넣는 것이 원칙이다 — 한 곳에서 관리되어야 하기 때문이다.</p>
+      </div>
+
+      <h3>3-9. description.launch.py 읽기 — <code>use_fake_joints</code> 와 <code>ParameterValue</code></h3>
+      <p><code>ros2_ws/src/rpi5_description/launch/description.launch.py</code> 를 열어 두 가지를 확인한다.</p>
+      <pre><code class="lang-python"># xacro 를 실행해서 그 표준출력(=URDF XML)을 파라미터 값으로 넘긴다.
+robot_description = ParameterValue(
+    Command(['xacro ', xacro_file]), value_type=str
+)</code></pre>
+      <p><strong>① <code>ParameterValue(..., value_type=str)</code> 함정.</strong> 이것을 빼면 런치 시스템이 XML 문자열을 YAML 로 해석하려 들어 다른 타입으로 잘못 추론하고,
+      <code>robot_state_publisher</code> 가 "Invalid parameter type" 으로 죽는다. Humble 에서 가장 흔한 런치 함정 중 하나다.</p>
+      <p><strong>② <code>use_fake_joints</code>.</strong> <code>joint_state_publisher</code> 는 바퀴(<code>continuous</code> 조인트)의 각도를 <em>가짜로</em>(0 rad) <code>/joint_states</code> 에 발행한다.
+      그래야 <code>robot_state_publisher</code> 가 바퀴 TF 를 만들어 트리가 완결된다. 06 단계부터는 <code>mcu_bridge</code> 가 엔코더로 <strong>진짜</strong> <code>/joint_states</code> 를 발행하므로 이 노드를 꺼야 한다.
+      <code>rpi5_bringup/launch/robot.launch.py</code> 는 이미 <code>use_mcu</code> 의 반대값을 <code>use_fake_joints</code> 로 넘긴다 — 두 노드가 같은 토픽을 발행하면 바퀴 TF 가 두 값 사이에서 떨리기 때문이다. 3-8 에서 본 것과 같은 종류의 문제다.</p>
+
+      <h3>3-10. TF 를 코드에서 만지는 두 가지 방법 — C++ 미리보기 <span class="tag cpp">C++</span></h3>
+      <p>이 단계에서는 읽기만 한다. 06 단계에서 (a)를, 10 단계에서 (b)를 실제로 쓴다. 두 패턴의 모양을 미리 눈에 익혀 두면 그때 "TF 코드"가 아니라 "운동학"에 집중할 수 있다.</p>
+      <h4>(a) 발행 — 06 의 <code>mcu_bridge</code> 가 <code>odom → base_link</code> 를 보내는 코드</h4>
+      <pre><code class="lang-cpp">#include "geometry_msgs/msg/transform_stamped.hpp"
+#include "tf2/LinearMath/Quaternion.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"   // tf2::toMsg(q) 를 위해
+#include "tf2_ros/transform_broadcaster.h"
+
+// 멤버:     std::unique_ptr&lt;tf2_ros::TransformBroadcaster&gt; tf_broadcaster_;
+// 생성자:   tf_broadcaster_ = std::make_unique&lt;tf2_ros::TransformBroadcaster&gt;(*this);
+
+void publish_odom_tf(double x, double y, double yaw)
+{
+  geometry_msgs::msg::TransformStamped tf;
+  tf.header.stamp = this-&gt;get_clock()-&gt;now();
+  tf.header.frame_id = "odom";           // 부모
+  tf.child_frame_id = "base_link";       // 자식 — 부모는 하나뿐 (2-1 철칙)
+  tf.transform.translation.x = x;
+  tf.transform.translation.y = y;
+  tf.transform.translation.z = 0.0;
+  tf2::Quaternion q;
+  q.setRPY(0.0, 0.0, yaw);               // 평면 로봇은 yaw 만 변한다
+  tf.transform.rotation = tf2::toMsg(q);
+  tf_broadcaster_-&gt;sendTransform(tf);
+}</code></pre>
+      <h4>(b) 조회 — 10 의 감독 노드가 "카메라가 본 것"을 로봇 기준으로 옮기는 코드</h4>
+      <pre><code class="lang-cpp">#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_listener.h"
+
+// 멤버
+std::unique_ptr&lt;tf2_ros::Buffer&gt; tf_buffer_;
+std::shared_ptr&lt;tf2_ros::TransformListener&gt; tf_listener_;
+// 생성자 — Listener 가 /tf, /tf_static 을 구독해 Buffer 를 채운다 (QoS 도 알아서 맞춘다)
+tf_buffer_ = std::make_unique&lt;tf2_ros::Buffer&gt;(this-&gt;get_clock());
+tf_listener_ = std::make_shared&lt;tf2_ros::TransformListener&gt;(*tf_buffer_);
+
+// 조회 — 실패는 예외로 온다. 반드시 잡는다 (TF 는 늦게 도착할 수 있다)
+try {
+  auto t = tf_buffer_-&gt;lookupTransform(
+    "base_link", "camera_optical_link", tf2::TimePointZero);   // Zero = 가장 최근 값
+  RCLCPP_INFO(get_logger(), "camera at x=%.3f z=%.3f",
+              t.transform.translation.x, t.transform.translation.z);
+} catch (const tf2::TransformException &amp; ex) {
+  RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "TF lookup failed: %s", ex.what());
+}</code></pre>
+      <p><code>lookupTransform(target, source, time)</code> 은 "<em>source</em> 프레임의 점을 <em>target</em> 프레임으로 옮기는 변환"을 준다. 인자 순서를 헷갈리면 부호가 뒤집힌다 — <code>tf2_echo base_link laser_link</code> 와 같은 순서라고 기억한다.
+      <code>tf2::TimePointZero</code> 대신 메시지의 <code>header.stamp</code> 를 넣으면 <em>그 시각</em>의 변환을 준다(센서 데이터를 올바른 자세로 옮길 때). 그 시각의 TF 가 아직 안 왔으면 예외가 나므로 <code>try/catch</code> 가 필수다.</p>
+      <h4>CMake / package.xml 의존성</h4>
+      <pre><code class="lang-cmake">find_package(geometry_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+
+ament_target_dependencies(my_node rclcpp geometry_msgs tf2 tf2_ros tf2_geometry_msgs)</code></pre>
+      <p><code>package.xml</code> 에도 같은 네 개를 <code>&lt;depend&gt;</code> 로 적는다 (04 단계 §3-3 — 두 곳에 적는 이유). Python 대응은 <code>tf2_ros.TransformBroadcaster(self)</code>, <code>tf2_ros.Buffer()</code> + <code>tf2_ros.TransformListener(buffer, self)</code> 이고, 참고 구현 <code>mcu_bridge_node.py</code> 의 <code>_publish_odometry</code> 에서 (a)의 Python 판을 볼 수 있다.</p>
+
+      <h2>4. TF 문제 진단법</h2>
+      <p>증상별로 원인이 거의 정해져 있다. 99 단계에도 같은 표가 있지만 여기서 한 번 읽어 두어야 그때 떠오른다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인</th></tr></thead>
+        <tbody>
+          <tr><td><code>No transform from [X] to [Y]</code></td><td>그 프레임을 아무도 발행 안 함 / 이름 오타</td><td><code>ros2 run tf2_tools view_frames</code></td></tr>
+          <tr><td>센서 <code>frame_id</code> 가 트리에 없음</td><td>드라이버의 <code>frame_id</code> 파라미터 ≠ URDF 링크명</td><td><code>ros2 topic echo /scan --field header.frame_id</code></td></tr>
+          <tr><td><code>extrapolation into the future</code></td><td>시계 불일치 또는 TF 발행이 느림</td><td><code>timedatectl</code>, <code>ros2 topic hz /tf</code></td></tr>
+          <tr><td>로봇이 지면에 파묻힘 / 떠 있음</td><td><code>base_footprint → base_link</code> 의 z 값</td><td><code>wheel_radius</code> 확인</td></tr>
+          <tr><td>스캔이 좌우 반전</td><td>라이다를 뒤집어 장착</td><td>URDF 에 <code>rpy="${PI} 0 0"</code> 또는 드라이버 <code>inverted:=true</code> (07)</td></tr>
+          <tr><td>TF 가 떨림</td><td><strong>두 노드가 같은 TF 를 발행</strong> (3-8 에서 재현한 것)</td><td><code>ros2 topic echo /tf</code> 로 발행자 확인, <code>view_frames</code> 의 Broadcaster 란</td></tr>
+          <tr><td>바퀴 링크가 트리에 없음</td><td><code>/joint_states</code> 발행자가 없음</td><td><code>ros2 topic hz /joint_states</code>, <code>use_fake_joints</code></td></tr>
+          <tr><td>런치가 "Invalid parameter type" 으로 죽음</td><td><code>ParameterValue(..., value_type=str)</code> 누락</td><td>description.launch.py</td></tr>
+        </tbody>
+      </table></div>
+      <h4>만능 진단 명령</h4>
+      <pre><code class="lang-bash">ros2 run tf2_ros tf2_monitor                  # 모든 TF 의 지연/주파수 — 떨림과 지연이 숫자로 보인다
+ros2 run tf2_ros tf2_monitor odom base_link   # 특정 경로만 (06 이후)</code></pre>
+
+      <h2>✅ 검증 체크포인트</h2>
+      <ul class="checklist">
+        <li><label><input type="checkbox"><span><code>hardware/INVENTORY.md</code> 의 섀시 실측값(바퀴 반지름·간격, 라이다/카메라 장착 위치)을 <strong>자로 재서</strong> 채웠다</span></label></li>
+        <li><label><input type="checkbox"><span>그 값을 <code>rpi5_robot.urdf.xacro</code> 의 property 에 <strong>미터 단위</strong>로 반영하고 Pi 로 동기화했다</span></label></li>
+        <li><label><input type="checkbox"><span><code>xacro … &gt; /tmp/robot.urdf</code> 와 <code>check_urdf</code> 가 오류 없이 통과하고, 루트가 <code>base_footprint</code> 다</span></label></li>
+        <li><label><input type="checkbox"><span><code>view_frames</code> 로 생성한 PDF 에서 트리가 한 덩어리로 이어져 있고 바퀴 링크도 들어 있다</span></label></li>
+        <li><label><input type="checkbox"><span><code>tf2_echo base_link laser_link</code> 값이 URDF 에 적은 값과 소수점 자리까지 같다</span></label></li>
+        <li><label><input type="checkbox"><span>URDF 의 <code>imu_link</code> 블록을 살리고 실측 위치를 넣어 <code>tf2_echo base_link imu_link</code> 가 값을 낸다</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 topic info /tf_static -v</code> 에서 Durability 가 TRANSIENT_LOCAL 인 것을 보고 그 이유를 말할 수 있다</span></label></li>
+        <li><label><input type="checkbox"><span>Foxglove 3D 패널에서 로봇 모델과 좌표축이 보이고, 라이다의 x(빨강)가 정면, 카메라 optical 의 z(파랑)가 렌즈 방향이다</span></label></li>
+        <li><label><input type="checkbox"><span><code>static_transform_publisher</code> 로 <code>test_link</code> 를 붙여 <code>tf2_echo base_footprint test_link</code> 가 합성된 값을 내는 것을 봤다</span></label></li>
+        <li><label><input type="checkbox"><span>같은 자식에 부모를 둘 붙여 TF 가 떨리는 것을 재현하고, 종료했다</span></label></li>
+        <li><label><input type="checkbox"><span><code>use_fake_joints</code> 가 무엇을 대신하고 06 단계에서 왜 꺼야 하는지 설명할 수 있다</span></label></li>
+        <li><label><input type="checkbox"><span>C++ 브로드캐스트/조회 코드(3-10)를 읽고, <code>lookupTransform</code> 의 인자 순서와 <code>try/catch</code> 가 필요한 이유를 말할 수 있다</span></label></li>
+        <li><label><input type="checkbox"><span><code>map → odom → base_link</code> 의 역할 차이를 남에게 설명할 수 있다</span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2>🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. SLAM 이 <code>map → base_link</code> 를 직접 발행하면 안 되는 이유는?</summary>
+        <div class="ans">SLAM 의 위치 보정은 <strong>불연속적</strong>(루프 클로저 시 위치가 갑자기 점프)이다. 제어기가 이 값을 쓰면 로봇이 순간이동한 것처럼 보여 제어가 폭주한다.
+        그래서 보정량은 <code>map → odom</code> 에 넣고, 제어기는 연속적인 <code>odom → base_link</code> 를 쓴다. 두 변환을 곱하면 결국 map 기준 위치가 나온다.</div></details>
+      <details class="quiz"><summary>2. <code>wheel_separation</code> 을 실제보다 크게 적으면 어떤 증상이 나타나는가?</summary>
+        <div class="ans">회전 각속도 계산 <code>ω = (v_r − v_l)/L</code> 에서 L 이 크므로 ω 가 <strong>작게</strong> 추정된다. 즉 실제로 90도 돌았는데 오도메트리는 80도만 돌았다고 기록한다.
+        SLAM 은 스캔 매칭 결과와 이 오도메트리가 계속 어긋나 지도를 휘게 만든다.</div></details>
+      <details class="quiz"><summary>3. <code>camera_optical_link</code> 가 따로 필요한 이유는?</summary>
+        <div class="ans">로봇 좌표 규약(REP-103, x=앞)과 영상 처리 규약(OpenCV, z=광축)이 다르기 때문이다. 두 규약을 한 프레임에 섞으면 어느 쪽 코드가 봐도 축이 틀린다.
+        그래서 두 프레임을 두고 그 사이 회전(rpy = −π/2, 0, −π/2)으로 연결한다.</div></details>
+      <details class="quiz"><summary>4. TF 가 미세하게 떨린다면 가장 먼저 무엇을 의심하는가?</summary>
+        <div class="ans"><strong>같은 자식 프레임을 두 노드가 동시에 발행</strong>하고 있는지. 예를 들어 mcu_bridge 가 <code>publish_tf:=true</code> 이고 동시에 robot_localization(EKF)도
+        <code>odom → base_link</code> 를 쏘는 경우, 또는 <code>joint_state_publisher</code> 와 mcu_bridge 가 둘 다 <code>/joint_states</code> 를 내는 경우. 한쪽을 꺼야 한다. 3-8 에서 직접 재현했다.</div></details>
+      <details class="quiz"><summary>5. <code>/tf_static</code> 이 TRANSIENT_LOCAL 로 발행되는 이유는? VOLATILE 이면 무엇이 깨지는가?</summary>
+        <div class="ans">고정 변환은 시작할 때 한 번만 발행된다. VOLATILE 이면 그 뒤에 뜬 구독자(SLAM, Foxglove, 나중에 띄운 내 노드)는 그 값을 영원히 받지 못해 <code>base_link → laser_link</code> 를 모른다.
+        TRANSIENT_LOCAL 은 발행자가 마지막 값을 보관해 두고 늦게 온 구독자에게도 준다. 03 단계 §2-7 의 Durability 가 실물로 쓰이는 곳이다.</div></details>
+      <details class="quiz"><summary>6. <code>lookupTransform</code> 을 <code>try/catch</code> 로 감싸야 하는 이유는?</summary>
+        <div class="ans">TF 는 다른 노드가 네트워크로 보내는 데이터라 <em>아직 도착하지 않았거나</em>(노드 기동 직후), <em>요청한 시각의 값이 버퍼에 없거나</em>(extrapolation), <em>프레임 이름이 틀렸을</em> 수 있다.
+        tf2 는 이 모두를 <code>tf2::TransformException</code> 예외로 알린다. 잡지 않으면 노드가 죽는다. 조회 실패는 정상적인 일시 상태이므로 throttle 된 경고로 넘기고 다음 주기에 다시 시도한다.</div></details>
+      <details class="quiz"><summary>7. <code>view_frames</code> 의 트리에 바퀴 링크가 보이지 않는다. 무엇이 빠진 것인가?</summary>
+        <div class="ans"><code>/joint_states</code> 발행자다. <code>robot_state_publisher</code> 는 고정 조인트는 URDF 만으로 <code>/tf_static</code> 에 내지만, <code>continuous</code> 조인트(바퀴)는 현재 각도를 알아야 하므로 <code>/joint_states</code> 가 와야 <code>/tf</code> 에 낸다.
+        이 단계에서는 <code>joint_state_publisher</code>(<code>use_fake_joints:=true</code>)가, 06 단계부터는 mcu_bridge 가 그 역할을 한다.</div></details>
+      <details class="quiz"><summary>8. <code>static_transform_publisher</code> 로 붙인 변환과 URDF 에 적은 변환은 TF2 입장에서 무엇이 다른가?</summary>
+        <div class="ans">아무것도 다르지 않다. 둘 다 <code>/tf_static</code> 으로 들어오는 <code>TransformStamped</code> 다. TF2 는 발행자가 누구인지 구분하지 않고 이어 붙인다.
+        차이는 관리 측면이다 — 로봇 몸에 고정된 것은 URDF 한 곳에서 관리해야 실측값을 고칠 때 한 번만 고치면 되고, Foxglove 가 형상까지 그릴 수 있다.</div></details>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

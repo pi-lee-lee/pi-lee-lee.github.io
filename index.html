@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ROS 2 자율주행 학습 가이드 — 로드맵</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="index">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">00 · 학습 로드맵</p>
+      <h1>Raspberry Pi 5 + ROS 2 Humble<br>자율주행 디바이스 학습 가이드</h1>
+      <p class="lead">
+        LiDAR·카메라·MCU를 갖춘 로봇을 <strong>ROS 2의 노드 구조에 맞게 직접 구성해서 실제로 주행</strong>시키는 것이
+        이 가이드의 끝입니다. 주 언어는 <span class="tag cpp">C++</span>, 보조는 <span class="tag py">Python</span>이며,
+        영상 처리는 OpenCV, 객체 검출은 YOLO(그리고 Hailo-8 가속)를 씁니다.
+      </p>
+
+      <div class="goal">
+        <span class="label">이 가이드의 원칙</span>
+        <p><strong>배우는 주체는 도구가 아니라 사용자 본인입니다.</strong> 모든 단계는
+        <em>개요 → 원리(왜) → 실습 → 검증 체크포인트 → 이해 확인</em> 순서로 되어 있고,
+        체크포인트는 "떴다"가 아니라 <strong>"내가 직접 명령을 쳐서 눈으로 확인했다"</strong>가 통과 기준입니다.
+        이해 확인 질문에 답할 수 없으면 그 단계를 다시 읽습니다.</p>
+      </div>
+
+      <h2>1. 이 가이드를 쓰는 법</h2>
+      <ol class="steps">
+        <li><strong>순서대로 갑니다.</strong> 각 단계는 앞 단계의 산출물(장치 인식, 컨테이너, TF 트리, <code>/odom</code>…)을 전제로 합니다.
+          특히 05(TF)를 건너뛰면 07 이후에서 반드시 막힙니다.</li>
+        <li><strong>편집은 Mac, 실행은 Pi.</strong> 이 저장소는 Mac에 있고 코드 편집·git 만 합니다. <code>ros2</code>·<code>colcon</code>·<code>docker</code> 명령은
+          전부 Pi 에서(대부분 Pi 의 Docker 컨테이너 안에서) 실행합니다. 각 명령 앞에 <span class="tag mac">Mac</span> / <span class="tag pi">Pi 호스트</span> / <span class="tag cli">컨테이너</span> 표시를 두었습니다.</li>
+        <li><strong>코드는 직접 칩니다.</strong> 가이드의 C++/Python 코드는 <em>보고 베끼는 것</em>이 아니라 <em>손으로 치고, 한 줄씩 왜 있는지 설명할 수 있게 되는 것</em>이 목표입니다.
+          저장소의 <code>ros2_ws/src/</code> 에 있는 기존 코드는 "읽고 이해할 참고 구현"입니다.</li>
+        <li><strong>체크포인트를 체크합니다.</strong> 각 페이지 끝의 체크박스는 이 브라우저에 저장되고, 아래 §8 과 왼쪽 목차에 진행률로 모입니다.</li>
+        <li><strong>막히면 99 로.</strong> ROS 2 문제의 대부분은 "코드가 틀렸다"가 아니라 "연결이 안 되어 있다"입니다. 로그를 읽기 전에 그래프를 봅니다.</li>
+      </ol>
+
+      <h2>2. 당신이 알고 있는 구조 → ROS 2 노드 그래프</h2>
+      <p>당신이 이미 이해하고 있는 추상 구조는 이것입니다.</p>
+      <pre class="diagram"><code>  ① 라이다로 공간을 스캔한다
+  ② 카메라로 보이는 물체를 판정하고, 같은 물체를 따라가며(추적), 라이다와 합쳐 거리를 잰다
+  ③ 요청(목표)에 대해 계획을 세운다
+  ④ 이동한다 — 세부 제어(모터·전원)는 MCU 가 맡는다
+  ⑤ 이동하는 동안 "계획 대비 얼마나 수행됐는가"를 계속 판정한다</code></pre>
+      <p>ROS 2 에서는 이 다섯 개가 <strong>노드</strong>가 되고, 노드 사이의 데이터가 <strong>토픽·서비스·액션</strong>이 됩니다.
+      아래 그림이 이 가이드를 끝냈을 때 Pi 위에서 실제로 돌아갈 그래프입니다. <strong>상자를 클릭하면 그 노드를 만드는 단계로 갑니다.</strong></p>
+      <div class="callout note"><span class="ct">이 프로젝트의 핵심 두 축</span>
+        <p>팔도 없고 조작기도 없다. 라이다·카메라로 <strong>어디로 갈지 계획을 도출하는 것</strong>(③, Pi 쪽: 09·10)과, 그 계획을 땅에 전달하는 <strong>4륜 모터 제어</strong>(④, MCU 쪽: 06a·06)가 이 로봇의 핵심이다.
+        나머지 단계(센서 연결, 인지, 시각화)는 이 두 축을 먹여 살리는 지원 계층이다. 우선순위가 갈릴 때는 이 기준으로 정한다.</p>
+      </div>
+
+      <div class="legend">
+        <span><i style="background:var(--node-sensor)"></i>센서·구동 (하드웨어 경계)</span>
+        <span><i style="background:var(--node-percep)"></i>인지·추정</span>
+        <span><i style="background:var(--node-plan)"></i>계획·감독</span>
+        <span><i style="background:var(--node-ctrl)"></i>제어</span>
+        <span><i style="background:var(--node-tf)"></i>형상·TF</span>
+        <span><i style="background:var(--node-ext);border-style:dashed"></i>ROS 밖</span>
+        <span>실선 = 토픽 · 점선 = TF 조회</span>
+      </div>
+
+      <div class="graph">
+      <svg viewBox="0 0 960 610" role="img" aria-label="최종 ROS 2 노드 그래프">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="arrow"/>
+          </marker>
+        </defs>
+
+        <text x="40" y="24" class="hdr">센서 · 구동</text>
+        <text x="360" y="24" class="hdr">인지 · 추정</text>
+        <text x="660" y="24" class="hdr">계획 · 감독 · 제어</text>
+
+        <!-- Foxglove (ROS 밖, 관측) -->
+        <a href="02-docker-ros2.html"><g class="node ext">
+          <rect x="40" y="40" width="200" height="52"/>
+          <text x="140" y="61" text-anchor="middle" class="n">Foxglove Studio (Mac)</text>
+          <text x="140" y="79" text-anchor="middle" class="s">02 · foxglove_bridge :8765 로 관측</text>
+        </g></a>
+
+        <!-- supervisor -->
+        <a href="10-autonomy.html"><g class="node plan">
+          <rect x="660" y="40" width="220" height="52"/>
+          <text x="770" y="61" text-anchor="middle" class="n">mission_supervisor</text>
+          <text x="770" y="79" text-anchor="middle" class="s">10 · C++ · 목표 지시 + 수행 판정</text>
+        </g></a>
+
+        <!-- camera -->
+        <a href="08-camera.html"><g class="node sensor">
+          <rect x="40" y="120" width="200" height="52"/>
+          <text x="140" y="141" text-anchor="middle" class="n">camera (camera_ros)</text>
+          <text x="140" y="159" text-anchor="middle" class="s">08 · libcamera · IMX708 Wide NoIR</text>
+        </g></a>
+
+        <!-- detector -->
+        <a href="08b-yolo.html"><g class="node percep">
+          <rect x="360" y="120" width="200" height="52"/>
+          <text x="460" y="141" text-anchor="middle" class="n">detector (YOLO / Hailo)</text>
+          <text x="460" y="159" text-anchor="middle" class="s">08b C++ · 08c Python · /detections</text>
+        </g></a>
+
+        <!-- tracker + localizer (08d) -->
+        <a href="08d-tracking-fusion.html"><g class="node percep">
+          <rect x="360" y="40" width="200" height="52"/>
+          <text x="460" y="61" text-anchor="middle" class="n">object_tracker · localizer</text>
+          <text x="460" y="79" text-anchor="middle" class="s">08d · C++/Py · +/scan +깊이 → /tracks, /objects</text>
+        </g></a>
+
+        <!-- image_proc -->
+        <a href="08a-opencv.html"><g class="node percep">
+          <rect x="360" y="192" width="200" height="44"/>
+          <text x="460" y="210" text-anchor="middle" class="n">image_proc_node</text>
+          <text x="460" y="227" text-anchor="middle" class="s">08a · C++ · OpenCV + cv_bridge</text>
+        </g></a>
+
+        <!-- lidar -->
+        <a href="07-lidar.html"><g class="node sensor">
+          <rect x="40" y="270" width="200" height="52"/>
+          <text x="140" y="291" text-anchor="middle" class="n">lidar_node (rplidar_ros)</text>
+          <text x="140" y="309" text-anchor="middle" class="s">07 · RPLIDAR A1M8 · /scan</text>
+        </g></a>
+
+        <!-- slam -->
+        <a href="09-slam-nav2.html"><g class="node percep">
+          <rect x="360" y="270" width="200" height="52"/>
+          <text x="460" y="291" text-anchor="middle" class="n">slam_toolbox</text>
+          <text x="460" y="309" text-anchor="middle" class="s">09 · /map + TF map→odom</text>
+        </g></a>
+
+        <!-- nav2 -->
+        <a href="09-slam-nav2.html"><g class="node plan">
+          <rect x="660" y="240" width="220" height="140"/>
+          <text x="770" y="262" text-anchor="middle" class="n">Nav2 (09)</text>
+          <text x="672" y="284" class="s">bt_navigator — 행동 트리 지휘</text>
+          <text x="672" y="302" class="s">planner_server — 전역 경로</text>
+          <text x="672" y="320" class="s">controller_server — 지역 추종</text>
+          <text x="672" y="338" class="s">costmap ×2 · behavior_server</text>
+          <text x="672" y="362" class="s">입력: /map  /scan  /odom  TF</text>
+        </g></a>
+
+        <!-- mcu_bridge -->
+        <a href="06-mcu-bridge.html"><g class="node ctrl">
+          <rect x="40" y="400" width="200" height="52"/>
+          <text x="140" y="421" text-anchor="middle" class="n">mcu_bridge</text>
+          <text x="140" y="439" text-anchor="middle" class="s">06 · C++ · cmd_vel ↔ odom · imu · fault</text>
+        </g></a>
+
+        <!-- MCU firmware (ROS 밖) -->
+        <a href="06a-mcu-protocol.html"><g class="node ext">
+          <rect x="40" y="540" width="200" height="52"/>
+          <text x="140" y="561" text-anchor="middle" class="n">NUCLEO-H723ZG 펌웨어</text>
+          <text x="140" y="579" text-anchor="middle" class="s">06a · PID · 엔코더 · IMU · 전원 · 안전</text>
+        </g></a>
+
+        <!-- TF -->
+        <a href="05-tf2-urdf.html"><g class="node tf">
+          <rect x="660" y="470" width="220" height="52"/>
+          <text x="770" y="491" text-anchor="middle" class="n">robot_state_publisher</text>
+          <text x="770" y="509" text-anchor="middle" class="s">05 · URDF → TF 트리 (base_link → 센서)</text>
+        </g></a>
+
+        <!-- edges -->
+        <path class="edge" d="M240,146 L360,146"/>
+        <text x="300" y="139" text-anchor="middle" class="lbl">/camera/image_raw</text>
+
+        <path class="edge" d="M240,162 L300,162 L300,214 L360,214"/>
+        <text x="304" y="200" class="lbl">(08a 실습)</text>
+
+        <path class="edge" d="M460,120 L460,92"/>
+        <text x="468" y="110" class="lbl">/detections</text>
+
+        <path class="edge" d="M560,66 L660,66"/>
+        <text x="610" y="59" text-anchor="middle" class="lbl">/objects</text>
+
+        <path class="edge" d="M770,92 L770,240"/>
+        <text x="780" y="150" class="lbl">action /navigate_to_pose</text>
+        <text x="780" y="166" class="lbl">goal ↓  feedback·result ↑</text>
+
+        <path class="edge" d="M240,296 L360,296"/>
+        <text x="300" y="289" text-anchor="middle" class="lbl">/scan</text>
+        <text x="140" y="338" text-anchor="middle" class="lbl">(/scan 은 Nav2 코스트맵도 구독)</text>
+
+        <path class="edge" d="M560,296 L660,296"/>
+        <text x="610" y="289" text-anchor="middle" class="lbl">/map</text>
+
+        <path class="edge" d="M240,412 L300,412 L300,340 L420,340 L420,322"/>
+        <text x="306" y="380" class="lbl">/odom  (Nav2 도 구독)</text>
+
+        <path class="edge" d="M740,380 L740,426 L240,426"/>
+        <text x="480" y="419" text-anchor="middle" class="lbl">/cmd_vel  (geometry_msgs/Twist)</text>
+
+        <path class="edge" d="M140,452 L140,540" marker-start="url(#arr)"/>
+        <text x="150" y="500" class="lbl">시리얼 프레임 (06a 에서 설계)</text>
+
+        <path class="edge tfline" d="M660,496 L640,496 L640,345 L520,345 L520,322"/>
+        <path class="edge tfline" d="M770,470 L770,380"/>
+        <text x="646" y="470" class="lbl">TF 조회</text>
+      </svg>
+      </div>
+
+      <p>다섯 개의 추상 단위가 어디로 갔는지 대응시키면 이렇습니다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>당신의 추상 단위</th><th>ROS 2 구성요소</th><th>데이터</th><th>배우는 단계</th></tr></thead>
+        <tbody>
+          <tr><td>① 라이다로 공간 스캔</td><td><code>lidar_node</code> → <code>slam_toolbox</code></td><td><code>/scan</code> → <code>/map</code>, TF <code>map→odom</code></td><td>07, 09</td></tr>
+          <tr><td>② 카메라로 물체 판정 · 추적 · 거리</td><td><code>camera</code> → <code>detector</code> → <code>object_tracker</code> → <code>object_localizer</code> (+ <code>/scan</code>, TF)</td><td><code>/camera/image_raw</code> → <code>/detections</code> → <code>/tracks</code> → <code>/objects</code></td><td>08, 08a, 08b, 08c, 08d</td></tr>
+          <tr><td>③ 요청에 대한 계획</td><td>Nav2 <code>planner_server</code> + <code>bt_navigator</code></td><td>액션 <code>/navigate_to_pose</code> → <code>/plan</code></td><td>09</td></tr>
+          <tr><td>④ 이동 (세부 제어는 MCU)</td><td>Nav2 <code>controller_server</code> → <code>mcu_bridge</code> → MCU 펌웨어</td><td><code>/cmd_vel</code> → 시리얼 → PWM / 엔코더·IMU → <code>/odom</code>, <code>/imu/data_raw</code> → EKF</td><td>06a, 06</td></tr>
+          <tr><td>⑤ 수행 정도의 지속 판정</td><td>액션 피드백 + <code>mission_supervisor</code> (직접 작성)</td><td><code>distance_remaining</code>, <code>/objects</code>, 취소·재계획</td><td>03(액션), 10</td></tr>
+          <tr><td>(모든 것을 공간적으로 묶는 접착제)</td><td><code>robot_state_publisher</code> + URDF</td><td>TF 트리</td><td>05</td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="callout why"><span class="ct">왜 이 그림을 먼저 보는가 — 위에서 아래로</span>
+        <p>MCU 부터 올라오면 위로 갈수록 "이걸 어디에 어떻게 붙이지"라는 확장점이 폭발합니다. 반대로 <strong>완성된 그래프를 먼저 놓고</strong>
+        각 상자를 하나씩 채우면, 매 단계에서 "이 노드가 무엇을 받고 무엇을 내야 하는가"가 이미 정해져 있습니다.
+        노드의 <em>인터페이스(토픽 이름·메시지 타입·프레임 이름)</em> 가 계약이고, 구현은 그 계약을 채우는 일입니다.
+        그래서 이 가이드의 모든 단계 페이지는 "이 노드가 그래프의 어디에 있는가"로 시작합니다.</p>
+      </div>
+
+      <h2>3. 노드 단위 학습 순서 — 왜 이 순서인가</h2>
+      <p>순서는 <strong>데이터가 흐르는 방향</strong>과 <strong>검증 가능성</strong>으로 정했습니다. 각 단계의 출력이 다음 단계의 입력입니다.</p>
+      <pre class="diagram"><code>  환경          기초                 구동·센서              비전                                자율주행
+  01 ─ 02  ──►  03 ─ 04 ─ 05  ──►   06a ─ 06 ─ 07  ──►   08 ─ 08a ─ 08b ─ 08c ─ 08d  ──►   09 ─ 10
+  장치 인식     개념  C++노드 TF      프로토콜 odom  scan     영상  OpenCV YOLO  Hailo  추적·거리     지도·경로  조립·감독
+                          ▲                                                                         │
+                          └────────── TF 가 없으면 07 이후 어느 것도 공간에 놓이지 않는다 ──────────┘</code></pre>
+      <ul>
+        <li><strong>03 → 04 → 05 는 도구가 아니라 언어 습득입니다.</strong> 토픽·서비스·액션·파라미터·QoS(03), 그것을 C++ 로 쓰는 법(04), 그리고 좌표계(05).
+          이 셋이 있어야 뒤의 모든 노드를 "읽고 쓸" 수 있습니다.</li>
+        <li><strong>06(MCU) 이 07(LiDAR) 보다 먼저인 이유:</strong> SLAM 은 <code>/odom</code> 없이는 돌지 않고, 가짜 MCU(<code>simulate:=true</code>) 로 하드웨어 없이 ROS 쪽을 먼저 검증할 수 있기 때문입니다.</li>
+        <li><strong>08 → 08a → 08b → 08c 는 같은 인터페이스를 점점 빠르게 만드는 과정입니다.</strong> 영상을 받는다(08) → OpenCV 로 다룬다(08a) → YOLO 로 <code>/detections</code> 를 낸다(08b, CPU 라 느림) → 같은 <code>/detections</code> 를 Hailo 로 낸다(08c, 실시간).
+          인터페이스가 같으니 하위 노드는 아무것도 바꾸지 않습니다. <strong>08d</strong> 는 그 <code>/detections</code> 위에 추적(<code>/tracks</code>)과 라이다 융합 거리(<code>/objects</code>)를 얹습니다 — 검출기는 그대로 두고 소비자만 늘립니다.</li>
+        <li><strong>09 → 10 은 새 기능이 아니라 조립입니다.</strong> 남이 만든 SLAM/Nav2 를 <em>구조를 이해한 채로</em> 붙이고, 마지막에 당신의 감독 노드가 그 위에 올라갑니다.</li>
+      </ul>
+
+      <h2>4. 언어 정책 — C++ 주, Python 보조</h2>
+      <p>"어디에 무엇을 쓸 것인가"를 노드 단위로 정해 두었습니다. 기준은 <strong>그 노드가 요구하는 것</strong>입니다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>노드 / 산출물</th><th>언어</th><th>왜</th><th>단계</th></tr></thead>
+        <tbody>
+          <tr><td>hello 발행자·구독자 (연습)</td><td><span class="tag cpp">C++</span> + <span class="tag py">Python</span></td><td>같은 노드를 두 언어로 써서 rclcpp/rclpy 의 대응 관계를 몸에 익힌다</td><td>04</td></tr>
+          <tr><td><code>mcu_bridge</code></td><td><span class="tag cpp">C++</span></td><td>50 Hz(20 ms) 고정 주기 루프, 바이트 프레임(속도·상태·IMU·이벤트) 파싱, 지터 최소화. 저장소의 Python 판은 <em>참고 구현</em></td><td>06</td></tr>
+          <tr><td><code>lidar_node</code>, <code>camera</code></td><td>외부 C++ 패키지</td><td>드라이버는 쓰지 않고 <em>파라미터·프레임·QoS 를 맞추는 것</em>이 학습 내용</td><td>07, 08</td></tr>
+          <tr><td><code>image_proc_node</code></td><td><span class="tag cpp">C++</span></td><td>cv_bridge → <code>cv::Mat</code> 가 복사 없이 이어진다. OpenCV C++ API 가 곧 Python API 이기도 하다</td><td>08a</td></tr>
+          <tr><td><code>yolo_detector</code></td><td><span class="tag cpp">C++</span> (OpenCV DNN) · 원리 확인은 <span class="tag py">Python</span> (ultralytics)</td><td>전처리·NMS 등 후처리를 직접 구현해야 출력 텐서를 이해한다. Python 으로 먼저 정답을 확인한다</td><td>08b</td></tr>
+          <tr><td><code>hailo_detect</code></td><td><span class="tag py">Python</span></td><td>HailoRT 는 Python 예제·문서가 가장 풍부하고, 연산은 칩이 하므로 언어 성능이 무의미</td><td>08c</td></tr>
+          <tr><td><code>object_tracker</code>, <code>object_localizer</code>, <code>scan_overlay</code></td><td><span class="tag cpp">C++</span></td><td>프레임마다 IoU 행렬·스캔 투영·TF 변환을 도는 실시간 루프. 투영은 순수 함수 헤더로 두 노드가 공유한다. 피치 캘리브레이션 스크립트만 <span class="tag py">Python</span>(Mac)</td><td>08d</td></tr>
+          <tr><td><code>hailo_depth</code></td><td><span class="tag py">Python</span></td><td>08c 와 같은 HailoRT 제약. 낮은 주기(2~5 fps)로 깊이 logit 만 내고, 척도 맞춤·거리·필터는 C++ 로컬라이저가 한다</td><td>08d</td></tr>
+          <tr><td>SLAM, Nav2</td><td>외부 C++ 패키지</td><td>파라미터 YAML 과 런치로 구성. 구조(노드·액션·코스트맵)를 이해하는 것이 목표</td><td>09</td></tr>
+          <tr><td><code>mission_supervisor</code></td><td><span class="tag cpp">C++</span></td><td>액션 클라이언트 + 상태기계. "계획 대비 수행 판정"을 코드로 쓰는 곳</td><td>10</td></tr>
+          <tr><td>런치파일, 파라미터</td><td><span class="tag py">Python</span> launch, YAML</td><td>ROS 2 관례. 런치는 언어라기보다 선언이다</td><td>04~10</td></tr>
+          <tr><td>캘리브레이션·분석 스크립트, 펌웨어</td><td><span class="tag py">Python</span> / C (STM32 HAL)</td><td>일회성 도구는 빠르게 쓰고 버린다. 펌웨어는 06a 에서 별도 트랙</td><td>06, 07</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">C++ 문법 자체(스마트 포인터, 람다, <code>std::bind</code>)는 부록 <a href="ref-rclcpp.html">A · rclcpp 레퍼런스</a> 에 필요한 만큼만 정리했습니다.
+      OpenCV 와 YOLO 의 독립적인 사용법은 부록 <a href="ref-opencv.html">B</a>, <a href="ref-yolo.html">C</a> 입니다.</p>
+
+      <h2>5. 학습 계획</h2>
+      <p>총 <strong>약 71~116시간</strong>, 주 8시간이면 <strong>9~15주</strong>입니다. 시간의 폭이 큰 것은 하드웨어 문제(전원, 케이블, 버전 불일치)가 개인마다 다르게 나오기 때문입니다.
+      단계는 건너뛰지 않되, <em>같은 Phase 안에서는</em> 막힌 곳을 두고 다음 단계의 "원리" 절만 먼저 읽는 것은 괜찮습니다.</p>
+
+      <div class="phase"><div class="ph">Phase 1<small>환경 · 3~5h</small></div><div>
+        <strong>01 · 02</strong> — Pi 가 장치(카메라·Hailo·시리얼)를 인식하고, 컨테이너 안에서 <code>ros2 topic list</code> 가 돌고, Mac 의 Foxglove 가 붙는다.
+        <br><span class="small">산출물: <code>hardware/INVENTORY.md</code> 의 빈칸이 실측값으로 채워진다.</span></div></div>
+      <div class="phase"><div class="ph">Phase 2<small>ROS 2 기초 · 11~16h</small></div><div>
+        <strong>03 · 04 · 05</strong> — 통신 4종을 CLI 로 만지고, C++ 로 pub/sub/timer/param 노드를 쓰고 빌드하고, URDF 로 TF 트리를 세운다.
+        <br><span class="small">산출물: <code>rpi5_hello_cpp</code> 패키지, <code>view_frames</code> PDF.</span></div></div>
+      <div class="phase"><div class="ph">Phase 3<small>구동·센서 · 17~28h</small></div><div>
+        <strong>06a · 06 · 07</strong> — 프로토콜을 결정하고, C++ 브리지로 실제 모터를 굴려 <code>/odom</code> 을 얻고 캘리브레이션하고, 두 IMU(WT901·BNO055)를 캘리브레이션해 비교한 뒤 EKF 로 융합하고, <code>/scan</code> 을 Foxglove 에서 본다.
+        <br><span class="small">산출물: <code>rpi5_mcu_bridge_cpp</code>, 캘리브레이션 값, IMU 비교표와 <code>ekf.yaml</code>, 실측 <code>max_distance</code>.</span></div></div>
+      <div class="phase"><div class="ph">Phase 4<small>비전 · 28~46h</small></div><div>
+        <strong>08 · 08a · 08b · 08c · 08d</strong> — 영상을 ROS 토픽으로 받고, OpenCV 로 처리하고, YOLO 로 <code>/detections</code> 를 내고, 같은 것을 Hailo 로 실시간화한 뒤, 추적하고, Colab 에서 컴파일한 YOLO 깊이 지도에 라이다로 척도를 매겨 물체의 위치·물체 사이 거리·벽까지 거리를 낸다.
+        <br><span class="small">산출물: <code>rpi5_vision</code> (C++: 검출기·추적기·로컬라이저), <code>rpi5_hailo_detect</code> (Python), 카메라 피치 캘리브레이션 값.</span></div></div>
+      <div class="phase"><div class="ph">Phase 5<small>자율주행 · 12~20h</small></div><div>
+        <strong>09 · 10</strong> — 지도를 만들고 목표점 주행을 시키고, 감독 노드와 계층화된 런치로 전체를 한 명령에 띄운다.
+        <br><span class="small">산출물: <code>autonomy.launch.py</code>, <code>mission_supervisor</code>, 저장된 지도.</span></div></div>
+
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>단계</th><th>제목</th><th>끝났을 때 할 수 있는 것</th><th>언어</th><th>소요</th></tr></thead>
+        <tbody>
+          <tr><td><a href="01-os-setup.html">01</a></td><td>OS 선정과 설치</td><td>ssh 접속 + 카메라·Hailo·시리얼 전부 호스트 인식</td><td><span class="tag hw">HW</span></td><td>2~3h</td></tr>
+          <tr><td><a href="02-docker-ros2.html">02</a></td><td>Docker + ROS 2 Humble</td><td>컨테이너 안 <code>ros2 topic list</code>, Foxglove 연결</td><td><span class="tag cli">CLI</span></td><td>1~2h</td></tr>
+          <tr><td><a href="03-ros2-concepts.html">03</a></td><td>ROS 2 핵심 개념</td><td>노드/토픽/서비스/액션/파라미터/QoS 를 CLI 로 조작하고 언제 무엇을 쓸지 판단</td><td><span class="tag cli">CLI</span></td><td>3~4h</td></tr>
+          <tr><td><a href="04-workspace-packages.html">04</a></td><td>워크스페이스와 패키지</td><td>ament_cmake 패키지에서 rclcpp 노드를 작성·빌드·실행, rclpy 와 비교</td><td><span class="tag cpp">C++</span> <span class="tag py">Py</span></td><td>5~7h</td></tr>
+          <tr><td><a href="05-tf2-urdf.html">05</a></td><td>TF2와 URDF</td><td>TF 트리를 세우고 임의 두 프레임 사이 변환을 조회</td><td><span class="tag cli">XML</span></td><td>3~5h</td></tr>
+          <tr><td><a href="06a-mcu-protocol.html">06a</a></td><td>MCU 프로토콜 선정</td><td>A(micro-ROS)/B(브리지)를 비교해 B 를 고르고, MCU 전권 구조·IMU 배치·계약 v2 를 확정</td><td>—</td><td>1~2h</td></tr>
+          <tr><td><a href="06-mcu-bridge.html">06</a></td><td>MCU 브리지 (C++)</td><td>키보드로 실제 모터를 굴리고 <code>/odom</code>·<code>/imu</code> 를 얻어 캘리브레이션하고 EKF 로 융합</td><td><span class="tag cpp">C++</span></td><td>14~22h</td></tr>
+          <tr><td><a href="07-lidar.html">07</a></td><td>LiDAR</td><td>Foxglove 에서 실시간 <code>/scan</code>, 장착 방향 검증</td><td><span class="tag cli">CLI</span></td><td>2~4h</td></tr>
+          <tr><td><a href="08-camera.html">08</a></td><td>카메라</td><td><code>/camera/image_raw</code> 가 흐르고 TF 에 붙음</td><td><span class="tag cli">CLI</span></td><td>3~6h</td></tr>
+          <tr><td><a href="08a-opencv.html">08a</a></td><td>OpenCV와 cv_bridge</td><td>C++ 노드에서 영상을 <code>cv::Mat</code> 로 받아 처리·재발행</td><td><span class="tag cpp">C++</span></td><td>4~6h</td></tr>
+          <tr><td><a href="08b-yolo.html">08b</a></td><td>YOLO 객체 검출</td><td>ONNX 모델로 <code>/detections</code> 발행, 출력 텐서와 NMS 를 직접 처리</td><td><span class="tag cpp">C++</span> <span class="tag py">Py</span></td><td>5~8h</td></tr>
+          <tr><td><a href="08c-hailo.html">08c</a></td><td>Hailo-8 가속</td><td>같은 <code>/detections</code> 를 실시간으로, CPU 는 비운 채로</td><td><span class="tag py">Py</span></td><td>4~8h</td></tr>
+          <tr><td><a href="08d-tracking-fusion.html">08d</a></td><td>객체 추적과 거리 추정</td><td><code>/tracks</code>(번호 유지) 와 <code>/objects</code>(라이다 점 · 라이다로 척도를 맞춘 YOLO 깊이 지도 · 물체 사이 거리 · 벽까지 거리), Colab 에서 깊이 HEF 컴파일, Hailo 예산 실측과 프레임 조절</td><td><span class="tag cpp">C++</span> <span class="tag py">Py</span></td><td>12~18h</td></tr>
+          <tr><td><a href="09-slam-nav2.html">09</a></td><td>SLAM과 Nav2</td><td>방 지도를 만들고 목표점 자율주행</td><td><span class="tag cli">YAML</span></td><td>6~10h</td></tr>
+          <tr><td><a href="10-autonomy.html">10</a></td><td>자율주행 노드 구성</td><td>감독 노드 + 계층 런치로 한 명령에 전체 기동·운용</td><td><span class="tag cpp">C++</span></td><td>6~10h</td></tr>
+          <tr><td><a href="99-troubleshooting.html">99</a></td><td>트러블슈팅</td><td>막혔을 때 원인을 스스로 좁힘</td><td>—</td><td>수시</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>6. 시작 전에 확정해야 할 것</h2>
+      <p>아래가 비어 있으면 해당 단계에서 멈춥니다. <code>hardware/INVENTORY.md</code> 에 기록합니다. <strong>추측해서 코드에 박아넣지 않습니다.</strong></p>
+      <div class="tbl"><table>
+        <thead><tr><th>확정 항목</th><th>현재</th><th>막히는 단계</th><th>확인 방법</th></tr></thead>
+        <tbody>
+          <tr><td>LiDAR 모델</td><td>✅ Slamtec RPLIDAR A1M8</td><td>—</td><td>—</td></tr>
+          <tr><td>MCU 보드</td><td>✅ NUCLEO-H723ZG (펌웨어 새로 작성)</td><td>—</td><td>—</td></tr>
+          <tr><td>모터 드라이버</td><td>✅ BTS7960 "IBT-2" ×4 — IS 로 1차 구현, 정밀 전류 센서는 보류 (2026-09-15)</td><td>06</td><td>INVENTORY 6절 검토표 (VCC 3.3 V, R_IS 1 kΩ + 클램프, PWM 8채널)</td></tr>
+          <tr><td><strong>MCU 통신 프로토콜</strong> (A/B)</td><td><strong>B(커스텀 시리얼 브리지)로 결정</strong> — 계약 v2, 460800</td><td>06</td><td>06a §5 결정 기록에 근거를 적고 <code>protocol.md</code> 로 저장</td></tr>
+          <tr><td><strong>섀시 실측값</strong> (바퀴 반지름·간격, 엔코더 CPR)</td><td>미확정</td><td>05, 06, 09</td><td>자로 직접 측정. CPR = PPR × 4 × 기어비</td></tr>
+          <tr><td><strong>호스트 HailoRT 버전</strong></td><td>✅ 4.23.0 (2026-09-13 실측)</td><td>08c</td><td><code>hailortcli fw-control identify</code></td></tr>
+          <tr><td>IMU</td><td>✅ WT901(UART, 기본) + BNO055(I2C, 캘리브레이션 학습·비교)</td><td>—</td><td>06 에서 둘 다 캘리브레이션해 비교</td></tr>
+          <tr><td>모터 수 · 구동 방식 · 엔코더 수</td><td>✅ 4모터 스키드 스티어, 바퀴마다 32비트 엔코더 (TIM2/TIM5/TIM23/TIM24), 바퀴별 독립 PID + 슬립 억제. 이더넷 미사용</td><td>05, 06</td><td>섀시 수치는 INVENTORY 6절. 운동학은 좌우 쌍 차동구동, 핀 배정은 06a §3</td></tr>
+          <tr><td>LiDAR 실측 최대 거리</td><td>미확정</td><td>09</td><td>07 에서 드라이버 로그의 <code>max_distance</code></td></tr>
+          <tr><td>호스트 libcamera 버전</td><td>✅ 0.7.2+rpt20260817, libpisp v1.7.0 (2026-09-13 실측)</td><td>08</td><td><code>dpkg -l | grep libcamera</code></td></tr>
+          <tr><td>카메라 장착 높이 · 피치, 라이다 평면 높이</td><td>미확정 — INVENTORY 4절 장착 정보 표</td><td>08d</td><td>높이 둘은 자로, 피치는 08d §3-6 벽 캘리브레이션으로. 주 방법(라이다 척도 깊이 지도)은 높이에 무관하지만, 대체 경로인 지면 평면의 정밀도는 높이의 제곱에 비례하므로 <strong>카메라는 가능한 한 높이</strong> 단다</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><span class="ct">가장 자주 무시되고 가장 뼈아프게 돌아오는 것</span>
+        <p>섀시 실측값입니다. 바퀴 간격이 5 mm 만 틀려도 직진 명령에 조금씩 휘고, 09 단계에서 "지도가 휘어요"의 원인 1위가 됩니다.
+        05 단계에서 자를 듭니다.</p>
+      </div>
+
+      <h2>7. 학습 중 지킬 습관</h2>
+      <pre><code class="lang-bash"># ① 무엇이 돌고 있는가
+ros2 node list
+ros2 topic list
+
+# ② 이 노드는 무엇과 연결되어 있는가
+ros2 node info /mcu_bridge
+
+# ③ 이 토픽에 정말 데이터가 흐르는가 (초당 몇 번?)
+ros2 topic hz /odom
+ros2 topic echo /odom --once
+
+# ④ 발행자/구독자의 QoS 가 맞는가 (연결이 안 되면 에러가 아니라 침묵이다)
+ros2 topic info /scan -v
+
+# ⑤ 전체 그래프를 그림으로 (Foxglove 의 Topic Graph 패널)</code></pre>
+      <p><strong>문제가 생기면 항상 이 다섯 개부터 칩니다.</strong> 그리고 주행 중 이상 동작은 재현이 거의 불가능하므로 <code>ros2 bag record</code> 를 03 단계에서부터 습관으로 만듭니다.</p>
+
+      <h2>8. 진행 현황</h2>
+      <div id="progress-overview"></div>
+      <p><button id="reset-progress" class="btn" type="button">진행 기록 초기화</button></p>
+
+      <h2>9. 부록</h2>
+      <div class="cards">
+        <a class="card" href="ref-rclcpp.html"><span class="num">부록 A</span><span class="t">rclcpp 레퍼런스</span><span class="d">노드·발행·구독·타이머·파라미터·QoS·TF·액션 클라이언트를 C++ 로 쓰는 패턴과 CMake 정리</span></a>
+        <a class="card" href="ref-opencv.html"><span class="num">부록 B</span><span class="t">OpenCV 사용법</span><span class="d">cv::Mat, 색공간, 리사이즈, 필터, 컨투어, 그리기, DNN 모듈 — C++ 과 Python 을 나란히</span></a>
+        <a class="card" href="ref-yolo.html"><span class="num">부록 C</span><span class="t">YOLO 사용법</span><span class="d">모델 계열, ultralytics 로 추론·내보내기, ONNX 출력 텐서 해석, NMS, 커스텀 데이터 학습의 개요</span></a>
+      </div>
+
+      <p class="footer-note">저장소 구조: <code>guide/</code>(이 가이드) · <code>docs/</code>(초기 마크다운 초안) · <code>ros2_ws/src/</code>(참고 구현과 당신이 만들 패키지) · <code>docker/</code>(Pi 컨테이너 정의) · <code>hardware/</code>(인벤토리, udev) · <code>scripts/</code>(Pi 보조 스크립트).</p>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>
