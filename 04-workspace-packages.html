@@ -15,7 +15,8 @@
 
       <p class="kicker">04 · 워크스페이스와 패키지</p>
       <h1>내 손으로 노드 만들기 — C++ 주, Python 보조</h1>
-      <p class="lead">03 단계가 "남이 만든 노드를 관찰"이었다면 여기부터는 <strong>내가 만든다.</strong>
+      <p class="lead"><a href="03-ros2-concepts.html">03 단계</a>가 "남이 만든 노드를 관찰"이었다면 여기부터는 <strong>내가 만든다.</strong>
+      03 에서 개념으로 본 것(<a href="03-ros2-concepts.html#params">파라미터</a>, <a href="03-ros2-concepts.html#qos">QoS</a>, <a href="03-ros2-concepts.html#executor">Executor</a>)이 여기서 코드가 된다 — 막히면 그 절을 다시 펼쳐 보라.
       이 단계에서 익히는 패턴(패키지 → 노드 클래스 → 빌드 → 실행)은 06, 08a, 08b, 10 단계에서 그대로 반복된다.</p>
 
       <div class="goal">
@@ -177,7 +178,8 @@ int main(int argc, char ** argv)
       ├─ 서비스 요청 / 액션 피드백이 왔나? → 핸들러 호출
       └─ 반복  (기본 SingleThreadedExecutor: 콜백은 한 번에 하나씩 순서대로)</code></pre>
       <p><strong>spin 을 호출하지 않으면 콜백이 하나도 실행되지 않는다.</strong> 그리고 <strong>콜백 안에서 오래 걸리는 일(sleep, 무거운 추론)을 하면 다른 콜백이 전부 밀린다.</strong>
-      이 사실이 08b 에서 "추론 중에도 파라미터 서비스가 응답해야 한다"는 설계로 이어진다 (부록 A 의 MultiThreadedExecutor).</p>
+      이 사실이 08b 에서 "추론 중에도 파라미터 서비스가 응답해야 한다"는 설계로 이어진다 (부록 A 의 MultiThreadedExecutor).
+      개념 설명은 <a href="03-ros2-concepts.html#executor">03 단계 §2-8</a>.</p>
 
       <div class="callout note"><span class="ct">Python 과 무엇이 대응되는가</span>
         <div class="tbl"><table class="compact">
@@ -294,7 +296,7 @@ ros2 run rpi5_hello_cpp hello_subscriber</code></pre>
       <p>B 에 <code>received: 'hello N'</code> 이 찍히면 두 프로세스가 DDS 로 연결된 것이다. <code>ros2 topic info /hello -v</code> 로 발행자 1, 구독자 1 과 양쪽 QoS 를 확인한다.</p>
 
       <h3>3-6. 파라미터와 QoS — 06 단계에서 바로 쓰는 두 가지</h3>
-      <p>발행 주기를 파라미터로 빼 보자. <code>hello_publisher.cpp</code> 의 생성자를 고친다.</p>
+      <p>발행 주기를 파라미터로 빼 보자 (개념: <a href="03-ros2-concepts.html#params">03 단계 §2-6</a>). <code>hello_publisher.cpp</code> 의 생성자를 고친다.</p>
       <pre><code class="lang-cpp">// 생성자 안. ROS 2 는 "선언하지 않은 파라미터"를 거부한다 — 선언이 곧 인터페이스다.
 this-&gt;declare_parameter&lt;double&gt;("rate_hz", 1.0);
 const double rate = this-&gt;get_parameter("rate_hz").as_double();
@@ -307,7 +309,15 @@ timer_ = this-&gt;create_wall_timer(
 ros2 run rpi5_hello_cpp hello_publisher --ros-args -p rate_hz:=5.0
 ros2 topic hz /hello                      # 5 Hz
 ros2 param get /hello_publisher rate_hz   # 5.0</code></pre>
-      <p>QoS 는 <code>rclcpp::QoS</code> 객체로 준다. 센서 스트림은 <code>BEST_EFFORT</code>, 상태·명령은 <code>RELIABLE</code> 이 관례다 (03 단계 §2-7).</p>
+      <p>QoS 는 <code>rclcpp::QoS</code> 객체로 준다. 센서 스트림은 <code>BEST_EFFORT</code>, 상태·명령은 <code>RELIABLE</code> 이 관례다.
+      개념·호환 규칙·프리셋은 <a href="03-ros2-concepts.html#qos">03 단계 §2-7</a> 에 정리되어 있다. 여기서는 그것을 코드로 돌려 본다.</p>
+      <div class="callout note"><span class="ct">지금까지 쓰던 그 <code>10</code> 이 곧 QoS 다</span>
+        <p><code>create_publisher&lt;T&gt;("hello", 10)</code> 와 <code>create_subscription&lt;T&gt;("hello", 10, cb)</code> 의 <code>10</code> 은
+        <code>rclcpp::QoS(10)</code> 의 축약이다. 그 자리는 원래 <strong>QoS 객체를 받는 자리</strong>이고, 숫자만 주면
+        <strong>깊이만 10 으로 지정하고 나머지는 기본값</strong>이 된다 — <code>KEEP_LAST</code> + <code>RELIABLE</code> + <code>VOLATILE</code>.</p>
+        <p>즉 §3-2 부터 만든 노드들은 모두 "깊이 10 · 재전송 보장 · 늦게 온 구독자에게는 주지 않음" 으로 통신하고 있었다.
+        아래처럼 <code>rclcpp::QoS</code> 를 명시하면 그 기본값을 하나씩 바꿀 수 있다.</p>
+      </div>
       <pre><code class="lang-cpp">// 큐 깊이 10 + 신뢰성 BEST_EFFORT (센서 데이터용 프리셋도 있다: rclcpp::SensorDataQoS())
 auto qos = rclcpp::QoS(10).best_effort();
 pub_ = this-&gt;create_publisher&lt;std_msgs::msg::String&gt;("hello", qos);</code></pre>
@@ -316,6 +326,37 @@ pub_ = this-&gt;create_publisher&lt;std_msgs::msg::String&gt;("hello", qos);</co
         <code>ros2 topic info /hello -v</code> 로 양쪽 QoS 를 비교해 보고, 구독자도 <code>rclcpp::QoS(10).best_effort()</code> 로 바꾸면 다시 연결된다.
         07 단계에서 라이다가 Foxglove 에 안 보일 때 이 경험이 답을 준다.</p>
       </div>
+
+      <h4>깊이(depth)를 눈으로 확인하기 — 느린 구독자 실험</h4>
+      <p>깊이는 설명만 들으면 잘 와닿지 않는다. <strong>구독 콜백을 일부러 느리게</strong> 만들어 직접 본다.
+      개념 쪽 설명은 <a href="03-ros2-concepts.html#qos">03 단계 §2-7</a> 의 "깊이가 실제로 만드는 동작".</p>
+      <pre><code class="lang-cpp">// hello_subscriber.cpp — 상단에 #include &lt;thread&gt; 를 추가한다.
+HelloSubscriber() : Node("hello_subscriber")
+{
+  this-&gt;declare_parameter&lt;int&gt;("depth", 10);        // 실행할 때 깊이를 바꿔 비교한다
+  const auto depth = this-&gt;get_parameter("depth").as_int();
+
+  sub_ = this-&gt;create_subscription&lt;std_msgs::msg::String&gt;(
+    "hello", rclcpp::QoS(depth),                     // ← 숫자 대신 QoS 객체를 명시
+    [this](const std_msgs::msg::String &amp; msg) {
+      std::this_thread::sleep_for(500ms);            // 처리에 0.5초 걸리는 노드인 척 (= 2 Hz)
+      RCLCPP_INFO(this-&gt;get_logger(), "processed: '%s'", msg.data.c_str());
+    });
+}</code></pre>
+      <pre><code class="lang-bash">colcon build --symlink-install --packages-select rpi5_hello_cpp &amp;&amp; source install/setup.bash
+
+ros2 run rpi5_hello_cpp hello_publisher  --ros-args -p rate_hz:=10.0   # 셸 1: 10 Hz 로 발행
+ros2 run rpi5_hello_cpp hello_subscriber --ros-args -p depth:=10       # 셸 2: 깊이 10
+ros2 run rpi5_hello_cpp hello_subscriber --ros-args -p depth:=1        # 셸 2: 깊이 1 로 다시</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>깊이</th><th>로그에 찍히는 번호</th><th>무슨 일이 일어난 것인가</th></tr></thead>
+        <tbody>
+          <tr><td><code>10</code></td><td>0, 1, 2, 3 … <strong>연속이지만 점점 뒤처진다</strong></td><td>큐에 쌓인 옛 메시지를 순서대로 처리한다. 발행 10 Hz · 처리 2 Hz 이므로 지연이 계속 커진다</td></tr>
+          <tr><td><code>1</code></td><td>0, 5, 10, 15 … <strong>건너뛰지만 항상 최신</strong></td><td>큐가 하나뿐이라 밀린 것은 버려진다. 지연이 쌓이지 않는다</td></tr>
+        </tbody>
+      </table></div>
+      <p>"빠른 센서 + 느린 처리"는 08b 의 추론 노드에서 그대로 재현된다. 그때 <code>depth 1</code> 을 쓰는 근거가 이 표의 아래 줄이다.
+      선택 기준은 "몇 개를 보관하느냐"가 아니라 <strong>지연이 쌓이느냐</strong>라는 점을 로그로 확인하라.</p>
 
       <h3>3-7. Python 보조 트랙 — 같은 노드를 rclpy 로 <span class="tag py">Python</span></h3>
       <pre><code class="lang-bash">cd /ros2_ws/src
@@ -425,6 +466,7 @@ ros2 topic echo /odom --field pose.pose.position</code></pre>
         <li><label><input type="checkbox"><span>C++ 구독 노드를 추가하고 <code>CMakeLists.txt</code> 의 <code>add_executable</code> / <code>install</code> 에 등록해 두 노드가 통신하는 것을 봤다</span></label></li>
         <li><label><input type="checkbox"><span><code>rate_hz</code> 파라미터를 선언하고 <code>--ros-args -p rate_hz:=5.0</code> 으로 주기가 바뀌는 것을 <code>ros2 topic hz</code> 로 확인했다</span></label></li>
         <li><label><input type="checkbox"><span>발행자만 <code>best_effort()</code> 로 바꿔서 <strong>연결이 조용히 끊기는 것</strong>과, <code>ros2 topic info -v</code> 로 그 원인이 보이는 것을 확인했다</span></label></li>
+        <li><label><input type="checkbox"><span>느린 구독자 실험으로 <strong>깊이 10 은 지연이 쌓이고 깊이 1 은 최신만 본다</strong>는 것을 로그로 확인했다 — <code>create_subscription(…, 10, …)</code> 의 <code>10</code> 이 <code>rclcpp::QoS(10)</code> 이라는 것도 설명할 수 있다</span></label></li>
         <li><label><input type="checkbox"><span>같은 발행자를 rclpy 로 써서 C++ 구독자가 Python 메시지를 받는 것을 봤다</span></label></li>
         <li><label><input type="checkbox"><span><code>colcon build --symlink-install</code> → <code>source install/setup.bash</code> → <code>ros2 run</code> 흐름을 보지 않고 칠 수 있다</span></label></li>
         <li><label><input type="checkbox"><span><code>rpi5_*</code> 패키지가 전부 빌드되고 <code>ros2 pkg list</code> 에 나온다</span></label></li>
