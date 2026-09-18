@@ -7,7 +7,7 @@
   'use strict';
 
   var STAGES = [
-    { id: 'index', file: 'index.html', num: '00', title: '학습 로드맵', group: 'main' },
+    { id: 'index', file: 'rosproject.html', num: '00', title: '학습 로드맵', group: 'main' },
     { id: '01', file: '01-os-setup.html', num: '01', title: 'RPi 5 OS 선정과 설치', group: 'main' },
     { id: '02', file: '02-docker-ros2.html', num: '02', title: 'Docker + ROS 2 Humble', group: 'main' },
     { id: '03', file: '03-ros2-concepts.html', num: '03', title: 'ROS 2 핵심 개념', group: 'main' },
@@ -77,7 +77,7 @@
     var side = document.querySelector('.sidebar');
     if (!side) return;
     side.innerHTML = '';
-    var brand = el('a', { class: 'brand', href: 'index.html' });
+    var brand = el('a', { class: 'brand', href: 'rosproject.html' });
     brand.appendChild(document.createTextNode('ROS 2 자율주행 학습 가이드'));
     brand.appendChild(el('small', { text: 'Raspberry Pi 5 · Humble · C++ 주 / Python 보조' }));
     side.appendChild(brand);
