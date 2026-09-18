@@ -68,9 +68,10 @@
                    ├── imu_link                ← /imu/data_raw 의 frame_id (06, MCU 가 IMU 를 읽는다)
                    ├── camera_link
                    │    └── camera_optical_link ← /camera/image_raw 의 frame_id
-                   ├── left_wheel_link          ← /joint_states 로 회전
-                   ├── right_wheel_link
-                   └── caster_link</code></pre>
+                   ├── front_left_wheel_link   ← /joint_states 로 회전 (4륜 전부)
+                   ├── front_right_wheel_link
+                   ├── rear_left_wheel_link
+                   └── rear_right_wheel_link</code></pre>
       <p>이 트리에서 <strong>URDF 가 책임지는 부분은 <code>base_footprint</code> 이하 전부</strong>다. <code>map → odom</code>, <code>odom → base_footprint</code> 는 다른 노드가 실시간으로 발행한다.
       그래서 이 단계가 끝나도 <code>view_frames</code> 에는 <code>odom</code> 이 보이지 않는다 — 06 단계에서 붙는다.</p>
 
@@ -80,7 +81,7 @@
       <div class="tbl"><table>
         <thead><tr><th></th><th><code>odom → base_link</code></th><th><code>map → odom</code></th></tr></thead>
         <tbody>
-          <tr><td>발행자</td><td>휠 오도메트리 (mcu_bridge)</td><td>SLAM / AMCL</td></tr>
+          <tr><td>발행자</td><td>휠 오도메트리 (mcu_bridge)<br><span class="small">표기는 REP-105 기준. 실제 발행 엣지는 <code>odom → base_footprint</code> — URDF 루트가 그것이기 때문이다 (06 §2-5 ④)</span></td><td>SLAM / AMCL</td></tr>
           <tr><td>성질</td><td><strong>연속적</strong> (튀지 않음)</td><td><strong>불연속</strong> (보정 시 튐)</td></tr>
           <tr><td>정확도</td><td>단기 정확, 장기 누적오차</td><td>장기 정확</td></tr>
           <tr><td>용도</td><td>제어 루프 (부드러워야 함)</td><td>전역 위치</td></tr>
@@ -93,7 +94,7 @@
 
       <div class="callout warn"><span class="ct">철칙: 하나의 좌표계에는 부모가 하나뿐이다</span>
         <p>두 노드가 같은 자식 프레임의 TF 를 동시에 발행하면 TF 트리가 떨리면서 모든 것이 망가진다. 06 단계의 <code>mcu_bridge</code> 에 <code>publish_tf</code> 파라미터가 있는 이유가 이것이다 —
-        나중에 IMU 를 융합하는 EKF 가 <code>odom → base_link</code> 를 대신 발행하게 되면 브리지 쪽을 꺼야 한다. 3-8 에서 이 떨림을 직접 재현해 본다.</p>
+        나중에 IMU 를 융합하는 EKF 가 <code>odom → base_footprint</code> 를 대신 발행하게 되면 브리지 쪽을 꺼야 한다. 3-8 에서 이 떨림을 직접 재현해 본다.</p>
       </div>
 
       <h3>2-2. 좌표 규약 — 외워야 하는 것</h3>
@@ -138,7 +139,7 @@
       <div class="tbl"><table>
         <thead><tr><th>joint type</th><th>의미</th><th>우리 로봇에서</th><th>TF 로 나가는 곳</th></tr></thead>
         <tbody>
-          <tr><td><code>fixed</code></td><td>고정. 절대 안 움직임</td><td>라이다, 카메라 마운트, 캐스터</td><td><code>/tf_static</code> (한 번 발행)</td></tr>
+          <tr><td><code>fixed</code></td><td>고정. 절대 안 움직임</td><td>라이다, 카메라 마운트, IMU</td><td><code>/tf_static</code> (한 번 발행)</td></tr>
           <tr><td><code>continuous</code></td><td>무한 회전</td><td>바퀴</td><td><code>/tf</code> (<code>/joint_states</code> 가 올 때마다)</td></tr>
           <tr><td><code>revolute</code></td><td>각도 제한 있는 회전</td><td>(아커만 조향이면 사용)</td><td><code>/tf</code></td></tr>
           <tr><td><code>prismatic</code></td><td>직선 이동</td><td>(해당 없음)</td><td><code>/tf</code></td></tr>
@@ -152,11 +153,13 @@
       <pre><code class="lang-xml">&lt;xacro:property name="wheel_radius" value="0.0325"/&gt;
 ...
 &lt;origin xyz="0 0 ${wheel_radius}"/&gt;                       &lt;!-- 변수 사용 --&gt;
-&lt;origin xyz="0 ${reflect * wheel_separation/2} 0"/&gt;       &lt;!-- 수식도 가능 --&gt;
+&lt;origin xyz="${x_reflect * wheelbase/2} ${y_reflect * wheel_separation/2} 0"/&gt;   &lt;!-- 수식도 가능 --&gt;
 
-&lt;xacro:macro name="wheel" params="prefix reflect"&gt; ... &lt;/xacro:macro&gt;
-&lt;xacro:wheel prefix="left"  reflect="1"/&gt;
-&lt;xacro:wheel prefix="right" reflect="-1"/&gt;</code></pre>
+&lt;xacro:macro name="wheel" params="prefix x_reflect y_reflect"&gt; ... &lt;/xacro:macro&gt;
+&lt;xacro:wheel prefix="front_left"  x_reflect="1"  y_reflect="1"/&gt;
+&lt;xacro:wheel prefix="front_right" x_reflect="1"  y_reflect="-1"/&gt;
+&lt;xacro:wheel prefix="rear_left"   x_reflect="-1" y_reflect="1"/&gt;
+&lt;xacro:wheel prefix="rear_right"  x_reflect="-1" y_reflect="-1"/&gt;</code></pre>
       <p><strong>바퀴 반지름을 바꿀 때 한 곳만 고치면 된다.</strong> 이것이 xacro 를 쓰는 이유다. 런치 시점에 <code>xacro</code> 명령이 이 파일을 순수 URDF 로 전개해서 <code>robot_state_publisher</code> 에 넘긴다(3-9).</p>
 
       <h3>2-4. <code>/tf</code> 와 <code>/tf_static</code> 의 QoS 가 다른 이유</h3>
@@ -174,6 +177,7 @@
         <tbody>
           <tr><td><code>wheel_radius</code></td><td>바퀴 지름 ÷ 2. <strong>로봇을 올려놓은 상태</strong>에서 눌린 높이 기준(고무 바퀴는 하중으로 1~2 mm 눌린다)</td><td>오도메트리 거리가 비례해서 틀림 (1 m 갔는데 0.9 m 로 기록)</td></tr>
           <tr><td><code>wheel_separation</code></td><td>좌우 바퀴의 <strong>접지점</strong> 사이 거리 (바퀴 폭의 중앙끼리)</td><td>회전량이 틀림. 90도 돌렸는데 85도로 기록 → SLAM 지도가 휜다</td></tr>
+          <tr><td><code>wheelbase</code></td><td>앞뒤 바퀴 <strong>축</strong> 사이 거리 (4륜). 회전 추정에는 들어가지 않는다</td><td>로봇 모형의 바퀴 위치가 틀어지고, 09 코스트맵 풋프린트의 근거가 어긋난다</td></tr>
           <tr><td><code>lidar_x / y / z</code></td><td><code>base_link</code> 원점(바퀴 축 중점, 축 높이)에서 라이다 <strong>회전축</strong>까지. z 는 바닥이 아니라 바퀴 축 높이 기준</td><td>벽이 실제보다 안쪽/바깥쪽에 그려짐</td></tr>
           <tr><td><code>lidar_yaw</code></td><td>라이다의 0° 방향과 로봇 정면의 각도 차. 0° 방향은 모델마다 다르므로 <strong>07 단계의 벽 실험</strong>으로 확정하고 여기로 돌아와 적는다</td><td><strong>지도가 전체적으로 회전</strong>해서 그려짐</td></tr>
           <tr><td><code>cam_x / y / z / pitch</code></td><td>렌즈 중심까지. 아래로 기울였으면 pitch 가 + 값</td><td>08b 검출 결과를 3D 로 올릴 때 방향이 틀림</td></tr>
@@ -185,15 +189,33 @@
         <p>간격이 145 mm 라면 3.5 % 오차다. 회전량은 <code>Δθ = (Δd_right − Δd_left) / L</code> 이므로 L 이 3.5 % 틀리면 회전량도 3.5 % 틀린다.
         로봇이 한 바퀴(360도) 돌면 12.6도가 어긋난다. SLAM 이 이를 보정하려 애쓰다가 지도가 뭉개진다. <strong>"SLAM 지도가 휘어요"의 원인 1위</strong>가 이것이다.
         06 단계의 360도 회전 캘리브레이션으로 미세 조정하지만, 출발점은 자로 잰 값이어야 한다.</p>
+        <p class="small">위 식 <code>Δθ = (Δd_right − Δd_left) / L</code> 은 <strong>2륜 차동구동</strong>의 정운동학이다.
+        우리 로봇은 4륜 스키드 스티어라 방향을 바꿀 때 바퀴가 옆으로 미끄러지므로, 이 식은 <strong>근사</strong>다.
+        그래서 <code>wheel_separation</code> 은 "재서 넣으면 끝나는 상수"가 아니라 출발점이고, 실제 회전 추정은 06 단계에서 IMU 로 보완한다
+        (06 §2-2 정운동학 · §3-9 회전 캘리브레이션 · §3-10 EKF 융합). <strong>05 에서 할 일은 자로 재서 넣는 것까지다.</strong></p>
       </div>
       <h4><code>base_link</code> 원점을 어디에 둘 것인가</h4>
-      <p><strong>차동구동 로봇은 좌우 바퀴 축의 중점</strong>에 두는 것이 관례다. 이 점이 제자리 회전의 중심이기 때문에 운동학 수식이 가장 단순해진다.
+      <p><strong>2륜 차동구동 로봇은 좌우 바퀴 축의 중점</strong>에 두는 것이 관례다. 이 점이 제자리 회전의 중심이기 때문에 운동학 수식이 가장 단순해진다.
       <code>base_footprint</code> 는 그 점을 지면에 투영한 것이고, URDF 에서 <code>base_footprint → base_link</code> 는 z 로 <code>wheel_radius</code> 만큼 띄워 놓았다. 그래서 바퀴 반지름이 틀리면 로봇 모형이 지면에 파묻히거나 떠 보인다.</p>
+
+      <div class="callout why"><span class="ct">4륜 스키드 스티어에서는 이 근거가 그대로 성립하지 않는다</span>
+        <p>우리 로봇은 4륜이고 조향 장치가 없다. 방향을 바꿀 때 좌우 바퀴의 속도를 다르게 줘서 <strong>바퀴를 옆으로 미끄러뜨리며(skid)</strong> 돈다.
+        그래서 실제 회전 중심은 노면 마찰·하중 배분·회전 속도에 따라 <strong>움직인다</strong> — 2륜처럼 기하학만으로 한 점이 정해지지 않는다.</p>
+        <p><strong>그럼 05 에서는 어떻게 하는가.</strong> 네 바퀴의 <strong>기하 중심</strong>(좌우 축간의 중점이자 앞뒤 축간의 중점)에 <code>base_link</code> 를 둔다.
+        URDF 는 "로봇이 실제로 어떻게 도는가"가 아니라 <strong>"부품이 어디에 붙어 있는가"</strong>를 적는 파일이기 때문이다. 이 단계에서 필요한 건 그것뿐이다.</p>
+        <p><strong>더 알아보고 싶다면</strong> — 이 주제의 검색어는 <code>differential drive kinematics</code>, <code>skid steer kinematics</code>,
+        <code>instantaneous center of rotation (ICR)</code> 세 가지다. 지금 파고들 필요는 없다. 06 단계에서 수식을 직접 쓸 때 다시 만난다.</p>
+        <p><strong>실제 슬립에 대응하는 곳은 06 단계다.</strong>
+        §2-1·§2-2 에서 역·정운동학을 세우고, §3-9 에서 360도 회전으로 <strong>회전량을 IMU 기준으로</strong> 캘리브레이션하며,
+        §3-10 에서 <code>robot_localization</code> 의 EKF 로 휠 오도메트리와 IMU 를 융합한다.
+        <code>hardware/INVENTORY.md</code> 6절이 <em>"스키드 스티어는 회전 시 바퀴 슬립이 커서 엔코더만의 회전 추정이 흔들린다 — IMU 융합(EKF)이 필요한 이유"</em> 라고 적어 둔 것이 이 이야기다.</p>
+      </div>
 
       <h3>3-2. xacro 에 실측값 반영 <span class="tag mac">Mac</span></h3>
       <p><code>ros2_ws/src/rpi5_description/urdf/rpi5_robot.urdf.xacro</code> 상단의 property 블록을 Mac 에서 편집한다. 값은 <strong>미터</strong>다. 145 mm 면 <code>0.145</code>.</p>
       <pre><code class="lang-xml">&lt;xacro:property name="wheel_radius"     value="____"/&gt;  &lt;!-- m, 하중 상태 지름 ÷ 2 --&gt;
-&lt;xacro:property name="wheel_separation" value="____"/&gt;  &lt;!-- m, 접지점 사이 --&gt;
+&lt;xacro:property name="wheel_separation" value="____"/&gt;  &lt;!-- m, 좌우 접지점 사이 --&gt;
+&lt;xacro:property name="wheelbase"        value="____"/&gt;  &lt;!-- m, 앞뒤 축간 (4륜) --&gt;
 &lt;xacro:property name="lidar_x"   value="____"/&gt;
 &lt;xacro:property name="lidar_y"   value="____"/&gt;
 &lt;xacro:property name="lidar_z"   value="____"/&gt;  &lt;!-- base_link(바퀴 축 높이) 기준 --&gt;
@@ -395,7 +417,7 @@ ros2 run tf2_ros tf2_monitor odom base_link   # 특정 경로만 (06 이후)</co
         그래서 두 프레임을 두고 그 사이 회전(rpy = −π/2, 0, −π/2)으로 연결한다.</div></details>
       <details class="quiz"><summary>4. TF 가 미세하게 떨린다면 가장 먼저 무엇을 의심하는가?</summary>
         <div class="ans"><strong>같은 자식 프레임을 두 노드가 동시에 발행</strong>하고 있는지. 예를 들어 mcu_bridge 가 <code>publish_tf:=true</code> 이고 동시에 robot_localization(EKF)도
-        <code>odom → base_link</code> 를 쏘는 경우, 또는 <code>joint_state_publisher</code> 와 mcu_bridge 가 둘 다 <code>/joint_states</code> 를 내는 경우. 한쪽을 꺼야 한다. 3-8 에서 직접 재현했다.</div></details>
+        <code>odom → base_footprint</code> 를 쏘는 경우, 또는 <code>joint_state_publisher</code> 와 mcu_bridge 가 둘 다 <code>/joint_states</code> 를 내는 경우. 한쪽을 꺼야 한다. 3-8 에서 직접 재현했다.</div></details>
       <details class="quiz"><summary>5. <code>/tf_static</code> 이 TRANSIENT_LOCAL 로 발행되는 이유는? VOLATILE 이면 무엇이 깨지는가?</summary>
         <div class="ans">고정 변환은 시작할 때 한 번만 발행된다. VOLATILE 이면 그 뒤에 뜬 구독자(SLAM, Foxglove, 나중에 띄운 내 노드)는 그 값을 영원히 받지 못해 <code>base_link → laser_link</code> 를 모른다.
         TRANSIENT_LOCAL 은 발행자가 마지막 값을 보관해 두고 늦게 온 구독자에게도 준다. 03 단계 §2-7 의 Durability 가 실물로 쓰이는 곳이다.</div></details>
