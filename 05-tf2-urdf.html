@@ -17,6 +17,7 @@
       <h1>로봇의 좌표계 세우기 — TF2와 URDF</h1>
       <p class="lead">라이다가 "전방 2.3 m 에 물체"라고 말해도, 그 점이 <em>로봇 기준 어디인지, 지도 기준 어디인지</em> 모르면 아무것도 할 수 없다.
       그 변환 사슬을 시간과 함께 관리하는 것이 TF2 이고, 사슬의 고정된 부분(몸통에 볼트로 붙은 관계)을 기술하는 파일이 URDF 다.
+      <strong>TF 는 특별한 서브시스템이 아니라 <code>/tf</code>·<code>/tf_static</code> 두 개의 평범한 토픽</strong>과 그 위에 얹은 약속이다 — 1-1 에서 먼저 확인한다.
       <strong>TF 는 자율주행의 키스톤이다.</strong> 07~10 단계에서 막히는 사람의 대부분이 여기를 대충 넘긴 사람이다.</p>
 
       <div class="goal">
@@ -38,7 +39,49 @@
         여기서 30분 재는 것이 뒤에서 3일을 아낀다.</p>
       </div>
 
-      <h2>1. 개요 — 왜 TF 가 필요한가</h2>
+      <h2>1. 개요 — TF 란 무엇인가</h2>
+
+      <h3>1-1. 먼저 — TF 는 <strong>토픽</strong>이다</h3>
+      <p>이것부터 확인하고 시작한다. 여기를 건너뛰면 TF 를 "ROS 안의 별개 장치" 같은 것으로 오해하게 되고, 뒤의 모든 설명이 어긋난다.</p>
+      <pre><code class="lang-bash">ros2 topic list | grep tf     # →  /tf      /tf_static      ← 토픽으로 존재한다
+ros2 node  list | grep tf     # →  (없음)                    ← TF 노드는 없다</code></pre>
+      <p><strong>토픽은 이 두 개가 전부다.</strong> 조율하는 중앙 노드도, 숨은 서비스도 없다. <code>ros2 topic echo /tf</code> 로 내용을 그대로 들여다볼 수 있다.
+      "TF" 라는 말이 가리키는 것은 문맥에 따라 셋이다 — 헷갈리는 지점이므로 여기서 갈라 둔다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>말할 때의 "TF"</th><th>정체</th><th>토픽인가</th></tr></thead>
+        <tbody>
+          <tr><td><code>/tf</code>, <code>/tf_static</code></td><td>토픽 이름. 타입은 <code>tf2_msgs/msg/TFMessage</code></td><td>✅ 토픽</td></tr>
+          <tr><td>TF2, <code>tf2_ros</code></td><td>라이브러리 — <code>Buffer</code>, <code>TransformListener</code>, <code>TransformBroadcaster</code></td><td>❌ 라이브러리</td></tr>
+          <tr><td>"TF 트리", "TF 가 떨린다"</td><td>좌표 변환이라는 개념과 그 데이터</td><td>❌ 개념</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout note"><span class="ct">그래서 TF 는 "약속"이다</span>
+        <p>메시지 타입(<code>TFMessage</code>) · 토픽 이름(<code>/tf</code>, <code>/tf_static</code>) · QoS(2-4) 세 가지를 지키기로 한 약속이고,
+        <code>tf2_ros</code> 는 그 약속대로 쓰기 쉽게 만든 라이브러리다. 그래서 <strong>어느 노드든 그 약속만 지키면 발행자가 될 수 있다</strong> — 3-8 에서 명령줄 한 줄로 직접 해 본다.</p>
+      </div>
+
+      <h3>1-2. 무엇이 흐르는가 — 메시지의 구조</h3>
+      <p>포맷은 <strong>엄격하게 고정</strong>이다. ROS 2 는 타입이 있는 pub/sub 이라, 타입이 맞지 않으면 발행자와 구독자가 <em>서로 보이지도 않는다</em>.</p>
+      <pre><code class="lang-yaml">tf2_msgs/msg/TFMessage
+└── geometry_msgs/TransformStamped[] transforms   ← 배열. 한 메시지에 엣지 여러 개
+
+    geometry_msgs/TransformStamped                ← 트리의 엣지 한 개 + 시각
+    ├── std_msgs/Header header
+    │   ├── builtin_interfaces/Time stamp         언제 시점의 관계인가
+    │   └── string frame_id                       부모 프레임 이름   예) "odom"
+    ├── string child_frame_id                     자식 프레임 이름   예) "base_footprint"
+    └── geometry_msgs/Transform transform
+        ├── Vector3    translation  (x, y, z)     이동, 단위 m
+        └── Quaternion rotation  (x, y, z, w)     회전</code></pre>
+      <p>필드의 <strong>이름·타입·개수는 고정</strong>이고 <strong>값만</strong> 각 노드가 채운다. 3-10 의 C++ 코드가 이 필드를 하나씩 채우는 모습이다.</p>
+      <div class="callout why"><span class="ct">여기서 가장 중요한 한 가지 — 발행되는 것은 <em>트리가 아니라 엣지 낱개</em>다</span>
+        <p><code>TransformStamped</code> 하나는 <strong>부모 하나 ↔ 자식 하나</strong>의 관계일 뿐이다. 트리 전체를 담는 메시지는 존재하지 않는다.
+        각 발행자는 자기가 아는 한 칸만 쏘고, <strong>트리는 받는 쪽 메모리 안에서만 조립된다</strong>(1-4 · 2-5).</p>
+        <p>그리고 프레임 이름은 그냥 문자열이다. <code>"map"</code> 이 무엇을 뜻하는지는 <strong>이 포맷 어디에도 없다</strong> —
+        그건 REP-105 라는 별도의 합의이고(2-1), TF2 자체는 <code>"banana"</code> 도 똑같이 유효한 이름으로 받아들인다.</p>
+      </div>
+
+      <h3>1-3. 왜 필요한가</h3>
       <p>라이다가 "전방 2.3 m 지점에 물체가 있다"고 알려 줬다고 하자. 이것만으로는 아무것도 할 수 없다. 질문이 줄줄이 따라온다.</p>
       <ul>
         <li>라이다의 "전방"은 로봇의 전방과 같은가? (뒤집어 달았을 수도 있다)</li>
@@ -55,7 +98,7 @@
       <p><strong>TF2 는 이 변환 사슬을 시간과 함께 관리하는 시스템이다.</strong> 각 노드는 자기가 아는 변환만 발행하고, TF2 가 그것들을 이어 붙여
       "임의의 A 기준에서 본 B" 를 <em>특정 시각에 대해</em> 계산해 준다. "시간과 함께"가 중요하다 — 0.1초 전 스캔은 0.1초 전 로봇 자세로 변환해야 한다.</p>
 
-      <h3>표준 TF 트리 — 우리가 만들 것</h3>
+      <h3>1-4. 표준 TF 트리 — 우리가 만들 것</h3>
       <pre class="diagram"><code>   map                      ← SLAM / AMCL 이 발행 (09단계)
     │                          "출발점이 지도상 어디였는지" 보정값
     │                          드물게, 튀듯이 갱신됨
@@ -167,6 +210,57 @@
       고정 변환은 시작할 때 <em>한 번만</em> 발행되는데, 그 뒤에 뜬 노드(SLAM, Foxglove)도 그 값을 받아야 하기 때문이다 — "구독 전에 발행된 마지막 값도 받는다"가 TRANSIENT_LOCAL 의 뜻이다.
       반대로 <code>/tf</code> 는 초당 수십 번 갱신되므로 기본 VOLATILE 로 충분하다. <code>ros2 topic info /tf_static -v</code> 로 직접 확인한다(3-6). 직접 TF 를 구독하는 코드를 쓸 일은 거의 없고, <code>tf2_ros::Buffer</code> 가 이 QoS 를 알아서 맞춰 준다.</p>
 
+      <h3>2-5. <code>/tf</code> 는 왜 보통 토픽처럼 다루지 않는가</h3>
+      <p>1-1 에서 봤듯 <code>/tf</code> 는 평범한 토픽이다. 그런데 <code>/scan</code> 을 다루듯 <code>create_subscription</code> 으로 구독해서 쓰는 코드는 거의 없다.
+      <strong>토픽은 같은데 쓰는 방법이 다르다</strong> — 그 차이가 어디서 오는지가 이 절이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th></th><th>보통 토픽 (<code>/scan</code>)</th><th><code>/tf</code></th></tr></thead>
+        <tbody>
+          <tr><td>발행자 수</td><td>보통 <strong>1</strong> (드라이버 하나)</td><td><strong>여럿</strong> — 06 이후 3개 (아래)</td></tr>
+          <tr><td>메시지가 담는 것</td><td><strong>전체</strong> — 그 순간의 스캔 한 장</td><td><strong>조각</strong> — 트리의 엣지 한 칸</td></tr>
+          <tr><td>발행자가 여럿이면</td><td>사고. 마지막 값이 이긴다</td><td>정상. 겹치지만 않으면 이어 붙는다</td></tr>
+          <tr><td>구독 방법</td><td>콜백을 직접 등록</td><td><code>TransformListener</code> 가 대신 구독 → <code>Buffer</code></td></tr>
+          <tr><td>언제 읽는가</td><td>메시지가 <strong>도착할 때</strong></td><td>내가 <strong>조회할 때</strong> (<code>lookupTransform</code>)</td></tr>
+          <tr><td>과거 값</td><td>안 남는다</td><td>버퍼에 수 초치 이력, 보간까지 해 준다</td></tr>
+          <tr><td>없는 값을 물으면</td><td>—</td><td>빈 값이 아니라 <strong>예외</strong>가 난다 (3-10)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4>① 발행자가 여럿이어도 되는 이유 — 메시지가 "조각"이라서</h4>
+      <p>우리 로봇의 <code>/tf</code> 발행자 명단이다. <strong>아무도 전체를 모른다.</strong></p>
+      <pre><code class="lang-text">/tf         ├─ robot_state_publisher   바퀴 관절            (05)
+            ├─ mcu_bridge  또는  EKF   odom → base_footprint (06 / 10, 둘 중 하나만!)
+            └─ slam_toolbox            map → odom            (09)
+
+/tf_static  └─ robot_state_publisher   base_footprint 이하 고정 전부 (05)</code></pre>
+      <p><code>/cmd_vel</code> 은 반대다. 메시지가 로봇 <strong>전체</strong>의 속도 명령이라 두 개가 오면 이어 붙일 방법이 없고 하나가 다른 하나를 덮는다 — 10 §2-4 가 그 이야기다.
+      <code>/tf</code> 는 조각이라 합쳐지지만, <strong>조각이 겹치는 순간</strong>(같은 자식 프레임) 똑같은 문제가 된다. 2-1 의 철칙이 그래서 필요하다.</p>
+
+      <h4>② 구독하지 않고 조회하는 이유 — 세 가지가 콜백으로는 안 된다</h4>
+      <div class="tbl"><table>
+        <thead><tr><th>문제</th><th>콜백으로 최신값만 들고 있으면</th><th><code>Buffer</code> 라서 가능</th></tr></thead>
+        <tbody>
+          <tr><td>도착 순서가 보장 안 됨</td><td>스캔이 TF 보다 먼저 오면 변환 불가</td><td>잠깐 기다렸다 조회 (타임아웃 인자)</td></tr>
+          <tr><td>과거 시각이 필요함</td><td>0.05초 전 자세를 모른다</td><td>이력 보관 + 보간</td></tr>
+          <tr><td>발행이 조각나 있음</td><td>한 발행자도 <code>map←base_link</code> 를 모른다</td><td>트리에서 경로를 찾아 합성</td></tr>
+        </tbody>
+      </table></div>
+      <p>그래서 노드는 <code>/tf</code> 를 직접 구독하지 않고, 생성자에 <code>Buffer</code> 와 <code>TransformListener</code> 를 한 번 만들어 두고 필요할 때 <strong>당겨 온다</strong>(3-10 (b)).
+      <strong>버퍼는 중앙에 하나가 아니라 소비하는 노드마다 하나씩</strong>이다 — 그래서 그 두 줄이 노드마다 반복된다.</p>
+      <p>조회 결과도 같은 <code>TransformStamped</code> 다. 트리에 실제로 없는 쌍을 물어도 된다 — 08d 가 <code>camera_optical_link ← laser_link</code> 를 조회하는데,
+      URDF 에 그 엣지는 없다. <code>laser_link → base_link → camera_link → camera_optical_link</code> 를 <strong>조회하는 순간 곱해서</strong> 만들어 준다.</p>
+
+      <h4>③ 예외 하나 — 토픽 그대로 쓰는 곳</h4>
+      <p><code>foxglove_bridge</code> 는 조회하지 않는다. <code>/tf</code>·<code>/tf_static</code> 을 <strong>토픽 그대로 구독해서 통째로</strong> Mac 으로 넘기고, 트리 조립은 Foxglove Studio 가 한다.
+      <code>ros2 bag record … /tf /tf_static</code> 도 같다 — 그래서 bag 에 <code>/tf_static</code> 을 빼먹으면 재생할 때 트리가 끊긴다.</p>
+
+      <div class="callout note"><span class="ct">정리 — 포맷은 평범하고, 특별한 것은 그 위에 얹힌 것이다</span>
+        <p><code>TFMessage</code> 는 <code>sensor_msgs/LaserScan</code> 이나 <code>nav_msgs/Odometry</code> 와 똑같은 방식의 평범한 메시지다.
+        ROS 가 <code>.msg</code> 로 양식을 정하고 노드가 값을 채운다.</p>
+        <p><strong><code>/tf</code> 를 특별하게 만드는 것은 포맷이 아니라</strong> — ① 조각을 나눠 발행한다는 <em>규약</em>, ② 그 조각을 시간축과 함께 모아 합성해 주는 <em>라이브러리</em>,
+        ③ "부모는 하나"라는 <em>트리 제약</em> 셋이다. 셋 다 ROS 가 강제하지 않는다. <strong>사람이 지켜야 한다.</strong></p>
+      </div>
+
       <h2>3. 실습</h2>
       <p>모든 명령은 컨테이너 안에서 한다. <span class="tag pi">Pi 호스트</span> → <code>cd ~/ros2_rpi5/docker &amp;&amp; docker compose run --rm dev</code></p>
 
@@ -247,7 +341,9 @@ check_urdf /tmp/robot.urdf</code></pre>
 ros2 run tf2_tools view_frames
 # 5초간 /tf, /tf_static 을 듣고 frames_&lt;시각&gt;.pdf 를 현재 디렉터리에 만든다</code></pre>
       <p>Mac 으로 가져와서 본다. <span class="tag mac">Mac</span></p>
-      <pre><code class="lang-bash">scp pi5:~/ros2_rpi5/ros2_ws/frames_*.pdf /tmp/ &amp;&amp; open /tmp/frames_*.pdf</code></pre>
+      <pre><code class="lang-bash"># 원격 경로의 * 는 따옴표로 감싼다 — 안 그러면 zsh 가 Mac 쪽에서 먼저 펼치려다 "no matches found" 로 죽는다
+scp 'pi5:~/ros2_rpi5/ros2_ws/frames_*.pdf' /tmp/ &amp;&amp; open /tmp/frames_*.pdf</code></pre>
+      <p class="small">뒤쪽 <code>/tmp/frames_*.pdf</code> 는 감싸지 않아도 된다. <code>&amp;&amp;</code> 뒤 명령의 확장은 앞 명령이 끝난 뒤에 일어나므로 그때는 파일이 도착해 있다.</p>
       <div class="callout note"><span class="ct">이 PDF 가 이 단계의 산출물이다</span>
         <p>트리가 <code>base_footprint</code> 를 루트로 <strong>한 덩어리</strong>로 이어져 있어야 한다. 끊어진 조각이 보이면 어딘가 joint 가 빠진 것이다.
         각 화살표에 적힌 <em>Broadcaster</em>(어느 노드가 발행하는가), <em>Average rate</em>, <em>Most recent transform</em> 을 읽어 보라 — 고정 조인트는 rate 가 10000 (static 표시), 바퀴는 <code>joint_state_publisher</code> 의 주기로 나온다.
@@ -300,7 +396,7 @@ ros2 run tf2_ros tf2_echo base_footprint test_link   # 값이 두 가지 사이�
       </div>
 
       <h3>3-9. description.launch.py 읽기 — <code>use_fake_joints</code> 와 <code>ParameterValue</code></h3>
-      <p><code>ros2_ws/src/rpi5_description/launch/description.launch.py</code> 를 열어 두 가지를 확인한다.</p>
+      <p><code>ros2_ws/src/rpi5_description/launch/description.launch.py</code> 를 열어 세 가지를 확인한다.</p>
       <pre><code class="lang-python"># xacro 를 실행해서 그 표준출력(=URDF XML)을 파라미터 값으로 넘긴다.
 robot_description = ParameterValue(
     Command(['xacro ', xacro_file]), value_type=str
@@ -310,6 +406,22 @@ robot_description = ParameterValue(
       <p><strong>② <code>use_fake_joints</code>.</strong> <code>joint_state_publisher</code> 는 바퀴(<code>continuous</code> 조인트)의 각도를 <em>가짜로</em>(0 rad) <code>/joint_states</code> 에 발행한다.
       그래야 <code>robot_state_publisher</code> 가 바퀴 TF 를 만들어 트리가 완결된다. 06 단계부터는 <code>mcu_bridge</code> 가 엔코더로 <strong>진짜</strong> <code>/joint_states</code> 를 발행하므로 이 노드를 꺼야 한다.
       <code>rpi5_bringup/launch/robot.launch.py</code> 는 이미 <code>use_mcu</code> 의 반대값을 <code>use_fake_joints</code> 로 넘긴다 — 두 노드가 같은 토픽을 발행하면 바퀴 TF 가 두 값 사이에서 떨리기 때문이다. 3-8 에서 본 것과 같은 종류의 문제다.</p>
+      <p><strong>③ <code>model</code>.</strong> <code>urdf/</code> 안의 어느 xacro 를 띄울지 고르는 인자다. 기본값은 실측용 <code>rpi5_robot.urdf.xacro</code> 이고,
+      섀시를 아직 재지 않았다면 가짜 치수 모델로 3-3 부터 3-8 까지를 먼저 돌려 볼 수 있다.</p>
+      <pre><code class="lang-bash">ros2 launch rpi5_description description.launch.py                                 # 실측용 (기본)
+ros2 launch rpi5_description description.launch.py model:=test_robot.urdf.xacro   # 가짜 치수</code></pre>
+      <div class="callout warn"><span class="ct">왜 <code>-p</code> 로 URDF 를 직접 넘길 수 없는가 — ① 을 뒤집어 본 것</span>
+        <p>런치 파일 없이 이렇게 해 보면 실패한다.</p>
+        <pre><code class="lang-bash">ros2 run robot_state_publisher robot_state_publisher --ros-args \
+  -p robot_description:="$(xacro src/rpi5_description/urdf/test_robot.urdf.xacro)"
+
+# Couldn't parse parameter override rule: '-p robot_description:=&lt;?xml version="1.0" ?&gt; ...</code></pre>
+        <p><code>xacro</code> 는 제대로 실행됐고 쉘도 결과를 펼쳤다. 문제는 <code>--ros-args -p 이름:=값</code> 의 값이 <strong>YAML 스칼라</strong>로 파싱된다는 데 있다 —
+        줄바꿈이 나온 순간 파서가 거기서 끊고, 남은 XML 을 인자로 오해한다.</p>
+        <p>런치 파일은 이 문자열을 <strong>애초에 명령줄에 올리지 않는다.</strong> <code>Command(['xacro ', xacro_file])</code> 를 런치 시스템이 직접 실행해서
+        그 표준출력을 <em>파라미터 값 객체</em>로 노드에 건넨다. 명령줄 파서를 거치지 않으니 줄바꿈도 따옴표도 문제가 되지 않는다.
+        <strong>①의 <code>value_type=str</code> 과 함께, 이 두 줄이 "URDF 를 노드에 넘기는 일"의 전부다.</strong></p>
+      </div>
 
       <h3>3-10. TF 를 코드에서 만지는 두 가지 방법 — C++ 미리보기 <span class="tag cpp">C++</span></h3>
       <p>이 단계에서는 읽기만 한다. 06 단계에서 (a)를, 10 단계에서 (b)를 실제로 쓴다. 두 패턴의 모양을 미리 눈에 익혀 두면 그때 "TF 코드"가 아니라 "운동학"에 집중할 수 있다.</p>
@@ -388,6 +500,8 @@ ros2 run tf2_ros tf2_monitor odom base_link   # 특정 경로만 (06 이후)</co
 
       <h2>✅ 검증 체크포인트</h2>
       <ul class="checklist">
+        <li><label><input type="checkbox"><span><code>ros2 topic list</code> 에 <code>/tf</code>·<code>/tf_static</code> 이 있고 <code>ros2 node list</code> 에는 TF 노드가 <strong>없다</strong>는 것을 눈으로 확인했다 (1-1)</span></label></li>
+        <li><label><input type="checkbox"><span><code>ros2 topic info /tf</code> 의 Type 이 <code>tf2_msgs/msg/TFMessage</code> 이고, Publisher count 가 <strong>1 이 아니어도</strong> 정상인 이유를 말할 수 있다 (2-5)</span></label></li>
         <li><label><input type="checkbox"><span><code>hardware/INVENTORY.md</code> 의 섀시 실측값(바퀴 반지름·간격, 라이다/카메라 장착 위치)을 <strong>자로 재서</strong> 채웠다</span></label></li>
         <li><label><input type="checkbox"><span>그 값을 <code>rpi5_robot.urdf.xacro</code> 의 property 에 <strong>미터 단위</strong>로 반영하고 Pi 로 동기화했다</span></label></li>
         <li><label><input type="checkbox"><span><code>xacro … &gt; /tmp/robot.urdf</code> 와 <code>check_urdf</code> 가 오류 없이 통과하고, 루트가 <code>base_footprint</code> 다</span></label></li>
@@ -406,6 +520,14 @@ ros2 run tf2_ros tf2_monitor odom base_link   # 특정 경로만 (06 이후)</co
       <div class="progress-bar"><span></span></div>
 
       <h2>🤔 이해 확인</h2>
+      <details class="quiz"><summary>0-A. <code>ros2 node list</code> 에 TF 노드가 없는데 TF 는 어떻게 동작하는가?</summary>
+        <div class="ans">TF 는 노드가 아니라 <strong>약속</strong>이기 때문이다 — 메시지 타입(<code>tf2_msgs/msg/TFMessage</code>), 토픽 이름(<code>/tf</code>·<code>/tf_static</code>), QoS 세 가지.
+        좌표계 관계를 아는 노드들이 각자 자기 엣지를 그 약속대로 발행하고, 필요한 노드가 <code>tf2_ros::Buffer</code> 로 모아 조회한다.
+        모아서 변환을 만들어 주는 중앙 주체는 없다.</div></details>
+      <details class="quiz"><summary>0-B. <code>/cmd_vel</code> 은 발행자가 둘이면 사고인데 <code>/tf</code> 는 왜 셋이어도 되는가?</summary>
+        <div class="ans">메시지가 담는 것이 다르다. <code>/cmd_vel</code> 한 장은 로봇 <strong>전체</strong>의 속도 명령이라 두 개를 이어 붙일 방법이 없고 마지막 값이 이긴다.
+        <code>/tf</code> 한 장은 트리의 <strong>조각</strong>(엣지)이라 서로 다른 칸이면 합쳐진다.
+        단 <strong>같은 칸</strong>(같은 자식 프레임)을 둘이 쏘면 <code>/tf</code> 도 똑같이 사고다 — 2-1 의 철칙이고 3-8 에서 재현한다.</div></details>
       <details class="quiz"><summary>1. SLAM 이 <code>map → base_link</code> 를 직접 발행하면 안 되는 이유는?</summary>
         <div class="ans">SLAM 의 위치 보정은 <strong>불연속적</strong>(루프 클로저 시 위치가 갑자기 점프)이다. 제어기가 이 값을 쓰면 로봇이 순간이동한 것처럼 보여 제어가 폭주한다.
         그래서 보정량은 <code>map → odom</code> 에 넣고, 제어기는 연속적인 <code>odom → base_link</code> 를 쓴다. 두 변환을 곱하면 결국 map 기준 위치가 나온다.</div></details>
