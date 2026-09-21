@@ -63,9 +63,9 @@ ros2 node  list | grep tf     # →  (없음)                    ← TF 노드�
       <h3>1-2. 무엇이 흐르는가 — 메시지의 구조</h3>
       <p>포맷은 <strong>엄격하게 고정</strong>이다. ROS 2 는 타입이 있는 pub/sub 이라, 타입이 맞지 않으면 발행자와 구독자가 <em>서로 보이지도 않는다</em>.</p>
       <pre><code class="lang-yaml">tf2_msgs/msg/TFMessage
-└── geometry_msgs/TransformStamped[] transforms   ← 배열. 한 메시지에 엣지 여러 개
+└── geometry_msgs/TransformStamped[] transforms   ← 배열. 한 메시지에 변환 여러 개
 
-    geometry_msgs/TransformStamped                ← 트리의 엣지 한 개 + 시각
+    geometry_msgs/TransformStamped                ← 변환 한 개 = 부모·자식 한 쌍 + 시각
     ├── std_msgs/Header header
     │   ├── builtin_interfaces/Time stamp         언제 시점의 관계인가
     │   └── string frame_id                       부모 프레임 이름   예) "odom"
@@ -74,9 +74,25 @@ ros2 node  list | grep tf     # →  (없음)                    ← TF 노드�
         ├── Vector3    translation  (x, y, z)     이동, 단위 m
         └── Quaternion rotation  (x, y, z, w)     회전</code></pre>
       <p>필드의 <strong>이름·타입·개수는 고정</strong>이고 <strong>값만</strong> 각 노드가 채운다. 3-10 의 C++ 코드가 이 필드를 하나씩 채우는 모습이다.</p>
-      <div class="callout why"><span class="ct">여기서 가장 중요한 한 가지 — 발행되는 것은 <em>트리가 아니라 엣지 낱개</em>다</span>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>ROS 2 용어</th><th>실체</th></tr></thead>
+        <tbody>
+          <tr><td><strong>frame</strong> (좌표계)</td><td>이름 그 자체. <code>"base_link"</code> 같은 <strong>문자열</strong></td></tr>
+          <tr><td><strong>parent frame</strong></td><td><code>header.frame_id</code> 에 적히는 프레임</td></tr>
+          <tr><td><strong>child frame</strong></td><td><code>child_frame_id</code> 에 적히는 프레임</td></tr>
+          <tr><td><strong>transform</strong> (변환)</td><td>그 둘 사이의 관계 = <code>TransformStamped</code> 한 개</td></tr>
+          <tr><td><strong>tf2 tree</strong></td><td>tf2 가 변환들을 모아 유지하는 트리</td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="callout why"><span class="ct">여기서 가장 중요한 한 가지 — 발행되는 것은 <em>트리가 아니라 변환 한 개씩</em>이다</span>
         <p><code>TransformStamped</code> 하나는 <strong>부모 하나 ↔ 자식 하나</strong>의 관계일 뿐이다. 트리 전체를 담는 메시지는 존재하지 않는다.
-        각 발행자는 자기가 아는 한 칸만 쏘고, <strong>트리는 받는 쪽 메모리 안에서만 조립된다</strong>(1-4 · 2-5).</p>
+        각 발행자는 자기가 아는 변환만 쏘고, <strong>트리는 받는 쪽 메모리 안에서만 조립된다</strong>(1-4 · 2-5).</p>
+        <p><strong>"프레임을 발행한다"고 말해도 된다.</strong> tf2 의 규칙이 <em>"한 프레임의 부모는 하나뿐"</em>(2-1)이므로,
+        루트를 뺀 모든 프레임은 <strong>자기를 <code>child_frame_id</code> 로 갖는 변환과 정확히 1:1</strong> 이다.
+        ROS 2 공식 튜토리얼 제목도 <em>"Adding a frame"</em> 인데 실제로 하는 일은 <code>TransformStamped</code> 를 발행하는 것이다.
+        둘이 갈리는 자리는 하나뿐 — <strong>부모 프레임은 발행 대상이 아니라 이름으로 참조될 뿐이다.</strong>
+        <code>map</code> 과 <code>odom</code> 이 URDF 에 없어도 트리에 나타나는 이유가 그것이다.</p>
         <p>그리고 프레임 이름은 그냥 문자열이다. <code>"map"</code> 이 무엇을 뜻하는지는 <strong>이 포맷 어디에도 없다</strong> —
         그건 REP-105 라는 별도의 합의이고(2-1), TF2 자체는 <code>"banana"</code> 도 똑같이 유효한 이름으로 받아들인다.</p>
       </div>
@@ -124,7 +140,7 @@ ros2 node  list | grep tf     # →  (없음)                    ← TF 노드�
       <div class="tbl"><table>
         <thead><tr><th></th><th><code>odom → base_link</code></th><th><code>map → odom</code></th></tr></thead>
         <tbody>
-          <tr><td>발행자</td><td>휠 오도메트리 (mcu_bridge)<br><span class="small">표기는 REP-105 기준. 실제 발행 엣지는 <code>odom → base_footprint</code> — URDF 루트가 그것이기 때문이다 (06 §2-5 ④)</span></td><td>SLAM / AMCL</td></tr>
+          <tr><td>발행자</td><td>휠 오도메트리 (mcu_bridge)<br><span class="small">표기는 REP-105 기준. 실제로 발행하는 변환은 <code>odom → base_footprint</code> — URDF 루트가 그것이기 때문이다 (06 §2-5 ④)</span></td><td>SLAM / AMCL</td></tr>
           <tr><td>성질</td><td><strong>연속적</strong> (튀지 않음)</td><td><strong>불연속</strong> (보정 시 튐)</td></tr>
           <tr><td>정확도</td><td>단기 정확, 장기 누적오차</td><td>장기 정확</td></tr>
           <tr><td>용도</td><td>제어 루프 (부드러워야 함)</td><td>전역 위치</td></tr>
@@ -219,7 +235,7 @@ ros2 node  list | grep tf     # →  (없음)                    ← TF 노드�
         <thead><tr><th></th><th>보통 토픽 (<code>/scan</code>)</th><th><code>/tf</code></th></tr></thead>
         <tbody>
           <tr><td>발행자 수</td><td>보통 <strong>1</strong> (드라이버 하나)</td><td><strong>여럿</strong> — 06 이후 3개 (아래)</td></tr>
-          <tr><td>메시지가 담는 것</td><td><strong>전체</strong> — 그 순간의 스캔 한 장</td><td><strong>조각</strong> — 트리의 엣지 한 칸</td></tr>
+          <tr><td>메시지가 담는 것</td><td><strong>전체</strong> — 그 순간의 스캔 한 장</td><td><strong>조각</strong> — 부모·자식 한 쌍의 변환</td></tr>
           <tr><td>발행자가 여럿이면</td><td>사고. 마지막 값이 이긴다</td><td>정상. 겹치지만 않으면 이어 붙는다</td></tr>
           <tr><td>구독 방법</td><td>콜백을 직접 등록</td><td><code>TransformListener</code> 가 대신 구독 → <code>Buffer</code></td></tr>
           <tr><td>언제 읽는가</td><td>메시지가 <strong>도착할 때</strong></td><td>내가 <strong>조회할 때</strong> (<code>lookupTransform</code>)</td></tr>
@@ -250,7 +266,7 @@ ros2 node  list | grep tf     # →  (없음)                    ← TF 노드�
       <p>그래서 노드는 <code>/tf</code> 를 직접 구독하지 않고, 생성자에 <code>Buffer</code> 와 <code>TransformListener</code> 를 한 번 만들어 두고 필요할 때 <strong>당겨 온다</strong>(3-10 (b)).
       <strong>버퍼는 중앙에 하나가 아니라 소비하는 노드마다 하나씩</strong>이다 — 그래서 그 두 줄이 노드마다 반복된다.</p>
       <p>조회 결과도 같은 <code>TransformStamped</code> 다. 트리에 실제로 없는 쌍을 물어도 된다 — 08d 가 <code>camera_optical_link ← laser_link</code> 를 조회하는데,
-      URDF 에 그 엣지는 없다. <code>laser_link → base_link → camera_link → camera_optical_link</code> 를 <strong>조회하는 순간 곱해서</strong> 만들어 준다.</p>
+      URDF 에 그 변환은 없다. <code>laser_link → base_link → camera_link → camera_optical_link</code> 를 <strong>조회하는 순간 곱해서</strong> 만들어 준다.</p>
 
       <h4>③ 예외 하나 — 토픽 그대로 쓰는 곳</h4>
       <p><code>foxglove_bridge</code> 는 조회하지 않는다. <code>/tf</code>·<code>/tf_static</code> 을 <strong>토픽 그대로 구독해서 통째로</strong> Mac 으로 넘기고, 트리 조립은 Foxglove Studio 가 한다.
@@ -565,11 +581,11 @@ ros2 run tf2_ros tf2_monitor odom base_link   # 특정 경로만 (06 이후)</co
       <h2>🤔 이해 확인</h2>
       <details class="quiz"><summary>0-A. <code>ros2 node list</code> 에 TF 노드가 없는데 TF 는 어떻게 동작하는가?</summary>
         <div class="ans">TF 는 노드가 아니라 <strong>약속</strong>이기 때문이다 — 메시지 타입(<code>tf2_msgs/msg/TFMessage</code>), 토픽 이름(<code>/tf</code>·<code>/tf_static</code>), QoS 세 가지.
-        좌표계 관계를 아는 노드들이 각자 자기 엣지를 그 약속대로 발행하고, 필요한 노드가 <code>tf2_ros::Buffer</code> 로 모아 조회한다.
+        좌표계 관계를 아는 노드들이 각자 자기가 아는 변환을 그 약속대로 발행하고, 필요한 노드가 <code>tf2_ros::Buffer</code> 로 모아 조회한다.
         모아서 변환을 만들어 주는 중앙 주체는 없다.</div></details>
       <details class="quiz"><summary>0-B. <code>/cmd_vel</code> 은 발행자가 둘이면 사고인데 <code>/tf</code> 는 왜 셋이어도 되는가?</summary>
         <div class="ans">메시지가 담는 것이 다르다. <code>/cmd_vel</code> 한 장은 로봇 <strong>전체</strong>의 속도 명령이라 두 개를 이어 붙일 방법이 없고 마지막 값이 이긴다.
-        <code>/tf</code> 한 장은 트리의 <strong>조각</strong>(엣지)이라 서로 다른 칸이면 합쳐진다.
+        <code>/tf</code> 한 장은 <strong>부모·자식 한 쌍의 변환</strong>이라 서로 다른 쌍이면 합쳐진다.
         단 <strong>같은 칸</strong>(같은 자식 프레임)을 둘이 쏘면 <code>/tf</code> 도 똑같이 사고다 — 2-1 의 철칙이고 3-8 에서 재현한다.</div></details>
       <details class="quiz"><summary>1. SLAM 이 <code>map → base_link</code> 를 직접 발행하면 안 되는 이유는?</summary>
         <div class="ans">SLAM 의 위치 보정은 <strong>불연속적</strong>(루프 클로저 시 위치가 갑자기 점프)이다. 제어기가 이 값을 쓰면 로봇이 순간이동한 것처럼 보여 제어가 폭주한다.
