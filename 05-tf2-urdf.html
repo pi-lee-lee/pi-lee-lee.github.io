@@ -136,8 +136,10 @@ ros2 node  list | grep tf     # →  (없음)                    ← TF 노드�
       (<a href="https://ros.org/reps/rep-0105.html">REP-105</a>)다. 두 변환을 곱하면 결국 <code>map</code> 기준 위치가 나오므로 정보는 잃지 않는다.</p>
 
       <div class="callout warn"><span class="ct">철칙: 하나의 좌표계에는 부모가 하나뿐이다</span>
-        <p>두 노드가 같은 자식 프레임의 TF 를 동시에 발행하면 TF 트리가 떨리면서 모든 것이 망가진다. 06 단계의 <code>mcu_bridge</code> 에 <code>publish_tf</code> 파라미터가 있는 이유가 이것이다 —
-        나중에 IMU 를 융합하는 EKF 가 <code>odom → base_footprint</code> 를 대신 발행하게 되면 브리지 쪽을 꺼야 한다. 3-8 에서 이 떨림을 직접 재현해 본다.</p>
+        <p>두 노드가 같은 자식 프레임의 TF 를 발행하면 TF2 는 <strong>마지막으로 들어온 값</strong>을 쓴다. 어느 쪽이 맞는지 판단하지 않고, 경고도 내지 않는다.
+        <code>/tf</code>(동적)면 둘이 계속 쏘므로 값이 <strong>번갈아 나타나고</strong>(떨림), <code>/tf_static</code>이면 <strong>조용히 한쪽 값으로 고정</strong>된다 — 후자가 더 위험하다. 3-8 에서 둘을 구분해 본다.</p>
+        <p>06 단계의 <code>mcu_bridge</code> 에 <code>publish_tf</code> 파라미터가 있는 이유가 이것이다 —
+        나중에 IMU 를 융합하는 EKF 가 <code>odom → base_footprint</code> 를 대신 발행하게 되면 브리지 쪽을 꺼야 한다.</p>
       </div>
 
       <h3>2-2. 좌표 규약 — 외워야 하는 것</h3>
@@ -389,8 +391,28 @@ ros2 run tf2_tools view_frames               # 트리에 test_link 가 매달려
   --x 0 --y 0 --z 0 --yaw 0 --pitch 0 --roll 0 \
   --frame-id laser_link --child-frame-id test_link
 
-ros2 run tf2_ros tf2_echo base_footprint test_link   # 값이 두 가지 사이에서 흔들리거나 경고가 섞인다</code></pre>
-      <p>이것이 "TF 가 떨린다"의 실체다. 어느 쪽이 맞는지 TF2 는 판단하지 않고 <strong>마지막으로 들어온 부모</strong>를 쓴다. 실험이 끝나면 세 터미널을 모두 <kbd>Ctrl</kbd>+<kbd>C</kbd> 로 끝낸다.</p>
+ros2 run tf2_ros tf2_echo base_footprint test_link   # 값이 한 번 바뀌고, 그 값에서 멈춘다</code></pre>
+      <p>TF2 는 어느 쪽이 맞는지 판단하지 않고 <strong>마지막으로 들어온 부모</strong>를 쓴다. 그런데 무엇이 관찰되는지는 <strong>정적이냐 동적이냐에 따라 전혀 다르다</strong> — 이 실험의 핵심이다.</p>
+      <div class="callout warn"><span class="ct">정적 중복은 떨리지 않는다 — 조용히 틀린다</span>
+        <p><code>/tf_static</code> 은 <strong>한 번만</strong> 발행된다. 두 발행자가 각각 한 번씩 쏘고 나면 새 메시지가 없으니 덮어쓸 일도 없다.
+        그래서 값이 <strong>한 번 바뀌고 그대로 고정</strong>된다. 오가며 흔들리지 않는다.</p>
+        <p>직접 확인해 보라 — 터미널 C 를 <kbd>Ctrl</kbd>+<kbd>C</kbd> 로 끝내고 다시 <code>tf2_echo</code> 를 보면 <strong>값이 원래대로 돌아오지 않는다.</strong>
+        <strong>tf2 에는 변환을 취소하는 수단이 없다.</strong> 버퍼에 한 번 들어간 정적 변환은 조회하는 노드를 재시작해야 사라진다.</p>
+        <p>에러도, 경고도, 떨림도 없다. <strong>그래서 정적 중복이 더 위험하다</strong> — 값만 조용히 틀린 채로 07~10 까지 따라간다.</p>
+      </div>
+      <p>반대로 <strong><code>/tf</code>(동적) 발행자가 둘이면 진짜로 떨린다.</strong> 둘 다 주기적으로 계속 쏘므로 매 발행마다 덮어쓰고, 조회할 때마다 다른 값이 나온다.
+      06 §3-10 의 상황이 그것이다 — 브리지와 EKF 가 <code>odom → base_footprint</code> 를 같이 쏘면 로봇 위치가 <strong>50 Hz 로</strong> 두 추정치 사이를 떤다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th></th><th>정적 중복 (이 실험)</th><th>동적 중복 (06 의 브리지 + EKF)</th></tr></thead>
+        <tbody>
+          <tr><td>증상</td><td>마지막 값으로 <strong>고정</strong></td><td>값이 <strong>번갈아</strong> 나타남 = 떨림</td></tr>
+          <tr><td>눈에 띄는가</td><td><strong>안 띈다</strong></td><td>띈다 — 로봇이 덜컥거린다</td></tr>
+          <tr><td>발행자를 종료하면</td><td><strong>안 사라진다</strong> (재시작 필요)</td><td>즉시 멎는다</td></tr>
+          <tr><td>위험도</td><td><strong>높다</strong> — 조용히 틀림</td><td>낮다 — 바로 보인다</td></tr>
+        </tbody>
+      </table></div>
+      <p>둘 다 <strong>같은 철칙 위반</strong>이다(2-1). 증상만 다를 뿐이다. 실험이 끝나면 세 터미널을 모두 <kbd>Ctrl</kbd>+<kbd>C</kbd> 로 끝내고,
+      <code>test_link</code> 가 남아 있으면 <code>tf2_echo</code> 쪽도 다시 띄운다.</p>
       <div class="callout tip"><span class="ct">static_transform_publisher 는 언제 실무에서 쓰는가</span>
         <p>URDF 를 고치기 전에 "센서를 여기에 달면 어떻게 보일까"를 빠르게 시험할 때, 또는 URDF 에 넣기 애매한 외부 장치(삼각대 위 카메라)를 붙일 때다. 로봇 몸에 고정된 것은 전부 URDF 에 넣는 것이 원칙이다 — 한 곳에서 관리되어야 하기 때문이다.</p>
       </div>
@@ -489,7 +511,8 @@ ament_target_dependencies(my_node rclcpp geometry_msgs tf2 tf2_ros tf2_geometry_
           <tr><td><code>extrapolation into the future</code></td><td>시계 불일치 또는 TF 발행이 느림</td><td><code>timedatectl</code>, <code>ros2 topic hz /tf</code></td></tr>
           <tr><td>로봇이 지면에 파묻힘 / 떠 있음</td><td><code>base_footprint → base_link</code> 의 z 값</td><td><code>wheel_radius</code> 확인</td></tr>
           <tr><td>스캔이 좌우 반전</td><td>라이다를 뒤집어 장착</td><td>URDF 에 <code>rpy="${PI} 0 0"</code> 또는 드라이버 <code>inverted:=true</code> (07)</td></tr>
-          <tr><td>TF 가 떨림</td><td><strong>두 노드가 같은 TF 를 발행</strong> (3-8 에서 재현한 것)</td><td><code>ros2 topic echo /tf</code> 로 발행자 확인, <code>view_frames</code> 의 Broadcaster 란</td></tr>
+          <tr><td>TF 가 떨림 (값이 번갈아 나타남)</td><td><strong>두 노드가 같은 <code>/tf</code> 를 발행</strong> — 동적 중복 (3-8)</td><td><code>ros2 topic echo /tf</code> 로 발행자 확인, <code>view_frames</code> 의 Broadcaster 란</td></tr>
+          <tr><td>떨리지는 않는데 값이 <strong>틀림</strong> (경고도 없음)</td><td><strong>정적 중복</strong> — <code>/tf_static</code> 을 둘이 발행했다. 발행자를 꺼도 버퍼에 남는다 (3-8)</td><td><code>ros2 topic echo /tf_static</code> 에 같은 <code>child_frame_id</code> 가 둘인지. 고친 뒤 <strong>조회하는 노드를 재시작</strong></td></tr>
           <tr><td>바퀴 링크가 트리에 없음</td><td><code>/joint_states</code> 발행자가 없음</td><td><code>ros2 topic hz /joint_states</code>, <code>use_fake_joints</code></td></tr>
           <tr><td>런치가 "Invalid parameter type" 으로 죽음</td><td><code>ParameterValue(..., value_type=str)</code> 누락</td><td>description.launch.py</td></tr>
         </tbody>
@@ -511,7 +534,7 @@ ros2 run tf2_ros tf2_monitor odom base_link   # 특정 경로만 (06 이후)</co
         <li><label><input type="checkbox"><span><code>ros2 topic info /tf_static -v</code> 에서 Durability 가 TRANSIENT_LOCAL 인 것을 보고 그 이유를 말할 수 있다</span></label></li>
         <li><label><input type="checkbox"><span>Foxglove 3D 패널에서 로봇 모델과 좌표축이 보이고, 라이다의 x(빨강)가 정면, 카메라 optical 의 z(파랑)가 렌즈 방향이다</span></label></li>
         <li><label><input type="checkbox"><span><code>static_transform_publisher</code> 로 <code>test_link</code> 를 붙여 <code>tf2_echo base_footprint test_link</code> 가 합성된 값을 내는 것을 봤다</span></label></li>
-        <li><label><input type="checkbox"><span>같은 자식에 부모를 둘 붙여 TF 가 떨리는 것을 재현하고, 종료했다</span></label></li>
+        <li><label><input type="checkbox"><span>같은 자식에 부모를 둘 붙여 보고, 정적 중복은 <strong>떨리지 않고 조용히 고정</strong>된다는 것과 발행자를 꺼도 <strong>값이 남는다</strong>는 것을 확인했다 (3-8)</span></label></li>
         <li><label><input type="checkbox"><span><code>use_fake_joints</code> 가 무엇을 대신하고 06 단계에서 왜 꺼야 하는지 설명할 수 있다</span></label></li>
         <li><label><input type="checkbox"><span>C++ 브로드캐스트/조회 코드(3-10)를 읽고, <code>lookupTransform</code> 의 인자 순서와 <code>try/catch</code> 가 필요한 이유를 말할 수 있다</span></label></li>
         <li><label><input type="checkbox"><span><code>map → odom → base_link</code> 의 역할 차이를 남에게 설명할 수 있다</span></label></li>
@@ -537,8 +560,10 @@ ros2 run tf2_ros tf2_monitor odom base_link   # 특정 경로만 (06 이후)</co
       <details class="quiz"><summary>3. <code>camera_optical_link</code> 가 따로 필요한 이유는?</summary>
         <div class="ans">로봇 좌표 규약(REP-103, x=앞)과 영상 처리 규약(OpenCV, z=광축)이 다르기 때문이다. 두 규약을 한 프레임에 섞으면 어느 쪽 코드가 봐도 축이 틀린다.
         그래서 두 프레임을 두고 그 사이 회전(rpy = −π/2, 0, −π/2)으로 연결한다.</div></details>
-      <details class="quiz"><summary>4. TF 가 미세하게 떨린다면 가장 먼저 무엇을 의심하는가?</summary>
-        <div class="ans"><strong>같은 자식 프레임을 두 노드가 동시에 발행</strong>하고 있는지. 예를 들어 mcu_bridge 가 <code>publish_tf:=true</code> 이고 동시에 robot_localization(EKF)도
+      <details class="quiz"><summary>4. TF 가 미세하게 떨린다면 가장 먼저 무엇을 의심하는가? 그리고 <strong>떨리지 않는데 값이 틀린</strong> 경우는?</summary>
+        <div class="ans">둘 다 <strong>같은 자식 프레임을 두 노드가 발행</strong>하는 것이다. 증상이 갈리는 이유는 <code>/tf</code> 는 계속 발행되고 <code>/tf_static</code> 은 한 번만 발행되기 때문이다 —
+        동적 중복은 값이 번갈아 나타나고, 정적 중복은 마지막 값으로 조용히 고정된다(발행자를 꺼도 남는다. 조회하는 노드를 재시작해야 한다).
+        떨리는 쪽의 예 — mcu_bridge 가 <code>publish_tf:=true</code> 이고 동시에 robot_localization(EKF)도
         <code>odom → base_footprint</code> 를 쏘는 경우, 또는 <code>joint_state_publisher</code> 와 mcu_bridge 가 둘 다 <code>/joint_states</code> 를 내는 경우. 한쪽을 꺼야 한다. 3-8 에서 직접 재현했다.</div></details>
       <details class="quiz"><summary>5. <code>/tf_static</code> 이 TRANSIENT_LOCAL 로 발행되는 이유는? VOLATILE 이면 무엇이 깨지는가?</summary>
         <div class="ans">고정 변환은 시작할 때 한 번만 발행된다. VOLATILE 이면 그 뒤에 뜬 구독자(SLAM, Foxglove, 나중에 띄운 내 노드)는 그 값을 영원히 받지 못해 <code>base_link → laser_link</code> 를 모른다.
