@@ -286,9 +286,29 @@ ros2 node  list | grep tf     # →  (없음)                    ← TF 노드�
         로봇이 한 바퀴(360도) 돌면 12.6도가 어긋난다. SLAM 이 이를 보정하려 애쓰다가 지도가 뭉개진다. <strong>"SLAM 지도가 휘어요"의 원인 1위</strong>가 이것이다.
         06 단계의 360도 회전 캘리브레이션으로 미세 조정하지만, 출발점은 자로 잰 값이어야 한다.</p>
         <p class="small">위 식 <code>Δθ = (Δd_right − Δd_left) / L</code> 은 <strong>2륜 차동구동</strong>의 정운동학이다.
-        우리 로봇은 4륜 스키드 스티어라 방향을 바꿀 때 바퀴가 옆으로 미끄러지므로, 이 식은 <strong>근사</strong>다.
-        그래서 <code>wheel_separation</code> 은 "재서 넣으면 끝나는 상수"가 아니라 출발점이고, 실제 회전 추정은 06 단계에서 IMU 로 보완한다
-        (06 §2-2 정운동학 · §3-9 회전 캘리브레이션 · §3-10 EKF 융합). <strong>05 에서 할 일은 자로 재서 넣는 것까지다.</strong></p>
+        우리 로봇은 4륜 스키드 스티어라 방향을 바꿀 때 바퀴가 옆으로 미끄러지므로 이 식은 <strong>근사</strong>이고,
+        <code>wheel_separation</code> 은 "재서 넣으면 끝나는 상수"가 아니라 <strong>출발점</strong>이다.
+        06 §3-9 의 360도 회전 캘리브레이션은 이 값을 물리 치수와 다른 <strong>"유효 축간 거리"</strong>로 조정하는 작업이다 — 슬립을 그 숫자 하나에 흡수시키는 것이다.
+        <strong>05 에서 할 일은 자로 재서 넣는 것까지다.</strong></p>
+      </div>
+
+      <div class="callout warn"><span class="ct">IMU 는 <em>각도</em>만 고쳐 준다 — 위치는 고쳐 주지 못한다</span>
+        <p>슬립은 두 가지를 동시에 망가뜨리는데, 고치는 수단이 서로 다르다.</p>
+        <div class="tbl"><table>
+          <thead><tr><th>슬립이 망가뜨리는 것</th><th>무엇이 고치는가</th></tr></thead>
+          <tbody>
+            <tr><td>회전각 (yaw)</td><td><strong>IMU 자이로 z</strong> — 06 §3-9 캘리브레이션, §3-10 EKF</td></tr>
+            <tr><td>위치 (x, y)</td><td>❗ <strong>IMU 로는 안 된다</strong> — 09 의 SLAM 스캔 매칭이 필요하다</td></tr>
+          </tbody>
+        </table></div>
+        <p>제자리 회전처럼 보여도 스키드 스티어는 실제 회전 중심이 기하 중심에 있지 않아 <strong>로봇이 조금씩 밀린다</strong>(3-3 의 ICR 이야기).
+        IMU 는 "얼마나 돌았는가"만 알려 줄 뿐 <strong>"얼마나 밀렸는가"는 모른다.</strong>
+        가속도계를 두 번 적분해 위치를 얻는 방법은 오차가 발산해서 실제로는 쓰지 못한다.</p>
+        <p>EKF(06 §3-10)도 마찬가지다. yaw 를 정확하게 만들어 <em>각도 오차가 위치로 번지는 것</em>은 크게 줄여 주지만,
+        슬립으로 직접 생긴 위치 오차 자체는 없애지 못한다 — <strong>그것을 관측하는 센서가 없기 때문이다.</strong></p>
+        <p><strong>위치 오차를 실제로 붙잡는 것은 09 의 SLAM 스캔 매칭이다.</strong> 그리고 이것이 2-1 에서 <code>map</code> 과 <code>odom</code> 을 나눈 이유와 정확히 같은 이야기다 —
+        <code>odom</code> 은 "단기 정확, 장기 누적오차", <code>map</code> 은 "장기 정확". <strong>스키드 스티어의 슬립은 그 누적오차를 키우는 주범이고, <code>map → odom</code> 이 그것을 흡수한다.</strong>
+        4륜을 고른 대가를 어디서 치르는지가 여기서 정해진다.</p>
       </div>
       <h4><code>base_link</code> 원점을 어디에 둘 것인가</h4>
       <p><strong>2륜 차동구동 로봇은 좌우 바퀴 축의 중점</strong>에 두는 것이 관례다. 이 점이 제자리 회전의 중심이기 때문에 운동학 수식이 가장 단순해진다.
