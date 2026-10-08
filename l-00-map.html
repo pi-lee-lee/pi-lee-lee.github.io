@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L0 · 라이다 한 대로 방에 대해 무엇을 알 수 있는가 — 라이다 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="l-00">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">L0 · 라이다 한 대로 방에 대해 무엇을 알 수 있는가</p>
+      <h1>라이다 한 대로 방에 대해 무엇을 알 수 있는가</h1>
+      <p class="lead">본편 <a href="07-lidar.html">07</a> 은 드라이버를 띄워 <code>/scan</code> 이 나오는 것까지를 맡는다. 이 가이드(l-00 ~ l-17)는 그 옆에 나란히 서서
+      <strong>전선 위의 바이트에서 시작해 "여기를 지나갈 수 있나"까지</strong> 열여덟 쪽을 간다 — 07 을 대체하지 않는다.
+      이 쪽은 코드를 한 줄도 쓰지 않는다. 대신 뒤의 열일곱 쪽이 전제하는 세 가지 — <strong>내 Pi 가 시리얼을 열 준비가 됐는가</strong>,
+      <strong>지금 가진 것으로 어느 쪽까지 갈 수 있는가</strong>, <strong>같은 사실을 어느 문서가 소유하는가</strong> — 를 표 세 장으로 만든다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>Pi 호스트에서 확인 명령 다섯이 전부 기대한 모양의 출력을 내고(안 나온 것은 "없으면" 칸의 차선을 적었다), 내 노트에 표 세 장이 있다 —
+        <strong>가진 것 × 갈 수 있는 쪽</strong>, <strong>소유표</strong>(이 사실은 07 · 08d · 09 · 09a · L 중 어느 쪽이 소유하는가), <strong>확인 기록표</strong>.
+        그리고 도구가 살 자리 <code>scripts/lidar_lab/</code> 가 Pi 에서 <code>ls</code> 로 보인다.</p>
+        <p><strong>이 쪽에 필요한 것</strong> — Pi 하나. <strong>라이다는 없어도 된다</strong> — 이 쪽은 <strong>명령으로</strong> 센서를 돌리지 않는다. 다만 §3-1-4 의 발동 확인에서 한 번 뽑았다 꽂고, <strong>꽂는 순간 머리가 돌 수 있다</strong>. 라이다가 손에 있으면 §2-5 끝의 상자를 <strong>먼저</strong> 읽는다.
+        <strong>없으면</strong> — Pi 가 아직 없으면 §1-3 의 표에서 "Mac 만" 행을 본다. 기록 파일 한 장이 있으면 순수 파이썬으로 도는 쪽들이 Mac 에서도 열린다(§2-1).
+        라이다가 없으면 l-01 부터 막히고, <code>.scan.jsonl</code> 한 장이 있으면 <strong>l-08 부터 다섯 쪽이 그대로 돈다</strong>.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag pi">Pi 호스트</span> <span class="tag mac">Mac</span>(편집)</div>
+        <div><span class="k">선행</span>없음. <a href="07-lidar.html">07</a> 을 이미 했으면 l-06 · l-07 이 쉬워질 뿐, <strong>순서를 바꾸지 않는다</strong></div>
+        <div><span class="k">채우는 INVENTORY 칸</span>없음 — 이 쪽은 <code>hardware/INVENTORY.md</code> 를 <strong>읽기만</strong> 한다</div>
+        <div><span class="k">이 쪽이 요구하는 수학</span>없음 — 출발선은 §2-5 가 긋는다</div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h</div>
+      </div>
+
+      <p class="small">이 가이드의 표와 빈칸(<code>____</code>)은 화면에서 채워지지 않는다(정적 HTML 은 입력을 저장하지 못한다 — 저장되는 것은 체크박스뿐이다).
+      종이든 파일이든 <strong>노트 하나</strong>를 정해 거기에 옮겨 적는다. 이 쪽의 표 세 장이 그 노트의 첫 장이고, 뒤의 쪽들이 "노트에 적는다"고 할 때의 그 노트다.</p>
+
+      <h2 id="overview">1. 개요 — 열여덟 쪽이 놓인 모양</h2>
+      <p>이 가이드가 주는 것은 완성된 인식 코드가 아니라 <strong>도출과 관찰 수단</strong>이다. 쪽마다 함수의 경계(골격)와 "내 값이 맞는지"를 가르는 판정 수단을 주고, 본문은 내가 채운다.
+      한 쪽 = 한 번의 실행과 한 번의 관찰이고, <strong>번호 순서가 하는 순서다</strong>.</p>
+      <p>이 쪽에서 처음 나오는 말을 한 줄씩 정해 둔다. 뒤의 쪽들은 이 낱말을 같은 뜻으로만 쓴다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>말</th><th>뜻</th></tr></thead>
+        <tbody>
+          <tr><td><strong>경로 A</strong>(Pi 호스트)</td><td>Pi 의 리눅스에서 파이썬이 <code>/dev/lidar</code> 를 직접 연다. ROS 를 거치지 않으므로 <strong>바이트가 보인다</strong>. 프롬프트 표기는 <code>pi$</code></td></tr>
+          <tr><td><strong>경로 B</strong>(컨테이너)</td><td>Docker 안의 ROS 2 드라이버(<code>rplidar_ros</code>)가 같은 케이블을 열고 <code>/scan</code> 을 낸다. <strong>바이트는 안 보이고 메시지가 보인다</strong>. 프롬프트는 <code>ros2$</code></td></tr>
+          <tr><td>벤치</td><td>책상 위. 센서는 차체에 달려 있지 않다. l-00 ~ l-17 이 전부 여기서 끝난다</td></tr>
+          <tr><td><a href="09a-assembly-gate.html">관문 09a</a></td><td>조립·실측 관문. 차체에 달아야만 얻는 값(장착 위치·방향·가림)을 닫는 자리. <strong>L 은 여기에 들어가지 않는다</strong></td></tr>
+          <tr><td><strong>기준 형식</strong> <code>.scan.jsonl</code></td><td>이 가이드가 정한 기록 파일 형식. 한 줄 = 한 바퀴. l-04 가 만들고 l-08 ~ l-16 이 읽는다(§2-3)</td></tr>
+          <tr><td><strong>무반사</strong></td><td>거리를 <strong>못 잰</strong> 방향. "아무것도 없는 방향"과 <strong>다르다</strong> — 이 둘을 섞는 것이 l-09 의 가장 큰 함정이다</td></tr>
+          <tr><td>미지 / 자유 / 점유</td><td>격자 한 칸이 가질 수 있는 세 상태(l-09). "빈 칸"이라고 부르면 <strong>미지</strong>와 <strong>자유</strong>가 섞인다</td></tr>
+          <tr><td><strong>회전수</strong></td><td>센서 머리가 초당 몇 바퀴 도는가. 데이터시트의 typical 은 <strong>5.5 Hz(주기 약 182 ms)</strong> 이고, 그 182 ms 가 뒤의 모든 실시간 판정의 예산이 된다. 드라이버 파라미터 <code>scan_frequency</code> 와 <strong>같은 말이 아니다</strong>(l-04 · l-07 이 가른다)</td></tr>
+          <tr><td>값의 세 상태</td><td><code>____</code>(모른다) · <code>NOMINAL(&lt;출처&gt;)</code>(출처 있는 임시값) · <code>MEASURED(&lt;날짜&gt;, &lt;방법&gt;)</code>(이 프로젝트에서 잰 값) — <code>hardware/INVENTORY.md</code> 머리말의 규약이다</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3 id="s1-1">1-1. 두 줄기 — 어느 쪽이 어느 쪽의 산출물을 쓰는가</h3>
+      <pre class="diagram"><code>[A 연결]  라이다 + Pi 가 필요하다.  전선 위의 바이트에서 한 바퀴까지
+  l-00 지도 ─► l-01 살아 있는가 ─► l-02 기기에게 묻는다 ─► l-03 점 하나 ─► l-04 한 바퀴 ─► l-05 대역폭·모드
+
+    l-04 가 만드는 것 = 기록 파일 한 장 (.scan.jsonl)   ← 여기서 줄기가 둘로 갈린다
+
+[줄기 1 · ROS 로 올라간다]  컨테이너 + 07 이 필요하다.  L 에서 이 둘뿐이다
+  l-05 ─► l-06 세 개의 입구 ─► l-07 두 경로가 서로를 채점한다
+
+[줄기 2 · 기하로 올라간다 · B 공간]  기록 파일 한 장이면 돈다
+  l-04 의 기록 ─► l-08 점을 방으로 ─► l-09 광선과 격자
+                                  ─► l-10 덩어리 ─► l-11 선분·코너 ─► l-12 통로 폭
+                                  ─► l-13 두 장의 차 ─► l-14 정합        (이 둘은 여러 바퀴가 든 기록)
+  l-04 · l-08 · l-10 ─► l-15 착시와 재질        (살아 있는 센서가 필요하다)
+
+[C 판정]  도구를 노드로 올리고 내 라이다를 판정한다
+  l-09 · l-11 · l-06 ─► l-16 도구를 노드로 ─► l-17 라이다 벤치 수용
+  l-17 ─► [ 관문 09a  조립·실측 ] ─► 본편 09 SLAM·Nav2</code></pre>
+      <p>이 그림은 순서를 바꾸라는 것이 아니라, <strong>부품이나 환경이 늦게 올 때 기다리는 동안 갈 수 있는 다른 차선</strong>을 알려 주는 용도다.
+      한 가지만 먼저 짚어 둔다 — <strong>컨테이너를 요구하는 것은 l-06 · l-07 · l-16 셋뿐이고, 07 을 선행으로 갖는 것은 l-06 · l-07 둘뿐이다.</strong>
+      나머지 열다섯 쪽은 기록 파일 한 장이면 돈다. 이것이 이 가이드를 07 과 나란히 세울 수 있는 이유이고, §1-3 의 표가 그 결과다.</p>
+
+      <h3 id="s1-2">1-2. 열여덟 쪽 한눈에 — 쪽마다 끝나면 보이는 것</h3>
+      <p class="small">이 쪽(l-00)이 이 가이드의 첫 쪽이다. <strong>l-01 · l-02 · l-03 까지 쓰였고</strong> 그 셋만 링크다 — 나머지는 아직 쓰이지 않아 글자로만 적는다.
+      배지: <span class="tag pi">Pi 호스트</span> 경로 A · <span class="tag cli">컨테이너</span> 경로 B · <span class="tag bench">벤치</span> 살아 있는 센서를 책상에서 돌린다 ·
+      <span class="tag sim">기록 파일</span> <strong>라이다 없이 기록 파일 한 장으로 닫힌다</strong> · <span class="tag py">Python</span> · <span class="tag cpp">C++</span> · <span class="tag mac">Mac</span>.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>쪽</th><th>끝나면 눈에 보이는 것</th><th>환경 <span class="small">(계획 기준)</span></th></tr></thead>
+        <tbody>
+          <tr><td>l-00 지도와 준비</td><td>(이 쪽) 확인 명령 다섯의 결과, 표 세 장, <code>scripts/lidar_lab/</code> 가 Pi 에서 보인다</td><td><span class="tag pi">Pi 호스트</span></td></tr>
+          <tr><td><a href="l-01-link.html">l-01</a> 살아 있는가</td><td>DTR 한 줄로 머리가 돌고 멈춘다. 초당 들어온 바이트를 세어 회선 용량과 견준다. 센서가 앞으로 여섯 쪽 동안 움직이지 않을 자리를 만든다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag bench">벤치</span> <span class="tag py">Python</span></td></tr>
+          <tr><td><a href="l-02-device-id.html">l-02</a> 기기에게 묻는다</td><td>명령 한 번을 보내 내 기기의 model · firmware · hardware · serial 을 읽는다. 일부러 <code>bad descriptor</code> 를 낸다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag bench">벤치</span> <span class="tag py">Python</span></td></tr>
+          <tr><td><a href="l-03-one-point.html">l-03</a> 5바이트를 손으로 판다</td><td>바이트 다섯 개가 (각도, 거리, 품질)이 되는 것을 손으로 따라가고, 손을 30 cm 앞에 대면 그 방향의 거리가 변한다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag bench">벤치</span> <span class="tag py">Python</span></td></tr>
+          <tr><td><a href="l-04-one-turn.html">l-04</a> 한 바퀴와 기록 파일</td><td>점의 흐름이 한 바퀴 단위로 잘리고, 회전당 점 수 · 각도 간격 · 회전수가 <strong>내 숫자</strong>로 나온다. 첫 <code>.scan.jsonl</code> 이 생긴다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag bench">벤치</span> <span class="tag py">Python</span></td></tr>
+          <tr><td><a href="l-05-bandwidth-modes.html">l-05</a> 왜 점이 이것뿐인가</td><td>회선 용량에서 "한 바퀴에 점이 몇 개까지 가능한가"를 산수로 도출하고, 기기에게 지원 모드 목록을 직접 묻는다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag bench">벤치</span> <span class="tag py">Python</span></td></tr>
+          <tr><td><a href="l-06-three-sources.html">l-06</a> 세 개의 입구</td><td>파일 · 시리얼 · <code>/scan</code> 세 입구가 같은 모양으로 읽힌다. 같은 포트를 둘이 열 때 무엇이 나는지 본다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag cli">컨테이너</span> <span class="tag bench">벤치</span></td></tr>
+          <tr><td><a href="l-07-cross-verify.html">l-07</a> 두 경로가 서로를 채점한다</td><td>같은 장면을 경로 A 와 경로 B 로 따로 재서 견준다. 다르면 <strong>센서가 나쁜지 내 도구가 나쁜지</strong>를 가른다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag cli">컨테이너</span> <span class="tag bench">벤치</span></td></tr>
+          <tr><td><a href="l-08-floor-plan.html">l-08</a> 점을 방으로</td><td>극좌표 점이 평면도가 된다. 각도가 커지는 방향을 <strong>관찰로</strong> 정한다(전제하지 않는다)</td><td><span class="tag pi">Pi 호스트</span> <span class="tag sim">기록 파일</span> <span class="tag py">Python</span></td></tr>
+          <tr><td><a href="l-09-occupancy.html">l-09</a> 광선과 격자 한 장</td><td>광선 하나가 지나간 칸은 자유, 끝은 점유, 뒤는 미지가 된다. 격자 한 장이 그림으로 나온다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag sim">기록 파일</span> <span class="tag py">Python</span></td></tr>
+          <tr><td><a href="l-10-clusters.html">l-10</a> 덩어리로 자르기</td><td>점들이 몇 개의 물건으로 갈린다. 문턱을 바꾸면 한 물건이 둘로 쪼개지는 것을 본다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag sim">기록 파일</span> <span class="tag py">Python</span></td></tr>
+          <tr><td><a href="l-11-lines.html">l-11</a> 선분과 코너</td><td>벽이 선분 몇 개로 줄고, 코너 좌표가 줄자와 맞는다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag sim">기록 파일</span> <span class="tag py">Python</span></td></tr>
+          <tr><td><a href="l-12-clearance.html">l-12</a> 벽까지의 거리와 통로 폭</td><td>"벽까지의 거리"가 <strong>세 가지 다른 값</strong>이라는 것을 같은 장면에서 본다. 통로를 지나갈 수 있는지 판정한다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag sim">기록 파일</span> <span class="tag py">Python</span></td></tr>
+          <tr><td><a href="l-13-motion.html">l-13</a> 두 장의 차</td><td>두 바퀴의 차에서 움직인 것만 남는다. 센서를 살짝 건드리면 차가 방 전체로 번지는 것을 본다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag bench">벤치</span> <span class="tag py">Python</span></td></tr>
+          <tr><td><a href="l-14-alignment.html">l-14</a> 정합의 원리</td><td>센서를 손으로 옮겼을 때 그 이동량을 두 스캔에서 되찾는다. 멀리서 시작하면 발산하는 것을 본다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag bench">벤치</span> <span class="tag py">Python</span></td></tr>
+          <tr><td><a href="l-15-illusions.html">l-15</a> 착시 셋과 재질</td><td>유리 · 거울 · 천 · 기울기에서 무엇이 보이고 무엇이 안 보이는지를 <strong>내 방에서</strong> 재서 적는다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag bench">벤치</span> <span class="tag py">Python</span></td></tr>
+          <tr><td><a href="l-16-node.html">l-16</a> 도구를 노드로</td><td>같은 기록 파일에 파이썬과 C++ 이 같은 답을 낸다. 노드가 결과를 발행하고, 콜백이 한 바퀴 주기 안에 끝난다</td><td><span class="tag cli">컨테이너</span> <span class="tag cpp">C++</span></td></tr>
+          <tr><td><a href="l-17-acceptance.html">l-17</a> 라이다 벤치 수용</td><td>줄자 여러 점으로 거리 계통 오차를 fit 하고, <strong>내가 정한 합격선</strong>으로 내 라이다를 판정한다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag bench">벤치</span></td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">⚠ 셋째 열은 <strong>아직 쓰이지 않은 쪽에 대해서는 설계 계획의 예상</strong>이다 — <strong>정본은 각 쪽 자신의 <code>.meta</code></strong> 이고, 열면 다를 수 있다. 그리고 기하 다섯 쪽(l-08 ~ l-12)은 이 열에 적힌 것 <strong>외에 Mac 에서도 돈다</strong>(§1-3 · §2-1 의 상자).</p>
+      <p class="small">l-13 · l-14 는 <strong>연속된 여러 바퀴가 든 기록 파일</strong>이 있으면 그 실습만 라이다 없이 닫힌다 — 그 쪽의 해당 실습 제목에 <span class="tag sim">기록 파일</span> 이 붙는다.
+      l-15 는 <strong>살아 있는 센서가 있어야 한다</strong>(천을 들이대고 기울이고 돌리는 쪽이라 기록 파일로는 못 한다).</p>
+
+      <h3 id="s1-3">1-3. 가진 것 × 갈 수 있는 쪽</h3>
+      <p>위에서 아래로 "하나씩 더 가질 때마다" 무엇이 열리는지를 적은 표다. 실습 B(§3-2)에서 "보유" 칸을 채운 뒤 이 표로 돌아와 <strong>내가 지금 서 있는 행</strong>을 짚는다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>가진 것</th><th>끝낼 수 있는 쪽</th><th>막히는 것</th></tr></thead>
+        <tbody>
+          <tr><td>Mac 만 (기록 파일도 없다)</td><td>읽기만. 이 쪽의 §1 · §2 를 읽고 §3-2 · §3-3 의 표 두 장은 채울 수 있다</td><td>확인 명령은 Pi 에서 돈다. ⚠ <strong>Mac 에서 <code>ros2</code> · <code>colcon</code> · <code>docker</code> 를 돌리지 않는다</strong>(이 프로젝트의 규칙)</td></tr>
+          <tr><td>Mac + <code>.scan.jsonl</code> 한 장</td><td><strong>l-08 · l-09 · l-10 · l-11 · l-12</strong> — 기하 다섯 쪽은 ROS 를 <code>import</code> 하지 않는 순수 파이썬이라 Mac 의 <code>python3</code> 로 그대로 돈다(§2-1 의 상자)</td><td>l-01 ~ l-07 · l-13 ~ l-17. 그리고 <strong>내 기기의 값</strong>은 이 길로 얻을 수 없다 — 알고리즘을 돌려 보는 연습이다</td></tr>
+          <tr><td>Pi (라이다 없음, 기록 파일도 없음)</td><td>l-00</td><td>l-01 부터</td></tr>
+          <tr><td>Pi + <code>.scan.jsonl</code> 한 장</td><td><strong>l-08 · l-09 · l-10 · l-11 · l-12</strong> — 공간 인식 다섯 쪽이 전부 돈다</td><td>l-01 ~ l-07(기기 필요) · l-13 · l-14(연속 스캔 필요) · l-15(살아 있는 센서) · l-17(줄자 대조)</td></tr>
+          <tr><td>Pi + <strong>여러 바퀴가 든</strong> 기록</td><td>위 + <strong>l-13 · l-14</strong></td><td>위와 같음</td></tr>
+          <tr><td>Pi + 라이다</td><td>l-01 ~ l-05 · l-15</td><td>l-06 · l-07(컨테이너·07 필요) · l-16(컨테이너 필요)</td></tr>
+          <tr><td>Pi + 라이다 + 컨테이너 + <a href="07-lidar.html">07</a> 완료</td><td><strong>l-06 · l-07 · l-16</strong></td><td>—</td></tr>
+          <tr><td>+ 줄자 · 각도기 · 거울 · 천 · 낮은 턱</td><td>l-11 · l-12 의 검산 · l-15 · <strong>l-17</strong></td><td>—</td></tr>
+          <tr><td>차체</td><td>(L 밖 — <a href="09a-assembly-gate.html">09a</a>)</td><td>—</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>정리하면</strong>: 컨테이너를 요구하는 것은 <strong>l-06 · l-07 · l-16 셋</strong>, 07 을 선행으로 갖는 것은 <strong>l-06 · l-07 둘</strong>이다.
+      기록 파일을 어디서 얻는가는 세 갈래다 — ① <strong>내가 뜬다</strong>(l-04. 정상 경로다) ② <code>/scan</code> <strong>에서 뜬다</strong>(l-06. 07 만 끝냈으면 이 길로 파일을 만들고 l-08 부터 갈 수 있다)
+      ③ <strong>1세대 기록을 빌린다</strong>(라이다가 아예 없는 날. <code>~/ros2/docs/camera_lidar/exp/</code> 에 같은 모델로 뜬 원시 json 이 있다 — 필드가 <code>{"a": 각도 도, "d": 거리 mm}</code> 둘뿐이라
+      <strong>기준 형식으로 바꾸는 변환을 내가 짜야 하고</strong>, 그것 자체가 l-08 의 실습이다).</p>
+      <div class="callout warn"><span class="ct">③ 을 쓸 때 반드시 기억할 것</span>
+        <p>1세대 기록은 <strong>내 방이 아니라 1세대의 그 방</strong>이고, 내 라이다가 그 라이다와 같은 개체인지는 <strong>아직 확인되지 않았다</strong>
+        (<code>hardware/INVENTORY.md</code> 머리말의 "1세대와 같은 개체" 목록에는 모터 · 엔코더 · 바퀴 · 프레임 · 전원 부품만 들어 있고 <strong>센서는 빠져 있다</strong>).
+        그래서 그 파일은 <strong>알고리즘을 돌려 보는 연습용</strong>이지 <strong>내 기기의 판정 근거가 아니다.</strong> 체크포인트는 이 파일로 닫히지 않는다 — 판정 수단에 "내 기록"이라고 적혀 있는 항목은 내가 뜬 파일이어야 한다.</p>
+      </div>
+
+      <h2 id="why">2. 원리 — 왜 두 줄기이고, 왜 07 옆에 또 한 채인가</h2>
+
+      <h3 id="s2-1">2-1. 왜 두 경로인가 — 같은 케이블에서 서로 다른 것이 보인다</h3>
+      <p>라이다는 USB 케이블 하나로 붙는다. 그 케이블 끝에서 볼 수 있는 것은 <strong>어디에서 보느냐에 따라 완전히 다르다.</strong></p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th></th><th>경로 A — Pi 호스트</th><th>경로 B — 컨테이너</th></tr></thead>
+        <tbody>
+          <tr><td>무엇이 연다</td><td>내가 쓴 파이썬이 <code>/dev/lidar</code> 를 연다</td><td><code>rplidar_ros</code> 드라이버가 같은 장치를 연다</td></tr>
+          <tr><td>보이는 것</td><td><strong>바이트</strong> — 명령 · 응답 머리 · 5바이트 점</td><td><strong>메시지</strong> — <code>sensor_msgs/msg/LaserScan</code> 한 개</td></tr>
+          <tr><td>안 보이는 것</td><td>ROS 의 시간 · 프레임 · QoS</td><td>그 메시지가 <strong>어떻게 만들어졌는가</strong>. 각도 보정도 모드 선택도 이미 끝나 있다</td></tr>
+          <tr><td>고장 났을 때</td><td>바이트가 안 오면 <strong>안 오는 것이 보인다</strong></td><td>토픽이 비면 원인이 열 가지다 — 패스스루 · 권한 · 파라미터 이름 · QoS · 포트 점유</td></tr>
+          <tr><td>이 가이드에서</td><td>l-01 ~ l-05 · l-08 ~ l-15 · l-17</td><td>l-06 · l-07 · l-16</td></tr>
+        </tbody>
+      </table></div>
+      <p>두 경로를 <strong>둘 다</strong> 갖는 것이 이 가이드의 뼈대다. 이유는 하나다 — <strong>혼자서는 자기가 틀린 것을 모른다.</strong>
+      경로 B 만 있으면 <code>/scan</code> 의 값이 이상할 때 센서를 의심할지 드라이버를 의심할지 내 해석을 의심할지 고를 수 없다.
+      경로 A 만 있으면 내 파서가 조용히 틀려도 견줄 상대가 없다. 그래서 l-07 은 <strong>같은 장면을 두 경로로 따로 재서 서로를 채점하게</strong> 만든다.</p>
+      <div class="callout note"><span class="ct">어디에서 편집하고 어디에서 돌리는가 — 이 프로젝트의 규칙</span>
+        <p><strong>편집은 Mac, 실행은 Pi 다.</strong> <code>scripts/sync-to-pi.sh</code> 가 저장소를 Pi 로 보내고, 가이드 열 쪽이 이미 이 고리를 쓴다(§3-4).</p>
+        <p>여기에 예외 하나가 <strong>결정으로 열려 있다</strong>: <strong>ROS 를 <code>import</code> 하지 않는 순수 파이썬은 Pi 가 없는 날 Mac 에서 돌려도 된다</strong>(2026-09-23 결정).
+        기하 쪽(l-08 ~ l-12)은 기록 파일 한 장과 표준 라이브러리만 쓰기 때문이다 — <strong>왜 그렇게 정했는가</strong>: 그 쪽들의 입력이 이미 파일이라 Pi 에 있든 Mac 에 있든 <strong>결과가 같고(동일)</strong>, 막히는 쪽을 하루 더 기다리게 만들 이유가 없다.</p>
+        <p>⚠ <strong>예외는 거기까지다.</strong> 시리얼을 여는 쪽(l-01 ~ l-05)은 장치가 Pi 에 붙어 있으므로 Pi 에서만 돈다. 그리고 <strong>Mac 에서 <code>ros2</code> · <code>colcon</code> · <code>docker</code> 를 돌리지 않는다</strong> — 이 규칙은 그대로다.</p>
+      </div>
+
+      <h3 id="s2-2">2-2. 왜 07 이 있는데 이 가이드가 따로 있는가</h3>
+      <p>본편 <a href="07-lidar.html">07</a> 은 <strong>드라이버를 띄우고 <code>/scan</code> 이 나오는 것을 확인</strong>한다. 그것은 그 쪽의 일이고 이 가이드는 그것을 다시 하지 않는다.
+      L 이 여는 것은 <strong>07 이 열지 않은 층</strong>이다 — 07 의 아래쪽(전선 위의 바이트가 어떻게 점이 되는가)과 위쪽(그 점들로 방에 대해 무엇을 말할 수 있는가).</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th></th><th>07 — LiDAR · <code>/scan</code></th><th>L — 라이다 가이드 18쪽</th></tr></thead>
+        <tbody>
+          <tr><td>질문</td><td>드라이버가 뜨고 토픽이 나오는가</td><td>그 숫자들이 <strong>무엇을 뜻하고 어디까지 믿을 수 있는가</strong></td></tr>
+          <tr><td>산출물</td><td>도는 노드 · 확인된 파라미터 · INVENTORY §3 의 기록란</td><td>내 손으로 쓴 도구 · 내 기기의 값 · 판정 기준</td></tr>
+          <tr><td>관계</td><td>L 의 <strong>l-06 · l-07 두 쪽만</strong> 07 을 선행으로 갖는다</td><td>나머지 열여섯은 07 없이 닫힌다</td></tr>
+        </tbody>
+      </table></div>
+      <p>그래서 같은 사실을 두 곳이 주장하는 일이 생긴다. 그런 자리는 <strong>어느 쪽이 소유하는지</strong>를 미리 정해 두지 않으면 학습자가 두 문서 사이에서 갈린다.
+      실습 C(§3-3)가 그 표를 직접 채우게 한다. 원칙은 하나다 — <strong>"L 이 맞고 07 이 틀렸다"고 쓰지 않는다.</strong> 조건을 밝히고, <strong>내 기기에서 재는 절차</strong>를 준다.</p>
+
+      <h3 id="s2-3">2-3. 왜 기록 파일인가 — 같은 입력에 같은 답을 요구할 수 있어야 도구를 의심할 수 있다</h3>
+      <p>살아 있는 센서만 가지고는 <strong>내 코드가 틀렸는지 방이 바뀐 건지</strong> 구별할 수 없다. 두 번 돌리면 두 번 다 다른 숫자가 나오기 때문이다.
+      그래서 이 가이드는 l-04 에서 <strong>한 바퀴를 파일에 적어 두고</strong>, 뒤의 열 쪽이 그 파일을 읽는다. 같은 파일에 같은 답이 나오지 않으면 <strong>바뀐 것은 내 코드뿐이다.</strong></p>
+      <p>형식은 <strong>이 가이드가 정해 둔다</strong>. 한 줄이 한 바퀴인 JSON Lines 이고, 첫 줄은 머리(<code>meta</code>)다.</p>
+      <pre><code class="lang-text">{"meta": {"model": "&lt;라벨에서 읽은 것&gt;", "firmware": "&lt;GET_INFO 로 읽은 것&gt;", "mode": "&lt;이름 또는 번호&gt;",
+          "source": "serial" | "topic" | "file", "date": "&lt;YYYY-MM-DD&gt;", "unit": "m", "note": "&lt;자유&gt;"}}
+{"t": &lt;초, float, 첫 바퀴가 0.0&gt;, "n": &lt;점 수&gt;,
+ "a": [&lt;각도 deg, float, 0 이상 360 미만, 오름차순&gt;, ...],
+ "r": [&lt;거리 m, float, 또는 null&gt;, ...],
+ "q": [&lt;품질, int, 없으면 생략&gt;, ...]}</code></pre>
+      <p>고정된 것은 넷이고, 넷 다 <strong>이유가 있다</strong>. 이유를 알아야 뒤에서 형식을 고치고 싶어질 때 무엇이 깨지는지 안다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>고정한 것</th><th>왜</th></tr></thead>
+        <tbody>
+          <tr><td>단위는 각도 <code>deg</code>, 거리 <code>m</code></td><td>센서는 mm 로 주고 <code>LaserScan</code> 은 m 다. <strong>m 으로 통일해야 두 쪽 모두와 그대로 견줄 수 있다</strong></td></tr>
+          <tr><td>못 잰 방향은 <code>null</code></td><td><code>null</code> 은 <strong>"못 쟀다"</strong> 하나만 뜻한다. <code>0</code> · <code>inf</code> · <code>null</code> 셋을 견주어 <strong>왜 이것인지는 <a href="l-04-one-turn.html">l-04</a> 에서 내가 적는다</strong></td></tr>
+          <tr><td><code>a</code> 와 <code>r</code> 은 같은 길이, 인덱스가 짝</td><td><strong>각도를 버리고 등간격을 가정하지 않는다.</strong> 이것이 <code>LaserScan</code> 과 다른 점이고, l-04 가 각도 간격의 산포를 잴 수 있는 이유다</td></tr>
+          <tr><td>머리 줄이 반드시 있다</td><td><code>source</code> 가 없는 파일은 <strong>내 기기의 판정 근거로 쓸 수 없다</strong> — 1세대에서 빌린 파일인지 내가 뜬 것인지 구별해야 한다</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>내 몫으로 남는 것</strong>은 ① 왜 <code>null</code> 인가, <code>LaserScan</code> 이 쓰는 <code>inf</code> · <code>NaN</code> 과 무엇이 다른가를 <strong>내 말로 적는 것</strong>(l-04 에서 닫는다)
+      ② <code>q</code>(품질)를 남길 것인가 ③ <code>note</code> 에 무엇을 적을 것인가다.
+      필드를 더하고 싶으면 <strong>파이썬 로더와 C++ 로더를 같이 고쳐야 한다</strong> — 그 불편이 바로 ROS 의 메시지 형식이 고정돼 있는 이유이고, 그것을 몸으로 아는 것이 l-16 의 학습 항목이다.</p>
+      <p class="small">⚠ 이 형식은 <strong>이 프로젝트가 만든 것</strong>이다. 저장소에도 1세대에도 없다. 1세대의 원시 json 은 필드가 <code>{"a","d"}</code>(각도 도, 거리 <strong>mm</strong>)라 변환이 필요하다 — 그리고 그 파일은 <strong>못 잰 방향을 <code>0.0</code> 으로 적어 두었다</strong>(2026-09-23 집필자가 파일을 직접 열어 확인). 위 표의 둘째 줄이 왜 있는지를 그 파일에서 바로 볼 수 있다 — <code>0</code> 으로 적힌 방향이 "센서 코앞에 벽"인지 "못 쟀다"인지, 파일만 보고는 구별할 방법이 없다.</p>
+
+      <h3 id="s2-4">2-4. 같은 사실을 네 군데서 읽는 순서 — 이 가이드의 되풀이되는 동작</h3>
+      <p>이 가이드의 수치는 네 종류의 출처에서 온다. 넷은 중복이 아니다 — <strong>같은 물건에 대해 서로 다른 질문에 답하고, 서로 다른 말을 할 수 있다.</strong>
+      펌웨어 가이드가 같은 동작을 네 문서(칩 데이터시트 · 레퍼런스 매뉴얼 · 보드 매뉴얼 · HAL 소스)로 하는 것과 같은 뼈대다 — <a href="fw-00-map.html">fw-00</a> §2-5.
+      다른 점은 <strong>L 에서는 넷 중 하나가 "답하지 않는다"로 닫히는 일이 잦다</strong>는 것이고, <strong>그것도 답이다.</strong></p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>갈래</th><th>무엇을 여는가</th><th>답하는 질문</th><th>누가 확인할 수 있는가</th></tr></thead>
+        <tbody>
+          <tr><td><strong>① 정의</strong></td><td><code>ros2$ ros2 interface show sensor_msgs/msg/LaserScan</code></td><td>ROS 가 이 값을 <strong>무엇이라고 부르고 어떤 단위·규약</strong>을 요구하는가</td><td>나(컨테이너)</td></tr>
+          <tr><td><strong>② 사양</strong></td><td>데이터시트 <code>RPLiDAR-A1M8_Slamtec_lidar.pdf</code> 의 표 · Figure · 쪽</td><td>제조사가 <strong>어떤 조건에서</strong> 무엇을 보장하는가</td><td>나 · 이 가이드를 쓴 사람도</td></tr>
+          <tr><td><strong>③ 구현</strong></td><td>드라이버 소스(<code>rplidar_ros</code>) · Slamtec SDK 헤더</td><td>코드가 <strong>실제로 무엇을 계산하고 무엇을 가정</strong>하는가</td><td>나(소스를 Pi 에서 받은 뒤 — 절차는 l-06)</td></tr>
+          <tr><td><strong>④ 실물</strong></td><td>내 기기 — 기동 로그 · <code>ros2 param get</code> · <code>ros2 topic hz</code> · 내 도구의 출력</td><td><strong>내 개체가 실제로 내는 값</strong></td><td><strong>나만</strong></td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>순서에 이유가 있다.</strong> ① 과 ② 가 "무엇을 기대해도 되는가"를, ③ 과 ④ 가 "실제로 무엇이 오는가"를 말한다.
+      ④ 부터 보면 숫자는 있는데 그것이 <strong>사양 안인지 밖인지</strong> 모르고, ② 만 보면 카탈로그는 아는데 <strong>내 물건</strong>은 모른다.</p>
+      <p>예로 <strong>최대 거리</strong> 하나를 네 갈래로 돌려 본다. 이 값은 뒤에서 격자 크기(l-09)와 Nav2 의 사거리 파라미터(본편 09)를 정하므로 대충 넘길 수 없는 값이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>갈래</th><th>어디</th><th>무엇이라 하는가</th><th>내 값</th></tr></thead>
+        <tbody>
+          <tr><td>① 정의</td><td><code>LaserScan.range_max</code></td><td>미터. "유효한 최대 거리"라고만 적혀 있고 <strong>조건은 없다</strong></td><td><code>____</code></td></tr>
+          <tr><td>② 사양</td><td>데이터시트 p.8 Figure 2-1 "RPLIDAR A1 Performance" 의 Distance Range 행 — <strong>판이 둘이고 여기서 갈린다</strong></td><td><strong>rev.2.2</strong>: <code>A1M8-R4 and the belowing models 0.15 - 6</code> / <code>A1M8-R5 0.15-12</code> (m, White objects)<br><strong>v3.0</strong>: 모델 구분 없이 <code>0.15-12</code> 하나만<br>(2026-09-23 집필자가 두 PDF 를 직접 열어 확인)</td><td>—</td></tr>
+          <tr><td>③ 구현</td><td>드라이버 소스 · SDK 헤더의 <code>GET_LIDAR_CONF</code> 응답 해석</td><td><code>____</code> — <strong>이 가이드는 확인하지 못했다</strong>(집필에 쓴 Mac 에 <code>rplidar_ros</code> 2.1.4 의 소스가 없다). 내가 열어 적는다</td><td>—</td></tr>
+          <tr><td>④ 실물</td><td>드라이버 기동 로그의 <code>max_distance</code>(07 §3-5 의 기록란) · 기기에게 직접 묻기(l-05)</td><td>—</td><td><code>____</code></td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">넷이 다르면 <strong>④ 가 내 기기의 사실</strong>이고, 나머지는 "무엇을 가정했는가"를 말해 준다. <strong>어느 문서가 틀렸다고 쓰지 말고 조건이 무엇이었는지를 적는다.</strong>
+      내 PDF 가 어느 판인지는 가장 싸게 구별된다 — 쪽 아래 꼬리말이 <code>n / 18</code> 이면 rev.2.2, <code>n / 19</code> 면 v3.0 이다. <strong>어느 판을 이 프로젝트의 정본으로 삼을지는 아직 정해지지 않았다</strong>(l-05 · l-07 이 두 경로로 이 값을 따로 낸다).</p>
+      <div class="callout note"><span class="ct">② 가 "답하지 않는다"로 닫히는 대표적인 자리</span>
+        <p><strong>통신 프로토콜이다.</strong> 데이터시트 <strong>두 판 모두</strong> 두 자리에서 같은 취지를 <strong>서로 다른 문장으로</strong> 적고 프로토콜 장을 싣지 않았다(2026-09-23 집필자가 두 PDF 에서 직접 확인) —
+        p.6 "Data Output": <em>"If you need detailed data format and communication protocol, please contact SLAMTEC."</em> / p.9 "Communication interface": <em>"Please contact SLAMTEC if you want detailed communication protocol and SDK."</em> <strong>그래서 이 가이드는 "데이터시트에 따르면 명령 바이트는…" 이라고 쓸 수 없다.</strong></p>
+        <p>그 값들(명령 바이트 · 5바이트 점 형식 · 응답 머리)은 l-02 · l-03 이 <strong>출처를 밝혀서</strong> 주고, 맞는지는 <strong>기기가 답해 준다</strong> — 응답 머리가 약속된 두 바이트로 오고 검사 비트가 서로 어긋나면, 그 이해가 옳았다는 증거다.
+        "데이터시트가 답하지 않는다는 것을 p.6 · p.9 에서 확인했다"는 <strong>유효한 ② </strong>다.</p>
+      </div>
+
+      <h3 id="s2-5">2-5. 이 가이드가 전제하는 것과 전제하지 않는 것 — 출발선을 여기서 긋는다</h3>
+      <p>막히는 이유가 <strong>라이다가 아니라 수학</strong>인 자리가 뒤에 여러 번 나온다. 그때 "내가 부족한가"를 고민하지 않게 출발선을 여기서 긋는다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>전제한다 (이미 안다고 보고 설명하지 않는다)</th><th>전제하지 않는다 (필요한 쪽이 그 자리에서 준다)</th></tr></thead>
+        <tbody>
+          <tr><td>파이썬 문법 — 함수 · 리스트 · 반복 · <code>dict</code> · 파일 읽기</td><td><strong>직선 맞춤</strong>(l-11) · <strong>광선 투사</strong>(l-09) · <strong>최근접 대응과 변환 추정</strong>(l-14)</td></tr>
+          <tr><td>삼각함수의 <strong>뜻</strong>(<code>sin</code> · <code>cos</code> 이 무엇을 주는가). 외우고 있을 필요는 없다</td><td><strong>중앙값 · 표준편차</strong>의 정의(l-04). 정의식은 그 쪽 본문이 준다</td></tr>
+          <tr><td>리눅스 셸 기본 — <code>ls</code> · <code>cd</code> · 파이프 · 리다이렉션</td><td>ROS 2 의 개념(노드 · 토픽 · QoS). 본편 <a href="03-ros2-concepts.html">03</a> 과 <a href="07-lidar.html">07</a> 이 준다. 쓰는 쪽은 l-06 · l-07 · l-16 셋뿐이다</td></tr>
+          <tr><td>비트 연산의 뜻(<code>&amp;</code> · <code>&gt;&gt;</code>). 어느 비트가 무엇인지는 l-03 이 준다</td><td>C++ (l-16 하나뿐이고, 그 쪽이 파이썬 판과 나란히 놓고 설명한다)</td></tr>
+        </tbody>
+      </table></div>
+      <p>쪽마다 <code>.meta</code> 의 <strong>"이 쪽이 요구하는 수학"</strong> 칸에 그 쪽이 쓰는 것이 한 줄로 적혀 있고, 본문이 <strong>어디까지 주는가</strong>도 함께 적혀 있다. 원칙은 이렇다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>본문이 <strong>준다</strong></th><th>내가 <strong>쓴다</strong>(<code># TODO(you):</code>)</th></tr></thead>
+        <tbody>
+          <tr><td>식 하나짜리 정의 — 점과 직선의 수직 거리, <code>x = r cos θ</code>, 인덱스 ↔ 각도, 중앙값 · σ 의 정의</td><td>그 식을 <strong>어디에 어떤 순서로</strong> 적용하는가</td></tr>
+          <tr><td>원리와 경계 조건 — 광선 투사가 "한 칸씩 전진하며 어느 칸을 지나는가"라는 것, 정합의 세 걸음</td><td><strong>절차 · 반복 · 재귀</strong>의 구현</td></tr>
+          <tr><td><strong>자기시험 벡터 전부</strong> — "이 입력에 이 답"이 적힌 시험 파일. 그것이 곧 채점표다</td><td>그 벡터를 통과시키는 구현</td></tr>
+        </tbody>
+      </table></div>
+      <p>정답 코드는 주지 않는다. 대신 <strong>돌려서 스스로 채점할 수단</strong>을 준다 — 순수 로직 파일은 직렬 포트를 열지 않으므로 <strong>라이다가 없어도 시험이 돈다</strong>:</p>
+      <pre><code class="lang-bash">pi$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_point.py
+PASS point &lt;n&gt; cases</code></pre>
+
+      <div class="callout warn"><span class="ct">먼저 읽어 둘 것 — 보이지 않는 레이저와 도는 머리</span>
+        <p>이 쪽은 <strong>명령으로</strong> 센서를 돌리지 않는다. 그래도 §3-1-4 의 발동 확인에서 USB 를 <strong>한 번 뽑았다 꽂고</strong>, 꽂는 순간 머리가 돌 수 있다. 그리고 <strong>다음 쪽에서 처음 전원을 넣는다.</strong> 그 전에 알아 둘 것이 있다.</p>
+        <p><strong>이 센서의 레이저는 눈에 보이지 않는다.</strong> 데이터시트는 파장을 <strong>775 / 785 / 795 nm</strong>(최소 / typical / 최대, "Infrared Light Band")로 적는다 — p.9 Figure 2-3 "RPLIDAR A1 Optical Specification".
+        적외선이라 <strong>켜졌는지 눈으로 알 수 없다.</strong> 등급 자체는 p.5 "Safety and Scope" 의 <strong>Class I</strong>(저출력 &lt;5 mW, 변조 펄스 구동)이고 이는 "정상 사용에서 안전"으로 분류된 등급이다 —
+        <strong>위험해서가 아니라 보이지 않아서 습관이 안 생기기 때문에</strong> 미리 적어 둔다. <strong>스캔 창을 들여다보지 않는다</strong>(특히 렌즈 높이에서 정면으로). 머리가 도는 동안 얼굴을 센서 높이에 두지 않는다.</p>
+        <p>도는 머리에 손 · 머리카락 · 천 · 케이블을 가까이 두지 않고, 들어 올리거나 옮길 때는 <strong>모터를 세운 뒤</strong> 든다. 이 규칙의 구체적인 절차와 나머지 규칙(USB 전류 · 케이블 여유)은 <strong>l-01 이 소유한다</strong> — 센서에 처음 전원이 들어가는 쪽이다.</p>
+      </div>
+
+      <h2 id="lab">3. 실습</h2>
+      <p>이 쪽은 <strong>코드를 쓰지 않고 센서를 돌리지 않는다.</strong> 그래서 다른 쪽의 네 걸음(확인 → 골격 → 직접 채우기 → 돌리고 보기) 가운데 "골격"의 자리에 <strong>빈 표</strong>가 들어간다.
+      실습은 넷이다 — A 환경 확인, B 가진 것 × 갈 수 있는 쪽, C 소유표, D 도구가 살 자리. A 와 D 는 Pi 에서, B 와 C 는 노트와 브라우저만 있으면 된다.</p>
+
+      <h3 id="s3-1">3-1. 실습 A — 내 Pi 가 시리얼을 열 준비가 됐는가 <span class="tag pi">Pi 호스트</span></h3>
+
+      <h4 id="s3-1-1">3-1-1. 확인 — 무엇이 이미 정해져 있고, 무엇을 내가 봐야 하는가</h4>
+      <p>아래는 이 가이드가 <strong>이미 값을 아는 것</strong>과 그 출처, 그리고 <strong>내 장치에서 그것을 어떻게 확인하는가</strong>다. 값이 어디서 왔는지와 내가 어떻게 확인하는지를 한 행에 같이 둔다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>항목</th><th>값</th><th>출처 · 등급</th><th>내 장치에서 보는 법</th></tr></thead>
+        <tbody>
+          <tr><td>보드레이트</td><td>115200 8N1 (고정)</td><td>데이터시트 p.10 Figure 2-5 "External Interface Signal Definition" 의 <code>Band rate</code> · <code>Working mode</code> 행 (두 판 같다) — <strong>확정</strong></td><td><code>pi$ stty -F /dev/lidar</code> — <strong>포트가 열려 있는 동안</strong> 쳐야 한다. 이 쪽에는 포트를 여는 프로그램이 없으므로 <strong>실제로 보는 것은 <a href="l-01-link.html">l-01</a> §3-4 에서</strong>다</td></tr>
+          <tr><td>회선 용량</td><td>11 520 B/s</td><td>115200 ÷ 10 (1 start + 8 data + 1 stop = 10 bit/byte) — <strong>산술</strong></td><td>l-01 에서 3초 동안 들어온 바이트를 직접 센다</td></tr>
+          <tr><td>USB VID:PID</td><td><code>10c4:ea60</code> (Silicon Labs CP210x)</td><td><code>hardware/INVENTORY.md</code> §3 — <strong>MEASURED(2026-09-13, detect-hardware.sh)</strong></td><td><code>pi$ lsusb | grep 10c4:ea60</code></td></tr>
+          <tr><td>고정 이름</td><td><code>/dev/lidar</code> → <code>ttyUSB&lt;n&gt;</code></td><td><code>hardware/udev/99-ros2-devices.rules</code> 의 LiDAR 줄 — VID:PID 로만 매칭하고 <code>ATTRS{serial}</code> 은 쓰지 않는다 — <strong>확정</strong>. <strong>왜 안 썼는지는 그 파일에 없다</strong>: CP2102 의 시리얼 <code>0001</code> 이 공통 기본값이라 고유하지 않다는 것은 <code>hardware/INVENTORY.md</code> §3 의 "CP2102 시리얼" 행에 적혀 있다. 규칙 파일의 작성·설치·검증은 <strong>01 이 소유한다</strong></td><td><code>pi$ ls -l /dev/lidar</code></td></tr>
+          <tr><td>major 번호</td><td>188 (<code>/dev/ttyUSB*</code>)</td><td><code>hardware/INVENTORY.md</code> §8 — <strong>MEASURED(2026-09-13)</strong>. 컨테이너의 <code>c 188:* rmw</code> 가 이 번호다</td><td><code>pi$ ls -l /dev/ttyUSB*</code> 의 앞 숫자</td></tr>
+          <tr><td>호스트 사용자의 그룹</td><td><code>dialout</code> 포함</td><td><code>hardware/INVENTORY.md</code> §1 "호스트명 / 사용자" 행 — <strong>MEASURED(2026-09-13)</strong>. 그 뒤에 바뀌었을 수 있다</td><td><code>pi$ id -nG</code></td></tr>
+          <tr><td>호스트의 <code>pyserial</code></td><td><code>____</code></td><td><strong>확인 과제</strong> — 이 가이드는 Pi 에 접속하지 못했다. 설치돼 있는지 <strong>확인되지 않았다</strong></td><td><code>pi$ python3 -c "import serial; print(serial.VERSION)"</code></td></tr>
+          <tr><td>컨테이너의 <code>pyserial</code></td><td>3.5</td><td><code>docker/Dockerfile</code> 이 이미지에 <code>pip3 install pyserial==3.5</code> 로 넣는다 — <strong>확정</strong>(이미지를 빌드했다면)</td><td><code>ros2$ python3 -c "import serial; print(serial.VERSION)"</code></td></tr>
+          <tr><td>회전수 typical</td><td>5.5 Hz</td><td>데이터시트 p.8 Figure 2-1 의 <code>Scan Rate</code> 행 (Min 1 / Typical 5.5 / Max 10) — <strong>NOMINAL(datasheet)</strong>. 비고에 <em>"Typical value is measured when RPLIDAR A1 takes 360 samples per scan"</em> 이라는 <strong>조건</strong>이 붙어 있다</td><td>l-04 에서 내 도구로 잰다</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">이 표의 셋째 층(<strong>네 갈래가 같은 값에 대해 뭐라고 하는가</strong>)은 §2-4 의 최대 거리 표가 맡는다. 이 쪽에서 실제로 돌려 볼 수 있는 값이 아니기 때문이다.</p>
+
+      <h4 id="s3-1-2">3-1-2. 빈 표 — 내가 채울 확인 기록표</h4>
+      <p>노트에 이 표를 옮긴다. <strong>"예상한 대로였는가"가 아니라 "무엇이 나왔는가"를 적는다</strong> — 이 가이드 전체에서 지키는 방식이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>#</th><th>확인한 것</th><th>내 출력 (그대로)</th><th>됐는가</th><th>안 됐으면 내가 고른 차선</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><code>import serial</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td>2</td><td><code>dialout</code> 그룹</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td>3</td><td><code>lsusb</code> 의 <code>10c4:ea60</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td>4</td><td><code>/dev/lidar</code> 심볼릭 링크</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td>5</td><td>데이터시트 PDF 의 자리와 <strong>판</strong>(꼬리말이 <code>/ 18</code> 인가 <code>/ 19</code> 인가)</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td>6</td><td>라이다를 <strong>뽑았을 때</strong> 3 · 4 의 출력</td><td><code>____</code></td><td>—</td><td>—</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-1-4">3-1-4. 돌리고 보기 — 명령 · 기대 출력의 모양 · 없으면</h4>
+      <p><strong>실행 확인: 미확인</strong> — 이 가이드를 쓴 Mac 에서는 Pi 에 접속할 수 없었다. 아래는 출력의 <strong>모양</strong>만 적은 것이고 값 자리는 전부 <code>&lt;n&gt;</code> 이다.
+      <strong>내 출력이 아래와 다르면 그것이 사실이고, 그 차이를 §3-1-2 의 표에 적는다.</strong></p>
+      <pre><code class="lang-bash">pi$ python3 -c "import serial; print(serial.VERSION)"
+pi$ id -nG
+pi$ lsusb | grep 10c4:ea60
+pi$ ls -l /dev/lidar
+pi$ ls -l /dev/ttyUSB*</code></pre>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><code>pi$ python3 -c "import serial; print(serial.VERSION)"</code></td><td><code>&lt;n&gt;.&lt;n&gt;</code> 꼴의 판 번호 <strong>한 줄</strong>. 줄이 나왔으면 <code>import</code> 가 성공한 것이다</td><td><code>ModuleNotFoundError: No module named 'serial'</code> → <strong>세 갈래가 있다</strong>. 아래 상자를 보고 <strong>하나를 골라 §3-1-2 의 "차선" 칸에 적는다</strong></td></tr>
+          <tr><td>2</td><td><code>pi$ id -nG</code></td><td>공백으로 이어진 그룹 이름들. 그 안에 <code>dialout</code> 이 있다</td><td><code>dialout</code> 이 없으면 포트를 열 때 <code>Permission denied</code> 가 난다. 그룹에 넣는 절차는 <strong>01 이 소유한다</strong> — 넣은 뒤에는 <strong>다시 로그인해야</strong> 반영된다(<code>id -nG</code> 로 다시 확인)</td></tr>
+          <tr><td>3</td><td><code>pi$ lsusb | grep 10c4:ea60</code></td><td><code>Bus &lt;n&gt; Device &lt;n&gt;: ID 10c4:ea60 Silicon Labs CP210x UART Bridge</code></td><td>줄이 안 나오면 <strong>커널이 장치를 못 봤다</strong> — 케이블과 포트를 바꿔 본다. 그래도 없으면 장치가 아니라 <strong>선</strong>의 문제일 가능성이 크다. 라이다가 아직 없으면 정상이다(§1-3 의 "Pi (라이다 없음)" 행)</td></tr>
+          <tr><td>4</td><td><code>pi$ ls -l /dev/lidar</code></td><td><code>lrwxrwxrwx &lt;…&gt; /dev/lidar -&gt; ttyUSB&lt;n&gt;</code> — <strong>심볼릭 링크</strong>다</td><td><code>No such file or directory</code> 면 둘 중 하나다: ① 장치가 안 꽂혀 있다(3번이 비어 있다) ② udev 규칙이 아직 설치되지 않았다(3번은 나오는데 4번만 없다). ②의 설치는 <strong>01 이 소유한다</strong>. 임시로 <code>/dev/ttyUSB&lt;n&gt;</code> 를 쓸 수는 있지만 <strong>부팅마다 번호가 바뀔 수 있다</strong></td></tr>
+          <tr><td>5</td><td><code>pi$ ls -l /dev/ttyUSB*</code></td><td>맨 앞이 <code>c</code>(문자 장치)이고 major 가 <strong>188</strong> 이다: <code>crw-rw---- &lt;…&gt; 188, &lt;n&gt; &lt;…&gt; /dev/ttyUSB&lt;n&gt;</code></td><td>major 가 188 이 아니면 <code>hardware/INVENTORY.md</code> §8 과 <code>docker/docker-compose.yml</code> 의 <code>c 188:* rmw</code> 가 어긋난 것이다 — 값을 적어 두고 l-06 에서 쓴다</td></tr>
+        </tbody>
+      </table></div>
+      <p>데이터시트 PDF 는 Pi 가 아니라 <strong>편집하는 Mac 쪽</strong>에 있다. 자리와 판을 여기서 확인해 둔다 — §2-4 가 그 쪽 번호로 값을 인용하기 때문이다.</p>
+      <pre><code class="lang-bash">mac$ ls ~/ros2/datasheet/ | grep -i rplidar
+mac$ pdftotext -f 8 -l 8 -layout ~/ros2/datasheet/RPLiDAR-A1M8_Slamtec_lidar.pdf - | grep -i "distance range" -A 4</code></pre>
+      <p><strong>없으면</strong> — <code>pdftotext</code> 가 없으면 PDF 보기 프로그램에서 8쪽을 연다. PDF 자체가 없으면 제조사 문서를 구해 내가 정한 자리에 두고 그 경로를 노트에 적는다.
+      <strong>내 PDF 의 판을 반드시 적는다</strong>(꼬리말 <code>n / 18</code> = rev.2.2, <code>n / 19</code> = v3.0). 이 가이드가 인용하는 쪽·Figure 번호는 그 두 판 기준이고, 다른 판이면 번호가 어긋날 수 있다 — 그때는 표 제목의 글자로 찾는다.</p>
+
+      <div class="callout note"><span class="ct">1번이 <code>ModuleNotFoundError</code> 일 때 — 세 갈래. 고르는 것은 나다</span>
+        <p><strong>(가) 호스트에 배포판 패키지로 넣는다.</strong> 데비안 계열의 이름은 <code>python3-serial</code> 이다. 시스템 파이썬에 그대로 붙으므로 <code>python3</code> 를 그냥 쳐도 보인다.</p>
+        <p><strong>(나) 가상환경을 만들어 그 안에 넣는다.</strong> 시스템 파이썬을 건드리지 않는다. 대신 <strong>실습마다 그 환경을 켜야 하고</strong>, 켜는 것을 잊으면 "어제는 됐는데 오늘은 안 되는" 증상이 난다.</p>
+        <p><strong>(다) 넣지 않고 컨테이너 안에서 같은 스크립트를 돌린다.</strong> ⚠ <strong>본편 <a href="02-docker-ros2.html">02</a> 를 끝낸 뒤에만 되는 길이다</strong> — <code>hardware/INVENTORY.md</code> §1 은 지금 Docker 를 <strong>미설치(02 단계)</strong> 로 적어 두었다(§3-2-2 의 부품 표가 "컨테이너가 뜬다"를 따로 세는 이유다). 02 가 끝나 있다면: 이미지에 <code>pyserial==3.5</code> 가 이미 들어 있고(<code>docker/Dockerfile</code>), compose 가 <code>/dev</code> 전체를 마운트하고 <code>c 188:* rmw</code> 를 열어 둔다.
+        치르는 값은 <strong>"경로 A 를 호스트에서 본다"는 이 가이드의 기본 구도가 흐려진다</strong>는 것이고, 얻는 것은 <strong>호스트를 하나도 건드리지 않는다</strong>는 것이다. 이 길로 가면 프롬프트가 <code>ros2$</code> 로 바뀐다는 것만 잊지 않으면 된다.</p>
+        <p class="small">⚠ <strong>이 가이드는 (가)의 명령을 확인하지 못했다.</strong> Pi OS Trixie(Debian 13)는 PEP 668 을 켜므로 <code>pip install</code> 이 거부될 수 있다고 알려져 있으나 <strong>이 Pi 에서 확인한 것이 아니다.</strong>
+        실제로 친 명령과 그 결과를 §3-1-2 의 "차선" 칸에 적어 두면, 그것이 이 절의 빈칸을 닫는 <strong>내 기록</strong>이 된다.</p>
+      </div>
+
+      <div class="callout why"><span class="ct">발동 확인 — 없을 때의 출력을 먼저 본다</span>
+        <p>3 · 4 번이 <strong>나왔다면</strong>, 라이다 USB 를 <strong>뽑고</strong> 같은 두 명령을 다시 친다. 그리고 <strong>있을 때와 없을 때의 출력을 둘 다</strong> §3-1-2 의 6번 줄에 적는다.</p>
+        <p>왜 이것을 일부러 하는가: 뒤에서 "장치가 안 보인다"는 증상을 만났을 때, <strong>없을 때가 어떻게 생겼는지 이미 봤으면</strong> udev 문제인지 연결 문제인지 한눈에 갈린다.
+        <code>lsusb</code> 는 나오는데 <code>/dev/lidar</code> 만 없으면 udev, 둘 다 없으면 연결이다. 확인한 뒤 <strong>다시 꽂아 둔다.</strong></p>
+        <p>⚠ <strong>꽂기 전에 §2-5 끝의 상자를 읽는다</strong> — 꽂는 순간 머리가 돌 수 있다. 머리 가까이에 손 · 머리카락 · 천 · 케이블을 두지 않고, 스캔 창을 렌즈 높이에서 정면으로 들여다보지 않는다.</p>
+        <p class="small">라이다가 아직 없으면 이 항목은 "없을 때"만 본 상태로 닫는다 — 그것도 관찰이고, 그렇게 적는다.</p>
+      </div>
+
+      <h3 id="s3-2">3-2. 실습 B — 가진 것 × 갈 수 있는 쪽</h3>
+
+      <h4 id="s3-2-2">3-2-2. 빈 표 — 서랍을 열고 채운다</h4>
+      <p>아래 표를 노트에 옮기고 <strong>"보유" 칸을 실물을 보고</strong> 채운다(기억으로 채우지 않는다). 모르는 것은 <strong>빈칸으로 둔다</strong> — 모르는 것을 "있다"로 적지 않는다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>가진 것</th><th>이것이 여는 쪽</th><th>보유</th><th>없으면 그 대신 할 것</th></tr></thead>
+        <tbody>
+          <tr><td>Pi 5 (전원 · 네트워크 · SSH)</td><td>l-00</td><td><code>____</code></td><td>Mac 에서 §1 · §2 를 읽고 이 표와 §3-3 의 표를 채운다</td></tr>
+          <tr><td>라이다 본체 + USB 케이블</td><td>l-01 ~ l-05</td><td><code>____</code></td><td><code>____</code> (기록 파일을 어디서 얻을지 §1-3 의 세 갈래에서 고른다)</td></tr>
+          <tr><td><code>.scan.jsonl</code> 기록 파일 (한 바퀴)</td><td>l-08 ~ l-12</td><td><code>____</code></td><td>l-04 까지 가서 내가 뜬다</td></tr>
+          <tr><td>같은 파일 (여러 바퀴 연속)</td><td>+ l-13 · l-14</td><td><code>____</code></td><td>같음</td></tr>
+          <tr><td>컨테이너가 뜬다 (본편 <a href="02-docker-ros2.html">02</a> 완료)</td><td>l-06 · l-16 의 절반</td><td><code>____</code></td><td>기하 줄기로 간다 — 열다섯 쪽이 열려 있다</td></tr>
+          <tr><td><a href="07-lidar.html">07</a> 완료 (<code>/scan</code> 이 나온다)</td><td>l-06 · l-07</td><td><code>____</code></td><td>같음</td></tr>
+          <tr><td>줄자 · 각도기</td><td>l-11 · l-12 의 검산 · <strong>l-17</strong></td><td><code>____</code></td><td>l-17 의 거리 fit 을 닫을 수 없다</td></tr>
+          <tr><td>거울 · 유리 · 천 · 낮은 턱</td><td>l-15</td><td><code>____</code></td><td>l-15 의 해당 실습만 비워 두고 나머지를 한다</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-2-3">3-2-3. 채우기 — 표에서 내 자리를 짚는다</h4>
+      <ol class="steps">
+        <li>위 표의 "보유" 칸을 채운다.</li>
+        <li>§1-3 의 표로 돌아가 위에서부터 내려오며 <strong>처음으로 "없다"가 나오는 행</strong>을 찾는다. 그 위까지가 <strong>지금 끝낼 수 있는 쪽</strong>이다.</li>
+        <li>없는 것 가운데 <strong>가장 앞쪽 차선을 막는 것</strong> 하나를 고른다(§1-1 의 그림에서 왼쪽에 있는 것). 그것이 다음에 구하거나 끝낼 것이다.</li>
+        <li>노트 맨 위에 한 줄로 적는다: <em>"나는 지금 ____ 까지 할 수 있고, 그다음을 막는 것은 ____ 다."</em></li>
+      </ol>
+
+      <h4 id="s3-2-4">3-2-4. 보고 판정하기</h4>
+      <p>표의 "보유" 열에 <strong>빈칸이 남아 있지 않으면</strong> 이 실습은 닫힌다(빈칸으로 남기기로 한 것은 "모른다"라고 적는다 — 그것도 채운 것이다).
+      그리고 3번에서 고른 한 가지가 노트에 적혀 있어야 한다. <strong>이 표는 뒤에서 여러 번 돌아온다</strong> — 부품이나 환경이 하나 늘 때마다 여는 쪽이 달라지기 때문이다.</p>
+
+      <h3 id="s3-3">3-3. 실습 C — 이 사실은 어느 쪽이 소유하는가</h3>
+
+      <h4 id="s3-3-2">3-3-2. 빈 표 — 같은 사실을 두 곳이 말하는 자리</h4>
+      <p>아래는 <strong>이 가이드와 기존 쪽이 같은 것에 대해 말하는 자리</strong>다. "그 쪽이 뭐라고 하는가"와 "소유"는 <strong>내가 직접 열어서 채운다</strong> — 가이드가 대신 요약해 주면 다음에 그 쪽이 바뀌었을 때 내가 모른다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>사실</th><th>어디를 열어 보는가</th><th>그 쪽이 뭐라고 하는가 · 소유 (내가 적는다)</th><th>L 이 더하는 층</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>유리 · 거울에서 무엇이 보이는가</td><td><a href="07-lidar.html">07</a> §2-2 · <code>hardware/INVENTORY.md</code> §3 "알아둘 한계" 표 · <a href="09-slam-nav2.html">09</a></td><td><code>____</code></td><td>같은 모델의 기록은 <strong>반대 결과</strong>를 적었다(조건이 좁다). 어느 쪽도 단정하지 않고 <strong>내 유리 · 내 거울에서 잰다</strong> — l-15</td></tr>
+          <tr><td>2</td><td>검은 · 무광 표면에서 거리가 안 잡히는 이유</td><td><a href="07-lidar.html">07</a> §2-2 · <code>INVENTORY.md</code> §3</td><td><code>____</code></td><td>"빛을 흡수해서"라는 설명이 같은 모델의 실험에서 <strong>기각</strong>된 적이 있다. 그 이야기와 함께 <strong>내 재질로 잰다</strong> — l-15</td></tr>
+          <tr><td>3</td><td>각 분해능 "약 1°"</td><td><code>INVENTORY.md</code> §3 (출처 없이 적혀 있다) ↔ 데이터시트 p.8 Figure 2-1 (<code>≤1</code> 이지만 <strong>"5.5Hz scan rate"라는 조건</strong>이 붙어 있다)</td><td><code>____</code></td><td>각도 간격은 <strong>센서 고유값이 아니라 (샘플 주기, 회전수)의 결과</strong>임을 산수로 도출하고 내 기기에서 잰다 — l-04 · l-05</td></tr>
+          <tr><td>4</td><td>최대 거리</td><td><a href="07-lidar.html">07</a> §3-5 · <code>INVENTORY.md</code> §3 "최대 거리 기록란"</td><td><code>____</code></td><td><strong>기록란은 07 이 채운다.</strong> L 은 기기에게 직접 물어(l-05) 로그와 <strong>대조</strong>한다(l-07). 값이 다르면 그것도 기록한다</td></tr>
+          <tr><td>5</td><td>회전수</td><td><a href="07-lidar.html">07</a> §3-5 · <code>INVENTORY.md</code> §3 "회전수 대조" 세 줄</td><td><code>____</code></td><td>내 도구로 잰 <strong>물리 회전수</strong>를 그 세 줄 옆에 <strong>네 번째 줄</strong>로 견준다 — l-04</td></tr>
+          <tr><td>6</td><td>0° 가 어느 쪽인가 · 줄자 대조</td><td><a href="07-lidar.html">07</a> §3-9-1 · <code>INVENTORY.md</code> §3 "센서 자체 검증"</td><td><code>____</code></td><td>기록은 07 이 소유한다. L 은 <strong>각도가 커지는 방향의 도출</strong>(l-08)과 <strong>여러 점 선형 fit 으로의 확장</strong>(l-17)을 더한다</td></tr>
+          <tr><td>7</td><td>"벽까지의 거리"</td><td><a href="07-lidar.html">07</a> §3-10 (<code>/scan_front_min</code>) · <a href="08d-tracking-fusion.html">08d</a> §2-8</td><td><code>____</code></td><td><strong>세 값이 서로 다른 것</strong>이다: 정면 섹터의 최소 거리(07) / 물체까지 가장 가까운 점(08d) / <strong>면까지의 수직 거리 + 법선</strong>(l-12)</td></tr>
+          <tr><td>8</td><td>장착 위치 · 방향 · 차체 가림</td><td><a href="07-lidar.html">07</a> §3-9-2 · <code>INVENTORY.md</code> §3 "장착 정보"</td><td><code>____</code></td><td><strong>없다.</strong> 이것은 <a href="09a-assembly-gate.html">09a</a>의 것이고 <strong>L 은 손대지 않는다</strong>. 책상에서 닫히면 L, 차체에 달아야 닫히면 09a</td></tr>
+          <tr><td>9</td><td>지도 토픽 <code>/map</code></td><td><a href="09-slam-nav2.html">09</a></td><td><code>____</code></td><td><strong>없다.</strong> <code>/map</code> 은 09 의 <code>slam_toolbox</code> 가 낸다 — L 이 만드는 격자는 <strong>다른 이름</strong>으로 발행한다(l-16). 같은 이름이면 09 에서 두 발행자가 부딪힌다</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-3-3">3-3-3. 채우기</h4>
+      <ol class="steps">
+        <li>행마다 링크를 열어 <strong>그 쪽이 실제로 뭐라고 적었는지</strong>를 한 줄로 옮긴다(요약하지 말고 그 쪽의 낱말을 쓴다).</li>
+        <li>"소유" 칸에 <strong>07 · 08d · 09 · 09a · L</strong> 중 하나를 적는다. 판단 기준은 <strong>"그 값을 채우는 칸이 어디에 있는가"</strong>다 — 기록란이 <code>INVENTORY.md</code> 에 있고 07 이 채우게 돼 있으면 소유는 07 이다.</li>
+        <li>두 곳이 <strong>서로 다른 말</strong>을 하는 행에 표시를 해 둔다. 그 행은 뒤에서 <strong>내가 재서 판정하는</strong> 자리다 — 지금 어느 쪽이 맞는지 정하지 않는다.</li>
+      </ol>
+
+      <h4 id="s3-3-4">3-3-4. 보고 판정하기</h4>
+      <p>아홉 행의 "소유" 칸이 전부 채워졌으면 닫힌다. 다 채운 뒤 스스로 물어본다 — <strong>"내가 뒤에서 어떤 값을 얻었을 때, 그 값을 어느 파일의 어느 칸에 적어야 하는가?"</strong>
+      이 표가 그 답이다. 답이 안 나오는 행이 있으면 그 행이 이 프로젝트에서 아직 자리가 없는 값이라는 뜻이고, 그럴 때 값을 <strong>내 노트에</strong> 적는 것이 정상 처리다(공유 파일에 새 칸을 내가 만들지 않는다).</p>
+
+      <h3 id="s3-4">3-4. 실습 D — 도구가 살 자리를 만들고, 그것이 Pi 로 간다는 것을 확인한다 <span class="tag mac">Mac</span> <span class="tag pi">Pi 호스트</span></h3>
+
+      <h4 id="s3-4-1">3-4-1. 확인 — 이 고리가 어떻게 도는가</h4>
+      <p>이 프로젝트의 기본 고리는 <strong>Mac 에서 편집 → Pi 에서 실행</strong>이고, 그 사이를 <code>scripts/sync-to-pi.sh</code> 가 잇는다. 뒤의 열일곱 쪽이 전부 이 고리 위에서 돈다.
+      먼저 <strong>그 스크립트가 무엇을 보내고 무엇을 빼는지</strong> 직접 본다.</p>
+      <pre><code class="lang-bash">mac$ grep -n 'PI_HOST\|PI_PATH\|--exclude' scripts/sync-to-pi.sh</code></pre>
+      <p><strong>실행 확인: 2026-09-23 Mac 에서</strong> — 아래 두 행은 이 명령을 실제로 돌려서 적었다. 다만 <strong>동기화 자체는 돌려 보지 못했다</strong>(Pi 에 접속하지 못했다) — §3-4-3 · §3-4-4 의 출력은 <em>모양</em>만 적은 것이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>위 명령의 <code>PI_HOST</code> · <code>PI_PATH</code> 줄</td><td>두 줄이 <code>${PI_HOST:-…}</code> · <code>${PI_PATH:-…}</code> 꼴로 나온다 — <strong>환경 변수가 있으면 그것을, 없으면 적힌 기본값을</strong> 쓴다는 뜻이다. 기본 호스트는 SSH 설정의 이름 하나, 기본 경로는 Pi 의 홈 아래 이 저장소 이름이다. 내 것과 다르면 <code>PI_HOST=&lt;내 이름&gt; ./scripts/sync-to-pi.sh</code> 처럼 앞에 붙여 덮어쓴다(파일을 고치지 않는다)</td><td>SSH 로 Pi 에 붙는 이름을 먼저 정한다(본편 <a href="01-os-setup.html">01</a>). 붙지 않으면 이 실습은 <strong>Mac 쪽 절반</strong>(디렉터리 만들기)까지만 하고 넘어간다</td></tr>
+          <tr><td>2</td><td>같은 명령의 <code>--exclude</code> 줄들</td><td><code>--exclude</code> 줄이 아홉 개 남짓 나온다: <code>.git/</code> · <code>.DS_Store</code> · <code>__pycache__/</code> · <code>*.pyc</code> · <code>ros2_ws/</code> 아래의 빌드 산출물 셋 · <strong><code>/firmware/</code></strong> · <strong><code>/.restructure/</code></strong>, 그리고 외부 드라이버 소스를 그때그때 붙이는 줄 하나. <strong><code>scripts/</code> 를 빼는 줄은 없다</strong></td><td>목록에 <code>scripts/</code> 를 빼는 줄이 있으면 이 실습의 전제가 깨진 것이다 — 내가 고치지 말고 그 줄을 노트에 적어 둔다</td></tr>
+        </tbody>
+      </table></div>
+      <p>여기서 알아 둘 것 하나: <strong>이 고리는 한 방향이다.</strong> Mac 이 원본이고 Pi 는 실행 사본이다. Pi 에서 고친 파일은 다음 동기화 때 <strong>덮어쓰인다</strong> — 그래서 편집은 Mac 에서 한다.</p>
+
+      <h4 id="s3-4-2">3-4-2. 자리 — 무엇이 어디에 살 것인가</h4>
+      <p>열일곱 쪽이 만들 파일의 자리를 미리 정해 둔다. <strong>지금 만드는 것은 폴더와 빈 자리뿐이고, 내용은 각 쪽에서 내가 채운다.</strong></p>
+      <pre class="diagram"><code>scripts/lidar_lab/            Pi 호스트에서 도는 파이썬. ROS 를 import 하지 않는다
+    link.py     l-01   포트 열기 · DTR · 바이트 세기
+    cmd.py      l-02   명령 왕복 · 응답 머리 · drain
+    point.py    l-03   5바이트 -&gt; (각도, 거리, 품질) · 재동기
+    turn.py     l-04   회전 자르기 · .scan.jsonl 저장/읽기
+    conf.py     l-05   지원 모드 목록 · 샘플 주기 · 최대 거리
+    source.py   l-06   세 입구를 같은 모양으로: 파일 / 시리얼 / /scan
+    verify.py   l-07   섹터 프로파일 · 두 경로 대조
+    geom.py     l-08   극좌표 -&gt; 직교 · 각도 규약
+    grid.py     l-09   광선 투사 · 미지/자유/점유 격자
+    cluster.py  l-10   분할 · 솎기
+    lines.py    l-11   선분 · 코너
+    clear.py    l-12   면까지의 수직 거리 · 법선 · 통로 폭
+    diff.py     l-13   두 장의 차
+    align.py    l-14   대응점 -&gt; 변환 추정 -&gt; 반복
+    checks.py   l-15   착시·재질 시험의 기록 양식
+    tests/             자기시험. 시험 파일은 전량으로 주어진다 (= 채점표)
+    scans/             .scan.jsonl 기록 파일을 두는 자리
+
+ros2_ws/src/rpi5_lidar_tools/   l-16   같은 로직의 C++ 판 (컨테이너에서 빌드한다)
+    include/rpi5_lidar_tools/   순수 헤더 — rclcpp 를 포함하지 않는다
+    src/                        얇은 노드 껍질
+    tests/                      C++ 자기시험</code></pre>
+      <p class="small">⚠ <strong>폴더 이름 두 개는 아직 제안이다.</strong> <code>rpi5_lidar_tools</code> 는 <a href="07-lidar.html">07</a> §3-10 이 이미 쓰는 이름인데 저장소에는 아직 없고, <code>lidar_lab</code> 은 이 가이드가 새로 고른 이름이다.
+      이름이 확정되면 이 쪽과 뒤의 쪽이 같은 이름을 쓴다 — <strong>쪽마다 다른 이름을 내가 만들지 않는다</strong>. 지금은 위의 이름 그대로 진행한다.</p>
+
+      <h4 id="s3-4-3">3-4-3. 만들기</h4>
+      <pre><code class="lang-bash">mac$ mkdir -p scripts/lidar_lab/tests scripts/lidar_lab/scans
+mac$ printf '%s\n' 'lidar_lab — L 가이드(l-00~l-17)의 도구. 내용은 각 쪽에서 내가 채운다.' &gt; scripts/lidar_lab/README.txt
+mac$ ./scripts/sync-to-pi.sh --dry-run</code></pre>
+      <p><code>--dry-run</code> 은 <strong>무엇이 오갈지 보여 주기만 하고 아무것도 복사하지 않는다.</strong> 출력에 <code>scripts/lidar_lab/</code> 로 시작하는 줄이 보이면 이 실습의 전제가 확인된 것이다.
+      보이는 것을 확인한 뒤에 <code>--dry-run</code> 없이 다시 돌린다.</p>
+      <p class="small">빈 디렉터리는 rsync 가 그대로 옮기지만 <strong>git 은 기록하지 않는다</strong>. 그래서 위에서 파일 한 줄을 같이 만들었다 — l-01 에서 첫 모듈이 생기면 그때부터는 필요 없다.
+      <code>scans/</code> 는 기록 파일이 커지는 자리라 <strong>버전 관리에 넣지 않는다</strong>(무엇을 무시할지 정하는 것은 내 몫이다).</p>
+
+      <h4 id="s3-4-4">3-4-4. Pi 에서 보이는가</h4>
+      <pre><code class="lang-bash">pi$ ls -R ~/ros2_rpi5/scripts/lidar_lab/</code></pre>
+      <p><strong>기대 출력의 모양</strong>: <code>README.txt</code> 와 <code>scans</code> · <code>tests</code> 두 디렉터리가 보인다.
+      <strong>없으면</strong> — ① 동기화를 <code>--dry-run</code> 으로만 돌렸다 ② <code>PI_PATH</code> 가 내 Pi 의 경로와 다르다(§3-4-1 의 1번 행) ③ SSH 로 붙는 이름이 다르다.
+      셋 다 아니면 <code>--dry-run</code> 출력을 다시 읽는다 — 거기에 <code>lidar_lab</code> 줄이 아예 없었다면 원인은 동기화가 아니라 <strong>내가 만든 자리</strong>다.</p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서, 직접 서랍을 열어서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.
+      <strong>이 가이드의 체크 항목은 "예상한 것을 봤는가"가 아니라 "무엇이 일어났는지 적었는가"로 되어 있다</strong> — 라이다는 예상대로 나오지 않는 일이 잦고, 그때 진도를 멈추지 않게 하기 위해서다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="host-python-serial-ready"><span><strong>경로 통과</strong> — <code>import serial</code> 이 어떻게 끝났는지 적었다. 실패했으면 §3-1-4 의 세 갈래 중 <strong>하나를 골라</strong> 그 이유와 함께 적었다
+          <span class="sub">판정 수단: 명령 출력 · §3-1-4 의 1번 행 · 합격 "수치"는 없다 — 성공/실패 어느 쪽이든 <strong>적혀 있으면</strong> 닫힌다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="pages-by-parts-marked"><span><strong>경로 통과</strong> — 부품 표의 "보유" 열에 빈칸이 없고, §1-3 에서 지금 내가 서 있는 행과 그다음을 막는 것 하나를 노트에 적었다
+          <span class="sub">판정 수단: 내 노트의 표 · §3-2-3 · §3-2-4</span></span></label></li>
+        <li><label><input type="checkbox" data-key="doc-owners-listed"><span><strong>경로 통과</strong> — 소유표 아홉 행의 "소유" 칸을 전부 채웠고, <strong>두 곳이 서로 다른 말을 하는 행</strong>에 표시를 했다
+          <span class="sub">판정 수단: 내 노트의 표 · §3-3-3 · 링크를 실제로 열어 그 쪽의 낱말을 옮겼는가</span></span></label></li>
+        <li><label><input type="checkbox" data-key="lab-dir-synced"><span><strong>경로 통과</strong> — Pi 에서 <code>ls -R ~/ros2_rpi5/scripts/lidar_lab/</code> 가 내가 만든 자리를 보여 준다(Pi 에 아직 못 붙었으면 그 사실과 <code>--dry-run</code> 출력의 해당 줄을 적었다)
+          <span class="sub">판정 수단: 명령 출력 · §3-4-4</span></span></label></li>
+        <li><label><input type="checkbox" data-key="device-node-absent-seen"><span><strong>발동 확인</strong> — 라이다 USB 를 뽑고 <code>lsusb</code> 와 <code>ls -l /dev/lidar</code> 를 다시 쳐서, <strong>있을 때와 없을 때의 출력을 둘 다</strong> 적었다
+          <span class="sub">판정 수단: 명령 출력 · §3-1-4 의 발동 상자 · 라이다가 아직 없으면 "없을 때"만 적고 그렇다고 밝힌다</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td><code>import serial</code> 이 <code>ModuleNotFoundError</code></td><td>호스트에 <code>pyserial</code> 이 없거나, <strong>다른</strong> <code>python3</code> 에 설치돼 있다</td><td><code>pi$ which -a python3</code> · <code>pi$ python3 -m pip show pyserial</code></td><td>§3-1-4 의 세 갈래 상자에서 하나를 고른다</td></tr>
+          <tr><td><code>lsusb</code> 는 <code>10c4:ea60</code> 을 보여 주는데 <code>/dev/lidar</code> 만 없다</td><td>커널은 장치를 봤지만 <strong>udev 규칙이 아직 설치되지 않았다</strong></td><td><code>pi$ ls -l /dev/ttyUSB*</code> 가 있으면 장치는 있는 것이다</td><td>udev 규칙의 설치는 본편 <a href="01-os-setup.html">01</a> 이 소유한다. 임시로 <code>/dev/ttyUSB&lt;n&gt;</code> 를 쓰되 <strong>부팅마다 바뀔 수 있다</strong></td></tr>
+          <tr><td><code>lsusb</code> 에도 <code>/dev</code> 에도 아무것도 없다</td><td>연결 문제 — 케이블 · 허브 · 포트. 전원이 모자라면 열거 자체가 안 되기도 한다</td><td>케이블과 포트를 바꿔 꽂고 <code>pi$ dmesg | tail</code> 을 본다</td><td>선을 바꾼다. 허브를 쓰고 있으면 Pi 에 직접 꽂아 본다 — 전류 상한은 l-01 이 다룬다</td></tr>
+          <tr><td>장치는 보이는데 뒤 쪽에서 포트를 열면 <code>Permission denied</code></td><td>사용자가 <code>dialout</code> 그룹이 아니다. <strong>그룹에 넣은 직후에도 다시 로그인하기 전에는 반영되지 않는다</strong></td><td><code>pi$ id -nG</code></td><td>그룹 추가는 <a href="01-os-setup.html">01</a>. 넣은 뒤 로그아웃/로그인하고 <code>id -nG</code> 로 다시 본다</td></tr>
+          <tr><td><code>sync-to-pi.sh</code> 가 <em>"멈춤: 이 동기화는 Pi 에만 있는 소스를 지운다"</em> 로 끝난다</td><td>Pi 의 컨테이너에서 만든 ROS 패키지가 Mac 에 없다. <strong>안전 장치가 일부러 멈춘 것이다</strong></td><td>그 메시지가 지울 대상을 줄마다 찍는다</td><td>메시지가 알려 주는 <code>rsync</code> 로 Pi 것을 Mac 으로 먼저 가져온 뒤 다시 돌린다. <strong>무시하고 강행하지 않는다</strong></td></tr>
+          <tr><td><code>--dry-run</code> 에는 <code>lidar_lab</code> 줄이 있는데 Pi 에서 <code>ls</code> 하면 없다</td><td><code>--dry-run</code> 만 돌렸거나, <code>PI_PATH</code> 가 내 Pi 의 경로와 다르다</td><td>§3-4-1 의 1번 행으로 돌아가 두 기본값을 본다</td><td>§3-4-3 을 <code>--dry-run</code> 없이 다시 돌린다</td></tr>
+          <tr><td>§2-4 가 인용한 쪽 · Figure 번호가 내 PDF 와 맞지 않는다</td><td>PDF 의 판이 다르다(rev.2.2 ↔ v3.0, 또는 그 밖의 판)</td><td>쪽 꼬리말: <code>n / 18</code> = rev.2.2, <code>n / 19</code> = v3.0</td><td>표 제목의 글자("RPLIDAR A1 Performance" 등)로 찾고 <strong>내 판을 노트에 적는다</strong></td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">여기 있는 것은 <strong>이 쪽에서 실제로 날 수 있는 것</strong>만이다. 장치가 안 보인다 · 권한 · 전원 같은 <strong>전 쪽 공통 증상</strong>은 l-01 이 소유하고, 저장소 전체의 공통 문제는 <a href="99-troubleshooting.html">99</a> 가 맡는다.</p>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. (네 갈래 검색) <code>/dev/lidar</code> 라는 이름 하나를 네 갈래로 찾아보라 — 그 이름은 <strong>누가 정했고</strong>, 무엇에 <strong>묶여 있고</strong>, 지금 내 Pi 에서 <strong>무엇을 가리키는가</strong></summary>
+        <div class="ans"><p>이 쪽의 네 갈래는 <strong>둘이 비어 있다.</strong> 그것을 확인하는 것이 문항의 절반이다.</p>
+        <p><strong>① 정의 — 없다.</strong> <code>/dev/lidar</code> 는 ROS 의 것도 제조사의 것도 아니다. 이 프로젝트가 붙인 이름이라 어떤 표준 문서에도 나오지 않는다.
+        <strong>② 사양 — 없다.</strong> 데이터시트에는 USB 도 리눅스 장치 이름도 없다(센서가 내놓는 것은 3.3 V TTL 시리얼이고, USB 는 중간의 CP2102 어댑터가 만든다).</p>
+        <p><strong>③ 구현 — <code>hardware/udev/99-ros2-devices.rules</code> 의 LiDAR 줄.</strong> 열어 보면 매칭 조건이 <code>idVendor</code> · <code>idProduct</code> 둘뿐이고 <code>ATTRS{serial}</code> 을 쓰지 않는다.
+        그런데 <strong>왜 안 썼는지는 그 파일이 말하지 않는다</strong> — 오히려 주석은 <em>"같은 칩(예: CP2102)을 쓰는 장치가 둘이면 idVendor/idProduct 가 동일하다. 그 경우 반드시 ATTRS{serial} 로 구분해야 한다"</em>고 적는다. 즉 규칙 파일만 열면 <strong>이 규칙이 왜 예외인지를 못 찾는다</strong>.</p>
+        <p>이유는 다른 문서에 있다 — <code>hardware/INVENTORY.md</code> §3 의 "CP2102 시리얼" 행이 <code>0001</code> 은 <strong>CP2102 공통 기본값이라 고유하지 않다</strong>고 적고, 같은 칩이 하나 더 붙으면 <code>KERNELS=="1-1.4"</code>(그 라이다가 꽂힌 USB 포트 경로)로 구분하라고 적어 두었다.
+        규칙 파일 맨 아래에도 포트 경로로 묶는 대안 줄이 주석으로 들어 있지만 그 예는 <code>/dev/mcu</code> 용이다. <strong>③ 이 한 문서로 닫히지 않는다는 것 자체가 이 문항의 수확이다</strong> — "어디에 적혀 있는가"와 "왜 그런가"가 다른 파일에 있을 수 있다.</p>
+        <p><strong>④ 실물 — <code>pi$ ls -l /dev/lidar</code> 와 <code>pi$ udevadm info -n /dev/lidar</code>.</strong> 앞의 것은 <strong>지금</strong> 어느 <code>ttyUSB&lt;n&gt;</code> 를 가리키는지, 뒤의 것은 커널이 그 장치에 대해 아는 속성 전부를 보여 준다.
+        여기서 얻는 것이 ③ 에 없다 — ③ 은 "무엇으로 묶었는가"를, ④ 는 "지금 무엇에 묶였는가"를 말한다. 뽑았다 꽂으면 ④ 의 <code>ttyUSB&lt;n&gt;</code> 는 바뀔 수 있고 <code>/dev/lidar</code> 는 그대로다 — <strong>그것이 이 규칙을 두는 이유 전체</strong>다.</p>
+        <p>①② 가 비어 있다는 것도 답이다. 뒤의 쪽에서는 반대로 <strong>② 만 있고 ③ 이 없는</strong> 값(프로토콜)과 <strong>넷이 서로 다른 말을 하는</strong> 값(최대 거리 · 각도 간격)을 만난다.</p></div></details>
+
+      <details class="quiz"><summary>2. 경로 B(컨테이너의 <code>/scan</code>)만 있으면 왜 "센서가 나쁜가, 내 도구가 나쁜가"를 가를 수 없는가</summary>
+        <div class="ans"><p><code>/scan</code> 한 개가 나올 때까지 사이에 낀 것이 여럿이기 때문이다 — 센서의 광학 · 펌웨어의 모드 선택 · 드라이버의 각도 보정과 단위 환산 · ROS 의 시간과 프레임 · 내 구독 코드의 해석.
+        값이 이상할 때 이 사슬 어디가 원인인지 <code>/scan</code> 하나로는 좁힐 수 없다. 특히 <strong>오류가 나지 않고 값만 틀리는</strong> 종류(파라미터 이름이 달라 통째로 무시되거나, 모드가 기대와 다른 것으로 낙착되는 경우)는 로그만 봐서는 정상으로 보인다.</p>
+        <p>경로 A 는 그 사슬의 <strong>맨 앞</strong>에 자를 대는 것이다. 바이트가 오는지, 한 바퀴에 점이 몇 개인지, 각도 간격이 고른지를 드라이버 없이 직접 재면, <code>/scan</code> 과 다를 때 <strong>어느 구간에서 갈렸는지</strong>가 보인다.
+        그래서 l-07 은 같은 장면을 두 경로로 따로 재서 견주고, 두 지표가 <strong>동시에</strong> 맞을 때만 통과로 본다.</p></div></details>
+
+      <details class="quiz"><summary>3. 이 가이드와 <a href="07-lidar.html">07</a> 이 같은 값(예: 최대 거리)에 대해 다른 말을 한다면, 무엇을 고쳐야 하는가</summary>
+        <div class="ans"><p><strong>아무것도 고치지 않는다 — 먼저 잰다.</strong> 둘 중 하나가 틀렸다고 정하는 것이 이 상황의 함정이다. 두 문서는 서로 다른 조건에서 얻은 말을 하고 있을 수 있고(카탈로그 값 ↔ 내 개체의 로그 값), 조건이 다르면 둘 다 참일 수 있다.</p>
+        <p>절차는 셋이다. ① 두 주장을 <strong>나란히</strong> 적고 각각의 조건(어느 문서의 어느 표인가, 어느 판인가, 어느 모드에서인가)을 밝힌다.
+        ② §3-3 의 소유표에서 <strong>그 값을 채우는 칸이 어디인지</strong> 본다 — 최대 거리의 기록란은 <code>INVENTORY.md</code> §3 에 있고 07 이 채운다.
+        ③ 내가 잰 값을 <strong>내 노트</strong>에 적는다. 소유하지 않은 칸에 내가 값을 써 넣지 않는다.</p>
+        <p>이것이 이 프로젝트가 "값의 세 상태"를 두는 이유이기도 하다 — <code>NOMINAL(&lt;출처&gt;)</code> 은 "출처는 있지만 내 것은 아직 아니다"를 잊지 않게 하는 표시다.</p></div></details>
+
+      <details class="quiz"><summary>4. 기준 형식이 못 잰 방향을 <code>0</code> 도 <code>inf</code> 도 아닌 <code>null</code> 로 적는다. 그런데 <code>LaserScan</code> 은 그 자리에 <code>inf</code> 나 <code>NaN</code> 을 쓴다. 둘 다 옳을 수 있는가</summary>
+        <div class="ans"><p>둘은 <strong>다른 문제를 풀고 있다.</strong> <code>LaserScan</code> 은 여러 센서와 여러 소비자가 공유하는 <strong>고정된 형식</strong>이라, 표기를 하나로 못박아 두지 않으면 받는 쪽마다 다르게 해석한다. 그래서 값의 자리에 숫자 타입으로 표현 가능한 특수값을 넣는다.</p>
+        <p>기준 형식은 <strong>내가 읽고 내가 쓰는</strong> 학습용 기록이고, 여기서 제일 중요한 것은 <strong>"못 쟀다"와 "없다"를 절대 섞지 않는 것</strong>이다. <code>0</code> 은 "0 m 에 물체가 있다"와 구별되지 않고, <code>inf</code> 는 격자를 만들 때 "아주 먼 곳에 점이 있다"처럼 읽혀 <strong>벽 뒤를 자유 공간으로 칠하는</strong> 버그를 부른다(l-09 가 그것을 일부러 일으켜 본다). <code>null</code> 은 그 하나만 뜻한다.</p>
+        <p>그래서 답은 "둘 다 옳다"이고, 옮길 때 <strong>어느 표기를 어느 표기로 바꾸는지 내가 알고 있어야 한다</strong>는 것이 요점이다. 이 변환이 l-06 에서 세 입구를 같은 모양으로 만들 때 실제로 나온다.</p></div></details>
+
+      <details class="quiz"><summary>5. §2-4 의 네 갈래에서 "② 사양"이 <strong>답하지 않는</strong> 값이 있다. 그런 값은 어떻게 다루는가, 그리고 그때 무엇이 ② 의 자리를 대신하는가</summary>
+        <div class="ans"><p>통신 프로토콜이 그렇다. 데이터시트 두 판 모두 p.6 과 p.9 에서 <em>"please contact SLAMTEC"</em> 이라 적고 프로토콜 장을 싣지 않았다. 그래서 명령 바이트나 점 형식에 대해 <strong>"데이터시트에 따르면"이라고 쓸 수 없다.</strong></p>
+        <p>이때 하는 일은 셋이다. ① <strong>값을 숨기지 않는다</strong> — 값이 없으면 학습자가 첫 줄에서 멈추고 채점도 못 한다. ② <strong>출처 사슬을 그대로 밝힌다</strong> — 어디서 온 값이고 등급이 무엇인지(<code>미확인 1차</code>) 적는다.
+        ③ <strong>기기가 스스로 검증하게 한다</strong> — 약속된 응답 머리가 그대로 오고, 점의 검사 비트 둘이 서로 어긋나며, 손을 앞에 댔을 때 그 방향의 거리가 줄어들면, 내 이해가 옳았다는 증거가 기기 쪽에서 나온다.</p>
+        <p>정리하면 <strong>③ 구현과 ④ 실물이 ② 의 자리를 대신한다.</strong> 그리고 "② 가 답하지 않는다는 것을 p.6 · p.9 에서 확인했다"는 그 자체로 유효한 ② 다 — <strong>없다는 것을 확인한 것과 안 찾아본 것은 다르다.</strong></p></div></details>
+
+      <details class="quiz"><summary>6. (일부러 틀리면) 라이다를 뽑고 <code>lsusb</code> 와 <code>ls -l /dev/lidar</code> 를 다시 치면 무엇이 달라지는가. 그 차이가 나중에 무엇을 가려 주는가</summary>
+        <div class="ans"><p>뽑으면 <strong>둘 다</strong> 사라진다. <code>lsusb</code> 의 <code>10c4:ea60</code> 줄이 없어지고, 커널이 만든 <code>ttyUSB&lt;n&gt;</code> 도 사라지므로 그것을 가리키던 <code>/dev/lidar</code> 심볼릭 링크도 함께 없어진다.</p>
+        <p>쓸모는 <strong>"하나만 없을 때"</strong>를 만났을 때 나온다. <code>lsusb</code> 에는 있는데 <code>/dev/lidar</code> 만 없으면 커널은 장치를 본 것이고 이름을 붙이는 udev 쪽 문제다 — 규칙이 설치되지 않았거나 매칭이 안 된 것이다.
+        둘 다 없으면 이름의 문제가 아니라 <strong>연결(케이블 · 포트 · 전원)</strong> 의 문제다. 이 두 갈래를 처음 보는 자리에서 가르지 못하면, 나중에 "라이다가 안 잡힌다"에서 udev 를 몇 시간 파게 된다.</p>
+        <p>한 가지 더: 뽑았다 꽂으면 <code>ttyUSB</code> 의 <strong>번호가 달라질 수 있다.</strong> 그것을 눈으로 보는 것이 고정 이름을 쓰는 이유를 가장 싸게 납득하는 방법이다.</p></div></details>
+
+      <details class="quiz"><summary>7. 이 센서의 레이저는 Class I 로 분류돼 있다. 그런데도 이 가이드가 첫 쪽부터 경고를 적어 두는 이유는 무엇인가</summary>
+        <div class="ans"><p>위험 등급이 높아서가 아니다. Class I 은 <strong>정상 사용에서 안전</strong>하다고 분류된 등급이고, 데이터시트도 저출력(&lt;5 mW)에 변조 펄스 구동이라고 적는다(p.5). 위험을 부풀려 말하면 나머지 경고까지 흘려 읽게 된다.</p>
+        <p>이유는 <strong>보이지 않기 때문</strong>이다. 파장이 775 ~ 795 nm(typical 785 nm)의 적외선이라(p.9 Figure 2-3) <strong>켜졌는지 눈으로 알 수 없다.</strong>
+        보이는 빨간 점이라면 사람은 저절로 시선을 피하고 창을 들여다보지 않는데, 안 보이면 그 습관이 생기지 않는다. 그래서 규칙을 <strong>습관으로 대신할 수 없고 글자로 적어 두어야</strong> 한다 — 렌즈 높이에서 정면으로 창을 들여다보지 않는다.</p>
+        <p>그리고 실제로 더 자주 부딪히는 위험은 <strong>도는 머리</strong> 쪽이다 — 머리카락 · 천 · 케이블이 감기고, 옮기려고 집어 들다 회전부를 잡는다. 그래서 센서에 처음 전원을 넣는 l-01 이 이 규칙들을 소유하고, 살아 있는 센서를 쓰는 모든 쪽이 그것을 되풀이한다.</p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>번호순 다음은</strong> → <a href="l-01-link.html">l-01 살아 있는가</a> — 포트를 열고, DTR 한 줄로 머리를 돌리고 세우고, 초당 들어오는 바이트를 센다. 센서를 <strong>놓을 자리</strong>도 그 쪽에서 만든다.</li>
+          <li><strong>라이다가 아직 없으면</strong> → 기록 파일 한 장을 구하는 세 갈래(§1-3)에서 하나를 고르고 <strong>l-08 부터</strong> 간다. 기하 다섯 쪽(l-08 ~ l-12)이 파일 한 장으로 전부 돈다. 라이다가 오면 l-01 로 돌아온다.</li>
+          <li><strong>컨테이너가 아직 안 떴으면</strong> → 그대로 진행한다. 컨테이너를 요구하는 것은 <strong>l-06 · l-07 · l-16 셋뿐</strong>이고, 그 셋은 본편 <a href="02-docker-ros2.html">02</a> 와 <a href="07-lidar.html">07</a> 이 끝난 뒤에 와도 된다.</li>
+          <li><strong>이 쪽을 못 닫았어도</strong> — <code>import serial</code> 이 안 되거나 Pi 에 아직 못 붙었어도 <strong>l-01 로 갈 수 있다</strong>. l-01 의 첫 실습은 본체 라벨을 눈으로 읽어 적는 것이라 도구가 필요 없다(그리고 그 라벨이 최대 거리 6 m ↔ 12 m 갈림의 <strong>가장 싼 증거</strong>다).
+          다만 <code>pyserial</code> 이 없으면 <strong>l-01 의 셋째 실습부터 막힌다</strong> — §3-1-4 의 세 갈래 중 하나를 그전에 골라 둔다. 소유표(§3-3)를 못 채웠으면 뒤에서 값을 얻었을 때 <strong>어디에 적을지</strong> 매번 헤매게 되므로, 그것만은 돌아와서 채운다.</li>
+          <li>이 쪽에서 적은 것 — 확인 기록표 · 부품 표 · 소유표 세 장 — 이 <strong>내 노트의 첫 장</strong>이다. 뒤의 쪽에서 "노트에 적는다"고 할 때의 그 노트가 이것이다. <code>hardware/INVENTORY.md</code> 에는 이 쪽에서 아무것도 적지 않는다.</li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

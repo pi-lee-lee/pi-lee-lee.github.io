@@ -270,7 +270,7 @@ cv2.imwrite('parsed.jpg', img)</code></pre>
           <tr><td>클립 없음</td><td><code>rect &amp;= cv::Rect(0, 0, w0, h0)</code></td><td>이미지 밖으로 나간 박스를 잘라야 <code>overlay</code> 가 예외 없이 그린다</td></tr>
         </tbody>
       </table></div>
-      <p class="small">이 프로젝트에서 쓰는 곳: 08b §2-c/d, §3-2, §3-5.</p>
+      <p class="small">이 프로젝트에서 쓰는 곳: 08b §2-2·§2-3·§2-4, §3-2, §3-5.</p>
 
       <h2>5. 커스텀 데이터 학습 (개요) <span class="tag mac">Mac / Colab</span></h2>
       <p>COCO 에 없는 것(충전 도크, 특정 장애물, 우리 집 고양이)을 검출하려면 학습이 필요하다. 이 프로젝트의 필수 경로는 아니지만, 흐름을 알아 두면 "안 되는 것"과 "데이터만 있으면 되는 것"을 구분할 수 있다.</p>
@@ -331,7 +331,7 @@ yolo export  model=runs/detect/train/weights/best.pt format=onnx opset=12 simpli
           <tr><td>클래스 필터</td><td>주행 안전에는 <code>person</code>(과 반려동물)만 보면 된다. 필터는 파서 뒤가 아니라 <em>NMS 앞</em>에서 해야 다른 클래스 박스가 억제 대상을 뺏지 않는다</td></tr>
           <tr><td>시간적 안정화</td><td>한 프레임의 검출은 깜빡인다. 감독 노드는 "연속 N 프레임(예: 3) 검출 시 인정, M 프레임 미검출 시 해제"로 히스테리시스를 둔다(10 단계 정책). 검출 노드는 raw 를 내고 판단은 위에서</td></tr>
           <tr><td>노출과 NoIR</td><td>역광·어두운 복도에서 recall 이 떨어진다. NoIR 은 낮에 색이 붉어도 검출에는 큰 영향이 없고, 밤에는 IR 조명이 있어야 한다. 노출 안정(AeEnable)이 색보다 중요</td></tr>
-          <tr><td>검출 → 거리</td><td>① <strong>라이다 융합</strong>(정석): 박스 중심 u → θ = atan((u−cx)/fx) → 그 방위의 <code>/scan</code> 거리(10 단계). ② 근사: 사람 키 H(≈1.7 m) 가 h 픽셀이면 Z ≈ fy·H/h — 거칠지만 라이다 사각(높이)에 있는 물체에 유용</td></tr>
+          <tr><td>검출 → 거리</td><td>① <strong>라이다 융합</strong>(정석): 박스 중심 u → θ = atan((u−cx)/fx) → 그 방위의 <code>/scan</code> 거리(08d §2-3 — 거기서는 이것을 뒤집어 라이다 점을 사진에 투영한다). ② 근사: 사람 키 H(≈1.7 m) 가 h 픽셀이면 Z ≈ fy·H/h — 거칠지만 라이다 사각(높이)에 있는 물체에 유용</td></tr>
           <tr><td>평가</td><td>실제 주행 환경에서 5분 rosbag 을 찍고 오검출(FP)·미검출(FN)을 세어 본다. mAP 보다 "우리 복도에서 사람을 몇 번 놓쳤나"가 중요하다</td></tr>
           <tr><td>프레임 드롭</td><td>추론이 카메라보다 느리면 최신 프레임만 처리(08b). 큐를 쌓으면 1분 뒤 30초 전 영상을 보고 판단한다</td></tr>
         </tbody>
@@ -357,7 +357,7 @@ def on_detections(dets):      # dets: 이 프레임의 Detection2DArray
           <tr><td>같은 사진의 검출 수 (정답 vs C++ vs Hailo)</td><td>____</td><td>____</td><td>____</td></tr>
         </tbody>
       </table></div>
-      <p class="small">이 프로젝트에서 쓰는 곳: 08b(입력 크기·필터), 08c(Hailo 실시간), 10(정책·융합).</p>
+      <p class="small">이 프로젝트에서 쓰는 곳: 08b(입력 크기·필터), 08c(Hailo 실시간), 08d(거리 융합), 10(정책).</p>
 
       <h2>7. Hailo 로 가는 길 (개요)</h2>
       <pre class="diagram"><code>   .pt ──(ultralytics export)──► .onnx ──(Hailo Dataflow Compiler, x86 Linux)──► .hef ──► Hailo-8 (HailoRT)

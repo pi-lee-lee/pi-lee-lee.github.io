@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F7 · 메모리 지도 — DTCM·DMA·캐시 — MCU 펌웨어 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="fw-07">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">F7 · 메모리 지도 — DTCM·DMA·캐시</p>
+      <h1>같은 DMA 코드가 버퍼의 자리에 따라 세 번 다르게 움직인다</h1>
+      <p class="lead"><a href="fw-05-cli.html">fw-05</a> 의 명령 창은 바이트마다 인터럽트가 나고, <a href="fw-03-clock-console.html">fw-03</a> 의 <code>printf</code> 는 글자를 다 보낼 때까지 주 루프를 세워 둔다.
+      이 쪽은 그 두 일을 <strong>DMA 에 맡긴다</strong> — 그런데 H7 에서 DMA 는 "버퍼를 어디에 두었는가"에 따라 <strong>결정적으로 실패</strong>하거나, <strong>동작</strong>하거나, <strong>가끔 틀린 데이터</strong>를 낸다.
+      세 상태를 일부러 하나씩 만들어 보고, 그 뒤에 명령 창의 수신을 Circular DMA 로 바꾼다. 여기서 만든 <code>dma_buf.h</code> · <code>stream_rx.c</code> 를 <a href="fw-12-adc.html">fw-12</a> 의 ADC, <a href="fw-14-wt901.html">fw-14</a> 의 WT901, <a href="fw-17-link-v2.html">fw-17</a> 의 계약 v2 링크가 그대로 쓴다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>명령 창에 <code>mem</code> 을 치면 DMA 버퍼의 주소가 <code>0x3000_xxxx</code>(RAM_D2)로, 32 바이트 정렬이 <code>1</code> 로, D-Cache 상태가 <code>0</code> 또는 <code>1</code> 로 찍히고 — 같은 값을 실은 두 줄(<code>printf</code> 로 보낸 줄과 DMA 로 보낸 줄)이 <strong>글자 하나 다르지 않다.</strong>
+        그 앞에서 버퍼가 DTCM 에 있을 때 DMA 줄이 <strong>안 나오는 것</strong>과, D-Cache 를 켰을 때 두 줄이 <strong>서로 다른 것</strong>을 내 눈으로 봤다. 명령 창은 이제 Circular DMA 로 받고, 수신 오류가 나도 스스로 되살아난다(<code>mem</code> 의 <code>rearm</code>).</p>
+        <p><strong>이 쪽에 필요한 것</strong> — NUCLEO-H723ZG, USB 케이블, fw-06 까지 끝낸 프로젝트(<code>firmware/h723zg/</code>), fw-03 에서 쓰던 Mac 터미널(pyserial miniterm), Mac 의 <code>cc</code>.
+        <strong>없으면</strong> — 보드가 없어도 실습 C 의 호스트 시험(<code>test_stream_rx.c</code>)은 Mac 만으로 된다. 나머지 관찰은 전부 보드가 있어야 한다. 새로 살 부품은 없다. 왕복 시험의 상대는 언제나 USB 너머의 Mac 터미널이다 — <strong>PD8 ↔ PD9 에 점퍼를 걸지 않는다</strong>(§2-8 끝의 안전 상자).</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag mx">CubeMX</span> <span class="tag mac">Mac</span></div>
+        <div><span class="k">선행</span><a href="fw-05-cli.html">fw-05</a> — <code>console.c</code> 의 수신부(<code>console_rx_start()</code> · <code>console_rx_pop()</code> · <code>console_rx_stats_t</code>) · <code>cli_register()</code> · 오류 콜백의 재무장 습관 /
+          <a href="fw-06-tick-watchdog.html">fw-06</a> — NVIC 우선순위 표 초판(§2-8) · <code>tick_get_ms()</code> / <a href="fw-03-clock-console.html">fw-03</a> — <code>_write()</code> · <code>huart3</code> · <code>CONSOLE_TX_TIMEOUT_MS</code> / <a href="fw-02-toolchain.html">fw-02</a> — <code>build.sh</code> 가 만드는 <code>.map</code></div>
+        <div><span class="k">채우는 INVENTORY 칸</span>없음 (이 쪽은 값을 확정하지 않는다 — 관찰 표는 내 노트에)</div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(정적 HTML 은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
+      </div>
+
+      <h2 id="overview">1. 개요 — 누가 그 메모리에 닿을 수 있는가</h2>
+      <p>부품 × 쪽 지도(<a href="fw-00-map.html">fw-00</a>)에서 이 쪽은 "Nucleo + USB 만으로 끝나는 쪽"의 마지막이다. 다음 쪽부터는 결선이 시작된다.
+      이 쪽의 질문은 하나다 — <strong>"이 버퍼를 누가 읽고 쓰는가."</strong> CPU 만 만지는 변수는 어디에 있어도 된다. DMA 가 만지는 버퍼는 <strong>DMA 가 닿을 수 있는 자리</strong>에 있어야 하고, CPU 의 캐시가 그 자리를 가리고 있으면 안 된다. H723 의 RAM 은 한 덩어리가 아니라 여섯 조각이고, 조각마다 닿을 수 있는 주인이 다르다.</p>
+      <pre class="diagram"><code>주소         영역 (ld 이름) · 크기     DMA1/DMA2 가 닿는가    여기에 두는 것
+──────────────────────────────────────────────────────────────────────────────────────────────────────
+0x0000_0000  ITCM (ITCMRAM) 64 KB      못 온다 (CPU·MDMA)    (비어 둔다)
+0x0800_0000  FLASH 1 MB                온다                   코드 · fw-16 의 저장 섹터
+0x2000_0000  DTCM (DTCMRAM) 128 KB     못 온다 (CPU·MDMA)    변수 전부 = .data .bss 힙 스택 (기본 ld)
+0x2400_0000  AXI SRAM (RAM_D1) 320 KB  온다                   (비어 둔다)
+0x3000_0000  SRAM1+2 (RAM_D2) 32 KB    온다                   .dma_buf = DMA 버퍼 전부 (이 쪽)
+0x3800_0000  SRAM4 (RAM_D3) 16 KB      온다 (BDMA 의 자리)    쓰지 않는다</code></pre>
+      <p class="small">주소·크기는 사용자의 CubeMX 생성물 <code>STM32H723XG_FLASH.ld</code> 의 <code>MEMORY</code> 블록(DTCMRAM 128K · RAM_D1 320K · RAM_D2 32K · RAM_D3 16K · ITCMRAM 64K · FLASH 1024K)과 RM0468 Rev 3 표 6(메모리 맵), DS13313 Rev 5 §3.3.2 에서 옮겼다.
+      "닿는가" 열은 RM0468 §2.1.6 "Bus master peripherals" 의 DMA1/DMA2 · BDMA 문단과 §2.3.2 의 SRAM 문단에서. SRAM1 과 SRAM2 는 각 16 KB 로 붙어 있어(0x3000_0000 · 0x3000_4000) ld 가 <code>RAM_D2</code> 하나로 묶었다.</p>
+      <p>이 쪽에서 쓰는 낱말:</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>낱말</th><th>뜻 (이 가이드에서)</th></tr></thead>
+        <tbody>
+          <tr><td>버스 마스터</td><td>스스로 메모리 주소를 내서 읽고 쓰는 쪽. CPU, DMA1/DMA2, MDMA, BDMA … 마스터마다 닿을 수 있는 메모리가 다르다(위 표의 셋째 열)</td></tr>
+          <tr><td>DTCM</td><td>Cortex-M7 코어에 직접 붙은 데이터 RAM(0x2000_0000, 128 KB). 캐시를 거치지 않고 대기 없이 읽힌다 — 그래서 CubeMX 기본 ld 가 변수를 전부 여기 둔다. <strong>DMA1/DMA2 는 여기 못 온다</strong></td></tr>
+          <tr><td>RAM_D2</td><td>D2 도메인의 SRAM1 + SRAM2(0x3000_0000, 32 KB). DMA1/DMA2 가 있는 도메인의 RAM 이다. 이 가이드는 <strong>모든 DMA 버퍼</strong>를 여기에 둔다</td></tr>
+          <tr><td>D-Cache</td><td>CPU 와 메모리 사이의 32 KB 데이터 캐시(DS13313 §3.1). 기본은 <strong>꺼짐</strong>. 켜면 CPU 가 읽고 쓴 값이 캐시에 머물러 DMA 가 보는 메모리와 어긋날 수 있다</td></tr>
+          <tr><td>캐시 라인</td><td>캐시가 메모리를 나르는 단위, Cortex-M7 은 <strong>32 바이트 고정</strong>(CMSIS <code>cachel1_armv7.h:46</code>). 정렬·크기 규칙이 여기서 나온다</td></tr>
+          <tr><td>MPU 리전</td><td>주소 범위 하나에 접근 권한·캐시 속성을 붙이는 단위. 이 쪽은 RAM_D2 32 KB 전체를 "캐시하지 않는 메모리"로 표시한다</td></tr>
+          <tr><td>Circular DMA</td><td>버퍼 끝에 닿으면 처음으로 되감아 계속 받는 DMA 모드. 콜백이 주는 <code>Size</code> 는 <strong>길이가 아니라 위치</strong>다(§2-8)</td></tr>
+          <tr><td><code>old_pos</code> / <code>pos</code></td><td>지난 콜백까지 처리한 위치 / 이번 콜백이 알려 준 위치. 그 차이가 새 바이트다. 되감기면 pos &lt; old_pos</td></tr>
+          <tr><td>재무장(re-arm)</td><td>fw-05 의 뜻 그대로 — 수신이 멈춘 뒤 다시 거는 일. DMA 수신에서는 <strong>모든</strong> 수신 오류가 수신을 멈춘다(§2-8 (c))</td></tr>
+        </tbody>
+      </table></div>
+      <p>이 쪽이 만들거나 고치는 파일: <code>User/Inc/System/dma_buf.h</code>(새로) · <code>User/Inc/System/stream_rx.h</code> + <code>User/Src/System/stream_rx.c</code>(새로, 순수) · <code>User/Src/Tools/console.c</code>(fw-05 의 수신부를 <strong>바꾼다</strong>, <code>mem</code> 명령을 더한다) · <code>STM32H723XG_FLASH.ld</code>(섹션 하나를 더한다 — 생성물에 손대는 이 쪽의 예외) ·
+      <code>Core/Src/main.c</code> 의 <code>MPU_Config()</code>(손으로 쓰지 않고 CubeMX 설정으로 만든다) · <code>firmware/host_tests/test_stream_rx.c</code>(새로) · <code>app.c</code>(한 줄).</p>
+
+      <h2 id="why">2. 원리 — 왜 자리가 먼저고, 캐시는 그 다음인가</h2>
+
+      <h3 id="s2-1">2-1. 버스 매트릭스 — DMA1/DMA2 는 ITCM · DTCM 에 닿지 못한다</h3>
+      <p>H723 안에는 마스터가 여럿이고(CPU, DMA1, DMA2, MDMA, BDMA, …) 메모리도 여럿이다. 둘 사이를 잇는 것이 버스 매트릭스(RM0468 Rev 3 §2.1, 그림 1 "System architecture")인데, <strong>모든 마스터가 모든 메모리에 이어져 있지 않다.</strong>
+      우리가 쓰는 DMA1/DMA2 에 대해 RM0468 §2.1.6 "Bus master peripherals" 는 이렇게 적는다: "The DMA1 and DMA2 controllers have two 32-bit buses - memory bus and peripheral bus, connected to the AHB bus matrix in D2 domain. … the memory bus can access <strong>all internal memories except ITCM and DTCM</strong>", 그리고 주변장치 버스도 같은 문장으로 "all internal memories except ITCM and DTCM".</p>
+      <p>DTCM 쪽에서 읽어도 같다 — §2.3.2: "DTCM-RAM on TCM interface is mapped at the address 0x2000 0000 and accessible by Cortex-M7, and by MDMA through AHBS slave bus of the Cortex-M7 CPU." 닿을 수 있는 마스터가 CPU 와 MDMA 둘로 못 박혀 있다. TCM 은 코어에 직접 붙은 메모리라 매트릭스를 거치지 않는 대신, 매트릭스에 있는 다른 마스터가 들어올 길이 없다.
+      반대로 SRAM1 에 대해서는 "AHB SRAM1 … can be used as <strong>DMA buffers</strong> to store peripheral input/output data in D2 domain" 이라고 용도까지 적어 뒀다. 이 두 문장이 이 쪽 전체의 근거다.</p>
+      <p>그래서 DMA1/DMA2 가 DTCM 주소(0x2000_xxxx)를 받으면 <strong>매트릭스에 그 길이 없다.</strong> 캐시가 켜졌든 꺼졌든, 버퍼가 정렬됐든 아니든 상관없이 — 자리가 틀렸다. 무엇이 보이는가(반환값 · 오류 코드 · 터미널)는 실습 A 에서 학습자가 직접 적는다. 이 가이드가 미리 적어 둔 기대는 [추정] 이다: DMA 스트림의 전송 오류(TEIF)가 서고 HAL 이 <code>HAL_UART_ErrorCallback()</code> 을 <code>ErrorCode</code> 에 <code>HAL_UART_ERROR_DMA</code>(0x10)를 달아 부른다(<code>stm32h7xx_hal_dma.c:1222-1233</code> 이 TEIF 를 <code>HAL_DMA_ERROR_TE</code> 로 옮기고 <code>:1424</code> 에서 <code>XferErrorCallback</code> 을, <code>stm32h7xx_hal_uart.c:3838-3868</code> 의 <code>UART_DMAError</code> 가 그것을 받아 오류 콜백을 부른다). 관찰이 다르면 관찰이 맞다.</p>
+      <p>이 프로젝트의 DMA 요청은 전부 <strong>DMAMUX1 → DMA1/DMA2</strong> 다. USART3 의 요청 번호는 RM0468 표 118 에서 <code>usart3_rx_dma</code> = 45, <code>usart3_tx_dma</code> = 46 이고(CubeMX 가 스트림에 배정한다), ADC3 도 같은 DMAMUX1(요청 115 — <code>hardware/pinmap-h723.md</code> §3-1)이다.
+      D3 도메인의 <strong>BDMA 와 SRAM4(RAM_D3)는 쓰지 않는다</strong> — "BDMA transfers are limited to the D3 domain resources. It can access the internal SRAM4, backup RAM, and AHB4 and APB4 peripherals"(§2.1.6). 우리 주변장치(USART3 · USART6 · I2C1 · ADC3)는 D2 에 있다.</p>
+
+      <h3 id="s2-2">2-2. CubeMX 의 기본 ld 는 변수를 전부 DTCM 에 둔다 — 그래서 "그냥 선언한" 버퍼는 항상 실패한다</h3>
+      <p>2-1 만으로는 문제가 안 된다. "그럼 버퍼를 DTCM 에 두지 않으면 되지"가 되려면 <strong>내 변수가 지금 어디에 있는지</strong>를 알아야 한다. 그것을 정하는 것이 링커 스크립트다. CubeMX 가 H723 프로젝트에 만들어 준 <code>STM32H723XG_FLASH.ld</code> 를 열어 보면(사용자의 생성물에서 확인):</p>
+      <pre><code class="lang-bash">cd firmware/h723zg
+grep -n "ORIGIN" STM32H723XG_FLASH.ld        # MEMORY 블록: 여섯 영역과 주소
+grep -n "&gt;DTCMRAM\|_estack" STM32H723XG_FLASH.ld   # 어느 섹션이 DTCM 으로 가는가</code></pre>
+      <pre><code class="lang-text">(기대)
+ MEMORY 에 DTCMRAM 0x20000000 128K · RAM_D1 0x24000000 320K · RAM_D2 0x30000000 32K · RAM_D3 0x38000000 16K · ITCMRAM · FLASH
+ &gt;DTCMRAM 이 붙은 출력 섹션이 다섯: .data  .tdata  .tbss  .bss  ._user_heap_stack
+ _estack = ORIGIN(DTCMRAM) + LENGTH(DTCMRAM)  → 스택도 DTCM 의 꼭대기에서 아래로 자란다
+ RAM_D1 · RAM_D2 · RAM_D3 를 쓰는 출력 섹션은 하나도 없다 (이름만 정의돼 있다)</code></pre>
+      <p>즉 <code>static uint8_t buf[256];</code> 라고만 쓰면 그 배열은 <code>.bss</code> → DTCM 에 들어간다. fw-05 의 <code>rx_ring</code> · <code>rx_buf</code> 도, fw-06 의 통계 구조체도 지금 전부 DTCM 에 있다. 그것이 <strong>옳은 자리</strong>다 — CPU 만 만지는 변수에 DTCM 은 가장 빠르고 캐시와 무관한 메모리다(DS13313 §3.3.2: "zero wait state memories … critical real-time data, such as … stack/heap memory"). 문제는 오직 <strong>DMA 가 만지는 버퍼</strong>를 같은 방식으로 선언할 때 생긴다.</p>
+      <p>06 §3-6-4 의 옛 코드는 버퍼 옆에 "안 하면 DMA 는 도는데 데이터가 안 바뀐다 — D-Cache" 라고 적어 뒀다. 그 문장은 셋째 상태(아래 표 ③)의 서술이고, 기본 ld 에서 <strong>먼저</strong> 만나는 것은 첫째 상태다. 캐시가 아니라 자리다. 세 상태를 표로 가른다(<a href="06a-mcu-protocol.html">06a</a> §3-3-A 가 같은 표를 예고했다 — 이 쪽이 그것을 보드에서 재현한다):</p>
+      <div class="tbl"><table>
+        <thead><tr><th>상태</th><th>버퍼의 자리</th><th>D-Cache</th><th>무슨 일이 나는가</th><th>성격</th><th>이 쪽의 실습</th></tr></thead>
+        <tbody>
+          <tr><td><strong>①</strong></td><td>DTCM — 기본 ld 그대로 선언한 배열</td><td>켜든 끄든 무관</td><td>DMA1/DMA2 가 그 주소에 닿지 못한다(§2-1). 전송이 일어나지 않는다</td><td><strong>결정적</strong> — 매번 같은 실패. <strong>1차 함정</strong></td><td>A</td></tr>
+          <tr><td><strong>②</strong></td><td>RAM_D2 — <code>.dma_buf</code> 섹션(§2-5)</td><td>꺼짐(CubeMX 기본)</td><td>동작한다. 캐시 조치가 하나도 없어도 된다</td><td>결정적</td><td>B · C</td></tr>
+          <tr><td><strong>③</strong></td><td>RAM_D2</td><td>켜짐, 조치 없음</td><td>CPU 는 캐시에 남은 값을 읽고 쓰고, DMA 는 메모리를 직접 읽고 쓴다 → 둘이 어긋난다</td><td><strong>비결정적</strong> — 될 때도 안 될 때도 있다</td><td>D (앞 절반)</td></tr>
+          <tr><td><strong>③′</strong></td><td>RAM_D2 + MPU 비캐시 리전</td><td>켜짐</td><td>그 영역만 캐시를 거치지 않는다 → ②와 <strong>동일</strong>하게 동작</td><td>결정적</td><td>D (뒤 절반)</td></tr>
+        </tbody>
+      </table></div>
+      <p>표를 진단 순서로 읽는다. 캐시를 켰다 껐다 해 보는 것으로는 원인을 좁히지 못한다 — ①이면 둘 다 실패하고, ②이면 캐시 OFF 는 당연히 통과한다. <strong>먼저 버퍼의 주소를 본다</strong>(<code>mem</code> 명령, <code>.map</code>, <code>arm-none-eabi-nm</code>). <code>0x2000_xxxx</code> 면 ①이다. 이것이 06 의 주석을 이 쪽에서 다시 도출한 결과다.</p>
+
+      <h3 id="s2-3">2-3. 캐시는 기본이 꺼져 있다 — 캐시 문제는 켠 뒤에만 생긴다</h3>
+      <p>Cortex-M7 의 D-Cache 는 리셋 뒤 꺼져 있고, 켜는 것은 소프트웨어다(CMSIS <code>SCB_EnableDCache()</code>, <code>cachel1_armv7.h:141</code>). CubeMX 는 CORTEX_M7 설정에서 켜라고 하기 전에는 그 호출을 만들지 않는다 — 사용자의 H723 생성물 <code>Core/Src/main.c</code> 에는 <code>SCB_Enable</code> 로 시작하는 줄이 없다(2026-09-22 직접 grep). 내 프로젝트에서도 같은지 한 줄로 본다:</p>
+      <pre><code class="lang-bash">grep -n "SCB_Enable\|MPU_Config" firmware/h723zg/Core/Src/main.c</code></pre>
+      <pre><code class="lang-text">(기대: SCB_EnableDCache 줄이 없다. MPU_Config 는 선언 · 호출 · 정의 세 군데 — CubeMX 가 배경 리전 하나를 이미 만들어 둔다(§2-5))</code></pre>
+      <p>캐시가 꺼져 있으면 CPU 의 모든 읽기 · 쓰기가 메모리로 바로 간다. DMA 가 쓴 것을 CPU 가 그대로 보고, CPU 가 쓴 것을 DMA 가 그대로 본다. ②가 "캐시 조치 없이 동작"하는 이유다.
+      그러면 왜 켜는가 — 520 MHz 코어가 AXI SRAM · 플래시를 대기 없이 쓰려면 캐시가 있어야 한다(DS13313 §3.1: "32 Kbytes of I-cache and 32 Kbytes of D-cache allowing 0-wait state"). 지금 우리 코드는 전부 DTCM(대기 없음)에서 돌아 켜지 않아도 느리지 않지만, 뒤에 데이터가 AXI SRAM 으로 넘치거나 상수 표를 플래시에서 많이 읽게 되면 켜게 된다.
+      그때 어떤 일이 나는지를 <strong>지금 아무것도 걸려 있지 않은 상태에서</strong> 미리 겪어 두는 것이 실습 D 다. 켜고 나면 메모리의 기본 속성이 그대로 작용한다 — RM0468 표 6 은 AXI SRAM · SRAM1 · SRAM2 의 기본 속성을 "Normal, Write-back, write allocate"(캐시됨)로 적는다. DTCM 은 TCM 인터페이스라 캐시를 거치지 않는다 — 그래서 CPU 전용 변수는 캐시를 켜도 아무 일이 없다.</p>
+
+      <h3 id="s2-4">2-4. 캐시 라인 32 바이트 — 버퍼는 32 정렬 · 32 의 배수, 이웃 변수가 같이 버려지는 함정</h3>
+      <p>캐시는 바이트 단위로 일하지 않는다. Cortex-M7 의 D-Cache 는 <strong>32 바이트 라인</strong> 단위로 메모리를 나른다 — CMSIS <code>cachel1_armv7.h:46</code>: "Cortex-M7 cache line size is fixed to 32 bytes (8 words)".
+      캐시 정비 연산도 라인 단위다. <code>SCB_InvalidateDCache_by_Addr(addr, size)</code>(<code>:358-378</code>)는 주소의 하위 5 비트를 무시하고(<code>:368</code> 주석 "register accepts only 32byte aligned values, only bits 31..5 are valid") 라인을 통째로 버린다.</p>
+      <p>여기서 함정이 하나 나온다. 버퍼가 32 바이트 경계에 맞지 않으면 버퍼의 첫 라인과 마지막 라인에는 <strong>이웃 변수</strong>가 같이 들어 있다. "DMA 가 새로 써 줬으니 버퍼의 캐시를 버려라"고 Invalidate 를 걸면, 그 라인에 있던 이웃 변수의 값 — CPU 가 캐시에만 써 두고 메모리에는 아직 안 내려간 값 — 이 <strong>같이 버려진다.</strong>
+      증상은 "DMA 와 아무 상관없는 변수가 가끔 옛 값으로 돌아간다"다. 재현이 어렵고 원인 자리와 증상 자리가 다르다. ST 의 H7 UART DMA 예제가 두 버퍼를 <code>ALIGN_32BYTES(…)</code> 로 선언하고(<code>Projects/NUCLEO-H743ZI/Examples/UART/UART_TwoBoards_ComDMA/Src/main.c:46 · :50</code>) 읽기 전에 <code>SCB_InvalidateDCache_by_Addr</code> 를 부르는(<code>:225</code>) 이유가 이것이다.</p>
+      <p>그래서 이 가이드의 규칙: <strong>DMA 버퍼는 32 바이트 정렬 + 크기는 32 의 배수.</strong> 256 · 128 · 192 는 조건을 만족하고, 100 은 아니다. 규칙을 <code>dma_buf.h</code> 의 매크로 둘이 강제한다(§3-2-2) — <code>DMA_BUF</code> 가 정렬을, <code>DMA_BUF_ASSERT_SIZE()</code> 가 배수를 컴파일 때 검사한다.
+      단서 하나. 이 가이드가 고른 해법(§2-5 의 MPU 비캐시 리전)에서는 리전 전체가 캐시를 거치지 않으므로 정렬이 <strong>동작의 필수 조건은 아니다.</strong> 그래도 규칙으로 두는 이유는, 뒤에 버퍼 하나를 다른 자리에 두거나 해법을 정비 연산으로 바꾸는 날에도 같은 선언이 그대로 안전하기 때문이다. 비용은 버퍼 사이의 빈칸 최대 31 바이트다.</p>
+
+      <h3 id="s2-5">2-5. 세 해법과 이 가이드의 구성 — RAM_D2 전용 섹션 + MPU 비캐시. 모드(Circular/Normal)와 무관하게 동일</h3>
+      <p>③(캐시 ON + 어긋남)을 피하는 길은 셋이다(ST 커뮤니티 FAQ "DMA is not working on STM32H7 devices", 2018-07-23 — 세 해법의 원문). 셋 다 ①(자리)을 먼저 고친 뒤의 이야기다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>해법</th><th>하는 일</th><th>드는 것</th><th>잃는 것</th></tr></thead>
+        <tbody>
+          <tr><td>(가) D-Cache 를 켜지 않는다</td><td>CubeMX 기본 그대로 둔다</td><td>없음</td><td>캐시가 주는 속도 전부. 나중에 켜는 순간 ③이 한꺼번에 나타난다</td></tr>
+          <tr><td>(나) <strong>MPU 비캐시 리전</strong></td><td>DMA 버퍼를 한 영역(RAM_D2)에 모으고 그 영역을 MPU 로 "캐시하지 않는 메모리"로 표시한다</td><td>ld 섹션 하나 + CubeMX 의 MPU 리전 하나. 버퍼 선언에 매크로 하나</td><td>그 영역의 접근은 캐시 없이 간다(UART 46 kB/s 수준에서는 의미 없는 손해). 정비 연산은 필요 없다</td></tr>
+          <tr><td>(다) 정비 연산</td><td>DMA 가 읽기 전 <code>SCB_CleanDCache_by_Addr</code>, DMA 가 쓴 뒤 읽기 전 <code>SCB_InvalidateDCache_by_Addr</code>(<code>cachel1_armv7.h:388 · :358</code>)</td><td>버퍼마다 · 전송마다 호출 한 줄. 32 정렬 · 배수가 <strong>필수</strong>(§2-4)</td><td>한 줄을 빠뜨린 버퍼가 조용히 ③으로 돌아간다. Circular 수신에서는 되감기 때 두 구간을 따로 무효화해야 한다</td></tr>
+        </tbody>
+      </table></div>
+      <p>이 가이드의 구성은 <strong>(나)</strong>다: 링커 스크립트에 <code>.dma_buf</code> 출력 섹션을 만들어 <code>&gt;RAM_D2</code> 로 보내고, 모든 DMA 버퍼(이 쪽의 USART3 RX · TX, 뒤의 USART6 RX · ADC3 · I2C1 을 DMA 로 고르면 그것도)를 <code>DMA_BUF</code> 로 그 섹션에 넣고, CubeMX 의 MPU 설정에 <strong>리전 1 = 0x3000_0000 · 32 KB · non-cacheable</strong> 을 더한다.
+      (나)를 고른 이유는 "버퍼를 선언하는 자리에서 규칙이 끝난다"는 점이다 — 전송 코드마다 정비 연산을 기억할 필요가 없고, fw-14 · fw-17 이 <code>stream_rx</code> 를 재사용할 때 캐시 코드를 옮길 것이 없다. (다)가 틀린 길은 아니다 — RAM 을 캐시로 최대한 쓰고 싶을 때의 길이고, 이 프로젝트는 그 요구가 없다.</p>
+      <p>리전의 크기는 둘 중 하나로 잡을 수 있다. 사실만 적는다:</p>
+      <ul>
+        <li><strong>RAM_D2 32 KB 전체</strong>(이 가이드의 예시) — 리전 하나로 <code>.dma_buf</code> 의 변수가 몇 개가 되든 다 덮는다. 기본 ld 에서 RAM_D2 를 쓰는 것이 없으므로 잃는 캐시 대상도 없다. 베이스 0x3000_0000 은 32 KB 에 정렬돼 있다(MPU 리전은 크기가 2 의 거듭제곱이고 베이스가 크기에 정렬돼야 한다 — ST 문서 "How to use the MPU to manage cache coherency"의 규칙).</li>
+        <li><strong>버퍼만 덮는 작은 리전</strong>(예: RAM_D2 끝의 1 KB) — ld 가 섹션을 그 정확한 주소에 고정해야 하고(<code>ORIGIN + LENGTH − 크기</code> 산술), 버퍼가 늘어 리전을 넘치면 넘친 부분이 조용히 캐시된다. 나머지 RAM_D2 를 캐시되는 일반 RAM 으로 쓸 수 있다. 1세대(~/ros2) 의 H7RS 프로젝트가 이 꼴이었다(AXI SRAM 끝 2 KB).</li>
+        <li>차이가 없는 축: DMA 의 동작, 캐시 정합성, 수신 · 송신 코드 — <strong>동일</strong>. 다른 것은 ld 산술의 양과 "버퍼가 늘 때 무엇을 고치는가"뿐이다.</li>
+      </ul>
+      <p><strong>CubeMX 가 이미 만든 리전이 하나 있다.</strong> 사용자 생성물 <code>Core/Src/main.c:162-185</code> 의 <code>MPU_Config()</code>: 리전 0, 베이스 0x0, 크기 4 GB, <code>MPU_REGION_NO_ACCESS</code>, <code>SubRegionDisable = 0x87</code>, TEX 0 · 비캐시 · 비버퍼 · 공유, 실행 금지, 그리고 <code>HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT)</code>.
+      4 GB 리전은 512 MB 서브리전 여덟 개로 갈리고 0x87 = 1000 0111b 은 0 · 1 · 2 · 7 번을 끈다 — 남는 3~6 번 = 0x6000_0000 ~ 0xDFFF_FFFF 가 "접근 금지"다 [산술 — 이 배경 리전의 목적 설명은 ST 문서에 있고 이 가이드는 확인하지 않았다]. 우리 RAM(0x2000_0000 ~ 0x3800_3FFF)은 꺼진 서브리전 1 에 있어 이 리전의 영향을 받지 않고, 표 6 의 기본 속성(캐시됨)이 그대로 작용한다.
+      그 <strong>위에</strong> 번호가 높은 리전 1 을 얹는다. 겹치는 곳에서는 번호가 큰 리전의 속성이 이긴다 [추정 — Cortex-M7 MPU 규칙, ARM PM0253 을 이 가이드는 열지 않았다. ST 의 H723 예제들이 배경 리전 0 위에 1 · 2 를 얹는 같은 꼴을 쓴다: <code>Projects/NUCLEO-H723ZG/Applications/LwIP/LwIP_UDP_Echo_Server/Src/main.c:256-300</code>].
+      <code>MPU_Config()</code> 는 <code>USER CODE</code> 밖의 생성물이다 — <strong>손으로 고치지 않고</strong> CubeMX 의 CORTEX_M7 설정으로 리전을 더해 다시 생성한다(§3-4-1). 이것이 이 가이드가 허용한 "생성물에 손대는 네 예외" 중 이 쪽의 것이다.</p>
+      <div class="callout note"><span class="ct">모드(Circular / Normal)와 캐시 처리는 무관하다 — 동일</span>
+        <p>버퍼의 자리(①)와 캐시 속성(③)은 DMA 가 <strong>어디에</strong> 쓰는가의 문제고, Circular 냐 Normal 이냐는 DMA 가 <strong>끝에 닿으면 무엇을 하는가</strong>의 문제다. (나)로 가면 두 모드 모두 추가 코드가 없고, (다)로 가면 Circular 만 되감기 때 두 구간을 무효화한다는 차이가 있을 뿐이다.
+        "왜 Normal 이 아니라 Circular 인가"는 이 쪽이 정하지 않는다 — <a href="fw-14-wt901.html">fw-14</a> 가 HAL 소스로 두 모드를 견주어 도출한다. 이 쪽은 Circular 을 <strong>쓰기 위해 알아야 할 최소 사실 셋</strong>(§2-8)만 세운다.</p>
+      </div>
+
+      <h3 id="s2-6">2-6. DMA 송신의 "끝"은 두 단계로 온다 — 그래서 USART 인터럽트도 켜져 있어야 한다</h3>
+      <p>fw-03 의 <code>_write()</code> 는 <code>HAL_UART_Transmit()</code> 으로 보낸다. 마지막 바이트가 선을 다 빠져나갈 때까지(TC 플래그, <code>stm32h7xx_hal_uart.c:1184</code>) 그 함수 안에서 기다린다 — N 바이트에 N × 21.7 µs. 이 쪽의 <code>mem</code> 은 두 번째 줄을 <code>HAL_UART_Transmit_DMA()</code>(<code>:1418</code>)로 보낸다. 함수는 DMA 에 일을 맡기고 <strong>바로 돌아온다</strong>(<code>gState = BUSY_TX</code>, <code>:1433</code>). 그러면 "다 보냈다"는 소식은 어디로 오는가. 소스를 따라가면 두 단계다.</p>
+      <pre class="diagram"><code> HAL_UART_Transmit_DMA(&amp;huart3, s_tx_dma, n)    gState = BUSY_TX 로 두고 바로 돌아온다
+        │
+        ▼
+ [DMA1 스트림]  s_tx_dma → USART3 TDR 로 n 바이트. 마지막 바이트를 TDR 에 넣으면 DMA 의 TC 플래그
+        │   DMA1_Streamx_IRQHandler → HAL_DMA_IRQHandler → UART_DMATransmitCplt (:3665)
+        │   Normal: DMAT 를 끄고 USART 의 TCIE 를 켠다 (:3676 · :3679). 내 콜백은 아직 안 부른다
+        ▼
+ [USART3]       마지막 바이트가 시프트 레지스터를 다 빠져나가면 USART 의 TC 플래그
+        │   USART3_IRQHandler → HAL_UART_IRQHandler → TC 가지 (:2516) → UART_EndTransmit_IT (:4200)
+        │   TCIE 를 끄고 gState = READY (:4203 · :4206)
+        ▼
+ HAL_UART_TxCpltCallback(huart) (:4216)          s_tx_done = true. 이 뒤에야 다음 송신이 HAL_BUSY 가 아니다</code></pre>
+      <p>DMA 의 TC 는 "마지막 바이트를 <strong>TDR 에 넣었다</strong>"이고, USART 의 TC 는 "마지막 바이트가 <strong>선을 다 나갔다</strong>"다. 둘 사이에 한 바이트 남짓의 시간이 있고, HAL 은 두 번째를 기다려서야 <code>gState</code> 를 READY 로 되돌리고 내 콜백을 부른다(Normal 모드 — <code>:3670</code> 의 분기. Circular 송신이면 DMA 쪽에서 바로 콜백 <code>:3689</code>, 우리는 쓰지 않는다).
+      여기서 두 가지가 따라온다.</p>
+      <ul>
+        <li><strong>USART3 global interrupt 는 켜져 있어야 한다.</strong> 2 단계는 <code>USART3_IRQHandler</code> 로 온다. fw-05 가 수신 때문에 이미 켜 두었지만, "수신을 DMA 로 바꿨으니 USART 인터럽트는 꺼도 되겠지"는 틀리다 — 끄면 DMA 는 끝났는데 <code>gState</code> 가 영원히 BUSY_TX 에 머물고, 그다음 <code>printf</code>(<code>HAL_UART_Transmit</code> 은 <code>gState == READY</code> 일 때만 보낸다, <code>:1126</code>)가 전부 <code>HAL_BUSY</code> 로 글자를 버린다. 수신의 IDLE 인터럽트도 같은 벡터로 온다(§2-8 (b)).</li>
+        <li><strong>콜백이 오기 전에 다음 송신을 시작하면 안 된다.</strong> <code>mem</code> 은 DMA 줄을 걸고 <code>s_tx_done</code> 이 서기를 <code>tick_get_ms()</code> 로 시간을 재며 기다린 뒤에야 돌아온다(§3-1-2). 안 기다리고 돌아오면 CLI 가 찍는 프롬프트 <code>&gt; </code> 가 <code>HAL_BUSY</code> 로 사라진다. 이 대기는 주 루프에서만 한다 — ISR 에서 기다리지 않는다(fw-06 §2-8 의 "SysTick 보다 높은 ISR 안에서는 HAL 의 시계가 멈춘다").</li>
+      </ul>
+      <p>송신을 "DMA 큐"로 일반화하는 것(글자를 큐에 넣고 돌아오면 DMA 가 알아서 내보내는 <code>_write</code>)은 이 쪽이 하지 않는다. 그것은 계약 v2 의 상태 · IMU · 이벤트 프레임을 내보내는 <a href="fw-17-link-v2.html">fw-17</a> 의 송신 큐(<code>tx_enqueue</code>)가 필요로 할 때 만든다. 이 쪽의 DMA 송신은 <strong>세 상태를 보이는 탐침</strong>이다 — <code>mem</code> 이 같은 글을 두 길로 보내고, 두 줄이 같은지를 본다.</p>
+
+      <h3 id="s2-7">2-7. CPU 가 옮기면 이 제약이 없다 — fw-05 가 DTCM 버퍼로도 됐던 이유, 그리고 I2C</h3>
+      <p>fw-05 의 <code>rx_ring</code> · <code>rx_buf</code> 는 DTCM 에 있었는데 아무 문제가 없었다. 인터럽트 수신에서 RDR 을 읽어 버퍼에 쓰는 것은 <strong>CPU</strong>(<code>UART_RxISR_8BIT</code>, <code>:4233</code>)이고, 폴링 송신에서 TDR 에 쓰는 것도 CPU 다. CPU 는 모든 메모리에 닿고, DTCM 은 캐시를 거치지 않는다. 그래서 자리 제약도 캐시 제약도 없었다.
+      제약은 <strong>DMA 가 마스터가 되는 순간</strong> 생긴다. 뒤의 쪽에서 이 구분이 다시 나온다:</p>
+      <ul>
+        <li><a href="fw-10-i2c-ina226.html">fw-10</a> 의 INA226 은 I2C1 을 <strong>인터럽트</strong>로 읽는다 → 버퍼 자리 제약 없음.</li>
+        <li><a href="fw-15-bno055.html">fw-15</a> 의 BNO055 는 I2C 를 IT 로 갈지 DMA 로 갈지를 HAL 소스를 보고 정한다(재도출 R1). DMA 를 고르면 그 버퍼도 <code>DMA_BUF</code> 다.</li>
+        <li><a href="fw-12-adc.html">fw-12</a> 의 ADC3, <a href="fw-14-wt901.html">fw-14</a> 의 USART6 은 DMA 다 → <code>DMA_BUF</code> 필수. 이 쪽에서 만든 매크로 하나로 끝난다.</li>
+      </ul>
+      <p>판정 규칙은 한 줄이다: <strong>"이 버퍼를 DMA 가 만지는가?" 예 → <code>DMA_BUF</code>. 아니오 → 아무 표시 없이(DTCM).</strong> 링 버퍼 · 통계 · 줄 버퍼 · PID 상태처럼 CPU 만 만지는 것을 RAM_D2 로 옮기지 않는다 — 옮기면 캐시를 켰을 때 그 변수만 느려진다.</p>
+
+      <h3 id="s2-8">2-8. Circular 수신을 쓰기 위한 최소 사실 셋 — Size 는 위치, 콜백은 두 길, 오류 하나에 DMA 가 선다</h3>
+      <p>이 쪽은 fw-05 의 1 바이트 인터럽트 수신을 <strong>Circular DMA + IDLE</strong> 로 바꾼다(<code>HAL_UARTEx_ReceiveToIdle_DMA()</code>, <code>stm32h7xx_hal_uart_ex.c:891-933</code>. Circular 인지 Normal 인지는 이 함수의 인자가 아니라 CubeMX 의 DMA 설정 <code>hdmarx-&gt;Init.Mode</code> 에서 온다).
+      바꾸는 이유는 fw-05 §2-2 · fw-06 §2-8 이 예고한 그것이다 — RDR 을 비우는 21.7 µs 기한을 ISR 이 아니라 <strong>DMA 가</strong> 지키게 되고, ISR 은 바이트마다가 아니라 IDLE · 절반(HT) · 끝(TC)에서만 온다. 그러나 이 API 로 코드를 쓰기 전에 알아야 할 사실이 셋 있고, 셋 다 HAL 소스에서 나온다(FW_H7 V1.13.0, 2026-09-22 직접 확인). 모르고 쓰면 06 §3-6-4 의 옛 코드처럼 된다.</p>
+      <h4 id="s2-8-1">(a) 콜백의 <code>Size</code> 는 "이번에 받은 길이"가 아니라 "버퍼 시작부터의 위치"다</h4>
+      <pre class="diagram"><code> DMA 가 쓰는 방향 →→→  N 에 닿으면 buf[0] 으로 되감는다. 콜백: HT(N/2) · TC(N) · IDLE(선이 조용할 때)
+ buf[0]                                                               buf[N-1]
+┌──────────────────────────┬──────────────────────────┬──────────────────────┐
+│ 이미 먹였다 (old_pos 앞) │ 새 바이트 = feed() 할 것 │ DMA 가 다음에 쓸 자리│
+└──────────────────────────┴──────────────────────────┴──────────────────────┘
+                           ↑ old_pos                 ↑ pos (= 콜백의 Size: 길이가 아니라 위치)
+
+ pos &lt; old_pos 면 되감긴 것이다: feed(buf+old_pos, N-old_pos) 다음에 feed(buf, pos)</code></pre>
+      <p>세 콜백 지점 모두 <code>Size = RxXferSize − (DMA 의 남은 카운터)</code> 를 넘긴다: IDLE <code>:2418</code>, TC <code>:3769</code>, HT <code>:3817</code>. 즉 <strong>DMA 가 다음에 쓸 자리</strong>다. Normal 모드에서는 매번 0 부터 다시 시작하니 "위치 = 길이"가 우연히 맞았고, 06 §3-6-4 의 코드(<code>for k &lt; size: rx_buf[k]</code>)는 그 우연 위에 서 있었다. Circular 에서는 되감기 때문에 <code>Size</code> 가 이전보다 <strong>작아질 수 있고</strong>, 같은 값이 <strong>두 번</strong> 올 수도 있다.
+      그래서 지난 위치 <code>old_pos</code> 를 들고 다니며 차이만 먹인다 — 순수 파일 <code>stream_rx.c</code> 가 하는 일의 전부다(§3-3-2). 규칙 셋:</p>
+      <ol>
+        <li><code>pos == old_pos</code> 면 새 바이트가 없다 — 돌아온다. HAL 은 TC 뒤에 오는 IDLE 을 <code>Size = N</code> 으로 <strong>한 번 더</strong> 알린다(<code>:2423-2438</code>, 주석 "If DMA is in Circular mode, Idle event is to be reported to user even if occurring after a Transfer Complete event"). 이 규칙이 그것을 걸러 낸다.</li>
+        <li><code>pos &gt; old_pos</code> 면 한 구간, <code>pos &lt; old_pos</code> 면 되감긴 것 — <strong>끝 조각(<code>old_pos</code>~N) 다음에 앞 조각(0~<code>pos</code>)</strong>. 순서가 바뀌면 바이트 순서가 바뀐다. 끝 조각의 길이가 0 이면(old_pos == N) 그 호출은 건너뛴다.</li>
+        <li><code>old_pos = pos</code> 를 그대로 둔다 — <strong>N 을 0 으로 "정리"하지 않는다.</strong> 정리하면 다음 IDLE(Size = N)에서 <code>N &gt; 0</code> 이 되어 버퍼 전체를 한 번 더 먹인다(중복). N 으로 두면 규칙 1 이 걸러 주고, 그다음 콜백은 규칙 2 의 되감기 가지로 바르게 간다. 호스트 시험의 한 벡터가 정확히 이것을 잡는다(§3-3-3).</li>
+      </ol>
+      <p>256 바이트 버퍼에 33 바이트 묶음(fw-14 의 WT901 이 그렇다)이 들어오면 256 mod 33 = 25 라서 되감기가 <strong>매번 묶음 중간</strong>에 걸린다. 그래서 <code>feed()</code> 는 "프레임 하나"를 받는 함수가 아니라 <strong>바이트 흐름을 받는 함수</strong>여야 한다 — 이 쪽에서는 링에 넣는 일이고, <a href="fw-14-wt901.html">fw-14</a> 에서는 바이트 단위 상태기계 파서에 먹이는 일이다(<a href="fw-17-link-v2.html">fw-17</a> 은 싱크를 바꾸지 않고 <strong>링에서 꺼내는 쪽</strong>을 바꾼다). 어느 쪽이든 되감기 경계를 모른다.</p>
+      <h4 id="s2-8-2">(b) 콜백이 두 길로 들어온다 — 그래서 USART IRQ 와 DMA 스트림 IRQ 의 선점 우선순위가 같아야 한다</h4>
+      <p><code>HAL_UARTEx_RxEventCallback()</code> 하나를 두 인터럽트가 부른다. IDLE 은 <code>USART3_IRQHandler → HAL_UART_IRQHandler</code>(<code>:2202</code>) 의 IDLE 가지(<code>:2368-2441</code>)에서, HT 와 TC 는 <code>DMA1_Streamx_IRQHandler → HAL_DMA_IRQHandler</code>(<code>stm32h7xx_hal_dma.c:1205</code>)가 등록된 콜백을 부르는 자리(HT <code>:1302</code> → <code>UART_DMARxHalfCplt</code> <code>uart.c:3790</code>, TC <code>:1381</code> → <code>UART_DMAReceiveCplt</code> <code>uart.c:3717</code>)에서 온다.
+      두 벡터의 선점 우선순위가 다르면 — 예컨대 IDLE 콜백이 <code>old_pos</code> 를 읽고 아직 갱신하지 못한 사이에 TC 인터럽트가 그것을 끊고 들어와 같은 콜백을 다시 돌리면 — <code>old_pos</code> 가 두 번 읽히고 한 번 덮인다. 바이트가 두 번 먹여지거나 빠진다. <strong>같은 선점 우선순위</strong>면 하나가 끝나야 다음이 오므로 콜백이 자기 자신을 끊을 수 없다. fw-06 §2-8 의 제약 2 가 이것이고, 아래 "NVIC 표에 더하는 행"이 그 값(6)을 낸다.</p>
+      <h4 id="s2-8-3">(c) 수신 오류 하나(PE · FE · NE · ORE)에 HAL 이 DMA 를 세운다 — Circular 이어도. 재무장은 필수다</h4>
+      <p>fw-05 §2-5 의 표를 다시 본다. 오류 분류 조건(<code>:2294-2296</code>)은 "<code>CR3.DMAR</code> 이 켜져 있거나, RTO 나 ORE 가 있으면 blocking"이다. DMA 수신 중에는 첫 항이 <strong>항상 참</strong>이다 — FE 하나, NE 하나에도 <code>UART_EndRxTransfer()</code>(<code>:2301</code>)로 수신을 끝내고, <code>DMAR</code> 을 끄고(<code>:2304</code>), DMA 스트림을 중단시킨 뒤(<code>HAL_DMA_Abort_IT</code>, <code>:2317</code>) 그 완료 콜백 <code>UART_DMAAbortOnError</code>(<code>:3876-3887</code>)에서 <code>HAL_UART_ErrorCallback()</code> 을 부른다.
+      "Circular 은 한 번 걸면 영원히 돈다"는 하드웨어 이야기다. HAL 위에서는 틀리다. 오류 콜백에서 다시 걸지 않으면 그 UART 는 리셋까지 조용히 죽어 있고 — <strong>fw-08 부터 fw-16 까지 모터 · 전원 잡음 속에서 유일한 관측 창이 CLI 다.</strong> 그 창이 말없이 닫히면 증상은 "방금 고친 모터 코드가 이상하다"로 보인다. 오류 콜백이 지킬 것은 fw-05 의 셋에 하나를 더한 넷이다: ① 센다(<code>uart_err</code> · <code>last_err</code> — HAL 을 부르기 <strong>전에</strong>) ② 오류 플래그를 지운다(<code>__HAL_UART_CLEAR_FLAG</code> — 지우지 않고 다시 걸면 밀린 ORE 가 시작 직후 다시 터져 <code>uart_ex.c:917-923</code> 의 <code>HAL_ERROR</code> 가지로 간다) ③ <strong><code>old_pos = 0</code></strong>(DMA 가 <code>buf[0]</code> 부터 다시 쓴다 — <code>stream_rx_reset()</code>) ④ 다시 건다, <code>HAL_OK</code> 일 때만 <code>rearm++</code>.</p>
+      <div class="callout note"><span class="ct">DMA 수신에서는 ORE 가 잘 나지 않는다 — 기한을 지키는 것이 바뀌었기 때문</span>
+        <p>fw-05 의 실습 C 는 ISR 을 일부러 늦춰 ORE 를 냈다. ORE 의 기한은 한 바이트 시간 <strong>21.7 µs</strong>(460800 8N1, RM0468 §53.5.6 Note — RDR 의 앞 바이트를 다음 바이트가 다 들어올 때까지 꺼내지 않으면 잃는다)이고, 그때는 그 기한을 <strong>ISR 이</strong> 지켰다. DMA 수신에서는 RDR 이 차는 순간 DMA 요청이 나서 <strong>하드웨어가</strong> 옮긴다 — ISR 이 얼마나 늦든 RDR 은 비워진다. 그래서 붙여넣기로는 ORE 가 잘 나지 않는다.
+        남는 ORE 의 경로는 DMA 요청 자체가 막힌 경우다: 오류로 DMA 가 선 뒤 재무장 전까지의 짧은 틈(위 ②가 지우는 것), 그리고 버스가 막힐 만큼 긴 일(플래시 섹터 지우기 — <a href="fw-16-flash-store.html">fw-16</a> 이 다룬다). 대신 새 유실 조건이 생긴다 — <strong>버퍼 한 바퀴(256 B ≈ 5.6 ms at 46 kB/s) 동안 콜백이 한 번도 못 도는 것</strong>. 그것은 ORE 로 보이지 않고 <code>feed()</code> 가 받는 바이트가 조용히 덮인 채 온다. 우선순위(b)와 fw-06 의 <code>exec_us_max</code> 가 그 여유를 지킨다.</p>
+      </div>
+      <p>06 §3-6-4 의 옛 코드와 이 쪽의 차이를 한 줄로: 옛 코드는 <strong>Normal 재무장</strong> 꼴(HT 끔 · 콜백 끝에서 재무장 · <code>size</code> 를 길이로)이었고 06 §3-6-1 의 표는 Circular 이었다 — 같은 쪽 안에서 표와 코드가 어긋났다. 이 쪽은 표를 따른다: HT 를 <strong>끄지 않고</strong>, 콜백 끝에서 재무장하지 <strong>않고</strong>(Circular 은 계속 돈다 — 다시 걸면 <code>HAL_BUSY</code> 가 돌아올 뿐이다, <code>uart_ex.c:929-932</code>), 오류 콜백에서만 재무장한다.</p>
+
+      <div class="callout note"><span class="ct">NVIC 표에 더하는 행 (표의 주인은 fw-06 §2-8 — 이 쪽은 행만 낸다)</span>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>IRQ</th><th>선점 우선순위</th><th>왜 그 자리인가</th><th>같은 값이어야 하는 짝</th></tr></thead>
+          <tbody>
+            <tr><td><code>DMA1_Streamx</code>(또는 <code>DMA2_Streamx</code>) — USART3_RX 요청 45</td><td>6 <em>[제안 — 전 쪽이 같이 쓰는 예시값]</em></td><td>수신 콜백의 둘째 길(HT · TC). 첫째 길(IDLE)을 나르는 <code>USART3</code> 와 같은 값이어야 콜백이 자기 자신을 끊지 못한다(§2-8 (b)). TIM6(1)보다 낮은 이유는 fw-06 과 같다 — Circular 버퍼가 밀린 수신을 5.6 ms 까지 받아 둔다</td><td><strong><code>USART3</code>(6) 와 서로 같게</strong></td></tr>
+            <tr><td><code>DMA1_Streamy</code>(또는 <code>DMA2_Streamy</code>) — USART3_TX 요청 46</td><td>6</td><td>송신 완료의 첫째 단계(§2-6). 둘째 단계가 <code>USART3</code> 로 오므로 같은 값에 둔다 — 값이 달라도 송신은 동작하지만, 한 링크의 인터럽트를 한 단계에 모아 두는 쪽이 표를 읽기 쉽다</td><td><code>USART3</code>(6)</td></tr>
+          </tbody>
+        </table></div>
+        <p>컨트롤러(DMA1 / DMA2)와 스트림 번호(x · y)는 CubeMX 가 배정한다 — 생성 후 <code>stm32h7xx_it.c</code> 에서 확인해 내 노트의 표에 적는다(§3-1-1 ③). <strong>워치독 예산표에 더하는 행은 없다</strong> — <code>mem</code> 의 송신 대기는 정상 경로에서 한 줄 길이(약 130 B × 21.7 µs ≈ 2.8 ms)이고 실패 경로에서만 <code>CONSOLE_TX_TIMEOUT_MS</code> 까지 기다린다. 둘 다 fw-06 의 "주 루프 최장 1회전" 행 안에서 <code>stat</code> 의 <code>loop_us_max</code> 로 보인다. 실패 경로의 100 ms 가 내 IWDG 주기에 비해 큰지는 내 예산표에서 본다.</p>
+      </div>
+
+      <div class="callout warn"><span class="ct">안전 — PD8 / PD9 에 루프백 점퍼를 걸지 않는다</span>
+        <p>"DMA 송신이 수신으로 되돌아오는지 보자"며 TX 와 RX 를 점퍼로 잇는 시험을 <strong>이 보드의 USART3 에서는 하지 않는다.</strong> PD8 / PD9 는 솔더 브리지 SB19 / SB12(기본 ON, UM2407 Rev 6 §7.6.5)로 ST-LINK 의 VCP 에 이어져 있다 — PD9(RX)에는 ST-LINK 의 <strong>출력</strong>이 이미 물려 있어서, 거기에 PD8(역시 출력)을 이으면 출력끼리 맞붙는다.
+        Morpho 의 CN12-10(PD8) · CN11-69(PD9)에도 아무것도 꽂지 않는다(<code>hardware/pinmap-h723.md</code> §2-C · 같은 시트 <code>pinmap-h723.md</code> §7-3 의 M1 행). 이 쪽의 왕복 시험은 전부 <strong>Mac 터미널이 상대</strong>다 — <code>mem</code> 의 두 줄을 눈으로 견주고, 붙여넣은 글이 에코로 돌아오는 것을 본다.</p>
+      </div>
+
+      <h2 id="lab">3. 실습</h2>
+      <p>실습은 넷이고 순서대로 쌓인다: <strong>A</strong> DTCM 에 둔 버퍼로 DMA 송신 → 무엇이 보이는가를 적는다(상태 ①) · <strong>B</strong> <code>.dma_buf</code> 섹션(RAM_D2)으로 옮긴다 → <code>mem</code> 의 두 줄이 같아진다(상태 ②) ·
+      <strong>C</strong> 명령 창의 수신을 Circular DMA + <code>stream_rx</code> 로 바꾸고 오류 재무장을 발동시킨다 · <strong>D</strong> D-Cache 를 켠다 → 두 줄이 어긋난다(상태 ③) → MPU 비캐시 리전 → 다시 같아진다(③′).
+      끝자리 번호의 뜻은 어느 쪽에서나 같다(1 = CubeMX, 2 = 골격, 3 = 직접 채우기, 4 = 굽고 보기). CubeMX 는 A 와 D 에서 연다. 한 실습 = 한 번의 빌드 · 플래시 · 관찰이고, D 만 fw-05 의 실습 C 처럼 <strong>두 번</strong> 굽는다(캐시만 켠 것 / MPU 를 더한 것).</p>
+      <div class="callout tip"><span class="ct">채울 자리마다 힌트 카드가 있다 — 읽는 순서</span>
+        <p>골격의 채울 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 붙어 있고(이 쪽은 T1 ~ T7), 그 주석 안에 <strong>번호 걸음</strong>이 있다. 먼저 걸음을 보고 직접 써 본다.
+        막히면 "직접 채우기" 절에서 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인.</p>
+        <p>완결 코드는 Mac 의 호스트 시험(<code>PASS stream_rx 14 cases</code>)과 이 프로젝트의 펌웨어 빌드(링크까지 — <code>.dma_buf</code> 조각을 넣은 링커 스크립트로, 두 버퍼가 <code>0x30000000</code> · <code>0x30000100</code> 에 놓이는 것까지)를 통과한 코드다(2026-10-02). 보드에서 도는 것 — 특히 실습 A 의 실패와 실습 D 의 어긋남 — 은 "굽고 보기"에서 내가 확인한다.
+        붙여 넣는 것으로 끝내지 않는다 — 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
+      </div>
+
+      <h3 id="s3-1">3-1. 실습 A — DTCM 에 둔 버퍼로 DMA 송신: 결정적 실패를 본다</h3>
+      <p>이 실습의 목적은 <strong>실패를 눈으로 보고 그 모양을 적는 것</strong>이다. 코드는 실습 B 에서 한 글자(<code>DMA_BUF</code>)만 바뀐다 — 같은 코드가 자리만으로 갈리는 것을 보려면 A 를 건너뛰면 안 된다.</p>
+
+      <h4 id="s3-1-1">3-1-1. CubeMX 설정 <span class="tag mx">CubeMX</span></h4>
+      <p>USART3 자체(460800 8N1, PD8 / PD9)와 그 인터럽트(선점 6)는 fw-03 · fw-05 에서 끝났다. 이 쪽이 새로 켜는 것은 <strong>DMA 스트림 둘과 그 인터럽트</strong>다. D-Cache 와 MPU 리전은 실습 D 에서 켠다(§3-4-1) — 지금 켜지 않는다.</p>
+      <p><strong>① 값 표</strong></p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>항목</th><th>값</th><th>왜</th><th><code>.ioc</code> 키 (생성 후 grep)</th></tr></thead>
+        <tbody>
+          <tr><td>USART3 의 DMA 요청 <code>USART3_RX</code></td><td>추가 (스트림은 CubeMX 가 배정)</td><td>수신을 DMA 에 맡긴다. DMAMUX1 요청 45(RM0468 표 118) → DMA1/DMA2 의 스트림 하나</td><td><code>Dma.…USART3_RX…</code> <em>(키 철자: 생성 후 확인 — 이 Mac 의 어느 H7 <code>.ioc</code> 에도 DMA1/DMA2 설정이 없어 확인하지 못했다)</em></td></tr>
+          <tr><td><code>USART3_RX</code> Mode</td><td><strong>Circular</strong></td><td>§2-8. HAL 의 분기(<code>hdmarx-&gt;Init.Mode</code>, <code>uart.c:2389</code> · <code>:3722</code>)를 이 값이 정한다. Normal 이면 IDLE 마다 수신이 끝난다</td><td>생성 코드에서: <code>hdma_usart3_rx.Init.Mode = DMA_CIRCULAR</code> <em>(핸들 이름은 생성 후 확인)</em></td></tr>
+          <tr><td><code>USART3_RX</code> Direction · Increment · Data Width</td><td>Peripheral To Memory · Memory 만 증가 · Byte / Byte</td><td>RDR 주소는 고정, 버퍼 주소는 전진, 8 비트 데이터. 기본값이 이미 이것이면 표에서 확인만</td><td><code>…Direction</code> · <code>…MemInc</code> · <code>…MemDataAlignment</code> <em>(생성 후 확인)</em></td></tr>
+          <tr><td><code>USART3_RX</code> Priority · FIFO</td><td>기본값 그대로 (Low · FIFO Disable)</td><td>스트림 우선순위는 스트림끼리의 중재다 — 둘뿐이라 차이 없음(동일). FIFO 는 바이트 전송에 필요 없고 켜면 버스트 · 정렬 조건이 따라온다</td><td>—</td></tr>
+          <tr><td>USART3 의 DMA 요청 <code>USART3_TX</code></td><td>추가 · Mode <strong>Normal</strong> · Memory To Peripheral · Memory 증가 · Byte / Byte</td><td>한 줄 보내고 끝나는 송신(요청 46). Circular 이면 같은 줄을 영원히 보낸다</td><td><code>hdma_usart3_tx.Init.Mode = DMA_NORMAL</code> <em>(생성 후 확인)</em></td></tr>
+          <tr><td>DMA1(또는 DMA2) stream x · y global interrupt</td><td>Enabled · Preemption Priority <strong>6</strong></td><td>§2-8 (b) — <code>USART3</code> 와 같은 값. CubeMX 는 DMA 를 더하면 그 벡터를 스스로 켜는 편이다(사용자의 H723 <code>.ioc</code> 에 <code>NVIC.ForceEnableDMAVector=true</code> 가 있다) — 켜졌는지와 <strong>숫자</strong>를 확인한다</td><td><code>NVIC.DMA1_Streamx_IRQn=true\:6\:0\:…</code> <em>(컨트롤러 DMA1 / DMA2 와 스트림 번호는 생성 후 확인)</em></td></tr>
+          <tr><td>USART3 global interrupt</td><td>Enabled · 6 (fw-05 그대로)</td><td>IDLE(§2-8 (b))과 송신 완료 2 단계(§2-6)가 이 벡터로 온다. 끄지 않는다</td><td><code>NVIC.USART3_IRQn=true\:6\:…</code></td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>② 위치 표</strong></p>
+      <p class="small"><strong>화면 확인: 미확인 (CubeMX 6.18.1)</strong> — 아래 경로는 CubeMX 의 일반 구조와 ST 문서에서 추정한 것이다. 화면이 다르면 <strong>화면이 맞다.</strong> 못 찾으면 값 표의 항목 이름("USART3_RX", "DMA Settings")으로 검색창(돋보기)을 쓰고, 달랐던 경로를 노트에 적어 둔다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>#</th><th>위치 (화면 경로)</th><th>설정</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>왼쪽 <strong>Connectivity → USART3</strong> → 아래 설정 창의 <strong>DMA Settings</strong> 탭 → <strong>Add</strong></td><td>목록에서 <strong>USART3_RX</strong>. 한 번 더 Add → <strong>USART3_TX</strong></td></tr>
+          <tr><td>2</td><td>같은 탭, USART3_RX 행을 고른 뒤 아래 <strong>DMA Request Settings</strong></td><td>Mode = <strong>Circular</strong>. Increment Address 는 Memory 만 체크. Data Width Byte / Byte</td></tr>
+          <tr><td>3</td><td>같은 탭, USART3_TX 행</td><td>Mode = <strong>Normal</strong>. 나머지는 2 와 같다</td></tr>
+          <tr><td>4</td><td>USART3 → <strong>NVIC Settings</strong> 탭</td><td>DMA1(또는 DMA2) stream x · y global interrupt 가 <strong>Enabled</strong> 인지(자동으로 켜졌을 수 있다). USART3 global interrupt 는 켜진 채로 둔다</td></tr>
+          <tr><td>5</td><td>왼쪽 <strong>System Core → NVIC</strong> → 표의 두 DMA stream 행(DMA1 · DMA2 중 CubeMX 가 잡은 쪽)</td><td><strong>Preemption Priority</strong> = 6 (Sub Priority 0)</td></tr>
+          <tr><td>6</td><td>오른쪽 위 <strong>GENERATE CODE</strong></td><td>다시 생성한다</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>③ 생성물 확인</strong></p>
+      <pre><code class="lang-bash">cd firmware/h723zg
+grep -n -i "dma" h723zg.ioc                                            # ① 요청 · 모드 · NVIC 줄이 저장됐는가
+grep -n "DMA_CIRCULAR\|DMA_NORMAL\|hdma_usart3\|__HAL_LINKDMA" Core/Src/stm32h7xx_hal_msp.c   # ② 모드와 핸들 이름
+grep -n "DMA[12]_Stream.*IRQHandler\|HAL_DMA_IRQHandler" Core/Src/stm32h7xx_it.c  # ③ 컨트롤러 · 스트림 번호와 핸들러
+grep -n "MX_DMA_Init\|MX_USART3_UART_Init" Core/Src/main.c              # ④ 호출 순서</code></pre>
+      <pre><code class="lang-text">(기대)
+ ① DMA 요청 두 줄(USART3_RX · USART3_TX)과 Mode 줄, DMA1_Streamx_IRQn=true\:6\:0\:… 두 줄(DMA2 에 잡혔으면 DMA2_…).
+    컨트롤러와 스트림 번호를 노트의 NVIC 표에 적는다.
+ ② 수신 핸들의 Init.Mode 가 DMA_CIRCULAR, 송신 핸들이 DMA_NORMAL. __HAL_LINKDMA 두 줄이 huart3 와 두 핸들을 잇는다.
+    핸들 이름(hdma_usart3_rx · hdma_usart3_tx 꼴)이 다르면 이 쪽의 코드에서 그 이름을 바꿔 읽는다.
+ ③ 두 스트림의 IRQHandler 가 각각 HAL_DMA_IRQHandler(&amp;hdma_usart3_…) 한 줄을 부른다 — §2-8 (b) 의 "둘째 길".
+ ④ main() 안에서 MX_DMA_Init() 이 MX_USART3_UART_Init() 보다 앞에 있다. (뒤에 있으면 DMA 클럭 · NVIC 가 준비되기 전에
+    __HAL_LINKDMA 가 돈다 — CubeMX 가 순서를 맞춰 두는 것이 보통이지만 [추정] 눈으로 확인한다.)
+ 줄 번호는 사람마다 다르다.</code></pre>
+      <p>재생성 규칙을 다시 떠올린다(<a href="fw-02-toolchain.html">fw-02</a> §2-1 · §2-2): 생성물은 <code>USER CODE BEGIN/END</code> 사이만 고친다, <code>cmake/stm32cubemx/</code> 는 재생성된다, 내 소스는 <code>User/</code> 에 두고 최상위 <code>CMakeLists.txt</code> 의 <code># Add user sources here</code> 에 등록한다.
+      이 쪽이 생성물에 손대는 곳은 둘 — 링커 스크립트에 섹션을 더하는 것(실습 B, 손으로)과 <code>MPU_Config()</code>(실습 D, CubeMX 로). HAL 콜백의 정의는 전부 <code>User/Src/Tools/console.c</code> 에 둔다.</p>
+
+      <h4 id="s3-1-2">3-1-2. 골격</h4>
+      <p><code>console.c</code>(fw-05 의 파일)에 <code>mem</code> 명령과 송신 완료 콜백을 더한다. 버퍼 둘은 <strong>일부러 아무 표시 없이</strong> 선언한다 — 기본 ld 가 DTCM 에 둔다(§2-2). 실습 B 가 여기에 <code>DMA_BUF</code> 를 붙인다.
+      fw-05 의 <code>console_rx_stats_t</code> 에는 두 칸을 더한다(실습 C 가 채운다 — 지금은 0 으로 찍힌다). 이름 <code>uart_err</code> · <code>last_err</code> · <code>rearm</code> 은 fw-05 가 예고한 대로 이 명령이 그대로 찍는다.</p>
+      <pre><code class="lang-c">/* User/Inc/Tools/console.h - fw-05 가 만든 구조체에 카운터 둘을 더한다(실습 C 가 채운다) */
+typedef struct {
+  uint32_t rx_bytes;      /* fw-05 */
+  uint32_t ring_drop;     /* fw-05 */
+  uint32_t uart_err;      /* fw-05: HAL_UART_ErrorCallback() 호출 횟수 */
+  uint32_t last_err;      /* fw-05: 거기서 본 huart-&gt;ErrorCode (HAL_UART_ERROR_* 비트: PE 1, NE 2, FE 4, ORE 8, DMA 16) */
+  uint32_t rearm;         /* fw-05: 수신을 실제로 다시 건 횟수(HAL_OK) */
+  uint32_t idle_events;   /* fw-07: USART IRQ 로 들어온 RxEvent 콜백 (IDLE) */
+  uint32_t ht_tc_events;  /* fw-07: DMA 스트림 IRQ 로 들어온 RxEvent 콜백 (HT 또는 TC) */
+} console_rx_stats_t;
+
+void console_cli_register(void);   /* "mem" 을 등록한다. app_init() 이 app_cli_register() 다음에 부른다 */</code></pre>
+      <pre><code class="lang-c">/* User/Src/Tools/console.c - 실습 A. 두 버퍼 모두 일부러 아무 표시 없이 둔다: 기본 링커 스크립트가 DTCM 에 둔다. */
+#define RX_DMA_SIZE 256u      /* [바이트] Circular DMA 버퍼(실습 C). 캐시 라인 8개. 256 B = 46 kB/s 입력의 5.6 ms */
+#define TX_DMA_SIZE 192u      /* [바이트] "# dma ..." 한 줄. 캐시 라인 6개. 가장 긴 줄이 들어가야 한다(3-1-3 의 6) */
+
+static uint8_t s_rx_dma[RX_DMA_SIZE];   /* 실습 A: 표시 없음 -&gt; DTCM. 실습 B: DMA_BUF. DMA 가 쓰고 콜백이 읽는다 */
+static uint8_t s_tx_dma[TX_DMA_SIZE];   /* 실습 A: 표시 없음 -&gt; DTCM. 실습 B: DMA_BUF. CPU 가 쓰고 DMA 가 읽는다 */
+static volatile bool s_tx_done;         /* HAL_UART_TxCpltCallback()(ISR)이 세운다. cmd_mem()(main)이 지우고 폴링한다 */
+static uint32_t s_mem_calls;            /* mem 줄의 n=: 낡은 DMA 줄이면 옛 n 이 한눈에 보인다(실습 D) */
+
+/* 문맥: ISR (USART3 global interrupt) - DMA 송신의 둘째 단계(2-6). 모든 UART 가 함께 쓴다. */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+  /* TODO(you) [T1]: DMA 송신이 다 끝났다고 알린다 - 힌트 카드 T1
+       1) huart-&gt;Instance 가 USART3 이면 s_tx_done = true
+       2) 그 밖엔 아무것도 없다 - printf 도, HAL 호출도 없다
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)huart;
+}
+
+/* 문맥: 주 루프(CLI 명령). 같은 key=value 목록을 두 번 찍는다:
+ *   "mem ..."    printf 로  (블로킹 HAL_UART_Transmit - 동작이 확인된 길)
+ *   "# dma ..."  s_tx_dma 에서 HAL_UART_Transmit_DMA 로
+ * 불변식:
+ *   - DMA 를 걸기 전에 먼저 s_tx_done = false (콜백이 대기 루프보다 먼저 올 수 있다)
+ *   - s_tx_done 이나 타임아웃 전에 돌아오지 않는다: 다음 printf 가 gState == BUSY_TX 를 만난다(HAL_BUSY, 바이트 유실)
+ *   - 대기는 tick_get_ms() 로 한다. 타임아웃은 CONSOLE_TX_TIMEOUT_MS (fw-03) - 한 줄에 ~ 130 x 21.7 us = 2.8 ms 걸린다 */
+static void cmd_mem(int argc, char *argv[])
+{
+  (void)argc; (void)argv;
+  console_rx_stats_t st;
+  char line[192];   /* 가장 긴 key=value 목록이 들어가야 한다 - 3-1-3 의 6 */
+  console_rx_get_stats(&amp;st);
+  s_mem_calls++;
+  /* TODO(you) [T2]: 같은 key=value 목록을 두 길로 찍는다 - 힌트 카드 T2
+       1) align32 = (두 버퍼 주소 &amp; 31u) == 0  ;  dcache = (SCB-&gt;CCR &amp; SCB_CCR_DC_Msk) != 0
+       2) snprintf(line, sizeof line, "n=%lu rx_buf=0x%08lx tx_buf=0x%08lx align32=%d dcache=%d uart_err=%lu last_err=%lu rearm=%lu idle_events=%lu ht_tc_events=%lu", ...);
+       3) printf("mem %s\r\n", line); fflush(stdout);                    -- 1번째 줄, 블로킹
+       4) len = snprintf((char *)s_tx_dma, sizeof s_tx_dma, "# dma %s\r\n", line);
+       5) s_tx_done = false;  HAL_UART_Transmit_DMA(&amp;huart3, s_tx_dma, len)  -- 2번째 줄, DMA. HAL_OK 가 아니면 -&gt; "ERR mem tx-busy"
+       6) s_tx_done 을 기다린다, tick_get_ms() 로 최대 CONSOLE_TX_TIMEOUT_MS  -- 넘으면 -&gt; HAL_UART_AbortTransmit(&amp;huart3) 뒤 "ERR mem tx-timeout"
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)line; (void)st;
+}
+
+void console_cli_register(void)
+{
+  bool ok = cli_register("mem", cmd_mem);
+  FW_ASSERT(ok);
+}
+
+/* app.c, app_init(): app_cli_register(); 다음에   -&gt;   console_cli_register(); */</code></pre>
+      <p>이 골격은 그대로 빌드된다(그때 <code>mem</code> 은 아무것도 찍지 않는다). 주소를 16진수로 찍는 것은 이 가이드의 "값은 정수" 규약(fw-05 §2-4)의 유일한 예외다 — 주소는 16진수여야 <code>0x2000</code> 과 <code>0x3000</code> 이 눈에 들어온다.</p>
+
+      <h4 id="s3-1-3">3-1-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><strong>구조체 두 칸</strong>을 <code>console.h</code> 에 더한다. fw-05 의 감시 줄(<code>LOG_WRN</code>)은 그대로 둔다 — 이 실습에서 그 줄이 쓰인다.</li>
+        <li><strong>값 모으기.</strong> <code>align32</code> 는 두 버퍼 주소의 하위 5 비트가 모두 0 인가(<code>((uint32_t)s_rx_dma | (uint32_t)s_tx_dma) &amp; 31u</code>). <code>dcache</code> 는 <code>SCB-&gt;CCR</code> 의 DC 비트(CMSIS <code>core_cm7.h:605</code>, <code>SCB_CCR_DC_Msk</code>). 카운터는 <code>unsigned long</code> 으로 캐스팅해 <code>%lu</code> 로.</li>
+        <li><strong>첫 줄</strong>은 <code>printf</code> 로. 프롬프트가 없는 줄이 아니므로 <code>fflush</code> 는 습관으로만 둔다.</li>
+        <li><strong>둘째 줄</strong>은 <code>s_tx_dma</code> 에 <code>snprintf</code> 로 만든다 — 반환값(길이)이 <code>sizeof s_tx_dma</code> 이상이면 잘린 것이다(그럴 때 <code>TX_DMA_SIZE</code> 와 <code>line</code> 을 함께 본다 — 32 의 배수로 올리는 것은 <code>TX_DMA_SIZE</code> 쪽이다). <code>s_tx_done = false</code> 를 <strong>먼저</strong> 쓰고 <code>HAL_UART_Transmit_DMA(&amp;huart3, s_tx_dma, (uint16_t)len)</code>. 반환이 <code>HAL_OK</code> 가 아니면 <code>ERR mem tx-busy</code> 를 찍고 돌아온다(직전 송신이 아직 안 끝난 것 — §2-6).</li>
+        <li><strong>기다리기.</strong> <code>t0 = tick_get_ms()</code> 뒤 <code>while (!s_tx_done)</code> 안에서 <code>(uint32_t)(tick_get_ms() - t0) &gt; CONSOLE_TX_TIMEOUT_MS</code> 면 <code>HAL_UART_AbortTransmit(&amp;huart3)</code> 로 멈춘 송신을 정리한 뒤 <code>ERR mem tx-timeout</code> 을 찍고 돌아온다. 뺄셈을 <code>uint32_t</code> 로 하는 이유는 fw-02 의 <code>app_loop()</code> 와 같다(되감기).</li>
+        <li><strong>손 검산.</strong> 카운터가 전부 최댓값(4 294 967 295, 10자리)일 때 둘째 줄은 몇 바이트인가 — 키 이름 · <code>=</code> · 공백 · <code># dma </code> · <code>\r\n</code> 을 다 세어 본다(이 가이드가 센 값: 179). <code>s_tx_dma</code>(192)에 들어가는가. <code># dma </code> 와 <code>\r\n</code> 을 뺀 나머지는 NUL 까지 쳐서 <code>line</code>(192)에도 들어가는가 — 잘리는 자리는 큰 버퍼가 아니라 <strong>먼저 만나는 작은 버퍼</strong>다. 그 줄이 나가는 데 21.7 µs × 179 = 3.9 ms — <code>CONSOLE_TX_TIMEOUT_MS</code>(fw-03 힌트 T1 의 100) 와 견주어 본다.</li>
+        <li><strong>콜백과 등록.</strong> <code>HAL_UART_TxCpltCallback</code> 은 <code>huart-&gt;Instance == USART3</code> 일 때 플래그만. <code>app_init()</code> 의 <code>app_cli_register();</code> 다음 줄에 <code>console_cli_register();</code>. <code>console.c</code> 는 이미 <code>CMakeLists.txt</code> 에 있다.</li>
+      </ol>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 2 ~ 5 = T2 · 걸음 7 = T1. 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>HAL_UART_TxCpltCallback()</code> · DMA 송신이 다 끝났다고 알린다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — DMA 송신의 "끝"은 두 단계로 온다(§2-6). 마지막 바이트가 선을 다 빠져나간 뒤 HAL 이 이 콜백을 부른다. 여기서는 "끝났다"는 표시 하나만 세운다. 기다리는 쪽은 <code>cmd_mem()</code>(T2)이다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T1 - User/Src/Tools/console.c */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+  if (huart-&gt;Instance == USART3) { s_tx_done = true; }
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li>이름과 인자는 HAL 헤더(<code>stm32h7xx_hal_uart.h:1653</code>)와 같아야 불린다 — fw-05 의 수신 콜백과 같은 "내가 정의하고 HAL 이 부르는" 함수다.</li>
+          <li><code>if (huart-&gt;Instance == USART3) { s_tx_done = true; }</code> — 모든 UART 가 이 콜백을 같이 쓰므로 USART3 일 때만 표시한다. fw-05 에서는 "아니면 <code>return</code>" 으로 썼고 여기서는 "맞으면 한다"로 썼다 — 할 일이 한 줄이면 이쪽이 짧다. 뜻은 같다.</li>
+          <li><code>s_tx_done</code> 은 ISR 이 쓰고 main 이 읽으므로 선언에 <code>volatile</code> 이 붙어 있다. 이것이 없으면 컴파일러가 T2 의 <code>while (!s_tx_done)</code> 을 "루프 안에서 안 바뀌는 값"으로 보고 한 번만 읽을 수 있다.</li>
+          <li>골격의 <code>(void)huart;</code> 는 지웠다 — 이제 <code>huart</code> 를 쓴다.</li>
+        </ul>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>USART3 global interrupt 를 꺼 뒀다</td><td>빌드는 된다. 실습 B 에서도 <code>ERR mem tx-timeout</code> — 송신의 둘째 단계가 USART 인터럽트로 온다(§2-6)</td><td>§3-1-1 의 값 표 마지막 행</td></tr>
+            <tr><td>여기서 <code>printf</code> 를 불렀다</td><td>빌드는 된다. ISR 안에서 블로킹 송신이 돈다 — 박자가 밀린다</td><td>표시만 세운다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 이 자리만으로는 보이는 것이 없다. T2 까지 채운 뒤 §3-1-4(실습 A) · §3-2-4(실습 B)에서 본다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t2"><summary>힌트 T2 — <code>cmd_mem()</code> · 같은 줄을 두 길로 찍는다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 같은 <code>key=value</code> 목록을 <strong>두 번</strong> 내보낸다. 첫째 줄(<code>mem …</code>)은 지금까지 쓰던 <code>printf</code>(블로킹 — 동작이 확인된 길), 둘째 줄(<code># dma …</code>)은 <code>s_tx_dma</code> 버퍼에 만들어 DMA 로. 두 줄을 견주면 "DMA 가 그 버퍼를 제대로 읽었는가"가 보인다 — 이 쪽 전체의 관측 창이다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T2 - User/Src/Tools/console.c */
+static void cmd_mem(int argc, char *argv[])
+{
+  (void)argc; (void)argv;
+  console_rx_stats_t st;
+  char line[192];   /* 가장 긴 key=value 목록이 들어가야 한다 - 3-1-3 의 6 */
+  console_rx_get_stats(&amp;st);
+  s_mem_calls++;
+
+  int align32 = ((((uint32_t)s_rx_dma | (uint32_t)s_tx_dma) &amp; 31u) == 0u) ? 1 : 0;
+  int dcache  = ((SCB-&gt;CCR &amp; SCB_CCR_DC_Msk) != 0u) ? 1 : 0;
+
+  (void)snprintf(line, sizeof line,
+                 "n=%lu rx_buf=0x%08lx tx_buf=0x%08lx align32=%d dcache=%d"
+                 " uart_err=%lu last_err=%lu rearm=%lu idle_events=%lu ht_tc_events=%lu",
+                 (unsigned long)s_mem_calls, (unsigned long)(uint32_t)s_rx_dma, (unsigned long)(uint32_t)s_tx_dma,
+                 align32, dcache,
+                 (unsigned long)st.uart_err, (unsigned long)st.last_err, (unsigned long)st.rearm,
+                 (unsigned long)st.idle_events, (unsigned long)st.ht_tc_events);
+  printf("mem %s\r\n", line);                        /* 첫째 줄: 블로킹 송신 */
+  fflush(stdout);
+
+  int len = snprintf((char *)s_tx_dma, sizeof s_tx_dma, "# dma %s\r\n", line);
+  FW_ASSERT(len &gt; 0 &amp;&amp; (size_t)len &lt; sizeof s_tx_dma);   /* 잘렸다면 버퍼 크기를 잘못 잡은 것이다 */
+
+  s_tx_done = false;                                 /* DMA 를 걸기 "전에" 지운다 */
+  if (HAL_UART_Transmit_DMA(&amp;huart3, s_tx_dma, (uint16_t)len) != HAL_OK) {   /* 둘째 줄: DMA */
+    printf("ERR mem tx-busy\r\n");
+    return;
+  }
+
+  uint32_t t0 = tick_get_ms();
+  while (!s_tx_done) {                               /* 송신이 다 끝날 때까지 기다린다 */
+    if ((uint32_t)(tick_get_ms() - t0) &gt; CONSOLE_TX_TIMEOUT_MS) {
+      (void)HAL_UART_AbortTransmit(&amp;huart3);         /* 멈춘 송신을 정리한다: gState -&gt; READY */
+      printf("ERR mem tx-timeout\r\n");
+      return;
+    }
+  }
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>(void)argc; (void)argv;</code> — <code>mem</code> 은 인자를 쓰지 않는다. 그대로 둔다. 골격 끝의 <code>(void)line; (void)st;</code> 는 지웠다.</li>
+          <li><code>int align32 = ((((uint32_t)s_rx_dma | (uint32_t)s_tx_dma) &amp; 31u) == 0u) ? 1 : 0;</code> — 배열 이름은 첫 칸의 주소다. <code>(uint32_t)</code> 로 숫자로 바꾸고, 두 주소를 <code>|</code>(비트 OR)로 합친 뒤 하위 5 비트(<code>&amp; 31u</code>)를 본다. 둘 다 32 의 배수일 때만 0 이다. <code>조건 ? 1 : 0</code> 은 "참이면 1, 아니면 0".</li>
+          <li><code>int dcache = ((SCB-&gt;CCR &amp; SCB_CCR_DC_Msk) != 0u) ? 1 : 0;</code> — 코어의 제어 레지스터에서 D-Cache 가 켜져 있는가를 읽는다(CMSIS 의 이름).</li>
+          <li><code>snprintf(line, sizeof line, "…", …);</code> — <code>printf</code> 와 같되 화면이 아니라 <strong>배열에</strong> 쓴다. 둘째 인자가 "이 크기를 넘겨 쓰지 마라"다. 서식 문자열을 두 줄로 나눠 썼다 — C 는 나란히 놓인 문자열 둘을 하나로 잇는다. <code>%08lx</code> 는 "16 진수 여덟 자리, 빈 자리는 0". 카운터는 <code>(unsigned long)</code> 으로 바꿔 <code>%lu</code> 로(fw-05 의 T9).</li>
+          <li><code>printf("mem %s\r\n", line); fflush(stdout);</code> — 첫째 줄. 블로킹이라 돌아왔을 때는 다 나갔다.</li>
+          <li><code>int len = snprintf((char *)s_tx_dma, sizeof s_tx_dma, "# dma %s\r\n", line);</code> — 둘째 줄을 DMA 버퍼에 만든다. <code>snprintf</code> 의 반환값은 "쓰려던 글자 수"다. 버퍼 크기 이상이면 잘린 것이다.</li>
+          <li><code>FW_ASSERT(len &gt; 0 &amp;&amp; (size_t)len &lt; sizeof s_tx_dma);</code> — 잘렸다면 <code>TX_DMA_SIZE</code> 를 잘못 잡은 프로그램의 오류다. 조용히 넘기지 않고 멈춘다(<strong>다르게 써도 되는 곳</strong> — <code>ERR</code> 줄을 찍고 돌아오는 답도 있다). <code>size_t</code> 는 <code>&lt;stddef.h&gt;</code> 에 있다.</li>
+          <li><code>s_tx_done = false;</code> 를 <code>HAL_UART_Transmit_DMA()</code> <strong>앞에</strong> — 콜백(T1)은 아래의 대기 루프보다 먼저 올 수 있다. 뒤에서 지우면 방금 선 표시를 지워 버려 영원히 기다린다.</li>
+          <li><code>if (HAL_UART_Transmit_DMA(…) != HAL_OK) { printf("ERR mem tx-busy\r\n"); return; }</code> — 직전 송신이 아직 끝나지 않았으면 HAL 이 거절한다.</li>
+          <li><code>while (!s_tx_done) { … }</code> — 끝날 때까지 기다린다. 안 기다리고 돌아가면 다음 <code>printf</code> 가 "송신 중"을 만나 글자를 잃는다. 타임아웃은 <code>(uint32_t)(tick_get_ms() - t0)</code> 로 잰다 — fw-06 의 간격 계산과 같은 부호 없는 뺄셈이다. 실습 A 에서는 DMA 가 버퍼에 닿지 못해 콜백이 오지 않으므로 이 타임아웃이 <code>ERR mem tx-timeout</code> 을 찍는다 — <strong>그것이 실습 A 가 보려는 것이다.</strong></li>
+          <li><code>(void)HAL_UART_AbortTransmit(&amp;huart3);</code> — 기다리기를 그만두는 것만으로는 송신이 끝나지 않는다. 실습 A 의 전송 오류는 <code>HAL_UART_Transmit_DMA()</code> 가 DMAT 를 켜기 <strong>전</strong>에 나서, HAL 의 오류 처리(<code>UART_DMAError</code>)가 <code>gState</code> 를 READY 로 되돌리지 못한다. 그대로 두면 <code>gState</code> 가 BUSY_TX 로 남아 이후의 모든 <code>printf</code> 가 <code>HAL_BUSY</code> 로 버려진다 — 보드는 살아 있는데 콘솔만 말이 없다. 그래서 <code>printf</code> 보다 먼저 송신을 취소해 상태를 되돌린다. 비동기 호출을 타임아웃으로 포기할 때는 시작한 쪽이 취소까지 한다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>stm32h7xx_hal_uart.h:1638</code>. 기다리지 않고 돌아오는 호출이다. 반환값은 <code>HAL_OK</code> / <code>HAL_BUSY</code>(송신이 아직 진행 중) / <code>HAL_ERROR</code>. 버퍼는 송신이 끝날 때까지 살아 있어야 하고, <strong>DMA 가 닿는 자리</strong>에 있어야 한다(§2-1).</p>
+        <pre><code class="lang-c">HAL_StatusTypeDef HAL_UART_Transmit_DMA(UART_HandleTypeDef *huart, const uint8_t *pData, uint16_t Size);</code></pre>
+        <p>이 함수를 쓰려면 <code>console.c</code> 위쪽에 <code>#include &lt;stddef.h&gt;</code> · <code>"Tools/cli.h"</code> · <code>"Tools/log.h"</code> · <code>"System/tick.h"</code> 가 있어야 한다. <code>CONSOLE_TX_TIMEOUT_MS</code> 는 fw-03 에서 정한 이름이다 — 다른 이름을 줬다면 그 이름으로 바꿔 읽는다.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>s_tx_done = false;</code> 를 DMA 호출 뒤에 뒀다</td><td>아무 말도 없다. 가끔(콜백이 먼저 온 날) <code>ERR mem tx-timeout</code></td><td>호출 앞으로</td></tr>
+            <tr><td>타임아웃 분기에서 <code>HAL_UART_AbortTransmit()</code> 을 뺐다</td><td>실습 A 에서 <code>ERR mem tx-timeout</code> 도 안 나오고, 그 뒤 모든 출력이 멎는다(LD1 은 계속 깜박인다). gdb: <code>p/x huart3.gState</code> = <code>0x21</code>(BUSY_TX)</td><td><code>printf</code> 앞에 abort</td></tr>
+            <tr><td>기다리지 않고 돌아갔다</td><td>다음 프롬프트나 다음 명령의 글자가 빠진다</td><td><code>while (!s_tx_done)</code></td></tr>
+            <tr><td><code>%lu</code> 에 캐스트 없이 넘겼다 / <code>%u</code></td><td><code>warning: format '%u' expects argument of type 'unsigned int', but argument … has type 'uint32_t' {aka 'long unsigned int'}</code></td><td><code>(unsigned long)</code> + <code>%lu</code></td></tr>
+            <tr><td><code>tick_get_ms()</code> 를 쓰는데 헤더가 없다</td><td><code>error: implicit declaration of function 'tick_get_ms'</code></td><td><code>#include "System/tick.h"</code></td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 실습 A(§3-1-4): 첫째 줄만 나오고 <code>ERR mem tx-timeout</code>. 실습 B(§3-2-4): 두 줄이 앞머리만 다르고 글자 하나 다르지 않다. 코드는 두 실습에서 <strong>같다.</strong></p>
+        </div></details>
+
+      <h4 id="s3-1-4">3-1-4. 굽고 보기</h4>
+      <pre><code class="lang-bash">firmware/tools/flash.sh                             # 빌드 → 굽기 → 리셋
+python3 -m serial.tools.miniterm &lt;port&gt; 460800      # fw-03 · fw-05 와 같은 포트</code></pre>
+      <p><code>help</code> 를 쳐서 <code>mem</code> 이 목록에 있는지 본다(<code>n=6</code>: help · led · ver · stat · hang · mem). 그다음 <code>mem</code> 을 <strong>두 번</strong> 친다. 기대는 §2-1 의 [추정]에서 나온 것이고, <strong>관찰이 다르면 관찰이 맞다</strong> — 표의 "내 관찰" 칸을 노트에 옮겨 적는다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>볼 것</th><th>기대 (추정)</th><th>내 관찰</th></tr></thead>
+        <tbody>
+          <tr><td><code>mem</code> 첫 줄의 <code>rx_buf=</code> · <code>tx_buf=</code></td><td>둘 다 <code>0x2000_xxxx</code> — DTCM. 이것이 상태 ① 의 증거다. <code>dcache=0</code></td><td><code>rx_buf=____ tx_buf=____</code></td></tr>
+          <tr><td>둘째 줄 <code># dma …</code></td><td><strong>나오지 않는다.</strong> 대신 <code>CONSOLE_TX_TIMEOUT_MS</code> 뒤에 <code>ERR mem tx-timeout</code></td><td>____</td></tr>
+          <tr><td>fw-05 의 감시 줄 <code>[…] W console: uart_err=… last_err=… rearm=…</code></td><td><code>uart_err</code> 가 1 늘고 <code>last_err=16</code>(<code>HAL_UART_ERROR_DMA</code>). <code>rearm=0</code> — 수신은 살아 있어 fw-05 의 재무장이 <code>HAL_BUSY</code> 를 받았다</td><td><code>last_err=____ rearm=____</code></td></tr>
+          <tr><td>그 뒤 <code>help</code></td><td>정상으로 돈다 — 타임아웃 분기의 <code>HAL_UART_AbortTransmit()</code> 이 <code>gState</code> 를 READY 로 되돌린다. <code>UART_DMAError</code> 는 되돌리지 못한다: 오류가 DMAT 를 켜기 전에 나서 <code>uart.c:3846-3849</code> 의 조건을 건너뛴다(2026-10-07 보드 실측 — abort 없이는 콘솔이 멎었다)</td><td>____</td></tr>
+          <tr><td>(gdb 가 있으면, <a href="fw-04-debugger.html">fw-04</a>) <code>p/x hdma_usart3_tx.ErrorCode</code></td><td><code>0x1</code> = <code>HAL_DMA_ERROR_TE</code>(전송 오류, <code>dma.c:1233</code>)</td><td>____</td></tr>
+        </tbody>
+      </table></div>
+      <p>표의 어느 행이 기대와 달라도 — 예컨대 둘째 줄이 깨진 글자로라도 나온다면 — 그것이 <strong>내 보드에서의 상태 ①</strong>이다. 그대로 적고 체크포인트 <code>dtcm-dma-fails-seen</code> 을 닫는다. 이 관찰 표는 이 가이드가 미리 채울 수 없었던 칸이고(에이전트는 보드에 접속하지 않았다), 06a §3-3-A 가 "fw-07 에서 직접 재현해 적는다"고 미뤄 둔 그 칸이다.</p>
+
+      <h3 id="s3-2">3-2. 실습 B — <code>.dma_buf</code> 섹션(RAM_D2)으로 옮긴다: 같은 코드가 동작한다</h3>
+      <p>이 실습은 CubeMX 를 열지 않는다(3-2-1 없음). 바꾸는 것은 셋 — 링커 스크립트에 출력 섹션 하나, 새 헤더 <code>dma_buf.h</code>, 그리고 두 선언 앞의 한 낱말이다. 코드의 논리는 한 줄도 바뀌지 않는다.</p>
+
+      <h4 id="s3-2-2">3-2-2. 골격</h4>
+      <p class="small">아래 두 블록은 <strong>전량 제공</strong>이다 — 이유: 주소 · 크기 · 정렬 · 섹션 이름 한 글자가 어긋나면 "가끔 틀린 데이터"라는 가장 잡기 어려운 증상이 된다. 두 블록 모두 2026-09-22 에 사용자의 H723 링커 스크립트 사본과 CubeCLT 1.21.0 의 <code>arm-none-eabi-gcc</code> 14.3 으로 실제 링크해 <code>.dma_buf</code> 가 <code>0x30000000</code> 에, 두 버퍼가 32 바이트 경계에 놓이는 것을 <code>.map</code> 과 <code>nm</code> 으로 확인했다.</p>
+      <pre><code class="lang-text">/* firmware/h723zg/STM32H723XG_FLASH.ld - 이 출력 섹션을 SECTIONS { } 블록 안에 넣는다.
+   자리는 ._user_heap_stack 섹션 바로 뒤, 주석 "Remove information from the standard libraries" 바로 앞이다.
+   이 파일은 CubeMX 생성물이다: 조각의 사본을 따로 둔다 - 조각이 아직 남아 있는지는 §3-2-4 의 grep 이 보인다. */
+
+  /* DMA 버퍼(fw-07): RAM_D2 = SRAM1+SRAM2, DMA1/DMA2 가 닿는 곳. MPU 리전 1 이 이 영역을 캐시되지 않게 만든다(fw-07 실습 D).
+     NOLOAD: 시작 코드가 이 섹션을 0 으로 지우지 않는다 - 내용을 가정하지 않는다. */
+  .dma_buf (NOLOAD) :
+  {
+    . = ALIGN(32);
+    _sdma_buf = .;
+    KEEP(*(.dma_buf))
+    KEEP(*(.dma_buf*))
+    . = ALIGN(32);
+    _edma_buf = .;
+  } &gt;RAM_D2</code></pre>
+      <pre><code class="lang-c">/* User/Inc/System/dma_buf.h - DMA1/DMA2 가 읽거나 쓰는 모든 버퍼의 자리(fw-07). */
+#ifndef DMA_BUF_H
+#define DMA_BUF_H
+
+/* 변수를 .dma_buf 출력 섹션(링커 스크립트: &gt;RAM_D2, 0x30000000)에 두고
+ * D-Cache 라인(32 B)에 정렬한다. 쓰는 법:   static DMA_BUF uint8_t s_rx_dma[256];   */
+#define DMA_BUF __attribute__((section(".dma_buf"), aligned(32)))
+
+/* 크기는 캐시 라인의 정수배여야 한다 - 그래야 이웃 변수가 버퍼와 한 라인을 나눠 쓰지 않는다(2-4). */
+#define DMA_BUF_ASSERT_SIZE(arr) _Static_assert((sizeof(arr) % 32u) == 0u, #arr ": size must be a multiple of 32 bytes")
+
+#endif /* DMA_BUF_H */</code></pre>
+      <p>그리고 <code>console.c</code> 의 두 선언이 이렇게 바뀐다 — 실습 A 와의 차이는 이 두 줄과 단정 두 줄뿐이다:</p>
+      <pre><code class="lang-c">#include "System/dma_buf.h"
+
+static DMA_BUF uint8_t s_rx_dma[RX_DMA_SIZE];   /* -&gt; .dma_buf (RAM_D2), 32 B 정렬 */
+DMA_BUF_ASSERT_SIZE(s_rx_dma);
+static DMA_BUF uint8_t s_tx_dma[TX_DMA_SIZE];
+DMA_BUF_ASSERT_SIZE(s_tx_dma);</code></pre>
+      <p>왜 이렇게 생겼는가(전량이어도 이유는 적는다). <code>section(".dma_buf")</code> 는 컴파일러에게 "이 변수를 <code>.bss</code> 가 아니라 <code>.dma_buf</code> 라는 입력 섹션에 넣어라"고 말하고, 링커 스크립트의 <code>KEEP(*(.dma_buf))</code> 가 그 입력 섹션을 모아 <code>&gt;RAM_D2</code> 로 보낸다 — <strong>두 이름이 글자까지 같아야</strong> 만난다. 섹션 규칙이 없는 입력 섹션은 링커가 "고아"로 어딘가에 놓는다 — 오류 없이 조용히 다른 자리로 간다. 그래서 3-2-4 의 grep 이 필요하다.
+      <code>NOLOAD</code> 는 "플래시에 초기값을 두지 말고 RAM 자리만 잡아라"다 — 시동 코드가 <code>.bss</code> 처럼 0 으로 채워 주지도 않는다. DMA 버퍼는 어차피 채워지기 전에는 뜻이 없으니 문제가 아니지만, <strong>이 섹션의 변수 초기값을 믿는 코드를 쓰지 않는다.</strong>
+      <code>ALIGN(32)</code> 둘은 섹션의 시작과 끝을 라인 경계에 맞추고, <code>aligned(32)</code> 는 그 안의 변수마다 경계를 맞춘다. <code>_Static_assert</code> 는 크기가 32 의 배수가 아니면 <strong>컴파일 때</strong> 멈춘다 — <code>robot_params.h</code> 의 EMPTY 키를 지키는 가드와 같은 장치다.</p>
+
+      <h4 id="s3-2-3">3-2-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><strong>ld 조각</strong>을 <code>firmware/h723zg/STM32H723XG_FLASH.ld</code> 의 정해진 자리에 붙인다. 파일 이름이 다르면(<a href="fw-02-toolchain.html">fw-02</a> 가 "생성 후 확인"이라 했다) <code>ls firmware/h723zg/*.ld</code> 로 찾는다. 이 파일은 CubeMX 생성물이다 — 재생성이 이 조각을 지우는지는 <strong>이 가이드가 확인하지 못했다</strong>(CubeMX 6.18.1 이 기존 <code>.ld</code> 를 덮어쓰는지 [확인불가]). 그래서 조각을 노트에 따로 보관하고, 재생성마다 3-2-4 의 grep 을 돌린다.</li>
+        <li><strong><code>User/Inc/System/dma_buf.h</code></strong> 를 위 그대로 만든다.</li>
+        <li><strong>두 선언</strong>에 <code>DMA_BUF</code> 를 붙이고 단정 두 줄을 더한다. 다른 곳은 손대지 않는다.</li>
+        <li><strong>일부러 틀려 본다</strong>(빌드만, 굽지 않는다): <code>TX_DMA_SIZE</code> 를 <code>100u</code> 로 바꿔 <code>build.sh</code> 를 돌린다 — 컴파일러가 <code>s_tx_dma: size must be a multiple of 32 bytes</code> 로 멈추는 것을 본다. 다시 <code>192u</code> 로.</li>
+        <li><strong>빌드</strong>하고 굽기 전에 맵을 본다(아래 3-2-4 의 첫 명령 둘). 주소가 <code>0x3000…</code> 이 아니면 굽지 않는다 — 1 과 3 의 철자를 본다.</li>
+      </ol>
+
+      <h4 id="s3-2-4">3-2-4. 굽고 보기</h4>
+      <pre><code class="lang-bash">firmware/tools/build.sh
+grep -n "\.dma_buf" firmware/h723zg/build/Debug/h723zg.map | head              # ① 출력 섹션과 그 주소 · 크기
+arm-none-eabi-nm -n firmware/h723zg/build/Debug/h723zg.elf | grep -i "dma_buf\|s_rx_dma\|s_tx_dma"       # ② 심볼 주소
+firmware/tools/flash.sh</code></pre>
+      <pre><code class="lang-text">(기대)
+ ① .dma_buf  0x30000000  0x1c0   ← 256 + 192 = 448 = 0x1c0. 그 아래 _sdma_buf = 0x30000000, _edma_buf = 0x300001c0
+ ② 30000000 b s_rx_dma      30000100 b s_tx_dma      (b = .bss 류의 미초기화 심볼)   — 하위 5 비트가 0 이다
+    fw-05 의 rx_ring 은 여전히 2000xxxx 에 있다 — CPU 전용이라 옮기지 않았다 (2-7)
+ 맵 파일 이름은 프로젝트 이름을 따른다(fw-02 의 CMake 가 -Wl,-Map=&lt;프로젝트&gt;.map 을 넣는다). 없으면 build/Debug 안을 ls 로 찾는다.</code></pre>
+      <p>터미널에서 <code>mem</code> 을 두 번 친다.</p>
+      <pre><code class="lang-text">(기대 — 두 줄이 앞머리만 다르고 나머지는 글자 하나 다르지 않다)
+&gt; mem
+mem n=1 rx_buf=0x30000000 tx_buf=0x30000100 align32=1 dcache=0 uart_err=0 last_err=0 rearm=0 idle_events=0 ht_tc_events=0
+# dma n=1 rx_buf=0x30000000 tx_buf=0x30000100 align32=1 dcache=0 uart_err=0 last_err=0 rearm=0 idle_events=0 ht_tc_events=0
+&gt; mem
+mem n=2 …
+# dma n=2 …
+&gt;
+ (uart_err 는 실습 A 에서 리셋 전에 늘었던 값이 아니라 0 이다 — 새로 구웠다. 감시 줄은 나오지 않는다.)</code></pre>
+      <p>둘째 줄이 나왔고 첫 줄과 같으면 상태 ② 다. 이것이 체크포인트 <code>dma-buf-in-ram-d2</code>(주소 · 정렬)와 <code>map-shows-dma-section</code>(맵)이다. 코드는 실습 A 와 같다 — 달라진 것은 자리뿐이라는 사실을 노트에 한 줄로 적어 둔다. 캐시는 아직 꺼져 있다(<code>dcache=0</code>) — 캐시 조치가 하나도 없이 동작하는 것도 함께 적는다(표 ② 의 증거).</p>
+
+      <h3 id="s3-3">3-3. 실습 C — 명령 창의 수신을 Circular DMA + <code>stream_rx</code> 로 바꾼다, 그리고 오류에서 되살린다</h3>
+      <p>이 실습도 CubeMX 를 열지 않는다(3-3-1 없음 — 스트림은 실습 A 에서 켰다). 새 파일은 <code>User/Inc/System/stream_rx.h</code> · <code>User/Src/System/stream_rx.c</code>(순수) · <code>firmware/host_tests/test_stream_rx.c</code> 셋이고, <code>console.c</code> 의 수신부가 바뀐다. <code>cli_feed()</code> 위쪽(<code>cli.c</code> · <code>app.c</code>)은 <strong>한 줄도 바뀌지 않는다</strong> — fw-05 가 약속한 그대로다.</p>
+      <p><strong>이름은 승계한다.</strong> fw-05 의 공개 이름은 그대로 두고 구현만 바꾼다 — 부르는 쪽(<code>app.c</code>)이 바뀌지 않게 하려는 것이고, <a href="fw-14-wt901.html">fw-14</a> 의 USART6 도 같은 <code>stream_rx</code> 를 다른 핸들로 쓰게 하려는 것이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>fw-05 의 이름</th><th>이 쪽에서</th><th>왜</th></tr></thead>
+        <tbody>
+          <tr><td><code>console_rx_start()</code> · <code>console_rx_pop()</code> · <code>console_rx_get_stats()</code> · <code>console_rx_stats_t</code></td><td><strong>승계</strong> — 같은 이름, <code>start</code> 의 구현만 바뀐다(<code>pop</code> · <code>get_stats</code> 는 그대로). 구조체는 두 칸이 늘었다(실습 A)</td><td>주 루프 · <code>app_init()</code> 이 그대로 컴파일된다. <code>mem</code> 이 같은 이름을 찍는다</td></tr>
+          <tr><td><code>RX_RING_SIZE</code> · <code>rx_ring</code> · <code>rx_head</code> · <code>rx_tail</code> · <code>rx_stats</code></td><td><strong>승계</strong></td><td>링은 그대로 필요하다 — ISR(이제는 DMA 콜백)이 넣고 주 루프가 꺼내는 경계가 바뀌지 않았다. 넣는 단위만 1 바이트에서 n 바이트가 됐다</td></tr>
+          <tr><td><code>RX_CHUNK</code> · <code>RX_SLOW_SPIN</code> · <code>rx_buf[]</code> · <code>HAL_UART_RxCpltCallback()</code></td><td><strong>삭제</strong></td><td>인터럽트 수신 전용이었다. <code>RxCpltCallback</code> 은 DMA + IDLE 수신에서는 불리지 않는다(HAL 은 <code>ReceptionType == TOIDLE</code> 이면 <code>RxEventCallback</code> 을 부른다 — <code>uart.c:3752 · :3769</code>)</td></tr>
+          <tr><td>—</td><td><strong>신설</strong>: <code>stream_rx.h/.c</code>(<code>stream_rx_t</code> · <code>stream_rx_init/advance/reset</code>) · <code>console.c</code> 의 <code>s_rx</code> · <code>rx_feed()</code> · <code>HAL_UARTEx_RxEventCallback()</code> · <code>RX_DMA_SIZE</code> · <code>s_rx_dma[]</code>(실습 A)</td><td>위치 추적은 순수 파일로 떼어 Mac 에서 채점한다. HAL 글루는 <code>console.c</code> 에 남긴다</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-3-2">3-3-2. 골격</h4>
+      <p>순수 파일부터. 헤더는 완성이고(시그니처와 불변식이 곧 계약이다), <code>.c</code> 는 <code>advance</code> 하나가 <code>TODO(you)</code> 다.</p>
+      <pre><code class="lang-c">/* User/Inc/System/stream_rx.h - Circular DMA 수신 버퍼의 위치 추적(fw-07).
+ * 순수 로직: HAL 헤더 없음. 같은 코드가 USART3(CLI, 나중에 계약 v2)과 USART6(WT901)을 맡는다. */
+#ifndef STREAM_RX_H
+#define STREAM_RX_H
+#include &lt;stdint.h&gt;
+
+/* 새로 온 바이트를 받는 싱크. stream_rx_advance() 와 같은 문맥에서 불린다 - 타깃에서는 ISR. */
+typedef void (*stream_rx_feed_fn)(const uint8_t *p, uint16_t n);
+
+typedef struct {
+  const uint8_t    *buf;      /* DMA 버퍼. 자리는 소유자가 DMA_BUF (dma_buf.h)로 정한다 */
+  uint16_t          size;     /* N [바이트]. DMA 는 buf[N-1] 다음에 buf[0] 으로 되감는다 */
+  uint16_t          old_pos;  /* 이 위치 앞은 전부 먹였다. 0 &lt;= old_pos &lt;= N. N 은 N 으로 둔다(0 으로 정리하지 않는다) */
+  stream_rx_feed_fn feed;
+} stream_rx_t;
+
+void stream_rx_init(stream_rx_t *s, const uint8_t *buf, uint16_t size, stream_rx_feed_fn feed);
+/* pos = HAL_UARTEx_RxEventCallback() 의 Size 인자: DMA 가 다음에 쓸 자리, buf[0] 부터 센다.
+ * 길이가 아니라 위치(1..N)다. old_pos 와 pos 사이의 바이트를 도착 순서대로 먹이고, pos 를 기억한다. */
+void stream_rx_advance(stream_rx_t *s, uint16_t pos);
+/* 수신 오류 뒤에는 DMA 가 buf[0] 부터 다시 시작한다: 옛 위치를 잊는다. */
+void stream_rx_reset(stream_rx_t *s);
+
+#endif /* STREAM_RX_H */</code></pre>
+      <pre><code class="lang-c">/* User/Src/System/stream_rx.c - Circular DMA 수신 버퍼의 위치 추적. 순수 로직: HAL 헤더 없음(호스트 시험 가능). */
+#include "System/stream_rx.h"
+
+void stream_rx_init(stream_rx_t *s, const uint8_t *buf, uint16_t size, stream_rx_feed_fn feed)
+{
+  s-&gt;buf = buf;
+  s-&gt;size = size;
+  s-&gt;old_pos = 0u;
+  s-&gt;feed = feed;
+}
+
+void stream_rx_reset(stream_rx_t *s)
+{
+  s-&gt;old_pos = 0u;                 /* 오류 뒤 DMA 는 buf[0] 부터 다시 쓴다 */
+}
+
+/* old_pos 와 pos 사이를 전부 먹이고, pos 를 기억한다.
+ * 불변식 (2-8 (a)):
+ *   - pos == old_pos          : 새것 없음 (TC 뒤에 오는 IDLE 이 N 을 한 번 더 알린다) -&gt; 돌아온다
+ *   - pos &gt;  old_pos          : 한 구간,  buf[old_pos .. pos)
+ *   - pos &lt;  old_pos          : 되감김,  buf[old_pos .. N) 을 먼저, 그다음 buf[0 .. pos). 첫 호출의 길이가 0 이면 건너뛴다
+ *   - old_pos = pos 그대로    : N 은 N 으로 둔다. N 을 0 으로 정리하면 다음 IDLE 에서 버퍼 전체를 다시 먹인다
+ * 문맥: 타깃에서는 ISR. 블로킹 없음, printf 없음. */
+void stream_rx_advance(stream_rx_t *s, uint16_t pos)
+{
+  /* TODO(you) [T3]: old_pos 와 pos 사이의 새 바이트를 싱크에 먹인다 - 힌트 카드 T3
+       1) pos == old_pos 이면 새것이 없다: 그냥 돌아간다
+       2) pos &gt; old_pos 이면 한 구간: feed(buf + old_pos, pos - old_pos)
+       3) pos &lt; old_pos 이면 되감김: 끝 조각 buf[old_pos .. N) 을 먼저, 그다음 앞 조각 buf[0 .. pos)
+       4) old_pos = pos  (N 이면 N 그대로 둔다)
+     굽기 전에 host_tests/test_stream_rx.c 로 스스로 확인한다. 채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)s; (void)pos;
+}</code></pre>
+      <p><code>feed</code> 를 함수 포인터로 받는 이유가 곧 "순수"의 뜻이다 — <code>stream_rx.c</code> 는 링도 UART 도 모른다. 이 쪽에서는 <code>rx_feed()</code>(링에 넣기)를, <a href="fw-14-wt901.html">fw-14</a> 에서는 WT901 파서를 넘긴다 — 같은 파일, 다른 싱크. <a href="fw-17-link-v2.html">fw-17</a> 은 <strong>싱크를 바꾸지 않는다</strong>: USART3 의 싱크는 <code>rx_feed()</code> 그대로 두고 링에서 <em>꺼내는</em> 쪽만 <code>cli_feed()</code> 에서 <code>comm_frame_feed()</code> 로 바꾼다.</p>
+      <p><code>console.c</code> 쪽의 HAL 글루. 지우는 것과 남기는 것을 파일 머리 주석에 적어 둔다 — 실습 A 의 <code>s_rx_dma</code> · <code>RX_DMA_SIZE</code> 는 그대로 쓴다.</p>
+      <pre><code class="lang-c">/* User/Src/Tools/console.c - 실습 C. fw-05 의 수신 쪽이 1 바이트 인터럽트 수신에서 Circular DMA 로 바뀐다.
+ * 남긴다 (같은 이름, 같은 호출처): RX_RING_SIZE rx_ring rx_head rx_tail rx_stats console_rx_stats_t
+ *                                  console_rx_start() console_rx_pop() console_rx_get_stats()
+ * 지운다:  RX_CHUNK  RX_SLOW_SPIN  rx_buf[]  HAL_UART_RxCpltCallback()  (USART3 가지가 유일한 가지였다)
+ * 새로:    s_rx  rx_feed()  HAL_UARTEx_RxEventCallback()  그리고 HAL_UART_ErrorCallback() 의 몸통             */
+#include "System/stream_rx.h"
+
+static stream_rx_t s_rx;      /* old_pos 가 여기 산다. CPU 만 닿는다 -&gt; DTCM 에 남는다. s_rx_dma[] 는 실습 B 의 DMA_BUF */
+
+/* stream_rx 의 싱크: old_pos 와 pos 사이의 바이트, 도착 순서대로.
+ * 문맥: ISR - USART3 (IDLE) 또는 DMA1 스트림 (HT / TC). 선점 우선순위가 같아 재진입하지 않는다.
+ * 불변식: fw-05 의 링 push 를 n 바이트만큼 - rx_bytes++, 링이 차면 -&gt; 새 바이트를 버리고 센다,
+ *         여기서 rx_tail 은 절대 움직이지 않는다. */
+static void rx_feed(const uint8_t *p, uint16_t n)
+{
+  /* TODO(you) [T4]: 받은 n 바이트를 링에 넣는다 - 힌트 카드 T4
+     for 로 p[0] .. p[n - 1] 하나마다 fw-05 의 T2 와 같은 넣기를 한다:
+       1) rx_stats.rx_bytes 를 1 올린다
+       2) next = (rx_head + 1u) &amp; (RX_RING_SIZE - 1u)
+       3) next == rx_tail 이면 가득 찼다: ring_drop 을 올리고 넣지 않는다
+       4) 아니면 rx_ring[rx_head] 에 먼저 쓰고, 그다음 rx_head = next
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)p; (void)n;
+}
+
+void console_rx_start(void)
+{
+  /* 문맥: app_init(), 한 번.
+     TODO(you) [T5]: 위치 추적을 초기화하고 Circular DMA 수신을 건다 - 힌트 카드 T5
+       1) stream_rx_init(&amp;s_rx, s_rx_dma, RX_DMA_SIZE, rx_feed);
+       2) HAL_UARTEx_ReceiveToIdle_DMA(&amp;huart3, s_rx_dma, RX_DMA_SIZE) 를 부르고 반환값을 받는다
+       3) 부팅 때 HAL_OK 가 아니면 무엇을 뜻하는지 정한다(fw-05 의 T1 과 같은 물음이다)
+     HT 인터럽트를 끄지 않는다 (06 은 껐다: 그것은 Normal 모드의 처방이었다, 2-8). */
+}
+
+/* 문맥: ISR. HAL 이 IDLE 때(USART3_IRQHandler 를 거쳐)와 HT / TC 때(DMA 스트림 핸들러를 거쳐) 부른다.
+ * Size 는 길이가 아니라 위치다(2-8 (a)). 모든 UART 가 이 콜백을 함께 쓴다: huart-&gt;Instance 부터 본다. */
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
+{
+  if (huart-&gt;Instance != USART3) { return; }
+  /* TODO(you) [T6]: 어느 길로 왔는지 세고, 새 바이트를 넘긴다 - 힌트 카드 T6
+       1) HAL_UARTEx_GetRxEventType(huart) 가 HAL_UART_RXEVENT_IDLE 이면 idle_events 를, 아니면 ht_tc_events 를 1 올린다
+       2) stream_rx_advance(&amp;s_rx, Size);
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)Size;
+}
+
+/* 문맥: ISR. 수신 오류는 무엇이든 DMA 수신을 이미 세웠다(2-8 (c)). TX DMA 오류(실습 A)도 여기로 온다.
+ * 불변식 - 2-8 (c) 의 넷, 이 순서로:
+ *   1. 먼저 센다: uart_err++, last_err = huart-&gt;ErrorCode   (어떤 HAL 호출보다 먼저 - 다시 걸면 ErrorCode 가 지워진다)
+ *   2. 플래그를 지운다: __HAL_UART_CLEAR_FLAG(huart, UART_CLEAR_OREF | UART_CLEAR_NEF | UART_CLEAR_PEF | UART_CLEAR_FEF)
+ *   3. stream_rx_reset(&amp;s_rx)                                 (DMA 가 s_rx_dma[0] 부터 다시 쓴다)
+ *   4. HAL_UARTEx_ReceiveToIdle_DMA(huart, s_rx_dma, RX_DMA_SIZE); HAL_OK 가 돌아왔을 때만 rearm++
+ *      (HAL_BUSY = 수신이 아직 돌고 있었다, 예: TX DMA 오류 뒤 - 실패가 아니다)
+ *   - 여기서 printf 금지. uart_err 가 바뀌면 app_loop() 가 fw-05 의 감시 줄을 찍는다. */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+  if (huart-&gt;Instance != USART3) { return; }
+  /* TODO(you) [T7]: 위 불변식의 1 ~ 4 를 그 순서로 쓴다 - 힌트 카드 T7 */
+}</code></pre>
+      <p>이 골격은 그대로 빌드된다(그때 <code>rx_feed</code> 가 비어 있어 아무 글자도 되돌아오지 않는다 — fw-05 실습 A 의 첫 상태와 같다). <code>app.c</code> 는 바뀌지 않는다: <code>app_init()</code> 의 <code>console_rx_start();</code> 와 <code>app_loop()</code> 의 <code>while (console_rx_pop(&amp;ch)) { cli_feed(ch); }</code> 가 그대로 일한다. <code>stream_rx.c</code> 는 최상위 <code>CMakeLists.txt</code> 의 <code># Add user sources here</code> 아래에 한 줄(<code>User/Src/System/stream_rx.c</code>)로 등록한다.</p>
+
+      <h4 id="s3-3-3">3-3-3. 직접 채우기</h4>
+      <p>채점표부터 놓는다. 아래 두 블록이 <code>firmware/host_tests/test_stream_rx.c</code> 한 파일이다(순서대로 이어 붙인다). 시험 파일은 전량으로 준다 — 벡터가 곧 채점표이기 때문이다. 벡터의 출처는 파일 머리 주석에 있다: <code>Size</code> 의 뜻과 "TC 뒤 IDLE 이 N 을 한 번 더 알린다"는 HAL 소스(§2-8 (a)), 33 바이트 묶음과 256 의 관계는 산술(256 mod 33 = 25)이다.
+      2026-09-22 에 Mac 의 <code>cc</code> 로 힌트 T3 의 완결 코드와 함께 돌려 <code>PASS stream_rx 14 cases</code> 를 확인했고, 빈 골격은 첫 벡터(<code>out_n == 10u</code>)에서, "N 을 0 으로 정리한" 변형은 <code>s.old_pos == 256u</code> 에서, 되감기 두 조각의 순서를 바꾼 변형은 <code>out[0] == 250u</code> 에서 멈추는 것도 확인했다.</p>
+      <pre><code class="lang-c">/* host_tests/test_stream_rx.c - Mac 에서 돈다, MCU 없음. 벡터가 곧 stream_rx.c 의 채점표다.
+ * stream_rx_advance() 를 쓰기 전까지는 실패한다. 벡터의 출처:
+ *  - Size 의 뜻과 "TC 다음 IDLE 이 둘 다 N 을 알린다" 경우: stm32h7xx_hal_uart.c:2418 :2438 :3769 :3817 (FW_H7 V1.13.0)
+ *  - N = 256 에 33 바이트 묶음: 256 mod 33 = 25 라서 바퀴마다 되감기가 묶음 안에 걸린다 (python3: 256 % 33) */
+#include &lt;assert.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include "System/stream_rx.h"
+
+#define N 256u
+static uint8_t buf[N];            /* DMA 버퍼를 대신한다 */
+static uint8_t out[4096];         /* 싱크가 받은 것 전부, 받은 순서대로 */
+static unsigned out_n, calls;
+static unsigned cases;
+
+static void sink(const uint8_t *p, uint16_t n) { memcpy(out + out_n, p, n); out_n += n; calls++; }
+static void clear(void) { out_n = 0u; calls = 0u; }
+#define CHECK(c) do { assert(c); cases++; } while (0)
+
+/* --- 그룹 1: 손으로 만든 위치. buf[i] = i 라서 바이트가 제 출처를 말한다 --- */
+static void group1(void)
+{
+  stream_rx_t s;
+  for (unsigned i = 0; i &lt; N; i++) { buf[i] = (uint8_t)i; }
+  stream_rx_init(&amp;s, buf, N, sink);
+  CHECK(s.old_pos == 0u);
+
+  clear(); stream_rx_advance(&amp;s, 10u);                 /* 10 바이트 뒤의 IDLE */
+  CHECK(out_n == 10u &amp;&amp; out[0] == 0u &amp;&amp; out[9] == 9u &amp;&amp; s.old_pos == 10u);
+
+  clear(); stream_rx_advance(&amp;s, 10u);                 /* 같은 위치가 또 옴: 새것 없음 */
+  CHECK(out_n == 0u);
+
+  clear(); stream_rx_advance(&amp;s, N);                   /* 딱 끝에서 TC: Size == N */
+  CHECK(out_n == 246u &amp;&amp; out[0] == 10u &amp;&amp; out[245] == 255u);
+  CHECK(s.old_pos == N);                               /* N 은 N 으로 남는다 */
+
+  clear(); stream_rx_advance(&amp;s, N);                   /* HAL 이 TC 뒤에 알리는 IDLE, 또 Size == N */
+  CHECK(out_n == 0u);                                  /* N 을 0 으로 정리했다면 여기서 버퍼 전체를 다시 먹인다 */
+
+  clear(); stream_rx_advance(&amp;s, 5u);                  /* 되감김: 앞에 새 바이트 5개, 끝 조각은 비었다 */
+  CHECK(out_n == 5u &amp;&amp; out[0] == 0u &amp;&amp; out[4] == 4u &amp;&amp; s.old_pos == 5u);
+
+  clear(); stream_rx_advance(&amp;s, 250u);
+  CHECK(out_n == 245u &amp;&amp; out[0] == 5u &amp;&amp; out[244] == 249u);
+
+  clear(); stream_rx_advance(&amp;s, 3u);                  /* 두 조각 모두 비지 않은 되감김: 250..255 다음 0..2 */
+  CHECK(out_n == 9u &amp;&amp; out[0] == 250u &amp;&amp; out[5] == 255u &amp;&amp; out[6] == 0u &amp;&amp; out[8] == 2u);
+  CHECK(calls == 2u);                                  /* 끝 조각, 그다음 앞 조각 - 이 순서로 두 번 부른다 */
+
+  stream_rx_reset(&amp;s);                                 /* 오류 경로: DMA 가 buf[0] 부터 다시 시작한다 */
+  CHECK(s.old_pos == 0u);
+  clear(); stream_rx_advance(&amp;s, 1u);
+  CHECK(out_n == 1u &amp;&amp; out[0] == 0u);
+}</code></pre>
+      <pre><code class="lang-c">/* --- 그룹 2: DMA 흉내. 33 바이트 묶음 40개; HT 는 128, TC 는 256, IDLE 은 묶음마다 --- */
+static void group2(void)
+{
+  stream_rx_t s;
+  uint8_t src[40u * 33u];
+  unsigned wr = 0u;                                    /* DMA 가 쓰는 위치, 0..N-1 */
+  for (unsigned i = 0; i &lt; sizeof src; i++) { src[i] = (uint8_t)(i * 7u + 3u); }   /* python3: [(i*7+3)&amp;255 for i in range(1320)] */
+  memset(buf, 0, sizeof buf);
+  stream_rx_init(&amp;s, buf, N, sink);
+  clear();
+  for (unsigned b = 0; b &lt; 40u; b++) {
+    for (unsigned k = 0; k &lt; 33u; k++) {
+      buf[wr] = src[b * 33u + k];
+      wr = (wr + 1u) % N;
+      if (wr == N / 2u) { stream_rx_advance(&amp;s, (uint16_t)(N / 2u)); }   /* DMA 스트림 IRQ 에서 오는 HT */
+      if (wr == 0u)     { stream_rx_advance(&amp;s, (uint16_t)N); }          /* TC: Size == N */
+    }
+    stream_rx_advance(&amp;s, (uint16_t)(wr == 0u ? N : wr));                /* USART IRQ 에서 오는 IDLE */
+  }
+  CHECK(out_n == sizeof src);                          /* 잃은 바이트도, 겹친 바이트도 없다 */
+  CHECK(memcmp(out, src, sizeof src) == 0);            /* 되감기 5번(1320 / 256)을 지나도 순서 그대로 */
+}
+
+int main(void)
+{
+  group1();
+  group2();
+  printf("PASS stream_rx %u cases\n", cases);
+  return 0;
+}</code></pre>
+      <pre><code class="lang-bash">cd firmware
+cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_stream_rx.c h723zg/User/Src/System/stream_rx.c -o /tmp/test_stream_rx &amp;&amp; /tmp/test_stream_rx</code></pre>
+      <pre><code class="lang-text">(기대)  PASS stream_rx 14 cases
+(빈 골격이면)  Assertion failed: (out_n == 10u &amp;&amp; out[0] == 0u &amp;&amp; out[9] == 9u &amp;&amp; s.old_pos == 10u), … line 29</code></pre>
+      <ol class="steps">
+        <li><strong><code>stream_rx_advance()</code></strong> — §2-8 (a) 의 규칙 셋을 그대로 옮긴다. 막히면: 되감기 가지에서 첫 조각의 길이는 <code>size − old_pos</code> 이고 <code>old_pos == size</code> 면 0 이다 — 그 호출을 건너뛰는지, 길이 0 으로 부르는지는 내 선택(시험은 둘 다 통과시킨다 — <code>calls == 2u</code> 를 세는 벡터는 두 조각이 <strong>모두</strong> 비어 있지 않은 경우다). 호스트 시험이 통과할 때까지 굽지 않는다.</li>
+        <li><strong>지우기.</strong> <code>console.c</code> 에서 <code>RX_CHUNK</code> · <code>RX_SLOW_SPIN</code> · <code>rx_buf</code> · <code>HAL_UART_RxCpltCallback</code> 을 지운다. <code>grep -n "RX_CHUNK\|RX_SLOW_SPIN\|rx_buf\b\|RxCpltCallback" h723zg/User/Src/Tools/console.c</code> 가 0 줄이어야 한다.</li>
+        <li><strong><code>rx_feed()</code></strong> — fw-05 §3-1-3 의 2 번(링에 넣기)을 <code>n</code> 번 반복한다. "바이트를 먼저 쓰고 <code>rx_head</code> 를 나중에" 규칙도 그대로.</li>
+        <li><strong><code>console_rx_start()</code></strong> — <code>stream_rx_init</code> 뒤 <code>HAL_UARTEx_ReceiveToIdle_DMA</code>. 부팅 때 <code>HAL_OK</code> 가 아니면 그 뒤의 모든 관측이 불가능하다 — fw-05 와 같은 결정(<code>FW_ASSERT</code> 로 멈출지, LD3 만 켤지)을 적는다.</li>
+        <li><strong><code>HAL_UARTEx_RxEventCallback()</code></strong> — 길 세기 뒤 <code>stream_rx_advance(&amp;s_rx, Size)</code> 한 줄. <code>HAL_UARTEx_GetRxEventType()</code> 은 콜백 <strong>안에서</strong> 읽어야 정확하다(<code>uart_ex.c:935-961</code>).</li>
+        <li><strong><code>HAL_UART_ErrorCallback()</code></strong> — 넷을 순서대로. 재시작이 <code>HAL_OK</code> 가 아닌 횟수까지 알고 싶으면 카운터를 하나 더한다(이름은 내가 정해 노트에).</li>
+        <li><strong>손 검산</strong>(호스트 시험이 못 보는 부분): 300 자를 한 번에 붙여넣으면 콜백은 몇 번 오는가 — HT(128) · TC(256) · IDLE(끝, 위치 44) 셋 [추정: VCP 가 틈 없이 보낸다는 전제]. 링(255 칸)에 300 바이트가 들어가는가 — 주 루프가 에코를 찍는 속도에 달렸다. <code>ring_drop</code> 이 오르면 그것은 fw-05 §2-6 의 현상이고 이 쪽의 버그가 아니다.</li>
+      </ol>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 1 = T3 · 걸음 3 = T4 · 걸음 4 = T5 · 걸음 5 = T6 · 걸음 6 = T7. 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <details class="hint" id="hint-t3"><summary>힌트 T3 — <code>stream_rx_advance()</code> · 지난번 위치와 이번 위치 사이를 먹인다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — DMA 는 버퍼를 빙빙 돌며 쓴다. HAL 은 콜백에서 "지금 어디까지 썼는가"(<code>pos</code>)만 알려 준다 — 길이가 아니라 <strong>위치</strong>다(§2-8 (a)). 이 함수가 "지난번에 본 위치"(<code>old_pos</code>)를 기억했다가 그 사이의 새 바이트만 도착 순서대로 <code>feed</code> 에 넘긴다. HAL 을 모르는 순수 함수라 Mac 에서 채점한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T3 - User/Src/System/stream_rx.c */
+void stream_rx_advance(stream_rx_t *s, uint16_t pos)
+{
+  if (pos == s-&gt;old_pos) { return; }                 /* 새것 없음: TC 뒤에 오는 IDLE 이 N 을 한 번 더 알린다 */
+
+  if (pos &gt; s-&gt;old_pos) {
+    s-&gt;feed(s-&gt;buf + s-&gt;old_pos, (uint16_t)(pos - s-&gt;old_pos));   /* 한 구간 */
+  } else {
+    const uint16_t tail = (uint16_t)(s-&gt;size - s-&gt;old_pos);       /* 되감김: 끝 조각이 먼저 */
+    if (tail &gt; 0u) { s-&gt;feed(s-&gt;buf + s-&gt;old_pos, tail); }
+    if (pos &gt; 0u)  { s-&gt;feed(s-&gt;buf, pos); }                      /* 그다음 앞 조각 */
+  }
+  s-&gt;old_pos = pos;                                  /* N 은 N 으로 둔다 - 0 으로 정리하지 않는다 */
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>if (pos == s-&gt;old_pos) { return; }</code> — 새 바이트가 없다. 흔한 경우다: 버퍼 끝에서 TC 가 N 을 알린 직후 IDLE 이 같은 N 을 한 번 더 알린다.</li>
+          <li><code>if (pos &gt; s-&gt;old_pos)</code> — 한 구간. <code>s-&gt;buf + s-&gt;old_pos</code> 는 "버퍼의 <code>old_pos</code> 번째 칸의 주소"(포인터에 정수를 더하면 그만큼 뒤의 칸을 가리킨다)이고, 길이는 <code>pos - old_pos</code> 다. <code>s-&gt;feed(…)</code> 는 구조체에 넣어 둔 <strong>함수 포인터</strong>를 부르는 것이다 — fw-05 의 명령 테이블이 함수를 부르던 것과 같다.</li>
+          <li><code>else</code> — <code>pos</code> 가 더 작다 = DMA 가 끝을 지나 앞으로 되감겼다. 새 바이트는 두 조각이다: <strong>끝 조각</strong> <code>buf[old_pos .. N)</code> 이 먼저 도착했고, <strong>앞 조각</strong> <code>buf[0 .. pos)</code> 이 나중에 도착했다. 그 순서로 먹인다. 순서를 바꾸면 글자 순서가 뒤집힌다.</li>
+          <li><code>if (tail &gt; 0u)</code> · <code>if (pos &gt; 0u)</code> — 길이가 0 인 조각은 부르지 않는다. <code>old_pos == N</code> 에서 되감기면 끝 조각이 비어 있다.</li>
+          <li><code>s-&gt;old_pos = pos;</code> — 기억을 고친다. <strong>N 은 N 그대로 둔다.</strong> "N 은 곧 0 이니까" 하고 0 으로 정리하면, 바로 뒤에 오는 IDLE(<code>pos == N</code>)에서 <code>pos &gt; old_pos</code> 가 되어 버퍼 전체를 다시 먹인다.</li>
+          <li><code>(uint16_t)(…)</code> — 뺄셈의 결과는 <code>int</code> 로 올라가므로 인자의 형으로 되돌린다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① 끝 조각의 길이가 0 일 때 건너뛰지 않고 길이 0 으로 부르는 답도 시험을 통과한다. 그때는 <code>feed()</code> 구현이 <code>n == 0</code> 을 견디는지 확인한다 ② <code>pos &gt; size</code> 를 방어하는가 — 이 코드는 안 한다(HAL 이 주는 값이고 버퍼 크기를 넘을 수 없다). 넣는다면 잘라 낼지 그냥 돌아올지가 또 하나의 결정이다 ③ <code>old_pos</code> 갱신을 가지마다 둬도 결과는 같다(동일).</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 파일).</p>
+        <p><strong>흔한 실수</strong> — 셋 다 컴파일러는 아무 말도 하지 않고, 호스트 시험이 잡는다(§3-3-3 머리의 확인).</p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th><code>/tmp/test_stream_rx</code> 가 멈추는 곳</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>빈 골격 그대로</td><td>첫 벡터 <code>out_n == 10u</code></td><td>—</td></tr>
+            <tr><td>끝에서 <code>old_pos</code> 를 0 으로 정리했다</td><td><code>s.old_pos == 256u</code></td><td>N 은 N 으로 둔다</td></tr>
+            <tr><td>되감기의 두 조각 순서를 바꿨다</td><td><code>out[0] == 250u</code></td><td>끝 조각 먼저</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-3-3 의 명령으로 <code>PASS stream_rx 14 cases</code>. 통과하기 전에는 굽지 않는다(체크포인트 <code>stream-rx-host-pass</code>).</p>
+        </div></details>
+
+      <details class="hint" id="hint-t4"><summary>힌트 T4 — <code>rx_feed()</code> · 받은 n 바이트를 링에 넣는다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — <code>stream_rx_advance()</code>(T3)가 새 바이트 묶음을 넘겨줄 때마다 불린다. fw-05 의 "링에 한 바이트 넣기"를 <code>n</code> 번 한다. 넣는 단위가 1 바이트에서 n 바이트로 바뀐 것 말고는 fw-05 의 T2 와 같다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T4 - User/Src/Tools/console.c */
+static void rx_feed(const uint8_t *p, uint16_t n)
+{
+  for (uint16_t i = 0u; i &lt; n; i++) {
+    uint16_t next = (uint16_t)((rx_head + 1u) &amp; (RX_RING_SIZE - 1u));
+
+    rx_stats.rx_bytes++;
+    if (next == rx_tail) {
+      rx_stats.ring_drop++;
+    } else {
+      rx_ring[rx_head] = p[i];
+      rx_head = next;
+    }
+  }
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>const uint8_t *p, uint16_t n</code> — "주소 <code>p</code> 부터 <code>n</code> 바이트". <code>const</code> 는 "이 함수는 그 바이트를 읽기만 한다"는 약속이다. <code>p[i]</code> 는 i 번째 바이트.</li>
+          <li><code>for</code> 안의 여섯 줄 — fw-05 의 T2 와 글자까지 같다(<code>rx_buf[i]</code> 가 <code>p[i]</code> 로 바뀐 것만 다르다). 가득 차면 새 바이트를 버리고 세고, 아니면 먼저 쓰고 나중에 <code>rx_head</code> 를 옮긴다. <code>rx_tail</code> 은 건드리지 않는다.</li>
+          <li><strong>재무장이 없다.</strong> fw-05 의 콜백은 끝에서 수신을 다시 걸었지만, Circular DMA 는 한 번 걸면 계속 돈다 — 다시 거는 것은 오류가 났을 때(T7)뿐이다.</li>
+          <li>문맥은 ISR 이다(USART3 의 IDLE, 또는 DMA 스트림의 HT · TC). 두 인터럽트의 선점 우선순위가 같아서(§2-8 (b)) 이 함수가 자기 자신을 끊고 들어오지 않는다.</li>
+        </ul>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>골격 그대로(비어 있다)</td><td>빌드는 된다. 친 글자가 하나도 안 돌아온다</td><td>채운다</td></tr>
+            <tr><td>USART3 과 DMA 스트림의 우선순위가 다르다</td><td>붙여넣기에서 글자가 겹치거나 빠진다(이 함수가 재진입한다)</td><td>§3-3-4 의 첫 grep — 셋 다 6</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-3-4 의 1 번. 친 글자가 되돌아오고 <code>help</code> 가 돈다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t5"><summary>힌트 T5 — <code>console_rx_start()</code> · Circular DMA 수신을 건다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — fw-05 와 같은 이름, 다른 구현. 위치 추적(<code>s_rx</code>)을 초기화하고 "IDLE 까지 받기"를 DMA 로 건다. 부르는 쪽(<code>app_init()</code>)은 한 글자도 바뀌지 않는다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T5 - User/Src/Tools/console.c */
+void console_rx_start(void)
+{
+  stream_rx_init(&amp;s_rx, s_rx_dma, RX_DMA_SIZE, rx_feed);
+
+  HAL_StatusTypeDef st = HAL_UARTEx_ReceiveToIdle_DMA(&amp;huart3, s_rx_dma, RX_DMA_SIZE);
+  FW_ASSERT(st == HAL_OK);
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>stream_rx_init(&amp;s_rx, s_rx_dma, RX_DMA_SIZE, rx_feed);</code> — 추적기에 넷을 알려 준다: 버퍼, 크기, 그리고 새 바이트를 받을 함수. 마지막 인자 <code>rx_feed</code> 는 <strong>괄호 없이</strong> 쓴다 — 함수를 부르는 것이 아니라 함수의 주소를 넘기는 것이다(fw-05 의 <code>cli_register("led", cmd_led)</code> 와 같다).</li>
+          <li><code>HAL_UARTEx_ReceiveToIdle_DMA(&amp;huart3, s_rx_dma, RX_DMA_SIZE)</code> — "이 버퍼에 DMA 로 받아라. 선이 조용해지면(IDLE) 알려 달라". CubeMX 에서 수신 DMA 를 Circular 로 잡았으므로(§3-1-1) 버퍼 끝에서 멈추지 않고 앞으로 되감는다.</li>
+          <li>순서 — 추적기 초기화가 <strong>먼저</strong>다. 수신을 건 직후부터 콜백(T6)이 올 수 있고, 그 콜백이 <code>s_rx</code> 를 쓴다.</li>
+          <li><code>FW_ASSERT(st == HAL_OK);</code> — fw-05 의 T1 과 같은 판단이다(다르게 써도 되는 곳 — LD3 만 켜고 가는 답도 있다).</li>
+          <li>HT 인터럽트를 끄는 줄이 <strong>없다</strong> — Circular 에서는 절반(HT) 알림도 쓴다(§2-8).</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>stm32h7xx_hal_uart_ex.h:179</code>. 반환값은 fw-05 의 <code>HAL_UART_Receive_IT()</code> 와 같은 꼴이다: <code>HAL_OK</code> / <code>HAL_BUSY</code>(이미 수신 중) / <code>HAL_ERROR</code>.</p>
+        <pre><code class="lang-c">HAL_StatusTypeDef HAL_UARTEx_ReceiveToIdle_DMA(UART_HandleTypeDef *huart, uint8_t *pData, uint16_t Size);</code></pre>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>rx_feed()</code> 로 괄호를 붙여 넘겼다</td><td>컴파일 오류(인자 없이 불렀고, <code>void</code> 를 값으로 넘기려 했다)</td><td><code>rx_feed</code></td></tr>
+            <tr><td>fw-05 의 <code>HAL_UART_Receive_IT()</code> 줄을 남겨 뒀다</td><td>부팅 직후 LD3(<code>FW_ASSERT</code>) — 둘째 호출이 <code>HAL_BUSY</code> 를 받는다</td><td>§3-3-3 의 2 번(지우기)</td></tr>
+            <tr><td><code>s_rx_dma</code> 가 아직 DTCM 에 있다(실습 B 를 건너뛰었다)</td><td>글자가 안 돌아온다 [추정 — §2-1 에서 나온 예상이다]</td><td>§3-2-4 의 <code>nm</code> 으로 주소를 본다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-3-4 의 1 번. 부팅 뒤 프롬프트가 나오고 글자가 되돌아온다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t6"><summary>힌트 T6 — <code>HAL_UARTEx_RxEventCallback()</code> · 어느 길로 왔는지 세고 넘긴다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — HAL 이 수신 사건마다 부른다. 길이 둘이다: 선이 조용해졌을 때(IDLE — USART 인터럽트로), 버퍼의 절반 · 끝에 닿았을 때(HT · TC — DMA 스트림 인터럽트로). 어느 길인지 세고, <code>Size</code>(위치)를 T3 에 넘긴다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T6 - User/Src/Tools/console.c */
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
+{
+  if (huart-&gt;Instance != USART3) { return; }
+
+  if (HAL_UARTEx_GetRxEventType(huart) == HAL_UART_RXEVENT_IDLE) {
+    rx_stats.idle_events++;                /* USART IRQ 로 들어온 길 */
+  } else {
+    rx_stats.ht_tc_events++;               /* DMA 스트림 IRQ 로 들어온 길 (HT 또는 TC) */
+  }
+  stream_rx_advance(&amp;s_rx, Size);
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li>인자가 둘이다 — fw-05 의 <code>RxCpltCallback</code> 과 달리 <code>Size</code> 가 온다. 이름은 Size 지만 <strong>버퍼 시작부터의 위치</strong>다(§2-8 (a)).</li>
+          <li><code>HAL_UARTEx_GetRxEventType(huart) == HAL_UART_RXEVENT_IDLE</code> — 이번 콜백이 어느 사건 때문인가. 콜백 <strong>안에서</strong> 읽어야 정확하다(§3-3-3 의 5 번).</li>
+          <li><code>if / else</code> 로 카운터 하나를 올린다. 골격의 주석은 <code>조건 ? a++ : b++</code> 꼴로 적었지만 뜻은 같다 — 읽기 쉬운 쪽을 쓴다.</li>
+          <li><code>stream_rx_advance(&amp;s_rx, Size);</code> — 실제 일은 이 한 줄이다. 여기서 <code>rx_feed()</code>(T4)까지 불려 링에 들어간다.</li>
+          <li>골격의 <code>(void)Size;</code> 는 지웠다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 콜백의 선언은 <code>stm32h7xx_hal_uart.h:1661</code>, <code>HAL_UARTEx_GetRxEventType()</code> 은 <code>stm32h7xx_hal_uart_ex.h:181</code>, <code>HAL_UART_RXEVENT_IDLE</code> 은 <code>stm32h7xx_hal_uart.h:838</code>.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>Size</code> 를 "이번에 받은 길이"로 보고 <code>rx_feed(s_rx_dma, Size)</code> 를 불렀다</td><td>첫 글자는 맞고, 그 뒤로 앞 글자들이 되풀이해 에코된다</td><td><code>stream_rx_advance()</code> 에 맡긴다</td></tr>
+            <tr><td>fw-05 의 <code>HAL_UART_RxCpltCallback()</code> 에 코드를 남겨 뒀다</td><td>빌드는 된다. 그 콜백은 이제 불리지 않는다(§3-3 의 표)</td><td>지운다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-3-4 의 1 · 2 번. 글자를 치면 <code>mem</code> 의 <code>idle_events</code> 가, 300 자를 붙여넣으면 <code>ht_tc_events</code> 가 는다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t7"><summary>힌트 T7 — <code>HAL_UART_ErrorCallback()</code> · 멈춘 DMA 수신을 되살린다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — DMA 수신에서는 수신 오류 하나에 HAL 이 수신을 세운다(§2-8 (c)). fw-05 의 T8 과 같은 자리이고, 할 일이 둘 늘었다: 오류 플래그를 지우고, 위치 추적을 처음으로 되돌린다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T7 - User/Src/Tools/console.c */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+  if (huart-&gt;Instance != USART3) { return; }
+
+  rx_stats.uart_err++;                                              /* 1. 먼저 센다 */
+  rx_stats.last_err = huart-&gt;ErrorCode;
+  __HAL_UART_CLEAR_FLAG(huart, UART_CLEAR_OREF | UART_CLEAR_NEF | UART_CLEAR_PEF | UART_CLEAR_FEF);   /* 2. */
+  stream_rx_reset(&amp;s_rx);                                           /* 3. 옛 위치를 잊는다 */
+  if (HAL_UARTEx_ReceiveToIdle_DMA(huart, s_rx_dma, RX_DMA_SIZE) == HAL_OK) {   /* 4. 다시 건다 */
+    rx_stats.rearm++;
+  }
+}</code></pre>
+        <p><strong>코드 설명</strong> — 골격 주석의 넷을 그 순서로 옮긴 것이다.</p>
+        <ul>
+          <li><code>rx_stats.uart_err++;</code> · <code>rx_stats.last_err = huart-&gt;ErrorCode;</code> — 먼저 센다. 아래의 재시작이 <code>ErrorCode</code> 를 지우므로 읽는 것이 앞이다(fw-05 의 T8 과 같다).</li>
+          <li><code>__HAL_UART_CLEAR_FLAG(huart, UART_CLEAR_OREF | UART_CLEAR_NEF | UART_CLEAR_PEF | UART_CLEAR_FEF);</code> — 네 오류 플래그를 한꺼번에 지운다. <code>|</code> 로 묶은 것은 "이 비트들 전부"다. 지우지 않고 다시 걸면 남아 있던 플래그가 곧바로 또 오류를 낸다.</li>
+          <li><code>stream_rx_reset(&amp;s_rx);</code> — 다시 건 DMA 는 버퍼의 <strong>맨 앞</strong>부터 쓴다. 추적기가 옛 위치를 기억하고 있으면 새 바이트를 "되감김"으로 잘못 읽는다. 그래서 옛 위치를 잊는다.</li>
+          <li><code>if (HAL_UARTEx_ReceiveToIdle_DMA(huart, s_rx_dma, RX_DMA_SIZE) == HAL_OK) { rx_stats.rearm++; }</code> — 다시 건다. <code>HAL_OK</code> 일 때만 센다 — fw-05 의 T8 과 같은 뜻의 카운터다. 여기서는 인자로 받은 <code>huart</code> 를 그대로 넘겼다(맨 위에서 USART3 임을 확인했으므로 <code>&amp;huart3</code> 과 같은 것이다).</li>
+          <li>ISR 문맥이다. 찍지 않는다 — <code>uart_err</code> 가 바뀐 것을 보고 찍는 것은 fw-05 의 감시 줄(주 루프)이다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — 재시작이 <code>HAL_OK</code> 가 아닌 횟수도 알고 싶으면 카운터를 하나 더한다(이름은 내가 정해 노트에 — §3-3-3 의 6 번).</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — T5 와 같은 <code>HAL_UARTEx_ReceiveToIdle_DMA()</code>, 그리고 HAL 매크로 <code>__HAL_UART_CLEAR_FLAG()</code>.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>재시작을 빼먹었다</td><td>오류 한 번 뒤로 명령 창이 죽는다. LD1 은 깜박인다(§3-3-4 의 마지막 문단이 일부러 해 보는 그것)</td><td>넷째 줄</td></tr>
+            <tr><td><code>stream_rx_reset()</code> 을 빼먹었다</td><td>되살아난 뒤 첫 입력에서 엉뚱한 옛 글자가 섞여 나온다</td><td>셋째 줄</td></tr>
+            <tr><td><code>ErrorCode</code> 를 재시작 뒤에 읽었다</td><td>감시 줄의 <code>last_err</code> 가 늘 0</td><td>순서</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-3-4 의 3 번. (가) 또는 (나)에서 <code>uart_err</code> 와 <code>rearm</code> 이 같이 늘고 그 뒤 <code>help</code> 가 돈다(체크포인트 <code>cli-dma-error-rearms</code>).</p>
+        </div></details>
+
+      <h4 id="s3-3-4">3-3-4. 굽고 보기</h4>
+      <pre><code class="lang-bash">cd firmware/h723zg
+grep -n "NVIC.USART3_IRQn\|NVIC.DMA[12]_Stream" h723zg.ioc      # 셋의 둘째 칸이 전부 6 인가 — 체크포인트 usart3-dma-irq-same-prio
+                                                                # 줄이 셋이 아니면 스트림이 DMA1 · DMA2 중 어디에 잡혔는지부터 본다
+cd ../.. &amp;&amp; firmware/tools/flash.sh
+python3 -m serial.tools.miniterm &lt;port&gt; 460800</code></pre>
+      <p>세 가지를 순서대로 본다.</p>
+      <ol>
+        <li><strong>창이 산다.</strong> 글자가 되돌아오고 <code>help</code> 가 돈다(<code>n=6</code>). <code>mem</code> 을 치면 <code>idle_events</code> 가 친 글자 수만큼 늘어 있다 — 한 글자 뒤마다 선이 조용해져 IDLE 이 왔다(RM0468 §53: "An Idle character is interpreted as an entire frame of 1s"). <code>ht_tc_events=0</code> 이다 — 아직 128 바이트를 안 채웠다. 이것이 <code>cli-on-circular-dma</code> 의 앞 절반.</li>
+        <li><strong>되감기가 하드웨어에서 돈다.</strong> fw-05 실습 C 의 300 자(<code>python3 -c "print('abcdefghij' * 30, end='')" | pbcopy</code>)를 붙여넣고 Enter, 다시 한 번 붙여넣고 Enter. <code>mem</code> 의 <code>ht_tc_events</code> 가 늘었다(600 B ÷ 128 = 4 회 이상 — HT · TC · HT · TC …). 두 번째 붙여넣기의 에코가 앞부분과 <strong>같은 글자 순서</strong>로 나오면 되감기 두 조각의 순서가 맞은 것이다(<code>ERR line too-long</code> 은 80 자 줄 버퍼 때문이다 — fw-05 그대로). <code>cli-on-circular-dma</code> 의 뒤 절반.</li>
+        <li><strong>오류를 일부러 낸다 — 재무장의 발동 확인.</strong> 사실 시트에 확실한 방법이 없다. 아래 세 후보를 순서대로 해 보고 표에 적는다. 셋 다 <code>uart_err</code> 를 올리지 못하면 <strong>그 사실을 적는다</strong> — 같은 코드 경로(오류 → 재무장)는 <a href="fw-14-wt901.html">fw-14</a> 의 <code>wt-unplug-recovers</code>(WT901 선을 뽑았다 꽂는다 — 부유한 RX 선이 FE · NE 를 확실히 만든다)에서 닫는다. 그때까지 "CLI 가 말없이 멈추면 재무장을 의심한다"가 증상 ↔ 원인 표에 남는다.</li>
+      </ol>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>#</th><th>방법</th><th>기대 (추정)</th><th>전제 — 확인하지 못한 것</th><th>내 관찰 (<code>uart_err</code> · <code>last_err</code> · <code>rearm</code> · 그 뒤 <code>help</code>)</th></tr></thead>
+        <tbody>
+          <tr><td>(가)</td><td>miniterm 을 <strong>다른 보드레이트</strong>(예: 115200)로 다시 열어 글자 몇 개를 친 뒤, 460800 으로 다시 연다</td><td>비트 폭이 네 배 달라 정지 비트 자리가 0 이 되는 글자가 있다 → FE(4), 경계가 흔들리면 NE(2). <code>uart_err</code> 가 늘고 <code>rearm</code> 도 같이 는다. 460800 으로 돌아온 뒤 <code>help</code> 가 돈다</td><td>ST-LINK/V3E 의 VCP 가 <strong>호스트가 정한 보드레이트로 실제 UART 를 돌린다</strong>는 전제 — UM2407 §7.6.5 는 USART3 이 ST-LINK 에 이어져 있다는 것만 말한다 [추정]</td><td>____</td></tr>
+          <tr><td>(나)</td><td>miniterm 안에서 <kbd>Ctrl+T</kbd> 다음 <kbd>Ctrl+B</kbd> 로 BREAK 를 켜고(화면에 <code>--- BREAK active ---</code>), 1 초 뒤 같은 키로 끈다(pyserial 3.5 의 miniterm 메뉴 — 이 Mac 의 소스에서 확인)</td><td>선이 한 프레임보다 오래 0 에 머물면 수신기는 정지 비트 자리에서 0 을 본다 → FE. 끈 뒤 <code>help</code> 가 돈다</td><td>ST-LINK 가 CDC 의 BREAK 요청을 <strong>실제 선</strong>으로 내보내는지 [추정 — 문서 없음]</td><td>____</td></tr>
+          <tr><td>(다)</td><td>300 자 붙여넣기(위 2 번)</td><td><strong>ORE 는 나지 않을 것</strong> — RDR 을 비우는 것이 이제 DMA 다(§2-8 상자). <code>uart_err</code> 가 그대로면 그것이 "DMA 가 기한을 지킨다"의 관찰이다</td><td>VCP 가 붙여넣은 글을 틈 없이 보낸다는 전제(fw-05 §2-5 와 같은 추정)</td><td>____</td></tr>
+        </tbody>
+      </table></div>
+      <pre><code class="lang-text">(감시 줄의 모양 — fw-05 그대로)
+[&lt;tick_ms&gt;] W console: uart_err=&lt;n&gt; last_err=&lt;n&gt; rearm=&lt;n&gt; ring_drop=&lt;n&gt;
+ last_err 는 HAL_UART_ERROR_* 의 비트 합: PE = 1, NE = 2, FE = 4, ORE = 8, DMA = 16 (stm32h7xx_hal_uart.h:361-365)
+ rearm 이 uart_err 와 같이 늘면 "재무장이 없었으면 창이 죽었을 횟수"다 — DMA 수신에서는 모든 오류가 blocking 이라 둘이 같이 는다</code></pre>
+      <p>(가) 또는 (나)에서 <code>uart_err</code> 와 <code>rearm</code> 이 같이 늘고 그 뒤 <code>help</code> 가 돌면 체크포인트 <code>cli-dma-error-rearms</code> 를 닫는다. 재무장을 <strong>일부러 빼고</strong> 같은 일을 한 번 더 해 보는 것도 좋다 — 그때는 <code>uart_err</code> 가 1 늘고 창이 죽은 채로 남아야 한다(LD1 은 깜박인다). fw-05 실습 C 의 실행 2 와 같은 모양이고, 이번에는 FE 하나로도 죽는다는 것이 다르다. 본 뒤에는 재무장을 <strong>되돌려 놓는다.</strong></p>
+
+      <h3 id="s3-4">3-4. 실습 D — D-Cache 를 켠다: 어긋남을 보고, MPU 비캐시 리전으로 되돌린다</h3>
+      <p>여기까지의 관찰은 전부 <code>dcache=0</code> 에서 얻은 것이다. 이 실습은 그 마지막 조건을 바꾼다 — 코드도, 버퍼의 자리도, DMA 설정도 그대로 두고 <strong>D-Cache 만 켠다</strong>(상태 ③). 그다음 MPU 리전 하나를 더해 <strong>③′</strong> 로 간다.
+      이 쪽에서 <strong>두 번 굽는</strong> 유일한 실습이다: <strong>실행 1</strong> = 캐시만 켠 것, <strong>실행 2</strong> = 거기에 리전을 더한 것. CubeMX 를 두 번 열고 두 번 생성한다.</p>
+      <div class="callout note"><span class="ct">캐시를 켜면 명령 창 자체가 흔들릴 수 있다 — 그래서 관찰을 부팅으로 옮긴다</span>
+        <p>③ 은 송신 버퍼만의 일이 아니다. <code>rx_feed()</code> 가 읽는 <code>s_rx_dma</code> 도 같은 RAM_D2 에 있고, 캐시가 켜지면 <strong>CPU 의 읽기</strong>가 캐시에 머문 옛 값을 볼 수 있다 — 그러면 친 글자가 되돌아오지 않거나 엉뚱한 글자가 나와 <code>mem</code> 을 칠 수조차 없다.
+        그래서 실행 1 에서는 두 줄을 <strong>부팅 직후 자동으로</strong> 한 번 찍게 한다(§3-4-2 의 <code>console_mem_dump()</code>). 관찰에 필요한 것은 NRST 뿐이고, 명령 창이 살았는지 죽었는지는 그 자체로 관찰 항목이 된다.</p>
+      </div>
+
+      <h4 id="s3-4-1">3-4-1. CubeMX 설정 <span class="tag mx">CubeMX</span></h4>
+      <p><strong>① 값 표</strong> — 위쪽 두 행이 실행 1, 나머지가 실행 2 다. 리전의 속성 값은 ST 가 H723 예제에서 "Normal Non Cacheable" 이라고 주석을 단 조합을 그대로 옮긴 것이다(<code>Projects/NUCLEO-H723ZG/Applications/LwIP/LwIP_UDP_Echo_Server/Src/main.c:286-300</code>, 2026-09-22 직접 확인).
+      상수 이름은 <code>stm32h7xx_hal_cortex.h:156</code>(<code>MPU_ACCESS_NOT_CACHEABLE</code>) · <code>:174</code>(<code>MPU_TEX_LEVEL1</code>) · <code>:193</code>(<code>MPU_REGION_SIZE_32KB</code>) · <code>:221</code>(<code>MPU_REGION_FULL_ACCESS</code>) · <code>:232</code>(<code>MPU_REGION_NUMBER1</code>) 에 있다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>항목</th><th>값</th><th>왜</th><th><code>.ioc</code> 키</th></tr></thead>
+        <tbody>
+          <tr><td>CORTEX_M7 — CPU DCache</td><td><strong>Enabled</strong> (실행 1)</td><td>이것이 상태 ③ 을 만드는 유일한 변경이다. 켜면 CubeMX 가 <code>main()</code> 앞머리에 <code>SCB_EnableDCache()</code>(CMSIS <code>cachel1_armv7.h:141</code>)를 넣는다</td><td><code>CORTEX_M7.CPU_DCache=Enabled</code> <em>(철자는 이 Mac 의 H7RS 프로젝트 <code>.ioc</code> 에서 옮겼다 — H723 의 IP 이름은 <code>CORTEX_M7</code> 이다. 생성 후 확인)</em></td></tr>
+          <tr><td>CORTEX_M7 — CPU ICache</td><td>건드리지 않는다</td><td>I-Cache 는 명령만 나른다 — DMA 버퍼의 정합성과 무관하다. 켜도 이 실습의 관찰은 바뀌지 않는다(동일). 이 쪽은 축을 하나만 움직인다</td><td>—</td></tr>
+          <tr><td>MPU Region 1 — Enable</td><td><code>MPU_REGION_ENABLE</code> (실행 2)</td><td>리전을 켠다. 실행 1 에서는 이 행부터 아래가 <strong>없다</strong></td><td><code>CORTEX_M7.Enable-Cortex_Memory_Protection_Unit_Region1_Settings</code> <em>(생성 후 확인)</em></td></tr>
+          <tr><td>Number</td><td><code>MPU_REGION_NUMBER1</code></td><td><strong>0 을 주지 않는다</strong> — 0 은 CubeMX 가 만든 배경 리전(§2-5)의 번호다. 0 으로 주면 그 4 GB 리전이 이 설정으로 <strong>덮어써진다</strong></td><td><code>Number-…Region1_Settings</code></td></tr>
+          <tr><td>Base Address</td><td><code>0x30000000</code></td><td>RAM_D2 의 시작이자 <code>.dma_buf</code> 의 시작(실습 B 의 맵에서 확인한 주소)</td><td><code>BaseAddress-…</code></td></tr>
+          <tr><td>Size</td><td><code>MPU_REGION_SIZE_32KB</code></td><td>RAM_D2 전체(SRAM1 + SRAM2 = 32 KB). 베이스 0x3000_0000 이 32 KB 에 정렬돼 있다(§2-5)</td><td><code>Size-…</code></td></tr>
+          <tr><td>SubRegion Disable</td><td><code>0x00</code></td><td>32 KB 를 통째로 쓴다 — 끄는 서브리전이 없다</td><td><code>SubRegionDisable-…</code> <em>(생성 후 확인)</em></td></tr>
+          <tr><td>TEX field level</td><td><code>MPU_TEX_LEVEL1</code></td><td>아래 Cacheable · Bufferable · Shareable 과 묶여 "Normal, 캐시하지 않음"이 된다. 넷을 따로 고르는 값이 아니라 <strong>한 조합</strong>이다</td><td><code>TypeExtField-…</code></td></tr>
+          <tr><td>Cacheable</td><td><code>MPU_ACCESS_NOT_CACHEABLE</code></td><td><strong>이 한 줄이 실습 D 의 전부다.</strong> 이 주소 범위의 접근이 캐시를 거치지 않는다 → CPU 와 DMA 가 같은 메모리를 본다</td><td><code>IsCacheable-…</code></td></tr>
+          <tr><td>Bufferable</td><td><code>MPU_ACCESS_NOT_BUFFERABLE</code></td><td>위 조합의 한 축(ST 예제의 값)</td><td><code>IsBufferable-…</code></td></tr>
+          <tr><td>Shareable</td><td><code>MPU_ACCESS_SHAREABLE</code></td><td>위 조합의 한 축(ST 예제의 값). ST 는 ETH 디스크립터용 리전에는 <code>NOT_SHAREABLE</code> + TEX 0 + Bufferable("Device") 을 쓴다 — 같은 파일 <code>:270-284</code>. 두 조합의 차이를 이 가이드는 확인하지 않았다 [확인불가]</td><td><code>IsShareable-…</code></td></tr>
+          <tr><td>Access Permission</td><td><code>MPU_REGION_FULL_ACCESS</code></td><td>CPU 가 읽고 쓴다</td><td><code>AccessPermission-…</code></td></tr>
+          <tr><td>Instruction Access</td><td><code>MPU_INSTRUCTION_ACCESS_ENABLE</code> (ST 예제의 값)</td><td>이 영역에 코드는 없다 — <code>DISABLE</code>(실행 금지)로 두어도 이 쪽의 동작은 <strong>동일</strong>하다. 달라지는 것은 잘못 그 주소로 점프했을 때 폴트가 나느냐뿐이다. 어느 쪽을 골랐는지 노트에 적는다</td><td><code>DisableExec-…</code></td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>배경 리전과 겹치지 않는다.</strong> §2-5 에서 센 대로 리전 0 의 <code>SubRegionDisable = 0x87</code> 은 서브리전 0 · 1 · 2 · 7 을 끄고, 우리 RAM_D2(0x3000_0000)는 꺼진 서브리전 1(0x2000_0000 ~ 0x3FFF_FFFF)에 있다.
+      즉 리전 0 은 이 주소를 <strong>덮지 않는다</strong> — 리전 1 만이 덮는다. 그래서 이 실습은 "번호가 큰 리전이 이긴다"는 규칙(§2-5 의 [추정])에 기대지 않는다. 겹치는 경우가 아니기 때문이다.</p>
+      <p><strong>② 위치 표</strong></p>
+      <p class="small"><strong>화면 확인: 미확인 (CubeMX 6.18.1)</strong> — 아래 경로는 <code>.ioc</code> 키 이름(위 표 넷째 열)에서 거꾸로 읽은 것이다. 화면이 다르면 <strong>화면이 맞다.</strong> 못 찾으면 검색창(돋보기)에 <strong>MPU</strong> 또는 <strong>Cortex</strong> 를 넣고, 달랐던 경로를 노트에 적어 둔다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>#</th><th>위치 (화면 경로)</th><th>설정</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>왼쪽 <strong>System Core → CORTEX_M7</strong></td><td><strong>CPU DCache</strong> = <strong>Enabled</strong>. CPU ICache 는 그대로 둔다 — 여기까지가 <strong>실행 1</strong> 이다</td></tr>
+          <tr><td>2</td><td>오른쪽 위 <strong>GENERATE CODE</strong></td><td>실행 1 의 생성. 아래 ③ 을 거쳐 굽고 관찰한 <strong>뒤에</strong> 3 으로 온다</td></tr>
+          <tr><td>3</td><td>같은 화면의 <strong>Cortex Memory Protection Unit Control Settings</strong></td><td>이미 값이 있다(배경 리전 0 을 만든 설정, §2-5) — <strong>손대지 않는다</strong></td></tr>
+          <tr><td>4</td><td>그 아래 <strong>Cortex Memory Protection Unit Region 1 Settings</strong></td><td>① 값 표의 셋째 행부터 끝까지. 리전 <strong>0</strong> 칸을 고치지 않는다</td></tr>
+          <tr><td>5</td><td>오른쪽 위 <strong>GENERATE CODE</strong></td><td>실행 2 의 생성</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>③ 생성물 확인</strong> — 생성할 때마다(두 번) 돌린다. 마지막 줄이 이 쪽에서 가장 잘 잊는 것이다.</p>
+      <pre><code class="lang-bash">cd firmware/h723zg
+grep -n "CPU_DCache\|Cortex_Memory_Protection_Unit_Region1" h723zg.ioc         # ① 설정이 저장됐는가
+grep -n "SCB_EnableDCache\|MPU_Config\|HAL_MPU_Enable" Core/Src/main.c          # ② 생성 코드와 호출 순서
+grep -n "MPU_REGION_NUMBER1\|0x30000000\|MPU_REGION_SIZE_32KB" Core/Src/main.c  # ③ 리전 1 블록 (실행 2 에서만)
+grep -n "\.dma_buf" STM32H723XG_FLASH.ld                                        # ④ 실습 B 의 ld 조각이 살아 있는가</code></pre>
+      <pre><code class="lang-text">(기대)
+ ① 실행 1: CPU_DCache=Enabled 한 줄.  실행 2: 그 아래 Region1 키 여럿(Enable · Number · BaseAddress · Size · TypeExtField · IsCacheable …)
+ ② main() 앞머리에서 MPU_Config() 가 SCB_EnableDCache() 보다 앞에 있다 [추정 — CubeMX 가 내는 순서다. 눈으로 확인한다]
+    순서가 뒤집혀 있으면 캐시를 켠 뒤에 리전이 적용되는 짧은 구간이 생긴다 — 그 사실을 노트에 적는다. 부팅 때 한 번뿐이라 이 쪽의 관찰은 바뀌지 않는다.
+ ③ MPU_Config() 안에 두 번째 HAL_MPU_ConfigRegion() 블록이 생겼다 — Number = MPU_REGION_NUMBER1, BaseAddress = 0x30000000, Size = MPU_REGION_SIZE_32KB
+ ④ .dma_buf 가 네 줄(섹션 · KEEP 둘 · &gt;RAM_D2) 그대로 있다. 없으면 재생성이 링커 스크립트를 덮어쓴 것이다 — 3-2-2 의 조각을 다시 붙이고 다시 빌드한다.
+    이것을 건너뛰고 구우면 버퍼가 DTCM 으로 돌아가 상태 ① 이 되고, 실습 D 는 아무것도 보여 주지 못한다(증상 표의 마지막 행).</code></pre>
+      <p><code>MPU_Config()</code> 를 손으로 고치지 않는 이유는 §2-5 에서 적은 그대로다 — <code>USER CODE</code> 밖의 생성물이라 다음 재생성에서 지워진다. 이 쪽이 생성물을 손으로 고치는 곳은 링커 스크립트 하나뿐이고(실습 B), 그래서 위 ④ 가 필요하다.</p>
+
+      <h4 id="s3-4-2">3-4-2. 골격</h4>
+      <p>코드에서 바뀌는 것은 <strong>한 군데</strong>다 — 실습 A 의 <code>cmd_mem()</code> 몸통을 이름 있는 함수로 떼어 내고, 부팅 때 한 번 부른다. 두 줄을 만드는 논리는 한 글자도 바뀌지 않는다. 캐시를 켜고 끄는 코드는 <strong>쓰지 않는다</strong>(CubeMX 생성물이 한다).</p>
+      <pre><code class="lang-c">/* User/Inc/Tools/console.h - 실습 D 가 공개 함수 하나를 더한다 */
+void console_mem_dump(void);   /* mem 두 줄을 한 번 찍는다. CLI 명령과 app_init() 이 둘 다 부른다 */</code></pre>
+      <pre><code class="lang-c">/* User/Src/Tools/console.c - lab D. Only the shape changes: the body of cmd_mem() becomes console_mem_dump().
+ * Why: with the D-Cache on, rx_feed() reads s_rx_dma through the cache too - the CLI may not echo at all.
+ * A boot-time dump makes the observation reachable with NRST alone (3-4 의 상자). */
+
+/* 문맥: 주 루프 - CLI 명령이거나 app_init() 의 마지막 줄. ISR 에서는 부르지 않는다. */
+void console_mem_dump(void)
+{
+  /* 3-1-3 에서 쓴 몸통 그대로: printf 줄, 그다음 DMA 줄, 그다음 s_tx_done 대기 */
+}
+
+static void cmd_mem(int argc, char *argv[])
+{
+  (void)argc; (void)argv;
+  console_mem_dump();
+}
+
+/* app.c, app_init(), as the LAST line - after console_cli_register() and after console_rx_start():
+ *   console_mem_dump();
+ * Context: main, once. It blocks for about one line time (3-1-3 의 6) and then returns. */</code></pre>
+      <p>부팅 줄은 <code>n=1</code> 로 찍힌다. 그래서 실습 D 에서는 <strong>처음 친 <code>mem</code> 이 <code>n=2</code></strong> 다 — 실습 B 의 <code>n=1</code> 과 다른 것은 자동 줄이 하나 앞서 있기 때문이고, 고장이 아니다.
+      <code>n=</code> 이 있어 좋은 곳이 여기다: 두 줄의 <code>n=</code> 이 서로 다르면 DMA 가 내보낸 것이 <strong>이번에 만든 글이 아니다.</strong></p>
+
+      <h4 id="s3-4-3">3-4-3. 직접 채우기</h4>
+      <p>실행 1(캐시만) → 관찰 → 실행 2(리전 추가) → 관찰. 순서를 지킨다 — 둘을 한 번에 하면 <strong>③ 을 못 보고</strong> 지나간다. 그러면 이 실습은 "설정을 따라 친 것"이 되고 남는 것이 없다.</p>
+      <ol class="steps">
+        <li><strong>실행 1 의 생성.</strong> §3-4-1 의 위치 표 1 · 2 (CPU DCache = Enabled → GENERATE CODE). 리전은 <strong>아직 더하지 않는다</strong>.</li>
+        <li><strong>③ 의 grep 넷</strong>을 돌린다. ④ 에서 <code>.dma_buf</code> 가 사라졌으면 3-2-2 의 조각을 다시 붙인다 — <strong>굽기 전에.</strong></li>
+        <li><strong>코드 한 군데</strong>를 §3-4-2 대로 고친다: <code>console_mem_dump()</code> 를 떼어 내고 <code>app_init()</code> 의 마지막 줄에서 부른다. <code>console.h</code> 에 선언을 더한다.
+        그 자리가 <strong>fw-06 의 tick 이 돌기 시작한 뒤</strong>인지 확인한다 — 이 함수의 대기는 <code>tick_get_ms()</code> 로 시간을 재므로 tick 이 서 있으면 실패 경로에서 영원히 돈다. 그리고 실패 경로의 <code>CONSOLE_TX_TIMEOUT_MS</code> 대기를 내 IWDG 주기와 견준다(<a href="fw-06-tick-watchdog.html">fw-06</a> 의 워치독 예산표) — 부팅 중 리셋이 반복되면 그 둘을 먼저 본다.</li>
+        <li><strong>빌드하고 맵을 다시 본다</strong>(3-2-4 의 첫 두 명령). 두 버퍼가 여전히 <code>0x3000_xxxx</code> 인가 — 여기서 <code>0x2000_xxxx</code> 가 나오면 2 를 건너뛴 것이다.</li>
+        <li><strong>굽고 관찰</strong>(§3-4-4 실행 1). <strong>NRST 를 다섯 번</strong> 누르며 부팅 줄 두 개를 매번 본다. 다섯 줄을 표에 적는다 — 한 번만 보고 판정하지 않는다.</li>
+        <li><strong>실행 2 의 생성.</strong> 위치 표 3 · 4 · 5 (리전 1 → GENERATE CODE). 다시 ③ 의 grep 넷 — 이번에는 ③ 번 grep 이 리전 블록을 찾아야 하고, ④ 번 grep 이 다시 필요하다(두 번째 재생성이다).</li>
+        <li><strong>다시 굽고 관찰</strong>(§3-4-4 실행 2). 코드는 5 번과 <strong>같은 소스</strong>다 — 달라진 것은 생성물의 MPU 리전 하나뿐이라는 사실을 노트에 한 줄로 적는다.</li>
+        <li><strong>되돌리지 않는다.</strong> 캐시와 리전은 켠 채로 둔다 — 뒤의 쪽들이 이 구성 위에서 돈다. 끄고 싶어지면 그 이유를 노트에 적고 끈다(끄면 상태 ② 로 돌아간다. 그것도 동작한다).</li>
+      </ol>
+      <p>막히는 자리 하나: 실행 1 에서 <strong>명령 창이 죽어</strong> <code>mem</code> 을 칠 수 없어도 그대로 진행한다. 부팅 줄 두 개가 이 실습의 관찰 대상이고, "명령 창이 죽었다"는 것 자체가 ③ 의 한 얼굴이다(수신 버퍼도 같은 RAM_D2 에 있다).
+      죽지 않았다면 그것도 적는다 — 캐시가 <code>s_rx_dma</code> 의 라인을 갖고 있지 않았다는 뜻이고, 왜 그럴 수 있는지는 §3-4-4 의 마지막 문단에 있다.</p>
+
+      <h4 id="s3-4-4">3-4-4. 굽고 보기</h4>
+      <pre><code class="lang-bash">firmware/tools/flash.sh                             # 실행 1 · 실행 2 모두 같은 명령
+python3 -m serial.tools.miniterm &lt;port&gt; 460800      # 부팅 줄을 놓치지 않으려면 굽기 전에 열어 둔다</code></pre>
+      <p><strong>실행 1 — 캐시만 켰다(상태 ③).</strong> NRST 를 다섯 번 누르고 매번 부팅 줄 둘을 본다. 기대는 "두 줄이 다르다"까지이고, <strong>무엇이 어떻게 다른지는 이 가이드가 미리 적을 수 없다</strong> — 아래를 읽기 전에 내 관찰을 먼저 적는다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>볼 것</th><th>기대 (추정)</th><th>내 관찰</th></tr></thead>
+        <tbody>
+          <tr><td>부팅 줄 1 (<code>mem n=1 …</code>, <code>printf</code>)</td><td>언제나 멀쩡하다. <code>dcache=1</code>, 주소는 <code>0x3000_xxxx</code> 그대로</td><td><code>dcache=____ rx_buf=____</code></td></tr>
+          <tr><td>부팅 줄 2 (<code># dma n=1 …</code>, DMA)</td><td>줄 1 과 <strong>다르다</strong> — 어떻게 다른지는 적지 않는다(아래 설명)</td><td>리셋 ①____ ②____ ③____ ④____ ⑤____</td></tr>
+          <tr><td>다섯 번 중 몇 번 어긋났는가</td><td>모른다 — 비결정적이다. 0/5 도 있을 수 있는 결과다</td><td>____ / 5</td></tr>
+          <tr><td>명령 창</td><td>글자가 안 돌아오거나 엉뚱한 글자가 나올 수 있다(수신 버퍼도 RAM_D2 다). 멀쩡할 수도 있다</td><td>____</td></tr>
+          <tr><td>(gdb 가 있으면) <code>p/x SCB-&gt;CCR</code></td><td>bit 16(<code>SCB_CCR_DC_Msk</code>, <code>core_cm7.h:605</code>)이 1</td><td>____</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>왜 줄 1 은 언제나 멀쩡한가.</strong> <code>printf</code> 가 내보내는 글은 스택의 <code>char line[192]</code> 에서 나가고, 스택은 DTCM 이며(§2-2), DTCM 은 TCM 버스로 코어에 직접 붙어 캐시를 거치지 않는다(RM0468 Rev 3 §2.1.2 "TCM buses" — "accessed by Cortex-M7 at CPU clock speed, with zero wait states").
+      그리고 그 글을 TDR 에 넣는 것은 CPU 다(§2-7). 캐시도 DMA 도 끼어들 자리가 없다. <strong>줄 1 은 "CPU 가 만든 값"의 증인이고, 줄 2 는 "DMA 가 메모리에서 읽은 값"의 증인이다.</strong> 두 줄을 나란히 찍는 설계의 값이 여기서 나온다.</p>
+      <p><strong>왜 형태를 약속하지 않는가.</strong> <code>.dma_buf</code> 는 <code>NOLOAD</code> 라 시동 코드가 0 으로 채우지 않는다(§3-2-2). 캐시가 켜진 채 CPU 가 <code>snprintf</code> 로 쓴 글은 write-back 캐시 라인에 머물고, DMA 는 <strong>메모리</strong>를 읽는다 — 거기에 무엇이 있는지는 지난 전원 주기와 그때까지의 접근에 달렸다.
+      그래서 나올 수 있는 것이 여럿이다: 깨진 글자, 아무것도 없는 줄, 지난 부팅의 줄, 앞부분만 맞는 줄, <code>n=</code> 만 옛 값인 줄. 어느 것이든 <strong>줄 1 과 다르면 ③ 을 본 것이다.</strong></p>
+      <p><strong>왜 비결정적인가.</strong> 어긋남은 "CPU 의 쓰기가 아직 캐시에 있는가"에 달렸다. write-back · write-allocate(RM0468 Rev 3 표 6 — 0x3000_0000 대의 기본 속성)에서는 쓰기가 캐시에 머무는 것이 보통이지만, 그 라인이 <strong>다른 접근에 밀려 메모리로 내려가면</strong>(축출) DMA 가 옳은 값을 읽는다.
+      캐시는 32 KB 이고 라인은 32 바이트(§2-4)다 — 어느 라인이 언제 밀리는지는 그때까지 무엇이 돌았는가의 함수이고, 우리가 정하는 것이 아니다. 두 줄 사이는 µs 단위라 밀릴 일이 적어 어긋남이 자주 보이지만, <strong>0/5 도 정상적인 결과다.</strong>
+      다섯 번 다 어긋나지 않았다면 표의 셋째 칸에 <strong>"못 봤다"를 그대로 적는다</strong> — 지어내지 않는다. 그 기록이 체크포인트 <code>dcache-mismatch-seen</code> 을 닫는다. 대신 다음 문단의 위험을 노트에 옮겨 적는다: <strong>③ 은 "안 보이면 없는 것"이 아니라 "지금 안 보인 것"이다.</strong> 실습 D 의 뒤 절반이 필요한 이유가 그것이다.</p>
+      <p><strong>실행 2 — MPU 리전을 더했다(상태 ③′).</strong> 같은 소스, 같은 버퍼, 같은 DMA 설정이다.</p>
+      <pre><code class="lang-text">(기대 — 부팅 줄 둘이 앞머리만 다르고 나머지는 글자 하나 다르지 않다)
+mem n=1 rx_buf=0x30000000 tx_buf=0x30000100 align32=1 dcache=1 uart_err=0 last_err=0 rearm=0 idle_events=0 ht_tc_events=0
+# dma n=1 rx_buf=0x30000000 tx_buf=0x30000100 align32=1 dcache=1 uart_err=0 last_err=0 rearm=0 idle_events=0 ht_tc_events=0
+ dcache=1 인데 두 줄이 같다 — 상태 ② 와 같은 결과를 캐시를 켠 채로 얻었다. 이것이 ③′ 다.
+&gt; mem
+mem n=2 …            (부팅 줄이 n=1 을 썼으므로 처음 친 mem 은 n=2 다)
+# dma n=2 …</code></pre>
+      <p>NRST 를 다시 다섯 번 눌러 다섯 번 다 같은지 본다. 명령 창도 정상으로 돌아왔는가 — <code>help</code> · <code>stat</code> · 300 자 붙여넣기(§3-3-4 의 2)를 한 번씩 해 본다. 다 통과하면 체크포인트 <code>mpu-noncache-match</code> 를 닫는다.
+      통과하지 못하면 리전이 버퍼를 덮지 않은 것이다 — 베이스 · 크기 · Enable · 번호 넷을 ③ 의 grep 으로 다시 본다(증상 표).</p>
+      <p class="small">선택(gdb, <a href="fw-04-debugger.html">fw-04</a>): 실행 1 에서 멈춘 뒤 <code>x/64xb &amp;s_tx_dma</code> 로 메모리를 직접 읽으면 CPU 가 쓴 글이 아니라 <strong>DMA 가 본 것</strong>이 보일 수 있다 — 디버거의 메모리 접근이 캐시를 거치지 않는다는 전제다 [추정 — 이 가이드는 확인하지 않았다]. 관찰이 다르면 관찰이 맞다.</p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="dtcm-dma-fails-seen"><span><strong>발동 확인</strong> — DTCM 에 둔 버퍼로 DMA 송신을 걸어 <strong>실패하는 것을 내 눈으로 봤고</strong>, §3-1-4 표의 "내 관찰" 칸(주소 · 둘째 줄 · <code>last_err</code> · 그 뒤 <code>help</code>)을 노트에 적었다
+          <span class="sub">판정 수단: 명령 창 출력(+ gdb 의 <code>ErrorCode</code>) · §3-1-4 · 기대와 달라도 관찰을 적으면 닫힌다 — 적지 않으면 닫히지 않는다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="dma-buf-in-ram-d2"><span><strong>경로 통과</strong> — <code>mem</code> 의 <code>rx_buf</code> · <code>tx_buf</code> 가 <code>0x3000_xxxx</code> 이고 <code>align32=1</code> 이다. 코드는 실습 A 와 같고 자리만 바뀌었다
+          <span class="sub">판정 수단: 명령 창 출력 · §3-2-4 · 뒤의 쪽(fw-12 · fw-14 · fw-17)이 이 자리를 전제한다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="map-shows-dma-section"><span><strong>경로 통과</strong> — <code>.map</code> 에 <code>.dma_buf</code> 출력 섹션이 <code>0x30000000</code> 에 있고, <code>nm</code> 이 낸 두 버퍼 심볼의 주소 하위 5 비트가 0 이다
+          <span class="sub">판정 수단: <code>grep</code> · <code>arm-none-eabi-nm</code> 출력 · §3-2-4 · CubeMX 를 재생성할 때마다 다시 본다(§3-4-1 ③ 의 넷째 grep)</span></span></label></li>
+        <li><label><input type="checkbox" data-key="stream-rx-host-pass"><span><strong>경로 통과</strong> — Mac 에서 <code>PASS stream_rx 14 cases</code> 가 나왔다. 되감기 · <code>pos == old_pos</code> · <code>pos == N</code> 세 경우가 모두 통과했다
+          <span class="sub">판정 수단: 호스트 시험 출력 · §3-3-3 · <code>map-shows-dma-section</code> 과 함께 보드 없이 닫을 수 있는 항목이다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="cli-on-circular-dma"><span><strong>경로 통과</strong> — 명령 창이 Circular DMA 수신으로 돈다: <code>help</code> 가 돌고 <code>idle_events</code> 가 친 글자만큼 늘며, 300 자를 두 번 붙여넣으면 <code>ht_tc_events</code> 가 늘고 에코의 글자 순서가 맞다
+          <span class="sub">판정 수단: 명령 창 출력(<code>mem</code> 의 두 칸) · §3-3-4 의 1 · 2 · 순서가 틀리면 되감기 두 조각의 차례를 본다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="cli-dma-error-rearms"><span><strong>발동 확인</strong> — 수신 오류를 일부러 내어 <code>uart_err</code> 와 <code>rearm</code> 이 같이 늘고 그 뒤에도 명령 창이 살아 있다. (가) (나) (다) 셋 다 <code>uart_err</code> 를 올리지 못했으면 <strong>그 사실을 표에 적었다</strong>
+          <span class="sub">판정 수단: 감시 줄 + 명령 창 출력 · §3-3-4 의 3 · 못 일으킨 경우 이 항목의 발동은 <a href="fw-14-wt901.html">fw-14</a> 의 선 뽑기에서 닫는다 — 그때까지 증상 표의 마지막 줄이 그 위험을 들고 있는다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="usart3-dma-irq-same-prio"><span><strong>경로 통과</strong> — <code>.ioc</code> 의 세 줄(<code>USART3</code> · 수신 DMA 스트림 · 송신 DMA 스트림)의 선점 우선순위가 <strong>같은 값</strong>이다
+          <span class="sub">판정 수단: <code>grep</code> 출력 · §3-3-4 의 첫 명령 · 왜 같아야 하는지는 §2-8 (b) · 표의 주인은 fw-06 §2-8</span></span></label></li>
+        <li><label><input type="checkbox" data-key="dcache-mismatch-seen"><span><strong>발동 확인</strong> — 캐시만 켠 빌드에서 부팅 줄 두 개가 <strong>어긋나는 것을 봤다</strong>, <strong>또는</strong> 다섯 번 리셋해도 어긋나지 않았다는 사실을 다섯 줄로 노트에 적었다
+          <span class="sub">판정 수단: 부팅 줄 두 개(리셋 5회) · §3-4-4 실행 1 · 비결정적이다 — 못 본 것도 적으면 닫힌다. 지어낸 값으로는 닫지 않는다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="mpu-noncache-match"><span><strong>경로 통과</strong> — MPU 리전을 더한 빌드에서 <code>dcache=1</code> 인 채 두 줄이 글자 하나 다르지 않고, 명령 창도 정상으로 돈다
+          <span class="sub">판정 수단: 부팅 줄 두 개 + <code>help</code> · <code>stat</code> · 300 자 붙여넣기 · §3-4-4 실행 2 · <a href="fw-19-bench-acceptance.html">fw-19</a> 의 DoD 표가 이 항목과 <code>dma-buf-in-ram-d2</code> 를 인용한다</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td><code>mem</code> 의 둘째 줄(<code># dma …</code>)이 안 나오고 <code>ERR mem tx-timeout</code> 이 난다</td><td>버퍼가 DTCM 에 있다(상태 ①) — <code>DMA_BUF</code> 를 안 붙였거나 <code>.dma_buf</code> 조각이 링커 스크립트에 없다</td><td><code>mem</code> 첫 줄의 <code>tx_buf=</code> 가 <code>0x2000_xxxx</code> 인가</td><td>§3-2-3 · 실습 A 라면 <strong>의도된 결과</strong>다(§3-1-4)</td></tr>
+          <tr><td>빌드가 <code>s_tx_dma: size must be a multiple of 32 bytes</code> 로 멈춘다</td><td><code>DMA_BUF_ASSERT_SIZE()</code> 가 잡은 것 — 크기가 32 의 배수가 아니다. 의도된 멈춤</td><td>메시지에 배열 이름이 있다</td><td>§2-4 · §3-2-3 의 4</td></tr>
+          <tr><td>빌드는 되는데 <code>.map</code> 에 <code>.dma_buf</code> 가 없고 주소가 <code>0x2000_xxxx</code> 다</td><td>섹션 이름의 철자가 어긋나 링커가 "고아 섹션"으로 다른 자리에 놓았다 · CubeMX 재생성이 <code>.ld</code> 를 덮어썼다</td><td><code>grep -n "\.dma_buf" STM32H723XG_FLASH.ld</code> 와 <code>section(".dma_buf")</code> 의 철자를 눈으로 맞춘다</td><td>§3-2-2 · §3-4-1 ③ 의 넷째 grep</td></tr>
+          <tr><td>붙여넣은 글의 <strong>순서가 뒤바뀌어</strong> 에코된다</td><td>되감기 가지에서 앞 조각을 끝 조각보다 먼저 먹였다</td><td>호스트 시험의 <code>out[0] == 250u</code> 벡터에서 멈춘다</td><td>§2-8 (a) 규칙 2 · §3-3-3 의 1</td></tr>
+          <tr><td>글자가 가끔 빠지거나 <strong>같은 토막이 두 번</strong> 들어온다</td><td><code>old_pos</code> 를 읽고 갱신하는 사이에 다른 벡터가 콜백을 끊고 들어왔다 — 두 IRQ 의 선점 우선순위가 다르다 · <code>pos == N</code> 을 0 으로 "정리"했다</td><td><code>grep -n "NVIC.USART3_IRQn\|NVIC.DMA[12]_Stream" h723zg.ioc</code> 의 둘째 칸 · 호스트 시험의 <code>s.old_pos == 256u</code> 벡터</td><td>§2-8 (a) 규칙 3 · §2-8 (b) · §3-1-1</td></tr>
+          <tr><td>첫 줄은 나오는데 그 뒤 프롬프트나 다음 <code>printf</code> 가 사라진다</td><td>송신 완료(2 단계)를 기다리지 않고 돌아왔다 · <code>USART3</code> global interrupt 를 껐다 → <code>gState</code> 가 <code>BUSY_TX</code> 에 머물러 다음 송신이 <code>HAL_BUSY</code> 다</td><td><code>grep -n "NVIC.USART3_IRQn" h723zg.ioc</code> · <code>ERR mem tx-busy</code> 가 찍히는가</td><td>§2-6 · §3-1-3 의 4 · 5</td></tr>
+          <tr><td>명령 창이 <strong>말없이</strong> 멈춘다(LD1 은 깜박이는데 글자가 안 돌아온다)</td><td>수신 오류 하나에 HAL 이 DMA 를 세웠는데 재무장이 없다 · 오류 플래그를 지우지 않고 다시 걸어 <code>HAL_ERROR</code> 로 돌아왔다</td><td>재무장을 넣기 전이라면 리셋 뒤 되살아난다. <code>mem</code> 의 <code>uart_err</code> 와 <code>rearm</code> 을 견준다</td><td>§2-8 (c) · §3-3-3 의 6</td></tr>
+          <tr><td>캐시를 켠 뒤 두 줄이 다르다 · 명령 창이 깨진다</td><td>상태 ③ — MPU 리전이 아직 없다. <strong>실행 1 에서는 의도된 결과다</strong></td><td><code>mem</code> 의 <code>dcache=1</code> 이고 리전이 없다</td><td>§3-4-1 의 위치 표 3 · 4 (실행 2)</td></tr>
+          <tr><td>리전을 더했는데도 두 줄이 다르다</td><td>리전이 버퍼를 안 덮는다: 베이스가 <code>0x30000000</code> 이 아니다 · Size 가 32 KB 보다 작다 · <code>Enable</code> 이 빠졌다 · Number 를 <strong>0</strong> 으로 줘서 배경 리전을 덮어썼다(새 리전은 4 GB 가 아니라 32 KB 다)</td><td><code>grep -n "MPU_REGION_NUMBER\|BaseAddress\|MPU_REGION_SIZE" Core/Src/main.c</code> — 블록이 <strong>둘</strong>인가</td><td>§3-4-1 ① 값 표의 Number · Base · Size 행</td></tr>
+          <tr><td>실습 D 에서 아무 차이도 안 보인다(캐시를 켜도 두 줄이 늘 같다)</td><td>두 줄이 애초에 DTCM 에서 나오고 있다 — 재생성이 <code>.ld</code> 의 <code>.dma_buf</code> 를 지워 버퍼가 상태 ① 로 돌아갔다(그러면 둘째 줄이 아예 안 나온다) · 축출로 캐시가 비었다(비결정적, §3-4-4)</td><td><code>mem</code> 의 주소 두 칸을 먼저 본다 — 이 쪽의 모든 진단은 주소에서 시작한다(§2-2)</td><td>§3-4-3 의 2 · 6</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. (4중 검색) 이 쪽에서 쓴 <code>HAL_UART_TxCpltCallback</code> 을 네 군데에서 찾아 적어 보라 — 헤더 → <code>__weak</code> → 호출 시점 → 예제</summary>
+        <div class="ans"><p>찾는 명령(<code>$HAL</code> · <code>$FW_H7</code> 는 fw-02 에서 정한 경로):</p>
+        <pre><code class="lang-bash">grep -n "HAL_UART_TxCpltCallback" $HAL/Inc/stm32h7xx_hal_uart.h            # ① 헤더: 시그니처
+grep -n "__weak void HAL_UART_TxCpltCallback" $HAL/Src/stm32h7xx_hal_uart.c  # ② 약한 기본 구현
+grep -n "HAL_UART_TxCpltCallback(huart)" $HAL/Src/stm32h7xx_hal_uart.c       # ③ 누가 언제 부르는가 (두 군데다)
+grep -rln "HAL_UART_TxCpltCallback" $FW_H7/Projects/NUCLEO-H723ZG | head     # ④ ST 예제</code></pre>
+        <p>① <code>stm32h7xx_hal_uart.h:1653</code> — <code>void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)</code>. 인자가 핸들 하나뿐이라 USART3 · USART6 이 <strong>같은 함수</strong>로 들어온다 — 그래서 본문의 골격이 <code>huart-&gt;Instance</code> 부터 본다.
+        ② <code>stm32h7xx_hal_uart.c:2554</code> 의 <code>__weak</code> 빈 함수. 내가 <code>User/Src/Tools/console.c</code> 에 같은 이름을 정의하면 이것을 덮는다(fw-06 의 <code>HAL_TIM_PeriodElapsedCallback</code> 과 같은 꼴 — 생성물이 덮는 콜백이 아니다).
+        ③ 호출이 <strong>둘</strong>이고, 둘의 위치가 §2-6 의 두 단계를 그대로 보여 준다. <code>:4216</code> 은 <code>UART_EndTransmit_IT()</code>(<code>:4200</code> 에서 시작) 안 — USART 의 TC 인터럽트가 온 뒤, <code>TCIE</code> 를 끄고 <code>gState</code> 를 READY 로 되돌린 <strong>다음</strong>이다. 우리의 Normal 모드 DMA 송신이 오는 길이 이것이다.
+        <code>:3689</code> 는 <code>UART_DMATransmitCplt()</code>(<code>:3665</code>) 안인데 <code>if (hdma-&gt;Init.Mode != DMA_CIRCULAR)</code> 의 <strong>else</strong> 가지다 — 즉 <strong>Circular 송신일 때만</strong> 여기서 부른다. 우리 송신은 Normal 이라 이 줄로 오지 않는다. "콜백이 왔다"만 보고 어느 길인지 모르면 §2-6 의 결론(USART 인터럽트가 켜져 있어야 한다)이 안 나온다.
+        ④ NUCLEO-H723ZG 예제에는 <strong>없다</strong>(위 grep 이 빈손이다). 가장 가까운 것은 <code>Projects/NUCLEO-H743ZI/Examples/UART/UART_TwoBoards_ComDMA/Src/main.c:325</code> — §2-4 에서 <code>ALIGN_32BYTES</code> 로 인용한 그 파일이고, 콜백 안에서 하는 일은 플래그 하나와 LED 뿐이다(우리 골격의 <code>s_tx_done</code> 과 같은 꼴). 줄 번호는 FW_H7 V1.13.0 에서 2026-09-22 에 직접 확인한 것이다.</p></div></details>
+      <details class="quiz"><summary>2. "DMA 가 안 된다"는 말을 들었다. 무엇을 <strong>가장 먼저</strong> 보는가? 캐시를 껐다 켰다 해 보는 것으로는 왜 원인을 좁히지 못하는가?</summary>
+        <div class="ans"><p>버퍼의 <strong>주소</strong>를 본다 — <code>mem</code> · <code>.map</code> · <code>nm</code> 중 아무것이나. <code>0x2000_xxxx</code> 면 DTCM 이고 그때는 캐시가 무슨 상태든 DMA1/DMA2 가 그 주소에 닿지 못한다(§2-1, RM0468 §2.1.6). 캐시를 껐다 켜 보는 시험은 세 상태를 가르지 못한다: ① 이면 껐을 때도 안 되고, ② 면 껐을 때 당연히 되니 "캐시 문제"라는 잘못된 결론이 나온다.
+        순서가 정해져 있다 — <strong>자리(①) → 동작(②) → 캐시(③)</strong>. 이 쪽의 실습 A · B · C · D 가 그 순서다.</p></div></details>
+      <details class="quiz"><summary>3. DTCM 은 캐시를 거치지 않는다. 그러면 DMA 버퍼도 DTCM 에 두면 캐시 문제가 없어 좋지 않은가?</summary>
+        <div class="ans"><p>두 성질이 다른 이야기다. DTCM 이 캐시와 무관한 것은 TCM 버스로 코어에 직접 붙어 있기 때문이고(RM0468 §2.1.2), 바로 그 구조 때문에 시스템 버스 매트릭스에 있는 DMA1/DMA2 가 들어올 길이 없다(§2.3.2 — 닿을 수 있는 마스터는 CPU 와 MDMA 둘). 캐시 문제를 피하려다 <strong>전송 자체</strong>를 잃는다.
+        정리하면 DTCM 은 "CPU 만 만지는 것"의 자리(기본 ld 가 그렇게 쓴다), RAM_D2 는 "DMA 가 만지는 것"의 자리다. 판정은 한 줄이다(§2-7): <strong>이 버퍼를 DMA 가 만지는가.</strong></p></div></details>
+      <details class="quiz"><summary>4. Circular 수신 콜백이 <code>Size = 256</code> 을 주었다. 방금 256 바이트를 받았다는 뜻인가? <code>old_pos</code> 를 0 으로 "정리"하면 무엇이 깨지는가?</summary>
+        <div class="ans"><p>아니다. <code>Size</code> 는 버퍼 시작부터의 <strong>위치</strong>, 즉 DMA 가 다음에 쓸 자리다(<code>RxXferSize</code> − 남은 카운터, <code>uart.c:2418</code> · <code>:3769</code> · <code>:3817</code>). 새 바이트는 <code>old_pos</code> 와의 차이뿐이다.
+        <code>pos == N</code> 을 0 으로 정리하면, HAL 이 TC 뒤에 한 번 더 알리는 IDLE(역시 <code>Size = N</code>, <code>:2423-2438</code>)에서 <code>N &gt; 0</code> 이 되어 <strong>버퍼 전체를 다시 먹인다</strong> — 256 바이트가 두 번 들어온다. 그대로 <code>N</code> 으로 두면 규칙 1(<code>pos == old_pos</code> → 돌아간다)이 그것을 걸러 내고, 다음 콜백은 되감기 가지로 바르게 간다. 호스트 시험의 <code>s.old_pos == 256u</code> 벡터가 이것을 채점한다.</p></div></details>
+      <details class="quiz"><summary>5. 수신 콜백 하나를 두 인터럽트가 부른다. 둘의 선점 우선순위가 다르면 무엇이 깨지는가? 그리고 오류 콜백에서 다시 걸지 않으면 무엇이 죽는가?</summary>
+        <div class="ans"><p>IDLE 은 <code>USART3_IRQHandler</code> 로, HT · TC 는 DMA 스트림 핸들러로 온다(§2-8 (b)). 값이 다르면 높은 쪽이 낮은 쪽을 <strong>콜백 도중에</strong> 끊을 수 있고, 그러면 <code>old_pos</code> 를 읽은 뒤 갱신하기 전에 같은 코드가 다시 돌아 같은 바이트가 두 번 먹여지거나 한 구간이 통째로 빠진다. 값이 같으면 하나가 끝나야 다음이 오므로 그런 창이 없다.
+        재무장은 다른 이야기다 — HAL 은 수신 오류 하나(PE · FE · NE · ORE)에 DMA 수신을 <strong>끝내 버린다</strong>(<code>uart.c:2294-2321</code>, DMA 수신 중에는 모든 오류가 blocking 이다). Circular 이어도 그렇다. 오류 콜백에서 다시 걸지 않으면 그 UART 는 리셋까지 조용히 죽어 있고, fw-08 부터 fw-16 까지 <strong>유일한 관측 창</strong>이 그 명령 창이다. 증상은 "방금 고친 모터 코드가 이상하다"로 위장해서 나타난다.</p></div></details>
+      <details class="quiz"><summary>6. 32 바이트 정렬을 안 지킨 버퍼에 <code>SCB_InvalidateDCache_by_Addr()</code> 를 걸면, 왜 <strong>이웃 변수</strong>가 옛 값으로 돌아가는가? 이 쪽의 구성에서는 왜 그 함수를 한 번도 부르지 않는가?</summary>
+        <div class="ans"><p>캐시의 단위가 32 바이트 라인이고(CMSIS <code>cachel1_armv7.h:46</code>) 정비 연산도 라인 단위이기 때문이다 — <code>:368</code> 의 주석대로 주소의 하위 5 비트는 무시된다. 버퍼가 경계에 맞지 않으면 첫 라인과 끝 라인에 이웃 변수가 같이 들어 있고, Invalidate 는 그 라인을 통째로 버린다. 그 라인에 CPU 가 쓰기만 하고 아직 메모리로 내려보내지 않은 이웃 변수의 값이 있었다면 그 값이 사라진다 — 증상이 나는 자리가 원인이 있는 자리와 다르다.
+        이 가이드는 해법 (나)(MPU 비캐시)를 골랐으므로 그 영역의 접근이 아예 캐시를 거치지 않는다 — 버릴 라인도, 부를 함수도 없다(§2-5). 그래도 <code>DMA_BUF</code> 가 32 정렬과 32 배수를 강제하는 이유는 §2-4 의 마지막 문단에 있다: 나중에 해법을 (다)로 바꾸거나 버퍼 하나를 다른 자리에 두는 날에도 같은 선언이 그대로 안전하다.</p></div></details>
+      <details class="quiz"><summary>7. (일부러 틀리면) CubeMX 에서 새 MPU 리전의 <strong>Number 를 0</strong> 으로 주었다. 무엇이 달라지는가? 캐시를 켜고 리전을 <strong>안</strong> 더한 채 뒀다면?</summary>
+        <div class="ans"><p>Number 0 은 CubeMX 가 이미 만든 배경 리전의 번호다(§2-5: 베이스 0x0 · 4 GB · <code>NO_ACCESS</code> · <code>SubRegionDisable 0x87</code>). 같은 번호로 쓰면 그 리전이 <strong>덮어써져</strong> 4 GB 짜리 배경이 32 KB 짜리로 바뀐다. RAM_D2 의 캐시 속성은 의도대로 되지만 배경 리전이 하던 일(0x6000_0000 ~ 0xDFFF_FFFF 접근 금지)이 사라진다 — 이 쪽의 관찰로는 아무 차이가 안 보이고, 나중에 엉뚱한 곳에서 "폴트가 안 난다"로 나타난다. 그래서 번호는 1 이다.
+        리전을 안 더하면 상태 ③ 에 머문다 — 실행 1 이 그것이고, 두 줄이 어긋나는 것을 보는 것이 목적이다. 문제는 <strong>어긋남이 늘 보이지는 않는다</strong>는 점이다(§3-4-4). 그래서 "두 줄이 같았으니 괜찮다"는 판정을 하지 않는다. 안전한 판정은 관찰이 아니라 구성이다 — 버퍼가 비캐시 영역에 있는가.</p></div></details>
+      <details class="quiz"><summary>8. (안전) "DMA 송신이 정말 나가는지 보려면 PD8 과 PD9 를 점퍼로 이어 보면 되지 않나?" — 왜 이 보드에서는 안 되는가?</summary>
+        <div class="ans"><p>PD8 · PD9 는 솔더 브리지 SB19 / SB12(기본 ON, UM2407 Rev 6 §7.6.5)로 ST-LINK 의 가상 COM 포트에 이미 이어져 있다. PD9(우리의 RX)에는 ST-LINK 쪽 <strong>출력</strong>이 물려 있고, 거기에 PD8(역시 출력)을 점퍼로 이으면 두 출력이 맞붙는다 — 한쪽이 HIGH, 다른 쪽이 LOW 를 낼 때 흐르는 전류를 막을 것이 없다.
+        Morpho 의 CN12-10(PD8) · CN11-69(PD9)에도 아무것도 꽂지 않는다. 이 쪽의 왕복 시험은 전부 USB 너머의 Mac 터미널이 상대이고, 그것으로 충분하다 — <code>mem</code> 의 두 줄을 견주는 것이 곧 "DMA 송신이 정말 나갔는가"의 답이다.</p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>다음은</strong> → <a href="fw-08-pwm-safe-output.html">fw-08</a> — PWM 과 안전 출력단(모터 전원 없이). 이 쪽까지가 "Nucleo + USB 만으로 끝나는" 마지막이고, fw-08 부터는 DMM 이 손에 있어야 한다. IBT-2 모듈이 아직 없어도 그 쪽의 PWM 절은 할 수 있다(모듈이 필요한 체크 셋은 열어 둔 채 넘어간다 — fw-08 의 "다음 행선지").</li>
+          <li><strong>엔코더가 달린 모터가 있으면</strong> → <a href="fw-09-encoder.html">fw-09</a> — 엔코더. 입구에서 "SB57 을 뗐는가"(<a href="fw-01-pinmap.html">fw-01</a>)를 확인한다.</li>
+          <li><strong>이 쪽이 남긴 것을 뒤에서 그대로 쓴다</strong> — <code>dma_buf.h</code> 의 <code>DMA_BUF</code> 는 <a href="fw-12-adc.html">fw-12</a> 의 ADC3 버퍼와 <a href="fw-14-wt901.html">fw-14</a> 의 USART6 버퍼에, <code>stream_rx</code> 는 <a href="fw-14-wt901.html">fw-14</a> 의 WT901 파서에 <strong>싱크를 바꿔</strong> 붙고, <a href="fw-17-link-v2.html">fw-17</a> 에는 <strong>손대지 않은 채</strong> 그대로 쓰인다(그 쪽은 링의 소비자만 바꾼다). 모드(Circular ↔ Normal)의 도출과 오류 재무장의 발동 확인은 fw-14 가 닫는다.</li>
+          <li><strong>이 쪽에서 <code>hardware/INVENTORY.md</code> 에 채우는 칸은 없다.</strong> 대신 노트에 셋이 있는가: ① 실습 A 의 관찰 표(내 보드에서 상태 ① 이 어떻게 보였는가) ② 실행 1 의 다섯 줄과 "봤다 / 못 봤다" ③ 오류를 일으킨 방법(가 · 나 · 다 중 어느 것, 또는 셋 다 실패)과 그때의 <code>uart_err</code> · <code>rearm</code>.</li>
+          <li><strong><a href="fw-06-tick-watchdog.html">fw-06</a> 의 표에 두 행을 옮겨 적었는가</strong> — NVIC 우선순위 표에 수신 · 송신 DMA 스트림 두 줄(§2-8 끝의 상자). 스트림 번호는 CubeMX 가 배정한 내 것으로.</li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

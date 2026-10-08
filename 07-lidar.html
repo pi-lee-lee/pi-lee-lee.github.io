@@ -20,13 +20,16 @@
 
       <div class="goal">
         <span class="label">이 단계가 끝나면</span>
-        <p>Foxglove 에서 실시간 라이다 스캔이 로봇 모형 주위에 그려지고, 그 점들이 실제 벽 위치와 일치한다.
+        <p>라이다를 <strong>책상 위에 둔 채로</strong> Foxglove 에서 실시간 스캔이 보이고, <code>/scan</code> 의 거리가 <strong>라이다 회전축에서 벽까지 자로 잰 거리</strong>와 일치한다.
+        라이다 몸체의 어느 쪽이 0° 이고 각도가 어느 쪽으로 커지는지 찾아 기록했다 — 조립할 때 의도한 방향으로 달기 위한 사전 지식이다.
         드라이버 로그에서 내 장비의 실측 최대 거리를 읽어 두 곳에 기록했고, <code>/scan</code> 을 구독해 정면 최소 거리를 <code>/scan_front_min</code> 으로 내는 C++ 노드 <code>scan_watch</code> 를 직접 작성해 동작시켰다.</p>
+        <p>차체에 올린 뒤에야 볼 수 있는 것 — 장착 방향(<code>lidar_yaw</code>·뒤집힘), 차체 가림, 장착 위치 실측, <code>scan_watch</code> 의 "정면" 재확인, 최종 전원 계통 — 은 <strong>이 단계의 완료 조건이 아니다.</strong> <a href="09a-assembly-gate.html">09a</a>에서 닫는다.</p>
       </div>
 
       <div class="meta">
         <div><span class="k">그래프에서의 위치</span><code>lidar_node</code> 상자(센서 계층) → <code>/scan</code> → <code>slam_toolbox</code>·Nav2 코스트맵 (+ 이 단계의 <code>scan_watch</code>)</div>
-        <div><span class="k">전제</span>05 (TF 트리에 <code>laser_link</code> 가 있어야 한다). 06 은 이 단계 자체에는 필요 없다 — <code>/odom</code> 은 09 부터 필요하다</div>
+        <div><span class="k">전제</span>05 (TF 트리에 <code>laser_link</code> 가 있어야 한다 — 숫자는 <code>NOMINAL(fake)</code> 그대로여도 된다, 3-6). 06·06b·펌웨어 차선은 이 단계에 필요 없다 — <code>/odom</code> 은 09 부터 필요하다</div>
+        <div><span class="k">수행 환경</span><span class="tag bench">벤치</span> 라이다를 책상에 두고 Pi 에 USB 로 직결한다. 섀시·MCU·모터 전원은 쓰지 않는다. 조립이 있어야 하는 부분은 <span class="tag asm">조립 후</span> 로 표시해 <a href="09a-assembly-gate.html">09a</a>로 미룬다</div>
         <div><span class="k">예상 소요</span>2~4시간</div>
         <div><span class="k">언어</span><span class="tag cli">CLI</span> + <span class="tag cpp">C++</span> (연습 노드)</div>
       </div>
@@ -67,7 +70,7 @@ float32[] intensities    # 반사 강도 (모델에 따라 비어 있음)</code>
         <thead><tr><th>항목</th><th>A1M8</th><th>이것이 학습에 주는 의미</th></tr></thead>
         <tbody>
           <tr><td>측정 방식</td><td><strong>레이저 삼각측량</strong> (TOF 아님)</td><td>거리가 멀수록 정확도가 급격히 떨어진다. TOF 라이다와 근본적으로 다르다</td></tr>
-          <tr><td>회전 속도</td><td><strong>약 5.5 Hz</strong> (2~10 Hz 가변)</td><td><strong>초당 5.5장.</strong> 빠르게 움직이면 스캔이 뭉개진다 → 09 단계 "천천히"의 물리적 근거 (2-3 에서 숫자로)</td></tr>
+          <tr><td>회전 속도</td><td><strong>typical 5.5 Hz</strong> (1 ÷ 5.5 ≈ 182 ms 주기). 데이터시트 표의 범위는 1~10 Hz</td><td><strong>5.5 Hz 라면 초당 5.5장.</strong> 빠르게 움직이면 스캔이 뭉개진다 → 09 단계 "천천히"의 물리적 근거 (2-3 에서 숫자로). <strong>내 장비가 실제로 내는 값은 3-5 에서 잰다</strong></td></tr>
           <tr><td>샘플링</td><td>초당 수천 점</td><td>한 바퀴 당 점 개수 = 샘플링 ÷ 회전수. 빠르게 돌릴수록 해상도가 낮아지는 교환관계</td></tr>
           <tr><td>각 분해능</td><td>약 1°</td><td>멀리 있는 가는 물체(의자 다리)를 놓칠 수 있다</td></tr>
           <tr><td>최대 거리</td><td><strong>개정판에 따라 다름</strong></td><td>3-5 참조 — <strong>드라이버 로그로 확인한다.</strong> 카탈로그 숫자를 믿지 않는다</td></tr>
@@ -76,6 +79,8 @@ float32[] intensities    # 반사 강도 (모델에 따라 비어 있음)</code>
           <tr><td>모터</td><td>어댑터의 DTR 핀으로 PWM 제어</td><td><strong>드라이버가 서비스로 제어한다</strong> — 3-8 참조</td></tr>
         </tbody>
       </table></div>
+      <p class="small">회전 속도의 출처: Slamtec "RPLIDAR A1 Introduction and Datasheet — Model: A1M8" rev.2.2 (2019-02-14) Figure 2-1 "RPLIDAR A1 Performance"(8쪽) — Scan Rate: Min 1 / Typical 5.5 / Max 10 Hz, typical 은 "한 바퀴에 360 샘플을 뜰 때"의 값이다.
+      같은 표에 거리 범위(개정판별)와 거리 분해능 행이 있다 — 3-9-1 에서 직접 찾아 읽는다. 1세대 자료에 사본이 있다: <code>~/ros2/datasheet/RPLiDAR-A1M8_Slamtec_lidar.pdf</code>.</p>
 
       <h3>2-2. 삼각측량 라이다의 한계 — 반드시 알아야 할 것</h3>
       <div class="tbl"><table>
@@ -124,7 +129,7 @@ float32[] intensities    # 반사 강도 (모델에 따라 비어 있음)</code>
 
       <h2>3. 실습</h2>
 
-      <h3>3-1. 드라이버 준비 <span class="tag cli">컨테이너</span></h3>
+      <h3>3-1. 드라이버 준비 <span class="tag cli">컨테이너</span> <span class="tag sim">SIM</span></h3>
       <p>드라이버는 apt 바이너리 <code>ros-humble-rplidar-ros</code>(Humble 공식 저장소, 2.1.x) 를 쓴다. 02 단계 §3-3 에서 넣었으므로 컨테이너에 이미 들어 있다. 확인만 한다.</p>
       <pre><code class="lang-bash">ros2 pkg list | grep rplidar          # rplidar_ros 가 나와야 한다
 ros2 pkg executables rplidar_ros      # rplidar_ros rplidar_node …</code></pre>
@@ -140,7 +145,7 @@ git clone -b ros2 https://github.com/Slamtec/rplidar_ros.git
 cd /ros2_ws &amp;&amp; colcon build --symlink-install --packages-select rplidar_ros --parallel-workers 2
 source install/setup.bash</code></pre>
 
-      <h3>3-2. 노드와 파라미터 — 여기에 함정이 있다</h3>
+      <h3>3-2. 노드와 파라미터 — 여기에 함정이 있다 <span class="tag sim">SIM</span></h3>
       <div class="tbl"><table class="compact">
         <thead><tr><th></th><th>값</th></tr></thead>
         <tbody>
@@ -151,7 +156,8 @@ source install/setup.bash</code></pre>
           <tr><td>서비스</td><td><code>start_motor</code>, <code>stop_motor</code> (<code>std_srvs/srv/Empty</code>)</td></tr>
         </tbody>
       </table></div>
-      <p><code>ros2_ws/src/rpi5_bringup/config/robot_params.yaml</code> 의 <code>lidar_node:</code> 블록을 열어 읽는다. 주석에 <strong>왜 모든 값을 명시했는지</strong>가 적혀 있다.</p>
+      <p><code>ros2_ws/src/rpi5_bringup/config/robot_params.yaml</code> 의 <code>lidar_node:</code> 블록을 열어 읽는다. 주석에 <strong>왜 모든 값을 명시했는지</strong>가 적혀 있다.
+      이 블록에서 <strong>장착에 달린 값은 <code>inverted</code> 하나</strong>다 — 벤치에서는 라이다를 바로 놓으므로 <code>false</code> 그대로 두고, 최종값은 <a href="09a-assembly-gate.html">09a</a>에서 정한다(3-9-2).</p>
       <pre><code class="lang-yaml">lidar_node:                       # ← 런치의 name='lidar_node' 와 같아야 이 블록이 적용된다
   ros__parameters:
     channel_type: "serial"
@@ -168,7 +174,7 @@ source install/setup.bash</code></pre>
         빈 값은 어떤 개정판에서도 동작한다. (실패 시 로그에 지원 모드 목록이 출력되므로, 원하면 그때 골라 넣는다.)</p>
       </div>
 
-      <h3>3-3. (참고) 소스로 받는 드라이버의 재현성 — <code>.repos</code></h3>
+      <h3>3-3. (참고) 소스로 받는 드라이버의 재현성 — <code>.repos</code> <span class="tag sim">SIM</span></h3>
       <p>A1M8 은 apt 로 해결되므로 지금 당장은 필요 없다. 다만 <strong>08 단계의 <code>camera_ros</code> 는 소스 빌드가 필요</strong>하므로 기법을 여기서 익혀 둔다.
       <code>git clone</code> 을 손으로 하면 Pi 를 새로 구웠을 때 재현이 안 된다. <strong><code>.repos</code> 파일로 고정</strong>한다.</p>
       <p><code>ros2_ws/src/drivers.repos</code>:</p>
@@ -182,32 +188,55 @@ vcs import src &lt; src/drivers.repos      # 한 번에 모두 받기
 vcs status src                          # 현재 상태 확인</code></pre>
       <p><code>.gitignore</code> 에 외부 드라이버 소스 디렉터리를 추가하고 <strong><code>.repos</code> 파일만 커밋</strong>한다. 남의 코드를 내 저장소에 복사해 넣으면 업데이트가 안 되고 라이선스도 꼬인다.</p>
 
-      <h3>3-4. 장치 확인 — udev 링크가 양쪽에서 보이는가 <span class="tag pi">Pi 호스트</span></h3>
+      <h3>3-4. 장치 확인 — udev 링크가 양쪽에서 보이는가 <span class="tag pi">Pi 호스트</span> <span class="tag bench">벤치</span></h3>
       <pre><code class="lang-bash">ls -l /dev/serial/by-id/                 # CP2102 (usb-Silicon_Labs_CP2102…) 가 보이는가
 ls -l /dev/lidar                         # → ttyUSB0 (udev 규칙, 01단계)
 cd ~/ros2_rpi5/docker &amp;&amp; docker compose run --rm dev ls -l /dev/lidar    # 컨테이너 안에서도</code></pre>
-      <p>여기서 <code>by-id</code> 경로와 <code>lsusb</code> 의 VID:PID 를 <code>hardware/INVENTORY.md</code> 3절에 적는다. A1M8 의 CP2102 는 보통 <code>10c4:ea60</code> 이지만 <strong>직접 확인한 값</strong>을 적는다.</p>
+      <p>여기서 <code>by-id</code> 경로와 <code>lsusb</code> 의 VID:PID 를 <code>hardware/INVENTORY.md</code> 3절에 적는다. A1M8 의 CP2102 는 보통 <code>10c4:ea60</code> 이지만 <strong>직접 확인한 값</strong>을 적는다.
+      (3절에는 2026-09-13 의 실측값 — <code>10c4:ea60</code>, by-id 경로, 포트 경로 — 이 이미 들어 있다. 지금 출력과 같은지 대조한다. udev 규칙은 VID:PID 로만 매칭하므로 다른 USB 포트에 꽂아도 <code>/dev/lidar</code> 는 유지되고, 달라지는 것은 3절의 "USB 포트 경로" 칸뿐이다 — 조립 때 포트가 바뀌면 09a 에서 그 칸을 고쳐 적는다.)</p>
 
-      <h3>3-5. 실행과 확인 <span class="tag cli">컨테이너</span></h3>
-      <p><code>robot.launch.py</code> 에 A1M8 블록이 이미 들어 있다. <code>use_lidar:=true</code> 로 켠다. (06 이 아직이라면 <code>mcu_bridge</code> 는 시뮬레이션으로 뜨므로 그대로 두어도 된다.)</p>
-      <pre><code class="lang-bash">ros2 launch rpi5_bringup robot.launch.py use_lidar:=true</code></pre>
-      <p>기동 로그에서 <strong>이 줄을 찾는다</strong>:</p>
+      <h3>3-5. 실행과 확인 <span class="tag cli">컨테이너</span> <span class="tag bench">벤치</span></h3>
+      <p><code>robot.launch.py</code> 에 A1M8 블록이 이미 들어 있다. 벤치에서는 <code>use_mcu:=false use_lidar:=true</code> 로 켠다.</p>
+      <pre><code class="lang-bash">ros2 launch rpi5_bringup robot.launch.py use_mcu:=false use_lidar:=true</code></pre>
+      <div class="callout why"><span class="ct">왜 <code>use_mcu:=false</code> 인가</span>
+        <p><code>use_mcu</code> 의 기본값은 <code>true</code> 라서 그냥 띄우면 <code>mcu_bridge</code> 가 같이 뜬다. <code>robot_params.yaml</code> 의 <code>wheel_radius</code>·<code>wheel_separation</code> 이 아직 <code>0.0</code>(EMPTY 자리표시)이면 브리지는 기동할 때마다 제원 ERROR 로그를 찍고, 찾아야 할 라이다 로그 한 줄이 그 사이에 묻힌다.
+        <code>use_mcu:=false</code> 로 끄면 <code>robot.launch.py</code> 가 <code>use_fake_joints</code> 를 그 반대(<code>true</code>)로 넘겨 <code>joint_state_publisher</code> 가 바퀴 관절을 채우므로 <strong>TF 트리는 그대로 완성된다.</strong> 08c 의 카메라 벤치 기동(<code>use_mcu:=false use_camera:=true</code>)과 같은 방식이다.
+        이 단계는 <code>/odom</code> 을 쓰지 않으므로 브리지가 없어도 잃는 것이 없다. 06 에서 제원을 이미 채웠다면 <code>use_mcu</code> 를 기본값으로 두어도 <code>/scan</code> 과 <code>base_link → laser_link</code> 변환은 같다 — 벤치에 MCU 가 없어도 그렇다.
+        <code>robot.launch.py</code> 도 <code>robot_params.yaml</code> 도 <code>simulate</code> 를 넘기지 않으므로 브리지는 코드 기본값 <code>simulate = true</code>(06 §3-4)인 <strong>가짜 MCU</strong> 로 뜬다: <code>/dev/mcu</code> 를 열지 않고, <code>/joint_states</code> 는 브리지가 낸다.
+        yaml 에 <code>simulate: false</code> 를 직접 적어 둔 경우만 다르다 — 그때는 실물 MCU 가 꽂혀 있지 않으면 "시리얼 열기 실패" ERROR 가 찍히므로 <code>use_mcu:=false</code> 로 띄운다.</p>
+      </div>
+      <p>기동 로그에서 <strong>이 꼴의 줄을 찾는다</strong> (아래 숫자는 줄의 <em>형식</em>을 보이기 위한 예시다 — 네 장비의 값은 다를 수 있다):</p>
       <pre class="diagram"><code>[rplidar_node]: current scan mode: Standard, sample rate: 8 Khz,
                 max_distance: 12.0 m, scan frequency: 10.0 Hz
                              ^^^^^^^^  ← 이 값이 내 장비의 진짜 최대 거리</code></pre>
       <div class="callout why"><span class="ct">최대 거리는 스펙이 아니라 드라이버 로그로 확인한다</span>
         <p>A1M8 은 개정판(R4/R6 등)에 따라 최대 거리가 다르다. 이 값을 <strong>두 곳</strong>에 기록한다:
-        ① <code>hardware/INVENTORY.md</code> 3절의 기록란 ② <code>nav2_params.yaml</code> 의 <code>laser_max_range</code> / <code>raytrace_max_range</code> / <code>obstacle_max_range</code> (09 단계, 현재 <code>0.0</code> 으로 비어 있다).
+        ① <code>hardware/INVENTORY.md</code> 3절 — "최대 거리 기록란"에 <strong>로그 한 줄을 그대로</strong>(scan mode · sample rate · max_distance · scan frequency 네 칸) 붙여 넣고, 표의 "최대 거리" 칸도 채운다 ② <code>nav2_params.yaml</code> 의 <code>laser_max_range</code> / <code>raytrace_max_range</code> / <code>obstacle_max_range</code> (09 단계, 현재 <code>0.0</code> 으로 비어 있다).
         <strong>왜 스펙보다 약간 작게 쓰는가:</strong> 최대 거리 근처의 측정값은 노이즈가 크고 반사 오류가 많아 지도에 <strong>유령 벽</strong>을 만든다. 관례적으로 실측 최대값의 0.7~0.8 배를 <code>obstacle_max_range</code> 로 쓴다.</p>
+        <p><strong>값을 넣을 때 같은 줄의 상태 낱말도 바꾼다.</strong> <code>nav2_params.yaml</code> 의 다섯 줄(<code>laser_max_range</code> 1 · <code>raytrace_max_range</code> 2 · <code>obstacle_max_range</code> 2)에는 지금 <code># ____ EMPTY. 0.0 은 자리표시</code> 가 붙어 있다.
+        <code>laser_max_range</code> 와 <code>raytrace_max_range</code> 는 로그에서 읽은 값이므로 그 자리를 <code>MEASURED(YYYY-MM-DD, 드라이버 기동 로그 max_distance)</code> 로 고친다. INVENTORY 3절 표의 "최대 거리" 칸도 <code>____</code> 를 값으로 바꾸고 같은 줄에 같은 표기를 붙인다.
+        <code>obstacle_max_range</code> 는 잰 값이 아니라 <strong>유도값</strong>(위 값 × 0.7~0.8)이다. 유도값의 상태를 어떻게 적을지는 <code>nav2_params.yaml</code> 머리말의 "결정 대기 2" 로 아직 정해지지 않았다 — 정해질 때까지는 머리말에 있는 표기 <code>MEASURED(YYYY-MM-DD, &lt;유도식&gt;)</code>(예: <code>raytrace_max_range × 0.75</code>)로 적어 둔다.
+        어느 줄이든 <strong>낱말을 지우지는 않는다.</strong> <code>scripts/check_nominal.sh</code> 는 "상태 낱말이 있는 줄"을 세고, 09a 의 관문은 그 줄 수가 줄지 않았는지도 본다(<code>--expect</code>) — 낱말을 지우면 값을 확정한 것이 아니라 세는 대상에서 빠진 것이 된다. 고친 뒤 <code>./scripts/check_nominal.sh</code> 의 표에서 다섯 줄이 EMPTY 가 아닌지 확인한다.</p>
       </div>
       <p>다른 터미널에서 데이터가 실제로 흐르는지 본다:</p>
       <pre><code class="lang-bash">ros2 topic list | grep scan
-ros2 topic hz /scan                                     # A1M8 은 5.5 Hz 근처가 정상
+ros2 topic hz /scan                                     # 10초쯤 두고 average rate 를 적는다: ____ Hz
+ros2 topic echo /scan --field scan_time --once          # 메시지가 말하는 "한 바퀴에 걸린 시간" [s]
 ros2 topic echo /scan --field header.frame_id --once    # laser_link 인가?
 ros2 topic echo /scan --field range_max --once          # 로그의 max_distance 와 같은가
 ros2 topic echo /scan --field ranges --once | head -20
 ros2 topic bw /scan                                     # 대역폭 (2-3 의 숫자와 비교)</code></pre>
       <p><code>ranges</code> 값이 전부 <code>inf</code> 나 <code>0.0</code> 이면 물리적 문제(모터 미회전, 렌즈 가림)다.</p>
+      <div class="callout note"><span class="ct">실측 항목 — 로그의 <code>scan frequency</code> 와 <code>topic hz</code> 를 둘 다 적어 비교한다</span>
+        <p>회전수에 관해 이 쪽에는 출처가 다른 숫자가 셋 나온다: ① 데이터시트의 typical 5.5 Hz(2-1) ② 드라이버 기동 로그의 <code>scan frequency</code> ③ <code>ros2 topic hz /scan</code> 이 재는, <strong>메시지가 실제로 도착하는 빈도</strong>.
+        ②가 "잰 회전수"인지 "스캔 모드의 공칭값"인지, ②와 ③이 같아야 하는지를 <strong>이 가이드는 확인하지 못했다.</strong> 그래서 어느 숫자가 정상이라고 단정하지 않는다 — 네 장비에서 재서 나란히 적는다.</p>
+        <pre class="diagram"><code>로그의 scan frequency                 : ____ Hz
+ros2 topic hz /scan 의 average rate   : ____ Hz   1 ÷ 값 = 메시지 주기 ____ ms
+메시지의 scan_time                    : ____ s    1 ÷ 값 = ____ Hz
+로그 값과 topic hz 가 같은가          : ____      다르면 몇 배인가 ____</code></pre>
+        <p>INVENTORY 3절 "최대 거리 기록란" 바로 아래의 "회전수 대조" 칸에 이 네 줄을 채운다. SLAM 과 Nav2 가 실제로 받는 것은 ③이다. 2-3 의 표는 5.5 Hz 로 계산한 것이므로, ③이 5.5 Hz 와 다르면 같은 식(주기 = 1 ÷ ③, 한 장 사이의 이동 = 속도 × 주기)에 네 값을 넣어 <strong>다시 계산해 둔다</strong> — 09 에서 지도 작성 속도를 정할 때 쓰는 것은 그 숫자다.
+        ③이 데이터시트의 범위(1~10 Hz) 밖이거나 값이 출렁이면 전원(3-12)과 USB 연결부터 의심한다.</p>
+      </div>
       <p><strong>QoS 를 눈으로 확인한다.</strong> 이 습관이 Foxglove 와 09 단계의 침묵을 미리 막는다:</p>
       <pre><code class="lang-bash">ros2 topic info /scan -v</code></pre>
       <pre class="diagram"><code>Publisher count: 1
@@ -218,12 +247,18 @@ ros2 topic bw /scan                                     # 대역폭 (2-3 의 숫
     History (Depth): KEEP_LAST (…)
     Durability: VOLATILE</code></pre>
 
-      <h3>3-6. TF 에 붙었는가</h3>
+      <h3>3-6. TF 에 붙었는가 <span class="tag bench">벤치</span></h3>
       <pre><code class="lang-bash">ros2 run tf2_ros tf2_echo base_link laser_link      # 변환이 나오는가 (URDF 의 lidar_x/y/z/yaw 와 같은가)
 ros2 run tf2_tools view_frames                      # 트리에 laser_link 가 있는가</code></pre>
       <p>변환이 안 나오면 05 단계의 <code>description.launch.py</code> 가 떠 있는지(<code>use_description:=true</code> 기본값), 그리고 <code>frame_id</code> 철자를 다시 본다.</p>
+      <div class="callout note"><span class="ct">여기서 보는 것은 "이름이 맞아 이어졌는가"다 — 숫자는 아직 NOMINAL 이다</span>
+        <p>이 절의 검사는 둘뿐이다. ① <code>/scan</code> 의 <code>frame_id</code> 와 URDF 의 링크 이름이 같아 <strong>TF 트리에 이어졌는가</strong>(이름 일치·연결성). ② <code>tf2_echo</code> 가 내는 값이 <strong>xacro 파일에 적힌 값과 같은가</strong>(파일 ↔ 출력의 일치).
+        그 값이 <em>실물과 맞는가</em>는 보지 않는다 — 라이다가 아직 차체에 달려 있지 않아 맞춰 볼 실물이 없다. <code>rpi5_robot.urdf.xacro</code> 의 <code>lidar_x</code>·<code>lidar_y</code>·<code>lidar_z</code>·<code>lidar_yaw</code> 는 지금 <code>NOMINAL(fake)</code> 주석이 붙은 자리 채움값이다.</p>
+        <p><strong>왜 그래도 되는가:</strong> <code>/scan</code> 은 라이다 <em>자기 프레임</em>에서 만들어지므로 이 숫자가 틀려도 3-5 ~ 3-10 의 결과는 하나도 바뀌지 않는다. 숫자가 쓰이는 곳은 프레임 <em>사이</em>를 변환하는 소비자 — Foxglove 에서 모형 대비 점의 위치, 08d 의 스캔 투영, 09 의 SLAM·Nav2 — 다.
+        실측값은 <a href="09a-assembly-gate.html">09a</a>에서 넣고 <code>MEASURED</code> 로 바꾼다. 그때까지 이 네 값을 "맞는 값"으로 믿지 않는다.</p>
+      </div>
 
-      <h3>3-7. Foxglove 에서 보기 <span class="tag mac">Mac</span></h3>
+      <h3>3-7. Foxglove 에서 보기 <span class="tag mac">Mac</span> <span class="tag bench">벤치</span></h3>
       <ol class="steps">
         <li>Pi 에서 <code>docker compose up -d foxglove</code> 가 떠 있는지 확인, Mac Foxglove → <code>ws://192.168.50.97:8765</code></li>
         <li>3D 패널 → Frame: <code>base_link</code></li>
@@ -231,8 +266,9 @@ ros2 run tf2_tools view_frames                      # 트리에 laser_link 가 �
         <li><strong>점이 안 보이면 <code>/scan</code> 패널 설정에서 QoS 를 <code>Best Effort</code> 로 바꾼다</strong> (2-5)</li>
       </ol>
       <p>점이 안 보일 때 확인 순서는 항상 같다: ① 패널 QoS Best Effort → ② <code>frame_id</code> 가 TF 트리에 있는가 (<code>view_frames</code>) → ③ 패널의 Frame 이 그 프레임과 연결된 좌표계인가. 대부분 ① 아니면 ② 다.</p>
+      <p>벤치에서 보는 것은 <strong>점이 나오는가</strong>와 <strong>점들이 방의 모양으로 알아볼 만한가</strong>까지다. 점들이 로봇 모형에 대해 어디에 그려지는지는 보지 않는다 — 그 위치를 정하는 TF 숫자가 아직 NOMINAL 이다(3-6).</p>
 
-      <h3>3-8. 모터 서비스 — 03 단계에서 배운 "서비스"의 실물</h3>
+      <h3>3-8. 모터 서비스 — 03 단계에서 배운 "서비스"의 실물 <span class="tag bench">벤치</span></h3>
       <p>A1M8 의 회전 모터는 드라이버가 <strong>서비스</strong>로 제어한다. 우리 로봇 안에 존재하는 첫 번째 진짜 서비스다.</p>
       <pre><code class="lang-bash">ros2 service list | grep motor
 #   /lidar_node/start_motor
@@ -252,36 +288,101 @@ ros2 service call /lidar_node/start_motor std_srvs/srv/Empty
       <p>배터리 로봇에서는 <code>auto_standby: true</code> 로 두면 <code>/scan</code> 구독자가 없을 때 모터를 자동 정지한다. 전력과 베어링 수명에 유리하지만, 이 모드에서는 위 서비스 호출이 무시된다.
       주행 중에 라이다를 멈출 일은 없지만, 정지 대기 중이나 Hailo 추론만 돌릴 때 모터를 끄면 전력 예산에 여유가 생긴다. Pi 5 + Hailo + 모터 구성에서 전력은 늘 빠듯하다.</p>
 
-      <h3>3-9. 장착 방향 검증 — 이 단계에서 가장 중요</h3>
-      <p>스캔이 나온다고 끝이 아니다. <strong>점들이 실제 벽 위치와 맞는지</strong> 확인해야 한다. 로봇을 <strong>벽에서 1 m 떨어진 곳에 벽을 정면으로 보게</strong> 놓는다.</p>
-      <pre><code class="lang-bash"># 정면(0도)과 90도 간격의 거리를 인덱스로 확인
-ros2 topic echo /scan --once | python3 -c "
-import sys, yaml
-d = yaml.safe_load(sys.stdin.read())
-r = d['ranges']
-n = len(r)
-print(f'점 개수: {n}')
-print(f'ranges[0]      (angle_min 방향): {r[0]:.3f} m')
-print(f'ranges[{n//4}]  : {r[n//4]:.3f} m')
-print(f'ranges[{n//2}]  : {r[n//2]:.3f} m')
-print(f'ranges[{3*n//4}]: {r[3*n//4]:.3f} m')
-"</code></pre>
-      <p>Foxglove 3D 패널에서 보는 것이 더 직관적이다. 로봇을 90° 돌렸을 때 스캔도 같은 방향으로 90° 돌아야 한다.</p>
-      <div class="tbl"><table>
-        <thead><tr><th>증상</th><th>원인</th><th>조치</th></tr></thead>
+      <h3>3-9. 스캔이 실물과 맞는가 — 센서 자체 검증(벤치)과 장착 방향 검증(조립 후) <span class="tag bench">벤치</span> <span class="tag asm">조립 후</span></h3>
+      <p>스캔이 나온다고 끝이 아니다. <strong>점들이 실제 벽 위치와 맞는지</strong> 확인해야 한다. 그런데 "맞는가"에는 성질이 다른 두 질문이 섞여 있다. 이 절은 그 둘을 갈라 앞의 것만 지금 한다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th></th><th>무엇을 묻는가</th><th>답이 무엇에 달려 있는가</th><th>언제</th></tr></thead>
         <tbody>
-          <tr><td>벽이 로봇 <strong>뒤쪽</strong>에 그려짐</td><td>라이다가 180° 돌아 장착됨</td><td>URDF <code>lidar_yaw</code> 에 <code>${PI}</code></td></tr>
-          <tr><td>벽이 <strong>좌우 반전</strong>됨</td><td>라이다를 <strong>뒤집어</strong> 장착</td><td>URDF <code>rpy="${PI} 0 0"</code> 또는 드라이버 <code>inverted: true</code></td></tr>
-          <tr><td>벽이 45° 기울어 그려짐</td><td>라이다 0° 방향이 어긋남</td><td><code>lidar_yaw</code> 를 실측 각도로</td></tr>
-          <tr><td>거리가 일정 비율로 틀림</td><td>단위 문제 (mm vs m)</td><td>드라이버 설정 확인</td></tr>
-          <tr><td>로봇 자기 몸통이 스캔에 찍힘</td><td>장착 높이 문제</td><td><code>angle_min/max</code> 로 마스킹하거나 라이다를 높임</td></tr>
+          <tr><td><strong>3-9-1 센서 자체</strong></td><td>거리 값이 자로 잰 것과 같은가 · 라이다 몸체의 어느 쪽이 0° 인가 · 각도가 어느 쪽으로 커지는가</td><td>라이다와 드라이버. <strong>어디에 달든 같다</strong></td><td><span class="tag bench">벤치</span> 지금</td></tr>
+          <tr><td><strong>3-9-2 장착</strong></td><td>라이다 0° 와 로봇 정면의 각도 차(<code>lidar_yaw</code>) · 뒤집힘 · 차체 가림 · <code>base_link</code> 에서의 x/y/z</td><td>라이다를 <strong>차체에 어떻게 달았는가</strong></td><td><span class="tag asm">조립 후</span> <a href="09a-assembly-gate.html">09a</a></td></tr>
         </tbody>
       </table></div>
-      <div class="callout warn"><span class="ct">이 검증을 건너뛰면 09 단계에서 "SLAM 이 지도를 못 만들어요"로 돌아온다</span>
-        <p>그때는 SLAM 파라미터를 의심하느라 며칠을 쓴다. <strong>지금 10분 쓰는 것이 훨씬 싸다.</strong> 라이다 장착 위치(x/y/z/yaw)를 자로 재서 URDF 의 <code>lidar_*</code> 속성에 반영하고, <code>INVENTORY.md</code> 3절 장착 정보란도 채운다.</p>
+
+      <h4>3-9-1. (벤치) 센서 자체 검증 — 0° 방향, 회전 방향, 거리 대조 <span class="tag bench">벤치</span></h4>
+      <p>라이다를 책상이나 바닥에 <strong>평평하게</strong> 놓고, 3-5 의 런치가 떠 있는 상태에서 한다. 먼저 도구 하나를 컨테이너 셸에 정의한다 — 지정한 부채꼴 안에서 <strong>가장 가까운 유효 점</strong>의 거리와 각도를 내는 함수다.</p>
+      <pre><code class="lang-bash"># 사용: probe [중심각 deg] [반폭 deg]      인자를 생략하면 전 방향
+probe() { ros2 topic echo /scan --once --full-length | python3 -c "
+import sys, math, yaml
+c = math.radians(float(sys.argv[1])) if len(sys.argv) &gt; 1 else 0.0       # 부채꼴의 중심각
+h = math.radians(float(sys.argv[2])) if len(sys.argv) &gt; 2 else math.pi   # 부채꼴의 반폭
+d = next(yaml.safe_load_all(sys.stdin.read()))
+best = None
+for i, x in enumerate(d['ranges']):
+    x = float(x)
+    a = d['angle_min'] + i * d['angle_increment']            # 1-1 의 식. 인덱스가 아니라 각도로 찾는다
+    off = math.atan2(math.sin(a - c), math.cos(a - c))       # 중심각과의 차를 [-pi, pi) 로 접는다
+    if abs(off) &gt; h or not math.isfinite(x) or not (d['range_min'] &lt;= x &lt;= d['range_max']):
+        continue                                             # inf, NaN, 범위 밖은 '측정 실패' (2-2)
+    if best is None or x &lt; best[0]:
+        best = (x, math.degrees(math.atan2(math.sin(a), math.cos(a))), i)
+print('유효한 점 없음' if best is None else f'가장 가까운 점: {best[0]:.3f} m, 각도 {best[1]:+.1f} deg, ranges[{best[2]}]')
+" "$@"; }
+
+probe             # 전 방향에서 가장 가까운 점
+probe 90 20       # +90° ± 20° 안에서 가장 가까운 점</code></pre>
+      <p class="small">읽을 곳 셋. ① 방향을 <strong>인덱스가 아니라 각도로</strong> 찾는다 — <code>ranges[0]</code> 은 <code>angle_min</code> 방향이지 0° 라는 보장이 없다(출력 끝의 <code>ranges[…]</code> 로 0° 가 몇 번째 칸인지 확인해 본다).
+      ② <code>--full-length</code> 는 긴 배열을 <code>...</code> 로 줄여 찍지 않게 하는 옵션이다(<code>ros2 topic echo --help</code>). ③ <code>safe_load_all</code> 의 첫 문서만 읽는 것은 출력 끝에 <code>---</code> 구분선이 붙어도 깨지지 않게 하기 위해서다.
+      이 함수가 하는 일은 3-10 에서 C++ 로 직접 쓸 <code>scan_watch</code> 의 계산과 같다 — 여기서는 측정 도구로만 쓴다.
+      <strong>확인하지 못한 것:</strong> 이 함수는 가짜 <code>LaserScan</code> 데이터로만 시험했고 실제 <code>/scan</code> 에서는 돌려 보지 못했다. 오류가 나면 <code>ros2 topic echo /scan --once --full-length | head -30</code> 으로 출력의 꼴부터 본다.</p>
+
+      <p><strong>① 0° 가 몸체의 어느 쪽인가, 각도는 어느 쪽으로 커지는가.</strong> 거리 대조보다 먼저 한다 — 어느 방향의 값을 읽고 있는지 알아야 하기 때문이다.</p>
+      <ol class="steps">
+        <li>책이나 상자를 라이다에서 <strong>약 30 cm</strong> 에 세운다. 최소 거리 0.15 m(2-1)보다 멀고, 주변의 어떤 것보다 가까워야 한다. <code>probe</code> 를 실행하면 그 책의 각도가 나온다.</li>
+        <li>책을 라이다 둘레로 조금씩 옮기며 <code>probe</code> 를 반복해, 각도가 <strong>0° 근처</strong>로 나오는 자리를 찾는다. 그 방향이 이 라이다의 0° 다. 몸체에서 눈에 띄는 것(케이블이 나오는 쪽, 모터가 있는 쪽 …)을 기준으로 어느 쪽인지 적고 <strong>위에서 사진을 찍어 둔다.</strong></li>
+        <li>위에서 내려다보며 책을 <strong>반시계 방향으로 1/4 바퀴</strong> 옮긴다. <code>probe</code> 가 <strong>+90° 근처</strong>를 내면 각도는 반시계로 커진다 — 1-1 의 "반시계 +", <code>LaserScan</code> 의 규약과 같다. −90° 근처라면 반대다. 어느 쪽이든 <strong>본 대로</strong> 적는다.</li>
+        <li>책은 그대로 두고 이번에는 <strong>라이다 몸체를</strong> 제자리에서 반시계로 90° 돌린다. 3번에서 반시계 + 였다면 책의 각도는 +90° 에서 <strong>0° 근처로 줄어야</strong> 한다. 센서를 +θ 돌리면 고정된 물체의 방위는 −θ 만큼 움직인다 — 09 에서 로봇이 돌 때 <code>base_link</code> 기준 화면의 벽이 반대로 도는 것과 같은 원리다.</li>
+      </ol>
+      <div class="callout why"><span class="ct">왜 "찾아서 적는가" — 물리 회전 방향과 메시지의 각도 부호는 별개다</span>
+        <p>A1M8 데이터시트는 코어가 <strong>시계 방향으로 돌며</strong> 스캔한다고 적는다(rev.2.2 3쪽 "System connection": "start rotating and scanning clockwise"). 한편 <code>LaserScan</code> 은 반시계를 + 로 친다. 그 사이는 드라이버가 메우고, 0° 가 몸체의 어느 쪽에 놓이는지도 그 변환을 거친 결과다.
+        그래서 데이터시트의 그림이나 다른 프로그램이 남긴 각도를 환산해 오지 않고, <strong>내 드라이버가 내는 메시지를 직접 본다.</strong>
+        1세대 기록(<code>~/ros2/rpi5_bridge/robot_footprint.md</code> "LiDAR 각도 매핑", 2026-07-25)에서도 로봇 전진 방향은 라이다 각도의 0° 가 아니었다 — 다만 그 값은 1세대의 자체 파서가 읽은 원시 각도이고 그때의 장착 기준이라 <code>lidar_yaw</code> 로 환산해 쓸 수 없다. "정면이 0° 가 아닐 수 있다"는 예로만 읽는다.</p>
+        <p><strong>이 기록이 어디에 쓰이는가:</strong> 조립할 때 0° 쪽을 로봇 정면으로 향하게 달면 <code>lidar_yaw</code> 는 0 근처에서 출발하고, 3-9-2 의 증상표는 "찾는" 절차가 아니라 "확인하는" 절차가 된다.</p>
       </div>
 
-      <h3>3-10. C++ 연습 — <code>/scan</code> 을 소비하는 첫 노드 <span class="tag cpp">C++</span></h3>
+      <p><strong>② 거리 대조 — 자로 잰 거리와 <code>/scan</code> 의 거리.</strong> 평평한 벽을 고른다(유리·거울·검은 무광 면은 피한다 — 2-2). 라이다와 벽 사이를 비우고, <strong>라이다 회전축 중심에서 벽까지의 수직 거리</strong>를 줄자로 0.5 m, 1.0 m, 2.0 m 에 차례로 맞춘다.
+      회전축에서 재는 이유: 데이터시트가 거리 값을 "회전 코어와 측정점 사이의 거리"로 정의한다(rev.2.2 Figure 1-4, 6쪽).</p>
+      <pre><code class="lang-bash">probe 0 20        # 0° 쪽을 벽으로 향하게 놓았을 때. 다른 쪽이 벽을 보고 있으면 ①에서 찾은 그 각도를 중심각으로 준다</code></pre>
+      <p>라이다를 벽에 정확히 직각으로 맞출 필요는 없다. 평평한 벽에서 <strong>부채꼴 안의 가장 가까운 점은 벽에 내린 수선의 발</strong>이고, 줄자로 잰 수직 거리와 비교할 값이 바로 그것이다.
+      단, 출력된 각도가 부채꼴의 가장자리(중심각 ± 20°)에 붙어 있으면 수선의 발이 부채꼴 밖에 있다는 뜻이다 — 라이다를 돌려 다시 잰다. 가장 가까운 점 하나를 고르는 방식이라 잡음이 있으면 조금 작은 쪽으로 치우친다. 거리마다 3번 재서 가운데 값을 적는다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>증상</th><th>원인 후보</th><th>조치</th></tr></thead>
+        <tbody>
+          <tr><td>세 거리가 모두 같은 비율로 틀림</td><td>단위 문제 (mm vs m)</td><td>드라이버 설정 확인</td></tr>
+          <tr><td>세 거리가 모두 같은 <em>길이</em>만큼 틀림</td><td>줄자의 기준점이 회전축 중심이 아니다(몸체의 끝에서 쟀다)</td><td>기준점을 회전축 중심으로 옮겨 다시 잰다</td></tr>
+          <tr><td>먼 거리일수록 차가 커짐</td><td>삼각측량의 성질(2-2)일 수 있다</td><td>줄자 쪽을 한 번 더 확인한 뒤, 남는 차를 그대로 기록한다 — 09 에서 최대 사용 거리를 정할 때의 근거가 된다</td></tr>
+          <tr><td>"유효한 점 없음" 또는 값이 튐</td><td>벽의 재질·햇빛(2-2), 0.15 m 미만</td><td>벽을 바꾸거나 흰 종이를 붙이고 다시 잰다</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>합격선은 네가 정한다 — 순서는 "측정 → 기록 → 합격선".</strong> 이 가이드는 허용 오차 숫자를 주지 않는다. A1M8 데이터시트의 성능 표(rev.2.2 기준 Figure 2-1 "RPLIDAR A1 Performance", 8쪽)에서 거리에 관한 행을 찾아 <strong>행 이름·값·조건을 그대로</strong> 아래 기록 칸에 옮긴다.
+      읽을 때 한 가지를 구분한다. <strong>분해능(resolution)</strong>은 "구별할 수 있는 가장 작은 거리 차"이고 <strong>정확도(accuracy)</strong>는 "참값에서 벗어난 정도"다 — 둘은 다른 양이다. 표의 행이 어느 쪽인지 이름을 보고 적는다(이 가이드가 연 사본에는 accuracy 라는 이름의 행이 없었다 — 네 사본에서 확인한다).
+      거기에 줄자 쪽의 불확실성(눈금 읽기, 회전축 중심을 눈으로 짚는 오차)을 더해 합격선을 정하고, 정한 근거를 같이 적는다.</p>
+      <p><strong>기록:</strong> <code>hardware/INVENTORY.md</code> 3절의 "센서 자체 검증" 칸(다음과 같은 꼴로 비어 있다)을 채운다.</p>
+      <pre class="diagram"><code>### 센서 자체 검증 (07 §3-9-1, 벤치) — 날짜 ____
+0° 방향 (몸체의 무엇을 기준으로 어느 쪽인가)              : ____        사진: ____
+각도가 커지는 방향 (위에서 내려다봐서)                    : ____        (반시계 / 시계)
+거리 대조 — 회전축 중심에서 벽까지의 수직 거리, probe 3회의 가운데 값
+  줄자 0.50 m   /scan ____ m   차 ____ mm
+  줄자 1.00 m   /scan ____ m   차 ____ mm
+  줄자 2.00 m   /scan ____ m   차 ____ mm
+데이터시트의 거리 사양 (문서·표·행 이름·값·조건 그대로)   : ____
+내가 정한 합격선                                          : ____        근거: ____
+/lidar_node 에 각도 범위를 자르는 파라미터가 있는가       : ____        (3-9-2 의 확인 과제)</code></pre>
+
+      <h4>3-9-2. (조립 후 — 09a) 장착 방향 · 차체 가림 · 장착 위치 실측 <span class="tag asm">조립 후</span></h4>
+      <div class="callout note"><span class="ct">이 절은 <a href="09a-assembly-gate.html">09a</a>에서 수행한다</span>
+        <p>지금은 읽기만 하고 건너뛴다. <strong>왜 지금이 아닌가:</strong> 여기서 가려내는 것은 전부 "라이다를 <em>차체에</em> 어떻게 달았는가"다. <code>lidar_yaw</code> 는 라이다 0° 와 로봇 정면 사이의 각이고, 뒤집힘은 라이다의 z 축과 차체의 z 축의 관계이고, 가림은 차체 구조물이 어디에 있는가이고, x/y/z 는 <code>base_link</code> 에서 잰 거리다 — 어느 것도 라이다 혼자서는 정해지지 않는다.
+        센서·보드는 지금 섀시에 달려 있지 않으므로(<code>hardware/INVENTORY.md</code> 머리말, 3절 "장착 정보"는 전부 <code>____</code>) 잴 대상이 아직 없다. 책상 위에서 임의로 "정면"을 정해 통과시켜도, 조립하는 순간 그 결과는 무효가 된다.
+        지금 할 수 있는 준비는 3-9-1 의 기록(0° 방향·회전 방향)이다.</p>
+        <p>절차와 <strong>장착 방향 증상표</strong>(벽이 뒤쪽에 그려짐 · 좌우 반전 · 45° 기울어짐 · 자기 몸통이 찍힘)는 <a href="09a-assembly-gate.html#s3-4-1">09a §3-4-1</a> 에, 차체 가림을 실제로 보는 절차는 <a href="09a-assembly-gate.html#s3-4-2">09a §3-4-2</a> 에, 장착 위치 x/y/z 실측은 <a href="09a-assembly-gate.html#s3-3">09a §3-3</a>(세팅 B)에 있다. 여기서는 <strong>무엇을 재게 되는지</strong>만 알아 두고 지나간다.</p>
+      </div>
+      <div class="callout note"><span class="ct">확인 과제 — 가린 구간을 무엇으로 버리는가</span>
+        <p>✅ <strong>닫혔다(2026-09-24)</strong> — <strong>그런 파라미터는 없다.</strong> 이 드라이버가 선언하는 파라미터는 정확히 <strong>열다섯</strong>이고(<code>src/rplidar_node.cpp:74-88</code>) 각도 범위를 자르는 것이 하나도 없다: <code>channel_type</code> · <code>tcp_ip</code> · <code>tcp_port</code> · <code>udp_ip</code> · <code>udp_port</code> · <code>serial_port</code> · <code>serial_baudrate</code> · <code>frame_id</code> · <code>inverted</code> · <code>angle_compensate</code> · <code>flip_x_axis</code> · <code>auto_standby</code> · <code>topic_name</code> · <code>scan_mode</code> · <code>scan_frequency</code>. <a href="l-07-cross-verify.html">l-07</a> 이 소스를 직접 열어 세었다.
+        <strong>내 기기에서 확인하는 일은 남아 있다</strong> — 라이다를 띄운 채 <code>ros2 param list /lidar_node</code> 로 열다섯 개가 그대로 나오는지 보고 3-9-1 의 기록 칸에 적는다. 그 대조는 <a href="l-07-cross-verify.html">l-07</a> 의 항목이 받는다.
+        그러니 <code>/scan</code> 을 받아 그 구간의 점을 "측정 실패"로 바꿔 다시 내는 필터 노드가 필요하다 — <code>scan_watch</code> 와 같은 구조로 직접 쓰는 길과 기존 필터 패키지를 쓰는 길이 있다(그 패키지가 이 이미지에 들어 있는지도 미확인).
+        어느 길로 갈지는 09a 에서 가림이 실제로 있는지 본 뒤에 정한다. 가림이 없으면 아무것도 필요 없다.</p>
+      </div>
+
+      <h3>3-10. C++ 연습 — <code>/scan</code> 을 소비하는 첫 노드 <span class="tag cpp">C++</span> <span class="tag bench">벤치</span></h3>
       <p>04 단계의 패턴을 <strong>실제 센서 데이터</strong>에 적용한다. 새 패키지 <code>rpi5_lidar_tools</code> 에 <code>scan_watch</code> 노드를 직접 쓴다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>항목</th><th>사양</th></tr></thead>
@@ -402,17 +503,17 @@ ros2 run rpi5_lidar_tools scan_watch
 # 다른 터미널
 ros2 topic echo /scan_front_min
 ros2 run rpi5_lidar_tools scan_watch --ros-args -p sector_deg:=60.0     # 섹터를 넓혀 본다</code></pre>
-      <p><strong>검증:</strong> 라이다 정면 30~50 cm 앞에 손이나 책을 가져가면 <code>data</code> 가 그 거리로 떨어지고, 치우면 벽 거리로 돌아온다. 옆(±90°)에 손을 대면 값이 바뀌지 <em>않아야</em> 한다.</p>
+      <p><strong>검증:</strong> 라이다의 0° 쪽(3-9-1 ①에서 찾아 적은 방향) 30~50 cm 앞에 손이나 책을 가져가면 <code>data</code> 가 그 거리로 떨어지고, 치우면 벽 거리로 돌아온다. 옆(±90°)에 손을 대면 값이 바뀌지 <em>않아야</em> 한다.</p>
       <div class="callout warn"><span class="ct">이 노드의 "정면"은 <code>laser_link</code> 기준이다</span>
         <p>라이다가 뒤집혀 있거나 돌아가 있어도 <strong>TF 가 보정해 주는 것은 Foxglove·SLAM 처럼 TF 를 조회하는 소비자뿐</strong>이다. 이 노드는 메시지의 각도만 보므로 URDF 의 <code>lidar_yaw</code> 와 무관하게 <em>라이다의 0°</em> 를 정면으로 취급한다.
-        그래서 3-9 의 장착 방향 검증이 끝난 뒤 이 값이 "로봇 정면"과 맞는지 다시 본다. 라이다 0° 가 로봇 뒤를 향하면 이 노드는 <em>뒤쪽</em> 최소 거리를 낸다.
+        벤치에서 확인한 것은 "<em>라이다의</em> 0° ± 섹터에 반응한다"까지다. 이 값이 "<em>로봇</em> 정면"과 맞는지를 확인하는 절차는 <span class="tag asm">조립 후</span> <a href="09a-assembly-gate.html#s3-4-3">09a §3-4-3</a> 에 있다 — 차체에 달기 전에는 로봇 정면이라는 것이 없기 때문이다.
         확장 과제: <code>tf2_ros::Buffer::lookupTransform("base_link", scan.header.frame_id, …)</code> 로 각 점을 <code>base_link</code> 로 옮긴 뒤 섹터를 자르면 장착과 무관해진다 — 부록 A 의 TF 조회 절 참조.</p>
       </div>
       <div class="callout note"><span class="ct">이 값은 10 단계에서 쓴다</span>
         <p><code>mission_supervisor</code> 가 "전방 장애물이 임계 거리 안 → 목표 취소(급정지)" 판단에 <code>/scan_front_min</code> 을 쓴다. Nav2 의 코스트맵이 있는데 왜 또 필요한가는 10 단계에서 다룬다 — 힌트: Nav2 는 "우회"를, 이 값은 "멈춤"을 담당한다.</p>
       </div>
 
-      <h3>3-11. 런치파일 통합 — 읽기 포인트</h3>
+      <h3>3-11. 런치파일 통합 — 읽기 포인트 <span class="tag sim">SIM</span></h3>
       <p><code>ros2_ws/src/rpi5_bringup/launch/robot.launch.py</code> 의 A1M8 블록을 열어 <strong>왜 그렇게 되어 있는지</strong> 확인한다.</p>
       <ul>
         <li><code>executable='rplidar_node'</code> — 드라이버의 실행파일 이름</li>
@@ -422,36 +523,58 @@ ros2 run rpi5_lidar_tools scan_watch --ros-args -p sector_deg:=60.0     # 섹터
       </ul>
       <p>연습 노드 <code>scan_watch</code> 도 같은 방식으로 이 런치에 추가해 본다(<code>package='rpi5_lidar_tools'</code>, 인자 <code>use_scan_watch</code>). 10 단계에서 어차피 필요하다.</p>
 
-      <h3>3-12. 전원 주의</h3>
+      <h3>3-12. 전원 주의 <span class="tag bench">벤치</span> <span class="tag asm">조립 후</span></h3>
       <p>라이다는 모터로 회전하므로 <strong>기동 전류가 크다</strong> (보통 400~600 mA, 순간 더).</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>증상</th><th>원인</th></tr></thead>
         <tbody>
           <tr><td>라이다가 돌다 멈춤</td><td>전원 부족</td></tr>
           <tr><td>모터가 돌 때만 스캔이 끊김</td><td>Pi 의 USB 전류 한계 (5 V/5 A 협상이 안 되면 600 mA 로 제한)</td></tr>
-          <tr><td><code>vcgencmd get_throttled</code> 가 0 이 아님</td><td>어댑터 용량 부족</td></tr>
+          <tr><td><code>vcgencmd get_throttled</code> 가 0 이 아님</td><td>Pi 급전원(어댑터 또는 강압 모듈)의 용량 부족 — Pi 본체의 저전압</td></tr>
         </tbody>
       </table></div>
-      <p><strong>해결:</strong> 27 W PD 어댑터 사용, 또는 <strong>셀프 파워 USB 허브</strong>를 통해 라이다에 별도 급전. Hailo 까지 달려 있으면 전력 여유가 더 줄어든다.</p>
+      <p><strong>해결:</strong> 5 V/5 A 협상이 되는 27 W PD 어댑터로 급전하거나, <strong>셀프 파워 USB 허브</strong>를 통해 라이다에 별도 급전한다. GPIO 헤더로 급전하고 있다면 USB-PD 협상 자체가 없다 — <code>hardware/INVENTORY.md</code> 7절 "USB 전류 한도" 행을 먼저 읽는다. Hailo 까지 달려 있으면 전력 여유가 더 줄어든다.</p>
+      <p>전원 확인은 <strong>무엇으로 Pi 를 먹이고 있는가</strong>에 따라 둘로 갈린다. 오늘의 급전에서 통과한 것은 조립 뒤의 전원 계통에서 통과한다는 보증이 아니다 — 급전원이 달라질 수 있고, 같더라도 동시에 걸리는 부하가 다르다.</p>
+
+      <h4>3-12-1. (벤치) 지금 Pi 를 먹이는 전원에서 <span class="tag bench">벤치</span></h4>
+      <p><strong>먼저 적는다:</strong> 지금 Pi 를 무엇으로 급전하고 있는가 — USB-C 어댑터(모델·정격)인지, 강압 모듈 → GPIO 헤더인지 — 를 <code>hardware/INVENTORY.md</code> 1절의 "전원" 칸(지금 <code>____</code>)에 적는다. 이 가이드는 네 벤치의 급전 수단을 알지 못한다(7절의 "지금의 방식" 칸도 비어 있다). 그 칸이 비어 있으면 오늘의 <code>0x0</code> 이 무슨 조건의 값인지 나중에 알 수 없다.
+      GPIO 헤더 급전이라면 7절 "USB 전류 한도" 행의 설정이 지금 OS 의 <code>config.txt</code> 에 있는지도 그 행의 빈칸에 적어 둔다.</p>
+      <pre><code class="lang-bash"># Pi 호스트에서 — 라이다가 돌고 /scan 이 흐르는 동안
+vcgencmd get_throttled          # throttled=0x0 이어야 한다 (비트의 뜻은 01 단계 §3-6)</code></pre>
+      <p>01 단계 §3-6 에서 본 대로 <code>get_throttled</code> 는 <strong>Pi 본체의 저전압만</strong> 보고, USB 포트의 전류 제한은 보지 못한다. 그래서 하나를 더 본다: 3-8 의 <code>stop_motor</code> → <code>start_motor</code> 를 서너 번 되풀이하며 — 기동 전류가 가장 큰 순간이다 — <code>ros2 topic hz /scan</code> 이 매번 같은 값으로 돌아오는지.</p>
+
+      <h4>3-12-2. (조립 후 — 09a) 최종 전원 계통에서 <span class="tag asm">조립 후</span></h4>
+      <div class="callout note"><span class="ct">이 확인의 수행은 <a href="09a-assembly-gate.html">09a</a> 로 옮겼다</span>
+        <p>지금은 읽기만 한다. <strong>왜 지금이 아닌가:</strong> 조립 뒤에 Pi 를 무엇으로 먹일지가 아직 정해지지 않았다 — USB-C 어댑터인지, 1세대처럼 배터리 → 5 V 강압 모듈 → GPIO 헤더인지는 결정 대기이고 <code>hardware/INVENTORY.md</code> 7절의 Pi 급전 칸도 <code>____</code> 다.
+        두 길은 USB 쪽 사정이 다르다 — GPIO 헤더 급전에는 USB-PD 협상이 아예 없다(7절 "USB 전류 한도" 행). 그리고 최종 구성에서는 라이다 혼자가 아니라 추론(Hailo) + SSD + 라이다 + 카메라 + 모터 구동이 <em>동시에</em> 걸린다.
+        오늘의 벤치에는 그 급전원도, 그 동시 부하도 없다 — 그래서 여기서 잰 <code>0x0</code> 은 조립 뒤의 보증이 되지 못한다.</p>
+        <p>절차와 판정 기준은 <a href="09a-assembly-gate.html#s3-5-9">09a §3-5-9</a> 에 있다. 여기서는 <strong>무엇을 재게 되는지</strong>만 알아 두고 지나간다.</p>
+      </div>
 
       <h2>✅ 검증 체크포인트</h2>
       <ul class="checklist">
-        <li><label><input type="checkbox"><span>삼각측량 라이다의 한계 3가지(햇빛/검은 표면/유리)와 그 이유를 말할 수 있다</span></label></li>
-        <li><label><input type="checkbox"><span>회전수 5.5 Hz 가 주행 속도에 주는 제약을 숫자(0.3 m/s → 5.5 cm/스캔)로 설명할 수 있다</span></label></li>
-        <li><label><input type="checkbox"><span>파라미터가 무시되는 두 가지 경로(노드 이름 불일치, 값 생략 → 노드 기본값)를 안다</span></label></li>
-        <li><label><input type="checkbox"><span><code>ros2 pkg list | grep rplidar</code> 로 드라이버가 컨테이너 이미지에 들어 있는 것을 확인했다</span></label></li>
-        <li><label><input type="checkbox"><span>udev 로 <code>/dev/lidar</code> 가 호스트와 컨테이너 양쪽에서 보이고, INVENTORY.md 3절에 by-id 경로와 VID:PID 를 적었다</span></label></li>
-        <li><label><input type="checkbox"><span><code>ros2 topic hz /scan</code> 이 5.5 Hz 근처를 보인다</span></label></li>
-        <li><label><input type="checkbox"><span>드라이버 로그의 <code>max_distance</code> 를 INVENTORY.md 3절과 <code>nav2_params.yaml</code> 에 기록했다</span></label></li>
-        <li><label><input type="checkbox"><span><code>/scan</code> 의 <code>frame_id</code> 가 URDF 의 <code>laser_link</code> 와 정확히 같고, <code>tf2_echo base_link laser_link</code> 가 값을 반환한다</span></label></li>
-        <li><label><input type="checkbox"><span><code>ros2 topic info /scan -v</code> 로 발행자 QoS 가 BEST_EFFORT 인 것을 눈으로 확인했다</span></label></li>
-        <li><label><input type="checkbox"><span>Foxglove 3D 에서 스캔 점이 보인다 (QoS Best Effort)</span></label></li>
-        <li><label><input type="checkbox"><span><code>start_motor</code> / <code>stop_motor</code> 서비스를 직접 호출해 <code>/scan</code> 이 끊겼다 이어지는 것을 <code>topic hz</code> 로 봤다</span></label></li>
-        <li><label><input type="checkbox"><span>벽에서 1 m 떨어져 정면을 봤을 때 정면 거리가 ~1.0 m 로 나오고, 로봇을 90° 돌렸을 때 스캔도 같은 방향으로 90° 돈다</span></label></li>
-        <li><label><input type="checkbox"><span>라이다 장착 위치(x/y/z/yaw)를 자로 재서 URDF 와 INVENTORY.md 에 반영했다</span></label></li>
-        <li><label><input type="checkbox"><span><code>rpi5_lidar_tools/scan_watch</code> 를 직접 작성·빌드해 <code>/scan_front_min</code> 이 정면의 손 거리에 반응하고 옆의 손에는 반응하지 않는 것을 봤다</span></label></li>
-        <li><label><input type="checkbox"><span><code>scan_watch</code> 의 구독 QoS 를 기본값(<code>10</code>)으로 바꿔 빌드하면 콜백이 한 번도 안 불리는 것을 확인하고, 다시 <code>SensorDataQoS()</code> 로 되돌렸다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp0"><span>삼각측량 라이다의 한계 3가지(햇빛/검은 표면/유리)와 그 이유를 말할 수 있다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp1"><span>회전수 5.5 Hz 가 주행 속도에 주는 제약을 숫자(0.3 m/s → 5.5 cm/스캔)로 설명할 수 있다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp2"><span>파라미터가 무시되는 두 가지 경로(노드 이름 불일치, 값 생략 → 노드 기본값)를 안다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp3"><span><code>ros2 pkg list | grep rplidar</code> 로 드라이버가 컨테이너 이미지에 들어 있는 것을 확인했다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp4"><span>udev 로 <code>/dev/lidar</code> 가 호스트와 컨테이너 양쪽에서 보이고, INVENTORY.md 3절에 by-id 경로와 VID:PID 를 적었다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp5"><span><code>ros2 topic hz /scan</code> 이 끊기지 않고 일정한 값을 낸다 (데이터시트의 회전 범위 1~10 Hz 안)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp6"><span>드라이버 로그의 <code>max_distance</code> 를 INVENTORY.md 3절과 <code>nav2_params.yaml</code> 에 기록했다</span></label></li>
+        <li><label><input type="checkbox" data-key="inventory-lidar-log-filled"><span>기동 로그의 나머지 세 칸(scan mode · sample rate · scan frequency)도 INVENTORY.md 3절 기록란에 로그 그대로 옮겨 적었다. 그 아래에 <code>topic hz</code> 실측값과 <code>scan_time</code> 을 적어 로그의 scan frequency 와 비교했다 (3-5)</span></label></li>
+        <li><label><input type="checkbox" data-key="max-range-state-marked"><span><code>nav2_params.yaml</code> 의 다섯 줄(<code>laser_max_range</code> · <code>raytrace_max_range</code> ×2 · <code>obstacle_max_range</code> ×2)과 INVENTORY.md 3절 "최대 거리" 칸에서 상태 낱말을 지우지 않고 <code>____ EMPTY</code> 를 <code>MEASURED(…)</code> 로 바꿔 적었다. <code>scripts/check_nominal.sh</code> 표에서 그 줄들이 EMPTY 가 아니고, <code>obstacle_max_range</code> 가 왜 "잰 값"이 아닌지 말할 수 있다 (3-5)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp7"><span><code>/scan</code> 의 <code>frame_id</code> 가 URDF 의 <code>laser_link</code> 와 정확히 같고, <code>tf2_echo base_link laser_link</code> 가 값을 반환한다 — 이름 일치·연결성 확인이다. 숫자는 아직 <code>NOMINAL(fake)</code> 임을 안다 (3-6)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp8"><span><code>ros2 topic info /scan -v</code> 로 발행자 QoS 가 BEST_EFFORT 인 것을 눈으로 확인했다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp9"><span>Foxglove 3D 에서 스캔 점이 보인다 (QoS Best Effort)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp10"><span><code>start_motor</code> / <code>stop_motor</code> 서비스를 직접 호출해 <code>/scan</code> 이 끊겼다 이어지는 것을 <code>topic hz</code> 로 봤다</span></label></li>
+        <li><label><input type="checkbox" data-key="lidar-zero-dir-recorded"><span><code>probe</code> 로 라이다 몸체의 0° 방향과 각도가 커지는 방향(반시계/시계)을 찾아 사진·메모로 INVENTORY.md 3절에 기록했다 (3-9-1 ①)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp11"><span>라이다 회전축에서 벽까지 줄자로 1 m 를 맞췄을 때 <code>/scan</code> 의 그 방향 거리가 ~1.0 m 로 나온다 (3-9-1 ②)</span></label></li>
+        <li><label><input type="checkbox" data-key="range-check-recorded"><span>0.5 m · 2.0 m 에서도 대조해 세 거리의 차를 INVENTORY.md 3절에 적었고, 데이터시트의 거리 사양(행 이름 그대로)과 내가 정한 합격선·근거를 함께 적었다. 세 값이 그 합격선 안에 든다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp13"><span><code>rpi5_lidar_tools/scan_watch</code> 를 직접 작성·빌드해 <code>/scan_front_min</code> 이 정면의 손 거리에 반응하고 옆의 손에는 반응하지 않는 것을 봤다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp14"><span><code>scan_watch</code> 의 구독 QoS 를 기본값(<code>10</code>)으로 바꿔 빌드하면 콜백이 한 번도 안 불리는 것을 확인하고, 다시 <code>SensorDataQoS()</code> 로 되돌렸다</span></label></li>
+        <li><label><input type="checkbox" data-key="bench-power-ok"><span>지금 Pi 를 먹이는 급전 수단을 INVENTORY.md 1절 "전원" 칸에 적었다. 그 구성에서 라이다가 도는 동안 <code>vcgencmd get_throttled</code> 가 <code>0x0</code> 이고, <code>stop_motor</code> → <code>start_motor</code> 를 되풀이해도 <code>/scan</code> 이 같은 빈도로 돌아온다 (3-12-1)</span></label></li>
+        <li><label><input type="checkbox" data-key="deferred-to-gate-understood"><span>이 쪽에서 09a 로 미룬 것 — 장착 방향·뒤집힘, 차체 가림, 장착 위치 x/y/z, <code>scan_watch</code> 의 "정면" 재확인, 최종 전원 계통 — 을 꼽고, 각각이 왜 라이다 혼자서는 닫히지 않는지 말할 수 있다</span></label></li>
       </ul>
+      <p class="small">이 목록은 <strong>라이다를 책상에 둔 채로 전부 닫힌다.</strong> 조립이 있어야 닫히는 항목(장착 방향 검증, 장착 위치 실측)은 여기서 빼서 <a href="09a-assembly-gate.html">09a</a>의 목록으로 보냈다 — 절차도 <a href="09a-assembly-gate.html#s3-4">09a §3-4</a>·<a href="09a-assembly-gate.html#s3-5">§3-5</a> 로 옮겼고, 3-9-2·3-10·3-12-2 에는 그리로 가는 안내만 남겼다.</p>
       <p class="progress-line"></p>
       <div class="progress-bar"><span></span></div>
 
@@ -477,6 +600,21 @@ ros2 run rpi5_lidar_tools scan_watch --ros-args -p sector_deg:=60.0     # 섹터
       <details class="quiz"><summary>8. 섹터 안에 유효한 점이 하나도 없을 때 <code>0.0</code> 이 아니라 <code>inf</code> 를 발행하는 이유는?</summary>
         <div class="ans"><code>0.0</code> 은 "코앞에 물체가 있다"로 읽힌다 — 10 단계의 감독 노드가 이것을 보면 급정지한다. 반면 <code>inf</code> 는 "이 방향에서 측정된 것이 없다"는 뜻으로, <code>range_max</code> 밖이거나 측정 실패다.
         <strong>모르는 것을 위험한 값으로 속이지 않는다</strong>는 센서 처리의 기본 원칙이다. 소비자 쪽에서 <code>isfinite</code> 로 구분한다.</div></details>
+
+      <details class="quiz"><summary>9. 책상 위에서 <code>probe 0 20</code> 이 줄자와 맞았고 0° 방향도 찾아 적었다. 그러면 조립 뒤의 <code>lidar_yaw</code> 검증(3-9-2)은 생략해도 되는가?</summary>
+        <div class="ans">안 된다. 벤치에서 확인한 것은 <strong>센서 자체</strong>다 — 거리 값이 맞고, 몸체의 어느 쪽이 0° 인지 안다. <code>lidar_yaw</code> 는 그 0° 와 <strong>로봇 정면</strong> 사이의 각이라, 라이다를 차체에 고정한 뒤에야 존재하는 양이다. "0° 를 정면으로 향하게 달았다"는 <em>의도</em>이고, 브래킷의 구멍 위치·조립 공차로 몇 도는 쉽게 어긋난다.
+        벤치의 기록은 조립 때 의도한 방향으로 달게 해 주고 3-9-2 를 "찾기"에서 "확인"으로 바꿔 줄 뿐, 확인 자체를 대신하지 못한다. 같은 이유로 <code>scan_watch</code> 의 "정면"도 조립 뒤에 다시 본다 — 그 값으로 10 단계의 급정지가 판단한다.</div></details>
+
+      <div class="callout tip"><span class="ct">다음 행선지</span>
+        <p><strong>번호순 다음은 <a href="08-camera.html">08 · 카메라</a>다.</strong> Pi 차선은 07 → 08 → 08a → 08b → 08c → 08d(벤치 지그)로 이어지고, 전부 센서를 책상에 둔 채로 한다.</p>
+        <ul>
+          <li><strong>라이다가 지금 손에 없다면</strong> — <span class="tag sim">SIM</span> 표시가 붙은 3-1·3-2·3-3·3-11 만 하고 08 로 간다. 08 은 07 을 필요로 하지 않는다. 라이다가 생기면 3-4 부터 돌아온다.</li>
+          <li><strong>이 센서를 더 알고 싶으면 → <a href="l-00-map.html">라이다 가이드(L0 ~ L17)</a>.</strong> 이 쪽(07)은 드라이버를 띄워 <code>/scan</code> 을 받는 데까지다 — 그 안에서 <strong>무슨 일이 일어나는지</strong>는 다루지 않는다. L 은 USB 케이블 한 가닥에서 시작해 바이트를 손으로 풀고, 같은 숫자로 방의 모양 · 통로 폭 · 움직인 것을 판정하는 데까지 간다. <strong>이 쪽을 먼저 할 필요는 없다</strong> — L 에서 컨테이너와 07 을 선행으로 요구하는 것은 <a href="l-06-three-sources.html">L6</a> · <a href="l-07-cross-verify.html">L7</a> 둘뿐이고, 나머지 열여섯 쪽은 <strong>기록 파일 한 장</strong>으로 닫힌다(라이다가 손에 없는 날에도 공간 인식 여덟 쪽이 열린다). 이 쪽이 열어 둔 질문 둘도 거기서 닫힌다: 기동 로그의 <code>scan frequency</code> 가 무엇을 뜻하는지(3-5)는 <a href="l-07-cross-verify.html">L7</a> 이 드라이버 소스로 답하고, 빈 <code>scan_mode</code> 가 무엇으로 낙착되는지(3-2)는 <a href="l-05-bandwidth-modes.html">L5</a> 가 받은 모드 목록과 이 쪽의 기동 로그를 <a href="l-07-cross-verify.html">L7</a> 이 대조해 판정한다.</li>
+          <li><strong>펌웨어 차선(<a href="fw-00-map.html">F0</a> ~ F19)</strong>은 Mac 에서 이 차선과 나란히 간다. 서로 기다리지 않는다. 두 차선이 만나는 곳은 <a href="06b-bench-integration.html">06b</a>(실물 MCU 벤치 통합 — 펌웨어 F19 통과가 선행) 하나이고, 07 은 06b 를 기다리지 않는다.</li>
+          <li><strong>이 쪽에서 미룬 것</strong> — 3-9-2(장착 방향·가림·장착 위치), 3-10 의 "정면" 재확인, 3-12-2(최종 전원 계통) — 은 <a href="09a-assembly-gate.html">09a</a>에서 닫는다. 09 의 SLAM·Nav2 는 <code>lidar_yaw</code> 와 장착 위치가 <code>MEASURED</code> 라는 전제 위에 서므로, 09a 를 건너뛰고 09 로 가지 않는다.</li>
+          <li><strong>09 가 이 쪽에서 가져다 쓰는 값</strong> — 3-5 의 <code>max_distance</code>(→ <code>nav2_params.yaml</code> 의 <code>laser_max_range</code>·<code>raytrace_max_range</code>·<code>obstacle_max_range</code>, slam_toolbox 의 <code>max_laser_range</code>)와 <code>topic hz</code> 실측값(→ 2-3 의 식으로 다시 계산한 주행 속도의 근거). 센서 고유값이라 벤치에서 확정된다 — INVENTORY.md 3절에 적었는지 확인하고 떠난다.</li>
+        </ul>
+      </div>
 
       <div class="pager"></div>
     </div>

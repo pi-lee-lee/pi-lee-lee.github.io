@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F2 · 툴체인과 빈 프로젝트 — MCU 펌웨어 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="fw-02">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">F2 · 툴체인과 빈 프로젝트</p>
+      <h1>내가 만든 프로젝트에서 LD1 이 깜박인다 — 다시 생성해도 내 코드는 남는다</h1>
+      <p class="lead"><a href="fw-00-map.html">fw-00</a> 에서 설치만 확인한 도구(STM32CubeMX · STM32CubeCLT)를 여기서 처음으로 끝까지 돌린다.
+      이 쪽이 남기는 것은 셋이다 — CubeMX 프로젝트 <code>firmware/h723zg/</code>, 모든 쪽이 부르는 도구 두 개(<code>firmware/tools/build.sh</code> · <code>flash.sh</code>),
+      그리고 "생성물에는 호출 두 줄, 본체는 <code>User/</code>"라는 경계. 뒤의 쪽들은 주변장치를 하나 켤 때마다 CubeMX 로 <strong>다시 생성</strong>한다. 그때 아무것도 잃지 않으려면 경계를 첫날 눈으로 확인해 둬야 한다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>내가 CubeMX 로 만든 프로젝트를 <code>firmware/tools/build.sh</code> 가 ELF 로 빌드하고, <code>firmware/tools/flash.sh</code> 로 구우면 보드의 초록 LED <strong>LD1 이 깜박인다.</strong>
+        CubeMX 에서 코드를 다시 생성해도 깜박임은 그대로이고, 일부러 <code>USER CODE</code> 블록 <strong>밖</strong>에 써 둔 줄만 사라지는 것을 <code>grep</code> 으로 본다.</p>
+        <p><strong>이 쪽에 필요한 것</strong> — Mac(STM32CubeMX 6.18.1 · STM32CubeCLT 1.21.0 — <a href="fw-00-map.html">fw-00</a> 에서 확인한 것), NUCLEO-H723ZG, USB 케이블(보드의 CN1 은 Micro-B 다 — UM2407 §6.1 의 기동 절차 3번이 "USB Type-A to Micro-B cable"을 쓴다. 충전 전용이 아닌 <strong>데이터선이 있는</strong> 케이블).
+        <strong>없으면</strong> — 보드가 없어도 실습 A · B 전부와 실습 C 의 빌드(ELF 생성)까지는 된다. 막히는 것은 체크포인트 셋(<code>flash-verifies-and-resets</code> · <code>led-blinks</code> · <code>regen-keeps-blinking</code>)뿐이고, 보드가 오면 <a href="#s3-3-4">§3-3-4</a> 만 다시 하면 된다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag mx">CubeMX</span> <span class="tag mac">Mac</span></div>
+        <div><span class="k">선행</span><a href="fw-00-map.html">fw-00</a> (지도와 준비) — 실제로 쓰는 것: CubeMX · CubeCLT 가 설치돼 있고 CubeCLT 의 <code>bin</code> 디렉터리들이 <code>PATH</code> 에 있다는 확인</div>
+        <div><span class="k">채우는 INVENTORY 칸</span><code>hardware/INVENTORY.md</code> 2절 "툴체인" 행 — 프로젝트 이름과 HAL 팩 버전을 덧붙인다(<a href="#next">다음 행선지</a>)</div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(정적 HTML 은 입력을 저장하지 못한다 — 학습 노트에 적는다)</span></div>
+      </div>
+
+      <p>이 쪽의 명령은 전부 <span class="tag mac">Mac</span> 의 터미널에서 친다. Pi 도 컨테이너도 쓰지 않는다 — 펌웨어 디렉터리(<code>firmware/</code>)는 Pi 로 동기화되지도 않는다(<code>firmware/README.md</code>).</p>
+
+      <h2 id="overview">1. 개요 — 설정 파일 하나가 LED 의 깜박임이 되기까지</h2>
+      <p>손으로 고치는 원본은 둘뿐이다: CubeMX 의 설정 파일 <code>h723zg.ioc</code> 와 내 소스 <code>User/</code>. 나머지는 도구가 만든다.</p>
+      <pre class="diagram"><code>h723zg.ioc                   핀 · 클럭 · 주변장치 설정의 원본 (CubeMX 화면으로만 고친다)
+   │  STM32CubeMX : GENERATE CODE
+   ▼
+Core/  Drivers/  cmake/stm32cubemx/  startup_stm32h723xx.s  STM32H723XG_FLASH.ld     = 생성물
+   +  User/Inc/{app.h, &lt;묶음&gt;/*.h}  User/Src/{app.c, &lt;묶음&gt;/*.c}                     = 내 코드
+   │  firmware/tools/build.sh  =  cmake --preset Debug  →  ninja  →  arm-none-eabi-gcc
+   ▼
+build/Debug/h723zg.elf       코드 + 주소 + 디버그 정보가 한 파일에
+   │  firmware/tools/flash.sh  =  build.sh  →  STM32_Programmer_CLI -c port=SWD -w … -v -rst
+   ▼
+ST-LINK/V3E ── SWD ──► STM32H723ZG 내장 플래시 ── 리셋 ──► main() ──► app_loop() ──► LD1 (PB0)</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>이 쪽에서 처음 나오는 말</th><th>뜻 (한 줄)</th></tr></thead>
+        <tbody>
+          <tr><td>생성물</td><td>CubeMX 가 <code>.ioc</code> 를 읽어 써내는 파일. 다시 생성하면 다시 써진다 — 어디까지가 다시 써지는지가 §2-1 의 주제다</td></tr>
+          <tr><td>툴체인</td><td>소스를 MCU 가 실행할 파일로 바꾸는 도구 묶음. 여기서는 CubeCLT 안의 CMake · Ninja · <code>arm-none-eabi-gcc</code></td></tr>
+          <tr><td>ELF</td><td>빌드 결과 파일(<code>.elf</code>). 기계어와 함께 "어느 주소에 놓이는가", 디버그 심볼을 담는다. 플래시 도구와 디버거(<a href="fw-04-debugger.html">fw-04</a>)가 같은 파일을 읽는다</td></tr>
+          <tr><td>프리셋</td><td><code>CMakePresets.json</code> 에 이름 붙여 둔 빌드 구성(Debug / Release). §2-3</td></tr>
+          <tr><td>SWD</td><td>Serial Wire Debug. 핀 두 개(PA13 · PA14)로 MCU 의 메모리를 읽고 쓰고 멈추는 디버그 포트. 플래시 쓰기도 이 길로 간다</td></tr>
+          <tr><td>VCP</td><td>Virtual COM Port. 같은 USB 케이블 위에 ST-LINK 가 만들어 주는 직렬 포트(USART3 에 연결). 이 쪽에서는 쓰지 않는다 — <a href="fw-03-clock-console.html">fw-03</a> 의 주제</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout note"><span class="ct">이 쪽이 하지 않는 것</span>
+        <p>클럭 트리를 따지지 않고(PLL1 의 DIVN1 하나만 이 프로젝트의 값에 맞춘다 — §3-1-1 의 "클럭" 상자), 글자를 찍지 않고, 옵션 바이트를 건드리지 않는다(셋 다 <a href="fw-03-clock-console.html">fw-03</a>). 디버거도 붙이지 않는다(<a href="fw-04-debugger.html">fw-04</a>). 출력은 LED 하나이고, 판정 수단은 <code>grep</code> 출력 · 빌드 출력 · 눈이다.</p>
+      </div>
+
+      <h2 id="why">2. 원리 — 왜 이렇게 나누고, 왜 이 도구인가</h2>
+
+      <h3 id="s2-1">2-1. CubeMX 가 만드는 것과 내가 만드는 것 — 경계는 파일마다 다르다</h3>
+      <p>펌웨어 쪽은 끝까지 가는 동안 <code>.ioc</code> 를 열댓 번 고친다(타이머를 켜고, UART 를 켜고, DMA 를 붙이고 …). 고칠 때마다 CubeMX 가 코드를 다시 써낸다.
+      그래서 "어느 파일의 어느 부분이 다시 써지는가"를 모르면, 어느 날 저녁의 작업이 다음 생성 한 번에 사라진다. 경계는 파일마다 같지 않다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>파일 · 디렉터리</th><th>다시 생성하면</th><th>내가 손대도 되는 범위</th><th>근거</th></tr></thead>
+        <tbody>
+          <tr><td><code>Core/Src/*.c</code> · <code>Core/Inc/*.h</code><br>(<code>main.c</code> · <code>stm32h7xx_it.c</code> · <code>main.h</code> …)</td><td>파일 전체를 다시 쓰되 <code>/* USER CODE BEGIN x */</code> ~ <code>/* USER CODE END x */</code> <strong>사이</strong>는 옮겨 적는다</td><td>마커 사이만. 마커 주석 자체는 고치지 않는다(고쳤을 때 CubeMX 가 그 블록을 어떻게 다루는지는 확인하지 않았다 — 건드리지 않는 쪽으로 정한다)</td><td><code>.ioc</code> 의 <code>ProjectManager.KeepUserCode=true</code> · <code>firmware/README.md</code> 규칙 1</td></tr>
+          <tr><td><code>cmake/stm32cubemx/CMakeLists.txt</code></td><td>다시 쓴다 — 주변장치를 켜면 컴파일할 HAL 소스 목록이 바뀌기 때문이다(이 파일 안의 <code>STM32_Drivers_Src</code> 목록)</td><td>없다. 마커도 없다</td><td>파일 내용(§2-2). 실제로 다시 써지는지는 실습 B 에서 직접 본다</td></tr>
+          <tr><td>최상위 <code>CMakeLists.txt</code></td><td><strong>다시 쓰지 않는다</strong></td><td>전부. 내 소스 · 포함 경로 · 매크로를 넣는 자리가 주석으로 표시돼 있다</td><td>파일 머리 주석: "This file is generated only once, and is not re-generated if converter is called multiple times. User is free to modify the file as much as necessary"</td></tr>
+          <tr><td><code>Drivers/</code></td><td>HAL 팩(<code>STM32Cube FW_H7 V1.13.0</code>)에서 <strong>필요한 파일만</strong> 복사해 온다. 주변장치를 켜면 파일이 는다</td><td>없다(고치면 팩과 달라진다)</td><td>주변장치 0개인 프로젝트의 <code>Drivers/STM32H7xx_HAL_Driver/Src</code> 에는 <code>.c</code> 가 18개, 팩 원본의 <code>Src/</code> 에는 125개 — <code>Src/Legacy/</code> 의 ETH 2개는 따로다(2026-09-22 <code>ls $FW_H7/Drivers/STM32H7xx_HAL_Driver/Src/*.c | wc -l</code> 로 확인, <code>$FW_H7</code> 은 §2-5. 복사를 시키는 키는 <code>ProjectManager.LibraryCopy=1</code>)</td></tr>
+          <tr><td><code>startup_stm32h723xx.s</code> · <code>STM32H723XG_FLASH.ld</code> · <code>cmake/gcc-arm-none-eabi.cmake</code> · <code>CMakePresets.json</code></td><td><strong>확인하지 못했다</strong> — 실습 B 에서 수정 시각으로 직접 확인해 노트에 적는다</td><td>링커 스크립트는 뒤 쪽(메모리 지도 · 플래시 저장)에서 조각을 더한다. 그때 이 관찰이 필요하다</td><td>학습자 관찰 (<a href="#s3-2-4">§3-2-4</a>)</td></tr>
+          <tr><td><code>User/Inc</code> · <code>User/Src</code></td><td>CubeMX 는 이 디렉터리를 모른다 — 만들지도, 지우지도 않는다(실습 C 의 마지막 걸음에서 직접 확인한다)</td><td>전부. 내 코드는 전부 여기 — 루트에는 <code>app</code> 둘만, 나머지는 목적별 묶음 폴더(<a href="#s2-2-1">§2-2-1</a>)</td><td><code>firmware/README.md</code> 예정 트리 · 규칙 1</td></tr>
+        </tbody>
+      </table></div>
+      <p>여기서 규칙 하나가 나온다: <strong>생성물(<code>Core/</code>)에는 <code>User/</code> 의 함수를 부르는 호출만 넣고, 로직은 전부 <code>User/</code> 에 둔다.</strong>
+      이렇게 하면 다시 생성할 때 걸려 있는 것이 호출 두 줄뿐이고, <code>git diff</code> 에서 "CubeMX 가 바꾼 것"과 "내가 바꾼 것"이 섞이지 않는다.
+      마커를 믿고 <code>main.c</code> 안에 로직을 길게 쓰는 길도 동작은 한다. 다만 그 길에서는 생성물과 내 코드가 한 파일에 섞여 diff 를 읽기 어렵고, 마커 근처를 잘못 건드렸을 때 걸려 있는 양이 커진다.</p>
+      <div class="callout why"><span class="ct">왜 "밖에 쓰면 사라진다"를 글로 읽지 않고 실습으로 하는가</span>
+        <p>한 번 당해 봐야 몸에 붙는 규칙이다. 당하는 날을 고를 수 있다면 잃을 것이 주석 한 줄뿐인 오늘이 낫다 — 실습 B 는 일부러 밖에 쓰고 사라지는 것을 <code>grep</code> 으로 본다(발동 확인).</p>
+      </div>
+
+      <h3 id="s2-2">2-2. 내 소스는 <code>User/</code> 에, 등록은 최상위 <code>CMakeLists.txt</code> 한 곳에</h3>
+      <p>C 에는 "디렉터리에 파일을 두면 알아서 컴파일된다"가 없다. 빌드 시스템에 <strong>적힌 파일만</strong> 컴파일된다. CubeMX 가 만든 CMake 구조는 두 층이다.</p>
+      <pre class="diagram"><code>CMakeLists.txt                       최상위 — 한 번만 생성된다. 내 것
+   add_executable(h723zg)                실행 파일 하나를 선언한다
+   add_subdirectory(cmake/stm32cubemx)   아래 파일을 끌어온다
+   target_sources(...)                   # Add user sources here            ◄── 내 .c
+   target_include_directories(...)       # Add user defined include paths   ◄── User/Inc
+   target_compile_definitions(...)       # Add user defined symbols         ◄── 빌드 스위치
+
+cmake/stm32cubemx/CMakeLists.txt     매번 다시 생성된다. CubeMX 것
+   stm32cubemx      포함 경로 + 매크로 (USE_HAL_DRIVER, STM32H723xx …)
+   STM32_Drivers    Drivers/ 의 HAL 소스 묶음
+   + Core/Src/*.c 와 startup_*.s 를 h723zg 에 더한다</code></pre>
+      <p>생성물 쪽 목록(<code>cmake/stm32cubemx/</code>)은 CubeMX 가 관리하고, 내 목록은 최상위 파일의 세 자리에 내가 적는다. 파일을 <code>User/Src</code> 에 만들어 놓고 등록을 잊으면 컴파일은 조용히 지나가고 <strong>링크에서</strong> 멈춘다:
+      <code>undefined reference to `app_init'</code>. 포함 경로를 잊으면 더 앞에서 멈춘다: <code>fatal error: app.h: No such file or directory</code> (두 메시지 모두 2026-09-22 에 이 구조로 실제로 내 본 것이다).</p>
+      <p>와일드카드로 <code>User/Src</code> 아래의 <code>.c</code> 를 통째로 넣는 길도 있다(폴더를 묶음으로 나누므로(<a href="#s2-2-1">§2-2-1</a>) 한 층만 보는 <code>file(GLOB …)</code> 이 아니라 하위 폴더까지 도는 <code>file(GLOB_RECURSE …)</code> 여야 한다). GLOB: 등록을 잊을 일이 없다 / 새 파일은 다시 configure 해야 잡힌다(<code>build.sh</code> 는 매번 configure 를 부르므로 차이는 작다). 명시 목록: 파일마다 한 줄을 적어야 한다 / 어느 쪽에서 어떤 모듈이 더해졌는지가 diff 로 남는다. 빌드 결과는 동일하다. 이 가이드의 본문은 명시 목록으로 쓴다 — 뒤 쪽들이 "한 줄을 더한다"고 말할 수 있어야 해서다.</p>
+      <p><code>main.c</code> 가 아는 내 함수는 끝까지 <strong>둘</strong>이다: 초기화가 끝난 뒤 한 번 불리는 <code>app_init()</code>, <code>while (1)</code> 안에서 계속 불리는 <code>app_loop()</code>. 뒤의 쪽들은 <code>main.c</code> 가 아니라 <code>User/Src/app.c</code> 에 한 줄씩 더한다.
+      (생성물에 손을 대야만 하는 예외가 뒤에 몇 번 나온다 — 그때마다 그 쪽이 이유를 댄다. 그 경우에도 마커 사이에만 쓴다.)</p>
+
+      <h4 id="s2-2-1">2-2-1. <code>User/</code> 안의 폴더 — 루트에는 <code>app</code> 둘, 나머지는 목적별 일곱 묶음</h4>
+      <p>이 가이드가 끝날 때 <code>User/</code> 에는 모듈이 서른 개쯤 쌓인다(<code>.c</code>/<code>.h</code> 한 쌍을 하나로 센다). 한 디렉터리에 두면 이름순 목록이 곧 구조가 되는데, 이름순은 아무것도 말해 주지 않는다 — <code>adc.c</code> 옆에 <code>app.c</code> 가, <code>cli.c</code> 옆에 <code>comm_frame.c</code> 가 선다.
+      그래서 <strong>폴더 하나가 질문 하나에 답하도록</strong> 나눈다. 규칙은 셋이다.</p>
+      <ul>
+        <li><code>User/Inc</code> · <code>User/Src</code> 의 <strong>루트에는 <code>app.h</code> · <code>app.c</code> 만</strong> 둔다. <code>main.c</code> 가 아는 두 함수가 사는 곳이고, 모듈을 엮는(초기화 순서 · 주 루프) 자리다.</li>
+        <li>나머지는 전부 <strong>묶음 폴더</strong>에 두고, <code>Inc</code> 와 <code>Src</code> 가 <strong>같은 폴더 이름</strong>을 쓴다 — <code>User/Inc/Tools/console.h</code> ↔ <code>User/Src/Tools/console.c</code>. 헤더만 있는 모듈(<code>log.h</code> · <code>dma_buf.h</code> · <code>imu_sample.h</code> · <code>frames.h</code> · <code>Config/</code> 의 둘)은 <code>Src</code> 쪽 폴더가 없다.</li>
+        <li>묶음 폴더는 <strong>그 묶음의 첫 파일을 만드는 쪽</strong>에서 만든다(<code>mkdir -p User/Inc/&lt;묶음&gt; User/Src/&lt;묶음&gt;</code>). 일곱 개를 미리 만들어 두지 않는다 — 아래 표의 "처음 만드는 쪽"이 그 자리다.</li>
+      </ul>
+      <div class="tbl"><table>
+        <thead><tr><th>폴더</th><th>넣는 기준 — 이 질문에 "예"면 여기</th><th>들어가는 모듈 (처음 만드는 쪽)</th></tr></thead>
+        <tbody>
+          <tr><td><code>Config/</code></td><td>값만 있고 실행 코드가 없는가 — 빌드 스위치와 공용 상수</td><td><code>fw_config.h</code> (fw-03) · <code>robot_params.h</code> (fw-08)</td></tr>
+          <tr><td><code>Tools/</code></td><td>사람이 보고 진단하려고 둔 것인가 — 글자 창 · 로그 · 명령 창 · 고장의 흔적</td><td><code>console</code> · <code>log.h</code> · <code>reset_cause</code> (fw-03) · <code>hardfault</code> (fw-04) · <code>cli</code> (fw-05)</td></tr>
+          <tr><td><code>System/</code></td><td>MCU 자체를 떠받치는 기반인가 — 시간 · 감시 · 메모리 배치 · DMA 수신 버퍼 · 저장</td><td><code>tick</code> · <code>wdg</code> (fw-06) · <code>dma_buf.h</code> · <code>stream_rx</code> (fw-07) · <code>nvstore</code> (fw-16)</td></tr>
+          <tr><td><code>Periph/</code></td><td>MCU 주변장치 하나를 감싸 <strong>핀의 신호</strong>(PWM · 펄스 · 전압)를 다루는가</td><td><code>motor</code> (fw-08) · <code>encoder</code> (fw-09) · <code>adc</code> (fw-12)</td></tr>
+          <tr><td><code>Device/</code></td><td>보드 밖 부품의 <strong>프로토콜</strong>(레지스터 맵 · 프레임)을 아는가</td><td><code>ina226</code> (fw-10) · <code>imu_sample.h</code> (fw-13) · <code>wt901_parse</code> · <code>wt901</code> (fw-14) · <code>bno055</code> (fw-15)</td></tr>
+          <tr><td><code>Control/</code></td><td>판단하는가 — 상태기계와 제어식</td><td><code>power</code> (fw-11) · <code>pid</code> · <code>protect</code> · <code>control</code> (fw-13) · <code>safety</code> (fw-18) · <code>traction</code> (fw-20)</td></tr>
+          <tr><td><code>Comm/</code></td><td>Pi 와의 계약 v2 를 다루는가</td><td><code>frames.h</code> · <code>crc8</code> · <code>frame_parser</code> · <code>comm_frame</code> (fw-17)</td></tr>
+        </tbody>
+      </table></div>
+      <p>질문 둘에 걸치는 파일은 <strong>그 파일의 알맹이</strong>(가장 많은 줄이 하는 일)로 정한다. 경계에 선 넷이 판정의 예다.</p>
+      <ul>
+        <li><code>stream_rx</code> 는 UART 수신을 다루지만 <code>Periph/</code> 가 아니라 <code>System/</code> 이다 — 주변장치 레지스터를 만지지 않는 순수 모듈이고, 명령 창 · WT901 · 계약 v2 의 수신이 <strong>함께 쓰는 기반</strong>이다(fw-07 이 만들고 fw-14 · fw-17 이 다시 쓴다).</li>
+        <li><code>adc</code> 가 읽는 ACS758 은 보드 밖 부품이지만 <code>adc</code> 는 <code>Periph/</code> 다 — 그 부품은 레지스터 없이 <strong>전압 하나로</strong> 말하므로 할 일이 ADC3 설정과 환산뿐이다. 같은 전류를 재도 INA226 은 레지스터를 I2C 로 읽어야 해서 <code>Device/</code> 다.</li>
+        <li><code>power</code> 는 릴레이 핀을 직접 움직이지만 <code>Control/</code> 이다 — 알맹이가 상태기계(<code>power_fsm_step()</code>)이고, 핀을 움직이는 몇 줄은 그 결과를 내보내는 끝단이다.</li>
+        <li><code>imu_sample.h</code> 는 코드가 없지만 <code>Config/</code> 가 아니라 <code>Device/</code> 다 — 값이 아니라 <strong>자료형</strong>이고, 센서 모듈 둘(WT901 · BNO055)이 채워 내놓는 모양이다.</li>
+      </ul>
+      <p>폴더를 나눠도 <strong>빌드 결과는 동일하다</strong> — 컴파일러가 보는 것은 등록된 파일 목록과 포함 경로뿐이다. 달라지는 것은 사람이 읽는 쪽이다: <code>ls User/Src/Control</code> 이 "판단하는 코드 전부"가 되고, <a href="fw-19-bench-acceptance.html">fw-19</a> 실습 A 의 경계 검사가 "통신 쪽 이름이 <code>Control/</code> · <code>Periph/</code> · <code>Device/</code> 에 있는가"라는 질문이 된다.</p>
+
+      <h4 id="s2-2-2">2-2-2. 헤더를 찾는 길 — 포함 경로는 <code>User/Inc</code> 하나, <code>#include "묶음/이름.h"</code></h4>
+      <p>폴더를 나누면 컴파일러가 헤더를 어떻게 찾을지도 정해야 한다. 이 가이드는 <strong>포함 경로를 <code>User/Inc</code> 하나로 두고, 헤더를 묶음 이름째 포함한다.</strong> 생성물 헤더(<code>main.h</code> · <code>stm32h7xx_hal.h</code>)와 루트의 <code>app.h</code> 는 폴더 없이 그대로다.</p>
+      <pre><code class="lang-c">/* User/Src/Control/control.c */
+#include "Control/control.h"     /* 자기 헤더도 같은 "묶음/이름.h" 꼴 */
+#include "Device/imu_sample.h"
+#include "Config/robot_params.h"
+#include "main.h"                /* 생성물: 묶음 없음 (Core/Inc) */</code></pre>
+      <p>따옴표 꼴(<code>#include "…"</code>)을 만나면 컴파일러는 ① <strong>포함하는 파일이 있는 디렉터리</strong>를 먼저 보고, ② 없으면 포함 경로(<code>-I</code>)를 적힌 순서대로 본다. 위의 둘째 줄이라면 ① <code>User/Src/Control/Device/imu_sample.h</code> — 없다, ② <code>User/Inc/Device/imu_sample.h</code> — 있다.
+      포함 경로는 최상위 <code>CMakeLists.txt</code> 의 <code>User/Inc</code> 한 줄과, 생성물 쪽 <code>cmake/stm32cubemx/CMakeLists.txt</code> 의 <code>MX_Include_Dirs</code>(<code>Core/Inc</code> · <code>Drivers/…/Inc</code> …)다. 그래서 <code>main.h</code> 는 폴더 없이 찾아진다.
+      묶음 이름을 빼먹고 <code>#include "log.h"</code> 라고 쓰면 ① <code>User/Src/Tools/log.h</code> 도, ② <code>User/Inc/log.h</code> 도 없어서 전처리에서 멈춘다: <code>fatal error: log.h: No such file or directory</code>(Mac 의 <code>cc</code> 는 <code>'log.h' file not found</code>). 세 가지 모두 2026-09-29 에 <code>arm-none-eabi-gcc</code> 14.3.1(CubeCLT 1.21.0)과 Mac 의 <code>cc</code> 로 같은 폴더 구조를 만들어 확인했다.</p>
+      <p>다른 길도 있다 — 묶음마다 포함 경로를 하나씩 더하고(<code>User/Inc/Tools</code>, <code>User/Inc/Control</code> …) <code>#include "control.h"</code> 처럼 이름만 쓰는 길이다. 1세대 펌웨어가 이렇게 했다(<code>~/stm32/learn/stm32h7r_boot_app_xip/Appli/CMakeLists.txt:67-71</code>, 묶음 다섯). <strong>빌드 결과는 동일하다.</strong> 갈리는 것은 이렇다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th></th><th>이 가이드 — <code>User/Inc</code> 하나 + <code>"묶음/이름.h"</code></th><th>묶음마다 포함 경로 + <code>"이름.h"</code></th></tr></thead>
+        <tbody>
+          <tr><td>포함 경로</td><td>처음 한 줄(<code>User/Inc</code>)이 끝까지 바뀌지 않는다. 호스트 시험의 <code>cc</code> 도 <code>-I…/User/Inc</code> 하나</td><td>묶음을 만들 때마다 CMake 에 한 줄, 그 묶음을 쓰는 모든 호스트 시험의 <code>cc</code> 에 <code>-I</code> 하나가 는다</td></tr>
+          <tr><td>포함 줄이 말해 주는 것</td><td>어느 묶음에 기대는지가 줄에 보인다 — <code>Control/</code> 파일이 <code>Comm/</code> 을 포함하면 줄만 보고 경계 위반을 안다</td><td>이름만 보인다. 어느 묶음인지는 파일을 찾아봐야 안다</td></tr>
+          <tr><td>파일을 다른 묶음으로 옮기면</td><td>그 헤더를 포함하는 줄을 <strong>전부</strong> 고친다(빠뜨리면 위의 <code>fatal error</code> 로 드러난다)</td><td>포함 줄은 그대로다. CMake 의 등록 줄만 고친다</td></tr>
+          <tr><td>같은 파일 이름</td><td>묶음이 다르면 겹쳐도 된다</td><td>겹치면 안 된다 — 포함 경로에서 <strong>먼저 찾은 쪽이 경고 없이</strong> 쓰인다(위와 같은 날 같은 두 컴파일러로 확인). 예: CubeMX 의 <code>CoupleFile</code> 을 켜면 <code>Core/Inc/adc.h</code> 가 생겨 내 <code>adc.h</code> 와 이름이 같아진다</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">한 가지 함정: 헤더 안에서는 이름만 써도 찾아지는 경우가 있다. <code>User/Inc/Tools/console.h</code> 가 <code>#include "log.h"</code> 라고 쓰면 ① 에서 자기 디렉터리(<code>User/Inc/Tools/</code>)의 <code>log.h</code> 가 잡혀 오류가 나지 않는다. 그래도 묶음째 쓴다 — 한 꼴이어야 <code>grep</code> 한 번으로 의존을 셀 수 있다(<a href="#quiz">이해 확인</a> 3번).</p>
+
+      <h3 id="s2-3">2-3. 프리셋(Debug / Release)과 빌드 디렉터리</h3>
+      <p><code>cmake</code> 에 넘길 옵션(생성기 · 툴체인 파일 · 빌드 종류 · 출력 디렉터리)을 매번 손으로 치지 않도록 CubeMX 가 <code>CMakePresets.json</code> 에 이름을 붙여 둔다. 생성된 파일을 읽으면 이렇다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>프리셋이 정하는 것</th><th>값 (생성된 파일에서 읽은 것)</th><th>어디에 적혀 있나</th></tr></thead>
+        <tbody>
+          <tr><td>생성기</td><td>Ninja</td><td><code>CMakePresets.json</code> 의 <code>"generator"</code></td></tr>
+          <tr><td>빌드 디렉터리</td><td><code>${sourceDir}/build/${presetName}</code> → <code>build/Debug</code> · <code>build/Release</code> 가 따로 생긴다</td><td><code>"binaryDir"</code></td></tr>
+          <tr><td>툴체인 파일</td><td><code>cmake/gcc-arm-none-eabi.cmake</code></td><td><code>"toolchainFile"</code></td></tr>
+          <tr><td>CPU · FPU</td><td><code>-mcpu=cortex-m7 -mfpu=fpv5-d16 -mfloat-abi=hard</code></td><td><code>cmake/gcc-arm-none-eabi.cmake</code> 의 <code>TARGET_FLAGS</code></td></tr>
+          <tr><td>Debug</td><td><code>-O0 -g3</code> (최적화 없음 · 디버그 정보 최대) + 매크로 <code>DEBUG</code></td><td>같은 파일의 <code>CMAKE_C_FLAGS_DEBUG</code> · <code>cmake/stm32cubemx/CMakeLists.txt</code> 의 <code>$&lt;$&lt;CONFIG:Debug&gt;:DEBUG&gt;</code></td></tr>
+          <tr><td>Release</td><td><code>-Os -g0</code> (크기 최적화 · 디버그 정보 없음)</td><td><code>CMAKE_C_FLAGS_RELEASE</code></td></tr>
+          <tr><td>링크</td><td><code>-T STM32H723XG_FLASH.ld</code> · <code>--specs=nano.specs</code> · <code>-Wl,--gc-sections</code> · <code>-Wl,--print-memory-usage</code> · <code>-Wl,-Map=…</code></td><td><code>CMAKE_EXE_LINKER_FLAGS</code></td></tr>
+        </tbody>
+      </table></div>
+      <p>이 표에서 세 가지를 가져간다.</p>
+      <ul>
+        <li><strong>컴파일러는 <code>PATH</code> 에서 찾는다.</strong> 툴체인 파일은 <code>arm-none-eabi-gcc</code> 를 이름만으로 부르고, 주석에 "arm-none-eabi- must be part of path environment"라고 적어 둔다. CubeCLT 의 <code>bin</code> 디렉터리들이 <code>PATH</code> 에 없으면 configure 단계에서 멈춘다 — <code>build.sh</code> 가 맨 앞에서 이것부터 검사하는 이유다.</li>
+        <li><strong>두 프리셋의 차이는 최적화와 디버그 정보, 둘뿐이다.</strong> 소스 · 링커 스크립트 · 매크로(단 <code>DEBUG</code> 하나 빼고)는 같다. 이 가이드의 도구는 <code>Debug</code> 를 기본으로 부른다: 디버거(<a href="fw-04-debugger.html">fw-04</a>)가 <code>-g3</code> 의 심볼을 읽고, <code>-O0</code> 에서는 기계어가 소스 줄과 1:1 에 가깝다.
+        <code>Release</code> 는 실행 시간과 크기가 달라진다 — 시간을 재는 쪽에 가서 <code>FW_PRESET=Release firmware/tools/build.sh</code> 로 견주어 볼 수 있다. 어느 쪽을 최종으로 삼을지는 이 쪽이 정하지 않는다.</li>
+        <li><strong>링크가 끝나면 메모리 사용표가 찍힌다</strong>(<code>--print-memory-usage</code>). FLASH 몇 바이트, 그리고 RAM 이 <strong>어느 영역 줄</strong>에 잡히는지. 생성된 링커 스크립트는 <code>.data</code> · <code>.bss</code> · 스택을 <code>DTCMRAM</code> 에 둔다(<code>STM32H723XG_FLASH.ld</code> 의 <code>&gt;DTCMRAM AT&gt; FLASH</code> · <code>_estack</code>). 지금은 보기만 한다 — 메모리 지도를 다루는 <a href="fw-07-memory-dma.html">fw-07</a>에서 이 줄이 주제가 된다.</li>
+      </ul>
+      <p><code>build/</code> 는 통째로 지워도 되는 디렉터리다(<code>firmware/.gitignore</code> 가 무시한다). 빌드가 이상하게 꼬였을 때의 첫 처방이 <code>rm -rf firmware/h723zg/build</code> 인 이유다 — 원본은 <code>.ioc</code> 와 소스이고 <code>build/</code> 는 언제든 다시 만들어진다.</p>
+
+      <h3 id="s2-4">2-4. ST-LINK/V3E 는 H7 에 SWD 와 VCP 만 준다 — 끌어다 놓기를 기대하지 않는다</h3>
+      <p>Nucleo 보드에는 MCU 가 둘 있다. 내가 프로그램하는 STM32H723ZG, 그리고 USB 커넥터(CN1) 뒤에서 디버그 프로브 노릇을 하는 ST-LINK/V3E. USB 케이블 한 가닥 위에 세 가지가 같이 흐른다: 보드 전원(JP2 기본 위치 [1-2] = <code>5V_USB_STLK</code>, UM2407 표 4), SWD, VCP.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>UM2407 (Rev 6) 의 문장</th><th>자리</th></tr></thead>
+        <tbody>
+          <tr><td>"The embedded STLINK-V3E supports <strong>only SWD and VCP</strong> for STM32H7 devices."</td><td>§7.3, 18쪽</td></tr>
+          <tr><td>"USB reenumeration capability: Virtual COM port, <strong>mass storage</strong>, debug port"</td><td>§1 Features, 7쪽</td></tr>
+        </tbody>
+      </table></div>
+      <p>두 문장은 어긋난다. 이 가이드는 <strong>§7.3 을 따른다</strong> — 특징 목록은 Nucleo-144 계열 공통 문구이고 §7.3 은 H7 보드에 한정해 쓴 문장이기 때문이다. <code>.bin</code> 을 드라이브에 끌어다 놓는 플래시는 기대하지 않는다. Mac 에 드라이브가 보이더라도 그 길을 쓰지 않는다 — 검증 · 리셋 · 디버거(fw-04)가 전부 SWD 위에 있다.</p>
+      <p>그래서 플래시 도구는 CubeCLT 에 든 <code>STM32_Programmer_CLI</code> 하나다. <code>flash.sh</code> 가 쓰는 인자는 넷이고, 넷 다 이 Mac 의 <code>STM32_Programmer_CLI --help</code>(STM32CubeProgrammer v2.22.0) 에서 확인한 것이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>인자</th><th><code>--help</code> 의 설명</th><th>왜 넣는가</th></tr></thead>
+        <tbody>
+          <tr><td><code>-c port=SWD</code></td><td>"Establish connection to the device" · port 값의 예에 SWD</td><td>ST-LINK 를 거쳐 SWD 로 붙는다. 주파수 · 연결 모드는 기본값(STLINKv3 의 SWD 기본 8000 kHz, mode = NORMAL)</td></tr>
+          <tr><td><code>-w &lt;elf&gt;</code></td><td>"Download the content of a file into device memory" · 받는 형식에 elf</td><td>ELF 에 주소가 들어 있어 시작 주소를 따로 주지 않는다(<code>.bin</code> 이면 주소 인자가 필요하다)</td></tr>
+          <tr><td><code>-v</code></td><td>"Verify if the programming operation is achieved successfully"</td><td>쓴 것을 되읽어 견준다. "구웠는데 옛 코드가 돈다"를 도구 단계에서 가른다</td></tr>
+          <tr><td><code>-rst</code></td><td>"Reset system"</td><td>새 코드가 리셋 벡터부터 돈다. 이 인자 없이 MCU 가 어떤 상태로 남는지는 확인하지 않았다 — 그래서 늘 넣는다</td></tr>
+        </tbody>
+      </table></div>
+      <p>같은 도구에 옵션 바이트를 읽고 쓰는 <code>-ob</code> 가 있다. <code>flash.sh</code> 는 <strong>그것을 부르지 않는다.</strong> 옵션 바이트는 잘못 쓰면 되돌릴 수 없는 비트(RDP Level 2)가 섞여 있는 영역이라, 읽는 절차와 (필요할 때만) 되돌리는 절차는 그것을 다루는 <a href="fw-03-clock-console.html">fw-03</a> 에서만 나온다.</p>
+      <p>구울 때 보드의 LD4(COM, 3색)를 본다 — 도구 출력 말고도 "어디까지 갔는가"를 알려 주는 창이다(UM2407 §7.6.1, 27쪽).</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>LD4 의 모양</th><th>UM2407 이 말하는 뜻</th></tr></thead>
+        <tbody>
+          <tr><td>빨강 느린 점멸 → 빠른 점멸</td><td>USB 초기화 전 → PC 와의 첫 통신(열거) 뒤</td></tr>
+          <tr><td>빨강 켜짐</td><td>PC 와 ST-LINK 사이의 초기화 완료 — 쉬고 있을 때의 모양</td></tr>
+          <tr><td>초록 켜짐</td><td>타깃(H723)과의 통신 초기화 성공 / 통신이 성공으로 끝남</td></tr>
+          <tr><td>빨강 ↔ 초록 점멸</td><td>타깃과 통신 중(굽는 동안)</td></tr>
+          <tr><td>주황 켜짐</td><td>통신 실패</td></tr>
+        </tbody>
+      </table></div>
+      <p>LD5(초록)는 MCU 에 전원이 들어와 있다는 표시, LD6(빨강)는 USB 에서 500 mA 를 넘게 끌고 있다는 표시다 — LD6 가 켜지면 케이블을 뽑고 보드에 꽂힌 것을 뗀다.</p>
+
+      <h3 id="s2-5">2-5. 에디터와 코드 탐색 — HAL 소스를 빨리 뒤질 수 있어야 한다</h3>
+      <p>펌웨어 쪽의 이해 확인 1번은 매번 같은 꼴이다: 그 쪽에서 쓴 HAL 함수 하나를 <strong>네 군데</strong>에서 찾는다 — ① 헤더(시그니처) ② <code>__weak</code> 기본 구현 ③ 누가 언제 부르는가 ④ ST 의 예제. HAL 은 문서보다 소스가 정확하고, 소스는 이 Mac 에 전부 있다. 뒤질 곳은 두 군데이고 둘은 같지 않다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>환경 변수</th><th>가리키는 곳</th><th>무엇이 있나</th></tr></thead>
+        <tbody>
+          <tr><td><code>$FW_H7</code></td><td><code>~/STM32Cube/Repository/STM32Cube_FW_H7_V1.13.0</code></td><td>HAL 팩 원본 전체 — HAL 소스 125개 전부(<code>Src/Legacy/</code> 의 ETH 2개는 따로)와 <code>Projects/NUCLEO-H723ZG/Examples/</code> 의 ST 예제</td></tr>
+          <tr><td><code>$HAL</code></td><td><code>~/ros2_rpi5/firmware/h723zg/Drivers/STM32H7xx_HAL_Driver</code></td><td>내 프로젝트에 <strong>복사된</strong> HAL — 실제로 컴파일되는 그 파일들. 처음에는 18개뿐이고 주변장치를 켤 때마다 는다(§2-1)</td></tr>
+        </tbody>
+      </table></div>
+      <p>4중 검색의 ① ② ③ 은 <code>$HAL</code> 에서 한다(내 펌웨어에 실제로 들어가는 코드라서). <code>$HAL</code> 에서 <code>grep</code> 이 아무것도 못 찾으면 대개 "그 주변장치를 아직 켜지 않았다"는 뜻이다 — 그때는 <code>$FW_H7/Drivers/STM32H7xx_HAL_Driver</code> 에서 찾는다. ④ 는 언제나 <code>$FW_H7</code> 다.</p>
+      <p>뒤지는 수단은 고르면 된다. 빌드와 플래시는 어느 쪽을 골라도 <code>build.sh</code> · <code>flash.sh</code> 다(동일).</p>
+      <div class="tbl"><table>
+        <thead><tr><th></th><th>(가) 터미널 <code>grep</code></th><th>(나) <code>compile_commands.json</code> 을 읽는 에디터</th></tr></thead>
+        <tbody>
+          <tr><td>준비</td><td>없음</td><td>언어 서버(clangd 등)가 붙는 에디터. 빌드할 때마다 <code>build/Debug/compile_commands.json</code> 이 생긴다 — 생성된 최상위 <code>CMakeLists.txt</code> 에 <code>CMAKE_EXPORT_COMPILE_COMMANDS TRUE</code> 가 들어 있다</td></tr>
+          <tr><td>얻는 것</td><td><code>파일:줄</code> 이 그대로 나온다 — 노트에 옮겨 적기 좋다. 가이드의 4중 검색 명령이 이 꼴이다</td><td>"정의로 이동" · "참조 찾기"로 호출 관계를 따라간다. 매크로 · <code>#ifdef</code> 가 내 빌드 설정(<code>STM32H723xx</code> …)대로 풀린다</td></tr>
+          <tr><td>드는 것</td><td>호출 관계를 따라가려면 <code>grep</code> 을 여러 번 친다. <code>#ifdef</code> 로 꺼진 코드도 걸려 나온다</td><td>교차 컴파일러의 내장 헤더 경로를 언어 서버가 찾게 하는 설정이 필요할 수 있다(clangd 라면 <code>--query-driver</code>) — <strong>이 가이드는 확인하지 못했다.</strong> 에디터의 빨간 줄과 <code>build.sh</code> 의 결과가 다르면 <code>build.sh</code> 가 맞다. 가장 흔한 경우는 <strong>아직 등록하지 않은 새 파일</strong>이다 — <code>compile_commands.json</code> 에는 CMake 에 등록된 파일만 들어가므로, 등록 전의 파일은 에디터가 포함 경로 없이 읽어 <code>main.h</code> 에서 온 이름 전부에 빨간 줄을 긋는다(<a href="fw-03-clock-console.html">fw-03</a> 의 <code>console.c</code> 에서 실제로 겪었다). 새 <code>.c</code> 는 만들자마자 등록하고 <code>build.sh</code> 를 한 번 돌린다</td></tr>
+          <tr><td>저장소</td><td>남는 것 없음</td><td>에디터 설정 디렉터리(<code>.vscode/</code> 등)를 커밋할지는 <code>firmware/README.md</code> 의 "학습자 선택"이다</td></tr>
+        </tbody>
+      </table></div>
+      <p>둘을 같이 써도 된다. 이 가이드의 본문은 (가)의 명령으로 적는다 — 에디터가 무엇이든 따라 칠 수 있어서다. VS Code 는 필수가 아니다(<code>firmware/README.md</code>).</p>
+
+      <h3 id="s2-6">2-6. Debug = Serial Wire, 그리고 PB3 를 첫날 풀어 두는 이유</h3>
+      <p>디버그 포트는 핀을 먹는다. CubeMX 의 디버그 모드에 따라 먹는 핀이 다르다. 모드 이름과 신호 이름은 CubeMX 6.18.1 의 DB 파일 <code>DEBUG-STM32H7_sys_v1_1_Modes.xml</code> 에서 읽었고(이 파일에는 핀 번호가 없다), 핀 번호는 DS13313 Rev 5 표 7 의 핀 이름 괄호 — 리셋 직후의 기능 — 에서 읽었다: <code>PA13(JTMS/SWDIO)</code> · <code>PA14(JTCK/SWCLK)</code> p.66, <code>PA15(JTDI)</code> p.67, <code>PB3(JTDO/TRACESWO)</code> p.69, <code>PB4(NJTRST)</code> p.70.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>Debug 모드 (화면 이름)</th><th>차지하는 핀</th><th>이 프로젝트에서</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Serial Wire</strong></td><td>PA13(SWDIO) · PA14(SWCLK)</td><td>이것을 쓴다. 보드의 ST-LINK 가 H7 에 주는 것이 SWD 다(§2-4)</td></tr>
+          <tr><td>Trace Asynchronous Sw</td><td>PA13 · PA14 · <strong>PB3</strong>(SWO)</td><td>PB3 를 잃는다</td></tr>
+          <tr><td>JTAG (4 pins) / (5 pins)</td><td>PA13 · PA14 · <strong>PA15</strong>(JTDI) · <strong>PB3</strong>(JTDO) (· PB4)</td><td>PA15 · PB3 를 잃는다</td></tr>
+        </tbody>
+      </table></div>
+      <p>이 프로젝트의 확정 핀맵에서 <strong>PA15 · PB3 는 앞 왼쪽(FL) 엔코더의 A · B 상</strong>이다(TIM2_CH1 · TIM2_CH2 — <code>hardware/pinmap-h723.md</code> §2-B). 엔코더는 <a href="fw-09-encoder.html">fw-09</a>에서야 켜지만, 핀을 비워 두는 일은 오늘 해야 한다. 이유가 둘 있다.</p>
+      <ul>
+        <li><strong>보드 프리셋이 PB3 를 미리 잠가 둔다.</strong> CubeMX 에 든 보드 프리셋 파일 <code>G75_Nucleo_NUCLEO-H723ZG_STM32H723ZGT_Board_AllConfig.ioc</code> 의 121~125줄은 PB3 를 <code>Mode=Trace_Asynchronous_SW</code> · <code>Locked=true</code> · 라벨 <code>SWO</code> 로 잡아 둔다(파일에서 확인).
+        "Trace Asynchronous Sw 를 고르지 않는다"로는 부족하다 — 이미 골라져 있다. <strong>Serial Wire 로 바꾸고, PB3 의 핀 잠금을 풀어야</strong> 나중에 TIM2_CH2 가 PB3 에 놓인다(<code>hardware/pinmap-h723.md</code> §6 #2).</li>
+        <li><strong>증상이 먼 데서 난다.</strong> 오늘 풀어 두지 않으면 fw-09 에서 "TIM2 의 엔코더 모드가 PA15/PB3 에 안 놓인다"로 나타난다. 그때는 원인이 일곱 쪽 앞에 있다.</li>
+      </ul>
+      <div class="callout warn"><span class="ct">안전 규칙 — 디버그에서 SWV(SWO 트레이스)를 켜지 않는다</span>
+        <p>리셋 직후부터 <code>MX_GPIO_Init()</code> 가 돌기 전까지 디버그 핀은 디버그 기능으로 살아 있다. RM0468 Rev 3 §11.3.1(511쪽): "PA15: JTDI in pull-up … PB3: JTDO in floating state".
+        이 구간에 디버거가 SWV 를 켜면 MCU 가 PB3 를 <strong>출력으로 구동</strong>하고, 거기에 엔코더의 B 상 출력이 물려 있으면 두 출력이 맞붙는다.</p>
+        <p>그래서 이 프로젝트의 규칙은 둘이 한 짝이다: ① CubeMX 에서 <strong>Debug = Serial Wire + PB3 잠금 해제</strong>(이 쪽, <a href="#s3-1-1">§3-1-1</a>) ② 디버그 구성에서 <strong>SWV 를 켜지 않는다</strong>(<a href="fw-04-debugger.html">fw-04</a> 에서 디버거를 붙일 때 다시 확인한다). 엔코더를 실제로 꽂는 것은 fw-09 다.</p>
+      </div>
+      <div class="callout note"><span class="ct">등급 — 추정</span>
+        <p>"SWV 를 켜면 그 구간에 MCU 가 PB3 를 구동한다"는 SWJ-DP 의 동작에서 추정한 것이다. RM0468 은 "리셋 후 PB3 = JTDO, floating" 까지만 말한다. 확인된 사실이 아니라서 이 가이드는 "켜지 않는다"를 절차로 둔다(<code>hardware/INVENTORY.md</code> 2절 "배선 전 필수 조건 4가지"의 ②, <code>hardware/pinmap-h723.md</code> §6 #14).
+        또 하나의 추정: 위 프리셋 파일이 "보드를 고를 때 나오는 <em>주변장치를 기본 모드로 초기화할까</em> 물음에 Yes 로 답했을 때" 적용된다는 것 — 파일 이름(<code>…_AllConfig</code>)에서 짐작한 것이고, 같은 폴더의 <code>…_Board.ioc</code> 에는 PB3 항목이 없다. 어느 쪽이 적용됐든 <a href="#s3-1-1">§3-1-1</a> 의 <code>grep</code> 이 결과를 알려 준다.</p>
+      </div>
+
+      <h2 id="lab">3. 실습</h2>
+      <p>실습은 셋이고, 각각 관찰 하나로 끝난다: <strong>A</strong> 생성 → 빌드 → ELF 가 생긴다 · <strong>B</strong> 다시 생성 → 밖에 쓴 줄이 사라진다 · <strong>C</strong> <code>app.c</code> 등록 → 굽기 → LD1 이 깜박인다.
+      소절 번호의 끝자리는 펌웨어 쪽 전체에서 같은 뜻이다(1 = CubeMX 설정, 2 = 골격, 3 = 직접 채우기, 4 = 굽고 보기). 해당 없는 걸음은 번호째 건너뛴다.</p>
+      <div class="callout tip"><span class="ct">채울 자리마다 힌트 카드가 있다 — 읽는 순서</span>
+        <p>골격의 채울 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 붙어 있고(이 쪽은 T1 하나 — 실습 C 의 <code>app_loop()</code>), 그 주석 안에 <strong>번호 걸음</strong>이 있다. 먼저 걸음을 보고 직접 써 본다.
+        막히면 "직접 채우기" 절에서 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인.</p>
+        <p>완결 코드는 이 프로젝트의 펌웨어 빌드(링크까지 — <code>User/</code> 에 <code>app.c</code> 하나만 등록한 Debug 프리셋, <code>User/</code> 경고 0)를 통과한 코드다(2026-10-04). 이 쪽에는 호스트 시험이 없다(§3-3-3). 주기 값은 카드도 주지 않는다 — 내가 정하고, 비워 둔 채 빌드하면 가드가 멈춘다. 보드에서 도는 것 — LD1 의 깜박임과 그 주기 — 은 "굽고 보기"에서 내가 확인한다.
+        붙여 넣는 것으로 끝내지 않는다 — 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
+      </div>
+
+      <h3 id="s3-1">3-1. 실습 A — 프로젝트를 생성하고 ELF 를 만든다</h3>
+
+      <h4 id="s3-1-1">3-1-1. CubeMX 설정 <span class="tag mx">CubeMX</span></h4>
+      <div class="callout note"><span class="ct">결정 대기 — 프로젝트를 어디서 출발하는가 · 이름 · Drivers/ 커밋</span>
+        <p><strong>출발점.</strong> (가) CubeMX 의 Board Selector 에서 NUCLEO-H723ZG 를 골라 새 프로젝트 — LED 3개 · B1 · VCP(USART3, PD8/PD9) · HSE 입력(PH0)이 미리 잡혀 나온다. 대신 이더넷(RMII 핀)과 USB_OTG_HS(7핀)도 미리 잡혀 나오므로 <strong>Disable</strong> 해야 하고, PB3 가 SWO 로 잠겨 나온다(§2-6).
+        (나) 이미 가지고 있는 <code>~/stm32/stm32H723/h723nu/h723nu.ioc</code> 에서 출발 — <code>board=custom</code> 이고 켜져 있는 IP 가 CORTEX_M7 · MEMORYMAP · NVIC · RCC · SYS 다섯뿐이라(파일에서 확인) 끌 것이 없다. 대신 LED · B1 핀을 손으로 잡고, 프로젝트 이름 · 위치를 바꿔 저장해야 한다.
+        두 길에서 같은 것: 생성되는 CMake 구조, HAL 팩, 값 표가 요구하는 끝 상태, 이후 모든 쪽의 설정(동일). 클럭은 두 출발점 모두 손볼 것이 있다(아래 "클럭" 상자).</p>
+        <p>이 가이드의 <strong>기본 진행</strong>은 (가)다. <code>hardware/pinmap-h723.md</code> §6 #1 이 (가)를 전제로 쓰여 있기 때문이고, 권고가 아니다. (나)로 가면 아래 값 표에서 "ETH · USB_OTG_HS Disable"과 "PB3 잠금 해제"는 할 일이 없고(그래도 <code>grep</code> 확인은 한다), LED · B1 행을 손으로 만든다.</p>
+        <p><strong>이름.</strong> 이 프로젝트는 <code>h723zg</code> 로 정했다(2026-09-29 — MCU 이름 STM32<strong>H723ZG</strong> 그대로). 이 가이드의 본문 경로는 전부 <code>firmware/h723zg/</code> 이고, <code>tools/build.sh</code> · <code>flash.sh</code> 도 이 이름을 기본값으로 찾는다. 새로 따라 하면서 다른 이름을 고르면 경로의 <code>h723zg</code> 만 바꿔 읽고, 도구에는 <code>export FW_PROJ=~/ros2_rpi5/firmware/&lt;내 이름&gt;</code> 으로 알린다(<a href="#s3-1-2">§3-1-2</a>).</p>
+        <p><strong><code>Drivers/</code> 를 커밋할 것인가.</strong> 두 길의 사실은 <code>firmware/README.md</code> "학습자 선택"에 적혀 있다(클론만으로 빌드되는가 ↔ 저장소 크기와 생성물 diff). 이 쪽의 실습은 어느 쪽이든 같다(동일). 정한 것을 노트에 적는다.</p>
+      </div>
+
+      <p><strong>① 값 표</strong> — "무엇을 어떤 값으로". <code>.ioc</code> 키는 생성 뒤 <code>grep</code> 으로 확인하는 데 쓴다. 키 철자는 실제 파일에서 확인한 것이다: 사용자의 H723 프로젝트(<code>~/stm32/learn/STM32H723/Code/Code.ioc</code>)와 CubeMX 의 보드 프리셋 파일.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>항목</th><th>값</th><th>왜</th><th><code>.ioc</code> 키 (생성 후 grep)</th></tr></thead>
+        <tbody>
+          <tr><td>보드 · MCU</td><td>NUCLEO-H723ZG · STM32H723ZGTx (LQFP144)</td><td>보드의 고정 배선(LED · B1 · VCP · HSE)이 미리 잡힌다</td><td><code>board=NUCLEO-H723ZG</code> · <code>Mcu.Name=STM32H723ZGTx</code> · <code>Mcu.Package=LQFP144</code></td></tr>
+          <tr><td>Debug</td><td><strong>Serial Wire</strong></td><td>§2-6. PA15 · PB3 를 엔코더에 남긴다</td><td><code>PA13(JTMS/SWDIO).Mode=Serial_Wire</code> · <code>PA14(JTCK/SWCLK).Mode=Serial_Wire</code> <em>(모드 철자는 DB · 다른 보드 프리셋에서 확인. 내 파일의 줄은 생성 후 확인)</em></td></tr>
+          <tr><td>PB3</td><td>잠금 해제 → Reset_State</td><td>§2-6. 프리셋이 SWO 로 잠가 둔다</td><td><code>PB3(JTDO/TRACESWO).</code> 로 시작하는 줄이 <strong>하나도 없다</strong></td></tr>
+          <tr><td>ETH</td><td>Disable</td><td>이더넷은 쓰지 않는다. RMII 핀은 Reset_State 로 둔다(<code>hardware/INVENTORY.md</code> 2절 "비워 둘 핀")</td><td><code>Mcu.IP<em>n</em>=ETH</code> 줄이 없다 · <code>Signal=ETH_</code> 줄이 없다</td></tr>
+          <tr><td>USB_OTG_HS</td><td>Disable</td><td>USB 7핀은 비워 두는 예약 핀이다(같은 곳)</td><td><code>Mcu.IP<em>n</em>=USB_OTG_HS</code> 줄이 없다</td></tr>
+          <tr><td>PB0 · PE1 · PB14</td><td>GPIO_Output, User Label <code>LD1</code> · <code>LD2</code> · <code>LD3</code></td><td>UM2407 §7.6.1 의 부품 이름(HIGH = 켜짐). 라벨이 <code>main.h</code> 의 <code>LD1_Pin</code> · <code>LD1_GPIO_Port</code> 가 된다. 프리셋의 라벨 <code>LED_GREEN</code> · <code>LED_YELLOW</code> · <code>LED_RED</code> 를 바꿔 적는다</td><td><code>PB0.Signal=GPIO_Output</code> · <code>PB0.GPIO_Label=LD1</code> (PE1 · PB14 도 같은 꼴)</td></tr>
+          <tr><td>PC13</td><td>GPIO_Input, User Label <code>B1</code></td><td>프리셋의 라벨 <code>B1 (Blue_User_Button)</code> 의 괄호 · 공백이 매크로 이름에서 어떻게 되는지 확인하지 못했다 → 단순한 이름으로. 이 쪽에서는 핀만 잡아 둔다</td><td><code>PC13.GPIO_Label=B1</code></td></tr>
+          <tr><td>Project Name · Location</td><td><code>h723zg</code> · <code>~/ros2_rpi5/firmware</code></td><td><code>firmware/h723zg/h723zg.ioc</code> 가 되게</td><td><code>ProjectManager.ProjectName=h723zg</code> · <code>ProjectManager.ProjectFileName=h723zg.ioc</code></td></tr>
+          <tr><td>Toolchain / IDE</td><td><strong>CMake</strong> (컴파일러 GCC)</td><td>빌드 도구가 CubeCLT 의 CMake + <code>arm-none-eabi-gcc</code> 다. CubeIDE 는 설치돼 있지 않다(<code>hardware/INVENTORY.md</code> 2절 "툴체인")</td><td><code>ProjectManager.TargetToolchain=CMake</code> · <code>ProjectManager.CompilerLinker=GCC</code></td></tr>
+          <tr><td>펌웨어 패키지</td><td>STM32Cube FW_H7 V1.13.0</td><td><code>$FW_H7</code> 와 같은 판이어야 4중 검색의 줄 번호가 맞는다</td><td><code>ProjectManager.FirmwarePackage=STM32Cube FW_H7 V1.13.0</code></td></tr>
+          <tr><td>HAL 복사 방식</td><td>필요한 라이브러리 파일만 프로젝트로 복사</td><td><code>$HAL</code> 이 프로젝트 안에 생긴다(§2-5)</td><td><code>ProjectManager.LibraryCopy=1</code> <em>(값 1 이 이 선택지라는 대응은 추정 — <code>LibraryCopy=1</code> 인 기존 프로젝트의 <code>Drivers/</code> 가 18개뿐인 데서)</em></td></tr>
+        </tbody>
+      </table></div>
+      <p>바꾸지 않고 <strong>확인만</strong> 하는 것 둘: <code>ProjectManager.KeepUserCode=true</code>(§2-1 의 전제), <code>ProjectManager.CoupleFile=false</code>(주변장치 초기화 함수 <code>MX_…_Init()</code> 이 전부 <code>main.c</code> 에 생긴다 — 뒤 쪽들의 생성물 확인 <code>grep</code> 이 이것을 전제로 <code>main.c</code> 를 뒤진다).
+      프리셋이 USART3(VCP)를 켜 뒀으면 그대로 둔다 — 값은 <a href="fw-03-clock-console.html">fw-03</a> 이 정한다.</p>
+      <div class="callout warn"><span class="ct">클럭 — 이 쪽에서 최종값 520 MHz 로 맞춘다. 출발 경로에 따라 550 MHz 가 이미 들어 있을 수 있다</span>
+        <p>CubeMX 의 초기 클럭은 <strong>어떤 경로로 프로젝트를 시작했느냐</strong>에 따라 다르다. 550 이 기본값인 것은 아니다.</p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>시작 경로</th><th>처음 열었을 때 SYSCLK</th><th>근거</th></tr></thead>
+          <tbody>
+            <tr><td>MCU Selector 에서 STM32H723ZGTx</td><td><strong>64 MHz</strong> (HSI, PLL 미사용)</td><td>CubeMX 화면에서 확인</td></tr>
+            <tr><td>Board Selector → 기본 모드 초기화 <strong>No</strong></td><td>192 MHz</td><td><code>…_Board.ioc</code> 의 <code>RCC.SYSCLKFreq_VALUE=192000000</code></td></tr>
+            <tr><td>Board Selector → 기본 모드 초기화 <strong>Yes</strong> — (가)</td><td><strong>550 MHz</strong> (HSE, <code>DIVM1=4</code> · <code>DIVN1=275</code> · <code>DIVP1=1</code>)</td><td><code>…_Board_AllConfig.ioc</code> 의 <code>RCC.SYSCLKFreq_VALUE=550000000</code></td></tr>
+            <tr><td><code>h723nu.ioc</code> — (나)</td><td>550 MHz (HSI 분수 PLL)</td><td>MCU Selector 의 64 MHz 에서 <strong>사용자가 직접 올린 값</strong>이다. Clock Configuration 화면이 상한을 550 으로 안내하므로 그대로 따라가면 여기에 닿는다</td></tr>
+          </tbody>
+        </table></div>
+        <p>곧, 550 은 ST 의 보드 프리셋이 넣어 두거나 화면 안내를 따라 손으로 올려서 들어온다. 어느 쪽도 부스트 비트를 묻지 않는다.
+        H723 의 CPU 상한은 VOS0 에서 520 MHz 이고, 550 MHz 는 <strong>VOS0 그리고 옵션 바이트 CPU_FREQ_BOOST = 1 일 때만</strong> 규격 안이다(DS13313 표 12). 공장 기본값은 0 이고(RM0468 표 18), HAL 은 이 비트를 검사하지 않는다 — 헤더의 주석뿐이다(<code>stm32h7xx_hal_rcc.h:7529</code> "requires to enable the CPU_FREQ_BOOST flash option byte, 520MHZ otherwise").
+        부스트 비트가 0 인 보드(공장 기본값 그대로인 보드)에 550 MHz 코드를 구우면 오류 없이 규격 밖에서 돈다.</p>
+        <p>이 프로젝트는 부스트를 쓰지 않는다(결정 9, <code>hardware/INVENTORY.md</code> 2절 "클럭" 행). 무엇을 내주고 얻는지는 이렇다: 부스트를 켜면 CPU · 타이머가 +5.8 % 빨라지고, 그 대가로 ITCM · DTCM 의 ECC 가 꺼진다(RM0468 §2.4). 이 프로젝트는 ECC 를 남기고 +5.8 % 를 내준다.
+        그래서 이 쪽에서 <strong>최종값</strong>으로 맞춘다: 생성 전에 Clock Configuration 에서 PLL1 의 <strong>DIVN1 을 275 → 260</strong> 으로 내린다 → 8 MHz ÷ 4 × 260 = <strong>520 MHz</strong>, HCLK 260 MHz · APB 130 MHz(분주는 그대로 ÷1 · ÷2 · ÷2). ST 의 템플릿(<code>$FW_H7/Projects/NUCLEO-H723ZG/Templates/Src/main.c</code> 136~139줄: <code>PLLM = 4</code> · <code>PLLN = 260</code> · <code>PLLP = 1</code>)과 같은 값이다.
+        <a href="fw-03-clock-console.html">fw-03</a> 은 이 값을 바꾸지 않는다 — 거기서는 옵션 바이트를 <strong>읽기만</strong> 해서 부스트 비트가 0(= TCM ECC 동작)인지 기록한다.
+        (나) 출발점은 HSI 분수 PLL 이라 값이 다르다 — 그쪽은 여기서 SYSCLK 를 520 MHz 이하로 맞추고, 소스를 HSE 로 옮기는 것은 fw-03 에서 한다.
+        아래 ③ 의 <code>grep</code> 이 <code>550000000</code> 을 내면 이 걸음을 빠뜨린 것이다.</p>
+      </div>
+
+      <p><strong>② 위치 표</strong> — "어디를 눌러서".</p>
+      <p class="small"><strong>화면 확인: 미확인 (CubeMX 6.18.1)</strong> — 아래 경로는 CubeMX 의 DB 파일 · 보드 프리셋 파일과 <code>hardware/pinmap-h723.md</code> §6 에서 추정한 것이다.
+      화면이 다르면 <strong>화면이 맞다.</strong> 다른 곳을 발견하면 값 표(위)의 항목 이름으로 검색하고, 달랐던 경로를 노트에 적어 둔다. 끝 상태는 ③ 의 <code>grep</code> 이 판정한다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>#</th><th>위치 (화면 경로)</th><th>설정</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>시작 화면 → <strong>New Project</strong> 의 <strong>Board Selector</strong></td><td>NUCLEO-H723ZG 를 골라 프로젝트를 시작한다. "Initialize all peripherals with their default Mode?" 를 물으면 기본 진행은 <strong>Yes</strong>(§2-6 의 추정대로면 <code>…_AllConfig</code> 프리셋이 적용된다). No 로 답했거나 물음이 다르게 나오면 LED · B1 이 안 잡혀 있을 수 있다 — 그때는 5번에서 핀부터 잡는다</td></tr>
+          <tr><td>2</td><td><strong>Pinout &amp; Configuration</strong> → 왼쪽 목록의 검색창에 <strong>DEBUG</strong></td><td><strong>Debug</strong> = <strong>Serial Wire</strong>. (DB 파일에서 H723 의 디버그 모드는 SYS 가 아니라 <code>DEBUG</code> 라는 이름의 IP 에 들어 있다. 화면의 분류 이름은 확인하지 못했다 — 찾은 자리를 노트에 적는다)</td></tr>
+          <tr><td>3</td><td>Pinout 그림의 <strong>PB3</strong> 핀</td><td>핀 잠금(<code>hardware/pinmap-h723.md</code> §6 #2 의 "Pin Locking")이 남아 있으면 푼다 → 핀을 눌러 <strong>Reset_State</strong>. 2번을 하고 나면 이미 풀려 있을 수도 있다 — ③ 의 <code>grep</code> 으로 판정한다</td></tr>
+          <tr><td>4</td><td>왼쪽 <strong>Connectivity</strong> → <strong>ETH</strong>, <strong>USB_OTG_HS</strong></td><td>각각 Mode 를 <strong>Disable</strong>. 그림에서 RMII · USB 핀의 색이 빠지는지 본다</td></tr>
+          <tr><td>5</td><td>Pinout 그림의 PB0 · PE1 · PB14 · PC13 → 우클릭 → <strong>Enter User Label</strong></td><td><code>LD1</code> · <code>LD2</code> · <code>LD3</code> · <code>B1</code>. 핀이 안 잡혀 있으면 먼저 핀을 눌러 GPIO_Output(PC13 은 GPIO_Input)</td></tr>
+          <tr><td>6</td><td><strong>Clock Configuration</strong> 탭</td><td>PLL1 의 <strong>N</strong>(DIVN1)을 260 으로 — 이 프로젝트의 최종값이다. SYSCLK 표시가 520 MHz 가 되는지 본다. 화면이 상한을 550 으로 안내해도 따라 올리지 않는다(위 "클럭" 상자)</td></tr>
+          <tr><td>7</td><td><strong>Project Manager</strong> → <strong>Project</strong></td><td>Project Name = <code>h723zg</code>, Project Location = <code>~/ros2_rpi5/firmware</code>, <strong>Toolchain / IDE = CMake</strong></td></tr>
+          <tr><td>8</td><td><strong>Project Manager</strong> → <strong>Code Generator</strong></td><td>필요한 라이브러리 파일만 복사하는 선택지 · 다시 생성할 때 사용자 코드를 유지하는 선택지가 골라져 있는지 확인</td></tr>
+          <tr><td>9</td><td>오른쪽 위 <strong>GENERATE CODE</strong></td><td>H7 펌웨어 패키지를 내려받겠느냐고 물으면 받는다(이 Mac 에는 V1.13.0 이 이미 있다)</td></tr>
+        </tbody>
+      </table></div>
+
+      <p><strong>③ 생성물 확인</strong> — 값 표의 모든 행을 <code>grep</code> 으로 닫는다. 이 출력이 체크포인트의 판정 수단이다.</p>
+      <pre><code class="lang-bash">cd ~/ros2_rpi5/firmware/h723zg
+grep -n '^ProjectManager\.\(TargetToolchain\|CompilerLinker\|ProjectName\|FirmwarePackage\|LibraryCopy\|KeepUserCode\|CoupleFile\)' h723zg.ioc
+grep -n '^PA13\|^PA14\|^PB3' h723zg.ioc                   # 디버그 핀
+grep -n '^Mcu\.IP' h723zg.ioc                             # 켜져 있는 IP 목록
+grep -n 'GPIO_Label' h723zg.ioc                           # 라벨
+grep -n '^RCC\.SYSCLKFreq_VALUE\|^board=' h723zg.ioc      # 클럭 · 출발점
+grep -n 'LD[123]_Pin\|LD[123]_GPIO_Port\|B1_Pin' Core/Inc/main.h
+grep -n 'ETH\|RMII\|USB_' Core/Src/main.c                 # 기대: 아무것도 안 나온다
+ls</code></pre>
+      <pre><code class="lang-text">(기대 — 줄 번호는 사람마다 다르다)
+ 명령 1: TargetToolchain=CMake, CompilerLinker=GCC, ProjectName=h723zg, FirmwarePackage=STM32Cube FW_H7 V1.13.0,
+      LibraryCopy=1, KeepUserCode=true, CoupleFile=false
+ 명령 2: PA13 · PA14 의 Mode 줄이 Serial_Wire 다. Trace_Asynchronous_SW 가 아니다. PB3 로 시작하는 줄은 하나도 없다
+ 명령 3: 목록에 ETH 와 USB_OTG_HS 가 없다 (DEBUG · NVIC · RCC · SYS · CORTEX_M7 … 은 있다)
+ 명령 4: PB0 · PE1 · PB14 · PC13 의 라벨이 LD1 · LD2 · LD3 · B1 이다. RMII_ · USB_FS_ 로 시작하는 라벨이 남아 있으면 그 핀이 아직 잡혀 있는 것이다
+ 명령 5: SYSCLKFreq_VALUE 가 520000000 이다((나) 출발점이면 520000000 이하). 550000000 이면 "클럭" 상자로 돌아간다
+ 명령 6: main.h 에 LD1_Pin / LD1_GPIO_Port … 매크로가 있다
+ 명령 7: 출력 없음
+ ls     : CMakeLists.txt  CMakePresets.json  Core  Drivers  cmake  h723zg.ioc    startup_stm32h723xx.s  STM32H723XG_FLASH.ld (+ 숨은 .mxproject)</code></pre>
+      <p>기대와 다른 줄이 있으면 그 줄을 노트에 적고 값 표의 해당 행으로 돌아간다. 생성물의 파일 이름(<code>STM32H723XG_FLASH.ld</code> 등)은 같은 MCU 로 만든 기존 프로젝트에서 본 것이다 — 내 것이 다르면 내 것이 맞다.</p>
+      <p><strong>다시 생성할 때의 규칙</strong>(이후 모든 쪽의 3-1 끝에서 되풀이된다): 생성물은 <code>USER CODE BEGIN/END</code> 사이만 고친다 · <code>cmake/stm32cubemx/</code> 는 다시 생성된다 · 내 소스는 <code>User/</code> 에 두고 최상위 <code>CMakeLists.txt</code> 의 <code># Add user sources here</code> 에 등록한다.</p>
+
+      <h4 id="s3-1-2">3-1-2. 골격 — 도구 두 개와 환경 변수 둘</h4>
+      <p>먼저 셸이 도구를 찾는지 본다. CubeCLT 설치기는 이 Mac 의 <code>/etc/paths</code> 에 자기 <code>bin</code> 디렉터리들을 적어 뒀다(2026-09-22 확인 — 새 터미널이면 <code>PATH</code> 에 들어 있다).</p>
+      <pre><code class="lang-bash">command -v cmake ninja arm-none-eabi-gcc STM32_Programmer_CLI     # 네 줄이 나와야 한다
+grep -n 'STM32CubeCLT' /etc/paths</code></pre>
+      <p>네 줄이 다 안 나오면 <a href="fw-00-map.html">fw-00</a> 의 설치 확인으로 돌아간다. <code>build.sh</code> 는 <code>PATH</code> 에서 먼저 잡히는 <code>cmake</code> · <code>ninja</code> 를 쓴다(fw-00 에서 적어 둔 "어느 것이 먼저인가"가 여기서 쓰인다). CubeCLT 의 것이 아니어도 된다 — 이 Mac 에서는 Homebrew 의 CMake 4.3.2 와 CubeCLT 의 CMake 3.28.1 둘 다로 같은 프로젝트가 빌드되는 것을 확인했다. 컴파일러와 플래시 도구는 CubeCLT 의 것이어야 한다.</p>
+      <p>다음은 환경 변수 둘(§2-5). <code>~/.zshrc</code> 끝에 두 줄을 더하고 새 터미널을 연다. 모든 쪽의 4중 검색이 이 이름을 쓴다.</p>
+      <pre><code class="lang-bash">export FW_H7="$HOME/STM32Cube/Repository/STM32Cube_FW_H7_V1.13.0"            # HAL 팩 원본 + ST 예제
+export HAL="$HOME/ros2_rpi5/firmware/h723zg/Drivers/STM32H7xx_HAL_Driver"     # 내 프로젝트에 복사된 HAL</code></pre>
+      <pre><code class="lang-bash">ls "$FW_H7/Projects/NUCLEO-H723ZG/Examples" | head -5     # 예제 디렉터리가 보인다
+ls "$HAL/Src" | wc -l                                      # 주변장치 0개인 프로젝트에서는 18 이었다. 내 값을 노트에</code></pre>
+      <p>이제 도구 두 개다. <code>firmware/tools/</code> 는 아직 없는 디렉터리다 — 여기서 만든다.</p>
+      <p class="small">이 블록은 전량 제공이다 — 이유: 도구 호출의 철자가 한 글자 틀리면 학습 내용과 무관한 곳에서 멈춘다. 그리고 이후 모든 쪽이 이 두 파일만 부르므로, 여기의 실수는 다른 쪽의 증상으로 나타난다. 왜 이렇게 생겼는지는 §2-3 · §2-4 에 있다.
+      <code>build.sh</code> 는 2026-09-22 에 같은 MCU 의 CubeMX 생성 프로젝트로 실제 빌드까지 돌려 본 것이고, <code>flash.sh</code> 는 문법 검사(<code>bash -n</code>)와 가짜 프로그래머로 인자가 넘어가는 것까지만 확인했다(집필 중에는 보드에 접속하지 않았다).</p>
+      <pre><code class="lang-bash">mkdir -p ~/ros2_rpi5/firmware/tools &amp;&amp; cd ~/ros2_rpi5/firmware/tools
+# 아래 두 파일을 build.sh · flash.sh 로 저장한 뒤:
+chmod +x build.sh flash.sh</code></pre>
+      <pre><code class="lang-bash">#!/usr/bin/env bash
+# firmware/tools/build.sh [TEXT|V2] - CubeCLT 도구로 CubeMX CMake 프로젝트를 configure + build 한다.
+# 모든 fw 쪽은 이 스크립트만 부른다. 여기서는 보드와 아무것도 주고받지 않는다.
+set -euo pipefail
+
+MODE="${1:-TEXT}"                       # VCP 링크 모드 -&gt; CMake 캐시 변수 LINK_MODE
+case "$MODE" in
+  TEXT|V2) ;;
+  *) echo "usage: build.sh [TEXT|V2]" &gt;&amp;2; exit 2 ;;
+esac
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" &amp;&amp; pwd)"
+PROJ_IN="${FW_PROJ:-$HERE/../h723zg}" # 프로젝트 이름을 달리 지었다면? export FW_PROJ=&lt;dir&gt;
+PRESET="${FW_PRESET:-Debug}"            # Debug | Release (CMakePresets.json)
+
+for tool in cmake ninja arm-none-eabi-gcc; do
+  command -v "$tool" &gt;/dev/null 2&gt;&amp;1 || {
+    echo "build.sh: '$tool' is not on PATH - add the STM32CubeCLT bin directories" &gt;&amp;2
+    exit 3
+  }
+done
+[ -f "$PROJ_IN/CMakePresets.json" ] || { echo "build.sh: no CMakePresets.json in $PROJ_IN" &gt;&amp;2; exit 4; }
+PROJ="$(cd "$PROJ_IN" &amp;&amp; pwd)"
+
+cd "$PROJ"
+cmake --preset "$PRESET" -DLINK_MODE="$MODE"
+cmake --build --preset "$PRESET"
+
+ELF="$(ls "build/$PRESET"/*.elf 2&gt;/dev/null | head -n 1 || true)"
+[ -n "$ELF" ] || { echo "build.sh: no .elf under build/$PRESET" &gt;&amp;2; exit 5; }
+arm-none-eabi-size "$ELF"
+echo "ELF: $PROJ/$ELF  (LINK_MODE=$MODE, preset=$PRESET)"</code></pre>
+      <pre><code class="lang-bash">#!/usr/bin/env bash
+# firmware/tools/flash.sh [TEXT|V2] - 빌드한 뒤 보드의 ST-LINK(SWD)로 굽기 + 검증 + 리셋.
+set -euo pipefail
+
+MODE="${1:-TEXT}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" &amp;&amp; pwd)"
+PRESET="${FW_PRESET:-Debug}"
+
+"$HERE/build.sh" "$MODE"                # 낡은 ELF 나 다른 모드의 ELF 를 굽는 일이 없게 한다
+
+command -v STM32_Programmer_CLI &gt;/dev/null 2&gt;&amp;1 || {
+  echo "flash.sh: STM32_Programmer_CLI is not on PATH (STM32CubeCLT: STM32CubeProgrammer/bin)" &gt;&amp;2
+  exit 3
+}
+PROJ="$(cd "${FW_PROJ:-$HERE/../h723zg}" &amp;&amp; pwd)"
+ELF="$(ls "$PROJ/build/$PRESET"/*.elf | head -n 1)"
+
+# -c port=SWD : ST-LINK 로 접속    -w &lt;elf&gt; : 굽기(주소는 ELF 에서 온다)
+# -v          : 되읽어 검증        -rst     : MCU 를 리셋해 새 코드를 시작한다
+# 옵션 바이트는 여기서 절대 건드리지 않는다.
+STM32_Programmer_CLI -c port=SWD -w "$ELF" -v -rst</code></pre>
+      <p>읽을 때 볼 곳: <code>set -euo pipefail</code>(한 단계라도 실패하면 거기서 멈춘다 — 빌드가 깨졌는데 옛 ELF 를 굽는 일을 막는다), <code>flash.sh</code> 가 <strong>먼저 <code>build.sh</code> 를 부른다</strong>는 점(소스를 고치고 빌드를 잊은 채 구워서 "고쳤는데 안 바뀐다"를 겪지 않게), 그리고 인자 <code>[TEXT|V2]</code>.
+      이 인자는 VCP 를 글자 명령 창으로 쓸지 이진 프레임으로 쓸지 고르는 빌드 스위치 <code>LINK_MODE</code> 로 넘어간다. 아직 이 스위치를 읽는 소스는 없다(인자 없이 부르면 <code>TEXT</code>) — 도구의 모양을 첫날 고정해 두는 것은 모든 쪽이 같은 명령을 부르기 때문이다.</p>
+      <p>도구가 넘기는 <code>-DLINK_MODE=…</code> 를 CMake 가 받을 자리도 지금 만든다. 최상위 <code>CMakeLists.txt</code>(내 파일이다 — §2-1)에서 <code># Add project symbols (macros)</code> 로 시작하는 블록을 아래로 바꾼다. 더한 것은 가운데 다섯 줄과 <code>LINK_MODE=…</code> 한 줄이다.</p>
+      <pre><code class="lang-cmake"># Add project symbols (macros)
+set(LINK_MODE "TEXT" CACHE STRING "VCP link mode: TEXT (command window) or V2 (binary contract)")
+set_property(CACHE LINK_MODE PROPERTY STRINGS TEXT V2)
+if(NOT LINK_MODE MATCHES "^(TEXT|V2)$")
+    message(FATAL_ERROR "LINK_MODE must be TEXT or V2 (got '${LINK_MODE}')")
+endif()
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
+    # Add user defined symbols
+    LINK_MODE=LINK_MODE_${LINK_MODE}
+)</code></pre>
+      <p>값이 <code>TEXT</code> · <code>V2</code> 가 아니면 configure 에서 멈추고, 통과하면 모든 내 소스에 <code>-DLINK_MODE=LINK_MODE_TEXT</code>(또는 <code>_V2</code>)가 붙는다. 이 매크로를 해석하는 헤더는 뒤 쪽에서 생긴다 — 지금은 아무도 읽지 않으므로 빌드에 영향이 없다. 이 편집은 실습 B 에서 한 번 더 쓰인다: 다시 생성한 뒤에도 이 줄들이 남아 있는지 본다.</p>
+
+      <h4 id="s3-1-4">3-1-4. 굽고 보기 — 아직 굽지 않는다. 빌드하고 ELF 를 본다</h4>
+      <pre><code class="lang-bash">cd ~/ros2_rpi5
+firmware/tools/build.sh</code></pre>
+      <pre><code class="lang-text">(기대하는 모양 — 수치는 내 것을 노트에 적는다)
+-- The C compiler identification is GNU 14.3.1        ← CubeCLT 1.21.0 의 arm-none-eabi-gcc
+[1/&lt;n&gt;] Building C object … main.c.obj
+   …
+[&lt;n&gt;/&lt;n&gt;] Linking C executable h723zg.elf
+Memory region         Used Size  Region Size  %age Used
+         DTCMRAM:       &lt;n&gt; B       128 KB      &lt;p&gt;%          ← RAM 은 이 줄에 잡힌다 (§2-3)
+          RAM_D1:          0 B       320 KB      0.00%
+          RAM_D2:          0 B        32 KB      0.00%
+          RAM_D3:          0 B        16 KB      0.00%
+         ITCMRAM:          0 B        64 KB      0.00%
+           FLASH:       &lt;n&gt; B         1 MB      &lt;p&gt;%
+   text    data     bss     dec     hex filename
+    &lt;n&gt;     &lt;n&gt;     &lt;n&gt;     &lt;n&gt;     &lt;x&gt; build/Debug/h723zg.elf
+ELF: /Users/&lt;나&gt;/ros2_rpi5/firmware/h723zg/build/Debug/h723zg.elf      (LINK_MODE=TEXT, preset=Debug)</code></pre>
+      <p>영역 이름과 크기(128 KB · 320 KB · 32 KB · 16 KB · 64 KB · 1 MB)는 생성된 링커 스크립트의 <code>MEMORY</code> 블록에서 온다. 주변장치가 하나도 없는 H723 프로젝트에서 FLASH 는 수 KB 였다(2026-09-22, 6 KB 대) — 내 값이 그 몇 배라면 무엇이 더 들어갔는지 <code>.ioc</code> 를 본다.</p>
+      <pre><code class="lang-bash">ls -l firmware/h723zg/build/Debug/h723zg.elf firmware/h723zg/build/Debug/compile_commands.json
+arm-none-eabi-readelf -h firmware/h723zg/build/Debug/h723zg.elf | grep -i 'machine\|entry'
+git -C ~/ros2_rpi5 check-ignore -v firmware/h723zg/build/Debug/h723zg.elf</code></pre>
+      <p>두 파일이 있고, <code>Machine</code> 이 ARM 이고, <code>Entry point</code> 가 <code>0x08…</code>(내장 플래시 영역)로 시작하면 실습 A 는 끝이다. 마지막 명령은 <code>firmware/.gitignore:4:build/</code> 로 시작하는 한 줄을 낸다 — 빌드 산출물은 저장소에 들어가지 않는다. 프로젝트의 나머지(<code>Drivers/</code> 포함)를 커밋할지는 위 "결정 대기"에서 정한 대로 한다.</p>
+
+      <h3 id="s3-2">3-2. 실습 B — USER CODE 밖에 쓴 줄은 사라진다</h3>
+
+      <h4 id="s3-2-1">3-2-1. CubeMX 설정 <span class="tag mx">CubeMX</span></h4>
+      <p>이 실습에서 CubeMX 로 하는 일은 <strong>설정을 하나도 바꾸지 않고 GENERATE CODE 를 한 번 누르는 것</strong>뿐이다. 누르는 때는 아래 §3-2-3 의 4번이다 — 먼저 표식을 심는다.</p>
+
+      <h4 id="s3-2-3">3-2-3. 직접 채우기 — 표식(카나리아) 셋을 심고 다시 생성한다</h4>
+      <ol class="steps">
+        <li><strong>표식 셋을 심는다.</strong> 전부 주석이라 동작은 바뀌지 않는다.
+          <ul>
+            <li>안쪽: <code>Core/Src/main.c</code> 의 <code>/* USER CODE BEGIN 2 */</code> 와 <code>/* USER CODE END 2 */</code> <strong>사이</strong>에 <code>/* canary-inside */</code></li>
+            <li>바깥쪽: 같은 파일, <code>/* USER CODE END 2 */</code> 의 <strong>바로 아랫줄</strong>에 <code>/* canary-outside */</code></li>
+            <li>생성되는 CMake: <code>cmake/stm32cubemx/CMakeLists.txt</code> 의 맨 끝에 <code># canary-cmake</code></li>
+          </ul>
+          넷째 표식은 이미 있다 — §3-1-2 에서 최상위 <code>CMakeLists.txt</code> 에 넣은 <code>LINK_MODE</code> 줄들이다.</li>
+        <li><strong>심은 것을 확인하고, 생성물의 수정 시각을 적어 둔다.</strong>
+          <pre><code class="lang-bash">cd ~/ros2_rpi5/firmware/h723zg
+grep -rn 'canary' Core/Src/main.c cmake/stm32cubemx/CMakeLists.txt        # 세 줄이 나온다
+stat -f '%Sm  %N' -t '%m-%d %H:%M:%S' CMakeLists.txt CMakePresets.json cmake/stm32cubemx/CMakeLists.txt \
+     cmake/gcc-arm-none-eabi.cmake STM32H723XG_FLASH.ld startup_stm32h723xx.s Core/Src/main.c | tee /tmp/before.txt</code></pre></li>
+        <li><strong>빌드가 그대로 되는지 본다</strong>: <code>~/ros2_rpi5/firmware/tools/build.sh</code></li>
+        <li><strong>CubeMX 에서 <code>h723zg.ioc</code> 를 열고 GENERATE CODE.</strong> 설정은 건드리지 않는다. 덮어쓰기를 묻는 창이 뜨면 문구를 노트에 적고 진행한다(집필자는 이 화면을 보지 못했다).</li>
+      </ol>
+
+      <h4 id="s3-2-4">3-2-4. 굽고 보기 — 무엇이 남고 무엇이 사라졌는가</h4>
+      <pre><code class="lang-bash">cd ~/ros2_rpi5/firmware/h723zg
+grep -rn 'canary' Core/Src/main.c cmake/stm32cubemx/CMakeLists.txt
+grep -n 'LINK_MODE' CMakeLists.txt
+stat -f '%Sm  %N' -t '%m-%d %H:%M:%S' CMakeLists.txt CMakePresets.json cmake/stm32cubemx/CMakeLists.txt \
+     cmake/gcc-arm-none-eabi.cmake STM32H723XG_FLASH.ld startup_stm32h723xx.s Core/Src/main.c | tee /tmp/after.txt
+diff /tmp/before.txt /tmp/after.txt
+~/ros2_rpi5/firmware/tools/build.sh | tail -3</code></pre>
+      <pre><code class="lang-text">(기대)
+ 첫 grep  : canary-inside 한 줄만 남는다. canary-outside 는 없다.  ← 이것이 이 실습의 관찰이다
+            canary-cmake 도 없을 것이다(이 파일은 통째로 다시 쓰인다 — §2-1). 남아 있으면 그 사실을 노트에 적는다
+ 둘째 grep: LINK_MODE 줄들이 그대로 있다 (최상위 CMakeLists.txt 는 다시 생성되지 않는다)
+ diff     : 수정 시각이 바뀐 파일 = CubeMX 가 다시 쓴 파일. 아래 표를 내 관찰로 채운다
+ build.sh : 다시 빌드된다</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>파일</th><th>다시 쓰였는가 (내 관찰)</th><th>그러면 이 파일에 손으로 넣은 것은</th></tr></thead>
+        <tbody>
+          <tr><td><code>Core/Src/main.c</code></td><td>____</td><td>마커 사이만 남는다</td></tr>
+          <tr><td><code>cmake/stm32cubemx/CMakeLists.txt</code></td><td>____</td><td>____</td></tr>
+          <tr><td><code>CMakeLists.txt</code> (최상위)</td><td>____</td><td>____</td></tr>
+          <tr><td><code>CMakePresets.json</code></td><td>____</td><td>____</td></tr>
+          <tr><td><code>cmake/gcc-arm-none-eabi.cmake</code></td><td>____</td><td>____</td></tr>
+          <tr><td><code>STM32H723XG_FLASH.ld</code></td><td>____</td><td>____ (<a href="fw-07-memory-dma.html">fw-07</a>에서 이 파일에 조각을 더한다 — 그때 이 칸을 다시 본다)</td></tr>
+          <tr><td><code>startup_stm32h723xx.s</code></td><td>____</td><td>____</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">힌트 하나: 같은 MCU 로 만들어 둔 기존 프로젝트(<code>~/stm32/learn/STM32H723/Code</code>)에서는 <code>startup_stm32h723xx.s</code> 의 수정 시각만 다른 생성물보다 약 6분 앞선다(2026-07-01 21:22:59 ↔ 21:29:14~15, <code>stat -f '%Sm %N'</code> 로 확인). 두 번째 생성에서 이 파일이 다시 쓰이지 않았다는 흔적일 수 있다(추정 — 내 관찰로 확인한다).</p>
+      <p>끝나면 남은 표식(<code>canary-inside</code>)을 지운다. 수정 시각이 바뀌었는데 내용은 같은 파일도 있을 수 있다 — 내용까지 보려면 4번 앞에서 <code>cp -R ~/ros2_rpi5/firmware/h723zg /tmp/h723zg.before</code> 로 떠 두고, 생성 뒤 <code>diff -rq /tmp/h723zg.before ~/ros2_rpi5/firmware/h723zg | grep -v /build</code> 를 본다.</p>
+
+      <h3 id="s3-3">3-3. 실습 C — <code>app.c</code> 를 등록하고 LD1 을 깜박인다</h3>
+      <p>이 실습은 CubeMX 를 새로 설정하지 않는다(LD1 핀은 §3-1-1 에서 잡았다). 마지막에 "다시 생성해도 살아남는가"를 보려고 GENERATE CODE 만 한 번 더 누른다.</p>
+
+      <h4 id="s3-3-2">3-3-2. 골격 — 파일 둘, 등록 두 줄, 호출 두 줄</h4>
+      <p><code>User/</code> 는 CubeMX 가 만들지 않는다. 내가 만든다: <code>mkdir -p ~/ros2_rpi5/firmware/h723zg/User/Inc ~/ros2_rpi5/firmware/h723zg/User/Src</code><br>이 쪽의 파일 둘은 <strong>루트</strong>에 둔다. 묶음 폴더(<a href="#s2-2-1">§2-2-1</a>)는 이 쪽에서 만들지 않는다 — 첫 묶음(<code>Config/</code> · <code>Tools/</code>)은 <a href="fw-03-clock-console.html">fw-03</a> 이 만든다.</p>
+      <pre><code class="lang-c">/* User/Inc/app.h - main.c 가 아는 진입점은 이 둘뿐이다. */
+#ifndef APP_H
+#define APP_H
+
+void app_init(void);   /* 한 번, 모든 MX_*_Init() 호출 뒤에 */
+void app_loop(void);   /* main() 의 while (1) 에서 끝없이 - 빨리 돌아와야 한다 */
+
+#endif /* APP_H */</code></pre>
+      <pre><code class="lang-c">/* User/Src/app.c - 모듈 초기화 순서와 주 루프. main.c 는 이 둘만 부르고 다른 것은 부르지 않는다. */
+#include "app.h"
+#include "main.h"   /* HAL + LD1_GPIO_Port / LD1_Pin (CubeMX 의 User Label "LD1" 에서 생성) */
+
+void app_init(void)
+{
+  /* 문맥: main(), 인터럽트 켜짐, SysTick 이미 동작 중(HAL_Init).
+   * 뒤 쪽들이 저마다 &lt;module&gt;_init() 한 줄씩을 의존 순서대로 더한다. */
+}
+
+void app_loop(void)
+{
+  /* 문맥: main(), 끝없이 연달아 불린다. 불변식: 빨리 돌아오고, 막지 않는다.
+   * TODO(you) [T1]: HAL_Delay() 없이 LD1 을 heartbeat 로 점멸시킨다 - 힌트 카드 T1
+   *   1) 파일 머리(#include "main.h" 아래, app_init() 위)에 주기 상수를 둔다:
+   *      #define HEARTBEAT_MS 0u  와  _Static_assert(HEARTBEAT_MS &gt; 0u, "app.c: HEARTBEAT_MS is still EMPTY");
+   *      0 은 자리표시다 - 눈으로 셀 수 있는 내 값 [ms] 을 적는다. 비워 두면 빌드가 여기서 멈춘다(의도된 것)
+   *   2) 마지막으로 뒤집은 시각을 함수 안의 static uint32_t last_ms 에 기억한다 [ms] (부팅 때 0)
+   *   3) uint32_t now_ms = HAL_GetTick();  - 지금 시각 [ms], 한 호출에 한 번만 읽는다
+   *   4) (uint32_t)(now_ms - last_ms) &gt;= HEARTBEAT_MS 이면: last_ms = now_ms; 그리고 HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
+   *      (부호 없는 뺄셈은 32비트가 한 바퀴 돌아도(wrap) 맞다 - 이해 확인 4번. 더해서 견주지 않는다)
+   *   지울 자리표시는 없다 - 빈 본문에 바로 쓴다. 위의 "문맥 · 불변식" 줄은 남긴다.
+   */
+}</code></pre>
+      <p>골격은 그대로 빌드된다(두 함수 모두 빈 본문). 다음은 등록 — 최상위 <code>CMakeLists.txt</code> 의 두 자리에 한 줄씩이다. 뒤의 쪽들은 모듈을 만들 때마다 첫 자리에 <strong>묶음 폴더까지 적은</strong> 한 줄(예: <code>User/Src/Tools/console.c</code>)을 더하고, 둘째 자리(<code>User/Inc</code>)는 끝까지 그대로 둔다(<a href="#s2-2-2">§2-2-2</a>).</p>
+      <p class="small">이 블록은 전량 제공이다 — 이유: 경로 철자 하나가 틀리면 링크 오류가 나고, 그 오류는 C 코드의 잘못처럼 보인다.</p>
+      <pre><code class="lang-cmake"># Add sources to executable
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    # Add user sources here
+    User/Src/app.c
+)
+
+# Add include paths
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+    # Add user defined include paths
+    User/Inc            # 사용자 포함 경로는 이것 하나 - 묶음 헤더는 "묶음/이름.h" (fw-02 2-2-2)
+)</code></pre>
+      <p>마지막으로 <code>Core/Src/main.c</code> — 생성물에 넣는 것은 <code>#include</code> 한 줄과 호출 두 줄이 전부이고, 셋 다 마커 <strong>사이</strong>다. 아래는 생성된 <code>main.c</code> 의 해당 부분에 세 줄을 넣은 모습이다(나머지 줄은 CubeMX 가 쓴 그대로).</p>
+      <pre><code class="lang-c">/* USER CODE BEGIN Includes */
+#include "app.h"
+/* USER CODE END Includes */
+
+  /* ... main() 안, MX_..._Init() 호출들 뒤 ... */
+  /* USER CODE BEGIN 2 */
+  app_init();
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
+    app_loop();
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+  }
+  /* USER CODE END 3 */</code></pre>
+      <p><code>while (1)</code> 은 <code>main.c</code> 에 하나 더 있다 — <code>Error_Handler()</code> 안의 것이다. 거기가 아니다. <code>BEGIN WHILE</code> 과 <code>END WHILE</code> 사이에 <code>while (1) {</code> 가 끼어 있는 모양이 낯설지만, 그래서 루프의 첫 줄이 마커 안쪽이 된다.</p>
+
+      <h4 id="s3-3-3">3-3-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li>위 네 가지(파일 둘 · 등록 두 줄 · <code>main.c</code> 세 줄)를 넣고 <strong>빈 골격인 채로</strong> <code>firmware/tools/build.sh</code> 를 돌린다. 빌드가 되면 배선은 맞다.</li>
+        <li><strong>일부러 한 번 틀린다.</strong> 최상위 <code>CMakeLists.txt</code> 에서 <code>User/Src/app.c</code> 줄을 지우고 빌드한다 → 어느 단계(컴파일 / 링크)에서, 어떤 문장으로 멈추는지 노트에 적고 줄을 되돌린다. 같은 방법으로 <code>User/Inc</code> 줄도 해 본다. 두 메시지가 어떻게 다른가?</li>
+        <li><code>app_loop()</code> 의 <code>TODO(you) [T1]</code> 를 채운다(막히면 아래 힌트 T1). 조건은 둘이다 — LD1 이 눈으로 셀 수 있는 주기로 깜박일 것, 그리고 <strong><code>HAL_Delay()</code> 를 쓰지 않을 것.</strong>
+          힌트: 지금 시각은 <code>HAL_GetTick()</code>(ms 단위, <code>stm32h7xx_hal.c:338</code>), 뒤집기는 <code>HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin)</code>. "마지막으로 뒤집은 시각"을 함수 안의 <code>static</code> 변수에 두고, 부호 없는 뺄셈으로 지난 시간을 구한다(32비트가 한 바퀴 돌아도 차는 맞다 — 왜 그런지는 이해 확인 4번).</li>
+        <li>왜 <code>HAL_Delay()</code> 가 안 되는가: <code>stm32h7xx_hal.c:405</code> 의 본문은 <code>HAL_GetTick()</code> 이 목표에 닿을 때까지 도는 <code>while</code> 하나다. 그 동안 <code>app_loop()</code> 는 돌아오지 않는다. 뒤 쪽에서 이 루프에 명령 창의 입력 처리와 워치독 갱신이 같이 산다 — 첫 모듈부터 "막지 않는다"를 지킨다.</li>
+      </ol>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 3 = T1. 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>app_loop()</code> · <code>HAL_Delay()</code> 없이 LD1 을 heartbeat 로 점멸시킨다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — <code>main()</code> 의 <code>while (1)</code> 이 이 함수를 끝없이 부른다(§3-3-2 의 <code>main.c</code> 세 줄). 입력은 <code>HAL_GetTick()</code> 이 주는 지금 시각 [ms] 하나, 출력은 LD1 핀의 뒤집기다. 끝났을 때 참이어야 하는 것: (1) 마지막으로 뒤집은 뒤 내 주기(<code>HEARTBEAT_MS</code>)만큼 지났을 때만, 한 번 뒤집는다 (2) 어느 호출도 기다리지 않고 바로 돌아온다 — 그래야 뒤 쪽에서 같은 루프에 들어오는 명령 창(fw-05)과 워치독 갱신(fw-06)이 굶지 않는다. 주기 값은 내가 정한다 — 이 카드는 숫자를 주지 않는다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T1 - User/Src/app.c */
+#define HEARTBEAT_MS 0u   /* ____ 내가 정한다 [ms] - LD1 을 뒤집는 간격. 눈으로 셀 수 있을 만큼 느리게. 옆의 0 은 자리표시일 뿐 값이 아니다 */
+_Static_assert(HEARTBEAT_MS &gt; 0u, "app.c: HEARTBEAT_MS is still EMPTY");
+
+void app_loop(void)
+{
+  /* 문맥: main(), 끝없이 연달아 불린다. 불변식: 빨리 돌아오고, 막지 않는다. */
+  static uint32_t last_ms;             /* 마지막으로 뒤집은 시각 [ms]. static 이라 호출 사이에 남고, 부팅 때 0 */
+  uint32_t now_ms = HAL_GetTick();     /* 지금 시각 [ms]. SysTick 인터럽트가 1 ms 마다 1 씩 올리는 수 */
+
+  if ((uint32_t)(now_ms - last_ms) &gt;= HEARTBEAT_MS) {   /* 부호 없는 차: 32비트가 한 바퀴 돌아도(wrap) 맞다 */
+    last_ms = now_ms;
+    HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
+  }
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li>어디에 넣는가 — 상수 두 줄은 <code>#include "main.h"</code> 아래 · <code>app_init()</code> 위(파일 범위), 함수는 골격의 <code>app_loop()</code> 자리에. 골격의 "문맥 · 불변식" 주석은 그대로 두었다 — 뒤 쪽들이 이 함수에 줄을 더할 때 그 규칙을 다시 읽는다. 지울 자리표시는 없다.</li>
+          <li><code>#define HEARTBEAT_MS 0u</code> — 전처리기 상수. 컴파일 전에 글자 그대로 바꿔 넣으므로 메모리를 쓰지 않고, 주기를 한 곳에서만 바꾼다. 끝의 <code>u</code> 는 "부호 없는 정수" 표시다 — 아래 뺄셈의 결과(<code>uint32_t</code>)와 같은 부호로 견주기 위해서다. <code>0</code> 은 값이 아니라 자리표시(<code>____</code>)다: 눈으로 셀 수 있는 값을 내가 적는다. 뒤 쪽의 <code>robot_params.h</code>(<a href="fw-08-pwm-safe-output.html">fw-08</a>)가 쓰는 "EMPTY 키"와 같은 꼴이다.</li>
+          <li><code>_Static_assert(HEARTBEAT_MS &gt; 0u, "…")</code> — 컴파일 시간 검사(C11). 조건이 거짓이면 빌드가 그 메시지로 멈춘다. 왜 두는가: <code>0</code> 인 채로 구우면 <code>&gt;= 0</code> 이 늘 참이라 매 호출마다 뒤집혀 LD1 이 흐릿하게 켜진 것처럼 보인다 — 조용히 틀리는 것보다 빌드가 멈추는 것이 낫다. 메시지 앞에 파일 이름을 붙이는 것이 이 프로젝트의 꼴이다. 함수 밖에 둘 수 있는 문장이고, 실행 코드를 만들지 않는다.</li>
+          <li><code>static uint32_t last_ms;</code> — 함수 <strong>안</strong>의 <code>static</code>: 이 변수는 함수가 돌아가도 사라지지 않고 다음 호출까지 값을 지킨다(보통의 지역 변수는 호출마다 새로 생기고 값이 정해져 있지 않다). 부팅 때 0 으로 시작한다 — C 가 <code>static</code> 변수를 0 으로 초기화하므로 <code>= 0</code> 을 안 써도 같다. <code>uint32_t</code> 는 "정확히 32비트 부호 없는 정수"(<code>stdint.h</code> — <code>main.h</code> → HAL 헤더를 거쳐 들어온다). <code>HAL_GetTick()</code> 의 반환형과 같아야 아래 뺄셈이 wrap 에 안전하다.</li>
+          <li><code>uint32_t now_ms = HAL_GetTick();</code> — 지금 시각을 한 번만 읽어 둔다. 한 호출 안에서 두 번 읽으면 그 사이에 1 ms 가 지나 두 값이 달라질 수 있다 — 비교에 쓴 값과 기억할 값이 같아야 한다.</li>
+          <li><code>if ((uint32_t)(now_ms - last_ms) &gt;= HEARTBEAT_MS)</code> — "마지막 뒤집기부터 주기 이상 지났는가". <strong>빼서</strong> 견준다. <code>last_ms + HEARTBEAT_MS</code> 와 견주는 꼴은 덧셈이 넘치는 순간 틀린다(이해 확인 4번). <code>(uint32_t)</code> 캐스트는 이 MCU 에서는 없어도 같은 코드가 나온다(<code>uint32_t</code> 끼리의 뺄셈은 이미 <code>uint32_t</code>) — "일부러 부호 없는 차를 쓴다"는 뜻을 읽는 사람에게 남기는 표시이고, HAL 자신도 같은 꼴로 쓴다(<code>HAL_Delay()</code> 의 <code>while ((HAL_GetTick() - tickstart) &lt; wait)</code>, <code>stm32h7xx_hal.c:416</code>).</li>
+          <li><code>last_ms = now_ms;</code> — 뒤집은 시각을 기억한다. 뒤집기와의 앞뒤 순서는 상관없지만(둘 다 이 호출 안에서 끝난다) <strong>조건 안</strong>에 있어야 한다 — 밖에 두면 매 호출마다 갱신돼 차가 늘 0 이 되고 영영 뒤집히지 않는다.</li>
+          <li><code>HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);</code> — 핀의 현재 출력을 읽어 반대로 쓴다. 두 매크로는 CubeMX 가 User Label <code>LD1</code> 에서 만든 것(<code>Core/Inc/main.h</code> 의 <code>#define LD1_Pin GPIO_PIN_0</code> · <code>#define LD1_GPIO_Port GPIOB</code> — 줄 번호는 내 생성물에서 <code>grep -n LD1 Core/Inc/main.h</code>). 포트가 먼저, 핀이 뒤다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — (가) 갱신: <code>last_ms = now_ms;</code> 는 루프가 늦으면 늦은 만큼 다음 뒤집기도 밀리고, <code>last_ms += HEARTBEAT_MS;</code> 는 평균 주기를 지키는 대신 오래 멈췄다 돌아오면 밀린 횟수만큼 연달아 뒤집는다 — LED 에서는 어느 쪽이든 된다. (나) 뒤집기: <code>TogglePin</code> 대신 <code>static bool on;</code> 을 두고 <code>HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, on ? GPIO_PIN_SET : GPIO_PIN_RESET); on = !on;</code> 로 써도 된다(<code>&lt;stdbool.h&gt;</code> 포함) — 핀 상태를 내가 들고 있게 된다. (다) 가드: 값을 처음부터 적을 거면 <code>_Static_assert</code> 줄 없이 <code>#define HEARTBEAT_MS &lt;내 값&gt;u</code> 한 줄로 끝내도 된다 — 가드는 "비워 둔 채 굽는 것"만 막는다. (라) <code>static uint32_t last_ms = 0;</code> 으로 써도 같다. 이 함수는 fw-05 에서 <code>led</code> 명령이 생기고 fw-06 에서 1 kHz(주기 1 ms) 박자가 생기면 다시 손보게 된다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong></p>
+        <ul>
+          <li><code>uint32_t HAL_GetTick(void)</code> — 선언 <code>stm32h7xx_hal.h:1081</code>, 정의 <code>stm32h7xx_hal.c:338</code>(<code>__weak</code>). 인자 없음, 반환은 부팅 뒤 지난 ms 수(<code>uwTick</code> 을 돌려준다, <code>:340</code>). 올리는 쪽은 <code>HAL_IncTick()</code>(<code>:327</code>, <code>uwTick += (uint32_t)uwTickFreq;</code>)이고, 그것을 1 ms 마다 부르는 것이 생성물 <code>Core/Src/stm32h7xx_it.c</code> 의 <code>SysTick_Handler()</code> 다(이해 확인 1번). 1 카운트 = 1 ms 인 것은 <code>uwTickFreq</code> 의 기본값(<code>:73</code> 의 <code>HAL_TICK_FREQ_DEFAULT</code> = <code>HAL_TICK_FREQ_1KHZ</code>, <code>stm32h7xx_hal.h:48</code>) 때문이다. 변수 하나를 읽을 뿐이라 주 루프 · ISR 어디서나 부를 수 있다. 약 49.7 일마다 0 으로 되감긴다(이해 확인 4번).</li>
+          <li><code>void HAL_GPIO_TogglePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin)</code> — 선언 <code>stm32h7xx_hal_gpio.h:267</code>, 정의 <code>stm32h7xx_hal_gpio.c:446</code>. 첫째 인자는 포트(<code>GPIOB</code> — 그 포트의 레지스터 묶음이 있는 주소라서 포인터다), 둘째는 핀 비트마스크(<code>GPIO_PIN_0</code> = <code>((uint16_t)0x0001)</code>, <code>stm32h7xx_hal_gpio.h:85</code>). 반환 없음. 본문은 <code>ODR</code> 을 읽어 <code>BSRR</code> 에 "낮았던 핀은 set, 높았던 핀은 reset" 을 한 번에 쓴다(<code>:454~457</code>). 주 루프 · ISR 어디서나 부를 수 있다.</li>
+          <li>쓰지 <strong>않는</strong> 것 — <code>void HAL_Delay(uint32_t Delay)</code>(<code>stm32h7xx_hal.c:405</code>): 본문이 <code>while ((HAL_GetTick() - tickstart) &lt; wait) {}</code>(<code>:416</code>) 라서 그 시간 동안 아무도 돌아오지 못한다. 3-3-3 의 4번.</li>
+        </ul>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>HEARTBEAT_MS</code> 를 <code>0u</code> 인 채로 빌드했다</td><td><code>error: static assertion failed: "app.c: HEARTBEAT_MS is still EMPTY"</code></td><td>내 값을 적는다(걸음 1)</td></tr>
+            <tr><td><code>#define HEARTBEAT_MS 500u;</code> — 끝에 세미콜론</td><td><code>error: expected ')' before ';' token</code> — 오류 위치는 <code>#define</code> 줄의 세미콜론이고, 그 아래 <code>note: in expansion of macro 'HEARTBEAT_MS'</code> 가 그 매크로를 쓴 <code>_Static_assert</code> 줄과 <code>if</code> 줄을 가리킨다(쓴 자리마다 한 번씩, 오류가 여럿 찍힌다)</td><td><code>#define</code> 은 문장이 아니라 글자 치환이다. 세미콜론까지 같이 치환되므로 뗀다</td></tr>
+            <tr><td><code>HAL_GPIO_TogglePin(LD1_Pin, LD1_GPIO_Port)</code> — 인자 순서를 바꿨다</td><td><code>error: passing argument 1 of 'HAL_GPIO_TogglePin' makes pointer from integer without a cast [-Wint-conversion]</code> 와 <code>note: expected 'GPIO_TypeDef *' but argument is of type 'short unsigned int'</code>(둘째 인자에도 거꾸로 된 <code>error</code> 가 하나 더 찍힌다)</td><td>포트(포인터)가 먼저, 핀(마스크)이 뒤 — 헤더 <code>:267</code> 의 순서</td></tr>
+            <tr><td><code>LD1</code> 이라고만 썼다</td><td><code>error: 'LD1' undeclared (first use in this function)</code></td><td>라벨은 <code>LD1_Pin</code> · <code>LD1_GPIO_Port</code> 두 매크로가 된다(<code>grep -n LD1 Core/Inc/main.h</code>)</td></tr>
+            <tr><td><code>static</code> 을 뺐다</td><td><code>warning: 'last_ms' is used uninitialized [-Wuninitialized]</code> — 경고일 뿐 빌드는 된다. 보드에서는 호출마다 <code>last_ms</code> 가 값이 정해지지 않은 채 새로 생겨 LD1 이 제멋대로다</td><td><code>static</code> 을 붙인다 — "호출 사이에 남는 변수"</td></tr>
+            <tr><td><code>last_ms = now_ms;</code> 를 <code>if</code> 밖에 두었다</td><td>아무 말 없다. 차가 늘 0 이라 LD1 이 한 번도 안 뒤집힌다</td><td>조건 안으로</td></tr>
+            <tr><td><code>now_ms &gt;= last_ms + HEARTBEAT_MS</code> 로 견줬다</td><td>아무 말 없다. 책상 위에서는 똑같이 깜박인다 — 49.7 일 뒤 <code>last_ms + HEARTBEAT_MS</code> 가 넘치는 순간부터 틀린다(이해 확인 4번)</td><td>빼서 견준다. 뒤 쪽의 엔코더 · 명령 워치독이 같은 꼴을 쓴다</td></tr>
+            <tr><td><code>HAL_Delay(HEARTBEAT_MS); HAL_GPIO_TogglePin(…);</code></td><td>아무 말 없다. LD1 은 깜박인다 — 그러나 이 함수가 주기 내내 돌아오지 않는다. fw-05 에서는 친 글자의 에코가 주기만큼 늦게 돌아오고(에코는 주 루프가 한다), fw-06 에서는 워치독 예산표의 "주 루프 최장 1회전" 행이 <code>HEARTBEAT_MS</code> 만큼 길어진다</td><td>이 카드의 꼴로. 3-3-3 의 4번</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 이 쪽에는 호스트 시험이 없다(<code>app.c</code> 는 <code>main.h</code> 를 포함한다). <code>firmware/tools/build.sh</code> 가 가드에서 멈추지 않고 ELF 를 내면 걸음 1 이 끝난 것이고, 나머지는 §3-3-4 에서 본다: LD1 이 깜박인다 · 열 번에 걸린 시간 = 20 × <code>HEARTBEAT_MS</code> ms(체크포인트 <code>led-blinks</code>) · B2 를 누르는 동안 꺼졌다가 처음부터 다시 · 다시 생성해도 같은 주기(<code>regen-keeps-blinking</code>). 보드 동작은 집필자가 확인하지 못했다 — 내가 본다.</p>
+        </div></details>
+      <p>이 쪽에는 호스트 단위시험이 없다. <code>app.c</code> 는 <code>main.h</code>(HAL)를 포함하므로 Mac 의 <code>cc</code> 로 컴파일되지 않는다. HAL 을 포함하지 않는 순수 로직 모듈이 처음 생기는 쪽부터 <code>firmware/host_tests/</code> 를 쓴다.</p>
+
+      <h4 id="s3-3-4">3-3-4. 굽고 보기</h4>
+      <p>보드의 CN1(ST-LINK 쪽 USB)에 케이블을 꽂는다. 다른 커넥터(CN13, 사용자 USB)에는 꽂지 않는다. LD5(초록)가 켜지고 LD4 가 빨강으로 멈추면 Mac 이 ST-LINK 를 알아본 것이다(§2-4 의 표). 공장 출하 데모(LD1~LD3 점멸 — UM2407 §6.1)는 이번 굽기로 지워진다.</p>
+      <p><strong>처음 꽂았을 때 한 번 — ST-LINK 펌웨어 갱신.</strong> <code>/opt/ST/STM32CubeCLT_1.21.0/STLinkUpgrade.sh</code> 를 실행한다(UM2407 §7.3.2. 스크립트가 무엇을 띄우는지는 <a href="fw-00-map.html#s3-1-3">fw-00</a> 의 도구 표 4행). 창이 보여 주는 갱신 전·후의 ST-LINK 펌웨어 판을 노트에 적어 둔다 — 아래 <code>flash.sh</code> 배너의 "펌웨어 판"과 같은 값이어야 한다. 집필자는 이 갱신 창을 보지 못했다(보드 미접속) — 화면이 다르면 화면이 맞다.</p>
+      <pre><code class="lang-bash">cd ~/ros2_rpi5
+ls /dev/cu.usbmodem*            # ST-LINK 의 VCP 가 포트로 보인다 (이 쪽에서는 열지 않는다)
+firmware/tools/flash.sh</code></pre>
+      <pre><code class="lang-text">(기대하는 흐름 — 정확한 문구는 내 출력을 노트에 붙여 둔다. 집필자는 보드에 연결해 보지 않았다)
+ build.sh 의 출력 (ELF: … 줄로 끝난다)
+ STM32CubeProgrammer 배너 → ST-LINK 정보(일련번호 · 펌웨어 판) → 장치 정보(STM32H72x/H73x, Device ID 0x483)
+ 지우기 · 쓰기 진행 표시 → 쓰기 성공 → 검증(-v) 성공 → 리셋(-rst)
+ 그 사이 LD4 가 빨강 ↔ 초록으로 깜박이다가 멈춘다</code></pre>
+      <p>그리고 <strong>LD1(초록)이 깜박인다.</strong> 세 가지를 더 본다.</p>
+      <ul>
+        <li><strong>주기를 시계로 잰다.</strong> 뒤집는 간격을 P ms 로 정했다면 한 번의 "켜짐 + 꺼짐"은 2P ms, 열 번이면 20 × P ms 다. 손목시계로 열 번을 재서 계산값과 견준다(____ s ↔ ____ s). 크게 다르면 1 ms 박자(SysTick)와 클럭 설정이 어긋난 것이다 — 이해 확인 1번이 그 길을 따라간다.</li>
+        <li><strong>B2(검정, RESET)를 누른다.</strong> 누르는 동안 LD1 은 꺼져 있고(리셋 중에는 핀이 구동되지 않는다), 떼면 처음부터 다시 깜박인다.</li>
+        <li><strong>다시 생성하고 다시 굽는다.</strong> CubeMX 에서 설정을 바꾸지 않고 GENERATE CODE → <code>grep -n 'app_' ~/ros2_rpi5/firmware/h723zg/Core/Src/main.c</code> 에 세 줄이 그대로 있는지 → <code>firmware/tools/flash.sh</code> → 여전히 깜박인다. 이것이 이 쪽의 목표 문장 뒷절이다.</li>
+      </ul>
+      <p>보드가 아직 없으면 <code>firmware/tools/build.sh</code> 까지만 하고 체크포인트의 마지막 셋을 비워 둔다.</p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="ioc-toolchain-cmake"><span><strong>경로 통과</strong> — <code>h723zg.ioc</code> 에 <code>ProjectManager.TargetToolchain=CMake</code> 와 <code>FirmwarePackage=STM32Cube FW_H7 V1.13.0</code> 이 있다
+          <span class="sub">판정 수단: <code>grep</code> 출력(명령 1) · §3-1-1</span></span></label></li>
+        <li><label><input type="checkbox" data-key="debug-serial-wire-pb3-free"><span><strong>경로 통과</strong> — PA13 · PA14 의 Mode 가 <code>Serial_Wire</code> 이고(<code>Trace_Asynchronous_SW</code> 가 아니다) <code>.ioc</code> 에 PB3 로 시작하는 줄이 없다
+          <span class="sub">판정 수단: <code>grep</code> 출력(명령 2) · §3-1-1 · 안전 규칙(§2-6)의 CubeMX 쪽 절반</span></span></label></li>
+        <li><label><input type="checkbox" data-key="eth-usb-released"><span><strong>경로 통과</strong> — IP 목록에 ETH · USB_OTG_HS 가 없고, 생성된 <code>main.c</code> 에 ETH · RMII · USB 글자가 없다
+          <span class="sub">판정 수단: <code>grep</code> 출력(명령 3 · 7) · §3-1-1</span></span></label></li>
+        <li><label><input type="checkbox" data-key="sysclk-at-most-520mhz"><span><strong>경로 통과</strong> — <code>RCC.SYSCLKFreq_VALUE</code> 가 520000000 이하다(부스트를 쓰지 않으므로 550 MHz 는 규격 밖이다 — (가) 출발점의 520 MHz 가 최종값이고 fw-03 도 바꾸지 않는다)
+          <span class="sub">판정 수단: <code>grep</code> 출력(명령 5) · §3-1-1 "클럭" 상자 · 근거 DS13313 표 12</span></span></label></li>
+        <li><label><input type="checkbox" data-key="build-produces-elf"><span><strong>경로 통과</strong> — <code>firmware/tools/build.sh</code> 가 메모리 사용표를 찍고 <code>build/Debug/h723zg.elf</code> 와 <code>compile_commands.json</code> 을 남긴다
+          <span class="sub">판정 수단: 빌드 출력 · <code>ls</code> · <code>readelf</code> · §3-1-4 · FLASH 사용량 ____ B 를 노트에</span></span></label></li>
+        <li><label><input type="checkbox" data-key="usercode-outside-lost"><span><strong>발동 확인</strong> — 다시 생성한 뒤 <code>canary-outside</code> 가 사라지고 <code>canary-inside</code> 와 최상위 <code>CMakeLists.txt</code> 의 <code>LINK_MODE</code> 줄은 남았다. "다시 쓰였는가" 표를 내 관찰로 채웠다
+          <span class="sub">판정 수단: <code>grep</code> · <code>diff</code> 출력 · §3-2-4</span></span></label></li>
+        <li><label><input type="checkbox" data-key="user-src-registered"><span><strong>경로 통과</strong> — 최상위 <code>CMakeLists.txt</code> 에 <code>User/Src/app.c</code> · <code>User/Inc</code> 가 있고 <code>main.c</code> 의 <code>app_</code> 세 줄이 전부 마커 사이에 있다
+          <span class="sub">판정 수단: <code>grep -n 'User/' CMakeLists.txt</code> · <code>grep -n -B1 -A1 'app_' Core/Src/main.c</code> · §3-3-2</span></span></label></li>
+        <li><label><input type="checkbox" data-key="unregistered-src-fails-link"><span><strong>발동 확인</strong> — 등록 줄을 일부러 뺐을 때 빌드가 어느 단계에서 어떤 문장으로 멈추는지 두 경우(<code>app.c</code> / <code>User/Inc</code>) 모두 노트에 적었다
+          <span class="sub">판정 수단: 빌드 출력 · §3-3-3 의 2번</span></span></label></li>
+        <li><label><input type="checkbox" data-key="flash-verifies-and-resets"><span><strong>경로 통과</strong> — <code>firmware/tools/flash.sh</code> 가 쓰기 · 검증 · 리셋까지 오류 없이 끝난다. 내 출력의 ST-LINK 펌웨어 판과 Device ID 를 노트에 적었다
+          <span class="sub">판정 수단: 도구 출력 · LD4 · §3-3-4 · 보드 필요</span></span></label></li>
+        <li><label><input type="checkbox" data-key="led-blinks"><span><strong>경로 통과</strong> — LD1 이 깜박이고, 열 번에 걸린 시간이 내가 정한 주기로 계산한 값과 맞는다(____ s ↔ ____ s)
+          <span class="sub">판정 수단: 눈 · 시계 · §3-3-4 · 보드 필요</span></span></label></li>
+        <li><label><input type="checkbox" data-key="regen-keeps-blinking"><span><strong>경로 통과</strong> — CubeMX 로 다시 생성하고 다시 구운 뒤에도 LD1 이 같은 주기로 깜박인다
+          <span class="sub">판정 수단: <code>grep</code> · 눈 · §3-3-4 · 보드 필요</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <p>"포트가 안 보인다" · "플래시가 안 된다"는 펌웨어 쪽 전체의 공통 증상이고 이 표가 그 자리다. 다른 쪽은 여기를 가리킨다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td><code>build.sh: 'arm-none-eabi-gcc' is not on PATH</code></td><td>CubeCLT 의 <code>bin</code> 이 <code>PATH</code> 에 없다 / 설치 뒤 터미널을 새로 열지 않았다</td><td><code>grep STM32CubeCLT /etc/paths</code> · <code>echo $PATH | tr ':' '\n' | grep ST</code></td><td>§3-1-2 · <a href="fw-00-map.html">fw-00</a></td></tr>
+          <tr><td>configure 끝에 <code>CMake Warning: Manually-specified variables were not used by the project: LINK_MODE</code></td><td>최상위 <code>CMakeLists.txt</code> 에 <code>LINK_MODE</code> 받는 자리를 넣지 않았다(빌드는 된다)</td><td><code>grep -n LINK_MODE CMakeLists.txt</code></td><td>§3-1-2</td></tr>
+          <tr><td>링크에서 <code>undefined reference to `app_init'</code></td><td><code>User/Src/app.c</code> 가 <code>target_sources</code> 에 없다</td><td><code>grep -n 'User/' CMakeLists.txt</code></td><td>§3-3-2</td></tr>
+          <tr><td>컴파일에서 <code>fatal error: app.h: No such file or directory</code></td><td><code>User/Inc</code> 가 포함 경로에 없다 / 파일을 다른 디렉터리에 만들었다</td><td>같은 <code>grep</code> · <code>ls User/Inc</code></td><td>§3-3-2</td></tr>
+          <tr><td>컴파일에서 <code>fatal error: log.h: No such file or directory</code> — 파일은 <code>User/Inc/Tools/</code> 에 분명히 있다</td><td><code>#include</code> 에 묶음 이름을 빼먹었다(<code>"log.h"</code> → <code>"Tools/log.h"</code>). 포함 경로는 <code>User/Inc</code> 하나다</td><td><code>grep -rn '#include "' User | grep -v '"[A-Z][A-Za-z]*/'</code> — 남는 줄이 <code>app.h</code> 와 생성물 헤더(<code>main.h</code> …)뿐이어야 한다</td><td>§2-2-2</td></tr>
+          <tr><td>configure 에서 <code>CMake Error … (target_sources): Cannot find source file:</code> 다음 줄에 <code>User/Src/console.c</code> — 빌드가 시작도 안 한다</td><td>등록 줄에 묶음 폴더를 빼먹었다(<code>User/Src/Tools/console.c</code> 여야 한다). 없는 파일을 등록하면 링크가 아니라 <strong>configure</strong> 에서 멈춘다(2026-09-29, cmake 4.3.2 로 확인)</td><td><code>grep -n 'User/Src' CMakeLists.txt</code> 의 경로를 <code>ls</code> 로 하나씩</td><td>§2-2-1 · §3-3-2</td></tr>
+          <tr><td><code>ls /dev/cu.usbmodem*</code> 가 비어 있다 — 포트가 안 보인다</td><td>충전 전용 케이블 / CN1 이 아닌 CN13 에 꽂음 / 허브 문제</td><td>LD4 가 빨강 <strong>느린 점멸</strong>에 머물면 USB 열거가 안 된 것(§2-4 표). LD5 가 꺼져 있으면 전원부터. 케이블을 바꾸고 Mac 에 직접 꽂는다</td><td>케이블 · 포트. ST-LINK 펌웨어 갱신(UM2407 §7.3.2)은 §3-3-4 의 첫 연결 걸음</td></tr>
+          <tr><td><code>flash.sh</code> 가 ST-LINK 나 타깃에 붙지 못하고 끝난다 — 플래시가 안 된다</td><td>위와 같은 원인 / 다른 프로그램이 ST-LINK 를 쥐고 있다(디버거 · 다른 <code>STM32_Programmer_CLI</code>) / 타깃이 SWD 에 응답하지 못하는 상태</td><td>LD4 가 주황이면 통신 실패. <code>STM32_Programmer_CLI -l st-link-only</code>(타깃을 건드리지 않고 프로브만 나열 — <code>--help</code>)로 프로브가 보이는지. 디버거를 끈다</td><td>프로브가 보이는데 타깃만 안 붙으면 <code>--help</code> 의 연결 모드 <code>mode=UR</code>("Reset mode with UR connection mode is HWrst")로 붙는지 본다: <code>STM32_Programmer_CLI -c port=SWD mode=UR</code>. 이 가이드는 이 경우를 겪어 확인하지 못했다 — 겪으면 노트에 적는다</td></tr>
+          <tr><td>구웠고 검증도 통과했는데 LD1 이 안 깜박인다</td><td><code>TODO(you) [T1]</code> 를 안 채웠다(힌트 T1) / <code>app_loop()</code> 를 <code>Error_Handler()</code> 의 <code>while</code> 에 넣었다 / 라벨이 <code>LD1</code> 이 아니라 다른 핀이 뒤집힌다 / 보드의 SB39 · SB47 이 기본과 다르다(LD1 ↔ PB0, UM2407 §7.6.1)</td><td><code>grep -n -B2 -A2 'app_loop' Core/Src/main.c</code> · <code>grep -n 'LD1' Core/Inc/main.h</code>(<code>GPIO_PIN_0</code> · <code>GPIOB</code> 여야 한다)</td><td>§3-3-2 · §3-1-1 · SB 는 <a href="fw-01-pinmap.html">fw-01</a></td></tr>
+          <tr><td>다시 생성했더니 <code>app_init()</code> 호출이 사라졌다</td><td>마커 밖에 썼다</td><td><code>grep -n -B1 -A1 'app_' Core/Src/main.c</code> — 위아래 줄이 <code>USER CODE</code> 마커(또는 <code>while</code> 의 <code>{</code>)인가</td><td>§2-1 · §3-3-2</td></tr>
+          <tr><td>(먼 증상) fw-09 에서 TIM2 의 엔코더 모드가 PA15/PB3 에 놓이지 않는다</td><td>Debug 가 Serial Wire 가 아니거나 PB3 가 SWO 로 잠겨 있다</td><td><code>grep -n '^PA13\|^PB3' h723zg.ioc</code></td><td>§3-1-1</td></tr>
+          <tr><td>굽는 중 LD6(빨강)가 켜진다</td><td>USB 에서 500 mA 를 넘게 끌고 있다(UM2407 §7.6.1)</td><td>보드에 꽂아 둔 것을 전부 뗀다</td><td>케이블을 뽑고 원인을 찾은 뒤 다시</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. (4중 검색) LD1 의 주기를 만든 1 ms 박자는 <code>HAL_IncTick</code> 에서 온다. 이 함수를 네 군데에서 찾아 적어 보라 — 헤더 → <code>__weak</code> → 호출 시점 → 예제</summary>
+        <div class="ans"><p>이 쪽에는 HAL 콜백이 없어서 같은 네 걸음을 <code>HAL_IncTick</code> 에 맞췄다. ③ 이 다른 쪽과 다르다 — 부르는 쪽이 HAL 안이 아니라 <strong>생성물</strong>에 있다.</p>
+        <pre><code class="lang-bash">grep -n "HAL_IncTick" $HAL/Inc/stm32h7xx_hal.h                    # ① 헤더: 시그니처
+grep -n "__weak void HAL_IncTick" $HAL/Src/stm32h7xx_hal.c         # ② 약한 기본 구현
+grep -rn "HAL_IncTick();" ~/ros2_rpi5/firmware/h723zg/Core/Src     # ③ 누가 언제 부르는가
+grep -rln "HAL_IncTick" $FW_H7/Projects/NUCLEO-H723ZG/Examples/HAL # ④ ST 예제</code></pre>
+        <p>① <code>stm32h7xx_hal.h:1079</code> — <code>void HAL_IncTick(void);</code> ② <code>stm32h7xx_hal.c:327</code> — 본문은 <code>uwTick += (uint32_t)uwTickFreq;</code> 한 줄이고, <code>HAL_GetTick()</code>(<code>:338</code>)이 그 <code>uwTick</code> 을 돌려준다.
+        ③ HAL 소스 안에는 부르는 곳이 없다(템플릿 파일 셋뿐). 부르는 것은 생성된 <code>Core/Src/stm32h7xx_it.c</code> 의 <code>SysTick_Handler()</code> 이고, 그 핸들러는 <code>startup_stm32h723xx.s</code> 의 벡터 테이블에 이름으로 올라 있다. SysTick 을 1 ms 로 거는 것은 <code>HAL_Init()</code> → <code>HAL_InitTick()</code>(<code>stm32h7xx_hal.c:170</code> → <code>:262</code>)의 <code>HAL_SYSTICK_Config(SystemCoreClock / (1000UL / uwTickFreq))</code>(<code>:271</code>)다 — 그래서 <code>SystemCoreClock</code> 이 실제 클럭과 다르면 LD1 의 주기가 틀어진다.
+        ④ <code>Examples/HAL/HAL_TimeBase_TIM/Src/stm32h7xx_hal_timebase_tim.c:161</code> — SysTick 대신 TIM6 의 <code>HAL_TIM_PeriodElapsedCallback()</code>(<code>:156</code>) 안에서 <code>HAL_IncTick()</code> 을 부른다. <code>__weak</code> 이라서 박자의 출처를 바꿀 수 있다는 실례다.
+        (줄 번호는 FW_H7 V1.13.0 에서 2026-09-22 에 확인한 것. ① ② 를 <code>$HAL</code> 에서 찾는 것은 그것이 실제로 컴파일되는 파일이어서이고, ④ 는 예제가 팩에만 있어서 <code>$FW_H7</code> 다.)</p></div></details>
+      <details class="quiz"><summary>2. 다시 생성한 뒤에도 남는 것을 고르라: (a) <code>main.c</code> 의 <code>USER CODE BEGIN 2</code> 아래에 쓴 호출 (b) <code>MX_GPIO_Init()</code> 본문에 직접 더한 한 줄 (c) 최상위 <code>CMakeLists.txt</code> 에 더한 소스 (d) <code>cmake/stm32cubemx/CMakeLists.txt</code> 에 더한 소스 (e) <code>User/Src/app.c</code></summary>
+        <div class="ans"><p>(a) (c) (e). (a) 는 마커 사이라서, (c) 는 그 파일이 "한 번만 생성"이라서(파일 머리 주석), (e) 는 CubeMX 가 <code>User/</code> 를 모르기 때문이다.
+        (b) 는 마커 밖이라 사라진다 — <code>MX_GPIO_Init()</code> 의 내용을 바꾸고 싶으면 <code>.ioc</code> 를 고친다. (d) 는 파일이 통째로 다시 쓰인다(실습 B 에서 본 것). 그래서 규칙이 "생성물에는 호출만, 본체는 <code>User/</code>, 등록은 최상위 파일"이다.</p></div></details>
+      <details class="quiz"><summary>3. (일부러 틀리면) <code>User/Src/app.c</code> 의 등록을 빼면 왜 컴파일이 아니라 <strong>링크</strong>에서 멈추는가? <code>User/Inc</code> 를 빼면 왜 더 앞에서 멈추는가? 그리고 <code>User/Src/Tools/console.c</code> 에서 <code>#include "log.h"</code> 는 안 되는데 <code>User/Inc/Tools/console.h</code> 에서는 같은 줄이 되는 이유는?</summary>
+        <div class="ans"><p><code>main.c</code> 는 <code>app.h</code> 의 선언만 보고 컴파일된다 — "어딘가에 <code>app_init</code> 이 있다"는 약속이면 충분하다. 약속을 지킬 정의(<code>app.c</code> 의 목적 파일)가 목록에 없다는 것은 모든 목적 파일을 모으는 링크 단계에서야 드러난다: <code>undefined reference to `app_init'</code>.
+        포함 경로가 없으면 그 약속(<code>app.h</code>)조차 찾지 못하므로 <code>main.c</code> 의 전처리에서 멈춘다: <code>fatal error: app.h: No such file or directory</code>. 오류가 난 <strong>단계</strong>를 보면 무엇을 빠뜨렸는지 절반은 알 수 있다.</p>
+        <p>셋째: 따옴표 꼴은 <strong>포함하는 파일의 디렉터리</strong>를 먼저 본다(§2-2-2 의 ①). <code>console.c</code> 의 디렉터리는 <code>User/Src/Tools/</code> 라서 거기에 <code>log.h</code> 가 없고, 포함 경로 <code>User/Inc</code> 바로 아래에도 없다 → <code>fatal error: log.h: No such file or directory</code>. <code>console.h</code> 의 디렉터리는 <code>User/Inc/Tools/</code> — <code>log.h</code> 의 형제라서 ① 에서 잡힌다.
+        되는데도 묶음째(<code>"Tools/log.h"</code>) 쓰는 이유는 한 꼴이어야 <code>grep -rn '#include "Comm/' User</code> 한 번이 "통신 묶음에 기대는 파일 전부"가 되기 때문이다(<a href="fw-19-bench-acceptance.html">fw-19</a> 실습 A 의 6) 이 같은 꼴의 검사다). 이름만 쓴 줄은 어느 묶음을 가리키는지 줄만 보고 알 수 없다.</p></div></details>
+      <details class="quiz"><summary>4. <code>now - last &gt;= period</code> 를 부호 없는 32비트로 계산하면 <code>HAL_GetTick()</code> 이 한 바퀴 돌아 0 으로 돌아간 직후에도 맞는 이유는? 한 바퀴는 며칠인가?</summary>
+        <div class="ans"><p>부호 없는 뺄셈은 2<sup>32</sup> 을 법으로 하는 연산이라, <code>last = 0xFFFFFFF0</code> · <code>now = 0x00000010</code> 이면 <code>now - last = 0x20</code>(32 ms)이 나온다 — 실제로 지난 시간과 같다. 반대로 <code>now &gt;= last + period</code> 처럼 <strong>더해서 비교</strong>하면 <code>last + period</code> 가 넘쳐 작은 수가 되는 순간 조건이 곧바로 참이 된다.
+        한 바퀴는 2<sup>32</sup> ms = 4 294 967 296 ms ÷ 86 400 000 ms/일 ≈ 49.7 일. 책상 위에서는 만나기 어렵지만, 같은 꼴의 계산이 뒤에서 32비트 엔코더 카운터와 명령 워치독(200 ms)에 그대로 쓰인다.</p></div></details>
+      <details class="quiz"><summary>5. <code>FW_PRESET=Release</code> 로 빌드해 구우면 무엇이 달라지고 무엇이 같은가? 빌드 디렉터리가 프리셋마다 따로인 것은 왜 편한가?</summary>
+        <div class="ans"><p>달라지는 것: 최적화(<code>-O0</code> → <code>-Os</code>)와 디버그 정보(<code>-g3</code> → <code>-g0</code>), 매크로 <code>DEBUG</code> 의 유무. 그래서 크기와 실행 시간이 달라지고, 디버거가 소스 줄 · 변수 이름을 알지 못하게 된다. 같은 것: 소스, 링커 스크립트, CPU · FPU 옵션, 나머지 매크로.
+        디렉터리가 따로(<code>build/Debug</code> · <code>build/Release</code>)라서 둘을 오가도 서로의 목적 파일을 덮어쓰지 않고, 두 ELF 를 나란히 두고 <code>arm-none-eabi-size</code> 로 견줄 수 있다. <code>LINK_MODE</code> 는 그렇지 않다 — 같은 디렉터리를 쓰므로 모드를 바꾸면 내 소스가 다시 컴파일된다. <code>flash.sh</code> 가 굽기 전에 늘 <code>build.sh</code> 를 부르는 이유 중 하나다.</p></div></details>
+      <details class="quiz"><summary>6. UM2407 은 한 곳에서 "mass storage"를, 다른 곳에서 "only SWD and VCP"를 말한다. 이 가이드는 어느 쪽을 따르고, 굽는 명령에 <code>-v</code> 를 넣는 이유는 무엇인가?</summary>
+        <div class="ans"><p>§7.3("only SWD and VCP for STM32H7 devices")을 따른다 — 계열 공통의 특징 목록보다 이 보드에 한정한 문장이 구체적이기 때문이다. 그래서 굽는 길은 SWD 하나(<code>STM32_Programmer_CLI -c port=SWD</code>)다.
+        <code>-v</code> 는 쓴 내용을 되읽어 파일과 견준다. 이것이 없으면 "구웠다"는 도구의 말과 "플래시에 그 내용이 있다"는 사실 사이를 확인할 수단이 없다. 뒤 쪽에서 "고쳤는데 동작이 안 바뀐다"를 만났을 때 도구 단계를 의심 목록에서 뺄 수 있게 해 준다.</p></div></details>
+      <details class="quiz"><summary>7. (안전 규칙) 엔코더는 fw-09 에서야 꽂는다. 그런데 왜 PB3 의 잠금을 오늘 푸는가? 그리고 CubeMX 에서 풀었는데도 디버거의 SWV 를 켜면 안 되는 이유는?</summary>
+        <div class="ans"><p>오늘 푸는 이유: 보드 프리셋이 PB3 를 SWO 로 <strong>이미 잠가 둔 채</strong> 프로젝트가 시작되고, 그 상태로는 TIM2_CH2 가 PB3 에 놓이지 않는다. 미뤄 두면 증상이 일곱 쪽 뒤에서 "핀이 안 잡힌다"로 나타나 원인을 찾기 어렵다.
+        SWV 를 켜면 안 되는 이유: CubeMX 설정은 <code>MX_GPIO_Init()</code> <strong>이후</strong>의 핀 상태만 정한다. 리셋 직후부터 그때까지 PB3 는 JTDO/TRACESWO 기능으로 살아 있고(RM0468 §11.3.1), 그 구간에 디버거가 SWV 를 켜면 MCU 가 PB3 를 출력으로 구동해 엔코더의 B 상 출력과 맞붙는다(추정 — 그래서 끄는 쪽으로 정했다). 두 조치는 서로를 대신하지 못한다.</p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>보드가 있으면</strong> → <a href="fw-03-clock-console.html">fw-03</a> — 클럭과 VCP 콘솔. 이 쪽에서 맞춘 520 MHz 가 부팅 배너에 찍히는 것을 보고, 옵션 바이트를 읽어 부스트 비트가 0 인지 기록한다. LED 하나였던 출력이 글자가 된다.</li>
+          <li><strong>보드가 아직 없으면</strong> → 이 쪽의 체크포인트 마지막 셋이 열린 채로 남는다. 보드가 오면 §3-3-4 만 다시 한다. 그동안은 본편(ROS 2 쪽)의 단계를 병행한다.</li>
+          <li><strong>DMM 이 있으면</strong> → <a href="fw-01-pinmap.html">fw-01</a>(핀맵과 내 보드 확인)은 지금 해도 되고, 결선이 시작되는 쪽 앞에서만 끝나 있으면 된다.</li>
+          <li><code>hardware/INVENTORY.md</code> 2절 "툴체인" 행에 <strong>프로젝트 이름</strong>(<code>firmware/h723zg</code> 또는 내가 고른 이름)과 <strong>HAL 팩 버전</strong>(<code>.ioc</code> 의 <code>ProjectManager.FirmwarePackage</code> 값)을 덧붙였는가.</li>
+          <li>노트에 남길 것: 출발점 (가)/(나) 중 고른 것, <code>Drivers/</code> 커밋 여부, 위치 표에서 화면이 달랐던 곳, "다시 쓰였는가" 표, <code>flash.sh</code> 의 실제 출력.</li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

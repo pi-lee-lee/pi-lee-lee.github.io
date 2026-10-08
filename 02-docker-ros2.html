@@ -204,6 +204,8 @@ docker info --format '{{.Architecture}}'     # aarch64 확인</code></pre>
       <div class="callout why"><span class="ct">왜 Pi 에서 직접 편집하지 않는가</span>
         <p>로봇은 자주 껐다 켜지고, SD 카드는 언젠가 죽는다. 원본은 Mac(+git)에 두고 Pi 는 "실행 사본"으로 취급하는 것이 안전하다. Pi 를 새로 굽더라도 rsync 한 번이면 복구된다.
         스크립트는 <code>build/ install/ log/</code> 를 제외하므로(<code>--delete</code> 가 빌드 산출물을 지우지 않도록) 동기화해도 매번 풀빌드가 되지 않는다.</p>
+        <p><strong>규칙 한 줄 — 패키지는 Mac 에서 만들거나, Pi 에서 만들었으면 다음 동기화 전에 Mac 으로 가져와 git 에 넣는다.</strong> <code>--delete</code> 는 "Mac 에 없는 것은 Pi 에서도 지운다"는 뜻이라, 뒤 단계에서 Pi 의 컨테이너 안에서 <code>ros2 pkg create</code> 로 만든 패키지를 Mac 에 가져오지 않은 채 동기화하면 그 패키지가 지워진다.
+        그래서 스크립트는 <code>ros2_ws/src/</code> 아래에 Pi 에만 있는 디렉터리를 지우게 되면 그 목록과 가져오는 명령을 보여 주고 <strong>멈춘다</strong>(정말 지우려면 <code>ALLOW_DELETE_SRC=1</code>). 07·08 에서 <code>ros2_ws/src/drivers.repos</code> 로 받는 외부 드라이버 소스는 보내지도 지우지도 않는다.</p>
       </div>
 
       <h3>3-3. 학습 단계 패키지 추가 <span class="tag mac">Mac</span></h3>
@@ -316,18 +318,18 @@ docker compose --profile robot up      # 로봇 본체 기동 (bringup 서비스
 
       <h2>✅ 검증 체크포인트</h2>
       <ul class="checklist">
-        <li><label><input type="checkbox"><span><span class="tag pi">Pi</span> <code>docker run --rm hello-world</code> 가 동작하고 <code>docker info --format '{{.Architecture}}'</code> 가 aarch64 다</span></label></li>
-        <li><label><input type="checkbox"><span>§3-3 의 학습 패키지를 넣었다 (A: <code>Dockerfile</code> 2-B 블록 추가 + <code>sync-to-pi.sh</code>, B: 컨테이너에서 설치)</span></label></li>
-        <li><label><input type="checkbox"><span><span class="tag pi">Pi</span> <code>docker/.env</code> 의 HOST_UID/HOST_GID 가 <code>id -u</code>/<code>id -g</code> 와 같다</span></label></li>
-        <li><label><input type="checkbox"><span><span class="tag pi">Pi</span> <code>docker images | grep rpi5-ros2</code> — 이미지가 있다</span></label></li>
-        <li><label><input type="checkbox"><span><span class="tag cli">컨테이너</span> <code>ros2 topic list</code> 에 <code>/rosout</code> 이 보인다</span></label></li>
-        <li><label><input type="checkbox"><span><span class="tag cli">컨테이너</span> <code>whoami &amp;&amp; id -u</code> — root 가 아니고 UID 가 호스트와 같다</span></label></li>
-        <li><label><input type="checkbox"><span><span class="tag cli">컨테이너</span> <code>/ros2_ws</code> 에 만든 파일이 호스트에서 내 계정 소유로 보인다 (root 면 실패)</span></label></li>
-        <li><label><input type="checkbox"><span><span class="tag cli">컨테이너</span> <code>ls -l /dev/lidar /dev/mcu /dev/video* /dev/hailo0 /dev/dma_heap/</code> — 장치가 보인다</span></label></li>
-        <li><label><input type="checkbox"><span>서로 다른 두 컨테이너에서 <code>demo_nodes_cpp talker</code> 와 <code>demo_nodes_py listener</code> 가 통신한다</span></label></li>
-        <li><label><input type="checkbox"><span><code>ros2 pkg list | grep -E 'rplidar|slam_toolbox|nav2_bringup|cv_bridge|vision_msgs|robot_localization'</code> — §3-3 목록의 패키지가 전부 나온다</span></label></li>
-        <li><label><input type="checkbox"><span><span class="tag mac">Mac</span> Foxglove 가 <code>ws://192.168.50.97:8765</code> 에 연결되어 토픽 목록과 <code>/rosout</code> 이 보인다</span></label></li>
-        <li><label><input type="checkbox"><span>(시스템 경로 볼륨이 없는 기본 구성에서) 컨테이너 안에서 <code>sudo apt install</code> 한 것이 <code>exit</code> 후 새 컨테이너에서 사라지는 것을 직접 확인했다 (예: <code>sudo apt install -y sl</code> → exit → 재진입 → <code>which sl</code>)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp0"><span><span class="tag pi">Pi</span> <code>docker run --rm hello-world</code> 가 동작하고 <code>docker info --format '{{.Architecture}}'</code> 가 aarch64 다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp1"><span>§3-3 의 학습 패키지를 넣었다 (A: <code>Dockerfile</code> 2-B 블록 추가 + <code>sync-to-pi.sh</code>, B: 컨테이너에서 설치)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp2"><span><span class="tag pi">Pi</span> <code>docker/.env</code> 의 HOST_UID/HOST_GID 가 <code>id -u</code>/<code>id -g</code> 와 같다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp3"><span><span class="tag pi">Pi</span> <code>docker images | grep rpi5-ros2</code> — 이미지가 있다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp4"><span><span class="tag cli">컨테이너</span> <code>ros2 topic list</code> 에 <code>/rosout</code> 이 보인다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp5"><span><span class="tag cli">컨테이너</span> <code>whoami &amp;&amp; id -u</code> — root 가 아니고 UID 가 호스트와 같다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp6"><span><span class="tag cli">컨테이너</span> <code>/ros2_ws</code> 에 만든 파일이 호스트에서 내 계정 소유로 보인다 (root 면 실패)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp7"><span><span class="tag cli">컨테이너</span> <code>ls -l /dev/lidar /dev/mcu /dev/video* /dev/hailo0 /dev/dma_heap/</code> — 장치가 보인다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp8"><span>서로 다른 두 컨테이너에서 <code>demo_nodes_cpp talker</code> 와 <code>demo_nodes_py listener</code> 가 통신한다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp9"><span><code>ros2 pkg list | grep -E 'rplidar|slam_toolbox|nav2_bringup|cv_bridge|vision_msgs|robot_localization'</code> — §3-3 목록의 패키지가 전부 나온다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp10"><span><span class="tag mac">Mac</span> Foxglove 가 <code>ws://192.168.50.97:8765</code> 에 연결되어 토픽 목록과 <code>/rosout</code> 이 보인다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp11"><span>(시스템 경로 볼륨이 없는 기본 구성에서) 컨테이너 안에서 <code>sudo apt install</code> 한 것이 <code>exit</code> 후 새 컨테이너에서 사라지는 것을 직접 확인했다 (예: <code>sudo apt install -y sl</code> → exit → 재진입 → <code>which sl</code>)</span></label></li>
       </ul>
       <p class="progress-line"></p>
       <div class="progress-bar"><span></span></div>

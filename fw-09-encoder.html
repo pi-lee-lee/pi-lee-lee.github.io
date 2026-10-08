@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F9 · 엔코더 — MCU 펌웨어 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="fw-09">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">F9 · 엔코더</p>
+      <h1>바퀴를 손으로 돌리면 숫자가 따라온다 — 그 숫자의 뜻을 내 손으로 잰다</h1>
+      <p class="lead"><a href="fw-05-cli.html">fw-05</a> 의 명령 창과 <a href="fw-06-tick-watchdog.html">fw-06</a> 의 시각(<code>tick_get_ms()</code>)이 있으니, 이제 처음으로 <strong>보드 밖의 신호</strong>를 받는다.
+      네 바퀴의 엔코더를 32비트 타이머 넷(TIM2 · TIM5 · TIM23 · TIM24)의 엔코더 모드에 물리고, 바퀴를 손으로 돌려 카운트가 양방향으로 움직이는 것을 본다.
+      이 쪽이 남기는 것은 코드보다 <strong>두 개의 잰 값</strong>이다 — 바퀴 1회전당 카운트(<code>ENCODER_CPR</code>)와 바퀴마다의 부호(<code>ENC_SIGN_*</code>). 뒤의 속도 PID(fw-13)와 계약의 <code>l_tick</code> · <code>r_tick</code>(fw-17)이 전부 이 두 값 위에 선다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>명령 창에 <code>enc</code> 를 치면 네 바퀴의 누적 카운트와 직전 1 s 증분이 나온다. 바퀴를 앞으로 돌리면 그 바퀴의 숫자가 <strong>커지고</strong>, 뒤로 돌리면 작아진다 — 네 바퀴 모두.
+        마스킹테이프로 표시한 바퀴를 N 회전 돌려 잰 counts/rev 를 <code>hardware/INVENTORY.md</code> 6절 "엔코더 분해능" 행과 <code>robot_params.h</code> 의 <code>ENCODER_CPR</code> 에 <code>MEASURED</code> 로 적는다.
+        <strong>이 프로젝트에서 <code>ENCODER_CPR</code> 이 MEASURED 가 되는 자리는 여기뿐이다</strong>(관문 09a 는 이 값을 재확인만 한다). 네 바퀴의 부호 상수 <code>ENC_SIGN_FL … _RR</code> 도 여기서 잰 값으로 적는다.</p>
+        <p><strong>이 쪽에 필요한 것</strong> — NUCLEO-H723ZG, USB 케이블, fw-06 까지 끝낸 프로젝트(<code>firmware/h723zg/</code>), 엔코더가 내장된 모터 <strong>1개 이상</strong>(섀시에 고정된 채 바퀴를 공중에 띄운다 — 모터 전원은 넣지 않는다), 엔코더 커넥터에서 점퍼선으로 빼는 수단(커넥터의 피치 · 핀 수는 기록에 없다 — §3-3 에서 실물을 보고 적는다), DMM, 10 kΩ 저항 1개(입구 확인 ③ · 실습 C), 마스킹테이프(회전 표시), <a href="fw-01-pinmap.html">fw-01</a> 에서 뗀 SB57.
+        <strong>없으면</strong> — 모터가 없으면 CubeMX 설정 · 골격 · 호스트 시험(§3-1-3)까지 하고, 카운트 확인 · counts/rev · 부호의 다섯 체크 항목은 열어 둔다. SB57 을 아직 떼지 않았으면 이 쪽에 들어오지 않는다(<a href="fw-01-pinmap.html#s3-3">fw-01 §3-3</a> 으로). 더 살 부품은 없다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag mx">CubeMX</span> <span class="tag mac">Mac</span></div>
+        <div><span class="k">선행</span><a href="fw-05-cli.html">fw-05</a> — <code>cli_register()</code> · 출력 규약 · <code>FW_ASSERT</code> / <a href="fw-06-tick-watchdog.html">fw-06</a> — <code>tick_get_ms()</code>(1 s 증분의 시각) · 동결 줄이 든 빌드(입구 확인 ①) / <a href="fw-01-pinmap.html#s3-3">fw-01 §3-3</a> — SB57 제거 · <a href="fw-01-pinmap.html#s3-4">fw-01 §3-4</a> — 결선 금지 목록 / <a href="fw-04-debugger.html">fw-04</a> — SWV 끔(<code>swv-off-confirmed</code>) · gdb 접속(입구 확인 ①) / <a href="fw-02-toolchain.html#s2-6">fw-02 §2-6</a> — Debug = Serial Wire + PB3 잠금 해제</div>
+        <div><span class="k">채우는 INVENTORY 칸</span>6절 "엔코더 분해능"(NOMINAL 94,000 → 내 실측 MEASURED) · "기어비"(역검증) · "엔코더 커넥터 · 선 색상" / 2절 "배선 전 확인"의 엔코더 항목(A/B 의 HIGH 전압 · 출력 형식) / 2절 "솔더 브리지"의 "내 보드" 줄에 SB57 기능 시험 결과</div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
+      </div>
+
+      <h2 id="overview">1. 개요 — 세는 것은 하드웨어, 뜻을 정하는 것은 나</h2>
+      <p>본편 <a href="06a-mcu-protocol.html">06a</a> §3-3-B 의 핀 배정표에서 "엔코더 ×4 — TIM2 (FL) · TIM5 (FR) · TIM23 (RL) · TIM24 (RR), 넷 다 32비트"라고 적힌 행을 실제로 만드는 쪽이다.
+      엔코더 한 개는 90° 어긋난 두 구형파(A · B)를 낸다. 타이머의 엔코더 모드는 그 두 선의 <strong>모든 엣지</strong>를 세고 방향까지 스스로 판별한다 — CPU 는 읽고 싶을 때 <code>CNT</code> 레지스터를 한 번 읽는다.
+      그래서 이 쪽의 코드는 짧다. 시간이 드는 곳은 코드가 아니라 <strong>값을 재는 일</strong>이다: 1회전이 몇 카운트인가, 어느 방향이 + 인가.</p>
+      <pre class="diagram"><code> 엔코더 (모터 안, Nucleo 3V3 급전)      MCU 하드웨어 (타이머 엔코더 모드)           펌웨어 encoder.c        쓰는 곳
+   A --90도 어긋난 구형파--&gt; TIMx_CH1 = TI1 -+                                    encoder_count()     --&gt; enc (명령 창, 이 쪽)
+   B -----------------------&gt; TIMx_CH2 = TI2 -+-&gt; 엣지 4개/주기 + 방향 --&gt; CNT 32비트 --&gt; encoder_delta()     --&gt; fw-13 의 속도 PID          
+                                                  (DIR 비트, RM0468 표 354)            x ENC_SIGN_*         --&gt; fw-17 의 l_tick/r_tick              
+                                                  CPU 비용 0: 읽을 때 한 번</code></pre>
+      <p>새로 나오는 말을 먼저 한 줄씩 정해 둔다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>말</th><th>이 가이드에서의 뜻</th></tr></thead>
+        <tbody>
+          <tr><td>쿼드러처(quadrature)</td><td>위상이 90° 어긋난 두 구형파 A · B. 어느 것이 먼저 바뀌는가로 방향을 안다</td></tr>
+          <tr><td>4체배(x4)</td><td>A 의 상승 · 하강, B 의 상승 · 하강 — 한 주기에 엣지 4개를 전부 센다. 펄스 1개 = 카운트 4</td></tr>
+          <tr><td>PPR</td><td>모터축 1회전당 펄스 수. 이 모터는 500(1세대 기록 — 재는 값이 아니라 부품 사양)</td></tr>
+          <tr><td>counts/rev · <code>ENCODER_CPR</code></td><td><strong>바퀴(출력축)</strong> 1회전당 카운트. = PPR × 4 × 기어비. 공칭 94,000 은 산술값, 내 값은 §3-1-4 에서 잰다</td></tr>
+          <tr><td>부호 상수 둘</td><td><code>ENC_SIGN_*</code> = 바퀴가 앞으로 돌 때 카운트가 + 가 되게 하는 ±1. <code>MOTOR_SIGN_*</code> = 양의 듀티가 바퀴를 앞으로 돌리게 하는 ±1(fw-11). <strong>다른 물건이다</strong>(§2-7)</td></tr>
+          <tr><td>1 s 증분(<code>d_xx</code>)</td><td><code>enc</code> 가 찍는 둘째 묶음. 직전 1 s 동안 카운트가 얼마나 변했는가 — <code>tick_get_ms()</code> 로 1 s 를 잰다(fw-06)</td></tr>
+        </tbody>
+      </table></div>
+      <p>이 쪽이 남기는 것을 뒤에서 누가 쓰는가: <code>encoder_delta()</code> 가 낸 카운트 차분은 <a href="fw-13-pid-protection.html">fw-13</a>에서 <code>ENCODER_CPR</code> 과 바퀴 지름으로 mm/s 가 되어 속도 PID 의 측정값이 된다.
+      좌 · 우 쪽당 평균 누적 카운트는 <a href="fw-17-link-v2.html">fw-17</a>이 계약 v2 의 <code>l_tick</code> · <code>r_tick</code> 으로 보낸다(06a §4-2). 바퀴별 카운트 네 개는 계약에 없다 — 벤치에서 그것을 보는 창이 이 쪽의 <code>enc</code> 다(06a §3-4).
+      그리고 "선을 뽑으면 카운트가 선다"(실습 C)는 fw-13 의 보호 3종 가운데 FEEDBACK_LOST 가 잡아야 하는 것의 예고다.</p>
+      <div class="callout note"><span class="ct">이 쪽의 숫자도 fw-03 의 클럭 트리 위에 서 있다</span>
+        <p>카운트 자체는 클럭과 무관하다(엔코더 엣지가 곧 클럭이다). 클럭이 들어오는 곳은 하나 — 입력 필터(§2-9)의 표본 주기다. 표본 클럭 <code>fDTS</code> 의 출발점은 <a href="fw-03-clock-console.html">fw-03</a> 의 타이머 클럭 260 MHz(SYSCLK 520 MHz — VOS0, 옵션 바이트 CPU_FREQ_BOOST = 0 공장 기본값 그대로)이다. 실수로 550 이 들어간 보드(CubeMX Clock Configuration 화면의 안내 — fw-03)라면 275 MHz 로 읽는다.</p>
+      </div>
+      <div class="callout note"><span class="ct">결정 대기 — <code>l_tick</code> · <code>r_tick</code> 의 부호 규약(전진 = +)을 계약 본문에 올리는가</span>
+        <p>(가) 계약 v2(06a §4-2 · §4-3)에 "전진 = +" 를 명시한다 — Pi 쪽 브리지가 부호를 뒤집을 일이 없어지고, MCU 가 <code>ENC_SIGN_*</code> 을 적용한 값을 보내는 것이 계약의 의무가 된다 / (나) 06 의 브리지 쪽 규약으로만 둔다 — 계약은 "누적 카운트"라고만 말하고 부호는 양쪽이 따로 맞춘다.
+        차이가 없는 축: 이 쪽에서 재는 <code>ENC_SIGN_*</code> 네 개와 그것을 적용하는 자리(<code>encoder.c</code>)는 어느 쪽이든 <strong>동일</strong>하다. 그래서 <strong>이 쪽에는 기본 진행이 없다</strong> — 어느 길로 가도 이 쪽에서 하는 일이 같기 때문이고, 권고가 아니다. 이 쪽은 바퀴별 부호만 다루고, 계약에 올릴지는 <a href="fw-17-link-v2.html">fw-17</a>에서 닫는다.</p>
+      </div>
+
+      <h2 id="why">2. 원리 — 왜 하드웨어가 세고, 왜 32비트이고, 왜 3V3 인가</h2>
+
+      <h3 id="s2-1">2-1. 4체배와 방향 판별 — 하드웨어가 센다(CPU 비용 0)</h3>
+      <p>A 와 B 가 90° 어긋나 있다는 것은, 한 신호가 바뀌는 순간 다른 신호는 안정된 레벨에 있다는 뜻이다. 그 레벨이 방향을 말해 준다 — A 가 올라갈 때 B 가 LOW 면 한 방향, HIGH 면 반대 방향. 타이머는 이 규칙을 하드웨어로 갖고 있다.</p>
+      <pre class="diagram"><code> 앞으로 돌 때 (예)                         뒤로 돌 때
+ A  __|""""|____|""""|____                 A  __|""""|____|""""|____
+ B  ____|""""|____|""""|__                 B  |""""|____|""""|____|"
+      ^  ^  ^  ^  ^  ^                          ^  ^  ^  ^  ^  ^
+      엣지마다 카운트 1 -&gt; 한 주기에 4          같은 엣지, 방향만 반대 -&gt; 카운트 -1
+ "A 상승 때 B 의 레벨" 이 두 그림에서 다르다  -&gt;  이것이 DIR 비트가 된다</code></pre>
+      <p>RM0468 §44.3.15(p.1693)는 세 모드를 준다 — 한쪽 엣지만 세는 x2 가 둘, <strong>둘 다</strong> 세는 x4(SMS = 011)가 하나. 이 가이드는 x4 를 쓴다. 다만 <strong>x2 두 모드의 SMS 값은 RM0468 안에서 서로 어긋난다</strong>: 같은 §44.3.15 본문은 "001 = TI2 엣지만 · 010 = TI1 엣지만"이라 적는데, 같은 문서의 TIMx_SMCR 비트 설명은 "0001 = TI1FP1 엣지 · 0010 = TI2FP2 엣지"로 정반대다. HAL 의 이름은 뒤쪽을 따른다(<code>TIM_ENCODERMODE_TI1</code> = <code>TIM_SMCR_SMS_0</code> = 001, <code>stm32h7xx_hal_tim.h:702</code> 의 주석이 "counts up/down on TI1FP1 edge"). x4 는 어느 해석에서도 011 하나라 이 가이드의 설정에는 영향이 없다 — 원본끼리 다툴 때 내가 딛고 설 자리는 <strong>내가 쓰는 모드는 x4</strong> 하나다. 방향 규칙은 표 354(p.1694)에 있다:</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>세는 엣지</th><th>다른 채널의 레벨</th><th>TI1FP1 상승</th><th>TI1FP1 하강</th><th>TI2FP2 상승</th><th>TI2FP2 하강</th></tr></thead>
+        <tbody>
+          <tr><td rowspan="2">TI1 과 TI2 둘 다(x4)</td><td>High</td><td>Down</td><td>Up</td><td>Up</td><td>Down</td></tr>
+          <tr><td>Low</td><td>Up</td><td>Down</td><td>Down</td><td>Up</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">RM0468 Rev 3 표 354 의 "Counting on TI1 and TI2" 두 행을 옮긴 것이다(TI1FP1 · TI2FP2 = 필터와 극성 선택을 거친 뒤의 TI1 · TI2). 같은 표가 TIM1/TIM8 장에는 표 349(p.1604)로 있다. 이 표에서 두 가지가 바로 나온다:</p>
+      <ul>
+        <li><strong>한 선만 움직이면 카운트는 ±1 을 왕복한다.</strong> TI1 만 토글하고 TI2 가 High 에 멈춰 있으면 상승에 Down, 하강에 Up — 제자리다. 그래서 "선 하나가 빠졌다"는 카운트가 <em>서는</em> 것이 아니라 <em>떨리는</em> 것으로 보일 수 있다(실습 C 에서 직접 본다).</li>
+        <li><strong>펄스 1개 = 카운트 4.</strong> PPR 500 이면 모터축 1회전 = 2,000 카운트 — 1세대가 실제로 잰 값과 같다(2026-07-17, <code>~/ros2/docs/bench/motor_bench_findings_2026-07-17.md:50</code> "2000 count = 모터축 1회전, 정지 시 드리프트 0"). 이 값은 <strong>모터축</strong>이다. 바퀴는 기어 뒤에 있다(§2-5).</li>
+      </ul>
+      <p>왜 소프트웨어로 세지 않는가. 이 모터의 무부하 최대는 모터축 약 5,150 rpm(1세대 실측, 2026-06-12, <code>~/ros2/docs/bts_stage1_results.md:19-36</code>)이고, 여기서 채널당 엣지 주파수는 5150 × 500 ÷ 60 ≈ 42.9 kHz, x4 로 채널 둘을 합치면 약 171,700 카운트/s 다 — 이 산술은 [추정]이지만 크기의 감은 준다.
+      바퀴 넷이면 초당 70만 번 가까운 인터럽트다. 1 kHz(1 ms) 제어 박자(fw-06)와 UART 수신이 그 사이에 끼어들 자리가 없다. 타이머 엔코더 모드는 이것을 전부 하드웨어가 하고, 1 ms 마다 CPU 가 하는 일은 32비트 읽기 한 번이다.</p>
+      <p class="small">HAL 에서 이 모드는 <code>HAL_TIM_Encoder_Init()</code>(<code>stm32h7xx_hal_tim.c:3030</code>)과 <code>TIM_ENCODERMODE_TI12</code>(<code>stm32h7xx_hal_tim.h:704</code> — "x4 mode, counts up/down on both TI1FP1 and TI2FP2 edges")이고, 시작은 <code>HAL_TIM_Encoder_Start()</code>(<code>hal_tim.c:3225</code>)다. RM 은 "encoder 모드에서는 프리스케일러를 0 으로 두라"고 못 박는다(§43.3.22 p.1603 의 Note — TIM1/TIM8 장의 문장이고 §44.3.15 는 같은 동작을 TIM2/5/23/24 에 적는다). CubeMX 의 Prescaler 기본값이 0 이다.</p>
+
+      <h3 id="s2-2">2-2. 32비트라 랩어라운드 보정 코드가 없다 — 부호 있는 차분 한 줄</h3>
+      <p>H723 의 TIM2 · TIM5 · TIM23 · TIM24 는 32비트 카운터다(DS13313 §3.31.2 p.42; CMSIS 의 <code>IS_TIM_32B_COUNTER_INSTANCE</code>, <code>stm32h723xx.h:24206</code> 이 정확히 이 넷을 나열한다). 바퀴가 넷이라 32비트 타이머 넷이 전부 필요하고, 그래서 TIM5 가 PA0/PA1 을 가져가며 이더넷(PA1)을 내준 것이다(<a href="fw-01-pinmap.html#s2-4">fw-01 §2-4</a>). 그 대가로 얻는 것이 무엇인지 숫자로 본다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th></th><th>16비트 (TIM3 · TIM4 였다면)</th><th>32비트 (TIM2 · TIM5 · TIM23 · TIM24)</th></tr></thead>
+        <tbody>
+          <tr><td>카운터가 한 바퀴 도는 시간 — 위 산술의 최대 171,700 카운트/s 에서</td><td>65,536 ÷ 171,700 ≈ <strong>0.38 s</strong></td><td>4,294,967,296 ÷ 171,700 ≈ 25,000 s ≈ <strong>6.9 시간</strong></td></tr>
+          <tr><td>1 ms 사이에 변할 수 있는 최대 카운트</td><td colspan="2">약 172 (같은 값 — 카운터 폭과 무관)</td></tr>
+          <tr><td>차분 <code>now - prev</code> 를 그대로 믿을 수 있는 조건</td><td>|차분| &lt; 32,768 — 1 ms 창에서는 성립하지만, 표본을 0.2 s 만 놓치면 깨진다</td><td>|차분| &lt; 2,147,483,648 — 3.5 시간을 놓쳐도 성립</td></tr>
+          <tr><td>바퀴 1회전(공칭 94,000)을 한 창에 담는가</td><td>못 담는다 — 한 회전 안에서 두 번 넘친다</td><td>담는다</td></tr>
+        </tbody>
+      </table></div>
+      <p>핵심은 "넘침을 처리하는 코드가 <em>없다</em>"가 아니라, <strong>부호 없는 32비트 뺄셈을 부호 있는 32비트로 읽으면 넘침이 저절로 처리된다</strong>는 것이다. 카운터가 0xFFFFFFFF 에서 0x00000001 로 넘어갔을 때 <code>0x00000001 - 0xFFFFFFFF</code> 는 부호 없는 산술에서 2 이고, 그것을 <code>int32_t</code> 로 읽으면 +2 다. 반대로 갔으면 0xFFFFFFFE = −2.
+      이 성질은 카운터 폭과 뺄셈의 폭이 <strong>같을 때만</strong> 성립한다 — 16비트 카운터를 32비트 변수에 담아 빼면 65,536 이 튀어나온다(그래서 16비트 타이머는 보정 코드가 필요했다).</p>
+      <p>그러려면 카운터가 정말 32비트 전 범위를 돌아야 한다. RM0468 §44.3.15(p.1693): 엔코더 모드의 카운터는 <strong>0 과 ARR 사이</strong>를 돈다("counts continuously between 0 and the auto-reload value"). ARR 이 65,535 로 남아 있으면 32비트 타이머라도 16비트처럼 넘친다 — CubeMX 의 Counter Period 를 <strong>4,294,967,295</strong>(0xFFFFFFFF)로 두는 이유이고, 32비트 타이머의 기본값이 그 값인지 §3-1-1 에서 확인한다.
+      §3-1-3 의 호스트 시험 벡터가 이 성질을 그대로 채점한다: <code>(0x00000001, 0xFFFFFFFF) → +2</code>, <code>(0xFFFFFFFF, 0x00000001) → −2</code>, <code>(0x80000000, 0x7FFFFFFF) → +1</code>.</p>
+
+      <h3 id="s2-3">2-3. 엔코더 전원은 Nucleo 3V3 — 실측 구성이 아니라 필수 조건인 이유 셋</h3>
+      <p>1세대는 이 엔코더를 3.3 V 로 급전해 동작을 확인했다(2026-07-04, <code>~/ros2/hardware/circuit_ai.md:30</code> "엔코더 3.3V: 사용자 실동작 확인"). 그런데 이 가이드가 3V3 를 고집하는 이유는 "1세대가 그렇게 했다"가 아니다. 엔코더 8핀이 전부 FT 계열(5 V 톨러런트)인데도 <strong>5 V 급전은 선택지가 아니다</strong> — 근거는 데이터시트의 각주에 있다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>#</th><th>조건</th><th>근거</th><th>등급</th></tr></thead>
+        <tbody>
+          <tr><td>①</td><td>FT 입력의 절대 최대는 고정 5 V 가 아니라 <code>Min(VDD, VDDA, VDD33USB, VBAT) + 4.0 V</code>(상한 6 V). <strong>Nucleo 가 꺼져 있으면(VDD = 0) 한도는 4.0 V.</strong> 엔코더를 다른 레일에서 살려 두면 보드가 꺼진 순간 5 V 신호가 4.0 V 한도를 넘는다</td><td>DS13313 Rev 5 표 9 p.88 · 표 12 p.90</td><td>확정</td></tr>
+          <tr><td>②</td><td>4 V 초과를 견디는 것은 내부 풀업/풀다운이 <strong>꺼져 있을 때만</strong>이다. 그런데 PA15(FL 엔코더 A)는 리셋 구간에 JTDI 풀업이 <strong>켜져 있고 펌웨어가 끌 수 없다</strong>(<code>MX_GPIO_Init</code> 이전 구간). PA15 에서는 5 V 급전이 언제나 조건 위반이다</td><td>DS 표 9 각주 4 · RM0468 §11.3.1 p.511 "PA15: JTDI in pull-up"</td><td>확정</td></tr>
+          <tr><td>③</td><td>8핀 중 6핀(PA0 · PA1 · PF6 · PF7 · PF11 · PF12)은 <code>FT_ha</code>(아날로그 겸용)라 그 핀의 ADC 채널을 켜면 한도가 4 V 로 내려간다. 확정 핀맵은 이 핀을 디지털 AF 로만 쓴다 — 조건이 지켜지는 것을 <em>설정</em>이 보장한다</td><td>DS 표 9 각주 5 · <code>hardware/pinmap-h723.md</code> §2-B</td><td>확정</td></tr>
+        </tbody>
+      </table></div>
+      <p>Nucleo 의 3V3(CN8-7)에서 급전하면 엔코더가 MCU 와 <strong>같이 켜지고 같이 꺼진다.</strong> ①이 저절로 지켜지고 ②의 풀업은 3.3 V 신호에 무해하다. 이것이 <code>hardware/INVENTORY.md</code> 2절 "배선 전 필수 조건 ①"(센서 · 엔코더 전원은 Nucleo 3V3 에서만)이 된 경위다.
+      한 가지가 더 따라온다 — <strong>MCU 가 HIGH 로 읽는 최소 전압</strong>은 VDD 에 비례한다: 표 51(p.126)의 VIH 는 <code>0.7 × VDD</code>(각주 1, CMOS 조건) = 3.3 V 에서 <strong>2.31 V</strong> 다(같은 표에 <code>0.47 × VDD + 0.25</code> = 1.80 V 행도 있다 — 각주 2 "guaranteed by design"). 엔코더의 HIGH 가 2.31 V 를 넘는지는 §2-4 · 실습 C 에서 DMM 으로 잰다 — 그래야 "3.3 V 로 동작했다"는 기록이 "마진이 얼마였다"는 값이 된다.</p>
+      <div class="callout warn"><span class="ct">안전 규칙 — 엔코더 전원은 Nucleo 3V3 에서만, 전원 선은 USB 를 뽑은 채 꽂는다</span>
+        <p>엔코더 ×4 의 VCC 는 <strong>CN8-7(3V3)</strong> 하나에서 딴다. 별도 5 V / 3.3 V 레일 금지. 3V3 · GND 는 <strong>USB 를 뽑은 채</strong> 꽂고, 켠 뒤 <strong>3V3–GND 전압부터</strong> 잰다(<a href="fw-01-pinmap.html#s2-6">fw-01 §2-6</a>: CN8-7 의 바로 아래 CN8-9 가 5 V 다 — 한 칸 미끄러진 점퍼선이 3V3 레일에 5 V 를 건다).
+        3V3 레일의 예산(권고 상한 300 mA, UM2407 §7.4.1)은 엔코더를 달 때마다 <a href="fw-01-pinmap.html#s3-5">fw-01 §3-5</a> 의 절차로 잰다 — 엔코더 4개의 소비 전류는 기록에 없다(INVENTORY 6절 "엔코더 전원" 행의 <code>____</code>).</p>
+      </div>
+
+      <h3 id="s2-4">2-4. 출력 형식은 모른다 — 풀업 유 · 무에서 HIGH 전압을 잰다</h3>
+      <p>엔코더 출력단이 <strong>푸시풀</strong>(HIGH 를 스스로 3.3 V 로 밀어 올린다)인지 <strong>오픈컬렉터</strong>(LOW 만 만들고 HIGH 는 풀업 저항이 만든다)인지는 1세대 기록 어디에도 없다 — 회로 정본에 "엔코더 A/B 4.7k 풀업 여부(오픈컬렉터면)"라는 미결 항목이 끝까지 남았다(<code>~/ros2/hardware/circuit_ai.md:403</code>, 2026-07-13). 제조사 데이터시트도 1세대가 구하지 못했다(INVENTORY 6절 "모터 모델" 행).
+      "풀업 없이 MCU 에 직결해 10만 카운트/s 까지 따라갔다"는 간접 근거([추정], <code>~/ros2/hardware/wiring_spec_assembly.md:127</code>)는 푸시풀 쪽을 가리키지만, 오픈컬렉터 + 엔코더 내부 풀업이어도 같은 관측이 나온다. 그래서 잰다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>측정</th><th>푸시풀이면</th><th>오픈컬렉터(내부 풀업 없음)이면</th><th>오픈컬렉터 + 내부 풀업이면</th></tr></thead>
+        <tbody>
+          <tr><td>A ↔ GND, 외부 풀업 <strong>없이</strong>, 바퀴를 천천히 돌려 HIGH 자리에서</td><td>≈ 3.3 V (VCC 근처)</td><td>≈ 0 V 또는 흔들림 — DMM 의 10 MΩ 입력이 약한 풀다운 노릇을 한다</td><td>내부 풀업이 만든 값(VCC 보다 낮을 수 있다)</td></tr>
+          <tr><td>같은 자리, A ↔ 3V3 에 <strong>10 kΩ</strong> 을 달고</td><td>≈ 3.3 V (달라지지 않는다)</td><td>≈ 3.3 V (달라진다 — 이것이 판정)</td><td>거의 그대로</td></tr>
+          <tr><td>LOW 자리에서</td><td colspan="3">셋 다 ≈ 0 V. LOW 는 출력단이 만든다</td></tr>
+        </tbody>
+      </table></div>
+      <p>DMM 은 평균을 보는 계기라 바퀴가 도는 동안은 값이 뜻이 없다 — <strong>천천히 돌려 멈춰 세운 자리</strong>에서 읽는다(A 는 어느 자리에서 HIGH 이고 어느 자리에서 LOW 다 — 카운트가 1 바뀔 때마다 한 선의 레벨이 바뀐다). 기록하는 것은 두 조건의 HIGH 전압과 LOW 전압, 그리고 판정이다. 확실하지 않으면 <strong>"미결"</strong>이라고 적는 것이 값이다.
+      이 결과가 정하는 것: MCU 쪽 GPIO Pull 을 켤지(오픈컬렉터에 풀업이 없으면 켜야 한다 — 이 쪽의 CubeMX 는 <strong>No pull</strong> 로 두고 재고, 켤지는 잰 뒤 학습자가 정한다), 그리고 INVENTORY 2절 "배선 전 확인" 첫 항목의 두 빈칸(HIGH 전압 <code>____</code> V · 출력 형식 <code>____</code>)이다. 관문 09a 는 조립된 배선에서 같은 것을 재확인한다.</p>
+
+      <h3 id="s2-5">2-5. counts/rev = PPR × 4 × 기어비 — 공칭 94,000 은 산술값, 내 값은 실측</h3>
+      <p><code>ENCODER_CPR</code> 은 오도메트리와 속도의 <strong>축척</strong>이다. 이 값이 3 % 틀리면 모든 속도와 모든 거리가 3 % 씩 틀리고, 지도(본편 09)의 축척이 3 % 틀린다. 그런데 지금 INVENTORY 6절에 적힌 94,000 은 잰 값이 아니다:</p>
+      <pre><code class="lang-text">94,000 counts/rev  =  500 PPR (모터축, 1세대 기록 — 사양)  x  4 (체배, §2-1)  x  47 (기어비, 1세대 기록 — 사양)
+                       ^ 잰 것: 모터축 1회전 = 2,000 카운트 (2026-07-17)      ^ 잰 적 없다 — 제조사 시트도 없다</code></pre>
+      <p>세 인자 중 실측된 것은 <strong>2,000</strong>(= 500 × 4) 하나고, 47 은 사양이다. 그래서 이 쪽은 출력축(바퀴)을 손으로 N 회전 돌려 counts/rev 를 직접 잰다 — 그러면 두 가지가 한 번에 나온다:</p>
+      <ul>
+        <li><strong><code>ENCODER_CPR</code> 의 MEASURED 값</strong>: <code>|카운트 변화| ÷ N</code>. 손으로 1회전을 맞추는 오차가 ±5° 라면 1회전에 ±1.4 % 이지만 N = 10 이면 ±0.14 % 로 줄어든다 — 그래서 여러 바퀴를 돌린다. 시작 · 끝 표시를 같은 자리에 정확히 맞추는 것이 이 측정의 전부다.</li>
+        <li><strong>기어비의 역검증</strong>: <code>잰 CPR ÷ 2,000</code> 이 정수(47)에 얼마나 가까운가. 47.0 근처면 "1 : 47" 이 실물에 맞는다는 증거다. 46.5 처럼 어정쩡하면 회전 수를 잘못 셌거나 표시가 밀렸다 — 다시 잰다. 정수이되 47 이 아니면 그 값이 내 기어비다.</li>
+      </ul>
+      <p>기록은 두 곳이다. <code>hardware/INVENTORY.md</code> 6절 "엔코더 분해능" 행에 <code>MEASURED(&lt;날짜&gt;, hand-turn &lt;N&gt; rev)</code>, "기어비" 행에 역검증 결과. 그리고 <code>robot_params.h</code>:</p>
+      <pre><code class="lang-c">#define ENCODER_CPR       94000L     /* NOMINAL(gen1-record): 500 PPR x 4 x 47 [바퀴 1회전당 카운트] */   /* 실측 전 */
+#define ENCODER_CPR       &lt;n&gt;L       /* MEASURED(&lt;날짜&gt;, hand-turn &lt;N&gt; rev avg) [바퀴 1회전당 카운트] */   /* 실측 후 — 한 파일에 한 줄만 */</code></pre>
+      <p class="small">1 카운트가 뜻하는 거리는 <code>π × 바퀴 지름 ÷ CPR</code> — 공칭 지름 0.180 m 와 94,000 으로 약 6.0 µm 다(산술). 지름은 이 쪽의 값이 아니다(INVENTORY 6절 "바퀴 지름" — 05 에서 자로, 09a 에서 굴림 거리로). 관문 09a 는 CPR 을 <strong>재확인</strong>한다 — 바퀴 지름과 함께 굴림 거리로 축척을 닫는 자리이지, CPR 을 처음 재는 자리가 아니다.</p>
+
+      <h3 id="s2-6">2-6. 1 ms 창의 속도 양자화 — 저속 문턱의 하한이 여기서 정해진다</h3>
+      <p>fw-13 은 1 kHz(1 ms) 박자마다 <code>encoder_delta()</code> 를 읽어 속도를 만든다. 1 ms 창에서 카운트는 정수로만 변하므로 속도도 계단이다 — <strong>1 카운트/ms = 1,000 카운트/s</strong>. 이것을 바퀴의 움직임으로 바꾸면(공칭 CPR 94,000 · 공칭 지름 0.180 m, 산술):</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>1 ms 창의 카운트</th><th>카운트/s</th><th>바퀴 회전</th><th>선속도(공칭)</th><th>어디서 나오는 값인가</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>1,000</td><td>0.0106 rev/s</td><td><strong>≈ 6.0 mm/s</strong></td><td>속도의 최소 계단 — 이보다 느린 움직임은 1 ms 창에서 0 또는 1 로만 보인다</td></tr>
+          <tr><td>≈ 105</td><td>≈ 105,000</td><td>≈ 1.12 rev/s (67 rpm)</td><td>≈ 0.63 m/s</td><td>정격 속도(1세대 기록 67 rpm — 사양)</td></tr>
+          <tr><td>≈ 172</td><td>≈ 171,700</td><td>≈ 1.83 rev/s (109 rpm)</td><td>≈ 1.03 m/s</td><td>무부하 최대(§2-1 의 [추정] 산술)</td></tr>
+        </tbody>
+      </table></div>
+      <p>따라오는 결론이 둘이다. 첫째, fw-13 의 저속 판정(STALL · FEEDBACK_LOST 의 "속도가 안 나온다")은 <strong>6 mm/s 아래를 구분하지 못한다</strong> — 1 ms 창 하나로는. 문턱을 그 아래로 두면 정지와 극저속을 가르지 못하고, 창을 넓히면(예: 10 ms 합, 1 s 합) 계단이 잘아지는 대신 판정이 늦어진다. 어느 창을 쓸지는 fw-13 에서 학습자가 정한다 — 이 표는 그 결정의 <em>하한</em>을 준다.
+      둘째, <code>enc</code> 의 1 s 증분 <code>d_xx</code> 는 계단이 1 카운트/s(≈ 0.006 mm/s)라 손으로 돌리는 속도를 보기에 충분히 잘다. 벤치에서 "천천히 돌렸는데 0 으로 보인다"면 창의 문제가 아니라 배선의 문제다.</p>
+
+      <h3 id="s2-7">2-7. 부호 상수는 둘이다 — <code>ENC_SIGN_*</code> 과 <code>MOTOR_SIGN_*</code> 을 섞지 않는다</h3>
+      <p>바퀴 하나에는 부호가 <strong>두 개</strong> 있다. 이 둘을 한 상수로 뭉치면 무엇이 생기는지가 1세대 벤치의 첫 사고였다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>상수</th><th>뜻</th><th>어떻게 재는가</th><th>재는 쪽</th></tr></thead>
+        <tbody>
+          <tr><td><code>ENC_SIGN_FL … _RR</code></td><td>바퀴가 <strong>앞으로</strong> 돌 때 카운트가 + 가 되게 하는 ±1. 엔코더의 A/B 를 어느 핀에 꽂았는가에 따라 정해진다</td><td>모터 전원 없이, 바퀴를 <strong>손으로</strong> 앞으로 돌려 raw 카운트의 증감을 본다</td><td><strong>이 쪽</strong>(실습 B)</td></tr>
+          <tr><td><code>MOTOR_SIGN_FL … _RR</code></td><td><strong>양의 듀티</strong>가 바퀴를 앞으로 돌리게 하는 ±1. 모터 두 선을 IBT-2 의 어느 단자에 이었는가에 따라 정해진다</td><td>모터 전원을 넣고 낮은 듀티로 살짝 돌려 바퀴의 방향을 본다</td><td><a href="fw-11-power-sequence.html">fw-11</a> 첫 통전</td></tr>
+        </tbody>
+      </table></div>
+      <p>"앞으로"의 정의는 하나다 — <strong>바퀴 윗면이 로봇의 앞쪽으로 움직이는 회전</strong>. 모터가 섀시에 고정돼 있으므로(사용자 확인 2026-09-22) 이 방향은 바퀴마다 이미 정해져 있다. 좌 · 우 바퀴는 거울상이라 같은 "앞으로"가 모터축 기준으로는 반대 회전이다 — 그래서 부호가 좌 · 우에서 다르게 나올 수 있고, <strong>같게 나올 수도 있다</strong>(엔코더 배선까지 거울상이면). 짐작하지 않고 넷 다 잰다.</p>
+      <div class="callout note"><span class="ct">1세대 기록(2026-07-17~18) — 넷 다 반대였고, "거울상이니 절반만 반대일 것"은 기각됐다</span>
+        <p>첫 통전에서 양의 듀티에 음의 속도가 읽혀 부호 이상 폴트가 트립했다(안전망은 제대로 동작했다). 확인해 보니 4개 <strong>모두</strong> "양 듀티 → 음 카운트"였고, 좌 · 우 절반만 반대일 것이라는 가설은 기각됐다. 고친 방법은 값이 아니라 구조였다 — 바퀴마다 개별 구동으로 부호를 실측해 상수로 두고, 로봇 프레임의 좌우 반전은 <strong>별도 상수</strong>로 분리했다(<code>~/ros2/docs/bench/session_summary_2026-07-18.md:9,17-23</code>).
+        그때의 부호 값(−1 × 4)은 <strong>1세대 배선 기준</strong>이라 가져오지 않는다. 가져오는 것은 "바퀴마다 실측한다"는 절차와 "두 부호를 섞지 않는다"는 구조다(INVENTORY 6절 "엔코더 부호 · 좌우 방향은 값이 아니라 절차로 가져온다").</p>
+      </div>
+      <p><strong>섞으면 무엇이 생기는가.</strong> 모터가 뒤로 돈다고(MOTOR_SIGN 의 일) <code>ENC_SIGN</code> 을 뒤집어 "맞춰" 놓으면, 카운트의 부호와 실제 회전의 부호가 어긋난다. fw-13 의 PID 는 목표 +100 mm/s 에 측정 −100 mm/s 를 받아 오차를 <em>더 크게</em> 보고 듀티를 <em>더 올린다</em> — 음의 되먹임이 양의 되먹임이 된다. 그 끝은 최대 듀티의 전속 회전이고, 폴트가 잡기 전까지 아무것도 세우지 못한다. 그래서 규칙은 단순하다: <code>ENC_SIGN_*</code> 은 <strong>손으로 돌려서만</strong> 정하고, 모터 방향 문제로는 절대 건드리지 않는다.</p>
+      <p>배선을 바꿔서(A/B 를 서로 바꿔 꽂아) 부호를 + 로 맞추는 길도 있다. 세는 결과는 상수를 −1 로 두는 것과 <strong>동일</strong>하다. 다른 점은 기록이다 — 상수는 파일에 남아 다시 잴 수 있고, 배선은 커넥터를 뽑는 순간 사라진다. 이 가이드는 배선은 그대로 두고 상수로 적는 쪽으로 진행한다(권고가 아니라, 값을 파일에 남기는 §2-5 의 규약과 같은 꼴이기 때문이다). 어느 쪽이든 넷 다 <code>MEASURED(&lt;날짜&gt;, hand-turn forward)</code> 로 적는다.</p>
+
+      <h3 id="s2-8">2-8. PA0 · PA1 은 주입 민감 군 — 배선을 짧게, 접지를 같이</h3>
+      <p>FR 엔코더의 두 핀(PA0 · PA1)은 데이터시트가 따로 표시한 핀이다. DS13313 표 50(p.125, 주입 전류 <strong>기능 민감도</strong>)에서 "주입 시 기능 이상이 생길 수 있는 0 mA 군"에 들어 있다 — 파손 한계가 아니라 <em>동작이 흔들릴 수 있다</em>는 뜻이고, 절대 최대 자체는 다른 핀과 같은 −5 mA(표 10 p.89)다.
+      주입 전류가 생기는 길은 입력 전압이 VSS 아래로 내려가는 <strong>언더슈트</strong>다 — 긴 선, 다른 접지, 빠른 엣지가 만든다. TIM5 는 다른 핀이 없어 피할 수 없으므로(fw-01 §2-2), 조건으로 막는다: 엔코더를 Nucleo 3V3 로 급전하고(§2-3), 엔코더 GND 를 Nucleo GND 에 <strong>바로</strong> 물리고, 네 선을 짧게 한다. PA1 은 Morpho CN11-30 뿐이라 배선 뒤 육안으로 한 번 더 본다(<code>hardware/pinmap-h723.md</code> §5-5 — 두 줄 위 CN11-24 가 VIN, 아래 CN11-32 가 주입 −0/0 mA 인 PA4 다).</p>
+
+      <h3 id="s2-9">2-9. 입력 필터 — 값은 학습자가 도출한다</h3>
+      <p>CubeMX 의 엔코더 설정에는 채널마다 <strong>Input Filter</strong>(0~15)가 있다. 이것은 TIMx_CCMR1 의 <code>IC1F[3:0]</code> · <code>IC2F[3:0]</code>(RM0468 §44 의 CCMR1 서술, p.1717)이고, 뜻은 "표본 클럭 <code>fSAMPLING</code> 으로 입력을 찍어 <strong>N 번 연속 같아야</strong> 전이로 인정한다"다. 접점 튐이나 짧은 노이즈를 걸러 준다. 값을 고르는 재료는 셋이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>IC1F</th><th>fSAMPLING · N (RM0468 표)</th><th>필터 창 = N ÷ fSAMPLING, fDTS = 260 MHz 일 때(산술)</th></tr></thead>
+        <tbody>
+          <tr><td>0000</td><td>필터 없음, fDTS 로 표본</td><td>—</td></tr>
+          <tr><td>0001 · 0010 · 0011</td><td>fCK_INT, N = 2 · 4 · 8</td><td>7.7 · 15.4 · 30.8 ns</td></tr>
+          <tr><td>0100 · 0101</td><td>fDTS/2, N = 6 · 8</td><td>46.2 · 61.5 ns</td></tr>
+          <tr><td>0110 · 0111</td><td>fDTS/4, N = 6 · 8</td><td>92.3 · 123.1 ns</td></tr>
+          <tr><td>1000 · 1001</td><td>fDTS/8, N = 6 · 8</td><td>184.6 · 246.2 ns</td></tr>
+          <tr><td>1010 · 1011 · 1100</td><td>fDTS/16, N = 5 · 6 · 8</td><td>307.7 · 369.2 · 492.3 ns</td></tr>
+          <tr><td>1101 · 1110 · 1111</td><td>fDTS/32, N = 5 · 6 · 8</td><td>615.4 · 738.5 · <strong>984.6 ns</strong>(가장 긴 창)</td></tr>
+        </tbody>
+      </table></div>
+      <ul>
+        <li><strong>fDTS 가 무엇인가.</strong> 타이머 커널 클럭(<code>fCK_INT</code>, TIM2/5/23/24 는 fw-03 의 트리에서 260 MHz)을 CR1 의 CKD 로 1 · 2 · 4 분주한 것이다. CubeMX 의 "Internal Clock Division (CKD)" 기본값 No Division 이면 fDTS = 260 MHz. 위 표의 셋째 열은 그 전제의 산술이고, 실수로 550 이 들어간 보드(275 MHz)에서는 창이 조금 짧아진다.</li>
+        <li><strong>걸러야 하는 것과 통과시켜야 하는 것.</strong> 무부하 최대 약 42.9 kHz/채널(§2-1 의 [추정] 산술)에서 한 채널의 주기는 약 23.3 µs, A 와 B 의 엣지는 그 1/4 인 약 <strong>5.8 µs</strong> 간격으로 온다. 가장 긴 필터 창(984.6 ns)도 그 1/6 이라 어느 값을 골라도 정상 신호는 통과한다 — 이 필터로 못 거르는 노이즈는 1 µs 급보다 긴 것이다. 1세대는 다른 MCU 의 카운터에서 글리치 필터 1 µs 를 썼다([추정] — 참고 기록일 뿐 합격선이 아니다).</li>
+        <li><strong>손으로 돌려서는 검증되지 않는다.</strong> 손 회전은 몇 Hz(한 바퀴에 수백 ms)라 필터가 아무 일도 하지 않는다. 고른 값이 모터 속도에서 카운트를 빠뜨리지 않는지는 <a href="fw-13-pid-protection.html">fw-13</a>에서 모터를 돌리며 다시 본다(정격 속도 20 s 의 카운트 합 ↔ CPR × 회전 수). 지금은 값 하나를 고르고 <strong>왜 그 값인지</strong>를 노트에 적는다: IC1F = <code>____</code>(창 <code>____</code> ns, 이유: <code>____</code>).</li>
+      </ul>
+
+      <h2 id="lab">3. 실습</h2>
+      <p>실습은 셋이다. <strong>A</strong> 타이머 넷을 켜고 바퀴 하나로 counts/rev 를 잰다 → <strong>B</strong> 네 바퀴의 부호를 재서 상수로 적는다 → <strong>C</strong> 선을 일부러 뽑아 보고 HIGH 전압을 잰다(코드 없음).
+      A 와 B 는 빌드 · 플래시 · 관찰 한 번씩이고, C 는 측정만이다(끝자리 2 = 빈 표, 3 = 측정, 4 = 판정 — fw-01 과 같은 변형). 빌드 · 플래시는 <a href="fw-02-toolchain.html">fw-02</a> 의 <code>firmware/tools/build.sh</code> · <code>firmware/tools/flash.sh</code> 만 부른다. <strong>모터 전원(24 V 계)은 이 쪽 어디에서도 넣지 않는다</strong> — 바퀴는 손으로만 돈다.</p>
+      <div class="callout tip"><span class="ct">채울 자리마다 힌트 카드가 있다 — 읽는 순서</span>
+        <p>골격의 채울 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 붙어 있고(이 쪽은 T1 ~ T8 — T1 ~ T6 은 실습 A, T7 · T8 은 실습 B), 그 주석 안에 <strong>번호 걸음</strong>이 있다. 먼저 걸음을 보고 직접 써 본다.
+        막히면 "직접 채우기" 절에서 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인.</p>
+        <p>완결 코드는 Mac 의 호스트 시험(<code>PASS encoder 10 cases</code>, <code>-fsanitize=undefined,address</code> 까지 조용함)과 이 프로젝트의 펌웨어 빌드(링크까지, <code>User/</code> 경고 0 — 실습 A 의 모습과 실습 B 의 모습을 따로 빌드)를 통과한 코드다(2026-10-03). 실습 B 의 빌드는 <code>ENC_SIGN_*</code> 넷에 샌드박스용 값을 넣고 했다 — 가이드에는 그 숫자가 없다. 내 값은 내가 잰다(§3-2-3).
+        보드에서 도는 것 — 카운트가 바퀴를 따라오는가, 부호, counts/rev — 은 "굽고 보기"에서 내가 확인한다. 붙여 넣는 것으로 끝내지 않는다 — 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
+      </div>
+      <div class="callout warn"><span class="ct">입구 확인 — 셋 다 "예"가 되기 전에는 엔코더 선을 핀에 꽂지 않는다</span>
+        <ol>
+          <li><strong>SB57 이 실제로 끊겼는가 — 기능 시험(fw-01 §3-3-2 표의 6단계, 아래 ①).</strong> PA1 을 잠깐 GPIO 출력으로 만들어 CN11-30 에서 3.3 V / 0 V 가 그대로 나오는가. 전제: <a href="fw-01-pinmap.html#s3-3">fw-01 §3-3</a> 의 도통 확인(<code>sb57-removed-open</code>)이 통과했다.</li>
+          <li><strong>디버그 구성에서 SWV 가 꺼져 있는가(아래 ②).</strong> <a href="fw-04-debugger.html#s2-5">fw-04 §2-5</a> 의 확인(<code>swv-off-confirmed</code>)이 지금 쓰는 gdbserver 인자에도 참인가 — <code>-z</code> · <code>-a</code> · <code>-b</code> 가 없다. PB3(FL 엔코더 B)를 MCU 가 구동하지 않게 하는 조건이다.</li>
+          <li><strong>PA15 · PB3 에 숨은 구동원이 없는가(아래 ③ — 실습 A 를 굽고 난 뒤, FL 엔코더를 꽂기 전에).</strong> 10 kΩ 하나로 두 핀이 정말 Hi-Z 인지 본다(<code>hardware/pinmap-h723.md</code> §6 B13).</li>
+        </ol>
+      </div>
+
+      <p><strong>① SB57 기능 시험 — gdb 로 PA1 을 잠깐 출력으로.</strong> 코드를 새로 굽지 않는다. <a href="fw-04-debugger.html">fw-04</a> 의 gdb 접속(<code>ST-LINK_gdbserver -d -e -p 61234</code> → <code>target extended-remote localhost:61234</code>)으로 CPU 를 세운 채 GPIOA 레지스터 세 개를 직접 쓴다. 조건 둘: 올라가 있는 펌웨어가 <a href="fw-06-tick-watchdog.html#s3-3">fw-06 §3-3</a> 의 <strong>동결 줄이 든 빌드</strong>여야 한다(아니면 세워 둔 사이 IWDG 가 리셋해 레지스터가 되돌아간다), 그리고 PA1 에는 <strong>아무것도 꽂혀 있지 않다.</strong></p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>레지스터</th><th>주소</th><th>출처(CMSIS <code>stm32h723xx.h</code>)</th><th>이 시험에서</th></tr></thead>
+        <tbody>
+          <tr><td><code>RCC-&gt;AHB4ENR</code></td><td>0x580244E0</td><td><code>RCC_BASE</code> = 0x40000000 + 0x18020000 + 0x4400 (<code>:2070 · :2096 · :2168</code>), <code>AHB4ENR</code> 오프셋 0xE0 (<code>:1282</code>), <code>GPIOAEN</code> = bit 0 (<code>:15429</code>)</td><td>GPIOA 에 클럭을 준다(엔코더 전 펌웨어는 포트 A 를 쓰지 않으므로 꺼져 있을 수 있다)</td></tr>
+          <tr><td><code>GPIOA-&gt;MODER</code></td><td>0x58020000</td><td><code>GPIOA_BASE</code> (<code>:2158</code>), 오프셋 0x00 (<code>GPIO_TypeDef</code>, <code>:1065</code>). 리셋값 0xABFFFFFF — PA1 = 11(아날로그), RM0468 §11.4.1 p.518</td><td>PA1 의 두 비트 [3:2] 를 01(출력)로</td></tr>
+          <tr><td><code>GPIOA-&gt;ODR</code></td><td>0x58020014</td><td>오프셋 0x14 (같은 구조체)</td><td>bit 1 을 1 / 0 으로 — CN11-30 을 DMM 으로</td></tr>
+        </tbody>
+      </table></div>
+      <pre><code class="lang-text">(gdb) x/wx 0x580244E0                                                            &lt;- AHB4ENR 지금 값 (노트에)
+(gdb) set {unsigned int}0x580244E0 = *(unsigned int*)0x580244E0 | 0x1            &lt;- GPIOAEN
+(gdb) x/wx 0x58020000                                                            &lt;- MODER 지금 값 (노트에 — 되돌릴 기준)
+(gdb) set {unsigned int}0x58020000 = (*(unsigned int*)0x58020000 &amp; 0xFFFFFFF3) | 0x4    &lt;- PA1 = 01 출력
+(gdb) set {unsigned int}0x58020014 = *(unsigned int*)0x58020014 | 0x2            &lt;- PA1 HIGH  -&gt; CN11-30 ↔ GND: ____ V (기대 ≈ 3.3)
+(gdb) set {unsigned int}0x58020014 = *(unsigned int*)0x58020014 &amp; 0xFFFFFFFD     &lt;- PA1 LOW   -&gt; CN11-30 ↔ GND: ____ V (기대 ≈ 0)
+(gdb) set {unsigned int}0x58020000 = *(unsigned int*)0x58020000 | 0xC            &lt;- 되돌림: PA1 = 11. 또는 NRST 한 번</code></pre>
+      <p>판정: 내가 쓴 값이 <strong>그대로</strong> 핀에 나오면 PA1 을 다른 무엇도 구동하지 않는다 — PHY 의 REF_CLK(SB57)뿐 아니라 UM2407 표 14 가 이름만 적고 정의하지 않은 "SB7" 경로까지 기능으로 닫힌다(<code>hardware/pinmap-h723.md</code> §7-2 U9). HIGH 가 3.3 V 에 못 미치거나 LOW 가 0 V 에서 뜨면 무언가가 맞붙어 있다 — 멈추고 fw-01 §3-3 의 도통 표로 돌아간다.
+      MODER 의 다른 비트(PA13 · PA14 = SWD)를 건드리지 않게 마스크 <code>0xFFFFFFF3</code> 을 쓴다 — 그 두 비트를 지우면 디버거가 떨어진다. 결과는 <code>hardware/INVENTORY.md</code> 2절 "솔더 브리지"의 "내 보드" 줄(fw-01 이 적기 시작한 줄)에 "기능 시험 통과 &lt;날짜&gt;"로 덧붙인다.</p>
+
+      <p><strong>② SWV 끔 재확인.</strong> 새 확인은 없다 — fw-04 의 것을 지금 조건에서 다시 본다: 돌고 있는 gdbserver 의 명령줄에 <code>-z</code> · <code>-a</code> · <code>-b</code> 가 없고, <code>.ioc</code> 에 <code>PB3(JTDO/TRACESWO).Mode=Trace_Asynchronous_SW</code> 줄이 없다(아래 §3-1-1 의 grep 에 넣었다). fw-04 §2-5 가 남긴 확인 과제 — <code>DBGMCU_CR</code>(0x5C001004)의 bit 20 <code>TRACECLKEN</code> 을 gdb 로 한 번 더 읽어 노트의 값과 같은지 본다(1 로 읽히면 FL 을 꽂기 전에 원인을 적는다).</p>
+
+      <p><strong>③ 숨은 구동원 시험(B13) — 실습 A 를 굽고 FL 을 꽂기 전에.</strong> 실습 A 의 빌드가 올라가면 PA15 · PB3 는 TIM2 의 입력(AF1, 풀 없음)이 된다 — 그 상태가 이 시험의 전제다(그 전에는 PA15 에 리셋 풀업이 켜져 있어 판정이 흐려진다). 디버거를 떼거나 ②를 확인한 뒤, 엔코더를 꽂지 않은 채:</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>핀 (자리)</th><th>10 kΩ 을 GND 로</th><th>10 kΩ 을 3V3 로</th><th>판정</th></tr></thead>
+        <tbody>
+          <tr><td>PA15 — Zio D20 <strong>CN7-9</strong></td><td>____ V (기대 ≈ 0)</td><td>____ V (기대 ≈ 3.3)</td><td rowspan="2">전압이 <strong>저항을 따라가면</strong> Hi-Z — 통과. 한쪽에 고정되면 무언가 구동 중 → 배선 중단, 무엇인지 적는다</td></tr>
+          <tr><td>PB3 — Zio D23 <strong>CN7-15</strong></td><td>____ V (기대 ≈ 0)</td><td>____ V (기대 ≈ 3.3)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">이 시험이 닫는 미결이 둘 있다(<code>hardware/pinmap-h723.md</code> §7-2): U8 — PA15 는 CN5-10(T_JTDI)에도 나온다. 온보드 ST-LINK 가 그 선을 구동하는지 문서로는 알 수 없다(UM2407 §7.3 "SWD and VCP only" 에서 구동하지 않는 쪽이 [추정]). 전원을 끈 채 CN7-9 ↔ CN5-10 의 도통도 함께 적어 둔다. U10 — UM 표 14 SB32 행의 정의 없는 "SB26" 경로. PB3 에서의 이 시험이 그것을 기능으로 닫는다.</p>
+
+      <h3 id="s3-1">3-1. 실습 A — 타이머 넷을 켜고, 바퀴 하나로 counts/rev 를 잰다</h3>
+      <p>CubeMX 에서는 네 타이머를 한 번에 켠다(다시 여는 일을 줄인다). 선은 <strong>바퀴 하나</strong>만 꽂는다 — 이 가이드의 예시는 FR(TIM5, PA0/PA1)이다. SB57 을 뗀 바로 그 핀이고, CubeMX 가 핀을 잡는 순서도 TIM5 가 먼저다. 다른 바퀴로 시작해도 절차는 같다(동일).</p>
+
+      <h4 id="s3-1-1">3-1-1. CubeMX 설정 <span class="tag mx">CubeMX</span></h4>
+      <p>네 타이머에 같은 설정을 넣는다. 항목 이름은 CubeMX 6.18.1 의 IP 정의 파일 <code>TIM1_8H7-gptimer2_v3_x_Cube_Modes.xml</code>(H723 의 TIM2 · TIM5 · TIM23 · TIM24 가 이 파일을 쓴다 — <code>STM32H723ZGTx.xml</code> 의 IP 행)에서 글자 그대로 옮긴 것이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>항목</th><th>값</th><th>왜</th><th><code>.ioc</code> 키 (생성 후 grep)</th></tr></thead>
+        <tbody>
+          <tr><td>TIM5 → Combined Channels</td><td><strong>Encoder Mode</strong></td><td>CH1 · CH2 가 TI1 · TI2 로 묶인다(§2-1). <strong>TIM5 를 가장 먼저</strong> — PA0/PA1 을 TIM5 가 차지해야 TIM2 가 그 핀을 먹지 않는다(<code>hardware/pinmap-h723.md</code> §6 #3)</td><td><code>SH.S_TIM5_CH1.0=TIM5_CH1,Encoder_Interface</code> · <code>SH.S_TIM5_CH2.0=…</code> <em>(꼴은 CubeMX 의 다른 계열 보드 프리셋 <code>N05_…B-G473E-ZEST1S…_AllConfig.ioc</code> L686~707 에서 확인. 내 파일은 생성 후)</em></td></tr>
+          <tr><td>TIM5 → Encoder Mode</td><td><strong>Encoder Mode TI1 and TI2</strong></td><td>x4 — 표 354 의 "TI1 and TI2" 행. 기본값은 TI1(x2)이라 <strong>바꿔야</strong> 한다</td><td><code>TIM5.EncoderMode=TIM_ENCODERMODE_TI12</code> <em>(RefParameter 이름 · 값 — 생성 후 확인)</em></td></tr>
+          <tr><td>TIM5 → Prescaler (PSC - 16 bits value)</td><td>0 (기본값)</td><td>RM 의 Note — 엔코더 모드에서 프리스케일러는 0 (§2-1)</td><td><code>TIM5.Prescaler</code> 줄이 <strong>없거나</strong> 0</td></tr>
+          <tr><td>TIM5 → Counter Period (AutoReload Register - 32 bits value )</td><td><strong>4294967295</strong></td><td>32비트 전 범위를 돌아야 부호 있는 차분이 성립한다(§2-2). IP 정의 파일은 32비트 인스턴스의 기본값을 4294967295 로 둔다 — 화면에서 그 값인지 <strong>확인</strong>한다</td><td><code>TIM5.Period</code> <em>(기본값이면 줄이 없을 수 있다 — 그러면 생성 코드의 <code>htim5.Init.Period</code> 로 확인)</em></td></tr>
+          <tr><td>TIM5 → Encoder 의 채널 1 · 2 각각: Polarity / IC Selection / Prescaler Division Ratio</td><td>Rising Edge / Direct / No division (전부 기본값)</td><td>극성은 부호 상수가 대신한다(§2-7 — 여기서 뒤집지 않는다). Direct = TI1→IC1, TI2→IC2</td><td><code>TIM5.IC1Polarity</code> · <code>IC1Selection</code> · <code>IC1Prescaler</code> — 기본값이면 줄이 없다</td></tr>
+          <tr><td>TIM5 → Encoder 의 채널 1 · 2 각각: Input Filter</td><td><strong>내 값</strong> (0~15, §2-9 에서 도출)</td><td>노트에 적은 이유대로</td><td><code>TIM5.IC1Filter</code> · <code>TIM5.IC2Filter</code> <em>(0 이 아니면 줄이 생긴다)</em></td></tr>
+          <tr><td>TIM2 · TIM23 · TIM24</td><td>위와 같게</td><td>TIM2 = PA15/PB3, TIM23 = PF6/PF7, TIM24 = PF11/PF12 에 놓였는지 Pinout 에서 본다 — CubeMX 가 TIM23 을 PF0/PF1 · PG12/PG13 에 먼저 둘 수 있다(<code>hardware/pinmap-h723.md</code> §6 #4). PG12 는 MOTOR_EN 이다</td><td><code>SH.S_TIM2_CH1.0=TIM2_CH1,Encoder_Interface</code> 등 여덟 줄 + <code>PA15.Signal=S_TIM2_CH1</code> 꼴의 핀 줄 여덟</td></tr>
+          <tr><td>여덟 핀의 GPIO Settings → User Label</td><td><code>ENC_FL_A</code> <code>ENC_FL_B</code> <code>ENC_FR_A</code> <code>ENC_FR_B</code> <code>ENC_RL_A</code> <code>ENC_RL_B</code> <code>ENC_RR_A</code> <code>ENC_RR_B</code></td><td>핀맵 정본의 신호 이름 그대로(<code>hardware/pinmap-h723.md</code> §2-B). 코드는 라벨로만 핀을 부른다</td><td><code>PA15.GPIO_Label=ENC_FL_A</code> 꼴 여덟 줄 <em>(키 꼴은 위 G473 프리셋 L201~202 의 <code>PA0.GPIO_Label=…</code> 에서 확인)</em></td></tr>
+          <tr><td>여덟 핀의 GPIO Pull-up/Pull-down</td><td>No pull-up and no pull-down (기본값)</td><td>출력 형식을 모르는 채로는 풀을 켜지 않는다 — 실습 C 에서 잰 뒤 정한다(§2-4). 입구 확인 ③의 전제도 "풀 없음"이다</td><td><code>PA15.GPIOParameters</code> 에 <code>GPIO_PuPd</code> 가 <strong>없다</strong></td></tr>
+          <tr><td>NVIC</td><td>아무것도 켜지 않는다</td><td>엔코더 모드는 인터럽트가 필요 없다 — 카운트는 읽을 때 읽는다. 이 쪽은 NVIC 표에 더하는 행이 없다</td><td><code>NVIC.TIM2_IRQn</code> 등이 <strong>없다</strong></td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">AF 번호는 CubeMX 가 정한다 — TIM2 = AF1, TIM5 = AF2, TIM23 = AF13, TIM24 = AF14(DS13313 Rev 5 표 8 "pin alternate functions" p.72~85; <code>hardware/pinmap-h723.md</code> §2-B · 같은 시트 6절 #5 가 표와 CubeMX DB 두 출처로 확인). 생성된 <code>stm32h7xx_hal_msp.c</code> 의 <code>GPIO_AF1_TIM2</code> 같은 매크로에서 다시 본다(아래 grep).</p>
+      <p class="small"><strong>화면 확인: 미확인 (CubeMX 6.18.1)</strong> — 아래 경로는 CubeMX 의 DB 파일과 ST 문서에서 추정한 것이다.
+      화면이 다르면 <strong>화면이 맞다.</strong> 다른 곳을 발견하면 값 표(위)의 항목 이름으로 검색하고, 달랐던 경로를 노트에 적어 둔다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>#</th><th>위치 (화면 경로)</th><th>설정</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>왼쪽 <strong>Timers → TIM5</strong> → Mode</td><td><strong>Combined Channels</strong> = <strong>Encoder Mode</strong>. Pinout 에서 PA0 · PA1 이 <code>TIM5_CH1</code> · <code>TIM5_CH2</code> 로 초록이 되는지 본다</td></tr>
+          <tr><td>2</td><td>TIM5 → <strong>Parameter Settings</strong> → Counter Settings</td><td>Prescaler = 0, Counter Period = 4294967295 (기본값이 아니면 고친다), Internal Clock Division = No Division</td></tr>
+          <tr><td>3</td><td>TIM5 → Parameter Settings → <strong>Encoder</strong></td><td>Encoder Mode = <strong>Encoder Mode TI1 and TI2</strong>. Channel 1 · Channel 2: Polarity Rising Edge · IC Selection Direct · Prescaler Division Ratio No division · <strong>Input Filter = 내 값</strong></td></tr>
+          <tr><td>4</td><td>Timers → <strong>TIM2</strong> → 같은 설정</td><td>Pinout 에서 <code>TIM2_CH1</code> 이 <strong>PA15</strong>, <code>TIM2_CH2</code> 가 <strong>PB3</strong> 인지. 다른 핀(PA0 · PA5)에 놓였으면 그 핀을 <strong>Ctrl + 드래그</strong>로 옮기거나, 핀을 클릭해 신호를 고른다. PB3 가 회색(잠김)이면 fw-02 §2-6 의 잠금 해제가 안 된 것</td></tr>
+          <tr><td>5</td><td>Timers → <strong>TIM23</strong> · <strong>TIM24</strong> → 같은 설정</td><td>TIM23 = <strong>PF6/PF7</strong>(PF0/PF1 · PG12/PG13 이면 옮긴다), TIM24 = <strong>PF11/PF12</strong>(선택지 없음)</td></tr>
+          <tr><td>6</td><td>각 타이머 → <strong>GPIO Settings</strong></td><td>핀 여덟 개의 <strong>User Label</strong> 을 <code>ENC_FL_A</code> … <code>ENC_RR_B</code> 로. GPIO Pull-up/Pull-down 은 그대로(No pull)</td></tr>
+          <tr><td>7</td><td>각 타이머 → <strong>NVIC Settings</strong></td><td>아무것도 체크하지 않는다</td></tr>
+          <tr><td>8</td><td><strong>GENERATE CODE</strong></td><td>—</td></tr>
+        </tbody>
+      </table></div>
+      <pre><code class="lang-bash">cd firmware/h723zg
+grep -n "Encoder_Interface" h723zg.ioc                                    # 여덟 줄 (TIM2·5·23·24 의 CH1·CH2)
+grep -n "^TIM2\.\|^TIM5\.\|^TIM23\.\|^TIM24\." h723zg.ioc                 # EncoderMode 넷이 TI12 인가, Period · IC1Filter 는 내 값인가
+grep -n "^PA15\.\|^PB3\|^PA0\.\|^PA1\.\|^PF6\.\|^PF7\.\|^PF11\.\|^PF12\." h723zg.ioc       # 핀 여덟 줄: Signal 과 GPIO_Label
+grep -n "TRACESWO" h723zg.ioc                                              # (기대: Trace_Asynchronous_SW 줄이 없다 — 입구 확인 ②)
+grep -n "MX_TIM2_Init\|MX_TIM5_Init\|MX_TIM23_Init\|MX_TIM24_Init\|HAL_TIM_Encoder_Init" Core/Src/main.c
+grep -n "HAL_TIM_Encoder_MspInit\|GPIO_AF[0-9]*_TIM" Core/Src/stm32h7xx_hal_msp.c   # 핀 · AF · 클럭이 켜지는 자리
+grep -n "ENC_[FR][LR]_[AB]" Core/Inc/main.h                                # 라벨 매크로 열여섯 줄 (_Pin · _GPIO_Port)
+grep -rn "HAL_TIM_Encoder_Start" Core/Src/                                  # (기대: 아무것도 안 나온다)</code></pre>
+      <pre><code class="lang-text">(기대: .ioc 에 Encoder_Interface 여덟 줄, 네 타이머의 EncoderMode=TIM_ENCODERMODE_TI12, Period 는 4294967295(기본값이면 줄이 없다).
+ 핀 줄에는 PA15.Signal=S_TIM2_CH1 · PA1.Signal=S_TIM5_CH2 처럼 내가 정한 핀이 그대로 있고, GPIO_Label 여덟 개가 핀맵의 이름이다.
+ main.c 에 MX_TIMx_Init 넷의 선언 · 호출 · 정의와 HAL_TIM_Encoder_Init 호출 넷. msp.c 의 HAL_TIM_Encoder_MspInit 안에서
+ 클럭 켜기 · GPIO_AF1_TIM2 / GPIO_AF2_TIM5 / GPIO_AF13_TIM23 / GPIO_AF14_TIM24 가 보인다. 줄 번호는 사람마다 다르다.
+ 마지막 줄이 비어 있어야 한다 — CubeMX 는 엔코더를 "초기화"만 하고 "시작"하지 않는다. 시작은 내 몫이다(fw-06 의 TIM6 과 같다).)</code></pre>
+      <p class="small">재생성 규칙(fw-02): 생성물은 <code>USER CODE BEGIN/END</code> 사이만 고친다. <code>cmake/stm32cubemx/</code> 는 다시 생성된다. 내 소스는 <code>User/</code> 에 두고 최상위 <code>CMakeLists.txt</code> 의 <code># Add user sources here</code> 에 등록한다. 생성된 핸들 이름(<code>htim2</code> · <code>htim5</code> · <code>htim23</code> · <code>htim24</code>)은 생성 후 <code>main.c</code> 에서 확인한다 — 다르면 골격의 <code>extern</code> 을 고친다.</p>
+
+      <h4 id="s3-1-2">3-1-2. 골격</h4>
+      <p>새 파일은 <code>User/Inc/Periph/encoder.h</code> · <code>User/Src/Periph/encoder.c</code> 둘, 그리고 공용 상수 헤더 <code>User/Inc/Config/robot_params.h</code> 에 더하는 키 묶음이다. 골격은 그대로 빌드된다(그 상태에서 <code>enc</code> 는 아무것도 찍지 않는다 — 빈 본문은 0 을 돌려준다).
+      순수한 부분은 하나 — <code>encoder_delta_raw()</code> — 이고 헤더에 <code>static inline</code> 으로 두어 <code>.c</code> 없이 Mac 에서 시험한다(fw-04 의 <code>hardfault.h</code> 와 같은 꼴). 나머지는 타이머 핸들을 만지므로 호스트 시험이 없다.</p>
+      <p><strong><code>robot_params.h</code></strong> — fw-08 이 빈 틀을 만든다. 파일이 이미 있으면 아래 <code>enum</code> 이 들어 있는지 보고(있으면 그대로, <strong>두 곳에 두지 않는다</strong> — 재정의는 컴파일러가 막는다), 엔코더 키 다섯 줄만 더한다. 없으면 이 블록으로 만든다. 상태 표기는 값과 <strong>같은 줄</strong>의 주석이다(<code>scripts/check_nominal.sh</code> 가 그 줄만 센다). <code>ENC_SIGN_*</code> 의 0 은 자리표시일 뿐 값이 아니다 — 실습 A 는 이 넷을 쓰지 않으므로 빌드되고, 실습 B 가 가드를 붙인다.</p>
+      <pre><code class="lang-c">/* User/Inc/Config/robot_params.h — 공용 상수. fw-08 이 빈 틀을 만들고, 쪽마다 제 키를 더한다.
+   값의 상태는 값과 같은 줄의 주석에 있다 (scripts/check_nominal.sh 는 그 줄만 센다). */
+#ifndef ROBOT_PARAMS_H
+#define ROBOT_PARAMS_H
+
+/* 바퀴 번호 — 펌웨어 전체에서 정의는 하나 (motor.c 와 encoder.c 가 함께 쓴다).
+   짝수 = 왼쪽, 홀수 = 오른쪽. 엔코더 타이머와 PWM 채널은 이 순서로 배열된다. */
+enum { FL = 0, FR, RL, RR, NW };
+
+/* --- 엔코더 (fw-09) --- */
+#define ENCODER_CPR   94000L   /* NOMINAL(gen1-record): 500 PPR x 4 x 47 [바퀴 1회전당 카운트] */
+#define ENC_SIGN_FL   0        /* ____ hand-turn forward: +1 또는 -1 */
+#define ENC_SIGN_FR   0        /* ____ hand-turn forward: +1 또는 -1 */
+#define ENC_SIGN_RL   0        /* ____ hand-turn forward: +1 또는 -1 */
+#define ENC_SIGN_RR   0        /* ____ hand-turn forward: +1 또는 -1 */
+
+#endif</code></pre>
+      <p><strong><code>encoder.h</code></strong> — 공개 함수는 다섯(실습 B 가 둘을 더한다). 이름 규칙은 이 가이드의 <code>&lt;모듈&gt;_&lt;동사&gt;</code>: 초기화 <code>encoder_init()</code>, 주 루프에서 부르는 것 <code>encoder_service_main()</code>(fw-06 의 <code>wdg_service_main()</code> 과 같은 꼴), 명령 등록 <code>encoder_cli_register()</code>.</p>
+      <pre><code class="lang-c">/* User/Inc/Periph/encoder.h — 32비트 타이머 위의 쿼드러처 엔코더 넷 (TIM2 FL, TIM5 FR, TIM23 RL, TIM24 RR).
+   세는 것은 하드웨어가 한다; 이 모듈은 CNT 를 읽고 그 수에 뜻(부호, 차분)을 붙일 뿐이다. */
+#ifndef ENCODER_H
+#define ENCODER_H
+#include &lt;stdint.h&gt;
+#include "Config/robot_params.h"   /* FL FR RL RR NW, ENCODER_CPR, ENC_SIGN_* */
+
+/* 순수 로직, 호스트 시험 가능: raw 32비트 카운터 읽기값 둘의 부호 있는 차분.
+ * 0xFFFFFFFF -&gt; 0x00000000 랩어라운드를 어느 방향으로 건너도 맞아야 한다,
+ * |참 차분| &lt; 2^31 인 한 (1 ms 창 하나에 많아야 ~172 카운트 움직인다). */
+static inline int32_t encoder_delta_raw(uint32_t now, uint32_t prev)
+{
+  /* TODO(you) [T1]: raw 읽기값 둘의 부호 있는 차분 - 힌트 카드 T1
+       1) now - prev 를 uint32_t 끼리 뺀다 (랩어라운드는 2^32 의 나머지로 저절로 접힌다, §2-2)
+       2) 그 결과를 (int32_t) 로 읽어 돌려준다 - 식 하나다
+     굽기 전에 host_tests/test_encoder.c 로 확인한다 (값 채점 + -fsanitize=undefined 의 두 줄, §3-1-3).
+     채우기 시작하면 아래 두 줄(빌드용 자리표시)은 지운다. */
+  (void)now; (void)prev;
+  return 0;
+}
+
+void    encoder_init(void);            /* 넷 모두 HAL_TIM_Encoder_Start. main 문맥, 한 번, MX_TIMx_Init 뒤 */
+int32_t encoder_count_raw(int wheel);  /* 타이머가 가진 그대로의 CNT, 부호 미적용. 어느 문맥이든: 32비트 읽기 한 번 */
+void    encoder_zero(void);            /* 넷 모두 CNT := 0 + 1 s 창을 잊는다. main 문맥 */
+void    encoder_service_main(void);    /* app_loop() 한 바퀴에 한 번: tick_get_ms() 로 1 s 창을 닫는다. main 문맥 */
+void    encoder_cli_register(void);    /* "enc" 를 등록한다 */
+#endif</code></pre>
+      <p><strong><code>encoder.c</code></strong> — 네 핸들을 바퀴 순서(<code>FL FR RL RR</code>)로 배열에 둔다(06 §3-6-3 의 <code>enc_tim[]</code> 관례 — 이제 파일 밖으로 나가지 않는 <code>static</code> 이고 접두어 <code>s_</code>). 1 s 창의 상태 셋은 전부 <code>static</code> 이다. 전역 변수는 모듈 밖으로 내놓지 않는다 — 06 의 <code>prev_cnt[]</code> 전역 공유를 가져오지 않는다.</p>
+      <pre><code class="lang-c">/* User/Src/Periph/encoder.c — 엔코더 카운터 넷을 읽는다; 세는 것은 하드웨어가 한다.
+   순수 로직이 아니다: TIM 핸들을 만지므로, 호스트 시험은 헤더의 encoder_delta_raw() 하나뿐이다. */
+#include "main.h"
+#include "Periph/encoder.h"
+#include "System/tick.h"
+#include "Tools/cli.h"
+#include "Tools/log.h"
+#include &lt;stdbool.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+extern TIM_HandleTypeDef htim2, htim5, htim23, htim24;   /* CubeMX 가 Core/Src/main.c 에 정의한다 — 이름은 생성 후 확인 */
+
+static TIM_HandleTypeDef *const s_enc_tim[NW] = { &amp;htim2, &amp;htim5, &amp;htim23, &amp;htim24 };  /* FL FR RL RR — robot_params.h 의 순서 */
+static uint32_t s_prev_1s[NW];     /* 지금 1 s 창이 열릴 때의 raw CNT */
+static int32_t  s_delta_1s[NW];    /* 마지막으로 닫힌 1 s 창 동안 움직인 raw 카운트 — "enc" 가 d_xx 로 찍는 값 */
+static uint32_t s_last_1s_ms;      /* 창을 마지막으로 닫은 때의 tick_get_ms() */
+
+void encoder_init(void)
+{
+  /* TODO(you) [T2]: 타이머 넷을 돌리고 첫 1 s 창을 연다 - 힌트 카드 T2
+       1) for 로 w = 0 .. NW - 1 마다 HAL_TIM_Encoder_Start(s_enc_tim[w], TIM_CHANNEL_ALL) 을 부르고
+          반환값을 받는다 - CubeMX 는 초기화만 했다
+       2) 반환값이 HAL_OK 가 아니면 FW_ASSERT - 실행 중 사건이 아니라 프로그래밍 오류다 (두 번 시작)
+       3) 같은 w 에서 s_prev_1s[w] = raw CNT (__HAL_TIM_GET_COUNTER)
+       4) 루프가 끝나면 s_last_1s_ms = tick_get_ms()  - 그래서 tick_init() 뒤에 불려야 한다
+     본문이 비어 있어도 빌드된다 - 자리표시는 없다. */
+}
+
+int32_t encoder_count_raw(int wheel)
+{
+  /* TODO(you) [T3]: 그 바퀴 타이머의 CNT 를 그대로 돌려준다 - 힌트 카드 T3
+       1) wheel 이 0 .. NW - 1 밖이면 0 을 돌려준다 (배열 밖의 핸들 포인터 = HardFault, fw-04)
+       2) __HAL_TIM_GET_COUNTER(s_enc_tim[wheel]) 을 (int32_t) 로 캐스트해 돌려준다 - 32비트 읽기 한 번
+     채우기 시작하면 아래 두 줄(빌드용 자리표시)은 지운다. */
+  (void)wheel;
+  return 0;
+}
+
+void encoder_zero(void)
+{
+  /* TODO(you) [T4]: 카운터 넷과 1 s 창을 0 으로 - 힌트 카드 T4
+       1) for 로 w 마다 __HAL_TIM_SET_COUNTER(s_enc_tim[w], 0u) - 하드웨어의 CNT 부터
+       2) 같은 w 에서 s_prev_1s[w] = 0, s_delta_1s[w] = 0 - 창의 기준도 0 이어야 다음 d_xx 가 깨끗하다
+       3) 2차(실습 B 의 5번): s_prev_cnt[w] = 0 을 더한다 - 실습 A 에는 그 배열이 아직 없다
+     본문이 비어 있어도 빌드된다 - 자리표시는 없다. */
+}</code></pre>
+      <p>같은 <code>encoder.c</code> 의 뒷부분이다 — 1 s 창을 닫는 주 루프 쪽 함수, 그리고 <code>enc</code> 명령.</p>
+      <pre><code class="lang-c">/* User/Src/Periph/encoder.c — 이어서: 1 s 창 · "enc" 명령 */
+void encoder_service_main(void)
+{
+  /* TODO(you) [T5]: 1 s 가 지났으면 창을 닫고 다음 창을 연다 - 힌트 카드 T5
+       1) now_ms = tick_get_ms();  (uint32_t)(now_ms - s_last_1s_ms) &lt; 1000u 이면 그냥 돌아간다 (fw-06 과 같은 뺄셈)
+       2) 바퀴마다 now[w] = raw CNT 를 먼저 넷 다 읽는다 - 같은 순간의 값
+       3) 그다음 바퀴마다 s_delta_1s[w] = encoder_delta_raw(now[w], s_prev_1s[w]);  s_prev_1s[w] = now[w];
+       4) s_last_1s_ms += 1000u  ("= now_ms" 가 아니다: 창이 루프 주기를 따라 밀려서는 안 된다)
+     본문이 비어 있어도 빌드된다 - 자리표시는 없다. */
+}
+
+static void cmd_enc(int argc, char *argv[])
+{
+  /* "enc"      -&gt; 한 줄, fw-05 규칙: enc fl=&lt;n&gt; fr=&lt;n&gt; rl=&lt;n&gt; rr=&lt;n&gt; d_fl=&lt;n&gt; d_fr=&lt;n&gt; d_rl=&lt;n&gt; d_rr=&lt;n&gt;
+     "enc zero" -&gt; encoder_zero(); 그다음 "OK enc"
+     그 밖      -&gt; "ERR enc bad-arg"
+     TODO(you) [T6]: 위 세 갈래를 argc 로 가른다 - 힌트 카드 T6
+       1) argc == 1 이면 한 줄: 앞 넷은 1차(실습 A) encoder_count_raw(FL) .. (RR), 뒤 넷은 s_delta_1s[FL] .. [RR]
+          - int32_t 는 (long) 으로 캐스트해 %ld 로 찍는다
+       2) argc == 2 이고 strcmp(argv[1], "zero") == 0 이면 encoder_zero(); 그리고 "OK enc"
+          - argc 를 먼저 본다: argv[1] 은 argc &gt;= 2 일 때만 뜻이 있다
+       3) 그 밖은 "ERR enc bad-arg"
+       4) 2차(실습 B 의 5번): 1) 의 앞 넷을 encoder_count(FL) .. (RR) 로 바꾼다
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)argc; (void)argv;
+}
+
+void encoder_cli_register(void)
+{
+  bool ok = cli_register("enc", cmd_enc);
+  FW_ASSERT(ok);
+}</code></pre>
+      <p class="small">골격을 문법 검사한 상태(2026-09-22, Mac 의 <code>cc -std=c11 -Wall -Wextra -fsyntax-only</code>, HAL 헤더는 stub): 오류 0, "unused variable" 경고 4 — TODO 본문이 비어 있어서 나는 경고이고 채우면 사라진다. <code>&lt;stdbool.h&gt;</code> 는 <code>cli.h</code> 가 이미 포함하지만 이 파일이 <code>bool</code> 을 직접 쓰므로 한 번 더 넣었다(해롭지 않다).</p>
+
+      <h4 id="s3-1-3">3-1-3. 직접 채우기</h4>
+      <p>채점표부터 놓는다. 아래가 <code>firmware/host_tests/test_encoder.c</code> 전체다 — 시험 파일은 전량으로 준다(벡터가 곧 채점표이기 때문이다). 기대값 열 개는 전부 집필 시점에 python3 으로 따로 계산해 넣었고, 참조 구현으로 <code>PASS encoder 10 cases</code> 가 나오는 것과 골격 그대로는 둘째 줄에서 <code>assert</code> 가 서는 것을 Mac 에서 확인했다(2026-09-22).</p>
+      <pre><code class="lang-c">/* host_tests/test_encoder.c - Mac 에서 돈다, MCU 없음. encoder_delta_raw() (encoder.h) 를 채점한다 — 유일한 순수 부분.
+ * 기대값은 전부 따로 계산했다 (2026-09-22):
+ *   python3 -c "print(((now - prev) + 2**31) % 2**32 - 2**31)"
+ * 캐스트 (int32_t)(uint32_t) 는 2의 보수에 기댄다 — Arm GCC 와 Apple clang 에서 참이다. */
+#include "Periph/encoder.h"
+#include &lt;assert.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void)
+{
+  int n = 0;
+  assert(encoder_delta_raw(0u, 0u) == 0); n++;
+  assert(encoder_delta_raw(100u, 90u) == 10); n++;
+  assert(encoder_delta_raw(90u, 100u) == -10); n++;
+  assert(encoder_delta_raw(0x00000001u, 0xFFFFFFFFu) == 2); n++;         /* 랩어라운드를 지나며 올려 셌다 */
+  assert(encoder_delta_raw(0xFFFFFFFFu, 0x00000001u) == -2); n++;        /* 랩어라운드를 지나며 내려 셌다 */
+  assert(encoder_delta_raw(0x80000000u, 0x7FFFFFFFu) == 1); n++;         /* 부호 있는 수의 한가운데를 건넌다 */
+  assert(encoder_delta_raw(0x7FFFFFFFu, 0x80000000u) == -1); n++;
+  assert(encoder_delta_raw(0x000000ACu, 0x00000000u) == 172); n++;       /* 무부하 최대에서 1 ms 창 하나 (추정) */
+  assert(encoder_delta_raw(0x00000064u, 0xFFFFFFF6u) == 110); n++;       /* 랩어라운드에 걸친 창 */
+  assert(encoder_delta_raw(0x7FFFFFFFu, 0x00000000u) == 2147483647); n++; /* 이 방법이 담을 수 있는 가장 큰 거리 */
+  printf("PASS encoder %d cases\n", n);
+  return 0;
+}</code></pre>
+      <pre><code class="lang-bash">cd firmware
+# 값 채점
+cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_encoder.c -o /tmp/test_encoder &amp;&amp; /tmp/test_encoder
+# 기대: PASS encoder 10 cases   (골격 그대로면 "Assertion failed: (encoder_delta_raw(100u, 90u) == 10)" 에서 선다)
+# 진단 — 값이 맞아도 UB 가 있으면 여기서 runtime error 가 뜬다 (아무 말 없이 PASS 만 다시 나오면 통과)
+cc -std=c11 -Wall -Wextra -fsanitize=undefined -Ih723zg/User/Inc host_tests/test_encoder.c -o /tmp/test_encoder_ub &amp;&amp; /tmp/test_encoder_ub</code></pre>
+      <ol class="steps">
+        <li><strong><code>encoder_delta_raw()</code> 부터.</strong> §2-2 의 성질을 한 식으로 쓴다 — 부호 없는 32비트로 빼고, 그 결과를 부호 있는 32비트로 읽는다. 그런데 <strong>이 열 벡터는 값만 채점한다</strong> — 순서를 바꾼 <code>(int32_t)now - (int32_t)prev</code> 도, 중간형을 64비트로 넓힌 것도 열 개를 다 통과한다(집필 시점에 Mac 에서 세 식을 다 돌려 확인했다). <strong>통과했다고 §2-2 를 쓴 것이 아니다.</strong> 순서를 바꾼 식은 여섯째 · 일곱째 벡터에서 <strong>부호 있는 정수의 넘침</strong>을 일으키고 그것은 정의되지 않은 동작(UB)이다 — 지금 컴파일러가 우연히 옳은 값을 낼 뿐이다 — 위의 둘째 명령(<code>-fsanitize=undefined</code>)이 그것을 <code>runtime error: signed integer overflow</code> 로 잡아낸다(힌트 T1 의 표). 그러니 <code>PASS</code> 가 뜨고 둘째 명령도 조용한 뒤에 내 한 줄을 §2-2 의 문장(부호 없는 뺄셈 → 부호 있는 읽기)과 한 글자씩 견주는 데까지가 이 걸음이다. 시험이 통과할 때까지 보드에 올리지 않는다.</li>
+        <li><strong><code>encoder_init()</code>.</strong> 네 핸들에 <code>HAL_TIM_Encoder_Start(h, TIM_CHANNEL_ALL)</code>(<code>stm32h7xx_hal_tim.c:3225</code>, <code>TIM_CHANNEL_ALL</code> 은 <code>hal_tim.h:788</code>). 이 함수는 두 채널의 CCxE 를 켜고 카운터를 돌린다 — CubeMX 가 만든 <code>MX_TIMx_Init()</code> 은 여기까지 하지 않는다(fw-06 의 TIM6 과 같다). 반환이 <code>HAL_OK</code> 가 아니면 <code>FW_ASSERT</code> — 채널 상태가 READY 가 아닐 때 <code>HAL_ERROR</code> 를 돌려주는데(<code>:3241</code>), 그것은 두 번 시작했다는 뜻이고 실행 중의 사건이 아니라 프로그램의 오류다. 끝에 1 s 창을 연다.</li>
+        <li><strong><code>encoder_count_raw()</code> · <code>encoder_zero()</code>.</strong> 매크로 둘 — <code>__HAL_TIM_GET_COUNTER()</code>(<code>hal_tim.h:1483</code>, <code>CNT</code> 읽기) · <code>__HAL_TIM_SET_COUNTER()</code>(<code>:1476</code>). 32비트 읽기 한 번이라 어느 문맥에서 불러도 반쯤 갱신된 값을 볼 일이 없다. 인덱스 검사(<code>wheel &lt; 0 || wheel &gt;= NW</code>)를 빼먹지 않는다 — 배열 밖의 핸들 포인터는 곧 HardFault 다(fw-04).</li>
+        <li><strong><code>encoder_service_main()</code>.</strong> <code>tick_get_ms()</code> 와의 뺄셈은 fw-06 과 같은 꼴 <code>(uint32_t)(now_ms - s_last_1s_ms)</code>. 창을 닫은 뒤 <code>s_last_1s_ms</code> 는 <code>+= 1000u</code> — <code>= now_ms</code> 로 하면 주 루프가 늦은 만큼 창이 늘어나 <code>d_xx</code> 가 "1 s 증분"이 아니게 된다. 네 바퀴를 같은 순간의 <code>CNT</code> 로 읽고 싶으면 읽기를 먼저 넷 다 하고 계산을 뒤에 한다(손으로 돌리는 속도에서는 차이가 안 보이지만, 습관이 fw-13 으로 간다).</li>
+        <li><strong><code>cmd_enc()</code>.</strong> fw-05 의 규약 — 첫 낱말은 명령 이름, <code>키=값</code> 을 공백으로, 값은 정수, 줄 끝 <code>\r\n</code>. <code>argc == 1</code> 이면 한 줄 출력, <code>argc == 2 &amp;&amp; strcmp(argv[1], "zero") == 0</code> 이면 <code>encoder_zero()</code> 뒤 <code>OK enc</code>, 그 밖은 <code>ERR enc bad-arg</code>. 카운트는 <code>int32_t</code> 라 <code>printf("%ld", (long)v)</code> 꼴로 찍는다. 실습 A 에서는 <strong>raw</strong> 값이다.</li>
+        <li><strong>엮기.</strong> <code>app_init()</code> 에 <code>encoder_init();</code> · <code>encoder_cli_register();</code> — <code>encoder_init()</code> 은 <code>tick_init()</code> <strong>뒤</strong>에(첫 창을 <code>tick_get_ms()</code> 로 연다). <code>app_loop()</code> 에 <code>encoder_service_main();</code>. 최상위 <code>CMakeLists.txt</code> 의 <code># Add user sources here</code> 에 <code>User/Src/Periph/encoder.c</code>.</li>
+      </ol>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 1 = T1 · 걸음 2 = T2 · 걸음 3 = T3 · T4 · 걸음 4 = T5 · 걸음 5 = T6 · 걸음 6 은 한 줄씩이라 카드가 없다. 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>encoder_delta_raw()</code> · raw 읽기값 둘의 부호 있는 차분</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 입력은 raw 32비트 카운터 읽기값 둘(지금 <code>now</code>, 지난번 <code>prev</code>), 출력은 그 사이에 움직인 카운트(부호 있음). 카운터가 <code>0xFFFFFFFF</code> 를 넘어 <code>0x00000000</code> 으로 되돌아간 사이를 건너도 맞아야 한다(§2-2). HAL 을 모르는 순수 함수라 Mac 에서 채점한다 — 헤더의 <code>static inline</code> 이고 <code>.c</code> 가 없다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T1 - User/Inc/Periph/encoder.h */
+static inline int32_t encoder_delta_raw(uint32_t now, uint32_t prev)
+{
+  return (int32_t)(now - prev);   /* 빼기는 uint32_t 끼리, 읽기만 int32_t 로 (§2-2) */
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>now - prev</code> — 둘 다 <code>uint32_t</code> 라 뺄셈도 <code>uint32_t</code> 로 된다. C 의 부호 없는 산술은 2<sup>32</sup> 로 나눈 나머지로 <strong>정의돼</strong> 있어서, <code>0x00000001 - 0xFFFFFFFF</code> 는 넘침이 아니라 그냥 2 다. 랩어라운드를 "다루는" 코드가 없는 것이 요점이다 — 컴파일되는 것은 뺄셈 하나다.</li>
+          <li><code>(int32_t)( … )</code> — 그 결과를 부호 있는 32비트로 <strong>읽는다</strong>. 2 는 +2, <code>0xFFFFFFFE</code> 는 −2. 괄호가 뺄셈 전체를 감싸야 한다 — 캐스트는 바로 뒤의 것 하나에만 붙는 연산자라, 괄호가 없으면 <code>now</code> 만 바뀐다(아래 흔한 실수의 첫 줄과는 또 다른 식이 된다).</li>
+          <li>이 성질은 <strong>카운터의 폭(32비트)과 뺄셈의 폭이 같을 때만</strong> 성립한다. 16비트 타이머였다면 <code>uint16_t</code> 가 뺄셈 전에 <code>int</code> 로 승격돼 나머지 연산이 일어나지 않는다 — 그래서 ARR 을 <code>0xFFFFFFFF</code> 로 두고(§3-1-1), 그래서 이해 확인 3번이 있다.</li>
+          <li>한 창에 반 바퀴(2<sup>31</sup> 카운트) 넘게 돌면 이 식은 방향을 거꾸로 읽는다. 1 ms 창에서는 무부하 최대(~172)의 약 1,250만 배라 문제가 아니지만, 창을 아주 넓히면 성립하지 않는 전제다 — 창을 넓히는 것은 <a href="fw-13-pid-protection.html">fw-13</a>의 선택이고, 그 쪽이 이 전제를 이어받는다.</li>
+          <li>골격의 <code>(void)now; (void)prev; return 0;</code> 세 줄은 지웠다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① <code>(int32_t)((int64_t)now - (int64_t)prev)</code> 처럼 64비트로 넓혀 빼는 식도 열 벡터와 진단 빌드를 다 통과한다(실제로 돌려 확인). 결과는 <strong>동일</strong>하고, 다른 점은 §2-2 의 "폭이 같으면 그것으로 끝"을 글자로 보여 주지 못한다는 것뿐이다 ② <code>now &gt;= prev</code> 로 가지를 갈라 큰 쪽에서 작은 쪽을 빼고 부호를 붙이는 식도 통과한다(동일). 두 줄이 더 든다 ③ <code>return now - prev;</code> 처럼 캐스트를 안 써도 반환형이 <code>int32_t</code> 라 같은 변환이 일어나고 열 벡터 · 진단 빌드가 조용하다. 이 변환은 C 표준이 "구현이 정한다"로 두는 것이고 gcc · clang 은 비트 그대로다. 캐스트를 쓰는 이유는 "여기서 읽는 폭을 바꾼다"를 글자로 남기는 것이다 — <code>-Wconversion</code> 을 더하면 clang 이 <code>warning: implicit conversion changes signedness: 'uint32_t' (aka 'unsigned int') to 'int32_t' (aka 'int') [-Wsign-conversion]</code> 으로 그 자리를 짚는다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 함수).</p>
+        <p><strong>흔한 실수</strong> — 컴파일러(<code>-Wall -Wextra</code>)는 넷 다 아무 말도 하지 않는다. 호스트 시험의 두 명령이 잡는다.</p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th><code>/tmp/test_encoder</code> (값 채점)</th><th><code>/tmp/test_encoder_ub</code> (진단)</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>골격 그대로</td><td><code>Assertion failed: (encoder_delta_raw(100u, 90u) == 10), function main, file test_encoder.c, line 13.</code></td><td>같다</td><td>—</td></tr>
+            <tr><td><code>(int32_t)(prev - now)</code> — 순서를 바꿨다</td><td>같은 둘째 줄에서 선다(기대값이 0 이 아닌 줄은 전부 걸린다)</td><td>같다</td><td><code>now - prev</code></td></tr>
+            <tr><td><code>(int32_t)now - (int32_t)prev</code> — 캐스트의 자리</td><td><code>PASS encoder 10 cases</code> — <strong>통과한다</strong></td><td><code>h723zg/User/Inc/Periph/encoder.h:&lt;줄&gt;:&lt;칸&gt;: runtime error: signed integer overflow: -2147483648 - 2147483647 cannot be represented in type 'int32_t' (aka 'int')</code> 뒤에 <code>SUMMARY: UndefinedBehaviorSanitizer …</code>, 그리고도 <code>PASS</code> 가 찍힌다. 여섯째 벡터 <code>(0x80000000, 0x7FFFFFFF)</code> 에서다 — 부호 있는 정수의 넘침은 정의되지 않은 동작이라 값이 맞아도 틀린 식이다</td><td>빼기는 <code>uint32_t</code> 로, 읽기만 <code>int32_t</code> 로</td></tr>
+            <tr><td>완결 코드</td><td><code>PASS encoder 10 cases</code></td><td><code>PASS encoder 10 cases</code> 만 — 조용하다</td><td>—</td></tr>
+          </tbody>
+        </table></div>
+        <p class="small">위 표는 2026-10-03 에 네 식을 각각 Mac 의 <code>cc</code>(Apple clang)로 실제로 돌린 결과다. <code>-fsanitize=address</code> 를 더해도 완결 코드는 조용하다.</p>
+        <p><strong>확인</strong> — §3-1-3 의 두 명령: 첫째가 <code>PASS encoder 10 cases</code>, 둘째도 같은 한 줄만. 둘 다 통과하기 전에는 굽지 않는다(체크포인트 <code>encoder-host-pass</code>). 보드에서는 T5 의 <code>d_xx</code> 가 이 함수를 지난 값이다 — 되돌아가는 방향으로 돌릴 때 음수가 나오면 이 식이 산 것이다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t2"><summary>힌트 T2 — <code>encoder_init()</code> · 타이머 넷을 돌리고 첫 1 s 창을 연다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — <code>app_init()</code> 이 한 번 부른다(main 문맥, <code>MX_TIMx_Init()</code> 넷과 <code>tick_init()</code> 뒤). CubeMX 가 만든 <code>MX_TIMx_Init()</code> 은 레지스터를 채우기만 하고 카운터를 <strong>돌리지는 않는다</strong>(§3-1-1 grep 의 마지막 줄이 비어 있는 이유). 여기서 넷을 돌리고, 끝났을 때 <code>s_prev_1s[]</code> 넷과 <code>s_last_1s_ms</code> 가 "지금"으로 차 있어야 한다 — T5 가 닫을 첫 창의 시작점이다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T2 - User/Src/Periph/encoder.c */
+void encoder_init(void)
+{
+  for (int w = 0; w &lt; NW; w++) {
+    HAL_StatusTypeDef st = HAL_TIM_Encoder_Start(s_enc_tim[w], TIM_CHANNEL_ALL);
+    FW_ASSERT(st == HAL_OK);                               /* READY 가 아니면 두 번 시작한 것 - 프로그램의 오류 */
+    s_prev_1s[w] = __HAL_TIM_GET_COUNTER(s_enc_tim[w]);   /* 첫 1 s 창의 기준 - 시작 직후의 raw CNT */
+  }
+  s_last_1s_ms = tick_get_ms();                            /* 창이 열린 시각 - 그래서 tick_init() 뒤에 불러야 한다 */
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>for (int w = 0; w &lt; NW; w++)</code> — <code>NW</code> 는 <code>robot_params.h</code> 의 <code>enum</code> 마지막 값(= 4)이다. <code>w</code> 를 <code>for</code> 안에서 선언하는 것은 C99 부터 되는 꼴이고 fw-05 의 루프와 같다.</li>
+          <li><code>HAL_StatusTypeDef st = HAL_TIM_Encoder_Start(s_enc_tim[w], TIM_CHANNEL_ALL);</code> — <code>s_enc_tim[w]</code> 는 이미 포인터(<code>&amp;htim2</code> …)라 <code>&amp;</code> 를 또 붙이지 않는다. <code>TIM_CHANNEL_ALL</code> 이어야 CH1 · CH2 가 둘 다 켜진다. 반환값을 변수에 받아 두는 것은 다음 줄의 <code>FW_ASSERT</code> 에 넣기 위해서다.</li>
+          <li><code>FW_ASSERT(st == HAL_OK);</code> — <code>HAL_OK</code> 가 아닌 경우는 하나뿐이다: 채널 상태가 READY 가 아니다 = 이미 시작한 타이머를 또 시작했다. 그것은 실행 중의 사건이 아니라 프로그램의 오류라 fw-03 의 <code>FW_ASSERT</code> 로 세운다(파일 : 줄을 찍고 LD3 을 켜고 멈춘다). <code>ERR</code> 를 찍고 넘어가는 종류가 아니다.</li>
+          <li><code>s_prev_1s[w] = __HAL_TIM_GET_COUNTER(s_enc_tim[w]);</code> — 첫 1 s 창의 기준. 시작 직후라 거의 0 이지만 "0 이겠지"라고 적지 않고 읽는다 — T4 의 <code>enc zero</code> 뒤에도 같은 자리에서 다시 읽히는 값이라, 읽는 습관이 두 함수를 같은 꼴로 만든다.</li>
+          <li><code>s_last_1s_ms = tick_get_ms();</code> — 루프 밖, 한 번. 창이 열린 시각이다. 그래서 이 함수는 <code>app_init()</code> 에서 <code>tick_init()</code> <strong>뒤</strong>에 있어야 한다(§3-1-3 의 6번).</li>
+          <li>골격의 본문이 비어 있었으므로 지운 자리표시는 없다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — 시작 루프와 <code>s_prev_1s[]</code> 루프를 둘로 나눠도 결과는 같다(동일). 반환값을 변수 없이 <code>FW_ASSERT(HAL_TIM_Encoder_Start(…) == HAL_OK);</code> 로 한 줄에 써도 되지만, 매크로 안에 부작용이 있는 호출을 두는 습관은 뒤에서(<code>assert</code> 가 꺼지는 빌드) 사람을 문다 — 그래서 변수에 받았다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>stm32h7xx_hal_tim.h:2308</code>(선언) · <code>stm32h7xx_hal_tim.c:3225</code>(정의). main 문맥에서 부른다. 두 채널의 CCxE 를 켜고(<code>:3297-3298</code>) <code>__HAL_TIM_ENABLE()</code>(<code>:3303</code> → <code>hal_tim.h:1229</code>, CR1 의 CEN)로 카운터를 돌린 뒤 <code>HAL_OK</code> 를 돌려준다(<code>:3306</code>). <code>TIM_CHANNEL_ALL</code> 일 때 네 채널 상태(CH1 · CH2 · 보완 CH1 · CH2) 중 하나라도 READY 가 아니면 아무것도 하지 않고 <code>HAL_ERROR</code>(<code>:3269</code>; CH1 만이면 <code>:3241</code>, CH2 만이면 <code>:3254</code>).</p>
+        <pre><code class="lang-c">HAL_StatusTypeDef HAL_TIM_Encoder_Start(TIM_HandleTypeDef *htim, uint32_t Channel);
+/*  htim    : 핸들의 주소 (&amp;htim5 - s_enc_tim[] 에 이미 그 꼴로 들어 있다)
+ *  Channel : TIM_CHANNEL_1 (hal_tim.h:782) · TIM_CHANNEL_2 (:783) · TIM_CHANNEL_ALL (:788, 둘 다)
+ *  반환    : HAL_OK = 0 · HAL_ERROR = 1 · HAL_BUSY = 2 · HAL_TIMEOUT = 3 (stm32h7xx_hal_def.h:39-45) */</code></pre>
+        <p><code>__HAL_TIM_GET_COUNTER()</code> 는 T3 에서, <code>tick_get_ms()</code> 는 fw-06, <code>FW_ASSERT</code> 는 fw-03 의 <code>log.h</code> 다.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>이 함수를 쓰지 않았다 · <code>app_init()</code> 에서 부르지 않았다</td><td>빌드는 된다. 바퀴를 돌려도 <code>enc</code> 의 네 값이 0 에서 꼼짝하지 않는다(증상 표 첫 행)</td><td><code>app_init()</code> 의 <code>tick_init();</code> 뒤에 <code>encoder_init();</code></td></tr>
+            <tr><td><code>HAL_TIM_Encoder_Start(*s_enc_tim[w], …)</code> — 포인터를 풀어 넘겼다</td><td><code>error: incompatible type for argument 1 of 'HAL_TIM_Encoder_Start'</code> + <code>note: expected 'TIM_HandleTypeDef *' but argument is of type 'TIM_HandleTypeDef'</code></td><td><code>s_enc_tim[w]</code> 그대로 — 이미 주소다</td></tr>
+            <tr><td><code>HAL_TIM_Encoder_Start(s_enc_tim[w])</code> — 채널 인자를 빼먹었다</td><td><code>error: too few arguments to function 'HAL_TIM_Encoder_Start'</code></td><td>둘째 인자 <code>TIM_CHANNEL_ALL</code></td></tr>
+            <tr><td>반환값을 받아 두고 <code>FW_ASSERT</code> 를 안 썼다</td><td><code>warning: unused variable 'st' [-Wunused-variable]</code></td><td><code>FW_ASSERT(st == HAL_OK);</code></td></tr>
+            <tr><td>같은 타이머를 두 번 시작했다(<code>app_init()</code> 에 두 줄)</td><td>부팅 직후 <code>FW_ASSERT</code> 가 찍는 <code>파일:줄</code> 한 줄(<code>…/encoder.c:&lt;줄&gt;</code> — 줄의 꼴은 fw-03 에서 내가 만든 매크로가 정한다) 뒤 LD3 이 켜지고 멈춘다 — <code>HAL_ERROR</code> 를 <code>FW_ASSERT</code> 가 잡은 것</td><td>한 줄만</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 이 자리만으로는 보이는 것이 없다(아직 찍는 명령이 없다). T6 까지 채우고 §3-1-4 에서 <code>enc</code> 를 두 번 쳐서 값이 나오는 것이 첫 확인이고, 바퀴를 돌려 <code>fr</code> 이 움직이는 것이 이 함수의 확인이다(체크포인트 <code>enc-counts-both-directions</code>).</p>
+        </div></details>
+
+      <details class="hint" id="hint-t3"><summary>힌트 T3 — <code>encoder_count_raw()</code> · 그 바퀴 타이머의 CNT 를 그대로 돌려준다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 입력은 바퀴 번호(<code>FL</code> = 0 … <code>RR</code> = 3), 출력은 그 타이머의 <code>CNT</code> 레지스터 값을 <code>int32_t</code> 로 읽은 것. 부호 상수는 입히지 않는다(그것은 실습 B 의 T7). 어느 문맥에서 불러도 된다 — 32비트 읽기 한 번이라 반쯤 갱신된 값을 볼 일이 없다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T3 - User/Src/Periph/encoder.c */
+int32_t encoder_count_raw(int wheel)
+{
+  if (wheel &lt; 0 || wheel &gt;= NW) { return 0; }               /* 배열 밖의 핸들 포인터는 곧 HardFault 다 (fw-04) */
+  return (int32_t)__HAL_TIM_GET_COUNTER(s_enc_tim[wheel]);  /* CNT 32비트 읽기 한 번 - 어느 문맥이든 */
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>if (wheel &lt; 0 || wheel &gt;= NW) { return 0; }</code> — <strong>먼저</strong> 범위를 본다. <code>s_enc_tim[wheel]</code> 은 배열의 <code>wheel</code> 번째 칸인데, C 는 칸 밖을 읽는 것을 막지 않는다 — 칸 밖에 있는 아무 값이나 "핸들 주소"로 믿고 <code>-&gt;Instance-&gt;CNT</code> 를 따라가면 HardFault 다(fw-04 가 보여 준 그것). <code>||</code> 는 "이거나"이고, 0 을 돌려주는 것은 fw_style 의 골격 규칙(빈 본문은 안전한 기본값)과 같은 선택이다.</li>
+          <li><code>return (int32_t)__HAL_TIM_GET_COUNTER(s_enc_tim[wheel]);</code> — 매크로는 <code>((핸들)-&gt;Instance-&gt;CNT)</code> 로 펼쳐진다: 핸들 → 그 안의 레지스터 블록 주소(<code>Instance</code>) → 그 블록의 <code>CNT</code> 칸. 레지스터는 <code>uint32_t</code> 라 <code>(int32_t)</code> 로 읽어 돌려준다 — 이 쪽의 "raw" 는 부호 없는 레지스터 값을 부호 있는 수로 <strong>읽은</strong> 것이다. 큰 양수 영역(2<sup>31</sup> 이상)은 음수로 보이지만 T1 의 차분이 그것을 바르게 다룬다.</li>
+          <li>골격의 <code>(void)wheel; return 0;</code> 두 줄은 지웠다 — 이제 <code>wheel</code> 을 쓴다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — <code>(int32_t)</code> 캐스트를 빼고 <code>return __HAL_TIM_GET_COUNTER(…);</code> 로 써도 반환형이 같은 변환을 한다(arm-gcc <code>-Wall</code> 은 조용하다 — 실제로 컴파일해 봤다). T1 의 셋째 "다르게 써도 되는 곳"과 같은 이야기다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — HAL 함수가 아니라 매크로다. <code>stm32h7xx_hal_tim.h:1483</code>: <code>#define __HAL_TIM_GET_COUNTER(__HANDLE__) ((__HANDLE__)-&gt;Instance-&gt;CNT)</code>. 인자는 핸들의 <strong>주소</strong>. <code>CNT</code> 는 CMSIS 의 <code>TIM_TypeDef</code>(<code>stm32h723xx.h:1535</code>, <code>__IO uint32_t CNT</code> — 오프셋 0x24)이고, 32비트 인스턴스에서는 32비트 전부가 뜻을 가진다. 어느 문맥이든 된다.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>범위 검사를 빼먹었다</td><td>아무 말도 없다. <code>wheel</code> 에 4 가 들어오는 날 HardFault — fw-04 의 <code>[…] E hardfault: pc=… lr=… cfsr=… hfsr=…</code> 줄이 찍힌다</td><td>첫 줄</td></tr>
+            <tr><td><code>wheel &gt; NW</code> — 등호 하나</td><td>아무 말도 없다. <code>wheel == 4</code> 가 통과해 위와 같다</td><td><code>&gt;=</code></td></tr>
+            <tr><td><code>__HAL_TIM_GET_COUNTER(*s_enc_tim[wheel])</code> — 포인터를 풀었다</td><td><code>error: invalid type argument of '-&gt;' (have 'TIM_HandleTypeDef')</code>(매크로가 펼쳐진 자리를 가리킨다) 뒤에 <code>warning: control reaches end of non-void function</code></td><td><code>s_enc_tim[wheel]</code> 그대로</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — T6 의 <code>enc</code> 가 찍는 앞 네 값이 이 함수다(실습 A). §3-1-4: 꽂지 않은 바퀴는 0 근처에서 ±1~2 떨리고, 꽂은 바퀴는 돌리는 방향으로 커지고 작아진다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t4"><summary>힌트 T4 — <code>encoder_zero()</code> · 카운터 넷과 1 s 창을 0 으로</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — <code>enc zero</code>(T6)가 부른다. main 문맥. 끝났을 때 참이어야 하는 것: 네 타이머의 <code>CNT</code> 가 0, 그리고 <strong>이 모듈이 기억하는 모든 "지난번 값"도 0</strong> — 하드웨어만 0 으로 하고 기억을 남기면, 다음 창의 차분이 "0 − 옛 CNT" 가 되어 엉뚱한 큰 수가 한 번 찍힌다. 실습 B 가 기억을 하나 더 만들므로(<code>s_prev_cnt[]</code>) 이 함수는 그때 한 줄이 는다.</p>
+        <p><strong>완결 코드</strong> — 2차까지 넣은 모습이다. 실습 A 를 구울 때는 "2차" 주석과 그 아래 한 줄이 <strong>없다</strong>(그 배열이 아직 없어 빌드가 안 된다).</p>
+        <pre><code class="lang-c">/* 완결 코드 T4 - User/Src/Periph/encoder.c */
+void encoder_zero(void)
+{
+  for (int w = 0; w &lt; NW; w++) {
+    __HAL_TIM_SET_COUNTER(s_enc_tim[w], 0u);   /* 하드웨어의 CNT 부터 */
+    s_prev_1s[w]  = 0u;                        /* 1 s 창의 기준도 0 - 아니면 다음 d_xx 에 "0 - 옛 CNT" 가 섞인다 */
+    s_delta_1s[w] = 0;
+    /* 2차(실습 B 의 5번) - 1 kHz 소비자의 창도 잊는다. 실습 A 를 구울 때는 아래 한 줄이 없다 (s_prev_cnt 가 아직 없다) */
+    s_prev_cnt[w] = 0u;
+  }
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>__HAL_TIM_SET_COUNTER(s_enc_tim[w], 0u);</code> — 매크로가 <code>(핸들)-&gt;Instance-&gt;CNT = 0u</code> 로 펼쳐진다. 레지스터에 쓰는 것이라 다음 엣지부터 0 에서 센다. <code>0u</code> 의 <code>u</code> 는 "부호 없는 상수"다 — 레지스터와 같은 형으로 맞춘 것이고 <code>0</code> 으로 써도 결과는 같다(동일).</li>
+          <li><code>s_prev_1s[w] = 0u; s_delta_1s[w] = 0;</code> — T5 가 쓰는 1 s 창의 두 기억. 기준(<code>s_prev_1s</code>)은 CNT 와 같은 <code>uint32_t</code> 라 <code>0u</code>, 결과(<code>s_delta_1s</code>)는 <code>int32_t</code> 라 <code>0</code>. 결과까지 지우는 이유: <code>enc zero</code> 직후의 <code>enc</code> 가 옛 창의 <code>d_xx</code> 를 그대로 보여 주지 않게.</li>
+          <li><code>s_prev_cnt[w] = 0u;</code> — <strong>2차</strong>(실습 B 의 5번). <code>encoder_delta()</code>(T8)의 창도 같은 이유로 잊는다. 이 줄을 실습 A 의 빌드에 넣으면 <code>'s_prev_cnt' undeclared</code> 로 멈춘다 — 흔한 실수의 표.</li>
+          <li>루프 하나에 넷을 다 넣었다. 하드웨어 → 기억의 순서는 중요하지 않다(이 함수는 main 문맥이고 창을 닫는 T5 도 main 문맥이라 사이에 끼어들 것이 없다).</li>
+          <li>골격의 본문이 비어 있었으므로 지운 자리표시는 없다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — <code>s_last_1s_ms</code> 를 여기서 <code>tick_get_ms()</code> 로 다시 열어도 된다(동일 — 창의 길이가 한 번 짧아지거나 길어질 뿐). 이 코드는 창의 시각을 건드리지 않아 <code>d_xx</code> 의 박자가 <code>enc zero</code> 와 무관하게 1 s 를 지킨다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 매크로 <code>__HAL_TIM_SET_COUNTER(__HANDLE__, __COUNTER__)</code>(<code>stm32h7xx_hal_tim.h:1476</code>) = <code>((__HANDLE__)-&gt;Instance-&gt;CNT = (__COUNTER__))</code>. T3 의 읽기 매크로와 짝이다. main 문맥.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>CNT 만 0 으로 하고 <code>s_prev_1s[]</code> 를 남겼다</td><td>아무 말도 없다. <code>enc zero</code> 뒤 첫 <code>d_xx</code> 가 −(옛 CNT) 만큼의 큰 음수로 한 번 찍힌다</td><td>둘째 줄</td></tr>
+            <tr><td>실습 A 의 빌드에 2차 줄을 넣었다</td><td><code>error: 's_prev_cnt' undeclared (first use in this function); did you mean 's_prev_1s'?</code></td><td>실습 A 에서는 그 줄을 뺀다 · 실습 B 에서 <code>s_prev_cnt[]</code> 선언 블록(§3-2-2)과 함께 넣는다</td></tr>
+            <tr><td>실습 B 에서 2차 줄을 안 넣었다</td><td>아무 말도 없다. 이 쪽에서는 보이지 않는다 — fw-13 에서 <code>enc zero</code> 뒤 첫 <code>encoder_delta()</code> 가 큰 값 하나를 돌려준다</td><td>§3-2-3 의 5번</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-1-4 의 둘째 묶음: <code>enc zero</code> → <code>OK enc</code>, 그 뒤 <code>enc</code> 의 앞 네 값이 0 근처(꽂은 바퀴를 안 움직였으면). counts/rev 를 잴 때 회차마다 이 명령으로 0 에서 시작한다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t5"><summary>힌트 T5 — <code>encoder_service_main()</code> · 1 s 가 지났으면 창을 닫고 다음 창을 연다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — <code>app_loop()</code> 가 한 바퀴에 한 번 부른다(main 문맥 — fw-06 의 <code>wdg_service_main()</code> 과 같은 자리). 거의 매번 "아직 1 s 가 안 됐다"로 바로 돌아가고, 1 s 에 한 번만 일을 한다: 네 바퀴의 raw CNT 를 읽어 지난 기준과의 차분(T1)을 <code>s_delta_1s[]</code> 에 남기고, 지금 값을 다음 창의 기준으로 삼는다. 끝났을 때 <code>s_last_1s_ms</code> 는 "창이 닫힌 시각"이 아니라 "다음 창이 <strong>열려야 했던</strong> 시각"이다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T5 - User/Src/Periph/encoder.c */
+void encoder_service_main(void)
+{
+  const uint32_t now_ms = tick_get_ms();
+  if ((uint32_t)(now_ms - s_last_1s_ms) &lt; 1000u) { return; }   /* 창이 아직 안 닫혔다 - 거의 모든 바퀴는 여기서 끝 */
+
+  uint32_t now[NW];
+  for (int w = 0; w &lt; NW; w++) {                               /* 읽기를 먼저 넷 다 - 같은 순간의 CNT */
+    now[w] = __HAL_TIM_GET_COUNTER(s_enc_tim[w]);
+  }
+  for (int w = 0; w &lt; NW; w++) {                               /* 계산은 그다음 */
+    s_delta_1s[w] = encoder_delta_raw(now[w], s_prev_1s[w]);
+    s_prev_1s[w]  = now[w];
+  }
+  s_last_1s_ms += 1000u;                                       /* "= now_ms" 가 아니다: 창이 루프 주기를 따라 밀리지 않게 */
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>const uint32_t now_ms = tick_get_ms();</code> — 시각을 한 번만 읽어 변수에 둔다. 아래에서 두 번 쓸 값을 두 번 읽으면 사이에 ms 가 바뀔 수 있다. <code>const</code> 는 "이 함수 안에서 다시 안 바꾼다"는 표시다.</li>
+          <li><code>if ((uint32_t)(now_ms - s_last_1s_ms) &lt; 1000u) { return; }</code> — fw-06 의 간격 뺄셈과 같은 꼴. 두 피연산자가 다 <code>uint32_t</code> 라 캐스트 없이도 같은 값이지만, "되감기를 알고 뺀다"를 글자로 남기는 습관이다(49.7 일에 한 번 <code>tick_get_ms()</code> 가 0 으로 되돌아가도 이 뺄셈은 맞다). 조건을 거꾸로(<code>&lt;</code> 면 돌아간다) 써서 뒤의 본문이 한 단 안쪽으로 들어가지 않게 했다 — <strong>다르게 써도 되는 곳</strong>: <code>&gt;= 1000u</code> 로 감싸는 꼴도 같다(동일).</li>
+          <li><code>uint32_t now[NW];</code> + 첫 <code>for</code> — <strong>읽기를 먼저 넷 다.</strong> 네 바퀴를 "같은 순간"의 값으로 읽고 싶으면 읽기 사이에 계산을 끼우지 않는다. 손으로 돌리는 속도에서는 차이가 안 보이지만, 이 습관이 fw-13 의 1 kHz 경로로 간다. <code>now[NW]</code> 는 함수 안의 지역 배열이라 돌아가면 사라진다 — 남겨야 하는 것은 아래의 <code>static</code> 둘뿐이다.</li>
+          <li>둘째 <code>for</code> — <code>s_delta_1s[w] = encoder_delta_raw(now[w], s_prev_1s[w]);</code> 가 T1 을 쓰는 자리다(<code>now</code> 가 앞, <code>prev</code> 가 뒤). 바로 다음 줄 <code>s_prev_1s[w] = now[w];</code> 로 기준을 옮긴다 — 이 줄이 없으면 차분이 "init 이후 누적"이 되어 <code>d_xx</code> 가 계속 커진다.</li>
+          <li><code>s_last_1s_ms += 1000u;</code> — <code>= now_ms</code> 가 <strong>아니다.</strong> 주 루프가 이 함수에 늦게 왔으면(예: 1,003 ms 에) <code>= now_ms</code> 는 그 3 ms 를 다음 창에 더해 창이 1,003 · 1,006 … ms 로 늘어난다. <code>+= 1000u</code> 는 창의 경계를 박자에 고정한다 — 그래서 <code>d_xx</code> 는 늘 "1 s 동안의 증분"이다.</li>
+          <li>골격의 본문이 비어 있었으므로 지운 자리표시는 없다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>tick_get_ms()</code>(fw-06, <code>System/tick.h</code>) · T3 과 같은 <code>__HAL_TIM_GET_COUNTER()</code> · T1 의 <code>encoder_delta_raw()</code>. 세 함수 다 main 문맥에서 안전하다.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>app_loop()</code> 에서 부르지 않았다</td><td>아무 말도 없다. <code>enc</code> 의 앞 넷은 움직이는데 <code>d_xx</code> 가 늘 0(증상 표 마지막 행)</td><td>§3-1-3 의 6번(엮기)</td></tr>
+            <tr><td><code>s_last_1s_ms = now_ms;</code></td><td>아무 말도 없다. 주 루프가 바쁜 날 창이 1 s 보다 길어져 <code>d_xx</code> 가 커 보인다 — 손으로는 알아보기 어렵고 fw-13 의 속도가 틀린다</td><td><code>+= 1000u</code></td></tr>
+            <tr><td><code>s_prev_1s[w] = now[w];</code> 를 빼먹었다</td><td>아무 말도 없다. 한 방향으로 돌리면 <code>d_xx</code> 가 1 s 마다 줄어들지 않고 누적된다(<code>enc</code> 의 앞 값과 같아진다)</td><td>둘째 루프의 둘째 줄</td></tr>
+            <tr><td><code>if (now_ms &gt;= s_last_1s_ms + 1000u)</code> — 더해서 견줬다</td><td>아무 말도 없다. 되감기(49.7 일)에서 한 번 깨진다 — 벤치에서는 못 본다</td><td>빼서 견준다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-1-4 의 ③: 한 방향으로 1 s 에 한 바퀴쯤 꾸준히 돌리면 <code>d_fr</code> 이 수만 단위로 붙고(공칭이면 94,000 근처), 멈추면 다음 1 s 뒤에 0 으로 돌아온다. 되돌리는 방향에서는 음수다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t6"><summary>힌트 T6 — <code>cmd_enc()</code> · 위 세 갈래를 argc 로 가른다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — fw-05 의 <code>cli_dispatch()</code> 가 "enc …" 줄을 낱말로 잘라 <code>argc</code>(낱말 수) · <code>argv[]</code>(낱말들)로 넘겨 부른다(main 문맥). 갈래는 셋: <code>enc</code> 혼자(<code>argc == 1</code>)면 한 줄 출력, <code>enc zero</code> 면 T4 를 부르고 <code>OK enc</code>, 그 밖은 <code>ERR enc bad-arg</code>. 출력 꼴은 fw-05 §2-4 의 규약 — 첫 낱말은 명령 이름, <code>키=값</code> 을 공백으로, 값은 정수, 줄 끝 <code>\r\n</code>. 실습 B 의 5번이 앞 넷을 부호 입힌 값으로 바꾼다.</p>
+        <p><strong>완결 코드</strong> — 2차(실습 B)까지 넣은 모습이다. 실습 A 를 구울 때는 앞 넷을 <code>encoder_count_raw(FL)</code> … 로 쓴다 — <code>encoder_count()</code> 는 실습 B 가 선언한다.</p>
+        <pre><code class="lang-c">/* 완결 코드 T6 - User/Src/Periph/encoder.c */
+static void cmd_enc(int argc, char *argv[])
+{
+  if (argc == 1) {
+    /* 앞 네 값 - 1차(실습 A): encoder_count_raw(FL) ... 로 쓴다. 2차(실습 B 의 5번): encoder_count(FL) ... 로 바꾼다 */
+    printf("enc fl=%ld fr=%ld rl=%ld rr=%ld d_fl=%ld d_fr=%ld d_rl=%ld d_rr=%ld\r\n",
+           (long)encoder_count(FL), (long)encoder_count(FR),
+           (long)encoder_count(RL), (long)encoder_count(RR),
+           (long)s_delta_1s[FL], (long)s_delta_1s[FR], (long)s_delta_1s[RL], (long)s_delta_1s[RR]);
+    return;
+  }
+  if (argc == 2 &amp;&amp; strcmp(argv[1], "zero") == 0) {   /* argc 를 먼저 본다 - argv[1] 은 argc &gt;= 2 일 때만 뜻이 있다 */
+    encoder_zero();
+    printf("OK enc\r\n");
+    return;
+  }
+  printf("ERR enc bad-arg\r\n");
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>if (argc == 1) { … return; }</code> — 갈래마다 <code>return</code> 으로 끝내는 꼴(fw-05 의 T6 과 같다). 그래서 마지막 <code>printf("ERR …")</code> 에는 조건이 없다 — 위에서 돌아가지 않은 모든 경우가 "그 밖"이다.</li>
+          <li><code>printf("enc fl=%ld fr=%ld … d_rr=%ld\r\n", (long)encoder_count(FL), …)</code> — 값 여덟 개를 한 줄에. 서식은 한 문자열이고 인자가 여덟이다(순서가 서식의 <code>%</code> 순서와 같아야 한다 — 앞 넷은 누적, 뒤 넷은 1 s 증분). <code>int32_t</code> 를 <code>%ld</code> 로 찍으려면 <code>(long)</code> 으로 캐스트한다 — Mac 에서 <code>int32_t</code> 는 <code>int</code>, arm-gcc 에서는 <code>long int</code> 라 캐스트가 있어야 두 곳에서 같은 줄이 경고 없이 된다(fw-05 T9 의 <code>%lu</code> 와 같은 이야기). <code>FL FR RL RR</code> 은 <code>robot_params.h</code> 의 <code>enum</code> 값이고 <code>s_delta_1s[]</code> 는 T5 가 채운 배열이다.</li>
+          <li><code>if (argc == 2 &amp;&amp; strcmp(argv[1], "zero") == 0)</code> — <strong><code>argc</code> 를 먼저</strong> 본다. <code>&amp;&amp;</code> 는 왼쪽이 거짓이면 오른쪽을 아예 보지 않으므로, <code>argc</code> 가 1 일 때 <code>argv[1]</code> 을 읽지 않는다 — fw-05 의 <code>tokenize()</code> 는 <code>argc</code> 뒤의 칸을 채우지 않아 거기엔 아무 값이나 있다. <code>strcmp()</code> 는 같을 때 0 을 돌려주므로 "같다"는 <code>== 0</code> 이다(fw-05 T6).</li>
+          <li><code>encoder_zero(); printf("OK enc\r\n"); return;</code> — 일을 하고, 규약의 <code>OK &lt;명령&gt;</code> 을 찍고, 돌아간다.</li>
+          <li><code>printf("ERR enc bad-arg\r\n");</code> — <code>enc foo</code> · <code>enc zero now</code> 가 다 여기로 온다.</li>
+          <li>골격의 <code>(void)argc; (void)argv;</code> 는 지웠다 — 이제 둘 다 쓴다. 줄 끝이 <code>\r\n</code> 이라 <code>fflush()</code> 는 필요 없다(프롬프트는 <code>cli_feed()</code> 가 찍는다).</li>
+          <li><strong>다르게 써도 되는 곳</strong> — <code>d_xx</code> 네 값에도 부호를 입힐지는 §3-2-3 의 5번이 내 선택으로 둔 것이다. 입히면 <code>(long)(s_sign[FL] * s_delta_1s[FL])</code> 꼴이 된다(동일 — 어느 쪽이든 노트에 적는다). <code>switch (argc)</code> 로 갈라도 같다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>printf</code> · <code>strcmp</code>(<code>&lt;string.h&gt;</code>, 골격의 include 에 있다) · T4 의 <code>encoder_zero()</code> · T3 의 <code>encoder_count_raw()</code>(실습 A) 또는 T7 의 <code>encoder_count()</code>(실습 B). 등록은 골격의 <code>encoder_cli_register()</code> 가 fw-05 의 <code>cli_register("enc", cmd_enc)</code> 로 이미 한다 — <code>cli_fn_t</code> 의 꼴 <code>void (*)(int argc, char *argv[])</code> 과 이 함수의 시그니처가 같아야 등록된다.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>%d</code> 에 캐스트 없이 <code>int32_t</code> 를 넘겼다</td><td><code>warning: format '%d' expects argument of type 'int', but argument 2 has type 'int32_t' {aka 'long int'} [-Wformat=]</code></td><td><code>(long)</code> + <code>%ld</code></td></tr>
+            <tr><td><code>argv[1] == "zero"</code></td><td><code>warning: comparison with string literal results in unspecified behavior [-Waddress]</code> — 주소끼리 견준 것이라 늘 거짓이다</td><td><code>strcmp(argv[1], "zero") == 0</code></td></tr>
+            <tr><td><code>if (argc = 2 &amp;&amp; …)</code> — 등호 하나</td><td><code>warning: suggest parentheses around assignment used as truth value [-Wparentheses]</code></td><td><code>==</code></td></tr>
+            <tr><td><code>argc</code> 를 보지 않고 <code>strcmp(argv[1], …)</code> 부터 썼다</td><td>빌드는 된다. <code>enc</code> 혼자 치면 <code>argv[1]</code> 의 쓰레기 주소를 따라가 HardFault 가 나거나 우연히 넘어간다</td><td><code>argc == 2 &amp;&amp;</code> 를 앞에</td></tr>
+            <tr><td>실습 A 의 빌드에서 <code>encoder_count(FL)</code> 을 썼다</td><td><code>error: implicit declaration of function 'encoder_count'; did you mean 'encoder_count_raw'? [-Wimplicit-function-declaration]</code></td><td>실습 A 는 <code>encoder_count_raw()</code> · 실습 B 에서 헤더에 선언을 더한 뒤 바꾼다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-1-4: <code>help</code> 에 <code>enc</code> 가 있고, <code>enc</code> 가 <code>enc fl=… d_rr=…</code> 한 줄, <code>enc zero</code> 가 <code>OK enc</code>, <code>enc x</code> 가 <code>ERR enc bad-arg</code>. 실습 B(§3-2-4)에서는 앞 넷이 "앞 = +" 로 바뀐다.</p>
+        </div></details>
+
+      <h4 id="s3-1-4">3-1-4. 굽고 보기</h4>
+      <pre><code class="lang-bash">cd firmware
+tools/flash.sh                            # 빌드까지 한다(fw-02) · 인자 없음 = TEXT 모드
+grep -rn "TODO(you)" h723zg/User/Src/Periph/encoder.c h723zg/User/Inc/Periph/encoder.h | wc -l # 남은 자리 (기대: 0)</code></pre>
+      <p><strong>먼저, 아무것도 꽂지 않은 채</strong> 명령 창을 연다. <code>enc</code> 를 몇 초 간격으로 두 번 친다 — 네 값이 그대로이거나 ±1~2 안에서 떨린다(입력이 부유 상태라 노이즈가 엣지로 잡힐 수 있다 — §2-1 의 "한 선만 움직이면 ±1"). 크게 움직이면 §증상 표(SB57). 이 상태에서 <strong>입구 확인 ③(B13)</strong>을 한다 — PA15 · PB3 가 이제 풀 없는 입력이다.</p>
+      <p><strong>배선(FR).</strong> USB 를 <strong>뽑고</strong> 꽂는다. 엔코더 커넥터의 어느 핀이 무엇인지는 기록에 없다(1세대의 "흰 = A, 초록 = B, 빨강 = VCC, 검정 = GND" 는 시험 전에 쓴 계획서의 값 — [추정], <code>~/ros2/docs/stage1_md30c_test_guide.md:75-78</code>). <strong>전원을 끈 채 DMM 도통</strong>으로 GND 를 먼저 찾고(모터 몸체 · 실드와 이어진 선이 GND 인 경우가 많다 — 이것도 확인할 대상이다), 남은 셋 중 VCC 는 색과 커넥터 표기로 짐작한 뒤 켜서 확인한다(§3-3 에서 기록). A · B 는 어느 쪽이든 된다 — 뒤바뀌면 부호가 반대로 나오고 그것이 실습 B 의 상수가 된다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>엔코더 선</th><th>Nucleo 자리</th><th>확인</th></tr></thead>
+        <tbody>
+          <tr><td>GND</td><td>Zio <strong>CN8-11</strong>(GND)</td><td>전원 OFF 에서 엔코더 GND 선 ↔ CN8-11 도통</td></tr>
+          <tr><td>VCC</td><td>Zio <strong>CN8-7</strong>(3V3) — 바로 아래 CN8-9 는 5 V</td><td>USB 를 꽂은 뒤 <strong>CN8-7 ↔ GND 부터</strong> 잰다: 3.3 V 근처. 그 다음 엔코더 커넥터의 VCC 핀에서 같은 값 → <code>enc-supply-3v3-measured</code></td></tr>
+          <tr><td>A (또는 B)</td><td><strong>CN10-29</strong>(Zio D32 = PA0) 또는 Morpho <strong>CN11-28</strong></td><td>짝 핀 CN10-30 = PE15(ESTOP 예정) — 지금은 비어 있다</td></tr>
+          <tr><td>B (또는 A)</td><td>Morpho <strong>CN11-30</strong>(PA1) — Zio 에는 나오지 않는다</td><td>두 줄 위 CN11-24 = VIN(지금은 무전압), 바로 아래 CN11-32 = PA4. 꽂은 뒤 육안으로 한 번 더(§2-8)</td></tr>
+        </tbody>
+      </table></div>
+      <p>자리는 <code>hardware/pinmap-h723.md</code> §2-B 의 것이다(UM2407 Rev 6 표 18 · 표 21 · 표 22). 3V3 예산은 <a href="fw-01-pinmap.html#s3-5">fw-01 §3-5</a> 의 절차로 잰다 — 엔코더 한 개의 소비 전류 <code>____</code> mA 를 적어 두면 INVENTORY 6절 "엔코더 전원" 행의 빈칸(4개 합계)이 여기서 채워지기 시작한다.</p>
+      <pre><code class="lang-text">&gt; enc
+enc fl=&lt;n&gt; fr=&lt;n&gt; rl=&lt;n&gt; rr=&lt;n&gt; d_fl=&lt;n&gt; d_fr=&lt;n&gt; d_rl=&lt;n&gt; d_rr=&lt;n&gt;
+&gt; enc zero
+OK enc
+&gt; enc                                  &lt;- 바퀴를 앞으로 반 바퀴쯤 돌린 뒤
+enc fl=&lt;n&gt; fr=&lt;+수만&gt; rl=&lt;n&gt; rr=&lt;n&gt; d_fl=&lt;n&gt; d_fr=&lt;n&gt; d_rl=&lt;n&gt; d_rr=&lt;n&gt;
+&gt; enc                                  &lt;- 같은 만큼 뒤로 돌린 뒤
+enc fl=&lt;n&gt; fr=&lt;0 근처&gt; rl=&lt;n&gt; rr=&lt;n&gt; ...</code></pre>
+      <p>본다: ① 돌리는 방향에 따라 <code>fr</code> 이 <strong>커지고 작아진다</strong>(부호는 아직 raw — + 가 앞일 수도 뒤일 수도 있다. 어느 쪽인지 노트에) ② 되돌리면 0 근처로 돌아온다 ③ 한 방향으로 1 s 에 한 바퀴쯤 꾸준히 돌리면 <code>d_fr</code> 이 수만 단위로 붙는다(공칭이면 94,000 근처). 꽂지 않은 세 바퀴는 0 근처에서 떨린다.</p>
+      <p><strong>counts/rev 를 잰다.</strong> 바퀴 테두리와 섀시에 마스킹테이프로 기준선을 맞춘다. <code>enc zero</code> → 한 방향으로 <strong>정확히 N 회전</strong>(N = 10 을 기본으로, 기준선이 다시 맞는 순간 멈춘다) → <code>enc</code> → <code>|fr| ÷ N</code>. 두 번 더 반복해 세 값의 흩어짐을 본다(흩어짐이 기준선 맞추기의 오차다).</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>회차</th><th>N</th><th><code>fr</code> (raw)</th><th>counts/rev = |fr| ÷ N</th><th>÷ 2,000 (= 기어비 역산)</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td>2</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td>3</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td colspan="3">평균 · 흩어짐(최대 − 최소)</td><td>____ · ____</td><td>정수에 가까운가: ____</td></tr>
+        </tbody>
+      </table></div>
+      <p>기록: <code>hardware/INVENTORY.md</code> 6절 "엔코더 분해능" 행을 <code>MEASURED(&lt;날짜&gt;, hand-turn &lt;N&gt; rev ×3 avg)</code> 로, "기어비" 행에 역산값을. <code>robot_params.h</code> 의 <code>ENCODER_CPR</code> 줄을 §2-5 의 둘째 꼴로 바꾼다. 94,000 과 다르면 다른 값이 맞다 — 산술값은 잰 값을 이기지 못한다. 단 ÷ 2,000 이 정수에서 멀면 먼저 회전 수를 의심한다.</p>
+
+      <h3 id="s3-2">3-2. 실습 B — 네 바퀴의 부호를 재서 상수로 적는다</h3>
+      <p>CubeMX 는 다시 열지 않는다(A 에서 넷을 켰다). 이 실습의 순서가 중요하다: 먼저 <strong>A 의 펌웨어 그대로</strong> 나머지 세 바퀴를 꽂고 raw 카운트의 증감을 본다 → 그 관찰이 <code>ENC_SIGN_*</code> 의 값이 된다 → 값을 적은 뒤에야 부호를 적용하는 함수와 가드를 붙여 굽는다. 값을 모르는 채로 가드가 붙은 코드를 굽는 순서가 아니다.</p>
+
+      <h4 id="s3-2-2">3-2-2. 골격</h4>
+      <p><code>encoder.h</code> 에 공개 함수 둘을 더한다 — <code>encoder_count()</code>(부호 적용 누적)와 <code>encoder_delta()</code>(부호 적용 차분 — fw-13 의 1 kHz 소비자가 부를 것). <code>encoder.c</code> 의 include 아래에 아래 블록을 더한다. <code>_Static_assert</code> 다섯 줄이 이 모듈의 <strong>가드</strong>다 — <code>ENC_SIGN_*</code> 넷 중 하나라도 EMPTY(자리표시 0)면 이 파일은 빌드되지 않는다. 자리표시 0 을 그대로 곱하면 카운트가 전부 0 이 되어 fw-13 의 PID 가 "속도 0" 을 믿고 듀티를 끝까지 올린다 — 0 이 위험한 쪽으로 동작하는 키다.</p>
+      <pre><code class="lang-c">/* User/Inc/Periph/encoder.h — 실습 B 가 공개 함수 둘을 더한다 */
+int32_t encoder_count(int wheel);   /* ENC_SIGN_* 적용: 앞으로 돌면 커진다. 어느 문맥이든 */
+int32_t encoder_delta(int wheel);   /* 그 바퀴의 직전 호출 이후 부호 적용 카운트. 부르는 쪽은 하나뿐 (1 kHz 소비자) */</code></pre>
+      <pre><code class="lang-c">/* --- 실습 B 가 User/Src/Periph/encoder.c 에 더하는 것 (include 아래) --- */
+/* EMPTY 키는 내 실측값을 품기 전까지 이 모듈의 빌드를 막는다 (이 가이드의 규칙: 가드는 .c 에 둔다). */
+_Static_assert((ENC_SIGN_FL) != 0, "robot_params.h: ENC_SIGN_FL is still EMPTY");
+_Static_assert((ENC_SIGN_FR) != 0, "robot_params.h: ENC_SIGN_FR is still EMPTY");
+_Static_assert((ENC_SIGN_RL) != 0, "robot_params.h: ENC_SIGN_RL is still EMPTY");
+_Static_assert((ENC_SIGN_RR) != 0, "robot_params.h: ENC_SIGN_RR is still EMPTY");
+_Static_assert((ENC_SIGN_FL) * (ENC_SIGN_FL) == 1 &amp;&amp; (ENC_SIGN_FR) * (ENC_SIGN_FR) == 1 &amp;&amp;
+               (ENC_SIGN_RL) * (ENC_SIGN_RL) == 1 &amp;&amp; (ENC_SIGN_RR) * (ENC_SIGN_RR) == 1,
+               "robot_params.h: ENC_SIGN_* must be +1 or -1");
+
+static const int32_t s_sign[NW] = { ENC_SIGN_FL, ENC_SIGN_FR, ENC_SIGN_RL, ENC_SIGN_RR };
+static uint32_t      s_prev_cnt[NW];   /* 직전 encoder_delta() 호출 때의 raw CNT — 1 kHz 소비자 자신의 창 */
+
+int32_t encoder_count(int wheel)
+{
+  /* TODO(you) [T7]: 부호를 입힌 누적 카운트 - 힌트 카드 T7
+       1) wheel 범위 검사는 T3 과 같다 - 밖이면 0
+       2) s_sign[wheel] * encoder_count_raw(wheel) 을 돌려준다 - 곱셈 한 줄
+     채우기 시작하면 아래 두 줄(빌드용 자리표시)은 지운다. */
+  (void)wheel;
+  return 0;
+}
+
+int32_t encoder_delta(int wheel)
+{
+  /* TODO(you) [T8]: 직전 호출 이후의 부호 입힌 차분 - 힌트 카드 T8
+       1) wheel 범위 검사는 T3 과 같다 - 밖이면 0
+       2) now = raw CNT (encoder_count_raw() 의 반환값을 uint32_t 로 되돌려 받는다)
+       3) d = encoder_delta_raw(now, s_prev_cnt[wheel]);  그다음 s_prev_cnt[wheel] = now;
+       4) s_sign[wheel] * d 를 돌려준다
+     부르는 쪽은 하나뿐 (1 kHz 소비자, fw-13). s_prev_cnt[] 를 1 s 창과 절대 나눠 쓰지 않는다 - 소비자 둘, 창 둘.
+     채우기 시작하면 아래 두 줄(빌드용 자리표시)은 지운다. */
+  (void)wheel;
+  return 0;
+}</code></pre>
+      <p class="small">가드가 멈추는 모습(2026-09-22, Mac 의 <code>cc -fsyntax-only</code>): <code>error: static assertion failed … robot_params.h: ENC_SIGN_FL is still EMPTY</code>. 메시지에 밑줄 네 개를 쓰지 않는 이유는 <code>check_nominal.sh</code> 가 그것을 빈칸으로 세기 때문이다. 값이 ±1 이 아니면(예: 2) 다섯째 줄이 막는다.</p>
+
+      <h4 id="s3-2-3">3-2-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><strong>나머지 세 바퀴를 꽂는다 — USB 를 뽑고.</strong> 자리는 아래 표(<code>hardware/pinmap-h723.md</code> §2-B). 각 엔코더의 GND · VCC 는 A 와 같은 두 자리(CN8-11 · CN8-7)에 모인다 — 점퍼선 네 개를 한 핀에 꽂을 수 없으므로 브레드보드의 전원 레일이나 WAGO 같은 무납땜 분기가 필요하다(<a href="fw-00-map.html">fw-00</a> 의 부품표). FL 을 꽂기 전에 입구 확인 ③이 끝나 있어야 한다.
+          <div class="tbl"><table class="compact">
+            <thead><tr><th>바퀴</th><th>타이머</th><th>A (또는 B)</th><th>B (또는 A)</th><th>이웃 주의</th></tr></thead>
+            <tbody>
+              <tr><td>FL</td><td>TIM2</td><td>PA15 — Zio D20 <strong>CN7-9</strong> 만</td><td>PB3 — Zio D23 <strong>CN7-15</strong>(또는 CN12-31)</td><td>PA15 의 Morpho 자리 CN11-17 은 짝 핀이 5 V — <strong>쓰지 않는다</strong></td></tr>
+              <tr><td>FR</td><td>TIM5</td><td colspan="2">실습 A 에서 이미 꽂았다</td><td>—</td></tr>
+              <tr><td>RL</td><td>TIM23</td><td>PF6 — Zio A8 <strong>CN10-11</strong>(또는 CN11-9)</td><td>PF7 — Zio D62 <strong>CN9-26</strong>(또는 CN11-11)</td><td>CN10-11 의 짝 핀 CN10-12 = PG14(USART6_TX, fw-14 예정) — 지금은 비어 있다</td></tr>
+              <tr><td>RR</td><td>TIM24</td><td>PF11 — Morpho <strong>CN12-62</strong> 만</td><td>PF12 — Morpho <strong>CN12-59</strong> 만</td><td>Morpho 전용. 실크의 핀 번호를 두 번 읽는다</td></tr>
+            </tbody>
+          </table></div>
+          켠 뒤 <strong>CN8-7 ↔ GND 부터</strong> 잰다. 3V3 예산(fw-01 §3-5)을 다시 잰다 — 이제 엔코더 넷이 달려 있다: 합계 <code>____</code> mA → INVENTORY 6절 "엔코더 전원" 행의 빈칸.</li>
+        <li><strong>부호를 관찰한다 — 코드는 아직 A 그대로.</strong> <code>enc zero</code> → 바퀴 하나를 <strong>앞으로</strong>(바퀴 윗면이 로봇 앞쪽으로) 반 바퀴 → <code>enc</code> → 그 바퀴의 raw 값이 커졌는가 작아졌는가. 넷을 하나씩. 다른 바퀴는 손대지 않는다(제자리에 있어야 그 값이 0 근처로 남는다 — 그것도 확인이다).
+          <div class="tbl"><table class="compact">
+            <thead><tr><th>바퀴</th><th>앞으로 돌릴 때 raw 카운트</th><th><code>ENC_SIGN_*</code></th><th>뒤로 돌릴 때(확인)</th></tr></thead>
+            <tbody>
+              <tr><td>FL</td><td>커진다 / 작아진다</td><td>+1 / −1</td><td>____</td></tr>
+              <tr><td>FR</td><td>커진다 / 작아진다</td><td>+1 / −1</td><td>____</td></tr>
+              <tr><td>RL</td><td>커진다 / 작아진다</td><td>+1 / −1</td><td>____</td></tr>
+              <tr><td>RR</td><td>커진다 / 작아진다</td><td>+1 / −1</td><td>____</td></tr>
+            </tbody>
+          </table></div>
+          "커진다"면 +1, "작아진다"면 −1. 좌 · 우가 서로 다르게 나와도, 넷 다 같게 나와도 그것이 내 배선의 값이다(§2-7 — 1세대는 넷 다 −1 이었다. 그 값을 옮기지 않는다).</li>
+        <li><strong><code>robot_params.h</code> 에 적는다.</strong> 네 줄의 0 을 잰 값으로, 주석을 <code>/* MEASURED(&lt;날짜&gt;, hand-turn forward) */</code> 로 바꾼다. 밑줄 네 개가 그 줄에서 사라져야 한다(<code>./scripts/check_nominal.sh</code> 로 세어 본다).</li>
+        <li><strong><code>encoder_count()</code> · <code>encoder_delta()</code> 를 채운다.</strong> 앞의 것은 곱셈 한 줄. 뒤의 것은 <code>encoder_delta_raw()</code> 에 자기 창(<code>s_prev_cnt[]</code>)을 물린 것 — 1 s 창의 <code>s_prev_1s[]</code> 와 <strong>섞지 않는다</strong>(두 소비자, 두 창). 이 쪽에서는 아무도 <code>encoder_delta()</code> 를 부르지 않는다 — fw-13 이 부른다. 그래도 지금 채우는 이유는 힌트 T7 · T8 과 견줄 수 있는 곳이 여기이기 때문이다.</li>
+        <li><strong><code>cmd_enc()</code> 의 앞 네 값을 <code>encoder_count()</code> 로 바꾼다.</strong> 이제부터 <code>enc</code> 의 <code>fl … rr</code> 은 "앞 = +" 다. <code>d_xx</code> 는 raw 창 그대로 둔다(1 s 증분에 부호를 붙일지는 내 선택 — 어느 쪽이든 노트에 적는다). <code>encoder_zero()</code> 에 <code>s_prev_cnt[] := 0</code> 을 더한다.</li>
+      </ol>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 4 = T7 · T8 · 걸음 5 = T6 · T4 의 2차(그 두 카드는 §3-1-3 에 있다) · 걸음 1 ~ 3 은 측정과 기록이라 카드가 없다. 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <details class="hint" id="hint-t7"><summary>힌트 T7 — <code>encoder_count()</code> · 부호를 입힌 누적 카운트</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — T3 의 raw 값에 그 바퀴의 <code>ENC_SIGN_*</code> 을 곱한 것. 끝났을 때 참이어야 하는 것: 어느 바퀴든 <strong>앞으로</strong> 돌리면 커진다(§2-7). 어느 문맥이든 된다. fw-17 이 좌 · 우 평균을 낼 때 부르는 함수가 이것이다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T7 - User/Src/Periph/encoder.c */
+int32_t encoder_count(int wheel)
+{
+  if (wheel &lt; 0 || wheel &gt;= NW) { return 0; }
+  return s_sign[wheel] * encoder_count_raw(wheel);   /* 앞으로 돌면 커지게 - 부호는 손으로 잰 상수다 (§2-7) */
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>if (wheel &lt; 0 || wheel &gt;= NW) { return 0; }</code> — T3 과 같다. <code>encoder_count_raw()</code> 가 같은 검사를 하지만 그 앞의 <code>s_sign[wheel]</code> 이 먼저 배열 밖을 읽으므로 여기서도 막는다.</li>
+          <li><code>return s_sign[wheel] * encoder_count_raw(wheel);</code> — <code>s_sign[]</code> 은 §3-2-2 블록의 <code>static const int32_t s_sign[NW] = { ENC_SIGN_FL, … }</code> 다: 네 상수를 바퀴 번호로 고를 수 있게 배열에 펼쳐 둔 것이다(상수 넷을 <code>if</code> 로 고르지 않는다). <code>const</code> 라 플래시에 놓이고 바뀌지 않는다. 값은 +1 또는 −1 뿐이라(§3-2-2 의 다섯째 <code>_Static_assert</code>) 곱셈은 부호를 뒤집거나 그대로 두는 것뿐이다.</li>
+          <li>곱이 <code>int32_t</code> 범위를 넘는 경우가 하나 있다: raw 가 정확히 <code>0x80000000</code>(= <code>INT32_MIN</code>)이고 부호가 −1 일 때. 누적 카운트가 2<sup>31</sup> 에 닿을 때의 일이고(T1 의 넷째 설명과 같은 한계), <code>enc zero</code> 가 그 전에 0 으로 되돌린다. fw-17 이 누적을 계약으로 보낼 때 이 한계를 이어받는다.</li>
+          <li>골격의 <code>(void)wheel; return 0;</code> 두 줄은 지웠다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — <code>(s_sign[wheel] &lt; 0) ? -raw : raw</code> 꼴의 조건식도 같다(동일). 배선을 바꿔 부호를 + 로 맞추고 상수를 전부 +1 로 두는 길도 §2-7 이 말했듯 세는 결과는 같다 — 그래도 이 함수와 배열은 그대로 둔다(값이 파일에 남는다).</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다. 같은 파일의 T3.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>robot_params.h</code> 의 <code>ENC_SIGN_*</code> 이 아직 0 이다</td><td><code>error: static assertion failed: "robot_params.h: ENC_SIGN_FL is still EMPTY"</code> — 넷이 다 0 이면 네 줄, 그리고 다섯째 <code>"… must be +1 or -1"</code> 까지(0 × 0 ≠ 1). 의도된 멈춤(§3-2-2)</td><td>§3-2-3 의 3번 — 잰 값을 적는다</td></tr>
+            <tr><td>값을 2 로 적었다(앞으로 두 배?)</td><td><code>error: static assertion failed: "robot_params.h: ENC_SIGN_* must be +1 or -1"</code></td><td>±1 만</td></tr>
+            <tr><td><code>return</code> 을 빼고 곱셈만 썼다</td><td><code>warning: value computed is not used [-Wunused-value]</code> + <code>warning: control reaches end of non-void function [-Wreturn-type]</code></td><td><code>return</code></td></tr>
+            <tr><td>모터가 뒤로 돈다고(fw-11) 여기 부호를 뒤집었다</td><td>빌드는 된다. 측정의 부호가 실제와 어긋나 fw-13 의 PID 가 양의 되먹임이 된다(§2-7 · 이해 확인 6번)</td><td><code>ENC_SIGN_*</code> 은 손으로 돌려서만 정한다 — 모터 방향은 <code>MOTOR_SIGN_*</code></td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-2-4: <code>cmd_enc()</code> 의 앞 넷을 이 함수로 바꾼 빌드에서, 네 바퀴를 앞으로 돌리면 <strong>넷 다 +</strong>, 뒤로 돌리면 넷 다 −(체크포인트 <code>enc-sign-four-recorded</code>).</p>
+        </div></details>
+
+      <details class="hint" id="hint-t8"><summary>힌트 T8 — <code>encoder_delta()</code> · 직전 호출 이후의 부호 입힌 차분</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 부르는 쪽은 하나뿐이다: fw-13 의 1 kHz 소비자. "지난번에 네가 불렀을 때부터 지금까지 움직인 카운트"를 부호를 입혀 돌려준다. 그래서 이 함수는 <strong>자기 창</strong>(<code>s_prev_cnt[]</code>)을 가진다 — T5 의 1 s 창(<code>s_prev_1s[]</code>)과 나눠 쓰면 두 소비자가 서로의 기준을 옮겨 둘 다 틀린다(소비자 둘, 창 둘). 이 쪽에서는 아무도 부르지 않는다 — 지금 채우는 이유는 T1 · T3 · T7 이 한 자리에 모이는 곳이라서다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T8 - User/Src/Periph/encoder.c */
+int32_t encoder_delta(int wheel)
+{
+  if (wheel &lt; 0 || wheel &gt;= NW) { return 0; }
+  const uint32_t now = (uint32_t)encoder_count_raw(wheel);        /* raw CNT - 부호를 입히기 전의 값. int32 -&gt; uint32 는 비트 그대로 */
+  const int32_t  d   = encoder_delta_raw(now, s_prev_cnt[wheel]); /* 이 소비자의 창 - s_prev_1s[] 가 아니다 */
+  s_prev_cnt[wheel]  = now;                                       /* 다음 호출의 기준 */
+  return s_sign[wheel] * d;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>if (wheel &lt; 0 || wheel &gt;= NW) { return 0; }</code> — T3 과 같다.</li>
+          <li><code>const uint32_t now = (uint32_t)encoder_count_raw(wheel);</code> — raw CNT 를 <strong>부호 없는</strong> 수로 되돌려 받는다. T3 이 <code>int32_t</code> 로 읽은 값을 <code>(uint32_t)</code> 로 다시 바꾸는 것은 비트를 하나도 건드리지 않는다(2 의 보수) — T1 이 <code>uint32_t</code> 둘을 받기 때문에 형을 맞춘 것이다. <code>encoder_count()</code>(부호 입힌 값)가 <strong>아니다</strong> — 그것으로 차분을 내고 또 부호를 곱하면 −1 바퀴에서 부호가 두 번 뒤집힌다.</li>
+          <li><code>const int32_t d = encoder_delta_raw(now, s_prev_cnt[wheel]);</code> — T1. 기준은 <strong>이 함수의</strong> 창 <code>s_prev_cnt[wheel]</code> 이다. §3-2-2 블록이 선언한 <code>static uint32_t s_prev_cnt[NW]</code> 는 처음 값이 0 이라, 첫 호출은 "0 부터 지금까지"를 돌려준다 — fw-13 이 첫 값을 버릴지 <code>encoder_zero()</code> 뒤에 시작할지는 그 쪽이 정한다.</li>
+          <li><code>s_prev_cnt[wheel] = now;</code> — 기준을 옮긴다. 이 줄이 없으면 매 호출이 "0 부터 누적"을 돌려준다(T5 의 셋째 흔한 실수와 같은 모양).</li>
+          <li><code>return s_sign[wheel] * d;</code> — 부호는 <strong>차분을 낸 뒤</strong> 한 번만. 차분의 크기는 1 ms 창에서 많아야 ~172 라(§2-2) 곱이 넘칠 일이 없다.</li>
+          <li>골격의 <code>(void)wheel; return 0;</code> 두 줄은 지웠다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — §3-2-2 블록을 <code>s_enc_tim[]</code> 선언 <strong>아래</strong>에 뒀다면 <code>now</code> 를 T5 처럼 <code>__HAL_TIM_GET_COUNTER(s_enc_tim[wheel])</code> 로 바로 읽어도 된다(동일 — 캐스트 두 번이 없어진다). 블록을 "include 아래"에 두면 <code>s_enc_tim</code> 이 아직 선언되지 않아 그 식은 쓸 수 없고, 그래서 이 완결 코드는 어느 자리에서도 되는 <code>encoder_count_raw()</code> 를 썼다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다. 같은 파일의 T1 · T3 과 <code>s_sign[]</code> · <code>s_prev_cnt[]</code>.</p>
+        <p><strong>흔한 실수</strong> — 셋 다 컴파일러는 아무 말도 하지 않고, 이 쪽에서는 보이지도 않는다(부르는 쪽이 fw-13 에 있다). 그래서 지금 눈으로 견준다.</p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>fw-13 에서 보이는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>s_prev_1s[wheel]</code> 을 썼다 — 1 s 창과 나눠 썼다</td><td><code>enc</code> 의 <code>d_xx</code> 와 1 kHz 속도가 둘 다 엉뚱하다(서로의 기준을 옮긴다)</td><td><code>s_prev_cnt[]</code></td></tr>
+            <tr><td><code>now</code> 를 <code>encoder_count(wheel)</code> 로 읽었다</td><td>부호 −1 인 바퀴의 속도가 반대로 나온다(부호가 두 번)</td><td>raw 로 읽고 마지막에 한 번</td></tr>
+            <tr><td><code>s_prev_cnt[wheel] = now;</code> 를 빼먹었다</td><td>속도가 "누적 거리"처럼 계속 커진다</td><td>셋째 줄</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 이 쪽에는 이 함수를 부르는 명령이 없어 보드에서 볼 것이 없다. 빌드가 되고(<code>User/</code> 경고 0), §3-2-4 의 <code>enc</code> 가 T7 로 바뀐 것을 본 뒤, 이 함수는 <a href="fw-13-pid-protection.html">fw-13</a>에서 속도로 처음 보인다. 지금은 T5 의 둘째 루프와 나란히 놓고 "같은 일, 다른 창"임을 눈으로 견주는 것이 확인이다.</p>
+        </div></details>
+
+      <h4 id="s3-2-4">3-2-4. 굽고 보기</h4>
+      <pre><code class="lang-bash">cd firmware
+tools/flash.sh                            # 가드가 멈추면 메시지에 나온 키를 채운다 (…is still EMPTY)
+grep -n "ENC_SIGN_\|ENCODER_CPR" h723zg/User/Inc/Config/robot_params.h # 다섯 줄 — 넷은 MEASURED(… hand-turn forward), 하나는 내 CPR</code></pre>
+      <pre><code class="lang-text">&gt; enc zero
+OK enc
+&gt; enc                                  &lt;- 네 바퀴를 차례로 앞으로 반 바퀴씩 돌린 뒤
+enc fl=&lt;+&gt; fr=&lt;+&gt; rl=&lt;+&gt; rr=&lt;+&gt; d_fl=&lt;n&gt; d_fr=&lt;n&gt; d_rl=&lt;n&gt; d_rr=&lt;n&gt;
+&gt; enc zero
+OK enc
+&gt; enc                                  &lt;- 네 바퀴를 뒤로
+enc fl=&lt;-&gt; fr=&lt;-&gt; rl=&lt;-&gt; rr=&lt;-&gt; ...</code></pre>
+      <p>본다: ① 앞으로 돌리면 <strong>넷 다 +</strong>, 뒤로 돌리면 넷 다 − ② 한 바퀴만 돌리면 그 바퀴만 움직이고 셋은 0 근처에 남는다(두 바퀴가 같이 움직이면 A/B 선이 다른 타이머에 꽂혔다) ③ 한 바퀴를 1 s 에 한 바퀴쯤 꾸준히 앞으로 돌리는 동안 <code>d_xx</code> 의 크기가 내 CPR 근처다. 이 셋이 <code>enc-counts-both-directions</code> · <code>enc-sign-four-recorded</code> 의 판정이다.</p>
+
+      <h3 id="s3-3">3-3. 실습 C — 일부러 끊어 보고, HIGH 전압을 잰다 (코드 없음)</h3>
+      <p>빌드는 없다. B 의 펌웨어 위에서 두 가지를 <strong>측정</strong>한다 — 선을 뽑으면 카운트가 어떻게 되는가(발동 확인), 그리고 엔코더 출력의 HIGH 전압과 출력 형식(§2-4). 끝에 커넥터 실물을 기록한다. 끝자리의 뜻은 fw-01 과 같다(2 = 빈 표, 3 = 측정, 4 = 판정).</p>
+      <p class="small">뽑는 것은 <strong>신호선(A 또는 B) 하나</strong>다. 3.3 V 신호선은 전원이 켜진 채 뽑고 다시 꽂아도 FT 핀에 해가 없다. VCC · GND 는 뽑지 않는다 — GND 가 끊긴 채 VCC 만 살아 있는 상태가 1세대 폭주 사고의 조건이었고(2026-07-18), 그것은 모터 전원이 있는 <a href="fw-13-pid-protection.html">fw-13</a>에서 보호 판정으로 다룬다. 여기서는 "카운트가 바퀴를 따라오지 않는다"가 어떻게 보이는지만 본다.</p>
+
+      <h4 id="s3-3-2">3-3-2. 빈 표</h4>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>(가) 끊기</th><th>뽑은 선</th><th>바퀴를 앞으로 반 바퀴 돌릴 때 <code>enc</code> 의 그 바퀴 값</th><th>다시 꽂은 뒤 정상인가</th></tr></thead>
+        <tbody>
+          <tr><td>FR</td><td>A</td><td>멈춤 / ±1~2 떨림 / 그 밖(____)</td><td>예 / 아니오</td></tr>
+          <tr><td>FR</td><td>B</td><td>____</td><td>____</td></tr>
+          <tr><td>(다른 바퀴 하나) ____</td><td>____</td><td>____</td><td>____</td></tr>
+        </tbody>
+      </table></div>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>(나) HIGH 전압</th><th>외부 풀업 없이, HIGH 자리</th><th>10 kΩ → 3V3 를 달고, HIGH 자리</th><th>LOW 자리</th><th>판정(§2-4 표)</th></tr></thead>
+        <tbody>
+          <tr><td>FR 의 A ↔ GND</td><td>____ V</td><td>____ V</td><td>____ V</td><td>푸시풀 / 오픈컬렉터(풀업 없음) / 오픈컬렉터 + 내부 풀업 / 미결</td></tr>
+          <tr><td>FR 의 B ↔ GND</td><td>____ V</td><td>____ V</td><td>____ V</td><td>____</td></tr>
+          <tr><td>(다른 바퀴 하나) ____</td><td>____ V</td><td>____ V</td><td>____ V</td><td>____</td></tr>
+          <tr><td>VIH 와의 마진</td><td colspan="4">HIGH(풀업 없이) − 2.31 V = ____ V (DS13313 표 51 p.126, 0.7 × VDD @ 3.3 V — §2-3)</td></tr>
+        </tbody>
+      </table></div>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>(다) 커넥터 실물</th><th>기록</th></tr></thead>
+        <tbody>
+          <tr><td>하우징(색 · 표기 · 피치 mm · 핀 수)</td><td>____ · ____ · ____ · ____ (1세대 기록: "JST 계열 흰색" 까지만)</td></tr>
+          <tr><td>핀 순서(1번 핀부터) · 선 색상</td><td>____ (1세대 계획서의 "흰 = A, 초록 = B, 빨강 = VCC, 검정 = GND" 와 같은가: 예 / 아니오 — [추정]이었던 값이다)</td></tr>
+          <tr><td>점퍼선으로 뺀 방법(어떤 하우징 · 핀 · 브레드보드)</td><td>____</td></tr>
+          <tr><td>엔코더 1개의 3.3 V 소비 전류(fw-01 §3-5 절차)</td><td>____ mA · 4개 합계 ____ mA</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-3-3">3-3-3. 측정</h4>
+      <ol class="steps">
+        <li><strong>(가) 끊기.</strong> 전원을 둔 채 FR 의 A 선만 Nucleo 쪽에서 뽑는다. <code>enc zero</code> → 바퀴를 앞으로 반 바퀴 → <code>enc</code>. 값이 CPR 의 절반 근처로 가지 <strong>않는다</strong> — 멈춰 있거나(뽑힌 입력이 조용하면) ±1~2 를 왕복한다(부유 입력이 노이즈로 토글하면, §2-1 의 표대로 상승에 Down · 하강에 Up). 어느 쪽이 보였는지 적는다. 다시 꽂고 <code>enc zero</code> → 반 바퀴 → 정상값이 돌아오는지. B 선으로 반복. 다른 바퀴 하나로 반복.</li>
+        <li><strong>(나) HIGH 전압.</strong> DMM 을 DC 전압으로, 검은 탐침 CN8-11(GND), 빨간 탐침을 FR 의 A 가 꽂힌 Zio/Morpho 핀에(핀이 아니라 점퍼선의 노출부에 대도 된다). 바퀴를 <strong>아주 천천히</strong> 돌리며 값이 두 레벨 사이를 오가는 것을 본다 — 한 레벨에서 멈춘다. HIGH 자리의 값과 LOW 자리의 값을 적는다. 그 다음 10 kΩ 을 A 선과 CN8-7(3V3) 사이에 달고(브레드보드 또는 악어클립) 같은 두 값을 다시 잰다.</li>
+        <li><strong>(나) 판정.</strong> §2-4 의 표로 읽는다. 풀업 없이 HIGH ≈ 3.3 V 이고 풀업을 달아도 그대로면 푸시풀. 풀업 없이 낮거나 흔들리다 풀업을 달자 3.3 V 로 올라오면 오픈컬렉터(내부 풀업 없음). 두 조건에서 HIGH 가 같은데 3.3 V 보다 뚜렷이 낮으면 내부 풀업이 있는 꼴일 수 있다 — 확신이 없으면 "미결". VIH 2.31 V 와의 마진을 계산한다.</li>
+        <li><strong>(다) 커넥터.</strong> 하우징을 눈으로 보고 표기를 옮겨 적고, 핀 간격을 자로 잰다(2.0 mm · 2.54 mm · 1.5 mm 어느 것에 가까운가 — 잰 값을 적는다). 1번 핀부터의 순서와 선 색상을 적고, 1세대 계획서의 색과 같은지 표시한다.</li>
+      </ol>
+
+      <h4 id="s3-3-4">3-3-4. 보고 판정하기</h4>
+      <ul>
+        <li><strong>(가)는 발동 확인이다.</strong> 선 하나가 빠지면 카운트는 바퀴를 따라오지 않는다 — 그런데 <strong>"0 으로 멈춘다"가 아니라 "떨릴 수 있다"</strong>는 것을 눈으로 봤다. fw-13 의 FEEDBACK_LOST 판정("듀티를 주는데 속도가 안 나온다")이 ±1~2 카운트/ms 의 떨림을 "속도 있음"으로 오판하지 않으려면 문턱이 그 위에 있어야 한다 — 그 값은 §2-6 의 양자화 표와 함께 fw-13 에서 학습자가 정한다. 1세대에서 같은 증상을 만든 것은 GND 단선과 커넥터 접촉 불량이었다(2026-07-18, <code>~/ros2/docs/bench/motor_bench_findings_2026-07-17.md:41-42,33</code>).</li>
+        <li><strong>(나)의 판정이 정하는 것.</strong> 오픈컬렉터(풀업 없음)로 나왔으면 MCU 쪽 풀업이 <strong>필요</strong>하다 — CubeMX GPIO Pull-up 을 켜거나 외부 저항을 단다(어느 쪽이든 HIGH 전압은 다시 잰다. 내부 풀업의 저항값은 DS13313 표 51 의 R<sub>PU</sub> 행 — 내가 찾아 적는다). 푸시풀이면 그대로 둔다. 어느 쪽이든 결과를 INVENTORY 2절 "배선 전 확인" 첫 항목의 두 빈칸에 적는다 → <code>enc-output-type-recorded</code>.</li>
+        <li><strong>(다)는 관문의 재료다.</strong> INVENTORY 6절 "엔코더 커넥터 · 선 색상" 행이 <code>____</code> 인 채로 남아 있다. 여기서 본 것을 <code>MEASURED(&lt;날짜&gt;, 육안 + 도통)</code> 로 적는다. 09a 는 조립된 배선에서 같은 것을 재확인한다.</li>
+      </ul>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="sb57-gpio-test-passed"><span><strong>경로 통과</strong> — gdb 로 PA1 을 출력 HIGH / LOW 로 하자 CN11-30 에서 3.3 V 근처 / 0 V 근처가 <strong>그대로</strong> 나왔다(두 값을 적었다)
+          <span class="sub">판정 수단: DMM · 입구 확인 ① · fw-01 §3-3-2 표의 6단계가 여기서 닫힌다 · INVENTORY 2절 "솔더 브리지" 내 보드 줄</span></span></label></li>
+        <li><label><input type="checkbox" data-key="pa15-pb3-no-hidden-driver"><span><strong>경로 통과</strong> — 실습 A 의 빌드가 올라간 상태에서 CN7-9(PA15) · CN7-15(PB3)에 10 kΩ 을 GND 로 / 3V3 로 달았을 때 전압이 저항을 따라갔다(네 값을 적었다). gdbserver 인자에 <code>-z</code> · <code>-a</code> · <code>-b</code> 가 없고 <code>DBGMCU_CR</code> bit 20 을 다시 읽어 적었다
+          <span class="sub">판정 수단: DMM + 10 kΩ · gdb <code>x/wx</code> · 입구 확인 ② · ③ · FL 을 꽂기 전에</span></span></label></li>
+        <li><label><input type="checkbox" data-key="encoder-ioc-four-timers"><span><strong>경로 통과</strong> — <code>.ioc</code> 에 <code>Encoder_Interface</code> 여덟 줄, 네 타이머의 <code>EncoderMode=TIM_ENCODERMODE_TI12</code>, 핀 여덟 개가 핀맵의 자리(PA15/PB3 · PA0/PA1 · PF6/PF7 · PF11/PF12)와 라벨(<code>ENC_FL_A</code> …)이다. <code>Core/Src/</code> 에 <code>HAL_TIM_Encoder_Start</code> 는 없다
+          <span class="sub">판정 수단: <code>grep</code> 출력 · §3-1-1 · <code>.ioc</code> 를 다시 생성할 때마다 다시 친다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="encoder-host-pass"><span><strong>경로 통과</strong> — Mac 에서 <code>test_encoder</code> 의 마지막 줄이 <code>PASS encoder 10 cases</code> 다
+          <span class="sub">판정 수단: 호스트 시험 출력 · §3-1-3 · 이 열 벡터는 값만 채점한다 — 식이 §2-2 의 성질을 쓴 것인지는 §3-1-3 1번에서 따로 견준다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="enc-supply-3v3-measured"><span><strong>경로 통과</strong> — 엔코더를 꽂고 켠 뒤 CN8-7 ↔ GND 와 엔코더 커넥터의 VCC 핀 ↔ GND 를 재서 둘 다 3.3 V 근처였다(값 ____ V · ____ V). 3V3 예산(fw-01 §3-5)을 엔코더 1개 · 4개에서 재 적었다
+          <span class="sub">판정 수단: DMM · §3-1-4 · §3-2-3 · INVENTORY 6절 "엔코더 전원" 행의 소비 전류 빈칸</span></span></label></li>
+        <li><label><input type="checkbox" data-key="enc-counts-both-directions"><span><strong>경로 통과</strong> — 꽂힌 바퀴마다 손으로 앞으로 돌리면 <code>enc</code> 의 그 값이 커지고 뒤로 돌리면 작아지며, 되돌리면 0 근처로 온다. 한 바퀴를 돌릴 때 다른 셋은 0 근처에 남는다
+          <span class="sub">판정 수단: 명령 창 출력 · §3-1-4(raw, 한 바퀴) · §3-2-4(부호 적용, 네 바퀴)</span></span></label></li>
+        <li><label><input type="checkbox" data-key="enc-cpr-measured"><span><strong>경로 통과</strong> — N 회전 × 3 회차로 잰 counts/rev 의 평균과 흩어짐을 적었고, ÷ 2,000 이 정수에 가까웠다(____). <code>hardware/INVENTORY.md</code> 6절 "엔코더 분해능" · "기어비" 행과 <code>robot_params.h</code> 의 <code>ENCODER_CPR</code> 이 <code>MEASURED(…)</code> 다
+          <span class="sub">판정 수단: 명령 창 출력 + 마스킹테이프 · §3-1-4 의 표 · <code>grep ENCODER_CPR</code> · 이 프로젝트에서 이 값이 MEASURED 가 되는 유일한 자리</span></span></label></li>
+        <li><label><input type="checkbox" data-key="enc-sign-four-recorded"><span><strong>경로 통과</strong> — <code>robot_params.h</code> 의 <code>ENC_SIGN_FL … _RR</code> 넷이 ±1 과 <code>MEASURED(…, hand-turn forward)</code> 이고, 그 빌드에서 네 바퀴를 앞으로 돌리면 <code>enc</code> 의 네 값이 <strong>모두 +</strong> 다
+          <span class="sub">판정 수단: <code>grep</code> 출력 + 명령 창 출력 · §3-2-4 · 가드 메시지(<code>is still EMPTY</code>)가 한 번은 났다가 사라진 것을 봤다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="enc-unplug-freezes-count"><span><strong>발동 확인</strong> — 신호선(A 또는 B) 하나를 뽑고 바퀴를 돌려도 그 바퀴의 카운트가 바퀴를 따라오지 않았다(멈춤 또는 ±1~2 떨림 — 어느 쪽이었는지 적었다). 다시 꽂자 정상으로 돌아왔다
+          <span class="sub">판정 수단: 명령 창 출력 · §3-3-3 (가) · <a href="fw-13-pid-protection.html">fw-13</a> FEEDBACK_LOST 의 예고</span></span></label></li>
+        <li><label><input type="checkbox" data-key="enc-output-type-recorded"><span><strong>경로 통과</strong> — A · B 의 HIGH 전압을 외부 풀업 없이 / 10 kΩ 풀업으로 두 번 재고 LOW 전압과 판정(푸시풀 / 오픈컬렉터 / 미결)을 INVENTORY 2절 "배선 전 확인" 첫 항목에 적었다. 커넥터의 피치 · 핀 순서 · 선 색상을 6절에 적었다
+          <span class="sub">판정 수단: DMM + 10 kΩ · §3-3-3 (나) · (다) · VIH 2.31 V 와의 마진 ____ V</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td>바퀴를 돌려도 <code>enc</code> 의 값이 0 에서 움직이지 않는다</td><td><code>HAL_TIM_Encoder_Start()</code> 를 부르지 않았다(CubeMX 는 시작하지 않는다) · 채널 하나만 시작했다 · 엔코더 VCC 가 안 들어갔다 · A/B 가 다른 타이머의 핀에 꽂혔다</td><td><code>grep -rn "Encoder_Start" User/Src</code> · DMM 으로 엔코더 VCC 핀 · 다른 바퀴 값이 움직이는가</td><td>§3-1-3 · §3-1-4 의 배선표</td></tr>
+          <tr><td>돌리면 ±1~2 만 왕복한다</td><td>A 또는 B 한 선만 이어져 있다(다른 선 단선 · 접촉 불량) — §2-1 의 표대로 한 선만 토글하면 제자리</td><td>실습 C (가)와 같은 모습이다 — 선 두 개의 도통</td><td>배선 · §3-3-4</td></tr>
+          <tr><td>아무것도 안 해도 <code>fr</code> 이 계속 변한다(폭주 · 드리프트)</td><td>SB57 이 실제로 끊기지 않았다(PA1 에 50 MHz) · 선을 꽂지 않은 입력이 노이즈로 토글한다(±1~2 는 정상)</td><td>입구 확인 ① · <a href="fw-01-pinmap.html#s3-3">fw-01 §3-3</a> 의 도통 표</td><td>fw-01 §3-3</td></tr>
+          <tr><td>값이 65,535 근처에서 되돌아오거나 <code>d_xx</code> 가 −65,000 대로 튄다</td><td>Counter Period 가 65535 로 남아 있다 — 32비트 타이머가 16비트처럼 돈다(§2-2)</td><td><code>grep -n "\.Period" h723zg.ioc</code> · 생성 코드의 <code>htim5.Init.Period</code></td><td>§3-1-1 값 표</td></tr>
+          <tr><td>1회전에 2,000 근처가 나온다</td><td>모터축과 출력축을 혼동했다 — 2,000 은 <strong>모터축</strong> 1회전(§2-1 · §2-5). 바퀴 1회전은 기어비만큼 더 크다</td><td>÷ 2,000 이 1 근처인가 47 근처인가</td><td>§2-5</td></tr>
+          <tr><td>잰 CPR ÷ 2,000 이 정수에서 멀다(예: 46.4)</td><td>회전 수를 잘못 셌다 · 기준선이 밀렸다 · 돌리는 동안 선이 떨어졌다</td><td>세 회차의 흩어짐 · <code>d_xx</code> 가 도중에 0 으로 떨어진 구간이 있었는가</td><td>§3-1-4 다시</td></tr>
+          <tr><td>빌드가 <code>static assertion failed … ENC_SIGN_FL is still EMPTY</code> 로 멈춘다</td><td><code>robot_params.h</code> 의 부호 키에 잰 값을 아직 적지 않았다 — 의도된 멈춤(§3-2-2)</td><td>메시지의 키 이름</td><td>§3-2-3 3번</td></tr>
+          <tr><td>앞으로 돌리면 두 바퀴만 + 다</td><td>부호를 짐작으로 적었다(좌 · 우 거울상은 부호를 <em>예측</em>하지 못한다 — 1세대 기록) · 두 바퀴의 라벨(FL/FR …)이 바뀌어 꽂혔다</td><td>바퀴 하나씩 돌려 어느 값이 움직이는가</td><td>§3-2-3 2번 · §2-7</td></tr>
+          <tr><td>CubeMX 에서 TIM2 가 PA15/PB3 에 놓이지 않는다 · PB3 가 회색이다</td><td>Debug 가 Serial Wire 가 아니다 · PB3 잠금이 안 풀렸다 · TIM2 를 TIM5 보다 먼저 켜서 PA0/PA1 을 먹었다</td><td><code>grep -n "TRACESWO\|SWDIO" h723zg.ioc</code></td><td><a href="fw-02-toolchain.html#s2-6">fw-02 §2-6</a> · §3-1-1 위치 표 1 · 4</td></tr>
+          <tr><td><code>test_encoder</code> 는 <code>PASS</code> 인데 내 식이 <code>(int32_t)now - (int32_t)prev</code> 다</td><td>이 열 벡터는 값만 채점한다 — 이 식은 여섯째 · 일곱째 벡터에서 부호 있는 정수의 넘침(UB)이고, 컴파일러가 우연히 옳은 값을 내 준 것이다</td><td><code>-fsanitize=undefined</code> 빌드(§3-1-3 둘째 명령)가 <code>runtime error: signed integer overflow</code> 를 찍는다 · 식을 §2-2 의 문장(부호 없는 뺄셈 → 부호 있는 읽기)과 한 글자씩 견준다</td><td>§3-1-3 1번 · 힌트 T1</td></tr>
+          <tr><td><code>enc</code> 의 값은 움직이는데 <code>d_xx</code> 가 늘 0 이다</td><td><code>encoder_service_main()</code> 이 <code>app_loop()</code> 에 없다 · 창의 시각 비교가 뒤집혔다 · <code>encoder_init()</code> 이 <code>tick_init()</code> 앞에 있다</td><td><code>grep -n "encoder_service_main\|encoder_init\|tick_init" User/Src/app.c</code></td><td>§3-1-3 4 · 6번</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. (4중 검색) 이 쪽에서 쓴 <code>HAL_TIM_Encoder_MspInit</code> 을 네 군데에서 찾아 적어 보라 — 헤더 → <code>__weak</code> → 호출 시점 → 생성물(예제 대신)</summary>
+        <div class="ans"><p>찾는 명령(<code>$HAL</code> · <code>$FW_H7</code> 는 fw-02 에서 정한 경로):</p>
+        <pre><code class="lang-bash">grep -n "HAL_TIM_Encoder_MspInit" $HAL/Inc/stm32h7xx_hal_tim.h                 # ① 헤더: 시그니처
+grep -n "__weak.*HAL_TIM_Encoder_MspInit" $HAL/Src/stm32h7xx_hal_tim.c         # ② 약한 기본 구현
+grep -n "HAL_TIM_Encoder_MspInit(htim)" $HAL/Src/stm32h7xx_hal_tim.c           # ③ 누가 언제 부르는가
+grep -rln "HAL_TIM_Encoder_Init" $FW_H7/Projects | head                          # ④ ST 예제 — 그리고
+grep -n "HAL_TIM_Encoder_MspInit" firmware/h723zg/Core/Src/stm32h7xx_hal_msp.c #      내 생성물</code></pre>
+        <p>① <code>stm32h7xx_hal_tim.h:2305</code> — 인자는 <code>TIM_HandleTypeDef *</code> 하나. 네 타이머가 같은 함수로 들어오므로 안에서 <code>htim-&gt;Instance</code> 로 갈라 핀 · 클럭을 켠다.
+        ② <code>stm32h7xx_hal_tim.c:3190</code> 의 <code>__weak</code> 빈 함수 — "user file 에서 구현하라"는 주석이 붙어 있다. 우리 프로젝트에서 그 user file 은 CubeMX 가 생성한 <code>stm32h7xx_hal_msp.c</code> 다.
+        ③ 호출은 <code>HAL_TIM_Encoder_Init()</code>(<code>:3030</code> 에서 시작) 안, <code>htim-&gt;State == HAL_TIM_STATE_RESET</code> 일 때 <strong>단 한 번</strong> — <code>:3075</code>(<code>USE_HAL_TIM_REGISTER_CALLBACKS</code> 가 0 일 때의 가지. 이 값은 <code>stm32h7xx_hal_conf_template.h:221</code> 과 생성된 <code>hal_conf.h</code> 에서 0 이다). 같은 자리의 <code>:3072</code> 는 콜백을 등록해 쓰는 경우의 가지다. 그래서 <code>MX_TIM5_Init()</code> 을 두 번 불러도 핀은 한 번만 설정된다.
+        ④ ST 의 H7 팩(V1.13.0)에는 <strong>엔코더 예제가 없다</strong> — <code>Projects/</code> 전체에서 <code>HAL_TIM_Encoder_Init</code> 0건(2026-09-22 grep). 그래서 넷째 자리는 내 생성물이다: <code>stm32h7xx_hal_msp.c</code> 의 <code>HAL_TIM_Encoder_MspInit()</code> 안에 <code>__HAL_RCC_TIM5_CLK_ENABLE()</code> · GPIO 클럭 · <code>GPIO_AF2_TIM5</code> 같은 줄이 있다 — §3-1-1 의 AF 번호가 여기서 실물로 보인다.</p></div></details>
+      <details class="quiz"><summary>2. B 선을 뽑아 둔 채 A 만 토글되면 카운트는 어떻게 되는가? 표 354 로 설명하고, 이것이 fw-13 의 판정에 무엇을 요구하는지 말해 보라.</summary>
+        <div class="ans"><p>B(TI2)가 한 레벨에 멈춰 있으면 A(TI1)의 상승과 하강이 <strong>반대 방향</strong>으로 센다 — B 가 High 면 상승에 Down · 하강에 Up. 한 주기마다 +1 −1 이라 카운트는 제자리에서 왕복한다. 바퀴가 아무리 돌아도 값은 ±1 안이다.
+        그래서 "피드백이 끊겼다"는 카운트가 0 으로 얼어붙는 것이 아니라 <strong>떨리는 것</strong>으로 보일 수 있고, fw-13 의 FEEDBACK_LOST 는 "속도 = 0" 이 아니라 "듀티에 비해 속도가 터무니없이 작다"로 판정해야 한다(1세대가 오판을 거쳐 도달한 꼴 — 문턱을 인가 듀티에 비례시킨다). 실습 C (가)가 이것을 눈으로 보는 자리다.</p></div></details>
+      <details class="quiz"><summary>3. (일부러 틀리면) Counter Period 를 65535 로 두고 바퀴 1회전을 돌리면 <code>enc</code> 와 <code>d_xx</code> 에 무엇이 보이는가? 그리고 <code>encoder_delta_raw()</code> 의 한 줄은 왜 그때 틀리는가?</summary>
+        <div class="ans"><p>카운터가 0 ~ 65535 사이를 돈다. 1회전(공칭 94,000)에 한 번 넘쳐 <code>fr</code> 은 28,464 근처(94,000 − 65,536)에서 멈춘 것처럼 보이고, 넘치는 순간을 가로지른 1 s 창의 <code>d_xx</code> 는 −65,536 만큼 어긋난 값이 된다.
+        <code>(int32_t)(now - prev)</code> 는 카운터의 폭이 <strong>뺄셈의 폭과 같을 때</strong>만 넘침을 흡수한다. 카운터는 16비트로 접히는데 뺄셈은 32비트로 하니 65,536 이 그대로 튀어나온다. 16비트 타이머(TIM3 · TIM4)에 보정 코드가 필요했던 이유가 이것이고, 32비트 타이머 넷을 쓰면서 ARR 을 0xFFFFFFFF 로 두는 이유도 이것이다.</p></div></details>
+      <details class="quiz"><summary>4. (안전) "엔코더 8핀이 전부 FT 니까 5 V 로 급전해도 된다"는 어디가 틀렸는가? 세 근거를 표 번호와 함께.</summary>
+        <div class="ans"><p>① FT 의 한도는 고정 5 V 가 아니라 <code>VDD + 4.0 V</code> 다(DS13313 표 9). Nucleo 가 꺼진 순간 VDD = 0 이라 한도가 4.0 V 로 내려가는데, 다른 레일의 5 V 엔코더는 살아 있다.
+        ② 4 V 초과는 내부 풀업이 꺼져 있을 때만 허용된다(표 9 각주 4). PA15 는 리셋 구간에 JTDI 풀업이 켜져 있고 펌웨어가 끌 수 없다(RM0468 §11.3.1).
+        ③ 6핀이 <code>FT_ha</code> 라 아날로그 기능이 켜지면 한도가 4 V 다(각주 5) — 지금 설정은 디지털이지만 조건이 "핀 종류"가 아니라 "설정"에 달려 있다는 뜻이다.
+        Nucleo 3V3 에서 급전하면 셋이 한 번에 해결된다 — 엔코더가 MCU 와 같이 켜지고 꺼진다. 그래서 이것은 "1세대가 그렇게 했다"가 아니라 필수 조건이다.</p></div></details>
+      <details class="quiz"><summary>5. 잰 CPR 이 공칭보다 3 % 작았다고 하자. 그대로 94,000 을 쓰면 어디서 무엇이 틀리는가? 그리고 1 ms 창에서 6 mm/s 아래의 속도는 왜 보이지 않는가?</summary>
+        <div class="ans"><p>속도(카운트 → mm/s)와 거리(카운트 → mm)가 <strong>모두 3 % 작게</strong> 계산된다. PID 는 실제보다 느리다고 믿어 3 % 빠르게 돌리고, 오도메트리는 3 % 짧게 걸었다고 적는다 — 본편 09 의 지도가 3 % 축소된다. 바퀴 지름 오차도 같은 자리에 곱해지므로 09a 에서 굴림 거리로 둘을 한 번에 닫는다.
+        1 ms 창에서 카운트는 정수라 속도의 계단이 1 카운트/ms = 1,000 카운트/s 다. 공칭 CPR · 지름으로 그것은 약 6.0 mm/s — 그 아래에서는 창마다 0 아니면 1 이라 "느리다"와 "멈췄다"를 한 창으로 가르지 못한다. 문턱을 그 아래로 두려면 창을 넓혀야 하고, 넓히면 판정이 늦어진다(fw-13 의 선택).</p></div></details>
+      <details class="quiz"><summary>6. 첫 통전에서 FL 모터가 뒤로 돌았다. <code>ENC_SIGN_FL</code> 을 뒤집어 "맞추면" 어떻게 되는가? 무엇을 뒤집어야 하는가?</summary>
+        <div class="ans"><p>모터가 뒤로 도는 것은 <code>MOTOR_SIGN_FL</code>(양의 듀티 → 앞)의 일이다. 엔코더 부호를 뒤집으면 바퀴는 여전히 뒤로 도는데 카운트는 앞으로 도는 것처럼 보인다 — 측정의 부호가 실제와 어긋난다. fw-13 의 PID 는 목표 +v 에 측정 −v 를 받아 오차를 두 배로 보고 듀티를 <strong>더 올리며</strong>, 올릴수록 측정은 더 음이 된다: 음의 되먹임이 양의 되먹임이 된 것이고, 끝은 최대 듀티다.
+        뒤집을 것은 <code>MOTOR_SIGN_FL</code>(fw-11 에서 잰다)이다. <code>ENC_SIGN_*</code> 은 모터 전원 없이 손으로 돌려서만 정하고, 모터 방향 문제로는 건드리지 않는다 — 두 부호를 한 상수로 뭉치지 않는 이유다(1세대 교훈 #1).</p></div></details>
+      <details class="quiz"><summary>7. 입구 확인 ③에서 PA15 에 10 kΩ 을 GND 로 달았는데 1.1 V 가 읽혔다. 무엇을 뜻하고, 실습 A 를 굽기 <em>전</em>에 같은 시험을 하면 왜 판정이 흐려지는가?</summary>
+        <div class="ans"><p>10 kΩ 풀다운을 달았는데 0 V 가 아니면 무언가가 그 핀을 HIGH 쪽으로 밀고 있다 — 약하게 끌린 값(1.1 V 는 3.3 V 를 10 kΩ 과 약 20 kΩ 으로 나눈 꼴)이면 풀업 급의 구동원이다. 온보드에서 PA15 에 닿을 수 있는 것은 CN5-10(T_JTDI)의 ST-LINK 쪽(UM2407 §7.3 은 SWD 만 지원한다고 하니 구동하지 않는 쪽이 [추정])과 MCU 자신의 리셋 풀업이다.
+        실습 A 를 굽기 전에는 PA15 가 CubeMX 의 Reset_State 라 리셋값(JTDI, 내부 풀업 ON — RM0468 §11.3.1)으로 남아 있다. 그때 재면 MCU 자신의 풀업(수십 kΩ)이 바로 이런 값을 만들어 "숨은 구동원"과 구별되지 않는다. TIM2 가 설정된 뒤에는 PA15 가 풀 없는 AF 입력이라 Hi-Z 이고, 그때 남는 것이 진짜 외부 구동원이다. 그래서 B13 은 A 의 빌드 뒤 · FL 을 꽂기 전이다.</p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>INA226 이 있으면</strong> → <a href="fw-10-i2c-ina226.html">fw-10</a> — I2C 와 INA226. 사전충전이 끝났는지 보는 눈이 거기서 생기고, 그것이 있어야 <a href="fw-11-power-sequence.html">fw-11</a> 의 첫 통전을 판정할 수 있다.</li>
+          <li><strong>모터를 돌려 보고 싶으면</strong> — 아직이다. 이 쪽은 <strong>손으로 돌려서</strong> 부호와 CPR 을 정하는 데까지다. 모터에 전원이 들어가는 것은 <a href="fw-11-power-sequence.html">fw-11</a> 이고, 그 앞에 <a href="fw-08-pwm-safe-output.html">fw-08</a>(PWM · EN)과 fw-10 이 있다. 순서를 건너뛰면 부호가 틀린 채로 바퀴가 도는 것을 보게 된다(이해 확인 6번).</li>
+          <li><strong>바퀴가 하나뿐이거나 커넥터를 아직 못 뺐으면</strong> → <code>enc-cpr-measured</code> · <code>enc-sign-four-recorded</code> 를 열어 둔 채 다음으로 갈 수 있다. 다만 <strong><a href="fw-13-pid-protection.html">fw-13</a>의 속도 PID 는 이 둘 없이 시작하지 못한다</strong> — 측정의 눈금과 부호가 그 쪽의 입력이다. 모터가 오면 §3-1-4 · §3-2-4 로 돌아와 닫는다.</li>
+          <li><strong>이 쪽이 <code>hardware/INVENTORY.md</code> 에 남기는 것</strong>: 2절 "배선 전 확인"의 엔코더 A/B HIGH 전압과 출력 형식, 6절 "기어비" · "엔코더 분해능" 의 <code>MEASURED</code>(내가 잰 counts/rev — 공칭 94,000 을 지우지 않고 덧붙인다), "엔코더 커넥터 · 선 색상". 잰 날짜와 방법이 값 옆에 같이 있는지 확인하고 떠난다.</li>
+          <li><strong>내 노트에 남아야 하는 것</strong>: 바퀴 넷의 <code>ENC_SIGN_*</code> 과 그것을 정할 때 바퀴를 어느 쪽으로 돌렸는지(앞으로 미는 방향), counts/rev 를 잴 때 몇 바퀴를 돌렸고 공칭과 몇 % 어긋났는지, 그리고 입력 필터를 그 값으로 정한 근거.</li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

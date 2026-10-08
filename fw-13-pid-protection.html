@@ -1,0 +1,2031 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F13 · 속도 PID + 보호 3종 — MCU 펌웨어 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="fw-13">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">F13 · 속도 PID + 보호 3종</p>
+      <h1>되먹임을 걸면, 틀린 값 하나가 폭주가 된다</h1>
+      <p class="lead">여기까지의 펌웨어는 <strong>열린 고리</strong>였다. <a href="fw-08-pwm-safe-output.html">fw-08</a> 의 <code>pwm</code> 은 내가 준 듀티를 그대로 내보내고,
+      <a href="fw-09-encoder.html">fw-09</a> 의 <code>enc</code> 는 센 카운트를 그대로 보여 준다. 둘은 서로를 모른다.
+      이 쪽은 그 둘을 이어 고리를 닫는다 — 엔코더가 낸 속도로 듀티를 고치고, 고친 듀티가 다시 속도를 바꾼다.
+      고리가 닫히는 순간 <strong>측정이 틀리면 출력이 폭주한다.</strong> 그래서 속도 PID 와 보호 3종은 같은 쪽에 있다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>명령 창에 <code>step fl 200 2000</code> 을 치면 2초 동안의 목표 · 측정 속도 · 듀티가 CSV 로 쏟아지고, Mac 에서 그것을 그리면 계단 응답 곡선이 나온다.
+        <code>step fl 200 2000 once</code> 로 목표를 한 번만 넣으면 <strong>200 ms 뒤 목표가 0 이 되는 행</strong>이 그 CSV 안에 있다 — 계약 v2 의 명령 워치독이다.
+        엔코더 선을 빼 놓고 같은 명령을 치면 LD3(빨강)이 켜지고 듀티가 0 으로 떨어진다.</p>
+        <p><strong>이 쪽에 필요한 것</strong> — <a href="fw-11-power-sequence.html">fw-11</a> 의 전원 구성 전부(배터리 · 사전충전 회로 · IBT-2 · 모터, <strong>바퀴는 공중</strong>)와 엔코더가 이미 물려 있는 모터, DMM, Mac 의 python3.
+        <strong>없으면</strong> — 실습 A(<code>pid.c</code>)와 실습 C 의 앞부분(<code>protect.c</code>)은 <strong>보드 없이 Mac 의 <code>cc</code> 만으로</strong> 끝난다. 두 호스트 시험은 이 쪽 분량의 절반이고, 전원부가 오기 전에 미리 해 둘 수 있다.
+        모터는 있는데 전원부가 없으면 거기까지다 — 계단 응답은 바퀴가 실제로 돌아야 나온다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag power">모터 전원</span> <span class="tag mac">Mac</span></div>
+        <div><span class="k">선행</span><a href="fw-09-encoder.html">fw-09</a> — <code>encoder_delta()</code> · <code>ENCODER_CPR</code> · <code>ENC_SIGN_*</code> · <a href="fw-11-power-sequence.html">fw-11</a> — 전원 시퀀스와 <code>MOTOR_SIGN_*</code> · <a href="fw-08-pwm-safe-output.html">fw-08</a> — <code>motor_set()</code> · <a href="fw-06-tick-watchdog.html">fw-06</a> — 1 kHz 박자와 <code>stat</code> · (선택) <a href="fw-12-adc.html">fw-12</a> — <code>adc_get_batt_ma()</code></div>
+        <div><span class="k">채우는 INVENTORY 칸</span>6절 "최대 선속도" 행의 <strong>재료</strong> — 무부하에서 실제로 낸 최고 속도를 이 쪽의 <code>step</code> 기록에서 얻어 적는다(그 칸을 닫는 것은 관문 09a 다)</div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
+      </div>
+
+      <h2 id="overview">1. 개요 — 고리를 닫고, 같은 자리에서 고리의 고장을 본다</h2>
+      <p>본편 <a href="06a-mcu-protocol.html">06a</a> §2-6 이 "제어와 안전의 전권은 MCU 에 있다"고 한 것의 절반이 이 쪽에서 실물이 된다.
+      Pi 는 mm/s 를 보낼 뿐이고, 그것을 듀티로 바꾸는 일도 그 변환이 고장 났을 때 멈추는 일도 전부 MCU 안에서 끝난다.</p>
+      <pre class="diagram"><code> 이 쪽에서 닫히는 고리 (바퀴 하나당 하나, 네 개가 나란히 돈다)
+
+    control_set_target()                                  1 kHz ISR (fw-06 의 콜백 안)
+    목표 vl/vr [mm/s]  --+
+                         |   +----------------------------------------------------------+
+                         +--&gt;| err = 목표 - 측정  --&gt;  pid_step()  --&gt;  u [permille]     |
+                             |         ^                                   |            |
+                             |         |                                   v            |
+                             |    측정 [mm/s]                     x MOTOR_SIGN_*        |
+                             |         ^                                   |            |
+                             |  x TICK_TO_MM_S                             v            |
+                             |         ^                              motor_set()  (fw-08)
+                             |  encoder_delta()  (fw-09)                   |            |
+                             +---------^-----------------------------------|------------+
+                                       |                                   v
+                                    엔코더 &lt;-------- 바퀴 &lt;-------- IBT-2 &lt;-- PWM
+
+    같은 틱에서 옆으로 갈라지는 것
+      protect_step()  &lt;-- 목표 · 측정 · 방금 쓴 듀티    --&gt;  트립하면 듀티 0 + 적분 0 + LD3
+      명령 워치독     &lt;-- 마지막 목표를 받은 뒤 흐른 ms  --&gt;  200 ms 를 넘으면 목표 0</code></pre>
+      <p>새로 나오는 말을 먼저 한 줄씩 정해 둔다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>말</th><th>이 가이드에서의 뜻</th></tr></thead>
+        <tbody>
+          <tr><td>열린 고리 / 닫힌 고리</td><td>열린 고리 = 듀티를 주고 결과를 보지 않는다(<code>pwm</code>). 닫힌 고리 = 결과를 재서 듀티를 고친다(이 쪽)</td></tr>
+          <tr><td>계단 응답(step response)</td><td>목표를 0 에서 어떤 값으로 <strong>한 번에</strong> 올리고 측정 속도가 따라오는 모양을 시간축으로 본 것. 제어기를 보는 가장 기본적인 창</td></tr>
+          <tr><td>와인드업(windup)</td><td>출력이 이미 한계에 닿아 있는데도 적분항이 계속 자라는 것. 오차의 부호가 바뀌어도 한동안 빠져나오지 못한다</td></tr>
+          <tr><td>blind band</td><td>보호가 <strong>일부러 판정하지 않는</strong> 구간(예: 목표가 아주 작을 때). 오트립을 막으려고 두지만, 진짜 고장도 거기서는 안 보인다</td></tr>
+          <tr><td>명령 워치독</td><td>200 ms 동안 상위의 명령이 없으면 목표를 0 으로 만드는 <strong>소프트웨어</strong> 장치(계약 v2). <a href="fw-06-tick-watchdog.html">fw-06</a> 의 하드웨어 워치독(IWDG)과 <strong>다른 것</strong>이고, 섞어 부르지 않는다</td></tr>
+          <tr><td>단조 사슬</td><td>1 kHz 콜백 안에서 뒤에 오는 단계가 앞 단계의 출력을 <strong>줄이기만</strong> 하고 키우지는 못하게 순서를 잡는 것(§2-10)</td></tr>
+        </tbody>
+      </table></div>
+      <p>이 쪽이 남기는 것을 뒤에서 누가 쓰는가: <code>control.h</code> 의 공개 함수 다섯이 <strong>계약이 닿는 유일한 문</strong>이 되어
+      <a href="fw-17-link-v2.html">fw-17</a> 의 통신 모듈과 <a href="fw-18-safety-fsm.html">fw-18</a> 의 안전 상태기계가 그 문으로만 들어온다(§2-14).
+      명령 워치독의 구현도 여기다 — fw-18 은 그 위에 fault 비트와 이벤트를 얹고, 계약 경로(Pi 없이 <code>mcu_probe.py</code>)에서 다시 판정한다.
+      무부하에서 잡은 게인은 <a href="fw-20-after-assembly.html">fw-20</a> 에서 바닥 위 부하로 다시 맞춘다.</p>
+      <div class="callout note"><span class="ct">이 쪽은 CubeMX 를 열지 않는다</span>
+        <p>새로 켜는 주변장치가 없다. 쓰는 것은 앞 쪽들이 이미 켜 놓은 TIM6(박자) · TIM1/TIM8(PWM) · TIM2/5/23/24(엔코더)뿐이고, 이 쪽이 더하는 것은 전부 <code>User/</code> 아래의 C 코드다.
+        <code>.ioc</code> 를 건드릴 일이 생겼다면 앞 쪽의 설정이 빠진 것이다 — 그 쪽으로 돌아간다.</p>
+      </div>
+
+      <h2 id="why">2. 원리 — 왜 이 두 가지가 같은 쪽에 있는가</h2>
+
+      <h3 id="s2-1">2-1. 재는 값을 먼저 정한다 — 카운트에서 mm/s 까지</h3>
+      <p>PID 의 입력은 "오차"다. 오차를 만들려면 목표와 측정이 <strong>같은 단위</strong>여야 한다. 계약 v2 의 목표는 mm/s(<a href="06a-mcu-protocol.html">06a</a> §4-3)이므로 측정도 mm/s 로 만든다.
+      재료는 <a href="fw-09-encoder.html">fw-09</a> 가 이미 만들어 두었다 — <code>encoder_delta(wheel)</code> 는 그 바퀴의 <strong>직전 호출 이후</strong> 카운트 변화를 부호까지 붙여 돌려준다.
+      1 kHz 박자마다 한 번씩 부르면 창의 길이는 언제나 1 ms 다.</p>
+      <pre><code class="lang-text">측정 [mm/s] = encoder_delta(wheel) [counts / 1 ms]  x  TICK_TO_MM_S
+
+TICK_TO_MM_S = 2 x pi x WHEEL_RADIUS_MM / ENCODER_CPR / DT
+             = 2 x 3.14159 x 90 / 94000 / 0.001
+             = 6.0158 ... [mm/s per (count per ms)]        &lt;- 공칭값으로 계산한 예시</code></pre>
+      <p>이 숫자가 곧 <strong>속도의 최소 계단</strong>이다. 1 ms 창에서 카운트는 정수로만 변하므로 측정 속도도 6 mm/s 단위로만 움직인다 —
+      같은 계산과 그 표는 <a href="fw-09-encoder.html#s2-6">fw-09 §2-6</a> 에 있고 여기서 다시 세우지 않는다. 거기서 따라 나온 결론 하나를 이 쪽이 받는다:
+      <strong>"속도가 안 나온다"는 판정의 문턱을 6 mm/s 아래로 둘 수 없다</strong>(1 ms 창 하나로는). 창을 넓히면 계단이 잘아지는 대신 판정이 늦어진다 — 어느 창을 쓸지는 내가 정한다.</p>
+      <div class="callout note"><span class="ct">등급 — 이 축 전체가 아직 공칭값 위에 서 있다</span>
+        <p><code>WHEEL_RADIUS_MM</code> 90 은 <strong>공칭 지름 180 mm 의 절반</strong>이다(<code>hardware/INVENTORY.md</code> 6절 "바퀴 지름" 행 — NOMINAL(gen1-record), 실측 지름 칸은 아직 <code>____</code>).
+        <code>ENCODER_CPR</code> 은 fw-09 에서 내가 잰 값이거나 아직 공칭 94,000 이다. 그러니 이 쪽에서 나오는 mm/s 는 <strong>축척이 몇 % 틀려 있을 수 있는 수</strong>다.
+        그래도 제어에는 문제가 없다 — 목표와 측정이 <em>같은</em> 축척으로 틀려 있으면 게인이 그 차이를 흡수한다. 문제가 되는 것은 이 숫자를 <strong>바깥과 견줄 때</strong>(오도메트리 · 지도 축척)이고, 그것은 관문 09a 의 일이다.
+        그래서 이 쪽의 합격선은 "몇 mm/s 이내"라는 남의 숫자가 아니라 <strong>내가 찍은 곡선을 보고 내가 정하는 값</strong>이다.</p>
+      </div>
+
+      <h3 id="s2-2">2-2. 고정 dt 의 이산 PID — 세 항이 각각 무엇을 고치는가</h3>
+      <p>연속 시간의 PID 는 적분과 미분으로 쓰여 있지만, MCU 는 1 ms 마다 한 번씩만 깨어난다. 적분은 <strong>더하기</strong>가 되고 미분은 <strong>차이 나누기 dt</strong> 가 된다.
+      dt 가 고정이라는 것이 이 모든 것의 전제다 — <a href="fw-06-tick-watchdog.html">fw-06</a> 이 하드웨어 격자로 박자를 만든 이유가 여기서 값을 한다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>항</th><th>이산 꼴</th><th>무엇을 고치는가</th><th>혼자 쓰면 남는 것</th></tr></thead>
+        <tbody>
+          <tr><td>P</td><td><code>kp * err</code></td><td>지금 벌어진 차이에 비례해 민다</td><td><strong>정상상태 오차</strong> — 마찰을 이기는 듀티가 필요하면 오차가 0 이 될 수 없다(오차가 0 이면 출력도 0 이니까)</td></tr>
+          <tr><td>I</td><td><code>ki * (integ += err * dt)</code></td><td>남은 차이를 시간에 걸쳐 쌓아 없앤다</td><td><strong>와인드업</strong>(§2-3)과 느린 진동</td></tr>
+          <tr><td>D</td><td><code>kd * (err - prev_err) / dt</code></td><td>차이가 빨라지는 것을 미리 깎는다(제동)</td><td><strong>잡음 증폭</strong> — 측정이 6 mm/s 씩 계단으로 뛰므로 그 한 칸이 <code>kd / dt</code> = <code>kd x 1000</code> 배로 커진다</td></tr>
+        </tbody>
+      </table></div>
+      <p>세 번째 줄이 이 로봇에서 특히 아프다. 측정이 한 칸 튀는 것만으로 D 항이 <code>kd x 6000</code> 만큼 출렁인다 — 그래서 속도 루프의 D 는 흔히 0 이다(1세대도 Kd 0 이었다).
+      D 를 쓰고 싶으면 먼저 측정 창을 넓혀 계단을 잘게 만들어야 한다. 그 순서를 뒤집으면 "게인을 올렸더니 소리가 난다"로 끝난다.</p>
+      <div class="callout why"><span class="ct">왜 <code>dt</code> 를 구조체에 담아 다니지 않는가</span>
+        <p><code>pid.h</code> 는 <code>PID_DT_S 0.001f</code> 를 파일 안에 못박는다. 박자는 하나뿐이고(TIM6), 바퀴마다 다를 수 없기 때문이다.
+        <strong>대신 그 사실이 깨질 자리를 한 군데로 모은 것</strong>이다 — 언젠가 박자를 500 Hz(2 ms)로 바꾼다면 고칠 곳은 이 한 줄과 CubeMX 의 ARR 둘뿐이고, 그 둘이 어긋나면 게인이 조용히 두 배가 된다.
+        골격의 주석에 그 연결을 적어 두는 이유다.</p>
+      </div>
+
+      <h3 id="s2-3">2-3. 적분 와인드업 — 고장이 아니라 산수의 결과다</h3>
+      <p>출력에는 한계가 있다(듀티는 ±1000 ‰ 를 넘지 못하고, 내가 정한 <code>DUTY_LIMIT_BENCH_PERMILLE</code> 은 그보다 더 낮다).
+      한계에 닿아 있는 동안에도 오차는 남아 있고, 적분은 그 오차를 계속 더한다. 더해 봐야 출력은 변하지 않는데 <strong>적분값만 자란다.</strong>
+      그러다 오차의 부호가 바뀌면 — 목표를 0 으로 내리거나 반대로 돌리면 — 쌓인 적분을 다 깎을 때까지 출력이 한계에 붙어 있다. 바퀴는 명령을 무시하고 계속 돈다.</p>
+      <pre class="diagram"><code> 목표 --+----+                     오차                 적분값
+        |    |                  +----+                +--------+
+   0 ---+    +---------      0 -+    +--------      0 -+        +-------
+                                                        \   와인드업이 없으면 여기서 바로 내려온다
+   출력 (한계에 붙어 있는 구간)
+        +----------------------------+                  +-------+
+   0 ---+                            +------       0 ---+       +--------
+                                     ^                          ^
+                              목표를 내린 시각                와인드업이 있으면 여기까지 늦는다</code></pre>
+      <p>막는 법은 하나가 아니다. 셋 다 "포화 중에는 적분을 자라지 못하게 한다"는 같은 말을 다르게 쓴 것이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>꼴</th><th>하는 일</th><th>대가</th></tr></thead>
+        <tbody>
+          <tr><td>조건부 적분(conditional integration)</td><td>출력이 포화하면 이번에 더한 만큼을 도로 뺀다</td><td>가장 짧다. 포화 경계에서 적분이 계단으로 멈췄다 움직인다</td></tr>
+          <tr><td>백캘큘레이션(back-calculation)</td><td>포화 전후의 차이 <code>(sat - u)</code> 에 비례해 적분을 되돌린다</td><td>부드럽다. <strong>되돌리는 세기 상수가 게인의 단위에 매여 있다</strong> — 남의 값을 옮기면 무력해진다(아래 상자)</td></tr>
+          <tr><td>적분 클램프(integral clamping)</td><td>적분값 자체를 범위 안에 가둔다</td><td>가장 단순하다. 가두는 범위를 어디에 둘지가 또 하나의 정해야 할 값이 된다</td></tr>
+        </tbody>
+      </table></div>
+      <p>이 쪽은 <strong>어느 것을 쓰라고 정하지 않는다.</strong> 정하는 것은 셋 다 만족해야 하는 성질이고, 그 성질을 §3-1 의 호스트 시험이 벡터로 채점한다:
+      <em>200 ms 동안 출력이 포화해 있어도 적분값은 한 틱치(1 ms 어치)보다 더 자라지 않는다.</em></p>
+      <div class="callout note"><span class="ct">1세대 무부하 튜닝값(기록, 2026-07-19)을 값으로 옮기지 못하는 이유</span>
+        <p>1세대는 1 kHz 속도 PID 를 Kp 0.60 / Ki 1.50 / Kd 0 / 백캘큘레이션 Kt 2.0 으로 돌렸다(1세대 펌웨어 <code>FW/control/include/motor_ctrl.h:91,149-206</code>).
+        그런데 1세대의 오차 단위는 count/s 이고 출력 풀스케일은 500 tick 이었다 — 이 프로젝트는 mm/s 와 1000 ‰ 다. <strong>같은 숫자가 다른 물리량을 가리킨다.</strong> 그래서 이 값들은 NOMINAL 로도 쓸 수 없고 "기록"으로만 인용한다.
+        집필 중에 실제로 확인한 것 하나: 위의 Kt 2.0 을 그대로 옮긴 백캘큘레이션 구현은 §3-1 의 와인드업 벡터에서 <strong>떨어진다</strong>(되돌리는 세기가 이 게인 스케일에서는 너무 약해 적분이 200 ms 동안 거의 그대로 자란다).
+        게인을 옮기면 안 된다는 말이 추상적인 주의가 아니라 컴파일해서 보이는 결과라는 뜻이다.</p>
+      </div>
+
+      <h3 id="s2-4">2-4. P → I → D 순서로 잡는다 — 그리고 게인이 0 인 채로 먼저 한 번 찍는다</h3>
+      <p>게인 셋을 한꺼번에 움직이면 무엇이 무엇을 바꿨는지 알 수 없다. 순서는 하나다.</p>
+      <ol class="steps">
+        <li><strong>전부 0 으로 한 번 찍는다.</strong> <code>step</code> 의 CSV 에서 목표는 계단인데 측정과 듀티는 바닥에 붙은 평평한 선이 나온다. 이것이 <strong>기준선</strong>이다 — 포획 · 덤프 · 그림 그리기가 다 도는지를 게인과 무관하게 먼저 확인한다.</li>
+        <li><strong>P 만.</strong> 진동 직전까지 올린다. "직전"은 CSV 에서 측정 곡선이 목표 주위를 넘실거리기 시작하는 지점이다. 그 값을 적고 절반쯤으로 내린다.</li>
+        <li><strong>I 를 더한다.</strong> 정상상태에서 남는 차이(목표선과 측정선의 간격)가 사라질 때까지. 너무 올리면 오버슛이 커지고 진동이 느려진다.</li>
+        <li><strong>D 는 필요할 때만 조금.</strong> §2-2 의 셋째 줄을 먼저 읽는다.</li>
+        <li>네 바퀴를 <strong>따로</strong> 본다. 같은 게인으로 네 바퀴의 곡선이 겹치지 않으면 그것은 게인이 아니라 배선 · 부호 · 기계의 문제다.</li>
+      </ol>
+      <p>게인은 <code>robot_params.h</code> 의 <code>PID_KP_MILLI</code> · <code>PID_KI_MILLI</code> · <code>PID_KD_MILLI</code> 에 <strong>정수 밀리 단위</strong>로 산다(1200 = 1.2).
+      명령 창의 <code>pid set kp 1200</code> 은 RAM 의 값만 바꾼다 — 리셋하면 헤더의 값으로 돌아간다. 마음에 드는 값을 찾으면 <strong>헤더에 옮겨 적는 것은 내 손</strong>이고, 그 뒤에 저장까지 가는 길은 <a href="fw-16-flash-store.html">fw-16</a> 이다.</p>
+      <div class="callout why"><span class="ct">이 세 키에는 <code>_Static_assert</code> 가드를 두지 않는다</span>
+        <p><a href="fw-08-pwm-safe-output.html">fw-08</a> 의 <code>PWM_CMD_HOLD_MS</code> 나 <code>DUTY_LIMIT_BENCH_PERMILLE</code> 은 빈칸(0)이 <strong>위험한 쪽</strong>으로 동작해서 가드로 빌드를 세웠다.
+        게인은 반대다 — <code>kp = 0</code> 이면 듀티가 0 이고, 그것이 가장 안전한 상태다. 게다가 <strong>튜닝하려면 먼저 빌드해서 돌려 봐야 하고, 돌려 봐야 값을 정할 수 있다.</strong> 가드를 두면 그 고리를 스스로 막는다.
+        그래서 게인만은 0 으로 태어나 빌드되고, 첫 <code>step</code> 이 평평한 선을 내는 것이 정상이다. 같은 이유로 <code>./scripts/check_nominal.sh</code> 는 이 세 줄을 EMPTY 로 계속 셀 것이다 — 그 개수가 0 이 되는 것은 <a href="fw-19-bench-acceptance.html">fw-19</a> 의 조건이지 이 쪽의 조건이 아니다.</p>
+      </div>
+
+      <h3 id="s2-5">2-5. 멈출 때 적분을 0 으로 — 1세대가 실물로 배운 것</h3>
+      <p>1세대 벤치에서 이런 일이 있었다(기록, 2026-07-18): <strong>정지 명령을 줬는데 상태는 RUN 이고 듀티가 −4 tick 남아 있었다.</strong>
+      감속하는 동안 쌓인 음의 적분이 백캘큘레이션의 고정점에서 얼어붙어, 목표가 0 인데도 아주 작은 듀티를 계속 내보내고 있었다.
+      고친 방법은 규칙 하나였다 — <strong>목표가 0 이고 측정 속도가 바닥이면 적분을 0 으로 하고 정지 상태로 간다.</strong> 감속 램프 자체는 그대로 두었다(화물 때문에 급정지를 피해야 해서).</p>
+      <p>이 쪽이 가져오는 것은 그 <strong>구조</strong>다. 값("바닥"이 몇 mm/s 인가)은 §2-1 의 계단 크기와 내 측정 창에서 나오므로 내가 정한다.
+      골격에서 이 규칙이 들어가는 자리는 두 군데다: 목표가 0 으로 내려올 때, 그리고 보호가 트립해서 출력을 끊을 때(§2-7). 둘 다 "다시 시작할 때 과거를 들고 가지 않는다"는 같은 말이다.</p>
+
+      <h3 id="s2-6">2-6. 폐루프와 보호 3종이 <em>같은 쪽</em>에 있는 이유</h3>
+      <p>1세대의 가장 비싼 사고는 이것이다(기록, 2026-07-18): <strong>엔코더의 GND 선이 끊겼다.</strong> 속도가 항상 0 으로 읽혔다.
+      PID 는 "목표 5000, 측정 0" 을 보고 오차를 계속 적분했다. 듀티는 최대로 갔고 바퀴는 전속으로 돌았다. <strong>폴트는 한 건도 뜨지 않았고</strong> 정지 명령으로도 세우지 못했다.</p>
+      <p>왜 아무것도 못 잡았는가. 그때 있던 보호 셋이 <strong>동시에</strong> 눈이 멀어 있었다 — 1세대 기록은 이것을 "3중 블라인드"라고 부른다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>있던 보호</th><th>왜 못 봤는가</th></tr></thead>
+        <tbody>
+          <tr><td>스톨 판정</td><td>"목표 ≥ 6000" 이라는 절대 게이트가 있었는데 그날 목표는 5000 이었다 — 판정 자체가 켜지지 않았다</td></tr>
+          <tr><td>부호 이상 판정</td><td>측정 속도가 0 이라 부호가 없다. "부호가 다르다"가 성립하지 않는다</td></tr>
+          <tr><td>과전류 판정</td><td>바퀴가 공중이라 전속으로 돌아도 전류가 작다(무부하 1개 약 0.5 A — 1세대 실측)</td></tr>
+        </tbody>
+      </table></div>
+      <p>그래서 새 폴트 하나가 생겼다: <strong>FEEDBACK_LOST</strong> — "이 듀티를 주고 있는데 이만큼의 속도가 안 나온다". 되먹임 자체가 죽은 것을 되먹임의 빈자리로 잡는다.</p>
+      <div class="callout warn"><span class="ct">이 쪽에서 같이 해야 하는 이유</span>
+        <p>고리를 닫는 코드와 고리의 고장을 잡는 코드를 <strong>다른 쪽에서</strong> 쓰면, 그 사이의 기간 동안 벤치에는 "측정이 틀리면 최대 듀티로 가는 장치"가 그대로 놓여 있게 된다.
+        이 가이드가 PID 와 보호 3종을 한 쪽에 묶은 것은 분량 때문이 아니라 그 기간을 0 으로 만들기 위해서다. 실습 B(계단 응답)를 하고 실습 C(보호)를 미루지 않는다.
+        미뤄야 한다면 그동안 <strong><code>DUTY_LIMIT_BENCH_PERMILLE</code> 을 더 낮춰 두고</strong>(fw-08 §2-9 의 상한이 PID 출력에도 그대로 걸린다) 바퀴를 공중에 둔 채로만 돌린다.</p>
+      </div>
+      <p>IWDG(하드웨어 워치독)는 이것을 막지 못한다는 점도 여기서 못박아 둔다. 그날 펌웨어는 <strong>멈추지 않았다</strong> — 1 kHz 루프도 주 루프도 정상으로 돌고 있었고 kick 도 제때 들어갔다.
+      IWDG 가 잡는 것은 "죽은 것"이고, 이것은 "살아서 틀리는 것"이다. 둘은 다른 장치가 맡는다.</p>
+
+      <h3 id="s2-7">2-7. 보호는 두 방향으로 틀린다 — 판정식의 구조가 전부다</h3>
+      <p>1세대 총평이 이것을 한 줄로 적어 두었다: "보호 장치는 두 방향으로 틀린다(못 잡는다 / 잘못 잡는다). 셋 다 로직이 아니라 <strong>선을 어디에 긋느냐</strong>가 틀렸다."
+      아래 두 사고가 각각 한 방향이고, 고친 방법이 그대로 이 쪽 판정식의 <strong>구조</strong>가 된다. 숫자는 가져오지 않는다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>날짜(1세대 기록)</th><th>무슨 일</th><th>왜 틀렸나</th><th>구조를 어떻게 고쳤나</th></tr></thead>
+        <tbody>
+          <tr><td>2026-07-19</td><td><strong>정상 급가속을 FEEDBACK_LOST 로 오판</strong> — 4모터가 동시에 트립. 같은 날 목표 100000 은 통과하고 105000 은 실패했다</td>
+              <td>처음 판정식이 <code>|속도| x 2 &lt; |목표|</code> 였다 — 문턱이 <strong>목표</strong>에 비례했다. 슬루로 듀티가 천천히 오르는 동안 듀티 게이트는 300 ms 에 열리는데 속도는 아직 목표의 절반에 못 미친다</td>
+              <td>문턱을 <strong>지금 인가하고 있는 듀티</strong>에 비례시켰다: <code>|속도| &lt; |듀티| x (건강한 속도:듀티 비) / FRAC</code>. 1세대는 FRAC = 4 를 썼다(= "이 듀티가 낼 속도의 25 % 도 안 난다")</td></tr>
+          <tr><td>2026-07-19</td><td><strong>고속에서 감속 중 부호 이상 오검출</strong> — 4모터 전부. 저속에서는 감속이 짧아 안 걸려서 늦게 발견됐다</td>
+              <td>판정이 "듀티 부호 ≠ 속도 부호" 만 봤다. 제동 중에는 브레이크 듀티(−)와 아직 양인 속도가 <strong>정상적으로</strong> 공존한다</td>
+              <td>조건에 <code>sgn(목표) == sgn(듀티)</code> 를 더했다 = <strong>구동 국면에서만</strong> 판정한다. 남는 한계: 고속 역전 지령 중의 타력 구간은 여전히 오트립 여지가 있다</td></tr>
+        </tbody>
+      </table></div>
+      <p>여기서 두 가지 일반 규칙이 나온다.</p>
+      <ul>
+        <li><strong>문턱은 "지금 무엇을 하고 있는가"에 매단다</strong>(인가 듀티), "무엇을 바라는가"(목표)에 매달지 않는다. 목표는 순간에 뛰지만 실제 구동은 천천히 오르기 때문이다.</li>
+        <li><strong>판정은 국면을 가린다.</strong> 구동 · 제동 · 타력은 물리적으로 다른 구간이고, 구동 국면에서만 참인 규칙을 제동 국면에 적용하면 정상을 고장이라 부른다.</li>
+      </ul>
+      <p>그리고 반대 방향의 대가가 <strong>blind band</strong> 다. 오트립을 막으려고 게이트를 두면(목표가 작을 때는 판정하지 않는다, 듀티가 낮을 때는 판정하지 않는다)
+      <strong>그 구간에서는 진짜 고장도 안 보인다.</strong> 1세대의 STALL 은 "목표 &lt; A" 구간이, FEEDBACK_LOST 는 "목표 &lt; 2000" 구간이 그대로 눈먼 곳으로 남았다.
+      이것은 없앨 수 있는 결함이 아니라 <strong>골라야 하는 값</strong>이다 — 그래서 §3-3 의 호스트 시험에는 "그 게이트 아래에서는 아무리 오래 둬도 STALL · FEEDBACK_LOST 가 트립하지 않는다"가 <strong>통과해야 하는 벡터</strong>로 들어 있다. 눈먼 곳이 어디인지를 내가 알고 골랐다는 증거다.
+      <strong>셋의 눈먼 곳이 같은 자리에 있는 것은 아니다</strong> — 아래 표를 보면 목표 게이트와 듀티 게이트를 가진 것은 STALL 과 FEEDBACK_LOST 둘이고, FEEDBACK_SIGN 에는 <strong>속도 게이트 하나뿐</strong>이다. 그래서 앞의 둘이 눈을 감는 낮은 듀티에서도 FEEDBACK_SIGN 은 판정한다(§3-3 의 벡터가 그 사실도 채점한다) — 되먹임 부호가 뒤집힌 상태는 듀티가 작아도 위험하다는 판단이 그 구조에 들어 있는 것이고, 대신 저듀티 구간의 오트립 여지가 남는다.</p>
+      <p>세 판정을 한 표로 모으면 이렇다. 왼쪽이 구조(이 쪽이 준다), 오른쪽이 값(내가 정한다).</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>보호</th><th>조건 (전부 AND, 지속 시간만큼 연속으로)</th><th>내가 정할 값 (<code>robot_params.h</code>, 전부 EMPTY)</th></tr></thead>
+        <tbody>
+          <tr><td><strong>STALL</strong></td><td><code>|목표| ≥ A</code> · <code>|속도| &lt; B</code> · <code>|듀티| ≥ C</code> · <code>T</code> 지속. <strong>A &gt; B 여야</strong> 정상 저속 주행이 걸리지 않는다</td>
+              <td><code>STALL_TARGET_MIN_MM_S</code> · <code>STALL_SPEED_MAX_MM_S</code> · <code>STALL_DUTY_MIN_PERMILLE</code> · <code>STALL_HOLD_MS</code></td></tr>
+          <tr><td><strong>FEEDBACK_LOST</strong></td><td><code>|목표| ≥ 게이트</code> · <code>|듀티| ≥ 게이트</code> · <code>|속도| &lt; |듀티| x 기울기</code> · <code>T</code> 지속</td>
+              <td><code>FBLOST_TARGET_MIN_MM_S</code> · <code>FBLOST_DUTY_MIN_PERMILLE</code> · <code>FBLOST_SPEED_PER_PERMILLE_MILLI</code> · <code>FBLOST_HOLD_MS</code></td></tr>
+          <tr><td><strong>FEEDBACK_SIGN</strong></td><td><code>sgn(목표) == sgn(듀티)</code>(구동 국면) · <code>|속도| ≥ 게이트</code> · <code>sgn(듀티) ≠ sgn(속도)</code> · <code>T</code> 지속</td>
+              <td><code>FBSIGN_SPEED_MIN_MM_S</code> · <code>FBSIGN_HOLD_MS</code></td></tr>
+        </tbody>
+      </table></div>
+      <p><code>FBLOST_SPEED_PER_PERMILLE_MILLI</code> 하나만 설명이 더 필요하다. 이것은 위 표의 "기울기"이고, 1세대의 <code>건강한 속도:듀티 비 ÷ FRAC</code> 를 <strong>이미 나눈 뒤의 값 하나</strong>로 둔 것이다.
+      단위는 <code>0.001 x (mm/s) per permille</code> — 즉 듀티 1 ‰ 당 몇 mm/s 를 기대하는가에 1000 을 곱한 정수다. 구하는 법은 §3-2 에서 내가 찍은 계단 응답에 있다:
+      <strong>정상상태에서 (측정 속도 ÷ 그때의 듀티)</strong> 가 내 로봇의 건강한 비이고, 그것을 몇으로 나눌지(1세대는 4)가 내가 고르는 여유다.
+      두 값을 곱셈 하나로 합쳐 둔 이유는 1 kHz 경로에서 나눗셈을 없애려는 것이고, 나눈 근거는 코드가 아니라 <strong>내 노트</strong>에 남는다.</p>
+
+      <h3 id="s2-8">2-8. 듀티 슬루를 우회하지 않는다 — 전기적인 이유다</h3>
+      <p>"긴급 정지 · 긴급 회피는 램프를 건너뛰고 바로 최대로" 는 그럴듯하게 들린다. 1세대는 그 경로를 실제로 만들다가 <strong>듀티 슬루만은 우회 금지</strong>로 결론냈다(기록, 2026-07-19).
+      이유가 제어가 아니라 전기다 — 슬루를 없애면 네 모터가 동시에 0에서 최대로 뛰면서 <strong>버스 전압이 꺼지고, 5 V 레일이 브라운아웃되고, 회피하는 도중에 제어 자체를 잃는다.</strong>
+      같은 회차에서 잰 값: 4모터 0→정격의 피크 전류 1.97 A, 버스 23.46 V(무부하). 부하가 걸리면 이보다 커진다는 것이 이 숫자의 뜻이다.</p>
+      <p>1세대가 쓴 시간은 가속 1500 ms · 감속 400 ms · 방향 전환 정지 200 ms 였다(기록). <strong>이 값들은 옮기지 않는다</strong> — 배터리 · 배선 저항 · 사전충전 회로가 확인되기 전에는 근거가 없는 숫자다.
+      이 쪽의 골격에도 슬루는 <strong>들어 있지 않다.</strong> 슬루가 없는 상태의 계단 응답을 먼저 봐야 "PID 가 어디까지 빠른가"를 알 수 있고, 그 다음에 "전원이 어디까지 견디는가"를 재서 슬루를 정할 수 있기 때문이다.
+      그 순서가 뒤집히면 슬루가 만든 느림을 게인으로 오해해 계속 올리게 된다. 슬루를 넣을지 · 얼마로 할지는 이 쪽의 기록을 보고 내가 정하고, 부하에서 다시 보는 것은 <a href="fw-20-after-assembly.html">fw-20</a> 이다.</p>
+      <div class="callout warn"><span class="ct">그래서 이 쪽의 실습은 <code>DUTY_LIMIT_BENCH_PERMILLE</code> 아래에서만 돈다</span>
+        <p>PID 의 출력도 <code>motor_set()</code> 을 지나며 fw-08 에서 내가 정한 상한에 잘린다(<a href="fw-08-pwm-safe-output.html#s2-9">fw-08 §2-9</a> 의 상한이 명령 경로든 제어 경로든 같은 자리에서 걸린다).
+        슬루가 없는 이 골격에서 그 상한이 사실상의 슬루 노릇을 한다 — 목표를 낮게 주고 상한을 낮게 두면 0→최대 계단 자체가 일어나지 않는다. 계단 응답을 크게 찍고 싶어 상한을 올리기 전에 이 절을 다시 읽는다.</p>
+      </div>
+
+      <h3 id="s2-9">2-9. 1 kHz 는 실시간으로 찍을 수 없다 — RAM 에 잡아 두었다가 끝나고 덤프한다</h3>
+      <p>계단 응답을 보려면 1 ms 마다의 목표 · 측정 · 듀티가 필요하다. 그것을 그때그때 찍으면 어떻게 되는지는 산수로 나온다.
+      VCP 는 460800 8N1 이고 1바이트가 10비트이므로 <strong>초당 46 080 B</strong>다(<a href="fw-06-tick-watchdog.html">fw-06</a> §2-1 의 같은 계산).
+      한 행이 <code>1999,200,198,-412,0</code> + 줄바꿈 = 약 20 B 라면 1 kHz 로는 초당 20 000 B — 대역은 남는다. 그런데 문제는 대역이 아니다.</p>
+      <ul>
+        <li><strong>찍는 행위가 재려는 것을 망가뜨린다.</strong> 콘솔 송신은 블로킹이다(fw-03) — 20 B 한 줄에 20 ÷ 46 080 = 0.00043 초 = 0.43 ms 가 걸리고, 그 시간 동안 주 루프는 다른 아무것도 못 한다. 1 kHz 루프의 지터를 재려고 만든 창이 지터의 원인이 된다.</li>
+        <li><strong>ISR 에서는 애초에 찍을 수 없다.</strong> 1 kHz 콜백 안에서 <code>LOG_*</code> · <code>printf</code> 금지는 fw-03 부터의 규칙이고(글자는 주 루프가 찍는다), 블로킹 송신을 선점 1 짜리 ISR 안에서 하면 그 아래 모든 것이 멈춘다.</li>
+        <li><strong>네 바퀴를 다 찍으면</strong> 행이 커져 위의 여유가 사라진다. 계약 v2 의 상태 프레임도 같은 선을 쓰고 있다(50 Hz).</li>
+      </ul>
+      <p>그래서 꼴은 하나다: <strong>ISR 이 RAM 배열에 채워 넣고, 다 찬 뒤에 주 루프가 한 번에 덤프한다.</strong>
+      덤프하는 동안 모터는 이미 서 있고(<code>step</code> 이 끝나면서 목표가 0 이 된다) 명령 창은 그 시간만큼 응답하지 않는다. 그 시간이 곧 아래의 워치독 예산 행이다.</p>
+      <div class="callout note"><span class="ct">워치독 예산표에 더하는 행 (표의 주인은 <a href="fw-06-tick-watchdog.html#s2-6">fw-06 §2-6</a> — 이 쪽은 행만 낸다)</span>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>구간</th><th>최장 시간</th><th>출처</th><th>처리</th></tr></thead>
+          <tbody>
+            <tr><td><code>step</code> 의 CSV 덤프</td><td><code>____</code> ms = (행 수) x (한 행의 바이트 수) x 1000 ÷ 46 080 B/s — <strong>내가 계산한다</strong></td><td>산술(460800 8N1)</td><td>덤프 루프 안에서 <code>wdg_service_main()</code> 을 부른다 · 덤프는 <strong>MOTOR_EN LOW</strong> 에서만</td></tr>
+          </tbody>
+        </table></div>
+        <p>행 수의 상한은 <code>control.c</code> 의 <code>STEP_CAP_MAX</code> 이고 내가 정한다 — <strong>이 하나의 값이 RAM 소비와 워치독 예산을 동시에 정한다.</strong>
+        한 행이 몇 바이트인지는 내 CSV 열 구성에 달렸다(§3-2 의 골격은 다섯 열이다). <strong>단위에 주의한다</strong> — 바이트 ÷ (B/s) 는 <strong>초</strong>다. 표의 식에 1000 이 곱해져 있는 것이 그래서이고, 이 표의 다른 행들과 견주려면 ms 여야 한다. 계산한 값이 내 IWDG 주기(fw-06 에서 내가 정한 값)보다 크면 둘 중 하나다 — 덤프 중 kick 을 촘촘히 넣거나, <code>STEP_CAP_MAX</code> 를 줄인다.
+        <strong>NVIC 표에 더하는 행은 없다</strong>(이 쪽은 인터럽트를 새로 켜지 않는다 — 전부 fw-06 의 TIM6 ISR 에 얹힌다).</p>
+      </div>
+
+      <h3 id="s2-10">2-10. 1 kHz 콜백 안의 순서 — 단조 사슬로 잡는다</h3>
+      <p><a href="fw-06-tick-watchdog.html">fw-06</a> 이 만든 <code>HAL_TIM_PeriodElapsedCallback()</code> 안은 이제 여러 쪽이 한 줄씩 넣는 자리가 됐다. 이 쪽이 <code>control_step_1khz()</code> 를 더하면 <strong>세 개</strong>가 된다.
+      <a href="fw-11-power-sequence.html#s2-6">fw-11 §2-6</a> 이 그 자리를 미리 비워 두었다 — "전원 뒤, 출력 앞". 이 쪽은 그 예약석에 앉는다.</p>
+      <pre><code class="lang-c">void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)   /* ISR 문맥, 선점 우선순위 1 */
+{
+  if (htim-&gt;Instance != TIM6) { return; }
+  /* 1 */  ++s_tick_ms;              /* fw-06 : 시각 */
+  /* 2 */  power_step_1khz();        /* fw-11 : 전원 시퀀스가 EN/RELAY 의 다음 값을 기록 */
+  /* 3 */  control_step_1khz();      /* fw-13 : 측정 -&gt; PID -&gt; 보호 -&gt; 듀티를 쓴다   &lt;- 이 쪽이 더하는 줄 */
+  /* 4 */  motor_step_1khz();        /* fw-08 : pwm 명령의 유지 시간이 끝났으면 듀티 0 */
+  /* 5 */  wdg_checkin_tick();       /* fw-06 : 박자가 살아 있다는 표시 */
+}</code></pre>
+      <p>순서의 근거를 <strong>규칙 하나</strong>로 쓴다: <strong>뒤에 오는 단계는 앞 단계의 출력을 줄이기만 하고 키우지 못한다(단조 사슬).</strong>
+      2 는 전원이 준비되지 않았으면 EN 을 내린다. 3 은 목표에 맞춰 듀티를 쓰되 보호가 트립하면 0 으로 만든다. 4 는 <code>pwm</code> 명령의 유지 시간이 끝났으면 0 으로 만든다. 5 는 아무것도 바꾸지 않는다.
+      이 규칙이 있으면 뒤에 무엇이 더 붙어도 순서를 다시 논의하지 않는다 — "출력을 줄이는 것"은 뒤에, "출력을 만드는 것"은 앞에.</p>
+      <p>3 과 4 의 순서는 이 규칙의 직접적인 결과다. 4 를 3 앞에 두면, 유지 시간이 끝나 듀티를 0 으로 만든 <strong>바로 그 틱에</strong> 3 이 다시 듀티를 써 버린다 — fw-08 이 만든 안전 장치가 소리 없이 약해진다.
+      <strong>두 <code>*_step_1khz()</code> 의 계약</strong>은 이렇게 적어 둔다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th></th><th>무엇을 읽는가</th><th>무엇을 쓰는가</th><th>실행 시간</th></tr></thead>
+        <tbody>
+          <tr><td><code>control_step_1khz()</code> (이 쪽)</td><td>엔코더 CNT 4개 · 목표 2개 · 게인 · 명령 시각</td><td>네 바퀴의 듀티(<code>motor_set()</code>) · PID 내부 상태 · 보호 래치 · 포획 버퍼 한 행</td><td><code>stat</code> 의 <code>exec_us_max</code> 로 잰다(§2-11)</td></tr>
+          <tr><td><code>motor_step_1khz()</code> (fw-08)</td><td><code>s_hold_ms</code> 하나(<code>cmd_pwm()</code> 이 무장한다)</td><td>0 이 되는 그 틱에만 네 바퀴의 듀티 0</td><td>평소에는 뺄셈 한 번</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><span class="ct">이 쪽 뒤로 <code>pwm</code> 명령은 DMM 바늘을 움직이지 못한다 — 고장이 아니다</span>
+        <p><code>control_step_1khz()</code> 는 <strong>매 틱 네 바퀴의 듀티를 쓴다.</strong> 그러므로 이 줄을 콜백에 엮은 순간부터 1 kHz 듀티의 주인은 하나가 된다 — 제어 모듈이다.
+        <code>pwm fl 300</code> 을 쳐도 다음 1 ms 안에 제어가 그 위에 자기 값을 쓴다(목표가 0 이면 0 을). 이것은 되먹임을 건 시스템에서 <strong>두 사람이 같은 레지스터를 쓰지 않게</strong> 하는 당연한 결과다.
+        부팅 직후부터 제어가 0 을 계속 쓰는 것이 위험하지 않은 이유도 같은 데 있다 — 듀티가 모터에 닿을지를 정하는 것은 듀티가 아니라 <strong>MOTOR_EN</strong> 이고, 그것은 fw-11 의 전원 시퀀스가 쥐고 있다.</p>
+        <p>fw-08 의 관찰(듀티 ∝ DMM 전압 · <code>pwm</code> 자동 타임아웃)을 다시 하고 싶으면 방법은 절차다: 콜백에서 <code>control_step_1khz();</code> 한 줄을 빼고 빌드하면 fw-08 의 동작으로 돌아간다(엮는 것도 한 줄이었다 — <a href="fw-08-pwm-safe-output.html#s3-1-3">fw-08 §3-1-3</a> 의 7번).
+        다른 길도 있다 — 제어가 "정지 상태"에서는 듀티를 쓰지 않게 하거나(누가 마지막에 썼는지가 상태에 따라 갈려 진단이 어려워진다), <code>pwm</code> 이 제어를 일시 정지시키게 한다(공개 함수가 하나 더 필요하다).
+        <strong>이 가이드의 기본 진행은 위의 단순한 소유권</strong>이고 권고가 아니다 — 계약 v2 모드에는 CLI 가 아예 없어서(<code>LINK_MODE</code>) 두 경로가 공존하는 것은 벤치에서만 생기는 문제이기 때문이다.</p>
+      </div>
+
+      <h3 id="s2-11">2-11. PID 를 ISR 에 둘 것인가 — <a href="fw-06-tick-watchdog.html#s2-2">fw-06 §2-2</a> 가 미룬 결정을 여기서 닫는다</h3>
+      <p>fw-06 이 세 길을 세워 두고 "실제 실행 시간을 알아야 정할 수 있으니 fw-13 에서" 라고 미뤘다. 이제 그 실행 시간을 만드는 코드가 생겼으니 잴 수 있다.
+      결정을 내리는 사람은 나이고, 이 절이 주는 것은 <strong>재는 절차와 각 길의 대가</strong>다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th></th><th>(가) 1 kHz ISR 안에서 전부</th><th>(나) ISR 은 표시만, 계산은 주 루프</th><th>(다) 나눠 싣기</th></tr></thead>
+        <tbody>
+          <tr><td>제어 주기의 흔들림</td><td>ISR 진입 지연만큼(fw-06 의 <code>dt_us_min/max</code>)</td><td>주 루프가 그때 하던 일이 끝나야 시작한다. <strong><code>step</code> 의 CSV 덤프 중에는 제어가 통째로 선다</strong></td><td>ISR 에 남긴 부분만 격자 위</td></tr>
+          <tr><td>안에서 부를 수 있는 것</td><td>블로킹 · <code>LOG_*</code> · <code>HAL_GetTick()</code> 에 기대는 타임아웃 전부 금지</td><td>제약 없음</td><td>ISR 쪽만 제약</td></tr>
+          <tr><td>낮은 우선순위에 주는 영향</td><td><code>exec_us_max</code> 만큼 UART · I2C ISR 이 밀린다</td><td>거의 없다</td><td>남긴 만큼</td></tr>
+          <tr><td>주 루프가 멈췄을 때(<code>hang main</code> · 긴 덤프)</td><td>제어와 보호는 계속 돈다</td><td><strong>제어도 보호도 같이 멈춘다</strong> — 듀티는 마지막 값으로 남는다</td><td>ISR 에 남긴 것만 돈다</td></tr>
+          <tr><td>값 넘겨주기</td><td>목표 · 게인을 주 루프가 쓰고 ISR 이 읽는다 → 찢어지지 않게 하는 장치가 필요(§3-2 의 골격이 그 자리를 설명한다)</td><td>CLI 와 같은 문맥이라 그 사이에는 필요 없다</td><td>경계마다 필요</td></tr>
+        </tbody>
+      </table></div>
+      <p>차이가 없는 축도 적어 둔다: <code>pid.c</code> · <code>protect.c</code> 의 내용, 호스트 시험, <code>control.h</code> 의 공개 면, 계약 v2 의 와이어 형식은 세 길에서 <strong>동일</strong>하다.</p>
+      <ol class="steps">
+        <li>먼저 (가)로 만든다 — 골격이 그렇게 돼 있다. 네 바퀴 PID + 보호 + 포획이 다 ISR 안이다.</li>
+        <li><code>step</code> 을 한 번 돌리고 <code>stat</code> 을 친다. <code>exec_us_max</code> 가 "1 kHz 콜백 한 번이 쓴 최장 시간"이다. 이 값을 <strong>노트에 적는다.</strong></li>
+        <li>그 값이 1000 µs 에 얼마나 가까운가를 본다. <code>overrun</code> 이 0 이 아니면 (가)는 이미 성립하지 않는다.
+        가깝다면 왜 그런지 먼저 본다 — 부동소수 PID 네 벌은 M7 의 FPU 에서 그리 오래 걸릴 일이 아니다. 보통 원인은 ISR 안에 들어가지 말아야 할 것(나눗셈이 든 환산, 글자 출력, HAL 블로킹 호출)이다.</li>
+        <li>같은 빌드에서 <code>loop_us_max</code> 도 본다. (나)를 고르면 <strong>그 값이 곧 제어가 늦어지는 최대 크기</strong>다. CSV 덤프 중이면 수백 ms 다 — (나)에서 <code>step</code> 을 돌리려면 덤프를 제어와 겹치지 않게 하는 별도의 설계가 필요하다.</li>
+        <li>고른 길과 그 근거(내가 잰 두 숫자)를 노트에 적는다. 이 결정은 <a href="fw-17-link-v2.html">fw-17</a> 의 <code>comm_frame_step_1khz()</code> 를 어디에 둘지에도 그대로 이어진다.</li>
+      </ol>
+
+      <h3 id="s2-12">2-12. 명령 워치독 200 ms — 계약이 정한 값이고, IWDG 와 다른 장치다</h3>
+      <p>계약 v2 는 이렇게 적어 두었다(<a href="06a-mcu-protocol.html">06a</a> §4-3): <strong>"MCU: 200 ms 동안 워치독을 되감는 프레임이 없으면 → 정지 (= 50 Hz 명령 10개 결손)"</strong>.
+      이 값은 임시값이 아니라 계약값이다. 그래서 <code>robot_params.h</code> 의 <code>CMD_WATCHDOG_MS</code> 는 EMPTY 가 아니라 200 으로 태어나고 주석은 <code>/* contract v2 */</code> 다.</p>
+      <p>구현은 두 줄로 끝난다. <strong><code>control_set_target()</code> 이 명령 시각을 갱신하고, <code>control_step_1khz()</code> 가 그 나이를 1 ms 씩 세어 200 을 넘으면 목표를 0 으로 만든다.</strong>
+      "목표를 0 으로" 까지가 이 쪽의 일이다 — 그것을 fault 비트로 올리고 이벤트 0x83 을 내보내는 것, 그리고 계약 경로(Pi 없이 <code>mcu_probe.py</code> 로 송신을 끊어 보는 시험)에서 다시 판정하는 것은 <a href="fw-18-safety-fsm.html">fw-18</a> 의 몫이다.
+      06a §4-2 의 fault 비트 표와 이벤트 코드 표는 <strong>(제안)</strong> 이라고 적혀 있고, 어느 비트 · 어느 코드를 쓸지 정하는 것은 내 과제다 — 이 쪽은 그 자리를 비워 둔다.</p>
+      <div class="callout warn"><span class="ct">두 워치독을 섞어 부르지 않는다</span>
+        <ul>
+          <li><strong>하드웨어 워치독(IWDG, fw-06)</strong> — 펌웨어가 <em>죽은 것</em>을 잡는다. 못 잡는 것: 살아서 틀리는 것(§2-6), 명령이 끊긴 것.</li>
+          <li><strong>명령 워치독(200 ms, 이 쪽)</strong> — 상위가 <em>말을 멈춘 것</em>을 잡는다. 못 잡는 것: MCU 자신이 멈춘 것, 전원이 사라진 것.</li>
+          <li><strong>전원 상실</strong> — 이것은 워치독이 아니라 <strong>MOTOR_EN 의 풀다운</strong>이 맡는다(fw-08 · fw-11). USB 를 뽑는 시험은 워치독 시험이 아니라 이것의 시험이다(<a href="fw-06-tick-watchdog.html#s2-9">fw-06 §2-9</a>).</li>
+        </ul>
+        <p>세 장치를 같은 문장에서 "워치독" 한 낱말로 부르면, 하나를 시험하고 셋 다 됐다고 믿게 된다. 1세대가 실제로 그랬다.</p>
+      </div>
+      <div class="callout note"><span class="ct">결정 대기 — 무엇이 워치독을 되감는가</span>
+        <p>계약 문서의 이전 판은 "200 ms 무프레임", 본편 06 §1-1 의 표는 "200 ms 무명령"이라 적어 두 쪽이 갈려 있었다. 둘은 다른 규칙이다(06a §4-3 의 상자).</p>
+        <p><strong>(가) 유효한 0x01(속도 명령)만</strong> 되감는다 — "상위가 명령을 보내고 있는가"를 본다. 되감는 자리가 <code>control_set_target()</code> 안이라 통신 모듈은 워치독을 몰라도 된다.
+        나중에 설정 프레임(0x02)이 생겨도 그것만 오고 속도 명령이 끊기면 200 ms 뒤 선다.<br>
+        <strong>(나) CRC 를 통과한 모든 프레임</strong>이 되감는다 — "링크가 살아 있는가"를 본다. 되감는 자리는 프레임 파서(통신 모듈)다. 0x02 를 구현한 뒤 설정 프레임만 계속 오면 MCU 는 마지막 목표를 유지한 채 계속 달린다.</p>
+        <p>차이가 없는 축(동일): 지금 계약에서 Pi → MCU 프레임은 0x01 하나뿐이라 <strong>지금은 두 규칙의 동작이 같다</strong> · CRC 가 틀린 프레임은 어느 쪽에서도 되감지 않는다 · 200 ms 라는 값 · Pi 쪽 0.5 s 워치독.</p>
+        <p>이 가이드의 <strong>기본 진행은 (가)</strong> 다 — 되감는 자리가 <code>control_set_target()</code> 안이면 이 쪽의 코드만으로 닫히기 때문이고, <strong>권고가 아니다.</strong> (나)로 가면 되감는 줄이 fw-17 의 파서로 옮겨 가고 이 쪽의 골격에서 그 한 줄이 빠진다.</p>
+      </div>
+      <div class="callout note"><span class="ct">결정 대기 — TEXT 모드의 <code>step</code> 과 200 ms 가 어떻게 공존하는가</span>
+        <p>제어 · 안전 모듈은 TEXT 와 V2 에서 <strong>같은 코드</strong>다(<code>LINK_MODE</code> 는 <code>app.c</code> 한 군데에서만 갈린다). 그래서 명령 창으로 계단 응답을 찍는 동안에도 명령 워치독은 살아 있다 — 2초짜리 <code>step</code> 을 그냥 두면 200 ms 뒤 목표가 0 이 되어 버린다.</p>
+        <p><strong>기본 진행</strong>[제안]: <code>step</code> 이 포획 구간 동안 <code>control_set_target()</code> 을 <strong>200 ms 보다 짧은 간격으로 다시 부른다</strong> — 즉 50 Hz 로 명령을 보내는 상위 노릇을 대신한다. 그리고 <code>step … once</code> 는 목표를 한 번만 넣는다 → 워치독이 목표를 0 으로 만드는 행이 CSV 에 그대로 보인다(그것이 이 쪽의 발동 체크 하나다).</p>
+        <p>다른 선택지(채택하지 않은 이유는 우열이 아니라 "제어 모듈은 두 모드에서 같은 코드"와의 정합이다):
+        <strong>TEXT 빌드에서 워치독을 끈다</strong> — 제어 모듈이 모드에 따라 갈리고 TEXT 에서 워치독 경로가 한 번도 시험되지 않는다 /
+        <strong><code>step</code> 전용 목표 경로를 따로 둔다</strong> — 워치독을 우회하는 계약 밖 입구가 하나 생긴다.</p>
+      </div>
+
+      <h3 id="s2-13">2-13. 엔코더 타이머의 디버그 동결 — 여기서 열리는 새 선택</h3>
+      <p><a href="fw-08-pwm-safe-output.html#s2-7">fw-08 §2-7</a> 이 TIM1 · TIM8 을 동결시켰다. 그것은 <strong>안전</strong>의 문제였다 — 중단점에서 멈춘 동안 PWM 이 마지막 듀티로 계속 나가면 바퀴가 도는 채로 코어가 선다.
+      엔코더 타이머(TIM2 · TIM5 · TIM23 · TIM24)는 그 문제가 없다. 대신 <strong>측정</strong>의 문제가 있고, 그것은 속도를 세우는 이 쪽이 판단할 자리다. fw-08 이 이 결정을 여기로 넘겼다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th></th><th>동결한다</th><th>동결하지 않는다(기본값)</th></tr></thead>
+        <tbody>
+          <tr><td>gdb 로 멈춘 동안</td><td>카운터가 선다 — 그 사이에 바퀴가 돌았다면 그 회전분을 <strong>잃는다</strong></td><td>카운터가 계속 센다</td></tr>
+          <tr><td><code>continue</code> 직후 첫 <code>encoder_delta()</code></td><td>정상값</td><td>멈춰 있던 시간의 회전이 <strong>한 창에 몰려</strong> 들어온다 → 속도가 크게 튄다 → 그 한 틱에 PID 가 반대로 차고 보호가 오트립할 수 있다</td></tr>
+          <tr><td>누적 카운트(계약의 <code>l_tick</code> · <code>r_tick</code>)</td><td>실제 이동보다 <strong>적어진다</strong> — 오도메트리가 조용히 틀린다</td><td>맞다</td></tr>
+        </tbody>
+      </table></div>
+      <p>양쪽 다 대가가 있고 <strong>어느 쪽이 맞는지는 내가 gdb 를 어디에 쓰느냐</strong>에 달렸다. 바퀴가 도는 동안 붙어서 제어 변수를 보려는 것이면 동결하지 않는 쪽이 오도메트리에 정직하고, 대신 <code>continue</code> 직후 한 틱을 버리는 처리가 필요하다.
+      세워 놓고 붙는 용도라면 동결해도 잃는 것이 없다. 고른 쪽과 이유를 노트에 적는다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>타이머</th><th>레지스터(기준 <code>0x5C001000</code>)</th><th>비트</th><th>HAL 매크로 (<code>stm32h7xx_hal.h</code>)</th></tr></thead>
+        <tbody>
+          <tr><td>TIM2(FL) · TIM5(FR)</td><td><code>DBGMCU_APB1LFZ1</code> — <code>0x5C00103C</code></td><td>0 · 3</td><td><code>__HAL_DBGMCU_FREEZE_TIM2()</code> :865 · <code>…_TIM5()</code> :868</td></tr>
+          <tr><td>TIM23(RL) · TIM24(RR)</td><td><code>DBGMCU_APB1HFZ1</code> — <code>0x5C001044</code></td><td>24 · 25</td><td><code>__HAL_DBGMCU_FREEZE_TIM23()</code> :886 · <code>…_TIM24()</code> :889</td></tr>
+        </tbody>
+      </table></div>
+      <p>확인하는 법은 앞 쪽들과 같다 — 세웠다고 믿는 것과 지금 서 있는 것은 다르므로 gdb 로 <strong>읽어서</strong> 본다: <code>x/wx 0x5C00103C</code> 의 bit 0 · 3(마스크 <code>0x00000009</code>), <code>x/wx 0x5C001044</code> 의 bit 24 · 25(마스크 <code>0x03000000</code>).
+      DBGMCU 는 시스템 리셋으로 지워지지 않으므로(<a href="fw-04-debugger.html">fw-04</a> §2-3 의 표) 한번 세운 비트는 재플래시를 넘어 남는다. <strong>이것은 fw-08 의 TIM1 · TIM8 동결(<code>0x5C00104C</code> 의 bit 0 · 1)과 다른 레지스터의 다른 비트다</strong> — STOP 리스트가 요구하는 것은 그쪽이고, 이 절의 넷은 그것을 대신하지 못한다.</p>
+
+      <h3 id="s2-14">2-14. <code>control.h</code> — 계약이 닿는 유일한 문</h3>
+      <p><a href="06a-mcu-protocol.html">06a</a> §2-5 가 펌웨어의 구조를 두 모듈로 못박았다: <strong>제어 · 안전 모듈</strong>과 <strong>통신 모듈</strong>. 통신 모듈은 제어 모듈의 공개 함수만 부르고, 제어 모듈은 통신 모듈을 <strong>모른다</strong>(단방향).
+      그 공개 함수의 전체 꼴을 세우는 쪽이 여기다. 이 쪽에서는 아직 절반이 빈 골격이지만, <strong>이름과 시그니처는 지금 확정된다</strong> — <a href="fw-14-wt901.html">fw-14</a> · <a href="fw-15-bno055.html">fw-15</a> · fw-17 · fw-18 이 전부 이 이름을 쓴다.</p>
+      <pre><code class="lang-text">밖에서 부를 수 있는 것 (통신 모듈 · CLI)        이 쪽에서의 상태
+  control_set_target(vl, vr)                     구현한다 (+ 명령 시각 갱신)
+  control_get_state(&amp;out)                        구현한다 (전압 · 전류는 있는 것만)
+  control_fault_flags()                          자리만 — 보호 3종의 래치를 계약 비트로 옮기는 것은 fw-18
+  control_get_imu(&amp;out, sensor_id)               자리만 — 센서 모듈이 아직 없다 ("샘플 없음")
+  control_pop_event(&amp;out)                        자리만 — 이벤트를 넣는 쪽이 아직 없다 (늘 false)
+
+제어 · 안전 쪽 파일만 부르는 것
+  control_post_event(code, detail)               큐에 넣는다. 꺼내는 쪽은 위의 pop
+
+밖으로 내보내지 않는 것 (이것이 경계다)
+  바퀴별 카운트 · 듀티 · PID 내부값  --&gt;  이름이 &lt;모듈&gt;_dbg_&lt;대상&gt;() 이고 CLI 만 부른다</code></pre>
+      <p>마지막 줄이 중요하다. 벤치에서 보고 싶은 것(바퀴 넷의 듀티, 적분값)은 계약에 없고, 계약에 넣지도 않는다 — 그런 관측은 TEXT 모드 CLI 의 몫이다.
+      통신 모듈이 <code>_dbg_</code> 함수를 부르면 계약이 조용히 넓어진 것이고, <a href="fw-19-bench-acceptance.html">fw-19</a> 의 경계 grep 이 그것을 0건으로 검사한다.</p>
+      <div class="callout note"><span class="ct">결정 대기 — 이벤트와 IMU 샘플이 통신 모듈에 닿는 길</span>
+        <p>위의 넷(06a §2-5 의 목록)만으로는 이벤트의 <code>code</code> · <code>detail</code> · <code>tick_ms</code> 를 꺼낼 길이 없다. 그래서 이 가이드는 <strong>다섯째 함수 <code>control_pop_event()</code></strong> 를 [제안] 으로 둔다.</p>
+        <p><strong>(가) 끌어가기</strong>(기본 진행): 통신 모듈이 큐에서 꺼낸다. 공개 함수가 넷 → 다섯이 되고(06a §2-5 의 목록을 고쳐야 한다), 큐가 하나 들고, 이벤트가 폴링 주기만큼 늦는다 /
+        <strong>(나) 싱크 등록</strong>: 통신 모듈이 초기화 때 콜백을 넘긴다. 공개 함수가 하나 느는 것은 동일, 지연 없음, 대신 콜백이 1 kHz 문맥에서 불린다 /
+        <strong>(다) 06 의 초안 그대로</strong>: 제어 쪽이 통신 쪽 함수를 직접 부른다 — 단방향이 깨진다.</p>
+        <p>와이어 계약(06a §4-2 의 0x82 · 0x83)은 <strong>어느 길이든 그대로</strong>다(동일). 기본 진행이 (가)인 것은 fw-19 의 단방향 grep 기준을 그대로 쓸 수 있는 꼴이기 때문이고 <strong>권고가 아니다.</strong>
+        큐의 깊이와 넘칠 때의 정책(오래된 것을 버린다 / 새것을 버린다)은 <strong>내가 정한다</strong> — 이벤트를 실제로 내는 쪽인 fw-18 에서.</p>
+      </div>
+
+      <h2 id="lab">3. 실습</h2>
+      <p>실습이 셋이다. <strong>A 와 C 의 앞부분은 Mac 만으로</strong> 끝나고, B 와 C 의 뒷부분은 모터 전원이 들어간다.
+      순서를 바꾸지 않는다 — 계산이 맞는 것을 Mac 에서 먼저 보고, 그 다음에 그 계산을 바퀴에 건다.</p>
+      <div class="callout tip"><span class="ct">채울 자리마다 힌트 카드가 있다 — 읽는 순서</span>
+        <p>골격의 채울 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 붙어 있고(이 쪽은 T1 ~ T14 — <code>pid.c</code> 둘, <code>control.c</code> 여덟, <code>protect.c</code> 넷), 그 주석 안에 <strong>번호 걸음</strong>이 있다. 먼저 걸음을 보고 직접 써 본다.
+        막히면 "직접 채우기" 절에서 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인.</p>
+        <p>완결 코드는 Mac 의 호스트 시험 둘(<code>PASS pid 16 cases</code> · <code>PASS protect 24 cases</code>, <code>-fsanitize=undefined,address</code> 까지 조용)과 이 프로젝트의 펌웨어 빌드(링크까지, <code>User/</code> 경고 0 — 앞 쪽의 <code>motor_*</code> · <code>encoder_*</code> · <code>power_get_state()</code> 는 임시 정의로)를 통과한 코드다(2026-10-03).
+        <code>control.c</code> 는 보드 없이 볼 수 없는 부분이 많아, 1 ms 마다 1차 지연 플랜트(듀티 → 속도 → 카운트)를 흉내 내는 호스트 시뮬레이션에 <code>step</code> · <code>once</code> · 엔코더 단선 · A/B 바뀜을 걸어 CSV 의 모양까지 확인했다 — 그 결과는 각 카드의 "확인"에 있다. 시간 · 전압 · 리셋 같은 보드의 일은 "굽고 보기"에서 내가 확인한다.
+        게인과 보호 문턱의 <code>____</code> · <code>EMPTY</code> 는 카드에도 빈칸이다 — 그 값을 정하는 것이 이 쪽의 실습이다. 붙여 넣는 것으로 끝내지 않는다 — 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
+      </div>
+
+      <h3 id="s3-1">3-1. 실습 A — <code>pid.c</code>: 보드 없이 제어기부터 맞춘다</h3>
+      <p>이 실습에는 빌드도 플래시도 없다. 관찰은 Mac 터미널의 한 줄 <code>PASS pid 16 cases</code> 다.</p>
+
+      <h4 id="s3-1-2">3-1-2. 골격</h4>
+      <p>새 파일 둘: <code>User/Inc/Control/pid.h</code> · <code>User/Src/Control/pid.c</code>. 헤더에 <strong>불변식 네 개</strong>가 주석으로 들어 있는 것이 이 골격의 핵심이다 — 시험 벡터가 채점하는 것이 그 넷이다.</p>
+      <pre><code class="lang-c">/* User/Inc/Control/pid.h — 바퀴마다 속도 PID 하나. 순수: HAL 헤더 없음, 그래서 Mac 의 cc 로 빌드된다. */
+#ifndef PID_H
+#define PID_H
+
+/* 제어 루프의 샘플 주기. TIM6 이 1 kHz 로 돌므로(fw-06) dt 는 고정이고 구조체에 싣지 않는다.
+   그 틱 주기가 바뀌면 이 줄도 같이 바뀐다 — 그 짝의 나머지 반쪽이 CubeMX 의 ARR 이다.
+   둘이 어긋나면 모든 게인이 소리 없이 틀린다. */
+#define PID_DT_S  0.001f
+
+typedef struct {
+  float kp, ki, kd;        /* 게인: 각각 (mm/s) · (mm/s * s) · (mm/s / s) 당 출력 단위 */
+  float integ;             /* 적분값 [mm/s * s] */
+  float prev_err;          /* 직전 스텝의 오차 [mm/s] */
+  float out_min, out_max;  /* 출력 포화 한계, 반환값과 같은 단위(permille) */
+} speed_pid_t;
+
+/* 다음 pid_step() 이 err 에만 의존하게 한다: integ = 0, prev_err = 0. 게인 · 한계는 그대로. */
+void  pid_reset(speed_pid_t *p);
+
+/* 고정 dt 로 한 스텝. 1 kHz 문맥에서 바퀴마다 한 번씩 불린다.
+ *   err    : 목표 - 측정  [mm/s]
+ *   반환   : 듀티 명령 u, [out_min, out_max] 로 포화시킨 값
+ * 불변식 — host_tests/test_pid.c 가 넷 다 검사한다:
+ *   I1  반환값은 언제나 [out_min, out_max] 안이다
+ *   I2  이번 호출에 준 err 는 이미 바로 이번 호출의 적분항 안에 들어 있다
+ *   I3  pid_reset() 직후에 D 항은 prev_err == 0 을 본다
+ *   I4  출력이 포화한 동안 적분은 포화 쪽으로 계속 자라서는 안 된다
+ */
+float pid_step(speed_pid_t *p, float err);
+#endif</code></pre>
+      <pre><code class="lang-c">/* User/Src/Control/pid.c — 바퀴 하나의 속도 PID. 순수 로직: HAL 헤더 없음(호스트 시험 가능). */
+#include "Control/pid.h"
+
+void pid_reset(speed_pid_t *p)
+{
+  /* TODO(you) [T1]: 다음 pid_step() 이 err 에만 의존하게 한다 - 힌트 카드 T1
+       1) p-&gt;integ 를 0.0f 로
+       2) p-&gt;prev_err 를 0.0f 로 (I3: 리셋 직후의 D 항이 "직전 오차 0" 을 보게)
+     게인과 out_min/out_max 는 건드리지 않는다. 채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)p;
+}
+
+float pid_step(speed_pid_t *p, float err)
+{
+  /* TODO(you) [T2]: 고정 dt 의 PID 한 스텝 - 힌트 카드 T2
+       1) P 항만: u = p-&gt;kp * err, 그다음 out_min/out_max 로 포화. 시험의 group 1 이 통과한다
+       2) D 항(선택 - 2-2 를 먼저 읽는다): p-&gt;kd * (err - p-&gt;prev_err) / PID_DT_S 를 더한다.
+          prev_err 는 이번 오차를 "쓴 뒤에" 갱신한다. D 를 빼기로 했으면 시험의 group 2 도 같이 뺀다
+       3) I 항: p-&gt;integ += err * PID_DT_S 를 u 를 계산하기 "전에"(I2), u 에 p-&gt;ki * p-&gt;integ 를 더한다
+       4) 와인드업 방지: 2-3 의 세 꼴 중 하나. 고른 이름과 이유를 노트에 적는다 - group 4 가 이것만 본다
+     무엇이든 플래시하기 전에 host_tests/test_pid.c 로 먼저 스스로 확인한다.
+     채우기 시작하면 아래 두 줄(빌드용 자리표시)은 지운다. */
+  (void)p; (void)err;
+  return 0.0f;      /* 안전한 기본값: 빌드되는 골격은 듀티를 요구하지 않는다 */
+}</code></pre>
+      <p class="small">이 골격은 그대로 빌드되고 그대로 돌아간다 — 듀티 0 을 돌려주는 제어기다. <strong>빌드를 세우는 <code>_Static_assert</code> 가드가 게인에 없는 이유</strong>는 §2-4 의 상자에 있다.</p>
+
+      <h4 id="s3-1-3">3-1-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><code>pid_reset()</code> 부터. 한 줄짜리지만 I3 이 여기서 정해진다.</li>
+        <li><code>pid_step()</code> 의 <strong>P 항만</strong> 먼저 쓰고 포화까지. 아래 시험을 돌리면 group 1 의 다섯이 통과하고 group 2 에서 떨어진다 — 떨어지는 자리가 다음에 쓸 곳을 알려 준다.</li>
+        <li><strong>D 항.</strong> <code>prev_err</code> 을 언제 갱신하는가가 유일한 함정이다 — 이번 오차를 쓴 <em>뒤에</em> 갱신한다.</li>
+        <li><strong>I 항 + 와인드업 방지.</strong> §2-3 의 세 꼴 중 하나를 고른다. 고른 이름과 이유를 노트에 적는다. group 4 가 이것만 본다.</li>
+        <li>네 그룹이 다 통과하면 <strong>진단 줄</strong>도 돌린다(3-1-4).</li>
+      </ol>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 1 = T1 · 걸음 2 ~ 4 = T2. 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>pid_reset()</code> · 다음 스텝이 err 에만 의존하게 한다</summary>
+        <div class="ans">
+
+        <p><strong>할 일</strong> — 입력은 제어기 하나(<code>p</code>). 끝났을 때 참이어야 하는 것: <code>integ == 0</code> 이고 <code>prev_err == 0</code>, 게인과 한계는 그대로. 부르는 쪽은 셋이다 — <code>control_init()</code>(T10), 명령 워치독 만료(T4), 보호 트립(T5)과 새 <code>step</code>(T9). 전부 "다시 시작할 때 과거를 들고 가지 않는다"(§2-5)는 같은 말이다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T1 - User/Src/Control/pid.c */
+void pid_reset(speed_pid_t *p)
+{
+  p-&gt;integ    = 0.0f;      /* 쌓인 오차를 잊는다 */
+  p-&gt;prev_err = 0.0f;      /* I3: 다음 D 항은 "직전 오차 0" 을 본다 */
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>p-&gt;integ = 0.0f;</code> — <code>p</code> 는 <strong>포인터</strong>라 멤버에 <code>-&gt;</code> 로 닿는다(<code>p.integ</code> 는 구조체 값일 때의 꼴). <code>0.0f</code> 의 <code>f</code> 는 <code>float</code> 상수라는 표시 — 없으면 <code>double</code> 0 이 되고, 값은 같지만 이 파일은 전부 <code>float</code> 로 통일한다.</li>
+          <li><code>p-&gt;prev_err = 0.0f;</code> — 이 줄이 I3 이다. 다음 <code>pid_step()</code> 의 D 항은 <code>(err - prev_err)</code> 를 보므로, 이것을 지우지 않으면 리셋 뒤 첫 스텝이 <strong>앞 회차의 마지막 오차</strong>와의 차이를 미분한다.</li>
+          <li>게인 · <code>out_min</code> · <code>out_max</code> 는 건드리지 않는다 — 그것은 "제어기가 무엇인가"이고, 지우는 것은 "제어기가 무엇을 기억하는가"다. 헤더 주석("게인 · 한계는 그대로")이 그 경계다.</li>
+          <li>골격의 <code>(void)p;</code> 는 지웠다 — 이제 <code>p</code> 를 쓴다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 파일).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>p.integ = 0.0f;</code></td><td>Mac: <code>error: member reference type 'speed_pid_t *' is a pointer; did you mean to use '-&gt;'?</code><br>arm-gcc: <code>error: 'p' is a pointer; did you mean to use '-&gt;'?</code></td><td><code>-&gt;</code></td></tr>
+            <tr><td><code>prev_err</code> 를 안 지웠다</td><td>컴파일러도 시험도 <strong>조용하다</strong> — 집필 중 확인(2026-10-03): 벡터의 구조체는 <code>prev_err = 0</code> 으로 태어나므로 <code>PASS pid 16 cases</code> 가 그대로 찍힌다</td><td>실물에서 드러난다: <code>kd ≠ 0</code> 일 때 두 번째 <code>step</code> 의 0 번 행 듀티가 첫 번째와 다르다(체크포인트 <code>stop-resets-integrator</code>). 헤더의 I3 을 다시 읽는다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 이 자리만으로는 시험이 바뀌지 않는다(골격도 <code>pid_reset()</code> 을 "통과"한다). T2 와 함께 §3-1-4 의 두 줄을 돌린다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t2"><summary>힌트 T2 — <code>pid_step()</code> · 고정 dt 의 PID 한 스텝</summary>
+        <div class="ans">
+
+        <p><strong>할 일</strong> — 입력은 오차 <code>err</code>(목표 − 측정, mm/s), 출력은 듀티 명령(permille)이고 <strong>언제나</strong> <code>[out_min, out_max]</code> 안이다(I1). 안에서 바뀌는 상태는 둘 — 적분 <code>integ</code> 와 직전 오차 <code>prev_err</code>. 1 kHz ISR 이 바퀴마다 한 번 부르므로 <code>printf</code> 도 블로킹도 없다 — 산수뿐이다. 아래는 <strong>조건부 적분</strong> 꼴이다(§2-3 의 첫 행). 세 꼴 다 시험을 통과한다 — 다른 둘은 코드 설명의 "다르게 써도 되는 곳"에 있다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T2 - User/Src/Control/pid.c (조건부 적분 꼴) */
+float pid_step(speed_pid_t *p, float err)
+{
+  p-&gt;integ += err * PID_DT_S;                                   /* I2: 이번 err 가 이번 적분에 들어 있다 */
+  float u = p-&gt;kp * err
+          + p-&gt;ki * p-&gt;integ
+          + p-&gt;kd * (err - p-&gt;prev_err) / PID_DT_S;             /* I3: 리셋 뒤 prev_err 는 0 */
+  p-&gt;prev_err = err;                                            /* 이번 오차를 쓴 "뒤에" 갱신한다 */
+  if      (u &gt; p-&gt;out_max) { u = p-&gt;out_max; p-&gt;integ -= err * PID_DT_S; }   /* I4: 더한 만큼 도로 뺀다 */
+  else if (u &lt; p-&gt;out_min) { u = p-&gt;out_min; p-&gt;integ -= err * PID_DT_S; }
+  return u;                                                     /* I1: 언제나 [out_min, out_max] 안 */
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>p-&gt;integ += err * PID_DT_S;</code> — 적분은 "오차 × 시간"의 합이다. <code>PID_DT_S</code>(0.001) 를 곱하는 것이 그 "× 시간"이고, 그래서 <code>ki</code> 의 단위가 <code>(mm/s · s)</code> 당 permille 이 된다. <strong>u 를 계산하기 전에</strong> 더하는 것이 I2 — group 3 의 첫 CHECK(<code>100</code>)가 "이번 오차가 이미 이번 출력에 들어 있다"를 본다.</li>
+          <li><code>float u = p-&gt;kp * err + p-&gt;ki * p-&gt;integ + p-&gt;kd * (err - p-&gt;prev_err) / PID_DT_S;</code> — 세 항을 한 식으로. D 항은 "오차의 변화율" = (이번 − 직전) ÷ dt. <code>/ PID_DT_S</code> 가 <code>float</code> 나눗셈인 것에 주의한다 — <code>1 / 1000</code> 처럼 정수끼리 쓰면 0 이다(아래 표).</li>
+          <li><code>p-&gt;prev_err = err;</code> — 이번 오차를 <strong>쓴 뒤에</strong> 갱신한다. 위 식보다 앞에 두면 <code>(err - prev_err)</code> 가 늘 0 이라 D 항이 죽는다(group 2 가 잡는다).</li>
+          <li><code>if (u &gt; p-&gt;out_max) { u = p-&gt;out_max; p-&gt;integ -= err * PID_DT_S; }</code> — 포화다(I1). 그리고 같은 줄에서 <strong>방금 더한 적분을 도로 뺀다</strong> — 이것이 조건부 적분(I4). 출력이 한계에 붙어 있는 동안 적분은 더 자라지 않으므로, 오차의 부호가 바뀌면 곧바로 한계에서 떨어진다(§2-3 의 그림). <code>else if</code> 로 아래쪽도 같게.</li>
+          <li><code>return u;</code> — 이 줄에 오는 <code>u</code> 는 세 갈래(위로 잘림 · 아래로 잘림 · 안) 어디서 왔든 한계 안이다 — I1 은 "검사"가 아니라 구조에서 나온다.</li>
+          <li>골격의 <code>(void)p; (void)err;</code> 와 <code>return 0.0f;</code> 는 지웠다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① 와인드업 방지의 꼴: <strong>적분 클램프</strong>는 <code>integ</code> 를 더한 직후 <code>±(out_max / ki)</code> 로 가두고(<code>ki != 0</code> 일 때만 — 0 으로 나누지 않게) 포화 줄에서는 <code>integ</code> 를 건드리지 않는다. <strong>백캘큘레이션</strong>은 포화 뒤 <code>integ += kt * (sat - u_raw)</code> 로 되돌린다 — 되돌리는 세기 <code>kt</code> 가 게인의 단위에 매인다(§2-3 의 상자). 집필 중 조건부 적분 · 클램프 둘을 실제로 돌려 <strong>둘 다 <code>PASS pid 16 cases</code></strong>(2026-10-03). ② D 항을 아예 빼고 <code>kd</code> 필드만 남길 수 있다(§2-2) — 그러면 group 2 의 세 CHECK 는 <code>kd</code> 로 채점하므로 <strong>시험 파일에서 같이 뺀다</strong>. 시험 파일도 내 것이다. ③ 적분을 u 뒤에 더하는 꼴도 옳다 — 그러면 group 3 의 기대값이 한 칸씩 밀리므로(0 · 100 · 200) 시험도 같이 고친다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 파일).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>if (u &gt; out_max)</code> — <code>p-&gt;</code> 를 빠뜨렸다</td><td>Mac: <code>error: use of undeclared identifier 'out_max'</code><br>arm-gcc: <code>error: 'out_max' undeclared (first use in this function)</code></td><td><code>p-&gt;out_max</code></td></tr>
+            <tr><td>D 항에 <code>* (1 / 1000)</code></td><td>컴파일러는 조용하다(정수 나눗셈 <code>1 / 1000</code> 은 0). <code>FAIL line 27: near(pid_step(&amp;p, 10.f), 100.f)</code> — D 항이 늘 0</td><td><code>/ PID_DT_S</code>(<code>float</code>)</td></tr>
+            <tr><td><code>prev_err = err</code> 를 식보다 <strong>앞에</strong> 썼다</td><td><code>FAIL line 27: near(pid_step(&amp;p, 10.f), 100.f)</code> — 리셋 뒤 첫 D 항이 0</td><td>식 뒤로 옮긴다</td></tr>
+            <tr><td>적분을 u 계산 <strong>뒤에</strong> 더했다(시험은 그대로)</td><td><code>FAIL line 34: near(pid_step(&amp;p, 100.f), 100.f)</code> — 첫 스텝의 I 항이 0</td><td>앞으로 옮기거나, 그 규약을 택했으면 group 3 의 기대값을 고친다</td></tr>
+            <tr><td>와인드업 방지가 없다</td><td><code>FAIL line 48: grow &lt;= 1.0f</code> — 200 ms 포화 동안 적분이 200 자랐다</td><td>포화 가지에서 적분을 되돌린다(또는 §2-3 의 다른 꼴)</td></tr>
+            <tr><td><code>float</code> 를 <code>==</code> 로 비교해 채점했다</td><td>컴파일러는 조용하다. 반올림 한 비트 차이로 틀린다</td><td>시험이 쓰는 <code>near()</code> 처럼 허용 오차로</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 걸음대로 채우면 §3-1-4 의 첫 줄이 이렇게 움직인다(완결 코드를 걸음 단위로 잘라 실제로 돌린 것, 2026-10-03):</p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>여기까지 채우면</th><th><code>/tmp/test_pid</code> 가 멈추는 곳</th><th>뜻</th></tr></thead>
+          <tbody>
+            <tr><td>골격 그대로(<code>return 0.0f</code>)</td><td><code>FAIL line 18: near(pid_step(&amp;p,  100.f),  200.f)</code></td><td>group 1 의 첫 벡터 — P 항이 없다</td></tr>
+            <tr><td>1) P 항 + 포화</td><td><code>FAIL line 27: near(pid_step(&amp;p, 10.f),  100.f)</code></td><td>group 1 다섯 통과. group 2 — D 항이 없다</td></tr>
+            <tr><td>2) + D 항</td><td><code>FAIL line 34: near(pid_step(&amp;p, 100.f), 100.f)</code></td><td>group 3 — I 항이 없다</td></tr>
+            <tr><td>3) + I 항(와인드업 방지 없이)</td><td><code>FAIL line 48: grow &lt;= 1.0f</code></td><td>group 4 — 포화 중에 적분이 자란다</td></tr>
+            <tr><td>4) + 와인드업 방지</td><td><code>PASS pid 16 cases</code></td><td>둘째 줄(<code>-fsanitize=undefined</code>)도 조용하다</td></tr>
+          </tbody>
+        </table></div>
+        <p>통과하기 전에는 굽지 않는다(체크포인트 <code>pid-host-pass</code>). 고른 와인드업 방지의 이름과 이유를 노트에 적는다.</p>
+        </div></details>
+      <p>시험 파일은 <strong>전량으로 준다</strong> — 벡터가 곧 채점표이기 때문이다. group 1~3 의 기대값은 python3 로 따로 계산한 것이고, group 4 만 값이 아니라 <strong>성질</strong>을 본다.</p>
+      <pre><code class="lang-c">
+/* firmware/host_tests/test_pid.c — pid_step() / pid_reset() 의 벡터(pid.c, 순수).
+   정확한 값은 손이 아니라 python3 로 계산했다(각 group 위의 주석을 본다).
+   group 1-3 은 계약을 못박고, group 4 는 와인드업 없는 적분이라면 떨어질 수 없는 동작을 본다. */
+#include &lt;assert.h&gt;
+#include &lt;stdio.h&gt;
+#include "Control/pid.h"
+
+static int cases = 0;
+#define CHECK(c) do { cases++; if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); return 1; } } while (0)
+/* float 는 허용 오차로 비교한다, == 로는 절대 비교하지 않는다 */
+static int near(float a, float b) { float d = a - b; if (d &lt; 0) d = -d; return d &lt;= 1e-3f; }
+
+int main(void)
+{
+  /* group 1 — P 만. u = kp*err, 포화. python3: 2*100 = 200, 2*-100 = -200, 2*1000 = 2000 -&gt; 1000 */
+  { speed_pid_t p = { 2.f, 0.f, 0.f, 0.f, 0.f, -1000.f, 1000.f };
+    pid_reset(&amp;p);
+    CHECK(near(pid_step(&amp;p,  100.f),  200.f));
+    CHECK(near(pid_step(&amp;p, -100.f), -200.f));
+    CHECK(near(pid_step(&amp;p, 1000.f), 1000.f));     /* I1: out_max 에서 잘린다 */
+    CHECK(near(pid_step(&amp;p,-1000.f),-1000.f));     /* I1: out_min 에서 잘린다 */
+    CHECK(near(pid_step(&amp;p,    0.f),    0.f)); }
+
+  /* group 2 — D 만, 리셋 직후. python3: 0.01*(10-0)/0.001 = 100, 다음 (10-10) -&gt; 0, 다음 (0-10) -&gt; -100 */
+  { speed_pid_t p = { 0.f, 0.f, 0.01f, 0.f, 0.f, -1000.f, 1000.f };
+    pid_reset(&amp;p);
+    CHECK(near(pid_step(&amp;p, 10.f),  100.f));       /* I3: 리셋 뒤 prev_err == 0 */
+    CHECK(near(pid_step(&amp;p, 10.f),    0.f));
+    CHECK(near(pid_step(&amp;p,  0.f), -100.f)); }
+
+  /* group 3 — I 만. python3: ki*sum(err*dt) = 1000*0.1 = 100, 다음 200, 다음 300 */
+  { speed_pid_t p = { 0.f, 1000.f, 0.f, 0.f, 0.f, -1000.f, 1000.f };
+    pid_reset(&amp;p);
+    CHECK(near(pid_step(&amp;p, 100.f), 100.f));       /* I2: 이번 호출의 err 가 이미 이번 호출의 적분에 들어 있다 */
+    CHECK(near(pid_step(&amp;p, 100.f), 200.f));
+    CHECK(near(pid_step(&amp;p, 100.f), 300.f)); }
+
+  /* group 4 - 와인드업 방지. 식이 아니라 동작을 본다: 200 ms 동안의 포화가 적분에
+     200 ms 어치 오차를 쌓아서는 안 된다. 단순한 적분은 여기서 200*1000*0.001 = 200 만큼 자란다. */
+  { speed_pid_t p = { 1.f, 1000.f, 0.f, 0.f, 0.f, -1000.f, 1000.f };
+    pid_reset(&amp;p);
+    float u = pid_step(&amp;p, 1000.f);
+    CHECK(near(u, 1000.f));                        /* 첫 스텝에서 이미 포화 */
+    float integ0 = p.integ;
+    for (int i = 0; i &lt; 200; i++) { u = pid_step(&amp;p, 1000.f); }
+    CHECK(near(u, 1000.f));                        /* 여전히 포화 */
+    float grow = p.integ - integ0; if (grow &lt; 0.f) { grow = -grow; }
+    CHECK(grow &lt;= 1.0f);                           /* I4: 많아야 한 스텝어치, 200 이 아니다 */
+    CHECK(pid_step(&amp;p, -1000.f) &lt; p.out_max);      /* 그 결과: 포화에서 곧바로 빠져나온다 */
+    /* 그리고 리셋 뒤에는 제어기가 그 무엇도 기억하지 않는다 */
+    p.kp = 2.f; p.ki = 0.f; pid_reset(&amp;p);
+    CHECK(near(pid_step(&amp;p, 100.f), 200.f)); }
+
+  printf("PASS pid %d cases\n", cases);
+  return 0;
+}</code></pre>
+
+      <h4 id="s3-1-4">3-1-4. 돌려 보기 — 값 채점 줄과 진단 줄, 둘 다</h4>
+      <pre><code class="lang-bash">cd firmware
+# 값 채점
+cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_pid.c h723zg/User/Src/Control/pid.c -o /tmp/test_pid &amp;&amp; /tmp/test_pid
+# 진단 — 값이 맞아도 정의되지 않은 동작이 있으면 여기서 runtime error 가 뜬다
+cc -std=c11 -Wall -Wextra -fsanitize=undefined -Ih723zg/User/Inc host_tests/test_pid.c h723zg/User/Src/Control/pid.c -o /tmp/test_pid_ub &amp;&amp; /tmp/test_pid_ub</code></pre>
+      <pre><code class="lang-text">PASS pid 16 cases</code></pre>
+      <p><strong>둘째 줄은 "조용한 것"이 통과다.</strong> <code>PASS</code> 가 찍혀도 그 위에 <code>runtime error:</code> 줄이 하나라도 있으면 실패다 — 이 진단기는 문제를 발견해도 프로그램을 멈추지 않는다.
+      <code>pid.c</code> 는 전부 부동소수라 이 줄이 잡을 것이 많지 않다(정수 넘침 · 0 나누기가 주 대상이다). 실제로 물리는 것은 실습 C 의 <code>protect.c</code> 이고, 거기서 이 줄이 무엇을 하는지 눈으로 보게 된다.</p>
+      <div class="callout why"><span class="ct">group 4 를 성질로 쓴 이유 — 그리고 집필 중에 확인한 것</span>
+        <p>값으로 채점하면 와인드업 방지의 <strong>식</strong>을 하나로 못박게 된다. 그러면 §2-3 의 세 꼴 중 둘이 "틀린 답"이 되어 버린다.
+        그래서 group 4 는 적분값이 자라는지만 본다. 집필 중에 네 가지 구현을 실제로 컴파일해 돌려 봤다(2026-09-23, Mac <code>cc</code>):
+        조건부 적분 · 백캘큘레이션(되돌리는 세기를 이 게인 스케일에 맞춘 것) · 적분 클램프 <strong>셋 다 16 cases 를 통과</strong>했고,
+        와인드업 방지가 <strong>없는</strong> 구현과 1세대의 <code>Kt 2.0</code> 을 그대로 옮긴 구현은 <strong>둘 다 같은 줄에서 떨어졌다</strong>(<code>FAIL line 48: grow &lt;= 1.0f</code>).
+        "이 벡터가 이런 잘못을 잡는다"는 말은 그 잘못된 구현을 실제로 만들어 돌려 본 뒤에만 할 수 있다.</p>
+      </div>
+      <p>여기까지가 실습 A 다. 남는 것: 고른 와인드업 방지의 이름과 이유, 그리고 <code>PASS pid 16 cases</code> 를 본 날짜.</p>
+
+      <h3 id="s3-2">3-2. 실습 B — 계단 응답을 찍는다 <span class="tag power">모터 전원</span></h3>
+      <div class="callout warn"><span class="ct">STOP — 하나라도 "아니오"면 전원을 넣지 않는다</span>
+        <ol>
+          <li>바퀴가 <strong>공중에</strong> 떠 있고 손 · 선 · 공구가 바퀴에서 떨어져 있다.</li>
+          <li>배터리와 IBT-2 사이에 <strong>사전충전 회로</strong>가 있다(직결 아님).</li>
+          <li>DMM 으로 <strong>MOTOR_EN 네트 = 0 V</strong>, RELAY_EN 네트 = 0 V 를 확인했다 — <strong>"0 V 라서"가 아니라 풀다운이 실재해서임을</strong> 판정법으로 갈랐다(<a href="fw-08-pwm-safe-output.html#s3-2-4">fw-08 §3-2-4</a>).</li>
+          <li>TVS 의 밴드 방향을 눈으로 확인했다(IBT-2 쪽은 밴드가 B+).</li>
+          <li>전원을 끊는 수단(스위치 · 커넥터)에 <strong>손이 닿는다.</strong></li>
+          <li><strong>디버그 동결이 들어간 빌드다</strong> — TIM1 · TIM8 의 <code>__HAL_DBGMCU_FREEZE_*</code> + OSSI + idle LOW(<a href="fw-08-pwm-safe-output.html#s2-7">fw-08 §2-7</a>). gdb 를 쓸 생각이 없어도 지킨다. <strong>§2-13 의 엔코더 타이머 동결은 이것이 아니다</strong> — 다른 레지스터의 다른 비트이고 이 항목을 대신하지 못한다.</li>
+          <li><code>ENC_SIGN_FL … _RR</code>(fw-09, 손으로 돌려)와 <code>MOTOR_SIGN_FL … _RR</code>(fw-11, 한 바퀴씩 통전해) <strong>여덟 개가 모두 실측값</strong>이고 ±1 이다. <strong>부호 하나가 틀리면 되먹임이 음에서 양으로 뒤집혀 최대 듀티로 간다</strong>(fw-09 §2-7) — 이 쪽에서 가장 비싼 실수다.</li>
+          <li><code>DUTY_LIMIT_BENCH_PERMILLE</code> 이 내가 정한 값으로 들어가 있고, 이 실습에서 <strong>더 올리지 않는다</strong>(§2-8).</li>
+          <li><strong>바퀴를 손으로 붙잡아 멈추지 않는다.</strong> 감속비 1:47 의 기어드 모터라 출력축 토크가 크다 — 스톨을 보는 것은 벤치의 일이 아니다(§3-3 · fw-20).</li>
+          <li>엔코더 · 센서의 전원은 <strong>Nucleo 의 3V3 에서만</strong> 따 왔다(별도 레일 아님).</li>
+        </ol>
+      </div>
+      <p>이 실습 하나가 이 쪽에서 가장 크다 — 새 파일이 넷이고 <code>robot_params.h</code> 에 다섯 줄이 는다. 그래도 <strong>빌드 · 플래시 · 관찰은 한 번</strong>이다.</p>
+
+      <h4 id="s3-2-2">3-2-2. 골격</h4>
+      <p><strong><code>robot_params.h</code> 에 더하는 다섯 줄.</strong> 상태 표기는 값과 <strong>같은 줄</strong>의 주석이다(<code>./scripts/check_nominal.sh</code> 가 그 줄만 센다).</p>
+      <pre><code class="lang-c">#define WHEEL_RADIUS_MM   90    /* NOMINAL(gen1-record): 공칭 바퀴 지름 180 mm / 2 [mm] */
+#define CMD_WATCHDOG_MS   200   /* 계약 v2 */
+#define PID_KP_MILLI      0     /* ____ 여기서(무부하) 한 번, fw-20 에서(바닥 위) 다시 튜닝 [0.001 x] */
+#define PID_KI_MILLI      0     /* ____ 위와 같다 */
+#define PID_KD_MILLI      0     /* ____ 위와 같다 — 0 이 아닌 값으로 하기 전에 2-2 를 읽는다 */</code></pre>
+      <p class="small"><code>CMD_WATCHDOG_MS</code> 만 빈칸이 아니다 — <strong>계약값</strong>이라 내가 정하는 값이 아니기 때문이다(§2-12). 게인 셋은 빈칸이고 <strong>가드가 없다</strong>(§2-4).
+      <code>WHEEL_RADIUS_MM</code> 은 공칭값이고(§2-1 의 등급 상자) 관문 09a 에서 하중을 실은 유효 반지름으로 다시 잰다.</p>
+      <p><strong><code>User/Inc/Device/imu_sample.h</code></strong> — MCU 안의 IMU 자료형 하나만 든 헤더다. <strong><a href="fw-14-wt901.html">fw-14</a> · <a href="fw-15-bno055.html">fw-15</a> 가운데 하나를 먼저 했으면 이미 있다</strong> — 그러면 이 블록은 건너뛰고 <strong>있는 파일을 그대로 둔다</strong>(세 쪽이 같은 내용을 싣는다).</p>
+      <pre><code class="lang-c">/* User/Inc/Device/imu_sample.h - MCU 안에서 쓰는 꼴의 IMU 샘플. 순수.
+ * 와이어 형식이 아니다: 그것은 frames.h (fw-17) 의 imu_payload_t 이고, 변환은 comm_frame.c 가 한다.
+ * fw-13 / fw-14 / fw-15 가운데 먼저 하는 쪽이 만든다 - 이 파일이 이미 있으면
+ * 있는 그대로 둔다. */
+#ifndef IMU_SAMPLE_H
+#define IMU_SAMPLE_H
+#include &lt;stdint.h&gt;
+
+typedef struct {
+  int16_t  ax_mg, ay_mg, az_mg;        /* [mg]      */
+  int16_t  gx_ddps, gy_ddps, gz_ddps;  /* [0.1 deg/s] */
+  uint32_t tick_ms;                    /* 샘플이 완성된 때의 tick_get_ms() */
+  uint16_t seq;                        /* 새 샘플마다 +1. 읽는 쪽은 이 값이 바뀌었을 때만 보낸다 */
+} imu_sample_t;
+
+#endif /* IMU_SAMPLE_H */</code></pre>
+      <p><strong><code>User/Inc/Control/control.h</code></strong> — §2-14 의 문이다. 이 쪽에서 절반은 빈 골격이지만 <strong>이름과 시그니처는 여기서 확정된다.</strong></p>
+      <pre><code class="lang-c">/* User/Inc/Control/control.h — 제어 · 안전 쪽과 나머지 전부 사이의 유일한 문.
+   comm_frame.c (v2 링크)와 CLI 는 "공개" 묶음만 부른다. 반대 방향은 없다: 이쪽의
+   어떤 파일도 comm_frame.h 를 include 해서는 안 된다. fw-19 가 바로 그것을 grep 한다. */
+#ifndef CONTROL_H
+#define CONTROL_H
+#include &lt;stdint.h&gt;
+#include &lt;stdbool.h&gt;
+#include "Device/imu_sample.h"
+
+typedef struct {
+  int32_t  l_tick, r_tick;   /* 누적 카운트의 쪽당(SIDE) 앞뒤 평균 (06a 4-2) */
+  int32_t  batt_mv;          /* 버스 전압 [mV]; 0 = 아직 읽을 부품이 연결되지 않음 */
+  int32_t  current_ma;       /* 배터리 전류 [mA]; 0 = 아직 읽을 부품이 연결되지 않음 */
+  uint8_t  fault;            /* 계약의 fault 비트. fw-18 이 채운다; 여기서는 0 */
+  uint32_t tick_ms;          /* 이 스냅샷이 속한 틱 */
+} state_t;
+
+typedef struct { uint8_t code; uint16_t detail; uint32_t tick_ms; } event_t;
+
+/* ---- 공개: 통신 모듈과 CLI 가 부를 수 있는 것은 이것뿐이다 ---- */
+void    control_set_target(int16_t vl_mm_s, int16_t vr_mm_s);  /* 명령 워치독도 되감는다 */
+void    control_get_state(state_t *out);
+uint8_t control_fault_flags(void);
+void    control_get_imu(imu_sample_t *out, uint8_t sensor_id); /* 0 = WT901, 1 = BNO055.
+                                                                  out-&gt;seq == 0 은 "샘플 없음" */
+bool    control_pop_event(event_t *out);   /* [제안] 이벤트 하나 또는 false. fw-18 까지는 비어 있다 */
+
+/* ---- 모듈 내부: 제어 · 안전 파일 전용. comm_frame.c 는 이것을 부르면 안 된다 ---- */
+void    control_post_event(uint8_t code, uint16_t detail);     /* 1 kHz 에서 안전: 블로킹 없음, printf 없음 */
+uint16_t control_dbg_event_dropped(void);                    /* 벤치 관측용 - 큐가 버린 이벤트 수. fw-18 의 fault 명령이 읽는다(이름표 _dbg_ 규칙) */
+
+/* ---- 연결 ---- */
+void    control_init(void);        /* main 에서 한 번, motor_init() 과 encoder_init() 뒤에 */
+void    control_step_1khz(void);   /* 1 kHz ISR, power_step_1khz() 와 motor_step_1khz() 사이 */
+void    control_cli_register(void);/* "pid" 와 "step" 을 등록한다 */
+#endif</code></pre>
+      <p><strong><code>User/Src/Control/control.c</code></strong> — 세 묶음으로 나눠 싣는다(긴 묶음은 블록 둘). 첫 블록은 <strong>가드와 상태</strong>다. 여기서 이 쪽이 두 개의 EMPTY 키에 <code>_Static_assert</code> 를 <strong>처음</strong> 붙인다.</p>
+      <pre><code class="lang-c">/* User/Src/Control/control.c — 닫힌 속도 루프, 명령 워치독, step 포획.
+   순수하지 않다: encoder.c / motor.c / tick.c 에 손을 뻗는다. 산수는 pid.c 와 protect.c 에 있다. */
+#include "main.h"
+#include "Control/control.h"
+#include "Config/robot_params.h"
+#include "Control/pid.h"
+#include "Periph/encoder.h"
+#include "Periph/motor.h"
+#include "System/tick.h"
+#include "System/wdg.h"
+#include "Tools/cli.h"
+#include "Tools/log.h"      /* FW_ASSERT() - 아래 control_cli_register() 가 쓴다 (fw-03) */
+#include "Control/power.h"  /* power_get_state() / POWER_ARMED - cmd_step() 은 armed 가 아니면 거절한다 (fw-11) */
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;     /* strtol() - cmd_pid() · cmd_step() 이 쓴다 */
+#include &lt;string.h&gt;
+
+/* fw-11 은 MOTOR_SIGN_* 을 EMPTY 로 만들고 일부러 가드를 걸지 않았다: 아직 쓰는 .c 가 없었고,
+   가드가 있었으면 fw-12 가 빌드되지 않았을 것이다. 이 파일이 그것을 쓰는 첫 .c 이므로 가드가
+   여기에 온다 — fw-09 가 ENC_SIGN_* 에 쓴 것과 같은 꼴. */
+_Static_assert((MOTOR_SIGN_FL) != 0, "robot_params.h: MOTOR_SIGN_FL is still EMPTY");
+_Static_assert((MOTOR_SIGN_FR) != 0, "robot_params.h: MOTOR_SIGN_FR is still EMPTY");
+_Static_assert((MOTOR_SIGN_RL) != 0, "robot_params.h: MOTOR_SIGN_RL is still EMPTY");
+_Static_assert((MOTOR_SIGN_RR) != 0, "robot_params.h: MOTOR_SIGN_RR is still EMPTY");
+_Static_assert((MOTOR_SIGN_FL)*(MOTOR_SIGN_FL) == 1 &amp;&amp; (MOTOR_SIGN_FR)*(MOTOR_SIGN_FR) == 1
+            &amp;&amp; (MOTOR_SIGN_RL)*(MOTOR_SIGN_RL) == 1 &amp;&amp; (MOTOR_SIGN_RR)*(MOTOR_SIGN_RR) == 1,
+               "robot_params.h: MOTOR_SIGN_* must be +1 or -1");
+
+/* step 포획의 행 수. 내가 정한다: 이 값이 RAM 비용(행마다 sizeof(step_row_t) — 직접 확인한다,
+   패딩은 잘못 세기 쉽다)과 덤프 시간을 함께 정하고, 덤프 시간은 2-9 의 워치독 예산 행이다.
+   길이 0 짜리 배열은 올바른 C 가 아니므로, 잊으면 보게 되는 것이 아래의 assert 다. */
+#define STEP_CAP_MAX  0    /* ____ 행, 한 행에 1 ms [행] */
+_Static_assert((STEP_CAP_MAX) &gt; 0, "control.c: STEP_CAP_MAX is still EMPTY");
+
+/* 1 ms 창당 카운트 -&gt; mm/s. 안의 값은 전부 내가 재기 전까지 공칭값이다 (2-1). */
+#define TICK_TO_MM_S  (2.0f * 3.14159265f * (float)(WHEEL_RADIUS_MM) / (float)(ENCODER_CPR) / PID_DT_S)
+
+typedef struct { uint16_t t_ms; int16_t target, meas, duty; uint8_t prot; } step_row_t;
+
+static speed_pid_t   s_pid[NW];
+static const int8_t  s_motor_sign[NW] = { MOTOR_SIGN_FL, MOTOR_SIGN_FR, MOTOR_SIGN_RL, MOTOR_SIGN_RR };
+
+static volatile int16_t  s_target_mm_s[2];   /* [0] 왼쪽, [1] 오른쪽. main 이 쓰고 1 kHz ISR 이 읽는다 */
+static volatile uint32_t s_last_cmd_ms;      /* 마지막 control_set_target() 때의 틱 */
+static volatile uint8_t  s_wd_stopped;       /* 1 = 명령 워치독이 목표를 0 으로 만들었다 */
+
+static step_row_t        s_cap[STEP_CAP_MAX];
+static volatile uint16_t s_cap_n;            /* 지금까지 쓴 행 수 */
+static volatile uint16_t s_cap_left;         /* 아직 남은 행 수; 0 = 포획 중이 아님 */
+static uint8_t           s_cap_wheel;        /* 행들이 어느 바퀴의 것인가 */
+static volatile uint32_t s_cap_t0;           /* 첫 포획 행의 틱 */</code></pre>
+      <p class="small"><code>s_</code> 접두어는 파일 안 <code>static</code> 의 규약이다. <code>volatile</code> 이 붙은 다섯만 <strong>두 문맥이 나눠 쓰는 것</strong>이고, 나머지는 한 문맥 전용이다 — 어느 변수를 누가 쓰는지 모르면 <code>volatile</code> 을 붙일지도 정할 수 없다(<a href="fw-11-power-sequence.html#s3-1-2">fw-11 §3-1-2</a> 의 같은 논의).</p>
+      <p>둘째 블록은 <strong>1 kHz 경로</strong>다. 이 함수 안에서 금지되는 것이 주석 마지막 줄에 있다.</p>
+      <pre><code class="lang-c">void control_set_target(int16_t vl_mm_s, int16_t vr_mm_s)   /* 어느 문맥에서든 */
+{
+  /* TODO(you) [T3]: 새 목표를 넣고 명령 워치독을 되감는다 - 힌트 카드 T3
+       1) s_target_mm_s[0] = vl_mm_s, s_target_mm_s[1] = vr_mm_s
+       2) s_last_cmd_ms = tick_get_ms()
+       3) s_wd_stopped = 0u
+     순서를 생각한다: 1 kHz ISR 은 그 가운데 어느 두 줄 사이에서든 돌 수 있다. 어떤 순서라야
+     한 틱 동안 로봇을 느리게만 할 뿐 절대 빠르게 하지 않는가? 답을 적어 둔다.
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)vl_mm_s; (void)vr_mm_s;
+}
+
+void control_step_1khz(void)      /* 1 kHz ISR, 선점 우선순위 1 */
+{
+  /* 1. 명령 워치독 (2-12) */
+  /* TODO(you) [T4]: 명령이 200 ms 넘게 끊겼으면 목표를 0 으로 - 힌트 카드 T4
+       1) age = (uint32_t)(tick_get_ms() - s_last_cmd_ms)  &lt;- 한 바퀴 돌아도(wrap) 안전한 뺄셈, fw-02 의 app_loop() 와 같다
+       2) age &gt; CMD_WATCHDOG_MS 이면: 목표 둘 다 0, s_wd_stopped = 1u, 그리고 네 바퀴 모두 pid_reset() (2-5)
+     여기서 IWDG 는 건드리지 않는다 — 그것은 다른 장치다(2-12). 자리표시는 없다: 비어 있어도 빌드된다. */
+
+  /* 2..5 바퀴마다: 측정 -&gt; 오차 -&gt; PID -&gt; (보호) -&gt; 부호 -&gt; 듀티 */
+  int16_t duty[NW];                      /* PID 가 낸 명령 [permille]. 전진 = + (목표 · 측정과 같은 부호 규약) */
+  float   meas[NW];                      /* 측정 속도 [mm/s]. 6. 의 포획이 다시 쓴다 */
+  for (uint8_t i = 0u; i &lt; (uint8_t)NW; i++) {
+    /* TODO(you) [T5]: 바퀴 하나의 측정 -&gt; 오차 -&gt; PID -&gt; (보호) -&gt; 부호 -&gt; 듀티 - 힌트 카드 T5
+         1) meas[i] = (float)encoder_delta(i) * TICK_TO_MM_S               1 ms 당 카운트 -&gt; mm/s
+         2) int16_t tgt = s_target_mm_s[i &amp; 1u]                             짝수 = 왼쪽, 홀수 = 오른쪽
+         3) duty[i] = (int16_t)pid_step(&amp;s_pid[i], (float)tgt - meas[i])    [permille], 전진 = +
+         4) (실습 C, 2차) protect_step() 이 트립하면 duty[i] = 0, pid_reset(), LD3 켜기
+         5) motor_set(i, (int16_t)(s_motor_sign[i] * duty[i]))              MOTOR_SIGN 은 여기서만 (fw-11) -
+                                                                            duty[i] 는 목표 · 측정과 같은 부호 규약으로
+                                                                            남긴다 (보호와 포획이 읽는다)
+       채우기 시작하면 아래 두 줄(빌드용 자리표시)은 지운다. */
+    duty[i] = 0; meas[i] = 0.0f;
+    (void)s_pid; (void)s_motor_sign;              /* 빈 골격에서 -Wunused-variable 을 막는다 */
+  }
+
+  /* 6. step 실행 중이면 한 행을 포획한다. 저장만 하고 절대 찍지 않는다 (2-9). */
+  /* TODO(you) [T6]: step 포획 한 행 - 힌트 카드 T6
+       1) s_cap_left &gt; 0u 이고 s_cap_n &lt; STEP_CAP_MAX 일 때만
+       2) 첫 행(s_cap_n == 0u)이면 s_cap_t0 = tick_get_ms()
+       3) step_row_t *r = &amp;s_cap[s_cap_n++]
+       4) r-&gt;t_ms = tick_get_ms() - s_cap_t0, r-&gt;target 과 r-&gt;duty 는 s_cap_wheel 의 것,
+          r-&gt;meas = meas[s_cap_wheel] 을 int16 범위로 자른 뒤 반올림, r-&gt;prot = 0u (실습 C 에서 s_prot[s_cap_wheel].tripped)
+       5) --s_cap_left
+     채우기 시작하면 아래 두 줄(빌드용 자리표시)은 지운다. */
+  (void)duty; (void)meas;
+  (void)s_cap; (void)s_cap_wheel;                 /* 빈 골격에서 -Wunused-variable 을 막는다 */
+}</code></pre>
+      <p class="small">같은 파일, 이어서 — 계약이 읽을 스냅샷과, "자리만" 인 네 함수.</p>
+      <pre><code class="lang-c">void control_get_state(state_t *out)      /* 어느 문맥에서든. 실시간 창이 아니라 스냅샷이다 */
+{
+  /* TODO(you) [T7]: 계약이 읽을 스냅샷 한 벌 - 힌트 카드 T7
+       1) out == NULL 이면 돌아간다
+       2) l_tick = (int32_t)(((int64_t)encoder_count(FL) + encoder_count(RL)) / 2)   쪽당(SIDE) 평균 (06a 4-2)
+          r_tick = FR 과 RR 로 같은 식
+       3) current_ma = 이 빌드에 fw-12 가 들어 있으면 adc_get_batt_ma(), 아니면 0
+       4) batt_mv    = ____ : 버스 전압을 어느 부품이 읽을지는 아직 열린 결정이다(I2C 의 INA226 #1,
+                       또는 ADC3 에 넣는 분압기). 기본 경로는 ina226_get_vbus_mv() (fw-10).
+                       내가 정하고 배선하기 전까지는 0 으로 둔다.
+       5) fault = control_fault_flags();  tick_ms = tick_get_ms();
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)out;
+}
+
+uint8_t control_fault_flags(void) { return 0u; }   /* 계약의 비트는 우리 몫이 아니라 fw-18 의 몫이다 */
+
+void control_get_imu(imu_sample_t *out, uint8_t sensor_id)
+{
+  (void)sensor_id;
+  if (out != NULL) { memset(out, 0, sizeof *out); }   /* seq == 0 은 "샘플 없음" (control.h) */
+}
+
+bool control_pop_event(event_t *out)  { (void)out; return false; }   /* 아직 이벤트를 올리는 쪽이 없다 */
+void control_post_event(uint8_t code, uint16_t detail) { (void)code; (void)detail; }</code></pre>
+      <p class="small">마지막 네 함수가 <strong>"자리만" 인 채로 안전한 기본값</strong>을 돌려주는 것이 중요하다 — fw-17 의 통신 모듈은 이 함수들을 부르는 코드를 먼저 쓰게 되고, 그때 이것들이 없으면 그 쪽이 시작조차 못 한다.
+      <code>control_get_imu()</code> 가 <code>bool</code> 이 아닌 이유는 계약 문서(06a §2-5)가 정한 시그니처가 <code>void</code> 라서다. 그래서 "샘플 없음"을 <code>seq == 0</code> 으로 나타내고, 그 약속을 헤더 주석에 적어 둔다.</p>
+      <p>셋째 블록은 <strong>명령 창</strong>이다. 두 명령 <code>pid</code> · <code>step</code> 을 <strong>한 등록 함수</strong>가 등록한다.</p>
+      <pre><code class="lang-c">static void cmd_pid(int argc, char *argv[])      /* main 문맥 */
+{
+  /* TODO(you) [T8]: 게인을 보고 · 바꾸는 명령 - 힌트 카드 T8
+       1) "pid" 또는 "pid show"        -&gt; 한 줄: pid kp_milli=&lt;n&gt; ki_milli=&lt;n&gt; kd_milli=&lt;n&gt;  (게인 x 1000 을 반올림한 정수)
+       2) "pid set &lt;kp|ki|kd&gt; &lt;milli&gt;" -&gt; strtol 로 읽어 / 1000.0f, 네 바퀴의 speed_pid_t 에 넣고 "OK pid"
+       3) 그 밖의 것                   -&gt; "ERR pid bad-arg"
+     RAM 에만 둔다: 리셋하면 robot_params.h 의 값이 돌아온다. 게인을 바꿔도 적분은 리셋되지
+     않는다 — 리셋해야 하는지 정하고, 그 이유를 적는다. 채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)argc; (void)argv;
+}
+
+static void cmd_step(int argc, char *argv[])     /* main 문맥. 이 함수는 일부러 블로킹한다 */
+{
+  /* TODO(you) [T9]: 계단을 넣고 포획하고 덤프한다 - 힌트 카드 T9. 이 순서로:
+     1) 해석  step &lt;fl|fr|rl|rr&gt; &lt;target_mm_s&gt; &lt;ms&gt; [once]
+        "ERR step bad-arg" 로 거절: 틀린 바퀴 이름, ms &lt; 1, ms &gt; STEP_CAP_MAX (자리 없음),
+        벤치에서 내가 허용하는 범위를 넘는 |target| (그 상한은 이 파일의 ____ 상수로 둔다).
+        power_get_state() != POWER_ARMED 이면 "ERR step not-ready" 로 거절 (fw-11) — 움직일
+        수 없는 실행을 포획하면 전원 시퀀스가 내려가 있다는 것을 헷갈리는 방식으로 알게 된다.
+     2) 포획할 바퀴를 pid_reset(), s_cap_n = 0, s_cap_wheel = w, 그리고 맨 마지막에 s_cap_left = ms
+        (이 대입부터 ISR 이 행을 쓴다. s_cap_t0 는 ISR 이 첫 행에서 찍는다 - T6).
+        첫 목표보다 먼저 포획을 건다, 그래야 0 번 행이 생긴다.
+     3) 이 바퀴가 있는 쪽에 control_set_target(). 그다음 s_cap_left == 0 이 될 때까지
+        main 문맥에서 돈다:
+           - "once" 없으면: &lt; CMD_WATCHDOG_MS 간격으로 control_set_target() 재호출   (2-12)
+           - 루프를 돌 때마다 wdg_service_main() 을 부른다                           (2-9)
+     4) control_set_target(0, 0)  — 무엇이든 찍기 전에 모터가 먼저 선다.
+     5) 덤프, 루프 안에서 wdg_service_main() 을 부르면서:
+           # csv step cols=t_ms,target_mm_s,meas_mm_s,duty_permille,prot n=&lt;rows&gt;
+           &lt;t_ms&gt;,&lt;target&gt;,&lt;meas&gt;,&lt;duty&gt;,&lt;prot&gt;      행마다 한 줄
+           # end
+           step n=&lt;rows&gt; prot=&lt;n&gt; trips=&lt;n&gt;           이 명령 자신의 답 줄
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)argc; (void)argv;
+}</code></pre>
+      <p class="small">같은 파일, 이어서 — 초기화와 등록.</p>
+      <pre><code class="lang-c">void control_init(void)      /* main 에서 한 번, motor_init() 과 encoder_init() 뒤에 */
+{
+  /* TODO(you) [T10]: 네 제어기의 게인 · 한계를 넣고, 워치독을 "이미 만료" 로 시작한다 - 힌트 카드 T10
+       1) 바퀴마다: kp = (float)PID_KP_MILLI / 1000.0f (ki, kd 도 같게),
+          out_min = -(float)DUTY_LIMIT_BENCH_PERMILLE, out_max = +(float)DUTY_LIMIT_BENCH_PERMILLE, 그다음 pid_reset()
+       2) 부팅 때 워치독이 이미 만료돼 있으려면 s_last_cmd_ms 는 무엇이어야 하는가?
+     자리표시는 없다: 비어 있어도 빌드된다(게인 0 · 한계 0 - 듀티는 0 에 갇힌다). */
+}
+
+void control_cli_register(void)
+{
+  FW_ASSERT(cli_register("pid",  cmd_pid));
+  FW_ASSERT(cli_register("step", cmd_step));
+}</code></pre>
+      <p class="small">출력 꼴은 fw-05 의 규약 그대로다 — 응답의 첫 낱말이 명령 이름, 값은 <code>키=값</code>, 단위는 키 이름 끝에, 값은 정수.
+      여러 줄 덤프는 <code>#&nbsp;csv …</code> 로 열고 <code>#&nbsp;end</code> 로 닫는다. 마지막 한 줄(<code>step n=… prot=… trips=…</code>)이 이 명령이 돌려주는 답이고, <strong>덤프를 다 지나쳐 스크롤해도 요약이 보이게</strong> 하는 자리다.</p>
+
+      <h4 id="s3-2-3">3-2-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><strong>빈칸 넷부터.</strong> <code>robot_params.h</code> 의 게인 셋은 0 인 채로 두고(§2-4), <code>control.c</code> 의 <code>STEP_CAP_MAX</code> 에 내 값을 적는다.
+        정하는 기준 둘: <strong>RAM</strong>(<code>sizeof(step_row_t)</code> × 행 수)과 <strong>덤프 시간</strong>(§2-9 의 식 — 이쪽은 RAM 의 바이트 수가 아니라 <strong>글자로 찍히는 한 행의 길이</strong>로 센다, 위 다섯 열이면 약 20 B).
+        두 숫자는 다르다: 위 골격의 <code>step_row_t</code> 는 <code>uint16_t</code> 하나 + <code>int16_t</code> 셋 + <code>uint8_t</code> 하나 = 멤버 9 B 지만 정렬 때문에 <strong><code>sizeof</code> 는 10</strong> 이다(집필 중 Mac <code>cc</code> 로 확인).
+        그래서 2000 행이면 RAM 20 kB, 덤프는 2000 x 20 x 1000 ÷ 46 080 = <strong>약 868 ms</strong> 다 — 이 값이 §2-9 의 워치독 예산 행에 그대로 들어가고, 내 IWDG 주기와 견주는 것도 이 값이다. 열을 바꾸면 둘 다 바뀌므로 <strong>내 구성으로 직접 세어</strong> 정한다.
+        이 값을 비워 두면 빌드가 <code>static assertion failed … control.c: STEP_CAP_MAX is still EMPTY</code> 에서 멈춘다(길이 0 짜리 배열은 C 가 아니다 — 가드가 없으면 더 알아보기 어려운 오류가 난다).</li>
+        <li><strong><code>MOTOR_SIGN_*</code> 넷이 fw-11 에서 실측값으로 채워져 있는지 확인한다.</strong> 안 채워져 있으면 이 파일의 가드가 빌드를 세운다 — <strong>그것이 정상이고</strong>, 값은 fw-11 §3-2-4 로 돌아가 통전해서 잰다. 추측해서 적지 않는다.</li>
+        <li><strong><code>control_set_target()</code>.</strong> 세 줄이지만 순서를 생각한다(주석의 질문). 답을 노트에 적는다.</li>
+        <li><strong><code>control_step_1khz()</code> 의 for 루프.</strong> 순서가 곧 §2-10 의 단조 사슬이다: 재고 → 오차 → PID → 부호 → <code>motor_set()</code>.
+        <code>s_target_mm_s</code> 두 칸은 각각 16비트라 하나씩은 찢어지지 않지만 <strong>둘이 짝으로는 찢어질 수 있다</strong>(한 틱 동안 왼쪽은 새 값, 오른쪽은 옛 값). 그것이 이 로봇에서 문제인지 판단하고 노트에 적는다 — 문제라면 둘을 32비트 하나에 담는 길이 있다.</li>
+        <li><strong>명령 워치독.</strong> 뺄셈은 <code>uint32_t</code> 로 한다(<code>tick_get_ms()</code> 는 49일에 한 바퀴 돈다). 만료에서 하는 일은 셋: 목표 0, 표시 세우기, <strong>적분 리셋</strong>(§2-5 를 안 하면 다음 명령의 첫 틱이 옛 적분을 들고 시작한다).</li>
+        <li><strong><code>cmd_step()</code>.</strong> 가장 길다. <strong>3)의 재주입 간격</strong>을 200 ms 보다 넉넉히 짧게 잡는다(예: 50 ms — 계약의 50 Hz 와 같은 박자). <code>wdg_service_main()</code> 을 빠뜨리면 덤프 도중 IWDG 가 보드를 리셋한다.</li>
+        <li><strong>엮기.</strong> <code>app_init()</code> 에 <code>control_init();</code> 와 <code>control_cli_register();</code> 를(<code>motor_*</code> · <code>encoder_*</code> 다음에),
+        1 kHz 콜백 안 <code>power_step_1khz();</code> 와 <code>motor_step_1khz();</code> <strong>사이</strong>에 <code>control_step_1khz();</code> 한 줄을(§2-10),
+        최상위 <code>CMakeLists.txt</code> 의 <code># Add user sources here</code> 에 <code>User/Src/Control/pid.c</code> 와 <code>User/Src/Control/control.c</code> 를 등록한다.</li>
+      </ol>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 3 = T3 · 걸음 4 = T5 · 걸음 5 = T4 · 걸음 6 = T9. 걸음에 따로 없는 T6(포획) · T7(스냅샷) · T8(<code>pid</code> 명령) · T10(초기화)은 골격의 순서대로 채운다 — T10 을 비워 두면 게인이 헤더의 값이 아니라 0 이다. 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <details class="hint" id="hint-t3"><summary>힌트 T3 — <code>control_set_target()</code> · 새 목표를 넣고 명령 워치독을 되감는다</summary>
+        <div class="ans">
+
+        <p><strong>할 일</strong> — 입력은 왼쪽 · 오른쪽 목표 속도(mm/s). 끝났을 때: 두 목표가 들어 있고, "마지막 명령 시각"이 지금이고, 워치독 표시가 지워져 있다. 부르는 쪽은 둘 — 지금은 <code>cmd_step()</code>(T9), fw-17 부터는 통신 모듈. 1 kHz ISR 이 <strong>세 줄 가운데 어디서든</strong> 끼어들 수 있다는 것이 이 함수의 전부다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T3 - User/Src/Control/control.c */
+void control_set_target(int16_t vl_mm_s, int16_t vr_mm_s)   /* 어느 문맥에서든 */
+{
+  s_target_mm_s[0] = vl_mm_s;        /* 1) 목표부터. 시각이 아직 옛것이면 ISR 은 기껏해야 이것을 0 으로 만든다 */
+  s_target_mm_s[1] = vr_mm_s;
+  s_last_cmd_ms    = tick_get_ms();  /* 2) 그다음 시각. 이 줄부터 워치독은 위 목표를 "살아 있는 명령" 으로 본다 */
+  s_wd_stopped     = 0u;             /* 3) 표시는 맨 마지막에 지운다 */
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>s_target_mm_s[0] = vl_mm_s;</code> · <code>[1] = vr_mm_s;</code> — 목표부터. 두 칸은 <code>volatile int16_t</code> 라 각각은 한 번에 쓰인다(Cortex-M7 의 16비트 저장은 찢어지지 않는다). <strong>둘이 짝으로는 찢어질 수 있다</strong> — 한 틱 동안 왼쪽은 새 값, 오른쪽은 옛 값(§3-2-3 의 4 가 그 판단을 내게 맡겼다).</li>
+          <li><code>s_last_cmd_ms = tick_get_ms();</code> — 그다음 시각. 이 줄이 명령 워치독을 되감는 <strong>유일한</strong> 자리다(§2-12 의 (가)). 통신 모듈은 워치독을 몰라도 된다 — 이 함수를 부르는 것으로 끝이다.</li>
+          <li><code>s_wd_stopped = 0u;</code> — 표시는 맨 마지막. ISR 이 세우고(T4) 이 함수만 지운다.</li>
+          <li><strong>왜 이 순서인가</strong>(골격의 질문) — 시각을 <strong>먼저</strong> 쓰면, ISR 이 그 사이에 돌 때 "살아 있는 명령"으로 <strong>옛 목표</strong>를 본다. 옛 목표가 새 것보다 크면 한 틱 동안 로봇이 명령보다 <strong>빠르다</strong>. 목표를 먼저 쓰면, ISR 이 그 사이에 돌 때 "만료된 명령"으로 <strong>새 목표</strong>를 보고 0 으로 만든다 — 느려질 뿐이다. 그 대가도 적어 둔다: 만료 직후의 첫 명령이 ISR 과 겹치면 그 명령은 통째로 0 이 되고 다음 명령(50 Hz 면 20 ms 뒤)이 되살린다. 이 쪽에서는 그 방향이 옳은 방향이다.</li>
+          <li>골격의 <code>(void)vl_mm_s; (void)vr_mm_s;</code> 는 지웠다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — 세 줄을 <code>__disable_irq(); … __enable_irq();</code> 로 감싸 ISR 이 끼어들 수 없게 하면 순서를 따질 일이 없어진다. 대가는 1 kHz 틱이 수십 ns 늦어질 수 있다는 것과, "왜 이 순서인가"를 더는 생각하지 않게 된다는 것이다. 둘 다 옳은 설계다 — 어느 쪽이든 이유를 노트에 적는다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>uint32_t tick_get_ms(void);</code>(fw-06 의 <code>System/tick.h</code>). 어느 문맥에서든 부를 수 있다. 1 ms 마다 1 씩 늘고 49.7 일에 한 바퀴 돈다 — 그래서 T4 의 뺄셈이 <code>uint32_t</code> 다.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>시각을 먼저 썼다</td><td>컴파일러는 조용하다. 아주 드물게(ISR 이 두 줄 사이에 돌 때) 한 틱 동안 옛 목표로 달린다 — 벤치에서 재현되지 않는 종류의 버그다</td><td>목표 → 시각 → 표시</td></tr>
+            <tr><td><code>s_last_cmd_ms = tick_get_ms();</code> 를 빼먹었다</td><td><code>step</code> 이 200 ms 쯤 뒤 저절로 선다(증상 표의 "저절로 선다" 행)</td><td>이 함수 안이 되감는 자리다(§2-12)</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — T4 · T9 까지 채운 뒤 §3-2-4 의 <code>step fl 200 1000</code> 에서 <code>target_mm_s</code> 열이 끝까지 200 이면(재주입이 되감고 있다), 그리고 <code>once</code> 에서 200 ms 행부터 0 이면 이 함수가 맞다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t4"><summary>힌트 T4 — <code>control_step_1khz()</code> · 1. 명령 워치독</summary>
+        <div class="ans">
+
+        <p><strong>할 일</strong> — 마지막 명령으로부터 몇 ms 지났는지 세고, <code>CMD_WATCHDOG_MS</code>(계약의 200) 를 넘었으면 목표를 0 으로, 표시를 세우고, 네 제어기의 적분을 지운다. 1 kHz ISR 의 첫 단계다 — 뒤의 2..5 가 이 틱에 "목표 0" 을 보게 하려면 <strong>앞에</strong> 있어야 한다. IWDG 는 건드리지 않는다(§2-12 — 다른 장치다).</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T4 - User/Src/Control/control.c 의 control_step_1khz() 안, 1. */
+  /* 1. 명령 워치독 (2-12) */
+  const uint32_t age = (uint32_t)(tick_get_ms() - s_last_cmd_ms);   /* 한 바퀴 돌아도(wrap) 안전한 뺄셈 */
+  if (age &gt; CMD_WATCHDOG_MS) {
+    s_target_mm_s[0] = 0;                                            /* 만료 중에는 틱마다: 목표 둘 다 0 */
+    s_target_mm_s[1] = 0;
+    s_wd_stopped = 1u;                                               /* 표시. 지우는 쪽은 control_set_target() 뿐 */
+    for (uint8_t i = 0u; i &lt; (uint8_t)NW; i++) { pid_reset(&amp;s_pid[i]); }   /* 과거를 들고 가지 않는다 (2-5) */
+  }</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>const uint32_t age = (uint32_t)(tick_get_ms() - s_last_cmd_ms);</code> — 부호 없는 뺄셈. <code>tick_get_ms()</code> 가 한 바퀴 돌아 작은 수가 돼도 결과는 올바른 "경과 ms" 다(2<sup>32</sup> 로 되감기는 것이 정의된 동작이라서 — fw-02 의 <code>app_loop()</code> · fw-09 의 <code>encoder_delta_raw()</code> 와 같은 꼴). <code>const</code> 는 "이 틱 안에서 다시 바뀌지 않는 값"이라는 표시다.</li>
+          <li><code>if (age &gt; CMD_WATCHDOG_MS)</code> — 계약의 글자는 "200 ms 동안 없으면". <code>&gt;</code> 는 201 ms 째에, <code>&gt;=</code> 는 200 ms 째에 선다 — 1 ms 차이이고 어느 쪽이든 되지만, 고른 것을 노트에 적는다(§3-2-4 의 <code>once</code> 행 번호가 그 답이다).</li>
+          <li><code>s_target_mm_s[0] = 0; [1] = 0;</code> — 만료 중에는 <strong>틱마다</strong> 0 을 쓴다. 한 번만 쓰고 말면 그 사이 <code>control_set_target()</code> 의 목표 두 줄(T3 의 1)과 겹칠 때 옛 목표가 살아난다.</li>
+          <li><code>s_wd_stopped = 1u;</code> — 표시. 지금은 아무도 읽지 않는다 — fw-18 이 이것을 fault 비트로 올린다. 지우는 쪽은 <code>control_set_target()</code> 뿐이다.</li>
+          <li><code>for (…) { pid_reset(&amp;s_pid[i]); }</code> — §2-5 의 규칙 "목표가 0 으로 내려올 때 적분을 0 으로". 틱마다 다시 불러도 해가 없다(이미 0 을 0 으로). 이것이 없으면 다음 명령의 첫 틱이 옛 적분을 들고 시작한다 — 체크포인트 <code>stop-resets-integrator</code>.</li>
+          <li><code>(uint8_t)NW</code> — <code>NW</code> 는 <code>enum</code>(= 4) 이라 <code>int</code> 다. <code>uint8_t i</code> 와 비교할 때 캐스트로 부호를 맞춘다(fw-08 의 <code>motor.c</code> 와 같은 습관).</li>
+          <li>이 자리에는 자리표시가 없었다 — 비어 있어도 빌드되고, 그러면 워치독이 없는 로봇이다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>tick_get_ms()</code>(T3 과 같다) · <code>pid_reset()</code>(T1).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>if (tick_get_ms() &gt; s_last_cmd_ms + CMD_WATCHDOG_MS)</code></td><td>컴파일러는 둘 다 조용하다(2026-10-03 확인). 49.7 일마다 한 번, 되감기는 순간에 틀린다 — 벤치에서는 영영 안 보인다</td><td>뺄셈으로 "경과"를 만들고 그것을 비교한다</td></tr>
+            <tr><td><code>pid_reset()</code> 을 빼먹었다</td><td>같은 <code>step</code> 을 두 번 돌리면 두 번째의 앞 몇 행이 다르다 · 정지 뒤 아주 천천히 돈다(증상 표)</td><td>§2-5</td></tr>
+            <tr><td>여기서 <code>wdg_service_main()</code> 이나 IWDG 를 건드렸다</td><td>빌드는 된다. 두 워치독이 섞인다 — §2-12 의 상자</td><td>지운다. IWDG 는 fw-06 의 몫이다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-2-4 의 <code>step fl 200 1000 once</code>: <code>target_mm_s</code> 열이 0 으로 바뀌는 행의 <code>t_ms</code> 를 적는다(체크포인트 <code>step-once-target-zeroed</code>). 집필 중 호스트 시뮬레이션(플랜트 모형, 2026-10-03)에서는 <code>&gt;</code> 로 쓴 이 코드가 <strong>200 번 행</strong>(<code>200,0,…</code>)부터 0 을 냈다 — 보드에서는 내가 확인한다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t5"><summary>힌트 T5 — <code>control_step_1khz()</code> · 2..5 바퀴마다 측정 → PID → (보호) → 듀티</summary>
+        <div class="ans">
+
+        <p><strong>할 일</strong> — 바퀴 하나에 대해: 1 ms 창의 카운트를 mm/s 로, 목표와의 오차를 PID 에, 그 출력을(실습 C 부터는 보호를 거쳐) 드라이버에. §2-10 의 단조 사슬이 이 루프 안에서도 성립한다 — PID 가 만들고, 보호가 줄이고, <code>motor_set()</code> 이 벤치 상한으로 한 번 더 자른다. 아래는 <strong>실습 C 까지 넣은 2차 모습</strong>이다 — 실습 B 를 구울 때는 주석이 가리키는 <strong>여섯 줄</strong>(<code>const protect_in_t in</code> 부터 닫는 <code>}</code> 까지) 앞에 <code>//</code> 를 붙여 막는다(아직 <code>s_prot</code> 가 없다). <code>/* … */</code> 로 감싸지 않는다 — 세 줄의 끝에 이미 블록 주석이 있어 중첩되고, 줄마다 감싸 보니 arm-gcc 가 <code>warning: "/*" within comment [-Wcomment]</code> 에 이어 <code>error: expected expression before '/' token</code> 으로 멈췄다(2026-10-03 확인).</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T5 - User/Src/Control/control.c 의 control_step_1khz() 안, 2..5 (2차까지 넣은 모습) */
+  /* 2..5 바퀴마다: 측정 -&gt; 오차 -&gt; PID -&gt; (보호) -&gt; 부호 -&gt; 듀티 */
+  int16_t duty[NW];                      /* PID 가 낸 명령 [permille]. 전진 = + (목표 · 측정과 같은 부호 규약) */
+  float   meas[NW];                      /* 측정 속도 [mm/s]. 6. 의 포획이 다시 쓴다 */
+  for (uint8_t i = 0u; i &lt; (uint8_t)NW; i++) {
+    meas[i]     = (float)encoder_delta(i) * TICK_TO_MM_S;      /* 1 ms 당 카운트 -&gt; mm/s */
+    int16_t tgt = s_target_mm_s[i &amp; 1u];                       /* 짝수 = 왼쪽, 홀수 = 오른쪽 */
+    float   u   = pid_step(&amp;s_pid[i], (float)tgt - meas[i]);   /* 오차 -&gt; [permille], 이미 ±DUTY_LIMIT_BENCH_PERMILLE 안 */
+    duty[i]     = (int16_t)u;
+    /* 2차 (실습 C, 3-3-4 의 3): PID 와 motor_set() 사이에 보호가 앉는다. 실습 B 를 구울 때는 아래 여섯 줄 앞에 // 를 붙여 막는다 (줄 끝 주석 때문에 블록 주석으로 감싸면 중첩된다) */
+    const protect_in_t in = { tgt, (int32_t)meas[i], duty[i] };
+    if (protect_step(&amp;s_prot[i], &amp;s_prot_cfg, &amp;in) != 0u) {
+      duty[i] = 0;                                             /* 이 바퀴만 끊는다. 넷을 다 세울지는 fw-18 의 결정 */
+      pid_reset(&amp;s_pid[i]);                                    /* 다시 시작할 때 과거를 들고 가지 않는다 (2-5) */
+      HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET); /* 빨강 = fault 래치 */
+    }
+    motor_set(i, (int16_t)(s_motor_sign[i] * duty[i]));        /* MOTOR_SIGN 이 "전진" 을 드라이버의 부호로 바꾼다 (fw-11).
+                                                                  motor_set() 이 내 벤치 상한으로 한 번 더 자른다 */
+  }</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>int16_t duty[NW]; float meas[NW];</code> — 루프 <strong>밖</strong>의 배열 둘. 6. 의 포획(T6)이 <code>s_cap_wheel</code> 번째 값을 다시 읽어야 하므로 루프 안의 지역 변수로는 안 된다. 골격의 <code>int16_t duty[NW];</code> 한 줄이 이 두 줄이 됐다.</li>
+          <li><code>meas[i] = (float)encoder_delta(i) * TICK_TO_MM_S;</code> — 직전 호출 이후의 카운트(부호 적용, fw-09 실습 B) × "카운트 하나가 1 ms 에 몇 mm/s 인가"(<code>TICK_TO_MM_S</code>, 첫 블록의 매크로). <code>(float)</code> 캐스트가 없으면 <code>int32_t × float</code> 라 어차피 <code>float</code> 로 승격되지만, 뜻을 눈에 보이게 적는다.</li>
+          <li><code>int16_t tgt = s_target_mm_s[i &amp; 1u];</code> — <code>i &amp; 1u</code> 는 "홀수인가": FL(0) · RL(2) 는 왼쪽 목표, FR(1) · RR(3) 는 오른쪽. <code>enum</code> 의 순서(<code>FL, FR, RL, RR</code>)가 이 한 비트를 가능하게 한다.</li>
+          <li><code>float u = pid_step(&amp;s_pid[i], (float)tgt - meas[i]);</code> · <code>duty[i] = (int16_t)u;</code> — 오차는 목표 − 측정. 반환값은 이미 <code>±DUTY_LIMIT_BENCH_PERMILLE</code> 안이라(T10 이 그렇게 넣는다) <code>int16_t</code> 로 자르는 캐스트는 안전하다. <strong><code>duty[i]</code> 는 "전진 = +" 인 채로 둔다</strong> — 골격의 옛 주석은 여기서 <code>MOTOR_SIGN</code> 을 곱했지만, 그러면 보호(<code>sgn(target) == sgn(duty)</code>)와 포획의 <code>duty</code> 열이 <code>MOTOR_SIGN = -1</code> 인 바퀴에서 거꾸로 읽힌다. 부호는 드라이버에 쓰는 마지막 줄에서만.</li>
+          <li><code>const protect_in_t in = { tgt, (int32_t)meas[i], duty[i] };</code> — 보호에 넘길 셋을 구조체 하나로. 순서는 <code>protect.h</code> 의 필드 순서(목표 · 측정 · 듀티)다. <code>(int32_t)meas[i]</code> 는 소수를 버린다 — 보호의 문턱은 mm/s 정수라 충분하다.</li>
+          <li><code>if (protect_step(&amp;s_prot[i], &amp;s_prot_cfg, &amp;in) != 0u) { … }</code> — 래치된 비트가 하나라도 있으면: 이 바퀴의 듀티 0, 적분 0(§2-5 의 둘째 자리), LD3 ON(빨강 = fault 래치 — fw_style 의 LED 역할). <strong>끊는 범위는 이 바퀴 하나</strong>이고 넷을 다 세울지 · MOTOR_EN 을 내릴지는 fw-18 의 결정이다(§3-3-4 의 3).</li>
+          <li><code>motor_set(i, (int16_t)(s_motor_sign[i] * duty[i]));</code> — 여기서만 <code>MOTOR_SIGN</code>. <code>int8_t × int16_t</code> 는 <code>int</code> 로 승격되므로 <code>(int16_t)</code> 로 되돌린다. <code>motor_set()</code> 이 <code>DUTY_LIMIT_BENCH_PERMILLE</code> 로 한 번 더 자른다(fw-08) — PID 의 한계와 같은 값이라 평소에는 아무 일도 안 하지만, 두 겹인 것이 맞다.</li>
+          <li>골격의 <code>duty[i] = 0; meas[i] = 0.0f;</code> 는 지웠다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① 보호에 넘기는 <code>duty</code> 를 "이번 틱에 드라이버에 쓴 값"(<code>protect.h</code> 의 주석)으로 읽어 <code>motor_set()</code> 뒤에 보호를 두는 꼴도 생각할 수 있다 — 그러면 트립한 틱에 듀티가 한 번 나간다. 이 쪽은 단조 사슬(§2-10)대로 PID 와 <code>motor_set()</code> 사이에 둔다. ② 트립했을 때 네 바퀴를 다 0 으로 하는 것은 fw-18 에서 정한다 — 여기서 미리 해도 틀리지 않는다.</li>
+        </ul>
+        <p><strong>실습 C 가 첫 블록(가드와 상태)에 더하는 것</strong> — §3-3-4 의 1 · 2 다. TODO 자리는 아니지만 위 코드가 이것 없이는 빌드되지 않는다. <code>#include "Control/protect.h"</code> 를 <code>"Control/pid.h"</code> 아래에 더하고, <code>MOTOR_SIGN_*</code> 가드 아래에 이 블록을 둔다.</p>
+        <pre><code class="lang-c">/* 3-3-4 의 1 · 2 가 control.c 의 첫 블록(가드와 상태)에 더하는 것. TODO 자리가 아니라 2차에서 끼운다 */
+_Static_assert((STALL_TARGET_MIN_MM_S) != 0,           "robot_params.h: STALL_TARGET_MIN_MM_S is still EMPTY");
+_Static_assert((STALL_SPEED_MAX_MM_S) != 0,            "robot_params.h: STALL_SPEED_MAX_MM_S is still EMPTY");
+_Static_assert((STALL_DUTY_MIN_PERMILLE) != 0,         "robot_params.h: STALL_DUTY_MIN_PERMILLE is still EMPTY");
+_Static_assert((STALL_HOLD_MS) != 0,                   "robot_params.h: STALL_HOLD_MS is still EMPTY");
+_Static_assert((FBLOST_TARGET_MIN_MM_S) != 0,          "robot_params.h: FBLOST_TARGET_MIN_MM_S is still EMPTY");
+_Static_assert((FBLOST_DUTY_MIN_PERMILLE) != 0,        "robot_params.h: FBLOST_DUTY_MIN_PERMILLE is still EMPTY");
+_Static_assert((FBLOST_SPEED_PER_PERMILLE_MILLI) != 0, "robot_params.h: FBLOST_SPEED_PER_PERMILLE_MILLI is still EMPTY");
+_Static_assert((FBLOST_HOLD_MS) != 0,                  "robot_params.h: FBLOST_HOLD_MS is still EMPTY");
+_Static_assert((FBSIGN_SPEED_MIN_MM_S) != 0,           "robot_params.h: FBSIGN_SPEED_MIN_MM_S is still EMPTY");
+_Static_assert((FBSIGN_HOLD_MS) != 0,                  "robot_params.h: FBSIGN_HOLD_MS is still EMPTY");
+_Static_assert((STALL_TARGET_MIN_MM_S) &gt; (STALL_SPEED_MAX_MM_S),
+               "robot_params.h: STALL_TARGET_MIN_MM_S must be greater than STALL_SPEED_MAX_MM_S (A &gt; B)");
+
+static protect_t           s_prot[NW];              /* 바퀴마다 지속 카운터 셋 + 래치 */
+static const protect_cfg_t s_prot_cfg = {           /* 칸 이름 = 키 이름의 소문자. 지정 초기화로 짝을 눈으로 맞춘다 */
+  .stall_target_min_mm_s          = STALL_TARGET_MIN_MM_S,
+  .stall_speed_max_mm_s           = STALL_SPEED_MAX_MM_S,
+  .stall_duty_min_permille        = STALL_DUTY_MIN_PERMILLE,
+  .stall_hold_ms                  = STALL_HOLD_MS,
+  .fblost_target_min_mm_s         = FBLOST_TARGET_MIN_MM_S,
+  .fblost_duty_min_permille       = FBLOST_DUTY_MIN_PERMILLE,
+  .fblost_speed_per_permille_milli = FBLOST_SPEED_PER_PERMILLE_MILLI,
+  .fblost_hold_ms                 = FBLOST_HOLD_MS,
+  .fbsign_speed_min_mm_s          = FBSIGN_SPEED_MIN_MM_S,
+  .fbsign_hold_ms                 = FBSIGN_HOLD_MS,
+};</code></pre>
+        <p>지정 초기화(<code>.stall_hold_ms = STALL_HOLD_MS</code>)는 "어느 칸에 어느 키" 를 눈으로 맞추게 한다 — 순서대로 열 개를 나열하면 하나가 밀려도 컴파일러는 모른다. 열한 번째 <code>_Static_assert</code> 가 §2-7 표의 각주(A &gt; B)다.</p>
+        <p><strong>쓰는 API</strong></p>
+        <ul>
+          <li><code>int32_t encoder_delta(int wheel);</code> — fw-09 실습 B. "그 바퀴의 직전 호출 이후 부호 적용 카운트". <strong>부르는 쪽은 하나뿐</strong>이어야 한다 — 다른 데서 부르면 그만큼의 카운트를 훔쳐 간다. 1 kHz 소비자가 그 하나다.</li>
+          <li><code>void motor_set(uint8_t wheel, int16_t permille);</code> — fw-08. main 또는 1 kHz ISR 에서. 벤치 상한으로 자른 뒤 TIM1/TIM8 의 CCR 을 쓴다.</li>
+          <li><code>uint8_t protect_step(protect_t *p, const protect_cfg_t *c, const protect_in_t *in);</code> — T14. 래치된 비트를 돌려준다.</li>
+          <li><code>void HAL_GPIO_WritePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin, GPIO_PinState PinState);</code> — <code>stm32h7xx_hal_gpio.h:266</code>. BSRR 레지스터 쓰기 한 번이라 ISR 에서 불러도 된다. <code>LD3_GPIO_Port</code> · <code>LD3_Pin</code> 은 CubeMX 가 <code>main.h</code> 에 만든 이름이다.</li>
+        </ul>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>duty[i] = (int16_t)(s_motor_sign[i] * (int)u);</code> 로 부호를 <code>duty</code> 에 넣었다</td><td>컴파일러는 조용하다. <code>MOTOR_SIGN = -1</code> 인 바퀴에서 FEEDBACK_SIGN 이 구동을 제동으로 보아 <strong>영영 안 서고</strong>, CSV 의 <code>duty</code> 열이 <code>target</code> 과 반대 부호다</td><td>부호는 <code>motor_set()</code> 인자에서만</td></tr>
+            <tr><td><code>motor_set(i, s_motor_sign[i] * duty[i]);</code> — 캐스트 없이</td><td>컴파일러는 둘 다 조용하다(<code>int</code> → <code>int16_t</code> 암묵 변환). 값은 ±1000 안이라 같다</td><td>캐스트를 적어 뜻을 보인다 — 필수는 아니다</td></tr>
+            <tr><td>보호를 <code>motor_set()</code> 뒤에 뒀다</td><td>트립한 틱에 듀티가 한 번 나간다 — 1 ms 라 눈에는 안 보인다</td><td>§2-10 — 줄이는 것은 만드는 것 뒤, 쓰는 것 앞</td></tr>
+            <tr><td><code>s_prot_cfg</code> 를 순서대로 나열하다 한 칸 밀렸다</td><td>컴파일러는 조용하다(전부 정수). 어느 보호가 엉뚱한 문턱으로 판정한다</td><td>지정 초기화로</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 실습 B: §3-2-4 의 기준선(게인 0 → <code>meas</code> · <code>duty</code> 가 0 인 평평한 선), 그다음 게인을 올리며 곡선. 실습 C: §3-3-4 의 ① 에서 <code>prot</code> 열이 <code>2</code> 로 바뀌는 행부터 <code>duty</code> 가 0 이고 LD3 가 켜진다(체크포인트 <code>fblost-trips-on-unplug</code>). 집필 중 호스트 시뮬레이션(엔코더를 끊은 플랜트 모형, 시험용 문턱, 2026-10-03)에서 같은 모양을 확인했다 — <code>prot</code> 가 서는 행부터 <code>duty 0</code>, 요약 줄 <code>prot=2 trips=1</code>. 어느 비트가 <strong>먼저</strong> 서는가는 내 문턱(지속 시간 · 속도 게이트)에 달렸다 — ② 에서 <code>4</code> 가 아니라 <code>2</code> 가 먼저 섰다면 코드가 아니라 문턱을 본다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t6"><summary>힌트 T6 — <code>control_step_1khz()</code> · 6. step 포획 한 행</summary>
+        <div class="ans">
+
+        <p><strong>할 일</strong> — <code>step</code> 이 돌고 있으면(<code>s_cap_left &gt; 0</code>) 이 틱의 목표 · 측정 · 듀티 · 보호 비트를 RAM 의 다음 행에 적는다. <strong>저장만 하고 절대 찍지 않는다</strong>(§2-9). 찍는 것은 <code>cmd_step()</code>(T9)이 다 끝난 뒤 main 문맥에서 한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T6 - User/Src/Control/control.c 의 control_step_1khz() 안, 6. */
+  /* 6. step 실행 중이면 한 행을 포획한다. 저장만 하고 절대 찍지 않는다 (2-9). */
+  if (s_cap_left &gt; 0u &amp;&amp; s_cap_n &lt; STEP_CAP_MAX) {
+    if (s_cap_n == 0u) { s_cap_t0 = tick_get_ms(); }           /* 첫 행의 틱. 그래서 t_ms 는 행 번호와 같다(틱을 빠뜨리지 않았다면) */
+    step_row_t *r = &amp;s_cap[s_cap_n++];                         /* 다음 빈 행을 가리키고, 행 수를 하나 올린다 */
+    float m = meas[s_cap_wheel];
+    if (m &gt;  32767.0f) { m =  32767.0f; }                      /* int16 에 담기 전에 자른다 (2-13: gdb 뒤의 큰 튐) */
+    if (m &lt; -32768.0f) { m = -32768.0f; }
+    r-&gt;t_ms   = (uint16_t)(tick_get_ms() - s_cap_t0);
+    r-&gt;target = s_target_mm_s[s_cap_wheel &amp; 1u];
+    r-&gt;meas   = (int16_t)(m + ((m &gt;= 0.0f) ? 0.5f : -0.5f));   /* 반올림: 자르기 전에 0.5 를 더한다(음수는 뺀다) */
+    r-&gt;duty   = duty[s_cap_wheel];
+    r-&gt;prot   = s_prot[s_cap_wheel].tripped;                   /* 2차 (3-3-4 의 3). 실습 B 에서는 이 자리에 0u */
+    --s_cap_left;
+  }</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>if (s_cap_left &gt; 0u &amp;&amp; s_cap_n &lt; STEP_CAP_MAX)</code> — 두 조건. 첫째는 "포획 중인가", 둘째는 배열 밖에 쓰지 않는 가드다. <code>cmd_step()</code> 이 <code>ms &gt; STEP_CAP_MAX</code> 를 거절하므로(T9) 둘째가 걸릴 일은 없어야 하지만, ISR 에서의 배열 밖 쓰기는 가장 찾기 어려운 고장이라 두 겹으로 둔다.</li>
+          <li><code>if (s_cap_n == 0u) { s_cap_t0 = tick_get_ms(); }</code> — 첫 행의 틱을 <strong>ISR 이</strong> 찍는다. 그러면 <code>t_ms</code> 가 행 번호와 같아진다(0, 1, 2, …) — 틱을 빠뜨리지 않았다면. §3-2-4 가 "<code>t_ms</code> 와 행 번호가 어긋나면 그 자체가 관찰"이라 한 것이 이 성질 위에 서 있다.</li>
+          <li><code>step_row_t *r = &amp;s_cap[s_cap_n++];</code> — 다음 빈 행의 <strong>주소</strong>를 잡고(<code>&amp;</code>), 행 수를 하나 올린다(<code>++</code> 가 뒤에 있으니 "쓴 뒤에 올린다"). 아래 다섯 줄은 <code>r-&gt;</code> 로 그 행에 쓴다 — <code>s_cap[s_cap_n].t_ms = …</code> 를 다섯 번 쓰는 것보다 짧고, 색인을 한 번만 계산한다.</li>
+          <li><code>float m = meas[s_cap_wheel]; if (m &gt; 32767.0f) …</code> — <code>int16_t</code> 에 담기 전에 범위를 자른다. 범위 밖의 <code>float</code> 를 정수로 캐스트하는 것은 정의되지 않은 동작이다(아래 표의 진단 메시지). 평소 속도는 수백 mm/s 라 걸릴 일이 없지만 §2-13 의 "gdb 뒤의 큰 튐"이 바로 그 경우다.</li>
+          <li><code>r-&gt;t_ms = (uint16_t)(tick_get_ms() - s_cap_t0);</code> — 첫 행으로부터의 ms. <code>STEP_CAP_MAX</code> 가 65 535 이하면 <code>uint16_t</code> 에 들어간다.</li>
+          <li><code>r-&gt;target = s_target_mm_s[s_cap_wheel &amp; 1u];</code> — T5 와 같은 "홀수 = 오른쪽". 워치독이 0 으로 만든 뒤라면 여기 0 이 찍힌다 — <code>once</code> 의 관찰이 이 열이다.</li>
+          <li><code>r-&gt;meas = (int16_t)(m + ((m &gt;= 0.0f) ? 0.5f : -0.5f));</code> — 반올림. 캐스트는 소수를 <strong>버리므로</strong>(0 쪽으로) 0.5 를 더하고(음수는 빼고) 버리면 반올림이 된다. <code>roundf()</code> 를 써도 되지만 <code>&lt;math.h&gt;</code> 와 링크 옵션이 따라온다.</li>
+          <li><code>r-&gt;duty = duty[s_cap_wheel];</code> · <code>r-&gt;prot = s_prot[s_cap_wheel].tripped;</code> — T5 가 남긴 배열에서. <code>prot</code> 은 실습 B 에서는 <code>0u</code> 로 두었다가 실습 C 에서 바꾼다.</li>
+          <li><code>--s_cap_left;</code> — 남은 행 수를 하나 줄인다. <strong>이 줄이 <code>cmd_step()</code> 의 <code>while</code> 을 끝낸다</strong> — 빼먹으면 아래 표의 첫 행이다.</li>
+          <li>골격의 <code>(void)duty; (void)meas;</code> 는 지웠다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — <code>s_cap_t0</code> 를 <code>cmd_step()</code> 에서 포획을 걸 때 찍어도 된다(골격의 처음 주석이 그랬다). 그러면 첫 행의 <code>t_ms</code> 가 0 또는 1 로 흔들리고(걸고 나서 첫 틱까지의 시간), 행 번호와 1 어긋날 수 있다 — 어느 쪽이든 되지만 §3-2-4 를 읽을 때 그 1 을 알고 있어야 한다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>tick_get_ms()</code>(T3 과 같다).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>--s_cap_left</code> 를 빼먹었다</td><td>빌드는 된다. <code>cmd_step()</code> 이 <strong>영영</strong> 돈다 — 그 안에서 <code>wdg_service_main()</code> 을 먹이므로 IWDG 도 리셋하지 않고, 재주입이 목표를 계속 되살려 <strong>바퀴가 멈추지 않는다.</strong> 남는 수단은 STOP 리스트 5번의 물리적 차단뿐이다</td><td>이 줄. 그리고 첫 <code>step</code> 은 <strong>짧은 ms</strong> 로(§3-2-4 의 경고 상자)</td></tr>
+            <tr><td>자르지 않고 <code>(int16_t)m</code></td><td>컴파일러는 조용하다. 호스트의 진단 빌드가 같은 꼴에서 하는 말(2026-10-03): <code>runtime error: 40000 is outside the range of representable values of type 'short'</code> — 보드에서는 엉뚱한 수가 조용히 찍힌다</td><td>범위를 먼저 자른다</td></tr>
+            <tr><td><code>s_cap_n &lt; STEP_CAP_MAX</code> 가드를 뺐다</td><td>지금은 <code>cmd_step()</code> 이 막아 준다. 두 가드가 서로를 믿는 구조는 하나가 바뀔 때 깨진다</td><td>둘 다 둔다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-2-4 의 첫 CSV: 요청한 행 수만큼 나오고 <code>t_ms</code> 가 0 부터 행 번호와 같다(체크포인트 <code>step-csv-captured</code>). 집필 중 호스트 시뮬레이션(2026-10-03)에서 <code>step fl 200 5</code> 가 <code>0,200,0,0,0</code> ~ <code>4,200,0,0,0</code> 다섯 행과 <code>step n=5 prot=0 trips=0</code> 을 냈다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t7"><summary>힌트 T7 — <code>control_get_state()</code> · 계약이 읽을 스냅샷 한 벌</summary>
+        <div class="ans">
+
+        <p><strong>할 일</strong> — 출력 인자 <code>out</code> 에 <code>state_t</code> 를 채운다: 쪽당 엔코더 평균 둘, 버스 전압 · 전류(아직 0), fault 비트, 이 틱. 부르는 쪽은 fw-17 의 통신 모듈(50 Hz 상태 프레임)이다 — 지금은 아무도 부르지 않지만 <strong>시그니처와 뜻은 여기서 확정</strong>된다(§2-14). 실시간 창이 아니라 <strong>스냅샷</strong>이다: 여섯 값이 같은 틱의 것이라는 보장은 없고, 계약도 그것을 요구하지 않는다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T7 - User/Src/Control/control.c */
+void control_get_state(state_t *out)      /* 어느 문맥에서든. 실시간 창이 아니라 스냅샷이다 */
+{
+  if (out == NULL) { return; }
+  out-&gt;l_tick     = (int32_t)(((int64_t)encoder_count(FL) + encoder_count(RL)) / 2);   /* 쪽당(SIDE) 평균 (06a 4-2) */
+  out-&gt;r_tick     = (int32_t)(((int64_t)encoder_count(FR) + encoder_count(RR)) / 2);
+  out-&gt;batt_mv    = 0;                    /* ____ 버스 전압을 어느 부품이 읽을지 정하고 배선하기 전까지 0 */
+  out-&gt;current_ma = 0;                    /* fw-12 를 이 빌드에 넣었으면 adc_get_batt_ma() */
+  out-&gt;fault      = control_fault_flags();
+  out-&gt;tick_ms    = tick_get_ms();
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>if (out == NULL) { return; }</code> — 출력 인자의 첫 줄은 늘 이것이다(fw-05 의 <code>console_rx_get_stats()</code> 와 같다). 통신 모듈이 잘못된 포인터를 주면 HardFault 대신 아무 일도 없게.</li>
+          <li><code>out-&gt;l_tick = (int32_t)(((int64_t)encoder_count(FL) + encoder_count(RL)) / 2);</code> — 쪽당(SIDE) 앞뒤 평균(06a 4-2). 첫 항을 <code>int64_t</code> 로 올리면 덧셈 전체가 64비트에서 일어난다 — 두 <code>int32_t</code> 의 합은 넘칠 수 있다(아래 표). 2 로 나눈 뒤 다시 <code>int32_t</code> 로.</li>
+          <li><code>out-&gt;batt_mv = 0;</code> — <code>____</code> 결정 대기. 버스 전압을 어느 부품이 읽을지(INA226 #1 · ADC3 분압기)를 정하고 배선하기 전까지 0 — 계약은 "0 = 아직 읽을 부품이 연결되지 않음"으로 읽는다(<code>control.h</code> 의 주석).</li>
+          <li><code>out-&gt;current_ma = 0;</code> — fw-12 를 이 빌드에 넣었으면 <code>adc_get_batt_ma()</code>. 넣지 않은 빌드에서 그 이름을 쓰면 링크가 멈춘다 — 그래서 완결 코드는 0 이다.</li>
+          <li><code>out-&gt;fault = control_fault_flags();</code> — 지금은 0 을 돌려주는 함수(골격 그대로). fw-18 이 채운다. 직접 0 을 쓰지 않고 함수를 거치는 것은 그때 이 줄을 안 고치려는 것이다.</li>
+          <li><code>out-&gt;tick_ms = tick_get_ms();</code> — 이 스냅샷의 시각.</li>
+          <li>골격의 <code>(void)out;</code> 는 지웠다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>int32_t encoder_count(int wheel);</code>(fw-09 실습 B, "<code>ENC_SIGN_*</code> 적용: 앞으로 돌면 커진다", 어느 문맥이든) · <code>control_fault_flags()</code>(이 파일) · <code>tick_get_ms()</code>(T3 과 같다).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>(encoder_count(FL) + encoder_count(RL)) / 2</code> — <code>int32_t</code> 끼리</td><td>컴파일러는 조용하다. 호스트 진단 빌드가 같은 꼴에서 하는 말(2026-10-03): <code>runtime error: signed integer overflow: 2000000000 + 2000000000 cannot be represented in type 'int32_t' (aka 'int')</code>. 94 000 CPR 로 카운트가 2<sup>30</sup> 을 넘는 것은 약 1 만 바퀴(≈ 6 km) — 긴 주행에서 어느 날 부호가 뒤집힌다</td><td><code>(int64_t)</code> 로 올려서 더한다</td></tr>
+            <tr><td><code>NULL</code> 검사 없음</td><td>조용하다. 잘못된 포인터 하나에 HardFault — fw-04 의 덤프를 읽게 된다</td><td>첫 줄</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 이 쪽에서는 보이는 것이 없다(부르는 쪽이 fw-17 에 온다). 빌드가 되고 <code>control.h</code> 의 시그니처와 같으면 끝이다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t8"><summary>힌트 T8 — <code>cmd_pid()</code> · 게인을 보고 · 바꾸는 명령</summary>
+        <div class="ans">
+
+        <p><strong>할 일</strong> — 세 꼴을 받는다: <code>pid</code> · <code>pid show</code> → 한 줄 보고, <code>pid set &lt;kp|ki|kd&gt; &lt;milli&gt;</code> → 네 바퀴의 게인을 바꾸고 <code>OK pid</code>, 그 밖 → <code>ERR pid bad-arg</code>. 출력 꼴은 fw-05 §2-4 의 규약(첫 낱말 = 명령 이름, <code>키=값</code>, 단위는 키 끝에, 값은 정수). main 문맥 — <code>printf</code> 해도 된다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T8 - User/Src/Control/control.c */
+static long gain_milli(float g)          /* 1.2f -&gt; 1200. 0.7f * 1000 은 699.9999 라서 반올림이 필요하다 */
+{
+  return (long)(g * 1000.0f + ((g &gt;= 0.0f) ? 0.5f : -0.5f));
+}
+
+static void cmd_pid(int argc, char *argv[])      /* main 문맥 */
+{
+  if (argc == 1 || (argc == 2 &amp;&amp; strcmp(argv[1], "show") == 0)) {           /* "pid" · "pid show" */
+    printf("pid kp_milli=%ld ki_milli=%ld kd_milli=%ld\r\n",
+           gain_milli(s_pid[0].kp), gain_milli(s_pid[0].ki), gain_milli(s_pid[0].kd));
+    return;
+  }
+  if (argc == 4 &amp;&amp; strcmp(argv[1], "set") == 0) {                           /* "pid set &lt;kp|ki|kd&gt; &lt;milli&gt;" */
+    const bool is_kp = (strcmp(argv[2], "kp") == 0);
+    const bool is_ki = (strcmp(argv[2], "ki") == 0);
+    const bool is_kd = (strcmp(argv[2], "kd") == 0);
+    char *end = NULL;
+    long  m   = strtol(argv[3], &amp;end, 10);
+    if ((!is_kp &amp;&amp; !is_ki &amp;&amp; !is_kd) || *end != '\0') { printf("ERR pid bad-arg\r\n"); return; }
+    const float g = (float)m / 1000.0f;
+    for (uint8_t i = 0u; i &lt; (uint8_t)NW; i++) {                            /* 네 바퀴 모두 같은 게인 */
+      if      (is_kp) { s_pid[i].kp = g; }
+      else if (is_ki) { s_pid[i].ki = g; }
+      else            { s_pid[i].kd = g; }
+    }
+    printf("OK pid\r\n");                   /* 적분은 건드리지 않는다: 이유는 카드의 코드 설명 */
+    return;
+  }
+  printf("ERR pid bad-arg\r\n");
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>static long gain_milli(float g)</code> — 보고용 도우미. <code>0.7f * 1000</code> 은 <code>float</code> 에서 699.9999… 라 그냥 자르면 699 가 찍힌다 — 0.5 를 더해(음수는 빼) 반올림한다(T6 의 반올림과 같은 꼴). 파일 안 <code>static</code> 이라 밖에서는 안 보인다.</li>
+          <li><code>if (argc == 1 || (argc == 2 &amp;&amp; strcmp(argv[1], "show") == 0))</code> — "<code>pid</code>" 는 인자 없이(<code>argc == 1</code>), "<code>pid show</code>" 는 둘. <code>strcmp()</code> 는 같으면 0 을 돌려준다 — <code>== 0</code> 이 "같다"다(fw-05 의 디스패치와 같은 문법). <code>argv[1] == "show"</code> 는 글자가 아니라 <strong>주소</strong>를 비교한다(아래 표).</li>
+          <li><code>printf("pid kp_milli=%ld …", gain_milli(s_pid[0].kp), …)</code> — 네 바퀴가 같은 게인이라 <code>[0]</code> 만 찍는다. <code>%ld</code> 는 <code>long</code> 의 서식 — <code>gain_milli()</code> 의 반환형과 짝이다(틀리면 arm-gcc 가 <code>-Wformat</code> 으로 말한다).</li>
+          <li><code>if (argc == 4 &amp;&amp; strcmp(argv[1], "set") == 0)</code> — <code>argc</code> 를 <strong>먼저</strong> 본다. <code>argv[3]</code> 을 읽기 전에 그것이 있는지 확인하는 것이다 — <code>&amp;&amp;</code> 는 왼쪽이 거짓이면 오른쪽을 보지 않는다(단락 평가).</li>
+          <li><code>const bool is_kp = …</code> 셋 — 세 번 <code>strcmp</code> 하고 결과를 이름 붙여 둔다. 아래 루프에서 다시 비교하지 않으려는 것이다.</li>
+          <li><code>long m = strtol(argv[3], &amp;end, 10); if (… || *end != '\0')</code> — fw-05 · fw-08 의 <code>cmd_pwm()</code> 과 같은 숫자 읽기. <code>end</code> 가 문자열 끝(<code>'\0'</code>)을 가리키지 않으면 뒤에 숫자 아닌 글자가 있었다는 뜻 → <code>bad-arg</code>. <code>&lt;stdlib.h&gt;</code> 가 필요하다 — 첫 블록의 include 에 한 줄이 늘어난 이유다.</li>
+          <li><code>const float g = (float)m / 1000.0f;</code> — 밀리 정수 → 실수 게인. <code>(float)</code> 캐스트 없이 <code>m / 1000</code> 이면 정수 나눗셈이다(T10 의 표).</li>
+          <li><code>for (…) { if (is_kp) { s_pid[i].kp = g; } … }</code> — 네 바퀴 모두 같은 게인(§2-4 의 5 는 "네 바퀴를 따로 본다" 지만 게인은 하나다 — 곡선이 다르면 게인이 아니라 기계의 문제라서).</li>
+          <li><code>printf("OK pid\r\n");</code> — 적분은 건드리지 않는다. <strong>리셋해야 하는가</strong>(골격의 질문): 게인을 바꾸는 순간 <code>ki * integ</code> 가 뛰므로 한 번 덜컹할 수 있다 — 그러나 <code>step</code> 이 시작할 때 <code>pid_reset()</code> 을 부르고(T9), 게인은 <code>step</code> 사이에 바꾼다. 그래서 여기서는 안 지운다. 주행 중에 바꾸는 명령이라면 답이 달라진다 — 이유를 노트에 적는다.</li>
+          <li>마지막 <code>printf("ERR pid bad-arg\r\n");</code> — 위 두 <code>if</code> 에 걸리지 않은 전부.</li>
+          <li>골격의 <code>(void)argc; (void)argv;</code> 는 지웠다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① 바퀴마다 다른 게인을 받는 꼴(<code>pid set fl kp 1200</code>)도 가능하다 — 명령 꼴이 달라지고 보고 줄이 넷이 된다. ② 보고를 <code>%d</code> 와 <code>(int)</code> 로 써도 된다 — 서식과 형의 짝만 맞으면.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>long strtol(const char *s, char **end, int base);</code>(<code>&lt;stdlib.h&gt;</code>) · <code>int strcmp(const char *a, const char *b);</code>(<code>&lt;string.h&gt;</code>, 같으면 0) · <code>printf()</code>. 전부 main 문맥에서만.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>&lt;stdlib.h&gt;</code> 없이 <code>strtol()</code></td><td>arm-gcc: <code>error: implicit declaration of function 'strtol'; did you mean 'strtok'? [-Wimplicit-function-declaration]</code><br>Mac: <code>error: call to undeclared library function 'strtol' with type 'long (const char *, char **, int)'; ISO C99 and later do not support implicit function declarations</code></td><td>첫 블록의 <code>#include &lt;stdlib.h&gt;</code></td></tr>
+            <tr><td><code>argv[1] == "set"</code></td><td>arm-gcc: <code>warning: comparison with string literal results in unspecified behavior [-Waddress]</code><br>Mac: <code>warning: result of comparison against a string literal is unspecified (use an explicit string comparison function instead) [-Wstring-compare]</code> — 그리고 늘 거짓이다</td><td><code>strcmp(…) == 0</code></td></tr>
+            <tr><td><code>argc</code> 를 안 보고 <code>argv[3]</code></td><td>조용하다. "<code>pid set kp</code>" 에서 <code>argv[3]</code> 은 쓰레기 포인터 — HardFault 또는 엉뚱한 게인</td><td><code>argc == 4</code> 를 <code>&amp;&amp;</code> 왼쪽에</td></tr>
+            <tr><td><code>m / 1000</code></td><td>조용하다. 1200 → 1.0, 700 → 0.0</td><td><code>(float)m / 1000.0f</code></td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-2-4 의 <code>pid</code> 가 <code>pid kp_milli=0 ki_milli=0 kd_milli=0</code> 을 찍고, <code>pid set kp 1200</code> → <code>OK pid</code> → <code>pid</code> 가 1200 을 돌려준다. 집필 중 호스트 시뮬레이션(2026-10-03)에서 <code>pid set kx 1</code> · <code>pid set kp 12x</code> 가 <code>ERR pid bad-arg</code> 로 거절됐다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t9"><summary>힌트 T9 — <code>cmd_step()</code> · 계단을 넣고 포획하고 덤프한다</summary>
+        <div class="ans">
+
+        <p><strong>할 일</strong> — 이 쪽의 관측 창이다. <code>step &lt;fl|fr|rl|rr&gt; &lt;target_mm_s&gt; &lt;ms&gt; [once]</code> 를 해석하고, 포획을 걸고, 목표를 넣고, 포획이 끝날 때까지 <strong>main 문맥에서 돌면서</strong>(일부러 블로킹 — 그동안 명령 창은 듣지 않는다, §3-2-4 의 경고 상자) 워치독을 먹이고 목표를 재주입하다가, 끝나면 모터를 세우고 CSV 를 덤프한다. 길어서 둘로 나눠 싣는다 — 한 함수다.</p>
+        <p><strong>완결 코드</strong> (1/2 — 해석 · 포획 걸기 · 목표 넣기)</p>
+        <pre><code class="lang-c">/* 완결 코드 T9 - User/Src/Control/control.c (1/2: 해석 · 포획 걸기 · 목표 넣기) */
+#define STEP_TARGET_MAX_MM_S  0     /* ____ 벤치에서 step 이 받는 |target| 의 상한 [mm/s]. 0 이면 목표 0 말고는 전부 거절한다 */
+#define STEP_REINJECT_MS      50u   /* once 가 아닐 때 목표를 다시 넣는 간격 [ms]. 3-2-3 의 6 이 든 예(계약의 50 Hz) - 바꿔도 된다 */
+_Static_assert((STEP_REINJECT_MS) &lt; (CMD_WATCHDOG_MS), "control.c: STEP_REINJECT_MS must be shorter than CMD_WATCHDOG_MS");
+
+static void cmd_step(int argc, char *argv[])     /* main 문맥. 이 함수는 일부러 블로킹한다 */
+{
+  /* 1) 해석: step &lt;fl|fr|rl|rr&gt; &lt;target_mm_s&gt; &lt;ms&gt; [once] - 틀린 것은 전부 bad-arg */
+  int w = -1;
+  if (argc == 4 || argc == 5) {
+    if      (strcmp(argv[1], "fl") == 0) { w = FL; }
+    else if (strcmp(argv[1], "fr") == 0) { w = FR; }
+    else if (strcmp(argv[1], "rl") == 0) { w = RL; }
+    else if (strcmp(argv[1], "rr") == 0) { w = RR; }
+  }
+  if (w &lt; 0) { printf("ERR step bad-arg\r\n"); return; }
+  char *end = NULL;
+  const long tgt = strtol(argv[2], &amp;end, 10);
+  if (*end != '\0' || tgt &lt; -(long)STEP_TARGET_MAX_MM_S || tgt &gt; (long)STEP_TARGET_MAX_MM_S) { printf("ERR step bad-arg\r\n"); return; }
+  const long ms = strtol(argv[3], &amp;end, 10);
+  if (*end != '\0' || ms &lt; 1 || ms &gt; STEP_CAP_MAX) { printf("ERR step bad-arg\r\n"); return; }
+  const bool once = (argc == 5);
+  if (once &amp;&amp; strcmp(argv[4], "once") != 0) { printf("ERR step bad-arg\r\n"); return; }
+  if (power_get_state() != POWER_ARMED) { printf("ERR step not-ready\r\n"); return; }   /* fw-11 */
+
+  /* 2) 포획을 먼저 건다 - 그래야 0 번 행이 생긴다 */
+  pid_reset(&amp;s_pid[w]);                        /* 앞 회차의 적분을 들고 시작하지 않는다 (2-5) */
+  protect_reset(&amp;s_prot[w]);                   /* 2차 (3-3-4 의 3): 새 step 은 래치를 푼다. 실습 B 에서는 이 줄이 없다 */
+  s_cap_n     = 0u;                            /* 첫 행의 틱(s_cap_t0)은 ISR 이 첫 행을 쓸 때 찍는다 (T6) */
+  s_cap_wheel = (uint8_t)w;
+  s_cap_left  = (uint16_t)ms;                  /* 이 줄부터 ISR 이 행을 채운다 */
+
+  /* 3) 이 바퀴가 있는 쪽에 목표를 넣고, 포획이 끝날 때까지 main 문맥에서 돈다 */
+  const int16_t vl = (w &amp; 1) ? 0 : (int16_t)tgt;        /* 짝수 = 왼쪽 */
+  const int16_t vr = (w &amp; 1) ? (int16_t)tgt : 0;        /* 홀수 = 오른쪽 */
+  control_set_target(vl, vr);
+  uint32_t last_inject = tick_get_ms();
+  while (s_cap_left &gt; 0u) {
+    wdg_service_main();                                                    /* 2-9: IWDG 는 계속 먹인다 */
+    if (!once &amp;&amp; (uint32_t)(tick_get_ms() - last_inject) &gt;= STEP_REINJECT_MS) {
+      control_set_target(vl, vr);                                          /* 2-12: 상위의 50 Hz 노릇 */
+      last_inject = tick_get_ms();
+    }
+  }</code></pre>
+        <p>이어서 (2/2 — 정지와 덤프). 위 블록의 <code>while</code> 이 끝난 자리에 그대로 이어진다.</p>
+        <pre><code class="lang-c">/* 완결 코드 T9 - User/Src/Control/control.c (2/2: 정지와 덤프) */
+  /* 4) 무엇이든 찍기 전에 모터가 먼저 선다 */
+  control_set_target(0, 0);
+
+  /* 5) 덤프. 한 행마다 wdg_service_main() - 2-9 의 워치독 예산 행이 이 루프다 */
+  const uint16_t n = s_cap_n;                              /* s_cap_left == 0 이라 ISR 은 더 쓰지 않는다 */
+  uint8_t  prot = 0u, prev = 0u;
+  uint16_t trips = 0u;
+  printf("# csv step cols=t_ms,target_mm_s,meas_mm_s,duty_permille,prot n=%u\r\n", (unsigned)n);
+  for (uint16_t k = 0u; k &lt; n; k++) {
+    const step_row_t *r = &amp;s_cap[k];
+    wdg_service_main();
+    printf("%u,%d,%d,%d,%u\r\n", (unsigned)r-&gt;t_ms, r-&gt;target, r-&gt;meas, r-&gt;duty, (unsigned)r-&gt;prot);
+    prot |= r-&gt;prot;                                       /* 래치된 적 있는 비트 전부 */
+    if (r-&gt;prot != prev) { trips++; prev = r-&gt;prot; }      /* prot 열이 바뀐 행의 수 = 래치가 선 횟수 */
+  }
+  printf("# end\r\n");
+  printf("step n=%u prot=%u trips=%u\r\n", (unsigned)n, (unsigned)prot, (unsigned)trips);
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>#define STEP_TARGET_MAX_MM_S  0</code> — <code>____</code> 새 빈칸. 벤치에서 <code>step</code> 이 받아 줄 <code>|target|</code> 의 상한이다. 0 인 채로 두면 목표 0 말고는 전부 <code>bad-arg</code> — 빌드는 되고 <strong>안전한 쪽으로</strong> 동작하므로 가드(<code>_Static_assert</code>)를 두지 않는다(§2-4 의 상자와 같은 논리). §3-2-4 의 "무부하 최대 속도"를 잰 뒤 그 아래로 적는다.</li>
+          <li><code>#define STEP_REINJECT_MS 50u</code> + <code>_Static_assert(… &lt; CMD_WATCHDOG_MS …)</code> — 재주입 간격. §3-2-3 의 6 이 든 예(계약의 50 Hz)이고 바꿔도 된다 — 다만 200 보다 짧아야 한다는 것을 컴파일러가 지키게 했다.</li>
+          <li><code>int w = -1; if (argc == 4 || argc == 5) { if (strcmp(argv[1], "fl") == 0) { w = FL; } … }</code> — 바퀴 이름 → <code>enum</code>. <code>-1</code> 로 시작해 아무것도 안 맞으면 그대로 남는다 — 그다음 한 줄 <code>if (w &lt; 0)</code> 이 "인자 수가 틀렸거나 이름이 틀렸다"를 한꺼번에 거절한다.</li>
+          <li><code>const long tgt = strtol(argv[2], &amp;end, 10); if (*end != '\0' || tgt &lt; -… || tgt &gt; …)</code> — T8 과 같은 숫자 읽기 + 범위. <code>(long)STEP_TARGET_MAX_MM_S</code> 캐스트는 <code>long</code> 끼리 비교하려는 것이다.</li>
+          <li><code>const long ms = …; if (… ms &lt; 1 || ms &gt; STEP_CAP_MAX)</code> — 행 수. <code>STEP_CAP_MAX</code> 를 넘으면 "자리 없음". <strong>이 검사가 T6 의 가드와 짝</strong>이다 — 이것이 없으면 ISR 이 <code>STEP_CAP_MAX</code> 에서 쓰기를 멈추지만 <code>s_cap_left</code> 는 0 이 안 되어 <code>while</code> 이 영영 돈다(아래 표).</li>
+          <li><code>const bool once = (argc == 5); if (once &amp;&amp; strcmp(argv[4], "once") != 0) …</code> — 다섯째 인자는 "<code>once</code>" 만 받는다.</li>
+          <li><code>if (power_get_state() != POWER_ARMED) { printf("ERR step not-ready\r\n"); return; }</code> — fw-11. EN 이 안 올라간 채 포획하면 평평한 선이 나오는데, 그것을 "게인이 0 이라서"로 읽게 된다 — 헷갈리는 길을 미리 막는다.</li>
+          <li><code>pid_reset(&amp;s_pid[w]); protect_reset(&amp;s_prot[w]);</code> — 과거를 지운다(§2-5 · §3-3-4 의 3 "새 <code>step</code> 은 래치를 푼다"). <code>protect_reset</code> 줄은 실습 C 에서 더한다.</li>
+          <li><code>s_cap_n = 0u; s_cap_wheel = (uint8_t)w; s_cap_left = (uint16_t)ms;</code> — <strong><code>s_cap_left</code> 가 맨 마지막</strong>. 이 대입부터 ISR 이 행을 쓰기 시작하므로, 그 전에 나머지가 준비돼 있어야 한다. 첫 목표보다 먼저 거는 것은 0 번 행(목표가 들어가기 직전의 틱)을 남기려는 것이다.</li>
+          <li><code>const int16_t vl = (w &amp; 1) ? 0 : (int16_t)tgt; vr = …; control_set_target(vl, vr);</code> — 그 바퀴가 있는 쪽에만 목표. 같은 쪽의 다른 바퀴도 같이 돈다(쪽당 목표가 계약의 꼴이다 — 06a).</li>
+          <li><code>while (s_cap_left &gt; 0u) { wdg_service_main(); if (!once &amp;&amp; (uint32_t)(tick_get_ms() - last_inject) &gt;= STEP_REINJECT_MS) { control_set_target(vl, vr); last_inject = tick_get_ms(); } }</code> — 포획이 끝날 때까지 main 문맥에서 돈다. <code>s_cap_left</code> 는 <code>volatile</code> 이라 매번 다시 읽는다(없으면 컴파일러가 이 루프를 "안 바뀌는 조건"으로 접을 수 있다). 안에서 하는 일 둘: IWDG 먹이기(§2-9), 그리고 <code>once</code> 가 아니면 50 ms 마다 상위 노릇(§2-12). <code>once</code> 면 목표가 한 번만 들어가고 200 ms 뒤 워치독이 0 으로 만든다 — 그것이 발동 체크다.</li>
+          <li><code>control_set_target(0, 0);</code> — 덤프보다 먼저. 덤프는 수백 ms 걸리고 그동안 바퀴가 돌 이유가 없다.</li>
+          <li><code>const uint16_t n = s_cap_n;</code> — <code>s_cap_left == 0</code> 이라 ISR 은 더 쓰지 않는다. 한 번 읽어 두고 그 수만큼 찍는다.</li>
+          <li><code>printf("# csv step cols=… n=%u\r\n", (unsigned)n);</code> … <code>printf("# end\r\n");</code> — fw-05 §2-4 의 여러 줄 덤프 꼴: <code>#&nbsp;csv</code> 로 열고 <code>#&nbsp;end</code> 로 닫는다. §3-2-4 의 python 이 <code>#</code> 줄을 건너뛰는 것과 짝이다. <code>%u</code> 에는 <code>(unsigned)</code> 캐스트 — <code>uint16_t</code> 는 승격 뒤 <code>int</code> 라 서식과 어긋난다.</li>
+          <li><code>for (…) { wdg_service_main(); printf("%u,%d,%d,%d,%u\r\n", …); prot |= r-&gt;prot; if (r-&gt;prot != prev) { trips++; prev = r-&gt;prot; } }</code> — 행마다 IWDG 를 먹인다(§2-9 의 워치독 예산 행이 바로 이 루프다 — 2000 행이면 약 868 ms). <code>prot |=</code> 는 "래치된 적 있는 비트 전부", <code>trips</code> 는 <code>prot</code> 열이 바뀐 행의 수 — 래치가 선 횟수다.</li>
+          <li><code>printf("step n=%u prot=%u trips=%u\r\n", …);</code> — 이 명령 자신의 답 줄. 덤프를 다 지나쳐 스크롤해도 요약이 보이는 자리(§3-2-2 끝의 설명).</li>
+          <li>골격의 <code>(void)argc; (void)argv;</code> 는 지웠다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① <code>trips</code> 의 뜻: "비트가 바뀐 횟수" 대신 "래치된 비트의 수"(<code>prot</code> 의 1 비트 개수)로 정의해도 된다 — 어느 쪽인지 노트에 적는다. ② 재주입 간격 50 ms 는 예다. ③ <code>s_cap_t0</code> 를 여기서 찍는 꼴은 T6 의 "다르게 써도 되는 곳". ④ 덤프 중 <code>printf</code> 대신 fw-07 의 DMA 송신을 쓰면 이 루프가 짧아진다 — 그 대신 버퍼가 필요하다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong></p>
+        <ul>
+          <li><code>power_state_t power_get_state(void);</code> · <code>POWER_ARMED</code> — fw-11 의 <code>Control/power.h</code>. main 문맥.</li>
+          <li><code>void wdg_service_main(void);</code> — fw-06 의 <code>System/wdg.h</code>: "<code>app_loop()</code> 한 바퀴에 한 번 부른다: 양쪽이 모두 살아 있을 때만 refresh". 여기서는 <code>app_loop()</code> 대신 이 함수의 두 루프가 그 "한 바퀴"다.</li>
+          <li><code>control_set_target()</code>(T3) · <code>pid_reset()</code>(T1) · <code>protect_reset()</code>(T13) · <code>strtol()</code> · <code>strcmp()</code>(T8 과 같다).</li>
+        </ul>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>덤프 루프에 <code>wdg_service_main()</code> 이 없다</td><td>CSV 가 나오다가 보드가 리셋되고 배너가 다시 뜬다(reset cause = IWDG) — 증상 표의 셋째 행</td><td>행마다 먹인다 · 또는 <code>STEP_CAP_MAX</code> 를 줄인다</td></tr>
+            <tr><td>재주입 간격이 200 ms 이상이다</td><td><code>target_mm_s</code> 열이 200 ms 쯤에서 0 이 된다(<code>once</code> 를 안 붙였는데도)</td><td><code>_Static_assert</code> 가 잡게 해 두었다 — 상수를 보라</td></tr>
+            <tr><td><code>ms &gt; STEP_CAP_MAX</code> 검사를 뺐다</td><td>빌드는 된다. <code>step fl 200 99999</code> 에서 ISR 은 <code>STEP_CAP_MAX</code> 행에서 멈추지만 <code>s_cap_left</code> 는 0 이 안 되어 <strong><code>while</code> 이 영영 돈다 — 바퀴가 멈추지 않는다</strong></td><td>해석 단계의 범위 검사. 두 가드는 서로를 믿지 않는다</td></tr>
+            <tr><td><code>s_cap_left = ms</code> 를 <code>s_cap_n = 0</code> 보다 먼저 썼다</td><td>ISR 이 옛 <code>s_cap_n</code> 자리에 한 행을 쓴 뒤 0 으로 돌아간다 — 첫 행 하나가 엉뚱한 자리에 있다</td><td><code>s_cap_left</code> 가 맨 마지막</td></tr>
+            <tr><td><code>control_set_target(0, 0)</code> 을 덤프 뒤에 뒀다</td><td>덤프하는 수백 ms 동안 바퀴가 마지막 목표로 돈다(재주입은 멈췄으니 200 ms 뒤 워치독이 세운다)</td><td>덤프 앞으로</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-2-4 의 전부가 이 함수의 관찰이다: 기준선 CSV(체크포인트 <code>step-csv-captured</code>), <code>once</code> 의 0 행(<code>step-once-target-zeroed</code>), 두 번 연달아 돌린 앞 몇 행(<code>stop-resets-integrator</code>). 집필 중 호스트 시뮬레이션(2026-10-03)에서: 잘못된 다섯 꼴(<code>step xx 200 100</code> · <code>step fl 200 0</code> · <code>step fl 200 99999</code> · 범위 밖 목표 · <code>step fl 200 100 twice</code>)이 전부 <code>ERR step bad-arg</code>, <code>step fl 200 400 once</code> 의 <code>target_mm_s</code> 열이 200 번 행부터 0. 보드에서의 시간 · 리셋 · 전압은 내가 확인한다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t10"><summary>힌트 T10 — <code>control_init()</code> · 게인 · 한계를 넣고, 워치독을 "이미 만료" 로 시작한다</summary>
+        <div class="ans">
+
+        <p><strong>할 일</strong> — main 에서 한 번, <code>motor_init()</code> 과 <code>encoder_init()</code> 뒤에. 네 제어기에 <code>robot_params.h</code> 의 게인(밀리 정수 → 실수)과 포화 한계(벤치 상한)를 넣고 리셋한다. 그리고 부팅 직후의 명령 워치독 상태를 정한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T10 - User/Src/Control/control.c */
+void control_init(void)      /* main 에서 한 번, motor_init() 과 encoder_init() 뒤에 */
+{
+  for (uint8_t i = 0u; i &lt; (uint8_t)NW; i++) {
+    s_pid[i].kp      = (float)PID_KP_MILLI / 1000.0f;             /* 밀리 정수 -&gt; 실수 게인 */
+    s_pid[i].ki      = (float)PID_KI_MILLI / 1000.0f;
+    s_pid[i].kd      = (float)PID_KD_MILLI / 1000.0f;
+    s_pid[i].out_min = -(float)DUTY_LIMIT_BENCH_PERMILLE;         /* fw-08 의 벤치 상한이 곧 PID 의 포화 한계 */
+    s_pid[i].out_max =  (float)DUTY_LIMIT_BENCH_PERMILLE;
+    pid_reset(&amp;s_pid[i]);
+  }
+  /* 부팅 때 워치독이 이미 만료돼 있게: "마지막 명령" 을 (CMD_WATCHDOG_MS + 1) ms 전으로 둔다 */
+  s_last_cmd_ms = (uint32_t)(tick_get_ms() - (CMD_WATCHDOG_MS + 1u));
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>s_pid[i].kp = (float)PID_KP_MILLI / 1000.0f;</code> — 밀리 정수(1200 = 1.2)를 실수로. <code>(float)</code> 캐스트와 <code>1000.0f</code> 둘 중 하나만 있어도 실수 나눗셈이지만, <code>PID_KP_MILLI / 1000</code> 이라고 쓰는 순간 정수 나눗셈이 되어 1200 은 1 이 되고 700 은 0 이 된다 — 컴파일러는 아무 말도 하지 않는다(아래 표).</li>
+          <li><code>out_min = -(float)DUTY_LIMIT_BENCH_PERMILLE; out_max = +…</code> — fw-08 의 벤치 상한이 곧 PID 의 포화 한계다. 그래서 와인드업 방지(T2)가 <strong>내 벤치 상한</strong>에서 작동한다 — ±1000 으로 두면 <code>motor_set()</code> 이 자르기는 하지만 PID 는 포화를 모른 채 적분을 쌓는다.</li>
+          <li><code>pid_reset(&amp;s_pid[i]);</code> — <code>s_pid</code> 는 <code>static</code> 이라 0 으로 태어나지만, "리셋된 상태로 시작한다"를 코드에 적는다.</li>
+          <li><code>s_last_cmd_ms = (uint32_t)(tick_get_ms() - (CMD_WATCHDOG_MS + 1u));</code> — 골격의 질문의 답. "마지막 명령"을 201 ms <strong>전</strong>으로 두면 첫 틱부터 <code>age &gt; 200</code> 이라 워치독이 이미 만료돼 있다 — 부팅 직후의 로봇은 "명령을 받은 적 없는" 상태여야 한다. 부호 없는 뺄셈이라 <code>tick_get_ms()</code> 가 아직 작아도(부팅 직후 0 근처) 되감겨서 큰 수가 되고, T4 의 뺄셈이 그것을 다시 되감아 201 을 낸다.</li>
+          <li>자리표시가 없던 자리다 — 비어 있어도 빌드된다. 그러면 게인도 한계도 0 이라 듀티가 0 에 갇힌다(안전하지만 <code>step</code> 이 영영 평평하다).</li>
+          <li><strong>다르게 써도 되는 곳</strong> — <code>s_last_cmd_ms = 0</code> 으로 두는 것: 부팅 뒤 200 ms 동안은 "살아 있는 명령"으로 본다. 목표가 0 이라 해는 없지만 <code>s_wd_stopped</code> 가 그동안 0 이다 — fw-18 이 그 표시를 fault 로 올리면 부팅 직후 200 ms 의 뜻이 달라진다. 어느 쪽이든 되지만, 질문의 답은 적어 둔다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>pid_reset()</code>(T1) · <code>tick_get_ms()</code>(T3 과 같다). 이 함수가 <code>tick_init()</code> 뒤에 불려야 하는 이유가 마지막 줄에 있다 — <code>app_init()</code> 의 순서(§3-2-3 의 7).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>PID_KP_MILLI / 1000</code></td><td>컴파일러는 둘 다 조용하다(2026-10-03 확인). 1200 → 1.0, 700 → 0.0 — "게인을 올렸는데 곡선이 안 바뀐다"</td><td><code>(float)… / 1000.0f</code></td></tr>
+            <tr><td>한계를 <code>±1000.0f</code> 로</td><td>조용하다. <code>motor_set()</code> 이 자르니 바퀴는 같지만, PID 가 포화를 모르는 구간이 생겨 와인드업 방지가 늦게 든다 — group 4 가 벤치에서 재현된다</td><td><code>DUTY_LIMIT_BENCH_PERMILLE</code></td></tr>
+            <tr><td><code>control_init()</code> 을 <code>tick_init()</code> 보다 먼저 불렀다</td><td>조용하다. <code>tick_get_ms()</code> 가 0 이라 결과는 같지만, 순서에 기대는 코드가 됐다</td><td><code>app_init()</code> 의 순서</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-2-4 의 <code>pid</code> 가 <code>robot_params.h</code> 의 값(처음엔 0 셋)을 찍고, 부팅 직후 <code>step … once</code> 가 아니라도 첫 명령 전에는 목표가 0 이다. 게인을 헤더에 옮겨 적은 뒤 다시 구우면 <code>pid</code> 의 첫 줄이 그 값을 보인다.</p>
+        </div></details>
+
+      <h4 id="s3-2-4">3-2-4. 굽고 보기 <span class="tag power">모터 전원</span></h4>
+      <pre><code class="lang-bash">firmware/tools/build.sh
+firmware/tools/flash.sh
+ls /dev/cu.usbmodem*
+python3 -m serial.tools.miniterm --logfile ~/step.log &lt;port&gt; 460800   # 나가기: Ctrl+]
+# 또는:  screen -L -Logfile ~/step.log &lt;port&gt; 460800                  # 나가기: Ctrl+A, K, Y</code></pre>
+      <p class="small">CSV 를 손으로 긁어 오지 않으려면 <strong>터미널에 로그 파일을 걸어 둔다.</strong> 위 두 인자가 그것이고, 옵션 철자는 내 도구의 <code>--help</code> 로 확인한다(pyserial 과 <code>screen</code> 의 버전에 따라 다르다 — 이 가이드는 확인하지 못했다).
+      로그를 못 걸면 터미널 창을 그대로 복사해 파일로 붙여 넣어도 된다 — 아래 python 은 <code>#</code> 로 시작하는 줄과 프롬프트 줄을 건너뛴다.</p>
+      <p>전원을 올리는 순서는 fw-11 그대로다. <strong>바퀴가 공중에 있는지 다시 본다.</strong></p>
+      <pre><code class="lang-text">&gt; pwr up
+OK pwr
+&gt; pwr stat
+pwr state=armed fail=0 t_ms=&lt;n&gt; vbus_mv=&lt;n&gt; ipc_ua=&lt;n&gt; valid=1 relay=1 en=1
+&gt; pid
+pid kp_milli=0 ki_milli=0 kd_milli=0
+&gt; step fl 200 1000
+# csv step cols=t_ms,target_mm_s,meas_mm_s,duty_permille,prot n=1000
+0,200,0,0,0
+1,200,0,0,0
+...
+# end
+step n=1000 prot=0 trips=0</code></pre>
+      <div class="callout warn"><span class="ct"><code>step</code> 이 도는 동안 명령 창은 대답하지 않는다</span>
+        <p><code>cmd_step()</code> 은 포획이 끝날 때까지 주 루프에서 돌고, 그 동안 <code>cli_feed()</code> 가 불리지 않는다 — 덤프가 끝날 때까지 <strong>무엇을 쳐도 듣지 않는다.</strong>
+        그러므로 이 실습에서 바퀴를 세우는 수단은 <strong>STOP 리스트 5번의 물리적 차단</strong>(전원 스위치 · 커넥터)뿐이다. 그 항목이 이 쪽에 있는 이유가 이것이다 — 손이 닿는 자리에 두었는지 지금 다시 본다.</p>
+        <p>그래서 게인을 올리는 동안에는 <code>&lt;ms&gt;</code> 를 <strong>짧게</strong> 쓴다(수백 ms). 곡선이 얌전해진 뒤에 길게 늘린다 — §2-4 의 2번은 "진동 직전까지" 올리라고 하고, 그 지점이 바로 멈추고 싶어지는 지점이다.</p>
+      </div>
+      <p><strong>첫 관찰은 "아무 일도 일어나지 않는 것"이다.</strong> 게인이 0 이니 듀티가 0 이고 바퀴는 돌지 않는다 — 목표만 계단이고 나머지는 평평한 선. 이것이 §2-4 의 기준선이다.
+      여기까지 나왔으면 포획 · 덤프 · 워치독 kick 이 전부 돌고 있다는 뜻이고, 이제부터 바뀌는 것은 전부 게인의 몫이다.</p>
+      <p>그림으로 보는 것이 표보다 훨씬 빠르다. matplotlib 이 없으면(fw-00 의 설치 확인) 아래 스크립트에서 그리는 부분만 지우고 숫자 몇 줄을 표로 본다.</p>
+      <pre><code class="lang-python">import sys, matplotlib.pyplot as plt
+rows = []
+for line in open(sys.argv[1]):
+    line = line.strip()
+    if not line or line.startswith('#') or line.startswith('&gt;'):
+        continue
+    f = line.split(',')
+    if len(f) != 5:
+        continue                       # 프롬프트·다른 명령의 출력은 건너뛴다
+    try:
+        rows.append([int(x) for x in f])
+    except ValueError:
+        continue
+t  = [r[0] for r in rows]
+plt.plot(t, [r[1] for r in rows], label='target [mm/s]')
+plt.plot(t, [r[2] for r in rows], label='measured [mm/s]')
+plt.plot(t, [r[3] for r in rows], label='duty [permille]')
+plt.xlabel('t [ms]  (MCU tick)'); plt.legend(); plt.grid(True); plt.show()
+print('rows', len(rows), 'first t', t[0] if t else None, 'last t', t[-1] if t else None)</code></pre>
+      <p>이제 §2-4 의 순서대로 게인을 올린다. 한 번에 하나씩, 매번 같은 <code>step</code> 명령으로. 볼 것은 넷이다 — <strong>올라가는 데 걸린 시간 · 넘어간 정도(오버슛) · 정상상태에서 남은 차이 · 떨리는가.</strong>
+      마음에 드는 곡선이 나오면 그 <code>pid set</code> 값들을 <code>robot_params.h</code> 에 옮겨 적고, <strong>곡선 하나를 노트에 남긴다</strong>(그림 파일이든 숫자 몇 줄이든).
+      <strong>그 기록을 보고 내 합격선을 정하는 것</strong>이 이 실습의 끝이다 — "정착 시간 <code>____</code> ms 이내, 오버슛 <code>____</code> % 이내, 정상상태 오차 <code>____</code> mm/s 이내" 를 내 손으로 적는다.</p>
+      <div class="callout note"><span class="ct">여기서 얻는 두 숫자를 놓치지 않는다</span>
+        <ul>
+          <li><strong>무부하 최대 속도</strong> — 목표를 올려 가며 측정 속도가 더 이상 따라오지 않는 지점이 내 로봇의 무부하 상한이다. 이 값을 노트와 <code>hardware/INVENTORY.md</code> 6절 "최대 선속도" 행의 재료로 적는다
+          (그 칸을 닫는 것은 바닥에서 재는 관문 09a 다 — 여기 값은 <strong>공중에 뜬 바퀴</strong>의 값이고 공칭 바퀴 지름 위에 서 있다).</li>
+          <li><strong>건강한 속도 : 듀티 비</strong> — 정상상태에서 <code>meas_mm_s ÷ duty_permille</code>. 실습 C 의 <code>FBLOST_SPEED_PER_PERMILLE_MILLI</code> 가 이 수에서 나온다(§2-7). 여러 듀티에서 같은지 보고, 다르면 어느 구간의 값을 쓸지 정한다.</li>
+        </ul>
+      </div>
+      <p>마지막으로 <strong>명령 워치독을 눈으로 본다.</strong> 같은 명령에 <code>once</code> 를 붙이면 목표를 한 번만 넣는다.</p>
+      <pre><code class="lang-text">&gt; step fl 200 1000 once</code></pre>
+      <p>CSV 의 <code>target_mm_s</code> 열이 어느 행에서 <strong>0 으로 바뀐다.</strong> 그 행의 <code>t_ms</code> 가 곧 워치독이 발동한 시각이고, 견줄 값은 계약의 <strong>200 ms</strong> 다(<code>CMD_WATCHDOG_MS</code>).
+      그 행 번호를 노트에 적는다. <strong>Mac 의 시계로 재지 않는다</strong> — 이 숫자는 MCU 의 tick 이고, 그것이 판정 기준인 이유는 Mac 쪽 지연이 섞이지 않기 때문이다(fw-18 이 계약 경로에서 같은 판정을 다시 한다).
+      <code>t_ms</code> 열과 행 번호가 어긋나 있으면 그 자체가 관찰이다 — 1 kHz 틱을 빠뜨렸다는 뜻이고, <code>stat</code> 의 <code>overrun</code> 을 같이 본다.</p>
+      <p>그리고 <code>stat</code> 을 쳐서 <code>exec_us_max</code> 와 <code>loop_us_max</code> 를 적는다 — §2-11 의 결정에 쓸 두 숫자다.</p>
+
+      <h3 id="s3-3">3-3. 실습 C — 보호 3종: Mac 에서 먼저, 그 다음에 실물로 <span class="tag power">모터 전원</span></h3>
+      <p>앞부분(<code>protect.c</code> 와 호스트 시험)은 <strong>보드 없이</strong> 끝난다. 모터 전원은 뒷부분(§3-3-4)에서만 들어가고, 그때 <a href="#s3-2">§3-2</a> 의 STOP 리스트를 <strong>처음부터 다시 지난다</strong> + 이 실습 고유의 둘:</p>
+      <div class="callout warn"><span class="ct">STOP — §3-2 의 열 항목을 다시 지나고, 이 실습 고유의 둘을 더한다</span>
+        <ol>
+          <li><strong>선을 뽑고 꽂는 일은 전원을 내린 상태에서만 한다.</strong> <code>pwr down</code> 으로 EN 과 릴레이를 내리고, DMM 으로 버스 전압이 떨어진 것을 본 뒤에 손을 댄다(블리더가 없어 C_BULK 에 전하가 남는다 — fw-11 §2-7). <strong>도는 바퀴 곁에서 커넥터를 만지지 않는다.</strong></li>
+          <li><strong>STALL 은 벤치에서 발동시키지 않는다.</strong> 감속비 1:47 의 출력축을 손이나 공구로 붙잡는 시험은 하지 않는다 — 이 쪽에서 STALL 은 <strong>호스트 시험의 경로 통과까지</strong>이고, 실제 발동은 조건(저속 · 짧은 시간 · 듀티 상한)을 걸 수 있는 <a href="fw-20-after-assembly.html">fw-20</a> 의 몫이다.</li>
+        </ol>
+      </div>
+
+      <h4 id="s3-3-2">3-3-2. 골격</h4>
+      <p>새 파일 둘: <code>User/Inc/Control/protect.h</code> · <code>User/Src/Control/protect.c</code>. §2-7 의 표가 그대로 헤더가 된다.
+      <strong>문턱은 인자로 받는다</strong> — <code>robot_params.h</code> 를 이 파일이 직접 읽지 않아야 호스트 시험이 자기 값으로 채점할 수 있다(fw-08 의 <code>motor_duty_to_ccr(…, arr)</code> · fw-12 의 <code>adc_raw_to_mv(…, vref_mv)</code> 와 같은 꼴).</p>
+      <pre><code class="lang-c">/* User/Inc/Control/protect.h — 바퀴별 보호 셋. 순수: HAL 헤더 없음, 호스트 시험 가능. */
+#ifndef PROTECT_H
+#define PROTECT_H
+#include &lt;stdint.h&gt;
+
+/* protect_t.tripped 안의 비트. 이것은 계약의 fault 비트(06a 4-2)가 아니다 — 그 표는 거기서
+   아직 "(제안)" 으로 표시돼 있고, 배정하는 것은 fw-18 에서 할 내 일이다. */
+enum { PROT_STALL = 1u, PROT_FBLOST = 2u, PROT_FBSIGN = 4u };
+
+/* 문턱은 전부 크기이므로 전부 unsigned 다. 인자로 받고, 여기서 robot_params.h 를 읽지 않는다 —
+   그래야 그 키들이 아직 EMPTY 인 동안에도 호스트 시험이 값을 댈 수 있다. */
+typedef struct {
+  uint32_t stall_target_min_mm_s;            /* A */
+  uint32_t stall_speed_max_mm_s;             /* B. A &gt; B 여야 한다, 아니면 저속 주행이 스톨로 보인다 */
+  uint16_t stall_duty_min_permille;          /* C */
+  uint16_t stall_hold_ms;                    /* T */
+  uint32_t fblost_target_min_mm_s;
+  uint16_t fblost_duty_min_permille;
+  uint32_t fblost_speed_per_permille_milli;  /* 기울기: permille 당 기대 속도, 0.001 x (mm/s) 단위 */
+  uint16_t fblost_hold_ms;
+  uint32_t fbsign_speed_min_mm_s;
+  uint16_t fbsign_hold_ms;
+} protect_cfg_t;
+
+typedef struct {
+  int32_t target_mm_s;
+  int32_t meas_mm_s;
+  int16_t duty_permille;   /* 이번 틱이 실제로 드라이버에 쓴 값 */
+} protect_in_t;
+
+typedef struct {
+  uint16_t stall_ms, fblost_ms, fbsign_ms;   /* 조건이 연속으로 유지된 ms (포화 카운터) */
+  uint8_t  tripped;                          /* 래치됨; 빠져나오는 길은 protect_reset() 하나뿐 */
+} protect_t;
+
+void    protect_reset(protect_t *p);
+/* 바퀴 하나의 1 ms 한 스텝. 래치된 비트를 반환한다. 호스트 시험이 검사하는 불변식:
+ *   P1  비트가 한 번 서면 protect_reset() 만 그것을 지운다
+ *   P2  STALL 과 FEEDBACK_LOST 는 자기 blind band(목표나 듀티가 제 게이트 아래) 안에서는
+ *       아무리 오래 가도 판정하지 않는다. FEEDBACK_SIGN 에는 목표/듀티 게이트가 아예 없다:
+ *       blind band 는 속도 게이트뿐이라, 다른 둘이 무시하는 듀티에서도 트립할 수 있다
+ *   P3  지속 시간은 연속이어야 한다 — 정상 틱 하나가 카운터를 지운다
+ *   P4  FEEDBACK_LOST 의 문턱은 목표가 아니라 듀티를 따른다
+ *   P5  FEEDBACK_SIGN 은 구동 국면에서만 판정한다: sgn(target) == sgn(duty)
+ *   P6  되먹임이 넘겨줄 수 있는 어떤 int32 에도 판정은 정의된 채로 남는다(-fsanitize 줄을 본다)
+ */
+uint8_t protect_step(protect_t *p, const protect_cfg_t *c, const protect_in_t *in);
+#endif</code></pre>
+      <pre><code class="lang-c">/* User/Src/Control/protect.c — STALL / FEEDBACK_LOST / FEEDBACK_SIGN. 구조는 1세대
+   벤치 기록(2026-07-18, 2026-07-19)에서 왔다; 숫자는 하나도 가져오지 않고 꼴만 (2-6, 2-7). */
+#include "Control/protect.h"
+
+/* int32 범위 전체에 대한 |v|. -INT32_MIN 은 표현할 수 없으므로 여기에 "-v" 라고 쓰지 않는다 —
+   그것을 눈에 보이게 하는 것이 3-3-3 의 진단 빌드다. */
+static uint32_t mag(int32_t v)
+{
+  /* TODO(you) [T11]: int32 전체에서 |v| 를 uint32 로 - 힌트 카드 T11
+       1) v &lt; 0 이면 0u 에서 (uint32_t)v 를 뺀다 (부호 없는 뺄셈은 넘쳐도 정의돼 있다), 아니면 (uint32_t)v
+     "-v" 라고 쓰지 않는다 - 그 한 값(INT32_MIN)에서 UB 다. 채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)v; return 0u;
+}
+
+static int sgn(int32_t v)
+{
+  /* TODO(you) [T12]: -1, 0 또는 +1 - 힌트 카드 T12
+       1) v &gt; 0 이면 1, v &lt; 0 이면 -1, 아니면 0 (세 번째 값이 중요하다 - protect_step() 이 "목표 없음" 과 "속도 0" 을 이것으로 본다)
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)v; return 0;
+}
+
+void protect_reset(protect_t *p)
+{
+  /* TODO(you) [T13]: 카운터 셋과 래치를 0 으로 - 힌트 카드 T13
+       1) stall_ms · fblost_ms · fbsign_ms = 0u
+       2) tripped = 0u  (P1: 래치를 지우는 유일한 자리)
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)p;
+}
+
+uint8_t protect_step(protect_t *p, const protect_cfg_t *c, const protect_in_t *in)
+{
+  /* TODO(you) [T14]: 바퀴 하나의 1 ms 판정 - 힌트 카드 T14. 이 순서로:
+     1) 크기: at = |target|, am = |measured|, ad = |duty|   (전부 uint32, mag() 로)
+     2) driving = sgn(target) != 0 그리고 sgn(target) == sgn(duty)          P5
+     3) 조건 셋, 각각 2-7 표의 한 행을 AND 로 묶은 것:
+          st = at &gt;= stall_target_min &amp;&amp; am &lt; stall_speed_max &amp;&amp; ad &gt;= stall_duty_min
+          thr = ad * fblost_speed_per_permille_milli / 1000u                P4
+          fl = at &gt;= fblost_target_min &amp;&amp; ad &gt;= fblost_duty_min &amp;&amp; am &lt; thr
+          fs = driving &amp;&amp; am &gt;= fbsign_speed_min &amp;&amp; sgn(meas) != 0 &amp;&amp; sgn(duty) != sgn(meas)
+     4) 지속 카운터: 조건이 참인 동안 +1, 참이 아니게 되는 순간 0 으로         P3
+     5) 카운터가 지속 시간에 닿았고 그리고 조건이 아직 참이면 비트를 래치한다  P1
+     p-&gt;tripped 를 반환한다. printf 없음, 블로킹 없음: 이것은 1 kHz 문맥에서 돈다.
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)c; (void)in; (void)mag; (void)sgn;
+  return p-&gt;tripped;
+}</code></pre>
+      <p class="small">골격이 그대로 빌드되고 <strong>아무것도 트립하지 않는다</strong> — 안전한 기본값이 아니라 <strong>위험한 기본값</strong>이라는 점이 앞의 골격들과 다르다. 보호가 없는 상태에서 모터를 돌리는 구간을 만들지 않으려면 §3-3-3 을 끝내고 §3-3-4 로 간다.</p>
+
+      <h4 id="s3-3-3">3-3-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><strong><code>mag()</code> 와 <code>sgn()</code> 부터.</strong> 둘 다 한 줄이다. <code>mag()</code> 의 함정은 주석에 적혀 있다 — <code>-v</code> 라고 쓰면 <code>v == INT32_MIN</code> 에서 정의되지 않은 동작이다. 부호 없는 산술로 빼는 길을 찾는다(fw-09 의 <code>encoder_delta_raw()</code> 에서 이미 한 번 만난 문제다).</li>
+        <li><strong>세 조건식.</strong> §2-7 의 표를 그대로 옮긴다. 이때 <code>robot_params.h</code> 를 보지 않는다 — 값은 전부 <code>c-&gt;</code> 에서 온다.</li>
+        <li><strong>지속 카운터.</strong> P3 이 여기서 정해진다. "5 ms 동안 <em>연속으로</em>" 와 "5 번 있었다" 는 다른 말이다.</li>
+        <li>아래 시험을 돌린다. <strong>두 줄 다</strong>.</li>
+        <li>통과하면 <code>robot_params.h</code> 에 <strong>열 개의 문턱</strong>을 더하고 내 값을 적는다. 값의 근거는 §3-2-4 에서 잰 두 숫자(무부하 상한, 건강한 속도:듀티 비)와 §2-1 의 6 mm/s 계단이다.
+        <strong>어디가 blind band 가 되는지를 같이 적는다</strong> — "목표 <code>____</code> mm/s 아래에서는 FEEDBACK_LOST 가 판정하지 않는다" 를 내가 알고 골랐다는 기록이다.</li>
+      </ol>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 1 = T11 · T12 · 걸음 2 ~ 3 = T14. T13(리셋)은 걸음에 따로 없다 — <code>sgn()</code> 다음에 채운다. 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <details class="hint" id="hint-t11"><summary>힌트 T11 — <code>mag()</code> · int32 전체에서 |v| 를 uint32 로</summary>
+        <div class="ans">
+
+        <p><strong>할 일</strong> — 입력은 어떤 <code>int32_t</code> 든(되먹임이 고장 나면 루프에 무엇이든 들어온다 — P6), 출력은 그 크기를 <code>uint32_t</code> 로. <code>v == INT32_MIN</code>(−2 147 483 648)에서도 정의된 채여야 한다 — <code>+2 147 483 648</code> 은 <code>int32_t</code> 에 없지만 <code>uint32_t</code> 에는 있다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T11 - User/Src/Control/protect.c */
+static uint32_t mag(int32_t v) { return (v &lt; 0) ? (uint32_t)0 - (uint32_t)v : (uint32_t)v; }</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>(v &lt; 0) ? … : …</code> — 삼항 연산자: 조건이 참이면 앞, 아니면 뒤. 한 줄짜리 함수에 어울린다(<code>if</code> 로 써도 같다).</li>
+          <li><code>(uint32_t)0 - (uint32_t)v</code> — 먼저 <code>v</code> 를 부호 없는 수로 바꾸고(음수는 2의 보수 그대로 큰 수가 된다), 0 에서 뺀다. <strong>부호 없는 뺄셈은 넘쳐도 정의돼 있다</strong>(2<sup>32</sup> 로 되감긴다) — 그래서 <code>INT32_MIN</code> 에서 정확히 2 147 483 648 이 나온다. <code>-v</code> 라고 쓰면 부호 <strong>있는</strong> 수의 부정이고, 그 한 값에서 정의되지 않은 동작(UB)이다. fw-09 의 <code>encoder_delta_raw()</code> 와 같은 꼴의 함정이다.</li>
+          <li><code>(uint32_t)v</code> — 양수 쪽은 그대로 바꾸기만 하면 된다.</li>
+          <li>골격의 <code>(void)v; return 0u;</code> 는 지웠다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — 64비트로 올렸다 내리는 길도 있다: <code>(uint32_t)(v &lt; 0 ? -(int64_t)v : (int64_t)v)</code>. <code>int64_t</code> 안에서는 2 147 483 648 이 표현되므로 UB 가 아니다. 어느 쪽이든 <code>-v</code> 만 아니면 된다(§3-3-3 의 상자).</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 파일).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>(v &lt; 0) ? -v : v</code></td><td>컴파일러는 둘 다 조용하다. 값 채점도 <code>PASS protect 24 cases</code>. 진단 줄만 말한다: <code>runtime error: negation of -2147483648 cannot be represented in type 'int32_t' (aka 'int'); cast to an unsigned type to negate this value to itself</code>(벡터 8 에서, 2026-10-03 재확인)</td><td>부호 없는 뺄셈으로. 진단 줄의 합격 조건은 "조용한 것"이다</td></tr>
+            <tr><td><code>(uint32_t)(-v)</code></td><td>같다 — 캐스트가 부정 <strong>뒤</strong>라 부정은 여전히 <code>int32_t</code> 에서 일어난다</td><td>캐스트를 먼저</td></tr>
+            <tr><td><code>abs(v)</code></td><td><code>&lt;stdlib.h&gt;</code> 가 필요하고, <code>abs(INT_MIN)</code> 도 같은 UB 다</td><td>위와 같다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 벡터 8(<code>-2147483647 - 1</code>)이 진단 줄에서 조용하다. 값 채점은 T14 까지 채워야 움직인다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t12"><summary>힌트 T12 — <code>sgn()</code> · -1 · 0 · +1</summary>
+        <div class="ans">
+
+        <p><strong>할 일</strong> — 부호 함수. 양수면 +1, 음수면 −1, <strong>0 이면 0</strong>. 세 번째 값이 중요하다 — "목표가 없다"(<code>sgn(target) == 0</code>)와 "속도가 0 이다"(<code>sgn(meas) == 0</code>)를 T14 가 따로 본다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T12 - User/Src/Control/protect.c */
+static int sgn(int32_t v)
+{
+  if (v &gt; 0) { return 1; }
+  if (v &lt; 0) { return -1; }
+  return 0;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>if (v &gt; 0) { return 1; }</code> · <code>if (v &lt; 0) { return -1; }</code> · <code>return 0;</code> — 세 갈래를 순서대로. 반환형이 <code>int</code> 인 것은 −1 을 돌려줘야 하기 때문이다(<code>uint</code> 로는 못 한다).</li>
+          <li>골격의 <code>(void)v; return 0;</code> 는 지웠다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — 한 줄 꼴 <code>return (v &gt; 0) - (v &lt; 0);</code> 도 같은 값이다(비교의 결과가 C 에서는 0 또는 1 인 <code>int</code> 라서). 집필 중 돌려 <code>PASS protect 24 cases</code> 를 확인했다(2026-10-03). 읽기 쉬운 쪽을 고른다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 파일).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>return v &gt; 0;</code> — 비교 하나로 끝냈다</td><td>컴파일러는 조용하다(0 또는 1 만 나온다). <code>FAIL line 58: run(&amp;p, 500, -200, 150, 2) == PROT_FBSIGN</code> — 음수 속도의 부호가 0 이 되어 FEEDBACK_SIGN 이 영영 안 선다</td><td>세 갈래로</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — T14 까지 채운 뒤 벡터 6 (구동 국면 · 제동 국면)이 통과하면 이 함수가 맞다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t13"><summary>힌트 T13 — <code>protect_reset()</code> · 카운터 셋과 래치를 0 으로</summary>
+        <div class="ans">
+
+        <p><strong>할 일</strong> — 바퀴 하나의 보호 상태를 "아무 일도 없었다"로. 끝났을 때 네 필드가 전부 0. 부르는 쪽: <code>control_init()</code>(또는 <code>s_prot</code> 가 <code>static</code> 이라 0 으로 태어나는 것에 기대도 된다 — 아래), 그리고 새 <code>step</code> 을 시작할 때(T9). <strong>래치를 지우는 유일한 자리</strong>다(P1).</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T13 - User/Src/Control/protect.c */
+void protect_reset(protect_t *p)
+{
+  p-&gt;stall_ms  = 0u;
+  p-&gt;fblost_ms = 0u;
+  p-&gt;fbsign_ms = 0u;
+  p-&gt;tripped   = 0u;       /* P1: 래치를 지우는 유일한 자리 */
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li>세 카운터(<code>stall_ms</code> · <code>fblost_ms</code> · <code>fbsign_ms</code>) — "조건이 연속으로 유지된 ms". 0 은 "지금은 아니다".</li>
+          <li><code>p-&gt;tripped = 0u;</code> — 래치. T14 는 비트를 <strong>세우기만</strong> 하고(<code>|=</code>) 절대 지우지 않는다. 그래서 지우는 자리가 여기 하나뿐이고, 그것이 P1 이 "검사"가 아니라 구조에서 나오게 한다. 풀어 주는 정책(자동인가 명령인가)은 §3-3-4 의 3 과 fw-18 의 결정이다.</li>
+          <li><code>0u</code> 의 <code>u</code> — 부호 없는 상수. 필드가 <code>uint16_t</code> · <code>uint8_t</code> 라 맞춰 쓴다(<code>0</code> 으로 써도 값은 같다).</li>
+          <li>골격의 <code>(void)p;</code> 는 지웠다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — <code>memset(p, 0, sizeof *p);</code> 한 줄(<code>&lt;string.h&gt;</code>). 필드가 늘어도 빠뜨리지 않는 대신, "무엇을 지우는가"가 코드에 안 보인다. 둘 다 옳다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 파일).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>tripped</code> 를 안 지웠다</td><td><code>FAIL line 32: run(&amp;p, 500, 500, 800, 1000) == 0u</code> — 벡터 1 부터 떨어진다(이 Mac 의 기본 빌드에서 다섯 번 다 그랬다). 다만 결정적이지 않다 — 시험의 <code>protect_t p;</code> 는 스택 위라 <strong>쓰레기로 태어나고</strong>, 그 쓰레기가 우연히 0 이면 벡터 2 의 <code>FAIL line 40: p.tripped == 0u</code> 까지 가서 떨어진다(<code>-O2</code> 로 돌리니 그랬다). 리셋이 지우지 않으면 그 쓰레기가 "래치"다</td><td>네 필드 전부</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 벡터 2 의 <code>CHECK(p.tripped == 0u)</code>("빠져나오는 길은 리셋뿐")가 이 함수를 본다 — T14 와 함께.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t14"><summary>힌트 T14 — <code>protect_step()</code> · 바퀴 하나의 1 ms 판정</summary>
+        <div class="ans">
+
+        <p><strong>할 일</strong> — 입력은 상태 <code>p</code>, 문턱 <code>c</code>(전부 <code>c-&gt;</code> 에서 — 이 파일은 <code>robot_params.h</code> 를 모른다), 이번 틱의 목표 · 측정 · 듀티 <code>in</code>. 출력은 래치된 비트. 끝났을 때 참이어야 하는 것: 세 조건이 "지속 시간만큼 <strong>연속으로</strong>" 참이었던 비트만 섰고, 한 번 선 비트는 그대로다. 1 kHz ISR 안에서 바퀴마다 불린다 — <code>printf</code> 없음, 블로킹 없음. §2-7 의 표가 그대로 코드가 된다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T14 - User/Src/Control/protect.c */
+uint8_t protect_step(protect_t *p, const protect_cfg_t *c, const protect_in_t *in)
+{
+  /* 1) 크기 - 전부 uint32, mag() 로 (P6: INT32_MIN 에서도 정의된다) */
+  const uint32_t at = mag(in-&gt;target_mm_s);
+  const uint32_t am = mag(in-&gt;meas_mm_s);
+  const uint32_t ad = mag((int32_t)in-&gt;duty_permille);
+
+  /* 2) 구동 국면인가: 목표가 있고, 듀티가 목표와 같은 쪽으로 밀고 있다 (P5) */
+  const int driving = (sgn(in-&gt;target_mm_s) != 0)
+                   &amp;&amp; (sgn(in-&gt;target_mm_s) == sgn((int32_t)in-&gt;duty_permille));
+
+  /* 3) 조건 셋 - 2-7 표의 한 행씩, AND 로 */
+  const int st = (at &gt;= c-&gt;stall_target_min_mm_s)          /* A: 이 아래는 blind band */
+              &amp;&amp; (am &lt;  c-&gt;stall_speed_max_mm_s)           /* B: "움직이지 않음" */
+              &amp;&amp; (ad &gt;= c-&gt;stall_duty_min_permille);       /* C: 실제로 밀고 있을 때만 */
+  const uint32_t thr = ad * c-&gt;fblost_speed_per_permille_milli / 1000u;   /* P4: 문턱은 듀티를 따른다 */
+  const int fl = (at &gt;= c-&gt;fblost_target_min_mm_s)         /* blind band: 이 아래에서는 판정하지 않는다 */
+              &amp;&amp; (ad &gt;= c-&gt;fblost_duty_min_permille)       /* 구동이 실제로 밀고 있을 때만 */
+              &amp;&amp; (am &lt;  thr);                              /* "이 듀티를 주는데 그만큼의 속도가 안 나온다" */
+  const int fs = driving
+              &amp;&amp; (am &gt;= c-&gt;fbsign_speed_min_mm_s)          /* 이 아래는 잡음으로 본다 */
+              &amp;&amp; (sgn(in-&gt;meas_mm_s) != 0)
+              &amp;&amp; (sgn((int32_t)in-&gt;duty_permille) != sgn(in-&gt;meas_mm_s));
+
+  /* 4) 지속 카운터: 참이면 +1 (0xFFFF 에서 포화), 거짓이 되는 순간 0 (P3) */
+  p-&gt;stall_ms  = st ? (uint16_t)((p-&gt;stall_ms  &lt; 0xFFFFu) ? p-&gt;stall_ms  + 1u : p-&gt;stall_ms)  : 0u;
+  p-&gt;fblost_ms = fl ? (uint16_t)((p-&gt;fblost_ms &lt; 0xFFFFu) ? p-&gt;fblost_ms + 1u : p-&gt;fblost_ms) : 0u;
+  p-&gt;fbsign_ms = fs ? (uint16_t)((p-&gt;fbsign_ms &lt; 0xFFFFu) ? p-&gt;fbsign_ms + 1u : p-&gt;fbsign_ms) : 0u;
+
+  /* 5) 지속 시간에 닿았고 조건이 아직 참이면 래치 (P1: 지우는 것은 protect_reset() 뿐) */
+  if (st &amp;&amp; p-&gt;stall_ms  &gt;= c-&gt;stall_hold_ms)  { p-&gt;tripped |= (uint8_t)PROT_STALL; }
+  if (fl &amp;&amp; p-&gt;fblost_ms &gt;= c-&gt;fblost_hold_ms) { p-&gt;tripped |= (uint8_t)PROT_FBLOST; }
+  if (fs &amp;&amp; p-&gt;fbsign_ms &gt;= c-&gt;fbsign_hold_ms) { p-&gt;tripped |= (uint8_t)PROT_FBSIGN; }
+  return p-&gt;tripped;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>const uint32_t at = mag(in-&gt;target_mm_s);</code> 등 셋 — 크기부터. 문턱은 전부 크기(부호 없음)라 비교 상대도 부호 없는 수여야 한다 — 부호 있는 <code>in-&gt;meas_mm_s</code> 와 그냥 비교하면 음수가 아주 큰 수로 읽힌다(아래 표). <code>(int32_t)in-&gt;duty_permille</code> 은 <code>int16_t</code> 를 <code>mag()</code> 의 인자형에 맞춘 것이다.</li>
+          <li><code>const int driving = (sgn(target) != 0) &amp;&amp; (sgn(target) == sgn(duty));</code> — 구동 국면(P5). 목표가 0 이면 "구동"이 아니고, 제어기가 되밀고 있으면(목표 +, 듀티 −) 제동이다. 이 한 줄이 1세대 2026-07-19 의 둘째 사고를 막는다(§2-7 표의 둘째 행).</li>
+          <li><code>st</code> — STALL 의 세 조건을 <code>&amp;&amp;</code> 로. <code>at &gt;= A</code> 와 <code>am &lt; B</code> 가 같이 서려면 A &gt; B 여야 한다는 것이 표의 각주이고, 3-3-4 의 2 에서 <code>_Static_assert</code> 가 된다.</li>
+          <li><code>const uint32_t thr = ad * c-&gt;fblost_speed_per_permille_milli / 1000u;</code> — <strong>문턱은 듀티를 따른다</strong>(P4). 곱한 뒤 나누므로 <code>ad</code>(≤ 1000) × 기울기 가 <code>uint32</code> 안에 들어야 한다 — 기울기가 4 백만을 넘지 않으면 된다. §2-7 은 "나눗셈을 없애려는 것"이라 적었지만 골격의 식에는 <code>/ 1000u</code> 가 하나 남는다 — 기울기(건강한 비 ÷ FRAC)의 나눗셈을 <strong>미리</strong> 해 둔 것이고, 이 상수 나눗셈 하나는 1 kHz 에서 문제가 아니다. 없애고 싶으면 기울기의 단위를 바꾼다(다르게 써도 되는 곳).</li>
+          <li><code>fl</code> — 두 게이트(목표 · 듀티)와 <code>am &lt; thr</code>. 게이트 아래가 blind band 다(P2) — 벡터 4 가 "그 아래에서는 1000 ms 를 둬도 안 선다"를 채점한다.</li>
+          <li><code>fs</code> — <code>driving</code> 이 앞에 있고, 속도 게이트, 그리고 <code>sgn(meas) != 0</code>. 마지막 조건이 없으면 속도 0 에서 <code>sgn(duty) != 0</code> 이 늘 참이 되어 벡터 9(전부 0 인 cfg)가 떨어진다 — 그 벡터가 "0 은 보호를 죽인다"를 보이는 벡터인데, 이 조건이 빠지면 거꾸로 FEEDBACK_SIGN 이 선다.</li>
+          <li><code>p-&gt;stall_ms = st ? (uint16_t)((p-&gt;stall_ms &lt; 0xFFFFu) ? p-&gt;stall_ms + 1u : p-&gt;stall_ms) : 0u;</code> — 지속 카운터(P3). 참이면 +1(0xFFFF 에서 포화 — 65 초 넘게 참이어도 되감기지 않게), <strong>거짓이면 0</strong>. "연속으로"는 이 <code>: 0u</code> 한 조각이다. 바깥 <code>(uint16_t)</code> 캐스트는 <code>+ 1u</code> 가 <code>unsigned int</code> 로 승격되는 것을 다시 16비트로 되돌린다(없으면 arm-gcc 가 조용히 잘라 넣지만 <code>-Wconversion</code> 을 켜면 경고다).</li>
+          <li><code>if (st &amp;&amp; p-&gt;stall_ms &gt;= c-&gt;stall_hold_ms) { p-&gt;tripped |= (uint8_t)PROT_STALL; }</code> — 래치(P1). <code>|=</code> 는 비트를 <strong>세우기만</strong> 한다. 조건 <code>st &amp;&amp;</code> 를 다시 보는 것은 카운터가 포화한 채 남는 경우를 막기 위해서가 아니라(거짓이면 0 이 됐다), "지금도 참"을 명시하는 것이다 — 걸음 5 의 글자 그대로.</li>
+          <li><code>return p-&gt;tripped;</code> — 골격이 이미 그렇게 돌려줬다. 골격의 <code>(void)c; (void)in; (void)mag; (void)sgn;</code> 는 지웠다 — 넷 다 이제 쓴다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① 카운터를 <code>uint16_t</code> 로 포화시킬지, 지속 시간에 닿으면 세기를 멈출지 — 둘 다 P3 을 만족한다. ② 세 조건을 <code>const int</code> 셋으로 나눌지 한 <code>if</code> 로 묶을지는 취향이지만, 나눠 두면 <strong>어느 조건에서 걸렸는지</strong>를 디버거로 한 번에 볼 수 있다. ③ 트립한 뒤 래치를 어떻게 푸는가는 여기 없다 — 내 결정이고 fw-18 의 자리다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 파일). <code>mag()</code> · <code>sgn()</code> 은 T11 · T12.</p>
+        <p><strong>흔한 실수</strong> — 대부분 컴파일러는 조용하고 호스트 시험이 잡는다. 아래 줄 번호는 두 블록을 이어 붙여 만든 내 <code>test_protect.c</code> 의 것이다(블록 사이 빈 줄 둘). 이어 붙인 자리의 빈 줄 수에 따라 벡터 5 부터는 한두 줄 다를 수 있으니 <strong>CHECK 의 글자</strong>로 찾는다.</p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>거짓일 때 카운터를 0 으로 안 돌렸다(누적)</td><td><code>FAIL line 46: run(&amp;p, 500, 0, 800, 2) == 0u</code> — 벡터 3: 정상 틱 하나가 끼어도 앞의 2 가 남아 있다</td><td><code>: 0u</code></td></tr>
+            <tr><td>래치 없이 조건을 그대로 돌려줬다</td><td><code>FAIL line 38: run(&amp;p, 500, 500, 800, 100) == PROT_FBLOST</code> — 벡터 2: 정상으로 돌아오자 비트가 사라졌다</td><td><code>p-&gt;tripped |=</code> 에 쌓고 그것을 돌려준다</td></tr>
+            <tr><td><code>driving</code> 을 빼고 <code>sgn(duty) != sgn(meas)</code> 만 봤다</td><td><code>FAIL line 78: run(&amp;p, 500, 200, -800, 1000) == 0u</code> — 벡터 6 의 제동 국면</td><td>§2-7 둘째 행 · P5</td></tr>
+            <tr><td><code>sgn(meas) != 0</code> 을 뺐다</td><td><code>FAIL line 104: r == 0u</code> — 벡터 9: 속도 0 에서 FEEDBACK_SIGN 이 선다</td><td>조건을 되돌린다</td></tr>
+            <tr><td>문턱을 <code>at</code>(목표)에 비례시켰다</td><td><code>FAIL line 64: run(&amp;p, 500, 60, 800, 3) == PROT_FBLOST</code> — 벡터 5: 1세대 2026-07-19 의 오트립 구조</td><td><code>ad</code>(듀티)로 — P4</td></tr>
+            <tr><td><code>am &lt; in-&gt;meas_mm_s</code> 처럼 부호를 섞어 비교했다</td><td>Mac(<code>-Wextra</code>): <code>warning: comparison of integers of different signs: 'uint32_t' (aka 'unsigned int') and 'const int32_t' (aka 'const int') [-Wsign-compare]</code><br>arm-gcc <code>-Wall</code>: <strong>조용하다</strong></td><td>크기는 전부 <code>mag()</code> 를 거친 <code>uint32_t</code> 끼리</td></tr>
+            <tr><td><code>if (fl = 1)</code></td><td>arm-gcc: <code>warning: suggest parentheses around assignment used as truth value [-Wparentheses]</code><br>Mac: <code>warning: using the result of an assignment as a condition without parentheses [-Wparentheses]</code></td><td><code>==</code>. 경고를 읽는다</td></tr>
+            <tr><td><code>if (fl);</code> — 세미콜론</td><td>Mac: <code>warning: if statement has empty body [-Wempty-body]</code><br>arm-gcc <code>-Wall</code>: <strong>조용하다</strong> — 호스트 시험이 먼저 잡는다</td><td>세미콜론을 지운다</td></tr>
+            <tr><td><code>mag()</code> 를 <code>-v</code> 로</td><td>T11 의 표 — 값 채점은 통과, 진단 줄만 말한다</td><td>T11</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 걸음대로 채우면 §3-3-3 의 첫 줄이 이렇게 움직인다(완결 코드를 걸음 단위로 잘라 실제로 돌린 것, 2026-10-03):</p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>여기까지 채우면</th><th><code>/tmp/test_protect</code> 가 멈추는 곳</th><th>뜻</th></tr></thead>
+          <tbody>
+            <tr><td>골격 그대로(T11 ~ T13 만 채움)</td><td><code>FAIL line 37: run(&amp;p, 500, 0, 800, 1) == PROT_FBLOST</code></td><td>벡터 1 은 "아무것도 안 선다"라 통과한다. 벡터 2 — 아무것도 안 선다</td></tr>
+            <tr><td>1) ~ 3) 조건까지, 조건이 참이면 바로 래치</td><td><code>FAIL line 36: run(&amp;p, 500, 0, 800, 2) == 0u</code></td><td>벡터 2 — 지속 시간(3 ms) 전에 섰다</td></tr>
+            <tr><td>4) 카운터 + 5) 지속 시간에 래치</td><td><code>PASS protect 24 cases</code></td><td>둘째 줄(<code>-fsanitize=undefined</code>)도 조용해야 한다 — T11 의 표</td></tr>
+          </tbody>
+        </table></div>
+        <p>통과하면 체크포인트 <code>protect-host-pass</code> · <code>stall-path-host-only</code>(벡터 7 이 STALL 의 경로다 — 벤치에서는 발동시키지 않는다). 그다음 §3-3-3 의 5 로 — 열 문턱에 내 값을 적고, 3-3-4 에서 엮는다(T5 의 카드에 엮는 코드가 있다).</p>
+        </div></details>
+      <pre><code class="lang-c">/* robot_params.h 에 더하는 열 줄 — 전부 EMPTY. 값은 내 기록에서 나온다 (2-7, 3-2-4) */
+#define STALL_TARGET_MIN_MM_S            0   /* ____ A: |target| 가 이 값 아래면 STALL 은 판정하지 않는다 */
+#define STALL_SPEED_MAX_MM_S             0   /* ____ B: "움직이지 않음". A &gt; B 여야 한다 [mm/s] */
+#define STALL_DUTY_MIN_PERMILLE          0   /* ____ C: 실제로 밀고 있을 때만 [permille] */
+#define STALL_HOLD_MS                    0   /* ____ T [ms] */
+#define FBLOST_TARGET_MIN_MM_S           0   /* ____ 게이트 [mm/s] */
+#define FBLOST_DUTY_MIN_PERMILLE         0   /* ____ 게이트 [permille] */
+#define FBLOST_SPEED_PER_PERMILLE_MILLI  0   /* ____ permille 당 0.001 x (mm/s) — 건강한 속도:듀티 비 / FRAC */
+#define FBLOST_HOLD_MS                   0   /* ____ [ms] */
+#define FBSIGN_SPEED_MIN_MM_S            0   /* ____ 이 값 아래는 잡음으로 무시 [mm/s] */
+#define FBSIGN_HOLD_MS                   0   /* ____ [ms] */</code></pre>
+      <p class="small">이 열 개에는 <strong><code>control.c</code> 에서 가드를 붙인다</strong> — 0 이면 어떤 보호도 트립하지 않기 때문이다(아래 시험의 마지막 벡터가 그것을 보인다). 실습 B 까지는 이 열 줄도 가드도 없었다: 보호를 엮는 <strong>이 실습에서 같이</strong> 넣는다.</p>
+      <p class="small">다만 열 개가 같은 뜻으로 0 인 것은 아니다. <strong>0 이면 판정이 죽는 것은 둘</strong>이다 — <code>STALL_SPEED_MAX_MM_S</code>(<code>|속도| &lt; 0</code> 은 참이 될 수 없다)와 <code>FBLOST_SPEED_PER_PERMILLE_MILLI</code>(문턱이 0 이라 같은 이유).
+      나머지, 특히 게이트 둘(<code>*_TARGET_MIN_*</code> · <code>*_DUTY_MIN_*</code>)에게 0 은 <strong>"blind band 를 두지 않는다"는 뜻있는 선택</strong>일 수 있다 — 그런데 <code>!= 0</code> 가드는 그 선택을 못 쓰게 만든다.
+      가드를 열 개 다 두는 것은 "열 개를 한 번씩은 들여다보게" 하려는 forcing function 이다. blind band 를 정말 두지 않기로 했다면 0 이 아니라 <strong>아주 작은 값 + 그 이유를 적은 주석</strong>으로 쓴다 — "안 정한 0" 과 "정해서 0" 을 구분할 방법이 소스에 있어야 한다.</p>
+      <p>시험 파일은 <strong>전량으로 준다.</strong> 위의 <code>CFG</code> 는 <strong>시험용 눈금</strong>이지 권장값이 아니다 — 산수가 눈으로 보이게 둥근 수로 골랐다.</p>
+      <pre><code class="lang-c">
+/* firmware/host_tests/test_protect.c — protect_step() 의 벡터(protect.c, 순수).
+   아래 cfg 는 시험용 눈금이지 권장값이 아니다: 산수를 눈으로 확인할 수 있게 둥근 수로
+   골랐다. 내 robot_params.h 의 값은 내가 재서 정한다. */
+#include &lt;assert.h&gt;
+#include &lt;stdio.h&gt;
+#include "Control/protect.h"
+
+static int cases = 0;
+#define CHECK(c) do { cases++; if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); return 1; } } while (0)
+
+static const protect_cfg_t CFG = {
+  /* stall  */ 300u, 20u, 200u, 5u,
+  /* fblost */ 100u, 200u, 100u, 3u,      /* 기울기 100 -&gt; 문턱 = |duty| * 0.1 mm/s */
+  /* fbsign */ 50u, 2u
+};
+
+/* 같은 틱을 n 번 돌리고 래치된 비트를 반환한다 */
+static uint8_t run(protect_t *p, int32_t tgt, int32_t meas, int16_t duty, int n)
+{
+  protect_in_t in = { tgt, meas, duty };
+  uint8_t r = 0;
+  for (int i = 0; i &lt; n; i++) { r = protect_step(p, &amp;CFG, &amp;in); }
+  return r;
+}
+
+int main(void)
+{
+  protect_t p;
+
+  /* 1. 정상 주행: 500 mm/s 요청, 500 측정, 듀티 800 -&gt; 아무것도 트립하지 않는다 */
+  protect_reset(&amp;p);
+  CHECK(run(&amp;p, 500, 500, 800, 1000) == 0u);
+
+  /* 2. FEEDBACK_LOST: 듀티 800 -&gt; 문턱 80 mm/s. 목표 500 에 속도 0 */
+  protect_reset(&amp;p);
+  CHECK(run(&amp;p, 500, 0, 800, 2) == 0u);           /* 지속 3 ms 에 아직 못 닿았다 */
+  CHECK(run(&amp;p, 500, 0, 800, 1) == PROT_FBLOST);  /* 연속 3 번째 ms 에 래치된다 */
+  CHECK(run(&amp;p, 500, 500, 800, 100) == PROT_FBLOST); /* 그리고 래치된 채로 남는다 */
+  protect_reset(&amp;p);
+  CHECK(p.tripped == 0u);                         /* 빠져나오는 길은 리셋뿐 */
+
+  /* 3. 지속은 연속이어야 한다: 사이에 정상 틱 하나가 끼면 카운터가 지워져야 한다 */
+  protect_reset(&amp;p);
+  run(&amp;p, 500, 0, 800, 2);
+  CHECK(run(&amp;p, 500, 500, 800, 1) == 0u);         /* 정상 틱 하나 */
+  CHECK(run(&amp;p, 500, 0, 800, 2) == 0u);           /* 다시 2 뿐 */
+  CHECK(run(&amp;p, 500, 0, 800, 1) == PROT_FBLOST);
+
+  /* 4. STALL 과 FEEDBACK_LOST 의 blind band: 제 게이트 아래에서는 아무리 오래 가도 트립하지 않는다
+        (1세대의 구멍을 일부러 남겼다 - 그 띠가 보호가 볼 수 없는 자리다) */
+  protect_reset(&amp;p);
+  CHECK(run(&amp;p, 90, 0, 800, 1000) == 0u);         /* 목표 90 &lt; 100 */
+  protect_reset(&amp;p);
+  CHECK(run(&amp;p, 500, 0, 150, 1000) == 0u);        /* 듀티 150 &lt; 200 */
+  /* FEEDBACK_SIGN 에는 그런 게이트가 없다 (2-7). 같은 낮은 듀티에서도 트립한다, 그것의
+     blind band 는 속도 게이트뿐이기 때문이다: 보호마다 눈먼 곳이 한 자리가 아니라 제각각이다. */
+  protect_reset(&amp;p);
+  CHECK(run(&amp;p, 500, -200, 150, 2) == PROT_FBSIGN);
+</code></pre>
+      <p class="small">이어지는 부분(5 의 나머지부터)이다. 마지막 두 묶음이 §2-7 · §3-3-3 이 말한 두 사실을 벡터로 굳힌다.</p>
+      <pre><code class="lang-c">
+  /* 5. 문턱은 목표가 아니라 듀티를 따른다: 같은 60 mm/s, 듀티 둘.
+        듀티 800 -&gt; thr 80 -&gt; 60 &lt; 80 트립.  듀티 500 -&gt; thr 50 -&gt; 60 &gt;= 50 트립 안 함. */
+  protect_reset(&amp;p);
+  CHECK(run(&amp;p, 500, 60, 800, 3) == PROT_FBLOST);
+  protect_reset(&amp;p);
+  CHECK(run(&amp;p, 500, 60, 500, 1000) == 0u);
+  /* 천천히 오르는 듀티에서 같은 꼴의 속도: 2026-07-19 의 오트립이 고쳐졌다 */
+  protect_reset(&amp;p);
+  { uint8_t r = 0; for (int16_t d = 200; d &lt;= 800; d += 10) { r |= run(&amp;p, 500, (int32_t)d / 10 + 5, d, 1); }
+    CHECK(r == 0u); }
+
+  /* 6. FEEDBACK_SIGN: 구동 국면에서만. 듀티 +, 속도 - , |속도| &gt;= 50, 목표 + */
+  protect_reset(&amp;p);
+  CHECK(run(&amp;p, 500, -200, 800, 1) == 0u);
+  CHECK(run(&amp;p, 500, -200, 800, 1) == PROT_FBSIGN);   /* 지속 2 ms */
+  /* 제동: 목표 +, 듀티 -(제어기가 되밀고 있다), 속도는 아직 + -&gt; 절대 트립 안 함 */
+  protect_reset(&amp;p);
+  CHECK(run(&amp;p, 500, 200, -800, 1000) == 0u);
+  /* 0 가까운 속도는 부호 오류가 아니라 잡음이다 (여기서 FEEDBACK_LOST 는 발동한다 - 그게 그 몫이다) */
+  protect_reset(&amp;p);
+  CHECK((run(&amp;p, 500, -30, 800, 1000) &amp; PROT_FBSIGN) == 0u);
+
+  /* 7. STALL: 목표 500 &gt;= 300, 속도 0 &lt; 20, 듀티 800 &gt;= 200, 5 ms */
+  protect_reset(&amp;p);
+  CHECK((run(&amp;p, 500, 0, 800, 4) &amp; PROT_STALL) == 0u);
+  CHECK((run(&amp;p, 500, 0, 800, 1) &amp; PROT_STALL) == PROT_STALL);
+  /* 정상 저속 주행이 스톨로 보여서는 안 된다: 그것을 막는 것이 A &gt; B 다 */
+  protect_reset(&amp;p);
+  CHECK((run(&amp;p, 250, 250, 800, 1000) &amp; PROT_STALL) == 0u);
+
+  /* 8. 극단의 되먹임: 고장 난 엔코더는 루프에 어떤 int32 든 넘길 수 있다.
+        판정은 정의된 채로 남아야 한다 - 그것을 증명하는 것이 진단 빌드다. */
+  protect_reset(&amp;p);
+  CHECK(run(&amp;p, 500, (-2147483647 - 1), 800, 10) == PROT_FBSIGN);
+  protect_reset(&amp;p);
+  CHECK(run(&amp;p, 500, 2147483647, 800, 10) == 0u);
+
+  /* 9. 전부 EMPTY 인 cfg: 문턱이 모두 0 이면 보호는 절대 발동하지 않는다.
+        control.c 가 이 키들을 _Static_assert 로 가드하는 이유가 그것이다. */
+  { const protect_cfg_t z = {0,0,0,0,0,0,0,0,0,0};
+    protect_t q; protect_reset(&amp;q);
+    protect_in_t in = { 500, 0, 800 };
+    uint8_t r = 0; for (int i = 0; i &lt; 1000; i++) { r = protect_step(&amp;q, &amp;z, &amp;in); }
+    CHECK(r == 0u); }
+
+  printf("PASS protect %d cases\n", cases);
+  return 0;
+}
+</code></pre>
+      <pre><code class="lang-bash">cd firmware
+# 값 채점
+cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_protect.c h723zg/User/Src/Control/protect.c -o /tmp/test_protect &amp;&amp; /tmp/test_protect
+# 진단 — 값이 맞아도 정의되지 않은 동작이 있으면 여기서 runtime error 가 뜬다
+cc -std=c11 -Wall -Wextra -fsanitize=undefined -Ih723zg/User/Inc host_tests/test_protect.c h723zg/User/Src/Control/protect.c -o /tmp/test_protect_ub &amp;&amp; /tmp/test_protect_ub</code></pre>
+      <pre><code class="lang-text">PASS protect 24 cases</code></pre>
+      <div class="callout why"><span class="ct">이 쪽에서 진단 줄이 실제로 하는 일 — 집필 중에 확인한 것</span>
+        <p><code>mag()</code> 를 <code>(uint32_t)((v &lt; 0) ? -v : v)</code> 로 쓴 구현을 만들어 두 줄을 다 돌려 봤다(2026-09-23, Mac <code>cc</code>). 결과:</p>
+        <pre><code class="lang-text">$ /tmp/test_protect          # 값 채점
+PASS protect 24 cases                                &lt;- 통과한다
+
+$ /tmp/test_protect_ub       # 진단
+protect.c:3:61: runtime error: negation of -2147483648 cannot be represented in type 'int32_t'
+  (aka 'int'); cast to an unsigned type to negate this value to itself
+SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior protect.c:3:61
+PASS protect 24 cases                                &lt;- 그래도 PASS 는 찍힌다</code></pre>
+        <p>두 가지를 한꺼번에 보여 준다. 첫째, <strong>값만 채점하는 벡터는 정의되지 않은 동작이 든 구현을 통과시킨다</strong> — 24개가 다 맞았고, 이 구현을 1 kHz 경로로 들고 갈 뻔했다.
+        둘째, <strong>진단 줄도 프로그램을 멈추지 않는다</strong> — 마지막에 <code>PASS</code> 가 찍힌 것만 보고 넘어가면 그 위의 두 줄을 놓친다. <strong>둘째 줄의 합격 조건은 "조용한 것"</strong>이다.</p>
+      </div>
+
+      <h4 id="s3-3-4">3-3-4. 굽고 보기 — 보호를 엮고, 일부러 고장을 만든다 <span class="tag power">모터 전원</span></h4>
+      <p>엮는 것은 세 곳이다.</p>
+      <ol class="steps">
+        <li><code>control.c</code> 에 <code>#include "Control/protect.h"</code>, <code>static protect_t s_prot[NW];</code>, 그리고 <code>robot_params.h</code> 의 열 문턱으로 채운 <code>static const protect_cfg_t s_prot_cfg = { … };</code>.</li>
+        <li><strong>열 개의 <code>_Static_assert</code></strong> 를 <code>control.c</code> 첫머리에 더한다 — 꼴은 <code>MOTOR_SIGN_*</code> 의 것과 같다: <code>_Static_assert((STALL_HOLD_MS) != 0, "robot_params.h: STALL_HOLD_MS is still EMPTY");</code>.
+        <code>A &gt; B</code> 를 증명하는 한 줄도 같이 둔다(<code>STALL_TARGET_MIN_MM_S &gt; STALL_SPEED_MAX_MM_S</code>) — §2-7 표의 각주가 컴파일러의 일이 된다.</li>
+        <li><code>control_step_1khz()</code> 의 for 루프에서 <strong>PID 와 <code>motor_set()</code> 사이</strong>에 <code>protect_step()</code> 을 넣는다(§2-10 의 단조 사슬 — 뒤에 오는 것이 출력을 줄인다).
+        트립하면 그 바퀴의 듀티를 0 으로, 적분을 0 으로(§2-5), 그리고 <strong>LD3 를 켠다</strong>(빨강 = fault 래치 — 이 가이드의 LED 역할). 포획 행의 <code>prot</code> 열에 <code>s_prot[wheel].tripped</code> 를 적는다.
+        <strong>끊는 범위는 그 바퀴 하나다</strong> — 이 골격은 트립한 바퀴의 듀티만 0 으로 하고 나머지 셋과 MOTOR_EN 은 건드리지 않는다. 1세대는 같은 사고에 <strong>전 모터 정지 + 주 전원 릴레이 열기</strong>로 대응했다(2026-07-18 의 백스톱).
+        넷을 다 세울 것인가, MOTOR_EN 까지 내릴 것인가는 안전 상태기계의 결정이고 <a href="fw-18-safety-fsm.html">fw-18</a> 의 자리다 — <strong>여기서 좁게 끊는 것이 최종 답이라고 읽지 않는다.</strong>
+        래치를 푸는 정책(자동으로 풀 것인가, 명령으로만 풀 것인가, 얼마나 유지할 것인가)도 <strong>내가 정한다</strong> — 여기서는 "<code>step</code> 을 새로 시작할 때 <code>protect_reset()</code>" 까지만 해 두고, 계약의 fault 비트로 올리는 것과 해제 정책은 <a href="fw-18-safety-fsm.html">fw-18</a> 에서 정한다.</li>
+      </ol>
+      <p>이제 세 가지를 확인한다. <strong>선을 뽑고 꽂는 일은 전부 <code>pwr down</code> 상태에서</strong> 한다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>#</th><th>만드는 고장</th><th>절차</th><th>보이는 것</th></tr></thead>
+        <tbody>
+          <tr><td>①</td><td><strong>FEEDBACK_LOST</strong> — 되먹임이 죽는다(1세대 2026-07-18 의 재현)</td>
+              <td><code>pwr down</code> → 한 바퀴의 엔코더 커넥터를 <strong>뽑는다</strong> → <code>enc</code> 로 그 바퀴 카운트가 더 이상 변하지 않는 것을 손으로 돌려 확인 → <code>pwr up</code> → <code>step &lt;그 바퀴&gt; &lt;목표&gt; &lt;ms&gt;</code></td>
+              <td><strong>LD3 가 켜진다.</strong> CSV 에서 <code>duty</code> 가 올라가다가 어느 행부터 0 이 되고, 그 행의 <code>prot</code> 열이 <code>2</code>(<code>PROT_FBLOST</code>) 다. 마지막 요약 줄의 <code>prot</code> 도 같다</td></tr>
+          <tr><td>②</td><td><strong>FEEDBACK_SIGN</strong> — 부호가 뒤집힌다(1세대 2026-07-17~18 의 재현)</td>
+              <td><code>pwr down</code> → 그 바퀴 엔코더의 <strong>A 와 B 를 바꿔 꽂는다</strong> → <code>enc</code> 로 손으로 앞으로 돌렸을 때 카운트가 <strong>줄어드는</strong> 것을 확인 → <code>pwr up</code> → 같은 <code>step</code></td>
+              <td>LD3 · <code>prot</code> 열이 <code>4</code>(<code>PROT_FBSIGN</code>). 뒤집힌 되먹임은 양의 되먹임이라 <strong>몇 ms 안에</strong> 듀티가 상한까지 간다 — 그것을 보호가 끊는 데 걸린 시간이 CSV 에 있다</td></tr>
+          <tr><td>③</td><td><strong>오트립하지 않는가</strong> — 정상 급가속(1세대 2026-07-19 의 재현)</td>
+              <td>선을 <strong>원래대로 돌려놓고</strong> 부호를 <code>enc</code> 로 다시 확인 → 목표를 0 에서 내가 쓰는 가장 큰 값까지 한 번에 주는 <code>step</code></td>
+              <td>CSV 의 <code>prot</code> 열이 <strong>처음부터 끝까지 0</strong>. 트립하면 문턱이 잘못된 것이지 코드가 잘못된 것이 아니다 — §2-7 로 돌아가 기울기나 게이트를 다시 정한다</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">① · ② 를 끝내면 <strong>반드시 선을 원래대로 돌려놓고</strong> <code>enc</code> 로 네 바퀴의 부호를 다시 확인한다. 뒤집힌 채로 다음 쪽에 가면 fw-17 의 <code>l_tick</code> · <code>r_tick</code> 부호가 통째로 틀린다.
+      <strong>STALL 은 여기서 발동시키지 않는다</strong> — 호스트 시험의 벡터 7(경로 통과)까지가 이 쪽의 몫이다.</p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다. 수치 합격선이 빈칸인 항목은 <strong>내 기록을 보고 내가 정해</strong> 노트에 적습니다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="pid-host-pass"><span><strong>경로 통과</strong> — <code>test_pid</code> 가 <code>PASS pid 16 cases</code> 를 찍고, <code>-fsanitize=undefined</code> 를 더한 둘째 줄이 <strong>조용하다</strong>
+          <span class="sub">판정 수단: Mac 터미널 · §3-1-4 · 고른 와인드업 방지의 이름과 이유를 노트에 적었다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="protect-host-pass"><span><strong>경로 통과</strong> — <code>test_protect</code> 가 <code>PASS protect 24 cases</code> 를 찍고, 진단 줄에 <code>runtime error:</code> 가 <strong>하나도 없다</strong>
+          <span class="sub">판정 수단: Mac 터미널 · §3-3-3 · <code>PASS</code> 아래가 아니라 <strong>위</strong>를 본다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="stall-path-host-only"><span><strong>경로 통과</strong> — STALL 의 판정 경로가 호스트 시험의 벡터 7 에서 돈다(<code>A &gt; B</code> 이므로 정상 저속 주행은 걸리지 않는다는 벡터까지). <strong>벤치에서 발동시키지 않았다</strong>
+          <span class="sub">판정 수단: 호스트 시험 출력 · §3-3-3 · 발동 확인은 <a href="fw-20-after-assembly.html">fw-20</a> 의 몫이다 — 기어드 모터의 출력축을 붙잡지 않는다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="step-csv-captured"><span><strong>경로 통과</strong> — <code>step &lt;바퀴&gt; &lt;목표&gt; &lt;ms&gt;</code> 가 <code>#&nbsp;csv step cols=…</code> 부터 <code>#&nbsp;end</code> 까지 요청한 행 수만큼 찍고, 마지막 줄 <code>step n=… prot=… trips=…</code> 이 온다. 덤프 중에 보드가 리셋되지 않는다
+          <span class="sub">판정 수단: 명령 창 출력 · §3-2-4 · 리셋되면 덤프 루프의 <code>wdg_service_main()</code> 이 빠진 것이다(§2-9 의 예산 행)</span></span></label></li>
+        <li><label><input type="checkbox" data-key="control-exec-us-measured"><span><strong>경로 통과</strong> — <code>step</code> 을 한 번 돌린 뒤 <code>stat</code> 의 <code>exec_us_max</code> · <code>loop_us_max</code> · <code>overrun</code> 을 적었고, 그 숫자로 "PID 를 ISR 에 둘 것인가"를 <strong>내가 정해</strong> 노트에 적었다
+          <span class="sub">판정 수단: <code>stat</code> 출력 · §2-11 · <code>overrun</code> 이 0 이 아니면 (가)는 이미 성립하지 않는다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="step-response-recorded"><span><strong>경로 통과</strong> — 게인을 P → I → D 순서로 잡아 계단 응답 곡선 하나를 노트에 남겼고, 그것을 보고 내 합격선을 적었다(정착 <code>____</code> ms · 오버슛 <code>____</code> % · 정상상태 오차 <code>____</code> mm/s)
+          <span class="sub">판정 수단: <code>step</code> CSV + 그림 · §3-2-4 · 무부하(바퀴 공중)의 값이다 — 부하에서 다시 잡는 것은 <a href="fw-20-after-assembly.html">fw-20</a></span></span></label></li>
+        <li><label><input type="checkbox" data-key="stop-resets-integrator"><span><strong>경로 통과</strong> — 같은 <code>step</code> 을 연달아 두 번 돌리면 두 CSV 의 앞 몇 행이 <strong>같다</strong>(앞 회차의 적분이 남아 있지 않다). 명령이 끝난 뒤 그 바퀴의 RPWM · LPWM 핀이 DMM 으로 0 V 다
+          <span class="sub">판정 수단: <code>step</code> CSV 두 벌 + DMM · §2-5 · §3-2-4</span></span></label></li>
+        <li><label><input type="checkbox" data-key="step-once-target-zeroed"><span><strong>발동 확인</strong> — <code>step … once</code> 의 CSV 에서 <code>target_mm_s</code> 열이 0 으로 바뀌는 행의 <code>t_ms</code> 를 적었고, 그것이 계약의 <strong>200 ms</strong>(<code>CMD_WATCHDOG_MS</code>)와 견줘진다
+          <span class="sub">판정 수단: <code>step</code> CSV · §3-2-4 · <strong>MCU 의 tick 으로</strong> 판정한다 — Mac 의 시계로 재지 않는다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="fblost-trips-on-unplug"><span><strong>발동 확인</strong> — 엔코더 커넥터를 뽑아 둔 바퀴로 <code>step</code> 을 돌리면 LD3 가 켜지고 CSV 의 <code>prot</code> 열이 <code>2</code> 로 바뀌며 그 행부터 <code>duty</code> 가 0 이다
+          <span class="sub">판정 수단: LD3 + <code>step</code> CSV · §3-3-4 ① · 선을 뽑고 꽂는 일은 <code>pwr down</code> 에서만</span></span></label></li>
+        <li><label><input type="checkbox" data-key="fbsign-trips-on-swap"><span><strong>발동 확인</strong> — 엔코더 A · B 를 바꿔 꽂은 바퀴로 <code>step</code> 을 돌리면 LD3 가 켜지고 <code>prot</code> 열이 <code>4</code> 다. 끝난 뒤 선을 원래대로 돌려놓고 <code>enc</code> 로 네 부호를 다시 확인했다
+          <span class="sub">판정 수단: LD3 + <code>step</code> CSV + <code>enc</code> · §3-3-4 ②</span></span></label></li>
+        <li><label><input type="checkbox" data-key="no-false-trip-fast-accel"><span><strong>경로 통과</strong> — 배선을 원래대로 돌린 뒤 0 에서 내가 쓰는 가장 큰 목표까지 한 번에 주는 <code>step</code> 에서 <code>prot</code> 열이 <strong>처음부터 끝까지 0</strong> 이다. 내 blind band(판정하지 않는 구간)가 어디인지 노트에 적었다
+          <span class="sub">판정 수단: <code>step</code> CSV · §3-3-4 ③ · 트립하면 코드가 아니라 문턱을 고친다(§2-7)</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td>빌드가 <code>static assertion failed … robot_params.h: MOTOR_SIGN_FL is still EMPTY</code> 로 멈춘다</td><td>fw-11 에서 네 부호를 아직 재지 않았다. 이 파일이 그 키를 처음 쓰는 <code>.c</code> 라 가드가 여기서 걸린다</td><td>메시지에 나온 키 이름</td><td>fw-11 §3-2-4 로 돌아가 한 바퀴씩 통전해 잰다 — 추측해서 적지 않는다</td></tr>
+          <tr><td>빌드가 <code>static assertion failed … control.c: STEP_CAP_MAX is still EMPTY</code> 로 멈춘다</td><td>포획 행 수를 아직 정하지 않았다. 길이 0 짜리 배열은 C 가 아니다</td><td>메시지</td><td>§3-2-3 의 1 — RAM 과 덤프 시간 둘로 정한다</td></tr>
+          <tr><td><code>step</code> 을 치면 CSV 가 나오다가 <strong>보드가 리셋</strong>되고 배너가 다시 뜬다(reset cause = IWDG)</td><td>덤프 루프에서 kick 을 안 한다. 덤프 시간이 IWDG 주기를 넘었다</td><td>배너의 reset 줄 · §2-9 의 식으로 내 덤프 시간 계산</td><td><code>cmd_step()</code> 의 덤프 루프에 <code>wdg_service_main()</code>(§3-2-3 의 6) 또는 <code>STEP_CAP_MAX</code> 를 줄인다</td></tr>
+          <tr><td>목표를 줘도 바퀴가 <strong>전혀</strong> 돌지 않고 CSV 의 <code>duty</code> 가 0 뿐이다</td><td>게인이 아직 0 이다(정상) · 또는 <code>pwr stat</code> 가 <code>armed</code> 가 아니다 · 또는 <code>DUTY_LIMIT_BENCH_PERMILLE</code> 이 너무 낮다</td><td><code>pid</code> · <code>pwr stat</code> · <code>en</code> 의 응답</td><td>§3-2-4 의 기준선 문단 → §2-4 의 순서</td></tr>
+          <tr><td>목표를 주자마자 듀티가 <strong>상한까지 튀고</strong> 바퀴가 한쪽으로만 전속으로 돈다</td><td>부호가 뒤집혀 음의 되먹임이 양의 되먹임이 됐다 — <code>ENC_SIGN_*</code> 또는 <code>MOTOR_SIGN_*</code> 하나가 틀렸다</td><td><code>enc</code> 로 손으로 앞으로 돌려 카운트가 <strong>느는지</strong> · CSV 에서 <code>meas</code> 의 부호가 <code>target</code> 과 반대인지</td><td>fw-09 §2-7(둘을 섞지 않는다) · fw-11 §3-2-4. <strong>코드에서 부호를 뒤집어 "맞추지" 않는다</strong></td></tr>
+          <tr><td>목표를 줬는데 <strong>200 ms 쯤 뒤 저절로 선다</strong>(<code>once</code> 를 안 붙였는데도)</td><td>재주입 간격이 <code>CMD_WATCHDOG_MS</code> 보다 길다 · 또는 <code>control_set_target()</code> 이 명령 시각을 갱신하지 않는다</td><td>CSV 의 <code>target_mm_s</code> 열이 0 이 되는 행의 <code>t_ms</code></td><td>§3-2-3 의 6 · §2-12 (되감는 자리는 <code>control_set_target()</code> 안이다)</td></tr>
+          <tr><td>정지 명령 뒤에도 바퀴가 <strong>아주 천천히</strong> 계속 돈다 / 두 번째 <code>step</code> 의 첫 행이 첫 번째와 다르다</td><td>목표가 0 이 될 때 적분을 리셋하지 않는다 — 1세대가 2026-07-18 에 겪은 "듀티 −4 tick 잔류"</td><td>두 CSV 의 앞 몇 행을 견준다 · DMM 으로 RPWM 핀</td><td>§2-5 · <code>control_step_1khz()</code> 의 워치독 만료 처리와 정지 처리</td></tr>
+          <tr><td>정상 가속인데 <code>prot</code> 가 <code>2</code>(FEEDBACK_LOST)로 뜬다</td><td>문턱을 <strong>목표</strong>에 비례시켰거나 기울기가 너무 크다 — 1세대가 2026-07-19 에 겪은 오트립</td><td>CSV 에서 트립한 행의 <code>duty</code> 와 <code>meas</code> 를 §2-7 의 식에 넣어 본다</td><td>§2-7 — 기울기(<code>FBLOST_SPEED_PER_PERMILLE_MILLI</code>)나 듀티 게이트를 다시 정한다</td></tr>
+          <tr><td>감속하거나 방향을 바꿀 때 <code>prot</code> 가 <code>4</code>(FEEDBACK_SIGN)로 뜬다</td><td><code>sgn(목표) == sgn(듀티)</code> 조건이 빠졌다 — 제동 국면에서는 듀티와 속도의 부호가 정상적으로 다르다</td><td>트립한 행의 <code>target</code> · <code>duty</code> · <code>meas</code> 부호 셋</td><td>§2-7 의 둘째 행 · <code>protect_step()</code> 의 <code>driving</code></td></tr>
+          <tr><td><code>pwm fl 300</code> 을 쳐도 DMM 전압이 안 변한다</td><td>고장이 아니다 — 이 쪽부터 1 kHz 듀티의 주인은 <code>control_step_1khz()</code> 하나다</td><td><code>OK pwm</code> 은 나오는데 전압만 그대로인가</td><td>§2-10 의 상자 — fw-08 의 관찰을 다시 하려면 콜백에서 <code>control_step_1khz();</code> 한 줄을 뺀다</td></tr>
+          <tr><td>gdb 로 멈췄다 <code>continue</code> 한 직후 속도가 크게 튀고 보호가 트립한다</td><td>멈춘 동안 엔코더 카운터가 계속 셌고 그 회전분이 한 창에 몰려 들어왔다</td><td><code>x/wx 0x5C00103C</code> · <code>x/wx 0x5C001044</code> 로 동결 비트를 읽는다</td><td>§2-13 — 동결할지 말지를 정하고, 안 하면 <code>continue</code> 직후 한 틱을 버린다</td></tr>
+          <tr><td>중단점에서 멈췄는데 <strong>바퀴가 계속 돈다</strong></td><td>TIM1 · TIM8 디버그 동결이 없는 빌드다</td><td><code>x/wx 0x5C00104C</code> 의 bit 0 · 1</td><td>fw-08 §2-7 · STOP 리스트 6번(§2-13 의 엔코더 동결과 <strong>다른 레지스터</strong>다)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. (4중 검색 — 변형) 내 <code>control_step_1khz()</code> 가 <strong>불리기까지</strong> 의 길을 다섯 군데에서 찾아 적어 보라 — 벡터 테이블 → <code>TIM6_DAC_IRQHandler</code> → <code>HAL_TIM_IRQHandler</code> → <code>HAL_TIM_PeriodElapsedCallback</code> → 내 함수</summary>
+        <div class="ans"><p>찾는 명령(경로 변수는 fw-02 에서 정한 <code>$FW_H7</code> · <code>$HAL</code>):</p>
+        <pre><code class="lang-bash">grep -n "TIM6_DAC_IRQHandler" $FW_H7/Drivers/CMSIS/Device/ST/STM32H7xx/Source/Templates/gcc/startup_stm32h723xx.s
+grep -n "TIM6_DAC_IRQHandler" firmware/h723zg/Core/Src/stm32h7xx_it.c       # 생성물: 벡터가 가리키는 정의
+grep -n "PeriodElapsedCallback(htim)" $HAL/Src/stm32h7xx_hal_tim.c          # 누가 언제 부르는가
+grep -n "__weak.*PeriodElapsedCallback" $HAL/Src/stm32h7xx_hal_tim.c        # 약한 기본 구현
+grep -rn "control_step_1khz" firmware/h723zg/User/Src                       # 내 정의와 내 호출 (-r: 하위 폴더까지)</code></pre>
+        <p>확인한 것(2026-09-23, FW_H7 V1.13.0): 벡터 테이블의 자리는 <code>startup_stm32h723xx.s:204</code> 의 <code>.word TIM6_DAC_IRQHandler</code> 이고,
+        같은 파일 <code>:509-510</code> 에 <strong>약한 별칭</strong>이 있다(<code>.weak</code> + <code>.thumb_set … , Default_Handler</code>) — 즉 <strong>내가 그 이름의 함수를 정의하지 않으면 무한 루프로 간다.</strong> 정의하는 것은 CubeMX 가 만든 <code>Core/Src/stm32h7xx_it.c</code> 이고 그 안에서 <code>HAL_TIM_IRQHandler(&amp;htim6)</code> 를 부른다(줄 번호는 생성 때마다 다르다).
+        <code>HAL_TIM_IRQHandler</code> 는 <code>stm32h7xx_hal_tim.c:3834</code> 에서 시작해 플래그를 하나씩 본다 — 업데이트 이벤트 가지는 <code>:3963</code>, 플래그를 지우는 곳이 <code>:3967</code>, 콜백을 부르는 곳이 <code>:3971</code> 이다.
+        그 콜백의 약한 기본 구현은 <code>:5803</code>(<code>__weak</code>, 빈 함수)이고 선언은 <code>Inc/stm32h7xx_hal_tim.h:2375</code> 다. 내 <code>tick.c</code> 의 정의가 그 약한 구현을 덮고, 그 안에서 <code>control_step_1khz()</code> 가 불린다.</p>
+        <p><strong>이 길에서 알게 되는 것 셋.</strong> ① 플래그를 지우는 것은 <em>콜백보다 앞</em>이다(<code>:3967</code> → <code>:3971</code>) — 내 코드가 오래 걸려도 다음 업데이트 플래그가 새로 설 수 있다는 뜻이고, 그래서 <code>overrun</code> 이 셀 수 있는 것이다.
+        ② 콜백은 <strong>모든 타이머가 함께 쓴다</strong> — <code>htim-&gt;Instance != TIM6</code> 을 거르는 첫 줄이 없으면 다른 타이머의 업데이트에도 제어가 한 번 더 돈다.
+        ③ <code>:3971</code> 은 <code>#else</code> 가지다 — <code>USE_HAL_TIM_REGISTER_CALLBACKS == 1</code> 로 빌드하면 이 경로가 아예 사라지고 핸들에 등록한 함수 포인터가 불린다.</p></div></details>
+      <details class="quiz"><summary>2. 게인을 전부 0 으로 두고 <code>step</code> 을 한 번 찍는 것이 왜 <strong>첫 걸음</strong>인가</summary>
+        <div class="ans"><p>그 CSV 는 제어에 대해 아무것도 말해 주지 않지만 <strong>제어가 아닌 것 전부</strong>에 대해 말해 준다: 1 kHz 포획이 요청한 행 수만큼 돌았는가, <code>t_ms</code> 가 행 번호와 맞는가(틱을 빠뜨리지 않았는가), 덤프가 워치독을 넘기지 않았는가, 목표가 계단으로 들어가고 200 ms 안에 재주입되는가, 터미널 로그가 제대로 잡히는가.
+        이 중 하나라도 틀린 상태에서 게인을 올리면, 나중에 이상한 곡선을 보고 그 원인을 게인에서 찾게 된다. 기준선은 "나중에 달라진 것이 무엇 때문인지 말할 수 있게" 만드는 장치다 — fw-06 이 PID 를 올리기 전에 빈 박자의 지터부터 잰 것과 같은 이유다.</p></div></details>
+      <details class="quiz"><summary>3. FEEDBACK_LOST 의 문턱을 <strong>목표</strong>가 아니라 <strong>인가 듀티</strong>에 비례시키는 이유를, 1세대가 겪은 두 사건으로 설명해 보라</summary>
+        <div class="ans"><p>목표는 명령이 바뀌는 순간에 <strong>계단으로</strong> 뛴다. 그러나 실제 구동(듀티)은 슬루와 제어기의 응답 때문에 천천히 오른다. 문턱을 목표에 매달면, 목표가 뛴 직후부터 "이만큼 속도가 나와야 한다"는 기대치가 이미 최대인데 실제 듀티는 아직 낮다 — 정상 가속이 곧바로 고장으로 보인다.
+        1세대는 2026-07-19 에 정확히 이것을 겪었다(목표 100000 은 통과, 105000 은 4모터 동시 트립). 문턱을 지금 인가하고 있는 듀티에 비례시키면 기대치도 실제 구동과 함께 자라므로 그 구간이 사라진다.
+        그런데 같은 날 다른 시험에서 <strong>진짜 단선은 여전히 잡혔다</strong>(엔코더 1개를 물리적으로 뽑고 시험). 이것이 중요하다 — 오트립을 줄이는 수정이 검출까지 죽이지 않았는지는 <strong>따로 확인해야</strong> 한다. 이 쪽의 체크 항목 <code>fblost-trips-on-unplug</code> 와 <code>no-false-trip-fast-accel</code> 이 그 한 쌍이다.</p></div></details>
+      <details class="quiz"><summary>4. 하드웨어 워치독(IWDG)이 1세대의 엔코더 GND 단선 폭주를 막지 못한 이유는</summary>
+        <div class="ans"><p>펌웨어가 <strong>죽지 않았기 때문</strong>이다. 1 kHz 루프도 주 루프도 정상으로 돌았고 kick 도 제때 들어갔다. IWDG 가 보는 것은 "이 코드가 아직 돌고 있는가" 하나뿐이고, "돌고 있는 코드가 옳은 값을 보고 있는가"는 보지 않는다.
+        되먹임이 죽으면 루프는 <strong>더 열심히</strong> 돈다 — 오차가 크니 적분이 자라고 듀티가 최대로 간다. 살아 있다는 신호는 오히려 더 확실해진다.
+        그래서 장치가 셋으로 나뉜다: IWDG = 죽은 것, 명령 워치독 = 상위가 말을 멈춘 것, 보호 3종 = 살아서 틀리는 것. 셋을 같은 낱말로 부르면 하나를 시험하고 셋 다 됐다고 믿게 된다.</p></div></details>
+      <details class="quiz"><summary>5. (일부러 틀리면) <code>control_step_1khz()</code> 를 1 kHz 콜백 안의 <code>motor_step_1khz()</code> <strong>뒤</strong>로 옮기면 무엇이 보이는가</summary>
+        <div class="ans"><p>평소에는 아무 차이도 보이지 않는다 — <code>motor_step_1khz()</code> 는 <code>pwm</code> 명령이 무장해 둔 유지 시간이 있을 때만 일을 하고, 제어가 도는 동안 그 값은 0 이기 때문이다. <strong>그것이 이 실수가 위험한 이유다.</strong>
+        차이가 나는 것은 <code>pwm</code> 을 쓴 직후뿐이다: 유지 시간이 끝나 <code>motor_step_1khz()</code> 가 네 바퀴를 0 으로 만든 <strong>바로 그 틱에</strong> 뒤따라 오는 제어가 다시 듀티를 써 버린다. fw-08 이 만든 "명령 워치독이 생기기 전 구간의 안전 장치"가 소리 없이 없어진다.
+        일반화하면 §2-10 의 단조 사슬이다 — <strong>출력을 줄이는 단계는 언제나 만드는 단계 뒤에</strong>. 콜백에 무엇이 더 붙든 이 규칙 하나로 순서가 정해진다.</p></div></details>
+      <details class="quiz"><summary>6. (안전) 이 쪽에서 <strong>STALL 을 벤치에서 발동시키지 않는</strong> 이유와, 그 대신 무엇으로 STALL 이 옳은지 확인하는가</summary>
+        <div class="ans"><p>모터는 감속비 1:47 의 유성기어 모터다(정격 토크 145.4 kgf·cm — 1세대 기록). 출력축을 손이나 공구로 붙잡아 멈추는 것은 사람과 기계 양쪽에 위험하고, 스톨 전류(기록상 22 A)가 배선과 드라이버에도 걸린다.
+        대신 <strong>판정식이 옳은가</strong>는 호스트 시험으로 확인한다 — 조건 넷이 다 참일 때 지속 시간만큼 뒤에 래치되는가, 그리고 <code>A &gt; B</code> 덕분에 정상 저속 주행이 걸리지 않는가. 이것이 "경로 통과"이고, 실제 발동은 조건(저속 · 짧은 시간 · 듀티 상한)을 걸 수 있는 <a href="fw-20-after-assembly.html">fw-20</a> 으로 미룬다.
+        체크 항목 이름 <code>stall-path-host-only</code> 가 그 미룸을 명시한다 — 미룬 것을 미뤘다고 적어 두지 않으면 나중에 "했다"가 된다.</p></div></details>
+      <details class="quiz"><summary>7. 값만 채점하는 호스트 시험 벡터가 <strong>통과시켜 버리는</strong> 잘못에는 어떤 것이 있고, 그것을 무엇이 잡는가</summary>
+        <div class="ans"><p>정의되지 않은 동작(UB)이다. 이 쪽에서 실제로 본 예: <code>mag()</code> 를 <code>-v</code> 로 쓰면 <code>v == INT32_MIN</code> 에서 부호 있는 넘침이 나는데, <strong>두 값이 우연히 같아서</strong> 24개 벡터가 전부 통과한다(§3-3-3 의 상자).
+        컴파일러는 UB 를 "일어나지 않는다"고 가정하고 최적화하므로, 같은 소스가 최적화 수준이나 컴파일러 버전에 따라 다르게 동작할 수 있다 — 벤치에서 맞다가 <code>Release</code> 빌드에서 틀리는 종류의 버그다.
+        잡는 것은 <code>-fsanitize=undefined</code> 를 더한 둘째 줄이고, <strong>합격 조건은 "조용한 것"</strong>이다(<code>PASS</code> 가 찍혀도 그 위에 <code>runtime error:</code> 가 있으면 실패). 같은 함정을 fw-09 의 엔코더 차분에서 이미 한 번 만났다.</p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>IMU 가 있으면</strong> → <a href="fw-14-wt901.html">fw-14</a> — WT901. 이 쪽이 만든 <code>imu_sample.h</code> 와 <code>control_get_imu()</code> 의 빈자리를 그 쪽이 채운다. BNO055 쪽이면 <a href="fw-15-bno055.html">fw-15</a>.</li>
+          <li><strong>IMU 가 아직 없으면</strong> → <a href="fw-16-flash-store.html">fw-16</a> — 플래시 저장. 저장할 값이 방금 생겼다(게인과 보호 문턱). 다만 저장 대상이 늘 것을 감안해 키 목록을 열어 둔다.</li>
+          <li><strong>부품을 더 안 사고 갈 수 있는 길</strong> → <a href="fw-17-link-v2.html">fw-17</a> — 계약 v2. 이 쪽의 <code>control.h</code> 다섯 함수가 그 쪽의 통신 모듈이 여는 유일한 문이다(§2-14). 호스트 시험(CRC · 프레임)은 Nucleo 없이도 먼저 할 수 있다.</li>
+          <li><strong>이 쪽에서 남긴 결정 둘</strong>을 노트에서 다시 확인한다: PID 를 ISR 에 둘 것인가(§2-11)와 엔코더 타이머를 동결할 것인가(§2-13). 둘 다 fw-17 · fw-18 이 그대로 이어받는다.</li>
+          <li>이 쪽에서 얻은 <strong>무부하 최대 속도</strong>를 <code>hardware/INVENTORY.md</code> 6절 "최대 선속도" 행의 재료로 적었는가. 그 칸을 <strong>닫는</strong> 것은 바닥에서 재는 관문 <a href="09a-assembly-gate.html">09a</a> 다.</li>
+          <li><code>./scripts/check_nominal.sh</code> 를 한 번 돌려 본다. 이 쪽이 <code>robot_params.h</code> 에 더한 EMPTY 는 <strong>게인 셋과 보호 문턱 열</strong>이고, 보호 문턱 열은 여기서 내 값으로 닫힌다. 게인 셋은 <a href="fw-20-after-assembly.html">fw-20</a> 의 부하 튜닝까지 열려 있다.
+          <code>control.c</code> 의 <code>STEP_CAP_MAX</code> 는 이 스크립트에 <strong>나오지 않는다</strong> — 스크립트가 세는 것은 <code>firmware/</code> 아래의 <code>*.h</code> 뿐이다. 그 하나는 빌드가 <code>_Static_assert</code> 로 세워 준다.</li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

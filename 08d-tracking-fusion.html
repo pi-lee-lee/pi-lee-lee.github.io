@@ -28,7 +28,8 @@
 
       <div class="meta">
         <div><span class="k">그래프에서의 위치</span><code>object_tracker</code> · <code>hailo_depth</code> · <code>object_localizer</code>(인지 계층) — <code>/detections</code> → <code>/tracks</code> + <code>/camera/depth_logit</code> + <code>/scan</code> → <code>/objects</code></div>
-        <div><span class="k">전제</span>08c (실시간 <code>/detections</code>, HailoRT 백엔드) · 07 (<code>/scan</code>) · 08 §3-9 (<code>camera_info</code>) · 05 (TF 실측) · Google 계정 + Hailo Developer Zone 계정 (Colab 컴파일)</div>
+        <div><span class="k">전제</span>08c (실시간 <code>/detections</code>, HailoRT 백엔드) · 07 (<code>/scan</code>) · 07 §3-9-1 (라이다 0° 방향 기록) · 08 §3-9 (<code>camera_info</code>) · 05 (TF 트리 — 센서 위치 값은 이 쪽 §3-1 의 임시 지그에서 잰다) · Google 계정 + Hailo Developer Zone 계정 (Colab 컴파일)</div>
+        <div><span class="k">수행 환경</span><span class="tag bench">벤치</span> 카메라와 라이다를 <strong>임시 지그</strong>(판 하나)에 고정하고 두 센서의 상대 위치를 자로 재(<code>NOMINAL(ruler)</code>) 이 쪽의 실습과 체크포인트를 전부 끝낸다. MCU·섀시는 쓰지 않는다. 지그의 값은 최종 장착값이 아니다 — <span class="tag asm">조립 후</span> <a href="09a-assembly-gate.html#s3-3">09a</a>에서 센서를 섀시에 올린 뒤 같은 검증을 최종 장착값으로 다시 한다</div>
         <div><span class="k">예상 소요</span>12~18시간 (Colab 컴파일 대기 포함)</div>
         <div><span class="k">언어</span><span class="tag cpp">C++</span> (추적기·투영·로컬라이저) 주 · <span class="tag py">Python</span> (깊이 노드 — HailoRT 제약, Colab 빌드 스크립트, 검산 스크립트) 보조</div>
       </div>
@@ -76,7 +77,7 @@
                         ③ 스케줄러 우선순위를 검출에 준다 (§3-5)
   판정:   손잡이를 다 써도 f_det &lt; 10 fps  →  카메라 깊이를 운용에서 뺀다.  A(라이다 점) + B(지면 평면) 로 돌아가고,
           C 는 정지 상태의 보조 계측으로만 남긴다.  이 판정은 §3-7 의 실측 표로 내리고 INVENTORY 5절에 적는다.</code></pre>
-      <p>CPU 쪽 예산은 09·10 이 우선이다(SLAM, Nav2, 제어 루프). 이 단계가 CPU 에 얹는 것은 스캔 투영(점 수백 개), 두 파라미터 최소제곱, 박스 안 중앙값, 트랙별 필터뿐이라 프레임당 밀리초 단위다. 깊이 지도 한 장(640×480 float)을 토픽으로 나르는 1.2 MB × 3 fps 가 가장 큰 비용이고, 그래서 깊이는 <em>같은 호스트 안</em>에서만 구독한다(공유 메모리 전송, 02 §5).</p>
+      <p>CPU 쪽 예산은 09·10 이 우선이다(SLAM, Nav2, 제어 루프). 이 단계가 CPU 에 얹는 것은 스캔 투영(점 수백 개), 두 파라미터 최소제곱, 박스 안 중앙값, 트랙별 필터뿐이라 프레임당 밀리초 단위다. 깊이 지도 한 장(640×480 float)을 토픽으로 나르는 1.2 MB × 3 fps 가 가장 큰 비용이고, 그래서 깊이는 <em>같은 호스트 안</em>에서만 구독한다(공유 메모리 전송, 02 §2-3).</p>
 
       <h3>1-4. 벽은 어디에서 오는가 — 세 가지 역할</h3>
       <p>실내에서 <em>공간의 끝</em>(벽)은 이 단계의 요구 중 가장 중요한 것이다. 그런데 벽을 <strong>YOLO 객체로 판정하지 않는다.</strong> 이유는 셋이다: YOLO 검출은 경계 있는 덩어리(thing)를 박스로 찾고 벽·바닥은 영역(stuff)이라 COCO 에 없다; Hailo-8 Model Zoo 의 세그멘테이션 모델은 VOC·Cityscapes·Pet 학습분뿐이라 실내 벽·바닥 모델이 없다(2026-09-15 확인); 무엇보다 <strong>라이다가 벽을 이미 cm 단위로 재고 있다</strong>. 벽은 라이다에서 오고, 이 단계에서 세 가지 일을 한다.</p>
@@ -138,10 +139,10 @@
   물체의 실제 크기를 안다       (참고)        사람 키 ≈ 1.7 m → 박스 높이로 대략 거리      크기가 제각각인 클래스 (상자, 개)</code></pre>
       <h3>2-3. 방법 A — 라이다 점을 사진 위에 투영한다 (척도의 원천이기도 하다)</h3>
       <p>단순한 방법은 "박스 중심의 방위각으로 <code>/scan</code> 인덱스를 찾는다"이다. 여기서는 반대로 간다 — <strong>라이다 점 전부를 카메라 픽셀로 투영</strong>한 뒤 박스 안에 떨어진 점을 읽는다. 이유는 둘이다.
-      ① 카메라와 라이다는 같은 자리에 있지 않다(URDF 의 <code>cam_x</code> ≈ 9 cm 앞). 가까운 물체일수록 두 센서에서 본 방위각이 다르고, 점을 투영하면 이 <em>평행이동</em>이 저절로 들어간다.
-      ② 투영된 점을 사진 위에 그리면 <strong>TF(05)가 맞는지 눈으로 검증</strong>된다 — 이 단계에서 가장 값진 진단 도구다 (§3-3).</p>
+      ① 카메라와 라이다는 같은 자리에 있지 않다(URDF 의 <code>cam_x</code> − <code>lidar_x</code> — 이 쪽에서는 §3-1 의 지그에서 잰 값). 가까운 물체일수록 두 센서에서 본 방위각이 다르고, 점을 투영하면 이 <em>평행이동</em>이 저절로 들어간다.
+      ② 투영된 점을 사진 위에 그리면 <strong>두 센서 사이의 TF(05 의 트리, 값은 §3-1 에서 잰 것)가 맞는지 눈으로 검증</strong>된다 — 이 단계에서 가장 값진 진단 도구다 (§3-3).</p>
 <pre class="diagram"><code>  ① /scan 의 점 i:  각도 θ_i = angle_min + i·angle_increment,  거리 r_i     →  laser_link 좌표  p_L = (r_i cos θ_i, r_i sin θ_i, 0)
-  ② TF:  T(camera_optical_link ← laser_link)  →  p_O = T · p_L                    (회전 + 평행이동. 05 의 실측이 여기서 효력을 낸다)
+  ② TF:  T(camera_optical_link ← laser_link)  →  p_O = T · p_L                    (회전 + 평행이동. 자로 잰 두 센서의 상대 위치가 여기서 효력을 낸다 — §3-1)
   ③ 투영:  p_O.z &gt; 0 인 점만 (카메라 앞)
            u_i = fx · p_O.x / p_O.z + cx,    v_i = fy · p_O.y / p_O.z + cy         (camera_info 의 K)
   ④ 박스 [x1, x2] × [y1, y2] 안에 (u_i, v_i) 가 들어온 점들 중  가장 가까운 무리(r_min 에서 cluster_tol 안)의 평균  = 물체 위치 (laser_link)
@@ -152,7 +153,7 @@
       투영된 점 전체(박스 밖의 점까지)는 버리지 않는다 — 그것이 §2-4 에서 깊이 지도의 척도를 맞추는 정답 집합이다.</p>
       <div class="callout note"><span class="ct">왜곡을 아직 안 편다 — 알고 미룬다</span>
         <p>박스 좌표는 원본(왜곡된) 영상에서 나왔고, K 는 왜곡을 편 영상의 모델이다. 광각(약 102°)이라 화면 가장자리에서 수 px~십수 px 차이가 난다. 중앙 2/3 에서 먼저 동작을 확인하고,
-        정확도가 필요해지면 <code>cv::undistortPoints</code> 로 박스 꼭짓점을 편 좌표로 바꾼 뒤 투영과 비교한다 — <strong>TODO(you)</strong> 로 §3-7 에 둔다. 08a 의 <code>undistort</code> 를 영상 전체에 걸고 검출기를 그 영상에 물리는 것이 더 정직한 방법이지만 CPU 를 쓴다.</p>
+        정확도가 필요해지면 <code>cv::undistortPoints</code>(부록 B 에는 없다 — OpenCV 문서의 함수)로 박스 꼭짓점을 편 좌표로 바꾼 뒤 투영과 비교한다 — <strong>TODO(you)</strong> 로 §3-7 에 둔다. 부록 B §6-3(<a href="ref-opencv.html">OpenCV 사용법</a>의 "왜곡 보정과 활용" — <code>cv::undistort</code>, 매 프레임이면 <code>initUndistortRectifyMap</code> + <code>remap</code>)의 방법으로 영상 전체를 편 뒤 검출기를 그 영상에 물리는 것이 더 정직한 방법이지만 CPU 를 쓴다. 08a 에는 왜곡 보정 실습이 아직 없다 — 코드는 부록 B §6-3 에 있다.</p>
       </div>
 
       <h3>2-4. 방법 C — 깊이 지도에 라이다로 척도를 매긴다</h3>
@@ -250,17 +251,58 @@
 
       <h2>3. 실습</h2>
 
-      <h3>3-1. 전제 확인 — 센서 쪽 다섯 가지가 먼저 흘러야 한다 <span class="tag cli">컨테이너</span></h3>
+      <h3>3-1. 전제 확인 — 임시 지그, 그리고 센서 쪽 여섯 가지 <span class="tag cli">컨테이너</span> <span class="tag bench">벤치</span></h3>
+      <p>이 쪽의 융합은 카메라와 라이다가 <strong>서로 어디에 있는가</strong>를 안다는 전제 위에 선다(§2-3). 그런데 센서는 아직 섀시에 달려 있지 않다(<code>hardware/INVENTORY.md</code> 머리말). 그래서 두 센서를 판 하나에 고정한 <strong>임시 지그</strong>로 그 관계를 만들고(3-1-1), 그 다음 센서 쪽 여섯 가지가 흐르는지 본다(3-1-2).</p>
+
+      <h4 id="s3-1-jig">3-1-1. (벤치) 임시 지그 — 두 센서를 판 하나에 고정하고 자로 잰다 <span class="tag bench">벤치</span></h4>
+      <p><strong>왜 지그로 충분한가.</strong> 이 쪽이 두 센서에 요구하는 것은 주행이 아니라 둘뿐이다. ① <strong>고정된 상대 자세</strong> — 스캔 점을 사진에 투영하고(§2-3) 그 점으로 깊이 지도의 척도를 맞춘다(§2-4). ② <strong>놓인 면에서의 높이</strong> — 방법 B 가 시선을 지면과 만나게 한다(§2-5). 판 하나에 두 센서를 고정하면 둘 다 생긴다.
+      로봇이 움직여야만 보이는 것은 트랙 필터가 <code>odom</code> 안에서 정지 물체를 제자리에 붙잡아 두는 모습(§2-7) 하나다. 벤치에는 <code>odom</code> 이 없으므로 로컬라이저는 필터를 끈 채(<code>filter=0</code>) 관측을 그대로 낸다(§3-6 의 읽기 상자). 필터를 벤치에서 켜 보는 방법은 §3-7 에 있고, 로봇이 움직이는 부분은 09a 로 넘긴다.</p>
+      <p><strong>무엇으로.</strong> 휘지 않는 판 하나(합판·아크릴·두꺼운 하드보드 따위)와 양면테이프·케이블 타이·작은 클램프면 된다. 납땜도 새로 살 부품도 없다. 지킬 조건은 셋이다.</p>
+      <ol class="steps">
+        <li><strong>흔들리지 않는다.</strong> 1세대에서 센서를 손으로 들고 한 실험은 데이터가 오염됐다(<code>~/ros2/hardware/camera_lidar_mount.md</code> 6절 "필수 부대조건" 1번). 상대 위치가 움직이면 투영이 흔들리고, 그 위에서 맞추는 척도 (a, b) 도 같이 흔들린다. 카메라의 FPC 케이블도 판에 붙여 케이블 무게에 카메라가 돌아가지 않게 한다.</li>
+        <li><strong>서로 가리지 않는다.</strong> 1세대의 확정 배치(라이다 = 최상단, 카메라 = 그 아래 — 같은 문서 머리)를 따른다. 라이다는 판 위에 평평하게 두고, 카메라는 라이다보다 <em>앞쪽</em>에, 렌즈와 받침이 라이다 스캔 평면보다 <em>낮게</em> 오도록 나무토막 같은 받침에 붙인다. 받침이 스캔 평면보다 높으면 앞쪽 스캔을 가리고, 카메라가 라이다 뒤에 있으면 라이다 몸체가 화면에 들어올 수 있다. 이것은 두 센서 <em>사이의</em> 조건이다 — 지그 전체를 바닥에서 얼마나 높이 두는가는 아래 "어디에 두는가"에서 따로 고른다. Foxglove 에서 <code>/scan</code> 을 켜 앞쪽이 빠짐없이 찍히는지 본다.</li>
+        <li><strong>정면을 하나로 정한다.</strong> 카메라 기판을 판에 수직으로 세워(직각자나 책 모서리로 확인) 카메라가 보는 방향을 지그의 정면, 곧 <code>base_link</code> 의 +x 로 정한다. 라이다는 07 §3-9-1 에서 찾아 적어 둔 <strong>0° 쪽</strong>을 그 정면으로 향하게 놓는다. 그러면 <code>lidar_yaw</code> 는 0 에서 출발하고, §3-3 의 표로 확인만 하면 된다. (07 §3-9-1 에서 각도가 시계 방향으로 커졌다면 좌우가 뒤집힌 것이다 — 07 §3-9-2 표의 둘째 행.)</li>
+      </ol>
+      <p><strong>어디에 두는가 — 지면은 바닥, 높이는 고른다.</strong> 방법 B 의 지면은 <code>base_footprint</code> 의 z = 0 이다(§2-5). 지그를 바닥에 두고 바닥에서 높이를 재면 그 평면이 실제 바닥이고, <code>h_cam</code> 은 조립 뒤와 같은 뜻(바닥 기준 높이)을 갖는다 — 값만 지그의 것이다.
+      판을 바닥에 직접 놓아야 하는 것은 아니다. 흔들리지 않는 상자·의자 위에 올려도 되고, 그때도 지면은 <strong>바닥</strong>이며 <code>h_cam</code>·<code>h_L</code> 은 판이 아니라 <strong>바닥에서</strong> 잰다. 판을 바닥에 놓고 조건 2 대로 카메라를 스캔 평면보다 낮게 붙이면 <code>h_cam</code> 은 라이다 몸체보다 낮아진다 — 그 값을 §2-5 의 표에 대 보면 B 를 몇 m 까지 믿을 수 있는지 나온다(INVENTORY 4절 <code>h_cam</code> 행이 "가능한 한 높이"라고 적은 이유).
+      높이는 두 가지로 고른다: ① §2-5 의 표 두 행(0.09 m / 0.30 m)에서 B 를 몇 m 까지 믿고 싶은가 — B 열·예측 σ 열·<code>ground_max_range</code>(§3-7)가 여기에 매인다. ② §3-7 에 쓸 "<code>h_L</code> 보다 낮은 상자"가 실제로 있는가 — <code>h_L</code> 이 낮으면 그런 물체가 없다. 하나 더, 스캔 면은 ±1.5° 까지 기울 수 있으므로(아래 주의 상자) 3 m 에서는 위아래로 약 8 cm(tan 1.5° × 3 m) 벗어난다 — <code>h_L</code> 이 그보다 낮으면 §3-7 의 3 m 행에서 스캔 면이 바닥에 닿을 수 있다.
+      책상에 두고 책상 면에서 재면 <strong>책상 면이 "지면"</strong>이 된다. 그때 B 가 맞는 물체는 책상 위에 선 것뿐이고, 바닥에 선 의자는 그 평면보다 아래에 있어 B 의 답이 틀린다. 투영(A)과 깊이 척도(C)는 두 센서의 상대 자세만 쓰므로 어디에 두든 같다.
+      §3-7 의 줄자 표(바닥에 선 물체, 3 m 까지)와 §3-8 은 지면을 바닥으로 한 지그로 한다.</p>
+      <p><strong>어떻게 재는가.</strong> 지그를 놓을 자리에서 잰다. 판 위에 라이다 회전축 중심을 지나고 정면과 나란한 기준선을 연필로 그어 두면 앞·옆 거리를 재기 쉽다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>잴 것</th><th>기준점</th><th>xacro 로 옮기는 식 (학습자 실습)</th></tr></thead>
+        <tbody>
+          <tr><td><code>h_cam</code> — 놓인 면에서 렌즈 중심까지</td><td>렌즈의 한가운데</td><td><code>cam_z</code> = h_cam − <code>wheel_radius</code>. <code>base_link</code> 가 <code>base_footprint</code> 보다 <code>wheel_radius</code> 만큼 위에 있기 때문이다(xacro 의 <code>base_footprint_to_base_link</code>, INVENTORY 4절 <code>h_cam</code> 행)</td></tr>
+          <tr><td><code>h_L</code> — 놓인 면에서 라이다 스캔 평면까지</td><td>레이저가 나가는 높이 — 회전하는 머리의 창 가운데. ⚠ <strong>데이터시트에서 이 높이를 읽으려 하지 마라</strong>(2026-09-24 정정): 기구 치수 그림(<code>rev.2.2</code> 16쪽 Figure 5-2 · <code>v3.0</code> 17쪽)은 <strong>바깥 치수만</strong> 적고 <strong>스캔 면의 높이를 표시하지 않는다</strong>. 옛 판이 그 그림에 <em>"Laser Working Area"</em> 라는 라벨이 있다고 적었는데 <strong>두 판 어디에도 그런 글자가 없다</strong>. <strong>자로 잰다</strong> — 회전하는 머리의 창 가운데 높이를 눈으로 잡고 재고, 그 불확실성을 노트에 적는다</td><td><code>lidar_z</code> = h_L − <code>wheel_radius</code></td></tr>
+          <tr><td>렌즈 중심이 라이다 회전축보다 앞(x)·왼쪽(y)으로 떨어진 거리</td><td>라이다 회전축 중심에서 기준선을 따라(앞 +), 기준선에 수직으로(왼쪽 +)</td><td><code>lidar_x</code> = <code>lidar_y</code> = 0 으로 두고 <code>cam_x</code>·<code>cam_y</code> 에 그대로</td></tr>
+          <tr><td><code>lidar_yaw</code></td><td>조건 3 으로 0° 를 정면에 맞췄다면 0</td><td><code>lidar_yaw</code> = 0.0. 어긋남은 §3-3 의 표 첫 행이 보여 준다</td></tr>
+          <tr><td>카메라 피치</td><td><strong>자로 재지 않는다</strong>(INVENTORY 4절). 조건 3 으로 기판을 세워 0 을 겨냥한 것이 출발점이다</td><td><code>cam_pitch</code> = 0.0 그대로. 실제 값은 §3-8(선택)로 구한다</td></tr>
+        </tbody>
+      </table></div>
+      <p><code>lidar_x</code> = <code>lidar_y</code> = 0 은 잰 값이 아니라 <strong>정의</strong>다. 지그에는 바퀴 축이 없으니 <code>base_link</code> 의 수평 원점을 라이다 회전축 아래로 정한 것이다 — §3-7 에서 줄자를 라이다 회전축에 대는 것과 같은 기준이다. 물체 사이 거리와 벽까지 거리는 원점을 어디에 두든 같다(§2-8 — 강체 변환은 거리를 보존한다).</p>
+      <p><strong>어디에 적는가.</strong> <code>hardware/INVENTORY.md</code> 4절 "장착 정보" 표의 해당 행에서 <code>____</code> 는 그대로 두고(09a 에서 <code>MEASURED</code> 가 들어갈 자리) 같은 줄에 지그 값을 덧붙인다. 상태 낱말은 값과 같은 줄에 둔다 — <code>scripts/check_nominal.sh</code> 가 줄 단위로 센다(05 §3-1).
+      출처 낱말은 그 스크립트의 어휘(<code>datasheet</code>·<code>ruler</code>·<code>drawing</code>·<code>gen1-record</code>·<code>fake</code>) 안에서 고른다. 거기에는 "정의"나 "계산"이 없다. 그래서 자로 재지 않은 값 — 정의한 <code>lidar_x</code>·<code>lidar_y</code>·<code>lidar_yaw</code> = 0, §3-7 에서 §2-5 식으로 정하는 <code>ground_max_range</code>, §3-8 로 구하는 <code>cam_pitch</code> — 도 "지그의 값"이라는 뜻으로 <code>ruler</code> 를 쓰고, 괄호 안에 방법(정의 / §2-5 계산 / §3-8)을 남긴다. 어휘에 그런 낱말이 생기면 세 곳을 함께 고친다.</p>
+<pre><code class="lang-text">| 바닥에서 렌즈 중심까지 높이 `h_cam` | `____` m · 지그 0.___ m NOMINAL(ruler, 지그, &lt;날짜&gt;, 바닥에서) | (원래 있던 설명은 그대로 둔다) |</code></pre>
+      <p>4절 표에는 옆 오프셋(<code>cam_y − lidar_y</code>) 칸이 없다. 0 이 아니면 <code>cam_x − lidar_x</code> 행 아래에 한 줄을 덧붙여 같은 꼴로 적는다. 그 다음 xacro 의 <code>lidar_*</code>·<code>cam_*</code> 에 위 표의 식으로 옮기고, 주석의 상태 낱말을 <code>NOMINAL(fake)</code> 에서 <code>NOMINAL(ruler, 지그, &lt;날짜&gt;)</code> 로 바꾼다 — <strong>이 옮기기가 이 절의 실습이다</strong>(Mac 에서 고쳐 동기화하고 다시 기동하는 순서는 05 §3-2·§3-3 과 같다). 3-1-2 의 두 <code>tf2_echo</code> 줄이 그 값을 되돌려 주면 파일과 TF 가 일치한 것이다.</p>
+      <div class="callout warn"><span class="ct">지그의 값은 최종 장착값이 아니다</span>
+        <p>이 값은 <em>지그 위의</em> 상대 위치와 높이다. 센서를 섀시에 올리면 전부 바뀐다. 그래서 <code>MEASURED</code> 가 아니라 <code>NOMINAL(ruler, 지그)</code> 이고, <span class="tag asm">조립 후</span> <a href="09a-assembly-gate.html#s3-3-3">09a</a>에서 장착한 뒤 다시 재서 바꾼 다음, 이 쪽에서 지그로 한 검증(3-1-2 의 두 <code>tf2_echo</code>, §3-3 의 채점표, §3-7 의 줄자 표, §3-8 의 피치)을 최종 장착값으로 다시 한다.
+        지그 값이 xacro 에 남아 있는 동안에는 <code>./scripts/check_nominal.sh --gate</code> 가 통과하지 않는다 — 지그의 숫자가 최종값인 척 09 로 새어 들어가는 것을 스크립트가 막는다.</p>
+        <p>하나 더: 판을 평평하게 놓아도 A1M8 의 스캔 면 자체가 ±1.5° 까지 기울 수 있다(데이터시트 rev.2.2 Figure 2-1 "Scan Field Flatness"). §3-3 에서 점의 줄이 조금 기울어 보이면 판의 수평과 함께 이것도 원인 후보다.</p>
+      </div>
+
+      <h4>3-1-2. 센서 쪽 여섯 가지 — 먼저 흘러야 한다 <span class="tag cli">컨테이너</span></h4>
+      <p>기동은 08 §3-10 의 벤치 명령에 라이다를 더한 것이다 — <code>ros2 launch rpi5_bringup robot.launch.py use_mcu:=false use_camera:=true use_lidar:=true</code> — 그리고 08c 의 검출기.</p>
 <pre><code class="lang-bash">ros2 topic hz /detections                 # 10 Hz 이상 (08c). 2~3 Hz 면 08b 검출기다 → 추적 시험이 무의미하다 (§2-1)
 ros2 topic echo /detections --once --field header.frame_id     # camera_optical_link (08 의 frame_id 가 검출까지 전달되는가)
 ros2 topic hz /scan                       # 약 5.5 Hz
 ros2 topic echo /camera/camera_info --once --field k            # 전부 0 이면 08 §3-9 로 돌아간다
-ros2 run tf2_ros tf2_echo laser_link camera_optical_link        # 평행이동이 URDF 의 cam_x − lidar_x 등과 맞는가
-ros2 run tf2_ros tf2_echo base_footprint camera_optical_link    # translation.z = 바닥에서 렌즈까지 높이 h_cam — 자로 잰 값과 맞는가
+ros2 run tf2_ros tf2_echo laser_link camera_optical_link        # 평행이동이 3-1-1 에서 잰 앞·옆·높이 차와 맞는가 (lidar_yaw = 0 이면 그대로 비교된다. z = h_cam − h_L)
+ros2 run tf2_ros tf2_echo base_footprint camera_optical_link    # translation.z = 놓인 면에서 렌즈까지 높이 h_cam — 3-1-1 에서 잰 값과 맞는가
 ros2 interface show vision_msgs/msg/Detection3D                 # results[], bbox(center: Pose, size: Vector3), id</code></pre>
-      <p>깊이 모델(§3-4·§3-5)은 이 다섯 줄이 통과한 뒤에 붙인다 — 척도의 자(스캔 투영)가 먼저 있어야 깊이 지도를 검증할 수 있다. 마지막 두 줄이 방법 B 의 캘리브레이션 전부다. <code>h_cam</code> 이 자로 잰 값과 다르면 05 의 URDF 를 먼저 고친다. 지금 자로 잰 값 세 개 — <strong>바닥에서 렌즈 중심까지, 바닥에서 라이다 평면까지, 카메라가 라이다보다 앞으로 나온 거리</strong> — 를 <code>hardware/INVENTORY.md</code> 4절 장착 정보에 적는다.</p>
+      <p>깊이 모델(§3-4·§3-5)은 이 여섯 가지(마지막 <code>interface show</code> 줄은 확인이 아니라 필드 이름을 보는 참고다)가 통과한 뒤에 붙인다 — 척도의 자(스캔 투영)가 먼저 있어야 깊이 지도를 검증할 수 있다. 두 <code>tf2_echo</code> 줄 가운데 <code>base_footprint</code> 쪽이 방법 B 의 캘리브레이션 전부이고(피치는 §3-8), <code>laser_link</code> 쪽은 투영(A)과 척도 쌍(C)이 쓰는 두 센서 사이의 관계다. 값이 3-1-1 에서 잰 것과 다르면 xacro 로 옮긴 식(<code>cam_z</code> = h_cam − <code>wheel_radius</code> 등)부터 다시 본다. 지그 값을 INVENTORY 4절에 적는 일은 3-1-1 에서 끝났다.</p>
+      <p><strong><code>K</code> 가 운용 스트림의 것인가.</strong> 투영(§2-3)과 방법 B(§2-5)는 모두 <code>camera_info</code> 의 <code>K</code> 로 픽셀을 방향으로 바꾼다. <code>K</code> 는 08 §3-9 에서 촬영한 조건(해상도·센서 모드·초점)의 값이다. 운용 스트림의 센서 모드가 그때와 다르면 640×480 끼리여도 투영이 <em>체계적으로</em> 어긋나고, §3-3 의 표에서는 지그나 TF 가 틀린 것처럼 보인다 — 1세대가 크롭 모드에서 실제로 겪은 일이다(08 §3-9 의 경고 상자). 08 의 체크포인트 "캘리브레이션 촬영과 운용 스트림의 조건이 같다"를 통과했는지 먼저 본다.</p>
 
-      <h3>3-2. <code>object_tracker.cpp</code> <span class="tag cpp">C++</span> <span class="tag cli">컨테이너</span></h3>
+      <h3>3-2. <code>object_tracker.cpp</code> <span class="tag cpp">C++</span> <span class="tag cli">컨테이너</span> <span class="tag sim">SIM</span> <span class="tag bench">벤치</span></h3>
       <p><code>rpi5_vision/src/object_tracker.cpp</code>. 입력도 출력도 <code>Detection2DArray</code> 다. 새로 등장하는 것은 <em>프레임 사이에 살아남는 멤버 변수</em> <code>tracks_</code> 뿐이다.</p>
 <pre><code class="lang-cpp">#include &lt;algorithm&gt;
 #include &lt;cmath&gt;
@@ -495,8 +537,8 @@ ros2 topic echo /tracks --once      # detections[i].id 가 "7" 같은 문자열�
       번호가 보이면 실험한다: ① 화면을 나갔다 들어오면 <em>새 번호</em>가 붙는다 — 정상이다. 같은 사람임을 아는 것(재식별)은 다른 문제다. ② 두 사람이 교차하면 번호가 바뀔 수 있다 — <code>max_age</code> 를 줄이고 <code>iou_threshold</code> 를 올리면 줄어드는가, 늘어나는가.
       ③ <code>ros2 param set /object_tracker min_hits 1</code> 로 바꾸면 번쩍이는 오검출에도 번호가 붙는 것을 본다.</p>
 
-      <h3>3-3. 라이다를 사진 위에 그린다 — 융합의 첫 검증 <span class="tag cpp">C++</span> <span class="tag cli">컨테이너</span></h3>
-      <p>§2-3 의 ①~③ 을 <strong>헤더 하나의 순수 함수</strong>로 만든다. ROS 에 묶이지 않은 함수라 두 노드(이 절의 <code>scan_overlay</code>, §3-4 의 <code>object_localizer</code>)가 공유하고, 06 의 프로토콜 파서처럼 ROS 없이 시험할 수 있다.
+      <h3>3-3. 라이다를 사진 위에 그린다 — 융합의 첫 검증 <span class="tag cpp">C++</span> <span class="tag cli">컨테이너</span> <span class="tag bench">벤치</span></h3>
+      <p>§2-3 의 ①~③ 을 <strong>헤더 하나의 순수 함수</strong>로 만든다. ROS 에 묶이지 않은 함수라 두 노드(이 절의 <code>scan_overlay</code>, §3-6 의 <code>object_localizer</code>)가 공유하고, 06 의 프로토콜 파서처럼 ROS 없이 시험할 수 있다.
       <code>rpi5_vision/include/rpi5_vision/scan_projection.hpp</code>:</p>
 <pre><code class="lang-cpp">#pragma once
 
@@ -658,7 +700,7 @@ int main(int argc, char ** argv)
   rclcpp::shutdown();
   return 0;
 }</code></pre>
-      <p><code>package.xml</code> 에 의존성을 더하고(<code>tf2</code>, <code>tf2_ros</code>, <code>tf2_geometry_msgs</code>, <code>geometry_msgs</code>, <code>visualization_msgs</code> — §3-4 것까지 한 번에), CMake 에 헤더 경로와 실행파일을 등록한다.</p>
+      <p><code>package.xml</code> 에 의존성을 더하고(<code>tf2</code>, <code>tf2_ros</code>, <code>tf2_geometry_msgs</code>, <code>geometry_msgs</code>, <code>visualization_msgs</code> — §3-6 것까지 한 번에), CMake 에 헤더 경로와 실행파일을 등록한다.</p>
 <pre><code class="lang-cmake">find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
@@ -676,20 +718,21 @@ target_link_libraries(scan_overlay ${OpenCV_LIBS})
 source install/setup.bash
 # 카메라(08)·라이다(07)·robot_state_publisher(05) 가 떠 있는 상태에서
 ros2 run rpi5_vision scan_overlay</code></pre>
-      <div class="callout warn"><span class="ct">이 화면이 05 단계의 채점표다 — 여기서 시간을 써야 뒤가 싸다</span>
-        <p>Foxglove Image 패널에서 <code>/camera/scan_overlay</code> 를 연다. 로봇을 벽 정면 1 m 에 두면 점들이 <strong>벽 위에 수평선 한 줄</strong>로 찍혀야 한다(라이다 평면이 벽과 만나는 높이). 의자를 앞에 두면 의자 다리 위의 점만 빨갛게 가까워진다.</p>
+      <div class="callout warn"><span class="ct">이 화면이 장착값의 채점표다 — 지금은 지그의 값, 09a 에서는 최종 장착값. 여기서 시간을 써야 뒤가 싸다</span>
+        <p>Foxglove Image 패널에서 <code>/camera/scan_overlay</code> 를 연다. 지그를 벽 정면 1 m 에 두면 점들이 <strong>벽 위에 수평선 한 줄</strong>로 찍혀야 한다(라이다 평면이 벽과 만나는 높이). 의자를 앞에 두면 의자 다리 위의 점만 빨갛게 가까워진다.</p>
         <div class="tbl"><table>
           <thead><tr><th>증상</th><th>원인</th><th>고칠 곳</th></tr></thead>
           <tbody>
-            <tr><td>점의 줄이 물체보다 좌·우로 밀려 있다</td><td>카메라 yaw 또는 <code>lidar_yaw</code> 가 틀림 (07 §3-9 를 통과했다면 카메라 쪽)</td><td>URDF <code>camera_joint</code> 의 yaw</td></tr>
-            <tr><td>가까운 물체에서만 밀린다, 먼 벽은 맞다</td><td>평행이동(<code>cam_x</code>, <code>cam_y</code>)이 틀림 — 시차는 가까울수록 크다</td><td>URDF <code>cam_x / cam_y</code> 실측</td></tr>
-            <tr><td>줄이 기울어 있다</td><td>카메라 roll, 또는 라이다가 수평이 아님</td><td>장착 · URDF rpy</td></tr>
-            <tr><td>줄이 너무 위·아래에 있다</td><td><code>cam_z − lidar_z</code> 또는 <code>cam_pitch</code> 가 틀림</td><td>§3-6 의 벽 캘리브레이션</td></tr>
-            <tr><td>점이 하나도 없다 (<code>pts: 0</code>)</td><td>TF 체인이 끊겼거나 <code>camera_info</code> 가 0, 또는 <code>frame_id</code> 불일치</td><td>§3-1 의 다섯 줄로 돌아간다</td></tr>
+            <tr><td>점의 줄이 물체보다 좌·우로 밀려 있다</td><td>카메라 yaw 또는 <code>lidar_yaw</code> 가 틀림 (07 §3-9-1 의 0° 방향·회전 방향·거리 대조를 통과했다면 카메라 쪽)</td><td>지그: <code>lidar_yaw</code> — 정면을 카메라가 보는 방향으로 정했으므로(3-1-1 의 정의) 두 센서 사이의 yaw 가 전부 이 값으로 들어간다. <a href="09a-assembly-gate.html#s3-4-5">09a</a>: 정면이 섀시 전방이 되므로 카메라 yaw 와 <code>lidar_yaw</code> 를 따로 본다 — xacro 의 <code>camera_joint</code> origin 에는 지금 피치만 있고 yaw 속성이 없다(필요하면 학습자가 추가)</td></tr>
+            <tr><td>가까운 물체에서만 밀린다, 먼 벽은 맞다</td><td>평행이동(<code>cam_x</code>, <code>cam_y</code>)이 틀림 — 시차는 가까울수록 크다</td><td>URDF <code>cam_x / cam_y</code> — 3-1-1 의 앞·옆 거리를 다시 잰다</td></tr>
+            <tr><td>줄이 기울어 있다</td><td>카메라 roll, 또는 라이다가 수평이 아님</td><td>장착(지그의 판·받침) · URDF rpy. A1M8 스캔 면 자체의 기울기(3-1-1 의 주의 상자)도 후보</td></tr>
+            <tr><td>줄이 너무 위·아래에 있다</td><td><code>cam_z − lidar_z</code> 또는 <code>cam_pitch</code> 가 틀림</td><td>3-1-1 의 두 높이를 다시 재고, 피치는 §3-8 의 벽 캘리브레이션</td></tr>
+            <tr><td>점이 하나도 없다 (<code>pts: 0</code>)</td><td>TF 체인이 끊겼거나 <code>camera_info</code> 가 0, 또는 <code>frame_id</code> 불일치</td><td>3-1-2 의 여섯 줄로 돌아간다</td></tr>
             <tr><td>가장자리에서만 어긋난다</td><td>렌즈 왜곡 (§2-3 참고 상자)</td><td>중앙에서 검증하고, 정확도가 필요하면 왜곡 보정</td></tr>
           </tbody>
         </table></div>
-        <p>위 표를 통과하면 TF 가 <em>두 센서로</em> 검증된 것이다. 05 에서 자로 잰 값이 여기서 처음으로 눈에 보인다.</p>
+        <p>위 표를 통과하면 지그의 TF 가 <em>두 센서로</em> 검증된 것이다. 3-1-1 에서 자로 잰 값이 여기서 처음으로 눈에 보인다.
+        <span class="tag asm">조립 후</span> <a href="09a-assembly-gate.html#s3-4-5">09a</a>에서 센서를 섀시에 올린 뒤 같은 화면으로 최종 장착값을 채점한다 — 다시 돌리는 비용이 작은 도구다.</p>
       </div>
 
       <h3>3-4. Colab 에서 깊이 모델을 HEF 로 — Mac 터미널이 Colab 을 부린다 <span class="tag mac">Mac</span> <span class="tag py">Python</span></h3>
@@ -775,8 +818,8 @@ hailortcli parse-hef ~/ros2_rpi5/ros2_ws/src/rpi5_hailo_detect/models/yolo26n-de
         출력이 미터이므로 노드에서 <code>x = log(d)</code> 로 바꿔 내면 로컬라이저는 아무것도 몰라도 된다 — §2-4 표의 두 번째 줄이 이 경우다. 두 모델의 실측 비교는 §3-7 표에 같이 적는다.</p>
       </div>
 
-      <h3>3-5. <code>hailo_depth</code> — 낮은 주기로 로그 깊이를 낸다 <span class="tag py">Python</span> <span class="tag cli">컨테이너</span></h3>
-      <p><code>rpi5_hailo_detect/rpi5_hailo_detect/hailo_depth.py</code>. 08c 의 <code>hailo_detect</code> 와 같은 뼈대(구독 → 전처리 → HailoRT → 후처리 → 발행)인데 두 가지가 다르다. ① <strong>주기 제한</strong>: 카메라는 30 fps 로 오지만 <code>depth_rate_hz</code>(기본 3) 로만 처리하고 나머지는 버린다 — §2-10 의 손잡이 ①. ② 후처리가 박스 디코드가 아니라 <em>텐서를 카메라 해상도로 리사이즈해 그대로 내는 것</em>이다. 미터로 바꾸지 않는다.</p>
+      <h3>3-5. <code>hailo_depth</code> — 낮은 주기로 로그 깊이를 낸다 <span class="tag py">Python</span> <span class="tag cli">컨테이너</span> <span class="tag bench">벤치</span></h3>
+      <p><code>rpi5_hailo_detect/rpi5_hailo_detect/hailo_depth.py</code>. 08c 의 <code>hailo_detect</code> 와 같은 뼈대(구독 → 전처리 → HailoRT → 후처리 → 발행)인데 두 가지가 다르다. ① <strong>주기 제한</strong>: 카메라는 30 fps 로 오지만 <code>depth_rate_hz</code>(기본 3) 로만 처리하고 나머지는 버린다 — §2-10 의 손잡이 ①. ② 후처리가 박스 디코드가 아니라 <em>텐서를 카메라 해상도로 리사이즈해 그대로 내는 것</em>이다. 미터로 바꾸지 않는다. 가짜 백엔드(<code>backend:=fake</code>)는 Hailo 없이 돌지만 <code>/camera/image_raw</code> 가 와야 발행한다 — 카메라가 있어야 하므로 이 절은 SIM 이 아니라 벤치다(하드웨어 없이 하는 시험은 §3-2 의 가짜 검출까지다).</p>
 <pre><code class="lang-python">#!/usr/bin/env python3
 """hailo_depth — YOLO26 깊이 HEF 를 낮은 주기로 돌려 로그 깊이(logit) 지도를 /camera/depth_logit 으로 낸다.
 
@@ -902,7 +945,7 @@ ros2 topic hz /detections                          # ★ 깊이를 켜기 전과
         </ul>
       </div>
 
-      <h3>3-6. <code>object_localizer.cpp</code> — 척도 맞춤 · A→C→B · 벽 상한 · 트랙 필터 · 거리 <span class="tag cpp">C++</span> <span class="tag cli">컨테이너</span></h3>
+      <h3>3-6. <code>object_localizer.cpp</code> — 척도 맞춤 · A→C→B · 벽 상한 · 트랙 필터 · 거리 <span class="tag cpp">C++</span> <span class="tag cli">컨테이너</span> <span class="tag bench">벤치</span></h3>
       <p>먼저 척도 맞춤을 <strong>ROS 와 무관한 순수 함수</strong>로 뺀다. §2-4 ③④ 가 그대로 코드다. <code>rpi5_vision/include/rpi5_vision/scale_calib.hpp</code>:</p>
 <pre><code class="lang-cpp">#pragma once
 
@@ -1467,7 +1510,7 @@ int main(int argc, char ** argv)
         <ul>
           <li>척도 쌍의 z 는 <code>(T_opt_laser_d * p_laser).z()</code> — 거리 r 이 아니다. 광각에서 화면 가장자리의 점은 r 이 z 의 1.5배가 넘는다. 이걸 r 로 넣으면 a 가 매 프레임 흔들리고 원인을 찾기 어렵다.</li>
           <li>A 가 있어도 C 를 계산한다. 그 차이의 이동 평균(<code>kC_meas</code>)이 로그에 찍힌다 — §3-7 에서 <code>k_c</code> 를 이 값으로 바꾼다. 운행 중 정확도 갱신의 첫 경로다.</li>
-          <li>필터는 <code>odom</code> 에서 산다. <code>target_frame</code> 이 <code>base_link</code> 여도 필터는 로봇과 함께 움직이지 않는다. odom TF 가 없으면(06 없이 시험할 때) 관측을 그대로 낸다 — 로그의 <code>filter=0</code>.</li>
+          <li>필터는 <code>odom</code> 에서 산다. <code>target_frame</code> 이 <code>base_link</code> 여도 필터는 로봇과 함께 움직이지 않는다. odom TF 가 없으면 관측을 그대로 낸다 — 로그의 <code>filter=0</code>. 벤치 기동(<code>use_mcu:=false</code>)에는 <code>odom</code> 을 내는 노드가 없으므로 지그에서는 이것이 기본 상태다. 벤치에서 필터를 켜 보는 방법은 §3-7.</li>
           <li>깊이 지도는 <code>toCvShare</code> 로 읽는다(복사 없음, 08a §2-2). 1.2 MB 짜리 지도를 프레임마다 복사하지 않는다.</li>
           <li><strong>TODO(you):</strong> 회전 중에는 척도 맞춤을 건너뛰는 각속도 게이트(<code>/odometry/filtered</code> 의 yaw rate)를 붙이십시오. 그리고 <code>ground_classes</code> 에 없는 물체가 A·C 모두 실패하면 방향만이라도 화살표 마커로.</li>
         </ul>
@@ -1478,7 +1521,7 @@ ament_target_dependencies(object_localizer
 target_include_directories(object_localizer PUBLIC ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(object_localizer ${OpenCV_LIBS})
 # install(TARGETS …) 목록에 object_localizer 추가</code></pre>
-      <h3>3-7. 재고, 비교하고, 판정한다 <span class="tag pi">Pi 호스트</span> <span class="tag cli">컨테이너</span></h3>
+      <h3>3-7. 재고, 비교하고, 판정한다 <span class="tag pi">Pi 호스트</span> <span class="tag cli">컨테이너</span> <span class="tag bench">벤치</span></h3>
       <p>노드를 다 띄우기 전에 <strong>Hailo 예산</strong>부터 잰다. <code>hailortcli run2</code> 는 HEF 두 개를 지정한 주기로 동시에 돌리며 각각의 달성 fps 를 보여 준다 — §1-3 의 식에 들어갈 숫자다.</p>
 <pre><code class="lang-bash"># Pi 호스트 (컨테이너 밖). ROS 노드는 모두 끈 채로
 DET=~/ros2_rpi5/ros2_ws/src/rpi5_hailo_detect/models/yolov8n.hef                    # 08c 에서 쓰는 검출 HEF
@@ -1499,17 +1542,41 @@ hailortcli run2 set-net $DET --framerate 30 set-net $DEP --framerate 5          
       </table></div>
       <p><strong>판정 규칙(§1-3):</strong> 검출 15 fps 이상을 지키는 행 중 깊이 주기가 가장 높은 것을 고른다. 어느 행도 검출 10 fps 를 못 넘기면 카메라 깊이를 운용에서 빼고(<code>hailo_depth</code> 를 런치에서 제외) A + B 로 간다. 결과와 근거를 <code>hardware/INVENTORY.md</code> 5절 표에 적는다.</p>
 
-      <p>그 다음 <strong>정확도</strong>를 줄자로 잰다. 물체를 정면 0.5 / 1 / 2 / 3 m 에 두고(줄자는 라이다 축 기준) 세 종류로 나눠 표를 채운다: 라이다 평면에 걸리는 것(사람), 평면 아래인 것(낮은 상자), 바닥에 없는 것(탁자 위 컵). 로그의 <code>kC_meas</code> 가 C 의 실측 상대 오차이고, 그 값을 <code>k_c</code> 파라미터로 되돌려 넣는다.</p>
+      <p>그 다음 <strong>정확도</strong>를 줄자로 잰다. 지그의 지면을 바닥으로 하고(3-1-1 "어디에 두는가" — 바닥에 직접, 또는 상자 위에 올려도 높이는 바닥에서), 물체를 정면 0.5 / 1 / 2 / 3 m 에 둔다 — 줄자는 라이다 회전축 기준이다(3-1-1 에서 <code>base_link</code> 원점을 그 아래로 정했다). 세 종류로 나눠 표를 채운다: 라이다 평면에 걸리는 것(사람·의자), 평면 아래인 것(낮은 상자), 바닥에 없는 것(탁자 위 컵). 로그의 <code>kC_meas</code> 가 C 의 실측 상대 오차이고, 그 값을 <code>k_c</code> 파라미터로 되돌려 넣는다.
+      줄자와 비교하는 값은 수평 거리다. 마커 라벨의 거리는 <code>base_link</code> 원점에서의 3차원 거리(코드의 <code>o.p.length()</code>)라 높이 차가 조금 섞인다 — <code>/objects</code> 의 x, y 로 수평 거리를 구해 적는다.</p>
+      <p><strong>벤치에서 트랙 필터를 켠다 — 지그는 움직이지 않는다.</strong> 표의 "필터 10초 후 σ" 열과 아래의 σ·A 인계는 필터가 켜져 있어야 보인다. 벤치에는 <code>odom</code> 이 없어 로그가 <code>filter=0</code> 이다(§3-6 의 읽기 상자). 필터가 요구하는 것은 <code>filter_frame</code> ← <code>target_frame</code> 변환이 조회되는 것뿐이므로, 지그를 <strong>움직이지 않는 동안</strong>은 아래 둘 중 하나로 켤 수 있다. 벤치에서는 결과가 같다 — 둘 다 필터가 쓰는 x, y 에 같은 값을 준다.</p>
+<pre><code class="lang-bash"># (가) 정적 TF 로 odom 을 세운다 — 05 §3-8 의 명령. 로컬라이저 파라미터는 그대로
+ros2 run tf2_ros static_transform_publisher \
+  --x 0 --y 0 --z 0 --yaw 0 --pitch 0 --roll 0 \
+  --frame-id odom --child-frame-id base_footprint
+#   자식은 base_footprint 다. base_link 로 하면 base_link 의 부모가 둘이 된다 (05 §3-8)
+
+# (나) 필터 프레임을 base_link 로 — TF 를 새로 만들지 않는다. 파라미터는 생성자에서 한 번 읽으므로 기동할 때 준다
+ros2 run rpi5_vision object_localizer --ros-args -p filter_frame:=base_link
+
+# 어느 쪽이든 로컬라이저 로그 끝의 filter=1 이 켜졌다는 표시다</code></pre>
+      <p>(가)는 파라미터를 건드리지 않는 대신 TF 트리에 발행자가 하나 는다. 05 §3-8 이 보인 대로 정적 변환은 발행자를 꺼도 조회하는 노드의 버퍼에 남는다 — <code>odom</code> 을 내는 노드(06·06b 의 브리지, EKF)를 띄우기 전에 이 발행자를 끄고, TF 를 조회하는 노드(로컬라이저 등)를 다시 띄운다.
+      (나)는 TF 를 건드리지 않는 대신 기본값(<code>odom</code>)과 다른 파라미터로 띄운다. 이것이 되는 이유는 지그가 고정돼 <code>base_link</code> 가 움직이지 않기 때문이고, 움직이는 로봇에서는 이해 확인 7번의 이유로 안 된다. 어느 쪽이든 필터를 켠 동안 지그를 옮기면 필터에 쌓인 위치가 틀린다.</p>
+      <p><strong>σ 가 줄고 A 가 이어받는 것을 본다(§2-7).</strong> 필터를 켠 채 <code>moving_classes</code> 에 없는 물체(의자·여행가방 따위 — 사람은 <code>q_moving</code> 이 커서 σ 가 잘 줄지 않는다)를 2 m 에 두되, 라이다 평면 밖(평면보다 낮게 또는 높게)에 두어 C 로만 잡히게 한다. 10초 동안 라벨의 σ 가 줄어드는 것을 본다.
+      그 다음 수평 위치는 그대로 두고 물체를 천천히 라이다 평면 높이로 옮긴다(받침에 올리거나 받침에서 내린다). A 가 잡히는 순간 라벨의 출처 글자가 <code>A</code> 로 바뀌고 위치가 라이다 값으로 옮겨 간다. 옮기는 동안 손이 물체를 가려 검출이 <code>max_age</code>(15 프레임 — 30 fps 에서 0.5 초) 넘게 끊기면 새 번호가 붙고 필터가 처음부터 다시 쌓인다 — 옆에서 잡는다.
+      로봇이 다가가며 이것이 일어나는 모습 — 움직이는 <code>odom</code> 안에서 정지 물체가 제자리에 남는가 — 는 <span class="tag asm">조립 후</span> <a href="09a-assembly-gate.html#s3-5-8">09a</a>의 몫이다.</p>
       <div class="tbl"><table>
-        <thead><tr><th>물체 · 거리</th><th>A (라이다)</th><th>C (깊이 지도, 온라인 척도)</th><th>C 오차 %</th><th>B (지면)</th><th>필터 10초 후 σ</th><th><code>wall</code> vs 줄자</th></tr></thead>
+        <thead><tr><th>물체 · 줄자 거리</th><th>A (라이다)</th><th>C (깊이 지도, 온라인 척도)</th><th>C 오차 %</th><th>B (지면) · <code>force_ground</code></th><th>B 오차</th><th>§2-5 식의 예측 σ (1 px, 지그의 h_cam)</th><th>필터 10초 후 σ</th><th><code>wall</code> vs 줄자</th></tr></thead>
         <tbody>
-          <tr><td>사람 1 m / 2 m / 3 m</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
-          <tr><td>낮은 상자 1 m / 2 m</td><td>(없음)</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
-          <tr><td>탁자 위 컵 1 m / 2 m</td><td>(없음)</td><td>____</td><td>____</td><td>(불가)</td><td>____</td><td>____</td></tr>
-          <tr><td>검은 소파 2 m (라이다 실패)</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
-          <tr><td>유리창 앞 물체 2 m</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td>바닥에 선 사람·의자 0.5 / 1 / 2 / 3 m</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td>낮은 상자 1 m / 2 m</td><td>(없음)</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td>탁자 위 컵 1 m / 2 m</td><td>(없음)</td><td>____</td><td>____</td><td>(불가)</td><td>—</td><td>—</td><td>____</td><td>____</td></tr>
+          <tr><td>검은 소파 2 m (라이다 실패)</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td>유리창 앞 물체 2 m</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
         </tbody>
       </table></div>
+      <p><strong>B 열을 따로 재려면</strong> — <strong>TODO(you):</strong> <code>force_ground</code> bool 파라미터를 추가해 참이면 방법 A 와 C 를 건너뛰게 만든다(몇 줄). A·C 가 먼저 걸리면 B 는 계산되지 않는다(§2-6 의 순서).
+      B 오차가 거리의 제곱으로 커지는 것이 보이면 §2-5 를 <em>이해한</em> 것이다. 그 곡선에서 "10 cm 를 넘는 거리"가 이 지그의 <code>ground_max_range</code> 다 — 벤치에서는 로컬라이저를 <code>-p ground_max_range:=…</code> 로 띄우고, INVENTORY 4절 그 행 옆에 3-1-1 과 같은 꼴(<code>NOMINAL(ruler, 지그, …)</code>)로 적는다. B 오차가 예측보다 훨씬 크고 <em>한쪽으로 치우쳐</em> 있으면 피치가 틀린 것이다 → §3-8.</p>
+      <div class="callout note"><span class="ct">이 표는 지그의 표다 — 09a 에서 다시 채운다</span>
+        <p>B 열과 예측 σ, <code>ground_max_range</code> 는 <code>h_cam</code> 과 피치에 매여 있다(§2-5 — 오차 ∝ d²/(fy·h_cam)). 지그의 카메라 높이는 최종 장착 높이가 아니므로 이 셋은 지그의 값이다. <span class="tag asm">조립 후</span> <a href="09a-assembly-gate.html#s3-4-6">09a</a>에서 센서를 섀시에 올린 뒤 같은 절차로 표를 다시 채우고 <code>ground_max_range</code> 를 최종 <code>h_cam</code> 으로 다시 정한다.</p>
+      </div>
+      <p>그 다음 <strong>라이다가 못 보는 물체</strong>로 시험한다: 라이다 평면(<code>h_L</code>)보다 낮은 상자나 책을 1 m 에 둔다. overlay 에는 박스가 있는데 <code>scan_overlay</code> 의 점은 그 위를 지나 뒤의 벽에 찍힌다. 깊이 노드가 떠 있으면 이 물체는 C(파랑)로 잡힌다.
+      <code>hailo_depth</code> 를 내린 채(C 없음)라면 로그에 <code>none</code> 이 1 늘어난다 — 클래스가 <code>ground_classes</code> 에 없어서다. <code>-p ground_classes:="[person, book, ...]"</code> 로 넣어 다시 띄우면 주황 구가 생기고 <code>B</code> 로 표시된다. 그 물체를 벽 앞 20 cm 까지 밀어 보면 <code>wall 0.2m</code>, 벽 뒤로는 갈 수 없으니 상한 검사가 켜지는 경계를 로그에서 본다.</p>
 
       <p><strong>척도의 두 방식 비교.</strong> 온라인(라이다, 매 프레임) 대 오프라인(공개 가중치에 구워진 (a, b), 또는 Colab 에서 <code>model.calibrate()</code> 로 우리 카메라에 맞춘 것). 오프라인 값의 오차는 Colab 에서 한 장으로 잰다: Pi 에서 찍은 벽 사진(§3-8 의 것)을 올려 <code>YOLO("yolo26n-depth.pt")</code> 로 예측한 미터가 라이다의 벽 거리와 얼마나 다른지.</p>
 <pre><code class="lang-bash"># Mac → Colab. 공개 가중치가 우리 카메라에서 얼마나 틀리는가 (오프라인 척도의 오차)
@@ -1531,24 +1598,15 @@ h, w = d.shape; print('center 5x5 median [m]:', np.median(d[h//2-2:h//2+3, w//2-
         </tbody>
       </table></div>
 
-      <p>Foxglove 3D 패널: Display frame 을 <code>base_link</code> 로, <code>/scan</code> · 로봇 모델(05) · <code>/objects/markers</code> 를 켠다. 사람이 카메라 앞 1 m 에 서면 초록 구가 스캔 점들 위에 놓이고 <code>#3 person 1.02m L</code> 이 뜬다.
+      <p>Foxglove 3D 패널: Display frame 을 <code>base_link</code> 로, <code>/scan</code> · 로봇 모델(05) · <code>/objects/markers</code> 를 켠다. 사람이 카메라 앞 1 m 에 서면 초록 구가 스캔 점들 위에 놓이고 <code>#3 person 1.02m A σ0.05</code> 같은 라벨이 뜬다.
       두 번째 사람(또는 의자)이 들어오면 둘 사이에 파란 선과 거리가, 각각에서 벽으로 회색 선과 <code>wall 0.45m</code> 이 그려진다.</p>
 
-      <p><strong>줄자로 채점한다.</strong> 물체를 정면 0.5 / 1 / 2 / 3 m 에 두고(줄자는 라이다 회전축 기준) 표를 채운다. 방법 B 만 따로 재려면 — <strong>TODO(you):</strong> <code>force_ground</code> bool 파라미터를 추가해 참이면 방법 A 를 건너뛰게 만든다(세 줄).</p>
-      <div class="tbl"><table>
-        <thead><tr><th>실제 거리</th><th>A (L) 측정</th><th>B (G) 측정 · <code>force_ground</code></th><th>B 오차</th><th>§2-4 식의 예측 σ (1 px, 내 h_cam)</th><th>마커의 <code>wall</code> 값 vs 줄자</th></tr></thead>
-        <tbody>
-          <tr><td>0.5 m</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
-          <tr><td>1 m</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
-          <tr><td>2 m</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
-          <tr><td>3 m</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
-        </tbody>
-      </table></div>
-      <p>B 오차가 거리의 제곱으로 커지는 것이 보이면 §2-4 를 <em>이해한</em> 것이다. 그 곡선에서 "10 cm 를 넘는 거리"가 당신의 <code>ground_max_range</code> 다. B 오차가 예측보다 훨씬 크고 <em>한쪽으로 치우쳐</em> 있으면 피치가 틀린 것이다 → §3-6.</p>
-      <p>그 다음 <strong>라이다가 못 보는 물체</strong>로 시험한다: 라이다 평면(<code>h_L</code>)보다 낮은 상자나 책을 1 m 에 둔다. overlay 에는 박스가 있는데 <code>scan_overlay</code> 의 점은 그 위를 지나 뒤의 벽에 찍힌다. 로그에 <code>none</code> 이 1 늘어난다 — 클래스가 <code>ground_classes</code> 에 없어서다. <code>-p ground_classes:="[person, book, ...]"</code> 로 넣어 다시 띄우면 주황 구가 생기고 <code>G</code> 로 표시된다. 그 물체를 벽 앞 20 cm 까지 밀어 보면 <code>wall 0.2m</code>, 벽 뒤로는 갈 수 없으니 상한 검사가 켜지는 경계를 로그에서 본다.</p>
-
-      <h3>3-8. (선택) 방법 B 의 캘리브레이션 — 벽 한 면으로 카메라 피치를 구한다 <span class="tag py">Python</span> <span class="tag mac">Mac</span></h3>
+      <h3>3-8. (선택) 방법 B 의 캘리브레이션 — 벽 한 면으로 카메라 피치를 구한다 <span class="tag py">Python</span> <span class="tag mac">Mac</span> <span class="tag bench">벤치</span></h3>
       <p>방법 B(§2-5)를 검산·대체 경로로 쓰려면 <code>cam_pitch</code> 가 맞아야 하는데, 피치는 자로 잴 수 없다. 대신 <strong>라이다가 잰 벽 거리</strong>와 <strong>사진에서 바닥과 벽이 만나는 선의 행</strong>을 짝짓는다 — 벽이 자가 되는 또 하나의 방식이다.</p>
+      <div class="callout note"><span class="ct">지그로 한다 — 구한 피치는 지그에 붙인 카메라의 것이다</span>
+        <p>3-1-1 의 지그를 지면 = 바닥으로 놓고 한다(바닥에 직접, 또는 상자 위 — 높이는 바닥에서). 식의 h 는 바닥에서 렌즈 중심까지(지그의 <code>h_cam</code>), 카메라가 라이다보다 앞선 거리는 지그에서 잰 <code>cam_x − lidar_x</code> 다. 구한 <code>cam_pitch</code> 는 xacro 와 INVENTORY 4절 <code>cam_pitch</code> 행 옆에 3-1-1 과 같은 꼴로 적는다 — <code>NOMINAL(ruler, 지그, &lt;날짜&gt;, §3-8 벽 캘리브레이션)</code>.
+        <span class="tag asm">조립 후</span> <a href="09a-assembly-gate.html#s3-4-7">09a</a>에서 섀시에 장착한 뒤 같은 절차로 다시 구한다.</p>
+      </div>
 <pre class="diagram"><code>  카메라 렌즈 높이 h (자), 벽까지 수평 거리 d_cam = (라이다 정면 거리 d_L) − (카메라가 라이다보다 앞선 거리)
   바닥-벽 경계선의 행 v_wall (사진에서 읽는다)
 
@@ -1556,11 +1614,14 @@ h, w = d.shape; print('center 5x5 median [m]:', np.median(d[h//2-2:h//2+3, w//2-
   경계선이 실제로 수평면 아래인 각    =  atan( h / d_cam )                   ← 중력 기준
   피치 (아래로 +)  θ_p  =  atan(h / d_cam)  −  atan((v_wall − cy) / fy)
 
-  검산: 거리 d 의 바닥 점이 찍힐 행  v(d) = cy + fy · tan( atan(h/d) − θ_p )   → 두 번째 거리에서 맞는지 본다</code></pre><pre><code class="lang-bash"># Pi 호스트: 로봇을 벽 정면(직각)에 약 1 m 두고. 라이다 정면 거리는 07 §3-10 의 노드로 읽는다
+  검산: 거리 d 의 바닥 점이 찍힐 행  v(d) = cy + fy · tan( atan(h/d) − θ_p )   → 두 번째 거리에서 맞는지 본다</code></pre><pre><code class="lang-bash"># Pi 호스트: 지그를 지면 = 바닥으로 놓고(3-1-1), 벽 정면(직각)에서 약 1 m 에 두고. 라이다 정면 거리는 07 §3-10 의 노드로 읽는다
+#   라이다 0° 를 지그 정면에 맞췄으므로(3-1-1) 그 노드의 "정면"이 지그의 정면이다
 ros2 topic echo /scan_front_min --once                          # 컨테이너. 예: 1.03
-rpicam-still -n --width 640 --height 480 -o /tmp/wall_1m.jpg   # 캘리브레이션과 같은 해상도 (K 는 해상도에 종속, 08 §2-6)
+rpicam-still -n --width 640 --height 480 -o /tmp/wall_1m.jpg   # 08 §3-9 촬영 때와 같은 해상도·센서 모드·초점 — 그때 정한 옵션을 덧붙인다 (K 는 그 조건에 종속)
 # Mac:
 scp pi5:/tmp/wall_1m.jpg ~/ros2_rpi5/calib/</code></pre>
+      <p><strong>이 사진도 캘리브레이션과 같은 조건이어야 한다.</strong> 아래 스크립트는 사진의 높이가 <code>camera_info</code> 와 같은지만 본다(<code>image_height</code> 비교). 센서 모드나 초점이 08 §3-9 의 촬영 때와 다르면 해상도가 같아도 <code>fy</code>·<code>cy</code> 가 이 사진에 맞지 않고, 구한 피치가 그만큼 틀린다 — 1세대가 크롭 모드에서 겪은 일이다(08 §3-9 의 경고 상자).
+      <code>rpicam-still</code> 은 운용 스트림과 모드를 고르는 프로그램이 다르므로 08 §3-9 의 "촬영 전 확인"에서 정한 옵션을 덧붙여야 하고, camera 노드가 떠 있으면 먼저 내린다(카메라는 한 번에 한 프로세스). 운용 스트림에서 한 장을 저장하면(08 §3-9 경로 ② 의 <code>save_calib_frames.py</code> 를 한 장만) 구조상 같은 조건이다.</p>
       <p><code>scripts/calibrate_cam_pitch.py</code> — 08 §3-9 의 캘리브레이션 스크립트와 같은 환경(<code>opencv-python numpy pyyaml</code>)에서 돈다. 창이 뜨면 ↑/↓ 로 선을 바닥-벽 경계에 맞추고 Enter.</p>
 <pre><code class="lang-python">#!/usr/bin/env python3
 """calibrate_cam_pitch.py — 벽 사진 한 장 + 라이다 거리로 카메라 피치를 구한다 (08d §3-8).
@@ -1613,7 +1674,7 @@ def main():
             v += 1
     cv2.destroyAllWindows()
 
-    # 피치: 중력 기준 각 − 광축 기준 각 (08d §3-6 의 식)
+    # 피치: 중력 기준 각 − 광축 기준 각 (08d §3-8 의 식)
     pitch = math.atan2(h, d_cam) - math.atan((v - cy) / fy)
     print(f'\nv_wall = {v}px,  d_cam = {d_cam:.3f} m,  h = {h:.3f} m')
     print(f'cam_pitch = {pitch:.4f} rad = {math.degrees(pitch):.2f} deg   (아래로 + · URDF 의 cam_pitch 에 넣는다)')
@@ -1636,7 +1697,7 @@ if __name__ == '__main__':
           <tr><td><strong>감독 노드 (10)</strong></td><td><code>mission_supervisor</code> 가 <code>/detections</code> 대신 <code>/objects</code> 를 구독한다 — 이제 "사람이 보인다"가 아니라 "사람이 <strong>1.2 m 앞</strong>에 있다"로 판단한다. 공분산이 큰(σ &gt; 0.2 m) 위치는 정지 판단에 쓰지 않는다. C 로 잰 물체는 필터가 좁힌 뒤에야 σ 가 그 아래로 내려온다</td><td>10 §2-2 의 3단 방어 중 "감독"층이 거리 기반이 된다</td></tr>
           <tr><td><strong>코스트맵 레이어 (10)</strong></td><td><code>/objects</code> 를 <code>sensor_msgs/PointCloud2</code> 로 바꿔 Nav2 obstacle layer 의 관측 소스에 추가</td><td>라이다가 못 보는 낮은 물체를 Nav2 가 피한다</td></tr>
           <tr><td>정석 추적기 (SORT)</td><td>등속 예측 → 칼만 필터(상태 [cx, cy, s, r, vx, vy, vs]), 탐욕 매칭 → 헝가리안</td><td>교차하는 사람들의 ID 유지. 06 의 EKF 와 같은 수학이 박스에 적용되는 것을 본다</td></tr>
-          <tr><td>왜곡 보정</td><td>박스 꼭짓점을 <code>cv::undistortPoints</code> 로, 또는 08a 의 <code>undistort</code> 영상에 검출기를 물린다</td><td>광각 가장자리의 방위각 오차 제거</td></tr>
+          <tr><td>왜곡 보정</td><td>박스 꼭짓점을 <code>cv::undistortPoints</code> 로, 또는 부록 B §6-3(<code>ref-opencv.html</code> "왜곡 보정과 활용")의 <code>cv::undistort</code> 로 편 영상에 검출기를 물린다 — 08a 에는 왜곡 보정 실습이 아직 없다</td><td>광각 가장자리의 방위각 오차 제거</td></tr>
           <tr><td>07 의 숙제</td><td><code>scan_watch</code> 를 TF 로 <code>base_link</code> 기준으로 바꾸는 확장 과제 — 이 단계의 <code>lookup</code>·<code>tf2::Transform</code> 이 그대로 답이다</td><td>장착과 무관한 "정면"</td></tr>
         </tbody>
       </table></div>
@@ -1644,26 +1705,31 @@ if __name__ == '__main__':
       
       <h2>✅ 검증 체크포인트</h2>
       <ul class="checklist">
-        <li><label><input type="checkbox"><span>§3-1 의 다섯 명령이 통과했고, <code>tf2_echo base_footprint camera_optical_link</code> 의 z 가 자로 잰 렌즈 높이와 1 cm 안에서 맞는다</span></label></li>
-        <li><label><input type="checkbox"><span>가짜 검출로 <code>object_tracker</code> 가 같은 박스에 <code>id "1"</code> 을 유지하고, IoU 임계 미만으로 옮기면 새 번호를 준다</span></label></li>
-        <li><label><input type="checkbox"><span>08c 검출기 + <code>-r /detections:=/tracks</code> 로 overlay 에 <code>#N</code> 이 보이고, 가로질러 걷는 동안 번호가 유지된다</span></label></li>
-        <li><label><input type="checkbox"><span><code>/camera/scan_overlay</code> 에서 벽 위에 점이 수평선 한 줄로 찍히고 §3-3 표의 증상이 없다 — TF 가 두 센서로 검증됐다</span></label></li>
-        <li><label><input type="checkbox"><span>Colab CLI 로 세션을 만들고 DFC wheel 을 올려 <code>hailo --version</code> 이 3.x 를 찍었다 (HailoRT 4.23.0 과 같은 Suite)</span></label></li>
-        <li><label><input type="checkbox"><span><code>build_depth_hef.py</code> 가 끝나 HEF 를 받았고, Pi 의 <code>hailortcli parse-hef</code> 가 입력 <code>imgsz</code>·출력 [1, H, W, 1] 을 읽는다. 세션을 <code>colab stop</code> 했다</span></label></li>
-        <li><label><input type="checkbox"><span><code>hailo_depth</code> 가 가짜 백엔드로 <code>32FC1</code>, 입력과 같은 <code>header</code>, 약 3 Hz 로 <code>/camera/depth_logit</code> 을 낸다</span></label></li>
-        <li><label><input type="checkbox"><span>진짜 HEF 로 깊이를 켠 뒤 <code>ros2 topic hz /detections</code> 를 켜기 전과 비교해 §3-7 예산 표의 첫 두 행을 채웠다</span></label></li>
-        <li><label><input type="checkbox"><span>로컬라이저 로그의 <code>calib ok a=… b=… n≥30 rms&lt;0.15</code> 가 벽 앞에서 안정적으로 찍히고, 로봇을 옮겨도 a, b 가 크게 튀지 않는다</span></label></li>
-        <li><label><input type="checkbox"><span><code>ros2 topic echo /objects --once</code> 에서 <code>frame_id</code>, <code>id</code>, <code>results[0].pose.pose.position</code>, <code>covariance[0]</code> 경로를 확인했다</span></label></li>
-        <li><label><input type="checkbox"><span>Foxglove 3D 에 A(초록)·C(파랑)·B(주황) 구가 색으로 구분되고, 번호·거리·σ, 물체 사이 선과 거리, 벽까지 선과 거리가 보인다</span></label></li>
-        <li><label><input type="checkbox"><span>낮은 상자와 탁자 위 컵이 <code>C</code> 로 위치를 얻고, 벽 뒤로 나오는 답은 로그에 <code>rej</code> 로 센다</span></label></li>
-        <li><label><input type="checkbox"><span>§3-7 정확도 표를 채웠고 <code>kC_meas</code> 로 <code>k_c</code> 를 갱신했다. C 오차가 거리에 대략 비례한다</span></label></li>
-        <li><label><input type="checkbox"><span>2 m 물체를 C 로 보며 10초 기다리면 라벨의 σ 가 줄고, 가까이 가서 A 가 잡히는 순간 위치가 라이다 값으로 옮겨 간다 (§2-7)</span></label></li>
-        <li><label><input type="checkbox"><span>§3-7 예산 표를 다 채우고 판정(C 유지 / C 제외)과 근거를 INVENTORY 5절에 적었다</span></label></li>
-        <li><label><input type="checkbox"><span>척도 두 방식(온라인 / 오프라인)의 실측 오차를 적고 선택을 기록했다</span></label></li>
-        <li><label><input type="checkbox"><span>(선택) <code>calibrate_cam_pitch.py</code> 로 <code>cam_pitch</code> 를 구해 URDF 에 넣었고, 2 m 사진의 경계선 행이 예측과 5 px 안에서 맞는다</span></label></li>
+        <li><label><input type="checkbox" data-key="jig-values-recorded"><span><span class="tag bench">벤치</span> 카메라와 라이다를 판 하나에 흔들리지 않게 고정했고(서로 가리지 않게, 라이다 0° 를 카메라 정면으로), <code>h_cam</code>·<code>h_L</code>·렌즈와 라이다 회전축 사이의 앞·옆 거리를 자로 재 INVENTORY 4절 장착 행 옆에 <code>NOMINAL(ruler, 지그, 날짜)</code> 로 적은 뒤, xacro 의 <code>lidar_*</code>·<code>cam_*</code> 에 옮기고 주석도 같은 낱말로 바꿨다 (3-1-1)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp0"><span>(지그 기준) 3-1-2 의 여섯 가지 확인이 통과했고, <code>tf2_echo base_footprint camera_optical_link</code> 의 z 가 지그에서 자로 잰 렌즈 높이(<code>h_cam</code>)와 1 cm 안에서 맞는다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp1"><span>가짜 검출로 <code>object_tracker</code> 가 같은 박스에 <code>id "1"</code> 을 유지하고, IoU 임계 미만으로 옮기면 새 번호를 준다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp2"><span>08c 검출기 + <code>-r /detections:=/tracks</code> 로 overlay 에 <code>#N</code> 이 보이고, 가로질러 걷는 동안 번호가 유지된다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp3"><span>(지그 기준) <code>/camera/scan_overlay</code> 에서 벽 위에 점이 수평선 한 줄로 찍히고 §3-3 표의 증상이 없다 — 지그의 TF 가 두 센서로 검증됐다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp4"><span>Colab CLI 로 세션을 만들고 DFC wheel 을 올려 <code>hailo --version</code> 이 3.x 를 찍었다 (HailoRT 4.23.0 과 같은 Suite)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp5"><span><code>build_depth_hef.py</code> 가 끝나 HEF 를 받았고, Pi 의 <code>hailortcli parse-hef</code> 가 입력 <code>imgsz</code>·출력 [1, H, W, 1] 을 읽는다. 세션을 <code>colab stop</code> 했다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp6"><span><code>hailo_depth</code> 가 가짜 백엔드로 <code>32FC1</code>, 입력과 같은 <code>header</code>, 약 3 Hz 로 <code>/camera/depth_logit</code> 을 낸다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp7"><span>진짜 HEF 로 깊이를 켠 뒤 <code>ros2 topic hz /detections</code> 를 켜기 전과 비교해 §3-7 예산 표의 첫 두 행을 채웠다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp8"><span>(지그 기준) 로컬라이저 로그의 <code>calib ok a=… b=… n≥30 rms&lt;0.15</code> 가 벽 앞에서 안정적으로 찍히고, 지그를 다른 벽 앞으로 옮겨도 a, b 가 크게 튀지 않는다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp9"><span><code>ros2 topic echo /objects --once</code> 에서 <code>frame_id</code>, <code>id</code>, <code>results[0].pose.pose.position</code>, <code>covariance[0]</code> 경로를 확인했다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp10"><span>Foxglove 3D 에 A(초록)·C(파랑)·B(주황) 구가 색으로 구분되고, 번호·거리·σ, 물체 사이 선과 거리, 벽까지 선과 거리가 보인다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp11"><span>낮은 상자와 탁자 위 컵이 <code>C</code> 로 위치를 얻고, 벽 뒤로 나오는 답은 로그에 <code>rej</code> 로 센다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp12"><span>(지그 기준 — 지면은 바닥, 높이는 3-1-1 "어디에 두는가"로 골라) §3-7 정확도 표를 채웠고 <code>kC_meas</code> 로 <code>k_c</code> 를 갱신했다. C 오차가 거리에 대략 비례한다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp13"><span>(지그 기준 — 지그를 고정하고 §3-7 의 방법으로 필터를 켠 채, 로그 <code>filter=1</code>) <code>moving_classes</code> 에 없는 2 m 물체를 C 로 보며 10초 기다리면 라벨의 σ 가 줄고, 그 물체를 같은 자리에서 라이다 평면 높이로 옮겨 A 가 잡히는 순간 위치가 라이다 값으로 옮겨 간다 (§2-7)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp14"><span>§3-7 예산 표를 다 채우고 판정(C 유지 / C 제외)과 근거를 INVENTORY 5절에 적었다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp15"><span>(지그 기준) 척도 두 방식(온라인 / 오프라인)의 실측 오차를 적고 선택을 기록했다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp16"><span>(선택, 지그 기준) <code>calibrate_cam_pitch.py</code> 로 지그 위 카메라의 <code>cam_pitch</code> 를 구해 URDF 에 넣었고, 2 m 사진의 경계선 행이 예측과 5 px 안에서 맞는다</span></label></li>
       </ul>
       <p class="progress-line"></p>
       <div class="progress-bar"><span></span></div>
+      <div class="callout note"><span class="ct">이 목록은 임시 지그로 100 % 가 된다 — 최종 장착값의 검증은 09a 에서 다시</span>
+        <p>위 18개는 전부 벤치에서 지그로 닫힌다. 그 가운데 지그의 값에 기대는 것 — 3-1-1 의 기록, 3-1-2 의 두 <code>tf2_echo</code>, §3-3 의 채점표, 척도 맞춤의 안정성, §3-7 의 정확도 표와 척도 비교, §3-8 의 피치 — 는 <span class="tag asm">조립 후</span> <a href="09a-assembly-gate.html#s3-4">09a</a>에서 최종 장착값으로 다시 한다.
+        로봇이 움직이는 동안 트랙 필터가 <code>odom</code> 안에서 정지 물체를 제자리에 붙잡아 두는가 — 벤치의 필터 체크포인트가 보지 못하는 절반 — 도 09a 의 체크포인트로 간다. 여기서 100 % 의 뜻은 "융합이 지그 위에서 맞게 돈다"이지 "로봇의 장착값이 맞다"가 아니다.</p>
+      </div>
 
       <h2>🤔 이해 확인</h2>
       <details class="quiz"><summary>1. 왜 08b 의 검출기(2 fps)로는 추적이 안 되는가? 숫자로 답하라.</summary>
@@ -1686,6 +1752,22 @@ if __name__ == '__main__':
         <div class="ans">① <code>depth_rate_hz</code> 를 5 → 2 로, ② 그래도 부족하면 Colab 에서 <code>imgsz</code> 를 512 → 384 로 다시 내보낸다, ③ 스케줄러 우선순위를 검출에 준다. 세 손잡이를 다 써도 10 fps 를 못 넘기면 카메라 깊이를 운용에서 빼고 A + B 로 간다. 판정과 근거는 INVENTORY 5절에.</div></details>
       <details class="quiz"><summary>10. 왜 <code>/objects</code> 에 "A/C/B" 대신 공분산을 넣는가?</summary>
         <div class="ans">소비자(감독 노드, 코스트맵, 필터)가 알아야 할 것은 방법의 이름이 아니라 <em>얼마나 믿을 수 있는가</em>다. σ² 을 넣으면 방법이 늘거나 판정이 C 를 빼도 소비자 코드는 바뀌지 않는다. 출처 문자는 사람이 보는 마커에만 둔다.</div></details>
+      <details class="quiz"><summary>11. 지그를 책상 위에 두고 높이를 책상 면에서 쟀다. A·C·B 중 무엇이 영향을 받고 무엇이 받지 않는가? 그리고 지그에서 맞춘 값을 왜 09a 에서 다시 재는가?</summary>
+        <div class="ans">A(라이다 점 투영)와 C(라이다로 척도를 맞춘 깊이 지도)는 카메라와 라이다의 <em>상대</em> 자세만 쓰므로 그대로다. B 는 <code>base_footprint</code> 의 z = 0 을 지면으로 쓰므로 책상 면이 지면이 되고, 바닥에 선 물체에는 틀린 답을 낸다 — 그래서 §3-7 의 B 열은 지면을 바닥으로 한 지그로 잰다(판을 상자 위에 올려도 높이는 바닥에서).
+        지그의 값은 지그 위의 상대 위치·높이일 뿐이라 센서를 섀시에 달면 전부 바뀐다. 그래서 <code>NOMINAL(ruler, 지그)</code> 로 적고, 09a 에서 다시 재 <code>MEASURED</code> 로 바꾼 뒤 같은 검증(§3-3 의 채점표, §3-7 의 줄자 표, §3-8 의 피치)을 되풀이한다. <code>h_cam</code> 이 바뀌면 B 의 오차 곡선과 <code>ground_max_range</code> 도 바뀐다(§2-5).</div></details>
+      <details class="quiz"><summary>12. 벤치에서는 <code>filter_frame:=base_link</code> 로 필터를 켜도 된다고 했다. 7번의 답과 모순이 아닌가?</summary>
+        <div class="ans">모순이 아니다. 7번이 <code>base_link</code> 를 피하는 이유는 로봇과 함께 움직여 정지 물체의 좌표가 계속 바뀌기 때문이다. 고정된 지그에서는 <code>base_link</code> 가 움직이지 않으므로 "정지 물체는 같은 좌표에 남는다"가 성립한다 — 같은 이유로 필터를 켠 채 지그를 옮기면 쌓인 위치가 틀린다.
+        정적 <code>odom → base_footprint</code> 를 주는 방법도 결과가 같고, 둘 다 "로봇이 움직이는 동안 <code>odom</code> 이 물체를 제자리에 붙잡아 두는가"는 보여 주지 못한다. 그것은 09a 에서 실제 <code>odom</code> 으로 본다.</div></details>
+
+      <div class="callout tip"><span class="ct">다음 행선지</span>
+        <p><strong>번호순 다음은 <a href="09a-assembly-gate.html">09a</a></strong>이다 <span class="tag asm">조립 후</span>. 센서·보드를 섀시에 올리고, 이 쪽에서 지그로 한 검증 — 3-1-1 의 자 재기, 3-1-2 의 두 <code>tf2_echo</code>, §3-3 의 채점표, §3-7 의 줄자 표와 <code>ground_max_range</code>, §3-8 의 피치 — 을 최종 장착값으로 다시 하고, 로봇이 움직이는 동안의 트랙 필터를 처음으로 본다. 그 다음이 09(지도·경로)다.</p>
+        <ul>
+          <li><strong>09a 가 열리는 조건</strong> — Pi 차선(여기까지)만으로는 열리지 않는다. 09a 앞에 <a href="06b-bench-integration.html">06b</a>(실물 MCU 벤치 통합)가 있고, 06b 는 펌웨어 차선이 F19(벤치 수용 시험)를 통과해야 열린다. 센서를 섀시에 올릴 브래킷·스탠드오프·배선재도 있어야 한다.</li>
+          <li><strong>펌웨어가 아직 F19 전이면</strong> — Mac 차선(<a href="fw-00-map.html">F0</a> ~ F19)을 이어 간다. 두 차선은 서로 기다리지 않는다. F19 를 통과했고 06b 가 아직이면 <a href="06b-bench-integration.html">06b</a> 로 간다. 기다리는 동안 09·10 은 "원리" 절을 먼저 읽어 둘 수 있다.</li>
+          <li><strong>벤치 전용 설정은 벤치에 두고 간다</strong> — §3-7 에서 필터를 켜려고 띄운 정적 <code>odom → base_footprint</code> 발행자나 <code>filter_frame:=base_link</code> 는 <code>odom</code> 을 내는 노드가 없을 때만 쓴다. 06b·09a 에서 브리지·EKF 가 <code>odom → base_footprint</code> 를 내기 시작할 때 정적 발행자가 남아 있으면 같은 변환을 두 발행자가 내게 된다 — 05 §3-8 의 중복 발행 문제이고, 정적 변환은 발행자를 꺼도 조회 노드의 버퍼에 남는다.</li>
+          <li><strong>이 쪽에서 09a 로 넘어가는 것</strong> <span class="tag asm">조립 후</span> — INVENTORY 4절 장착 행(지그 값 옆의 <code>____</code>)과 xacro 의 <code>lidar_*</code>·<code>cam_*</code>(지금 <code>NOMINAL(ruler, 지그)</code>). 넘어가지 않는 것 — <code>K</code>·<code>D</code>(08 §3-9), Hailo 예산 판정(INVENTORY 5절), 추적기, Colab 에서 만든 HEF. 장착과 무관하다.</li>
+        </ul>
+      </div>
 
       <div class="pager"></div>
     </div>

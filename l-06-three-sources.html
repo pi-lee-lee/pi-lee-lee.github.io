@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L6 · 같은 케이블인데 왜 컨테이너 안에서는 바이트가 안 보이는가 — 라이다 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="l-06">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">L6 · 같은 케이블인데 왜 컨테이너 안에서는 바이트가 안 보이는가</p>
+      <h1>같은 케이블인데 왜 컨테이너 안에서는 바이트가 안 보이는가</h1>
+      <p class="lead">여기까지 다섯 쪽은 <strong>경로 A</strong> 하나만 썼다 — Pi 호스트의 파이썬이 <code>/dev/lidar</code> 를 직접 열고 바이트를 보는 길이다.
+      본편 <a href="07-lidar.html">07</a> 은 반대로 <strong>경로 B</strong> 하나만 썼다 — 컨테이너의 ROS 2 드라이버가 <code>/scan</code> 을 내는 길이다.
+      이 쪽이 붙이는 도구는 <code>source.py</code> 로, <strong>파일 · 시리얼 · <code>/scan</code> 세 입구를 같은 모양으로</strong> 만든다. 그리고 두 경로가 같은 케이블 하나를 놓고 다툴 때 무슨 일이 나는지를 <strong>일부러 일으켜</strong> 본다.
+      여기서 세 입구가 생기고 나면 뒤의 쪽들은 "스캔이 어디서 왔는가"를 묻지 않아도 된다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>같은 <code>for scan in source:</code> 한 줄이 <strong>세 입구에서 똑같이</strong> 돈다 — 어제 뜬 기록 파일에서도, 지금 도는 센서에서도, 컨테이너의 <code>/scan</code> 에서도.
+        그리고 드라이버가 포트를 쥔 채로 파이썬을 띄우면 무슨 문구가 나오는지, 장치를 컨테이너에 넘기지 않으면 그것과 <strong>어떻게 다른 방식으로</strong> 실패하는지를 내 손으로 보고 적었다.</p>
+        <p><strong>이 쪽에 필요한 것</strong> — 라이다, Pi, 컨테이너(본편 <a href="02-docker-ros2.html">02</a>), <a href="07-lidar.html">07</a> 의 드라이버가 한 번이라도 떠 본 상태, <a href="l-04-one-turn.html">l-04</a> 까지 끝낸 도구와 기록 파일 한 장.
+        <strong>없으면</strong> — <strong>07 을 아직 안 했으면 이 쪽과 <a href="l-07-cross-verify.html">l-07</a> 을 건너뛰고 <a href="l-08-floor-plan.html">l-08</a> 로 간다.</strong> 기록 파일 입구 하나만으로 공간 인식 다섯 쪽(l-08 ~ l-12)이 전부 돌고, 연속된 여러 바퀴가 든 파일이면 l-13 · l-14 도 돈다(l-15 는 살아 있는 센서가 있어야 한다).
+        컨테이너는 떴는데 07 을 아직 안 했다면 — 실습 A 까지는 그대로 되고, B · C · D 가 07 을 기다린다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag pi">Pi 호스트</span> <span class="tag cli">컨테이너</span> <span class="tag py">Python</span></div>
+        <div><span class="k">선행</span><a href="l-04-one-turn.html">l-04</a> — 실제로 쓰는 것: <code>Scan</code> · <code>load_jsonl()</code> · <code>save_jsonl()</code> · <code>split_turns()</code> / <a href="07-lidar.html">07</a> §3-1 ~ §3-8 — 드라이버가 떠서 <code>/scan</code> 이 나온 적이 있어야 한다</div>
+        <div><span class="k">채우는 INVENTORY 칸</span>없음. 이 쪽의 관찰은 전부 내 노트에 적는다 (드라이버 값의 대조는 <a href="l-07-cross-verify.html">l-07</a> 이 한다)</div>
+        <div><span class="k">이 쪽이 요구하는 수학</span>없다 — 단위 환산 둘뿐이다(라디안 → 도, m ↔ mm). <strong>식은 §2-4 가 그대로 준다.</strong></div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
+      </div>
+
+      <div class="callout warn"><span class="ct">L4 — 두 프로그램이 같은 포트를 다투면 모터가 예상 밖으로 돈다 (이 규칙은 이 쪽이 세운다)</span>
+        <p>이 쪽의 실습 B · C 는 <strong>두 주인을 일부러 만드는</strong> 실습이다. 그런데 이 어댑터에서 <strong>포트를 여는 행위 자체가 DTR 을 올린다</strong>(<a href="l-01-link.html#s2-4">l-01 §2-4</a>).
+        그래서 드라이버가 돌리고 있는 머리 옆에서 파이썬으로 포트를 열면 <strong>그 순간 머리가 멈추거나</strong>, 반대로 내가 <code>dtr=False</code> 로 세워 둔 머리가 드라이버 쪽 닫힘에 <strong>갑자기 다시 돈다.</strong>
+        어느 쪽이 나든 <strong>내가 명령하지 않은 시점에 회전이 바뀐다.</strong></p>
+        <p>그러므로 실습 B · C 를 시작하기 전에: <strong>① 센서를 책상에 고정한 자리에 그대로 둔다</strong>(l-01 실습 B 의 자리) <strong>② 손·머리카락·천·케이블을 머리에서 치운다</strong> <strong>③ 스캔 창 앞에 얼굴을 두지 않는다.</strong>
+        이 실습은 "도는가 안 도는가"를 보는 실습이 아니다 — <strong>화면의 문구를 읽는 실습</strong>이므로, 머리는 도는 채로 두고 손만 멀리 두면 된다.</p>
+        <p>⚠ <strong>드라이버가 포트를 쥐고 있는 동안에는 <code>motor(ser, False)</code> 로 머리를 세울 수 없다</strong> — 포트가 내 것이 아니기 때문이다. 그때 머리를 세우는 수단은 <strong>드라이버의 서비스</strong>이고, 그 절은 <strong>07 §3-8</strong> 이 소유한다(<code>/lidar_node/stop_motor</code> · <code>/lidar_node/start_motor</code>, <code>std_srvs/srv/Empty</code>).
+        같은 절이 단서도 함께 적는다 — <strong><code>auto_standby: true</code> 인 구성에서는 이 서비스 호출이 무시된다.</strong> 우리 <code>robot_params.yaml</code> 은 <code>false</code> 로 두고 있지만, <strong>내 파일이 지금도 그런지는 실습 전에 한 번 본다.</strong>
+        <a href="l-01-link.html">l-01</a> 이 "DTR 로 머리가 안 멈추면 l-06 의 드라이버 서비스로 돌린다"고 미뤄 둔 것이 이것이다 — <strong>이 쪽은 절차를 다시 쓰지 않고 07 §3-8 을 가리킨다.</strong></p>
+      </div>
+
+      <div class="callout warn"><span class="ct">L1 · L3 — 되풀이</span>
+        <p><strong>L1</strong> 이 센서의 광원은 <strong>775 ~ 795 nm(typical 785 nm)의 적외선</strong>이라 사람 눈에 보이지 않는다(데이터시트 Figure 2-3, rev.2.2 9쪽 — 안전 등급 Class I 은 같은 판 5쪽).
+        등급 자체는 "정상적인 사용에서 사람과 동물에게 안전"이지만, <strong>켜졌는지 눈으로 알 수 없어서 조심하는 습관이 안 생기는 것</strong>이 문제다. 스캔 창을 렌즈 높이에서 정면으로 들여다보지 않는다. 자세한 것은 <a href="l-01-link.html">l-01</a>.</p>
+        <p><strong>L3</strong> 이 쪽은 <strong>호스트와 컨테이너가 같은 USB 장치에 번갈아 붙는</strong> 쪽이다. 붙이고 떼는 일이 많아질수록 전류 문제가 소프트웨어 문제처럼 보이기 쉽다.
+        Pi 5 는 5V/5A 협상이 되는 어댑터가 아니면 <strong>USB 포트 전류 합계가 600 mA 로 제한</strong>되고(<code>hardware/INVENTORY.md</code> §1 주의), 이 구성은 루트 저장장치까지 USB 다.
+        <strong>라이다가 도는 중에 다른 USB 장치를 꽂거나 뽑지 않는다.</strong> 실습 도중 머리가 돌다 멈추면 코드가 아니라 전류를 먼저 의심한다.</p>
+      </div>
+
+      <h2 id="overview">1. 개요 — 입구가 셋이면 도구가 하나로 남는다</h2>
+      <p>여기까지 만든 도구는 전부 <strong>시리얼 포트에 매달려</strong> 있다. <code>stream()</code> 은 열린 포트를 받아야 돌고, 포트는 라이다가 꽂혀 있어야 열린다.
+      그런데 뒤에 오는 열 쪽 남짓은 <strong>스캔이 어디서 왔는지에 관심이 없다</strong> — 격자를 그리든 선분을 뽑든 필요한 것은 "각도와 거리의 짝이 든 한 바퀴"뿐이다.
+      그래서 이 쪽에서 <strong>입구를 셋으로 늘리고, 그 셋이 밖에서 보기에 같은 모양이 되게</strong> 만든다. 그러면 도구는 하나로 남는다.</p>
+      <pre class="diagram"><code> 입구                       source.py 가 씌우는 같은 껍질            그 뒤의 모든 쪽
+ ──────────────────        ───────────────────────────────         ─────────────────
+ .scan.jsonl 파일    ─►      FileSource(path)     ┐
+ /dev/lidar (시리얼) ─►      SerialSource(dev)    ├─►  for scan in source:  ─►  geom / grid /
+ /scan (ROS 2 토픽)  ─►      TopicSource(topic)   ┘         scan.a  scan.r        lines / clear …
+                                                             (deg)   (m)
+ 경로 A = Pi 호스트 · 파이썬 · 바이트가 보인다     │      경로 B = 컨테이너 · ROS 2 · 메시지가 보인다
+ l-01 ~ l-05 가 여기까지 왔다                      │      07 이 여기까지 왔다
+                                                   └─ 이 쪽에서 둘이 처음 만난다</code></pre>
+      <p>그런데 둘을 만나게 하는 순간 <strong>이 가이드에서 가장 조용한 고장 셋</strong>이 한꺼번에 나온다. 이 쪽은 그 셋을 하나씩 일부러 일으켜 본다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>말</th><th>이 가이드에서의 뜻</th></tr></thead>
+        <tbody>
+          <tr><td>입구(source)</td><td>스캔이 들어오는 자리. 이 쪽에서 셋이 된다 — <strong>파일 · 시리얼 · 토픽</strong>. 기준 형식의 머리 줄에 있는 <code>"source"</code> 칸이 바로 이 셋 중 무엇이었는지를 적는 자리다</td></tr>
+          <tr><td>같은 모양</td><td>밖에서 쓰는 코드가 안 바뀐다는 뜻. 구체적으로는 <strong><code>for scan in source:</code> 한 줄로 돌고, 나오는 것이 l-04 의 <code>Scan</code></strong> 이라는 것</td></tr>
+          <tr><td>장치 패스스루</td><td>호스트의 장치 파일을 컨테이너 안에서 쓰게 하는 설정. <strong>두 겹</strong>이다 — 파일이 보이게 하는 것과, 보이는 파일을 열 수 있게 하는 것(§2-3)</td></tr>
+          <tr><td>포트 소유권</td><td>같은 <code>/dev/lidar</code> 를 누가 쥐고 있는가. 리눅스는 이것을 <strong>강제로 막지 않는다</strong> — 그래서 조용히 고장난다(§2-2)</td></tr>
+          <tr><td>경로 A · 경로 B</td><td>A = Pi 호스트의 파이썬이 포트를 직접 연다(바이트가 보인다) / B = 컨테이너의 드라이버가 <code>/scan</code> 을 낸다(메시지가 보인다). <strong>둘이 동시에 포트를 쥘 수는 없다</strong></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="why">2. 원리 — 왜 같은 선에서 한쪽은 바이트가 보이고 한쪽은 침묵하는가</h2>
+
+      <h3 id="s2-1">2-1. 침묵에는 층이 있다 — 경로 A 를 먼저 한 사람만 그 층을 가를 수 있다</h3>
+      <p><code>/scan</code> 이 안 나온다. 원인 후보는 최소한 넷이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>층</th><th>무엇이 죽었나</th><th>경로 A 로 보면</th><th>경로 B 로만 보면</th></tr></thead>
+        <tbody>
+          <tr><td>① 전기·선</td><td>케이블·전류·커넥터</td><td><strong>포트가 안 열리거나 바이트가 0</strong></td><td>"드라이버가 안 뜬다" 하나로 뭉뚱그려진다</td></tr>
+          <tr><td>② 장치 파일</td><td><code>/dev/lidar</code> 가 없다(udev) 또는 컨테이너에 안 넘어갔다</td><td>호스트에서는 보이는데 컨테이너에서만 없다 → <strong>패스스루</strong>(§2-3)</td><td>같은 문구로 보인다</td></tr>
+          <tr><td>③ 포트 소유권</td><td>다른 프로세스가 이미 쥐고 있다</td><td><strong>열기 자체가 막히거나</strong>, 둘 다 열려서 양쪽이 절반씩 받는다(§2-2)</td><td>"가끔 되고 가끔 안 된다"</td></tr>
+          <tr><td>④ 설정</td><td>파라미터 블록이 통째로 무시됐다 / 보드레이트가 기본값</td><td><strong>바이트는 멀쩡히 흐른다</strong> — 그러면 선도 장치도 아니다</td><td>노드는 떴는데 토픽이 안 나온다</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>④ 는 07 §2-4 가 소유한다.</strong> 거기에 두 경로가 적혀 있다 — 런치에서 <code>name='lidar_node'</code> 를 안 주면 노드 이름이 <code>rplidar_node</code> 가 되어 <code>robot_params.yaml</code> 의 <code>lidar_node:</code> 블록이 <strong>에러 없이 통째로 무시되고</strong>, 적지 않은 값은 노드 소스의 기본값(<code>serial_baudrate 1000000</code> · <code>frame_id "laser_frame"</code>)이 적용된다.
+      이 쪽은 그 내용을 다시 가르치지 않는다. <strong>이 쪽이 07 에 더하는 것은 하나다</strong> — 경로 A 로 바이트를 먼저 본 사람은 <strong>①②③ 을 몇 초 만에 지울 수 있고</strong>, 그러면 남는 것이 ④ 뿐이다.</p>
+      <div class="callout why"><span class="ct">왜 이것이 중요한가</span>
+        <p>07 의 함정 절(§2-4)을 읽고도 막히는 이유는, 읽는 시점에 <strong>"내 경우가 그 함정인지"를 가릴 수단이 없기 때문</strong>이다. 증상이 전부 "아무 일도 안 일어남"으로 같다.
+        경로 A 는 그 수단이다. <code>pi$ python3 scripts/lidar_lab/link.py</code> 가 초당 몇천 바이트를 세어 주면 <strong>선도 장치도 소유권도 문제가 아니라는 것이 그 한 줄로 증명된다.</strong> 남은 곳은 한 군데뿐이다.</p>
+      </div>
+
+      <h3 id="s2-2">2-2. 포트는 하나인데, 리눅스는 둘째 사람을 막아 주지 않는다</h3>
+      <p><code>/dev/lidar</code> 는 <code>/dev/ttyUSB&lt;n&gt;</code> 를 가리키는 심볼릭 링크 하나이고, 그 뒤에는 CP2102 어댑터가 하나 있다. <strong>동시에 두 방향으로 읽을 수 있는 물건이 아니다.</strong>
+      그런데 여기서 초보자를 가장 오래 붙잡는 성질이 나온다 — <strong>리눅스의 직렬 포트 잠금은 권고(advisory)이지 강제가 아니다.</strong> 즉 다음 두 가지가 모두 일어날 수 있다.</p>
+      <ul class="steps">
+        <li><strong>(가) 둘째가 못 연다</strong> — 열기가 실패하고 예외가 난다. <strong>시끄러운 고장이다.</strong> 원인이 화면에 적혀 있으니 오히려 다행이다.</li>
+        <li><strong>(나) 둘째도 열린다</strong> — 두 프로세스가 같은 흐름을 나눠 읽는다. 오류는 하나도 안 나고, <strong>양쪽이 각각 절반씩 받는다.</strong> 이때 경로 A 의 점 수도 절반, 경로 B 의 <code>/scan</code> 도 절반이 된다.
+        <a href="l-01-link.html#s3-3-4">l-01 §3-3-4</a> 가 이미 호스트 파이썬 <strong>둘</strong> 사이에서 이것을 보여 줬다.</li>
+      </ul>
+      <p><strong>(나) 가 이 가이드에서 가장 조용한 고장이다.</strong> 숫자가 나오고 그림도 그려지는데 <em>점이 부족하다.</em> 그리고 그 부족을 보는 사람은 대개 센서나 모드를 의심한다 — 원인은 옆 터미널에 있다.</p>
+      <p>⚠ <strong>이 쪽의 실습 B 는 l-01 의 되풀이가 아니다.</strong> l-01 은 <strong>호스트 파이썬 둘</strong>을 붙였고, 여기는 <strong>컨테이너의 드라이버 ↔ 호스트 파이썬</strong>이다. 다른 점이 셋이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>다른 점</th><th>l-01 §3-3-4</th><th>이 쪽 실습 B</th></tr></thead>
+        <tbody>
+          <tr><td>양쪽이 누구인가</td><td>같은 스크립트 둘</td><td><strong>C++ 드라이버(컨테이너) ↔ 파이썬(호스트)</strong> — 문구도 대응도 다르다</td></tr>
+          <tr><td>무엇을 읽는가</td><td>파이썬 예외 하나</td><td><strong>양쪽 다</strong> — 파이썬 예외 <em>그리고</em> 드라이버 쪽 로그. 한쪽만 보면 반쪽이다</td></tr>
+          <tr><td>고치는 방법</td><td>둘째 터미널을 닫는다</td><td><strong>순서를 정하는 일</strong> — 어느 경로를 쓸지 정하고 다른 쪽을 내리는 절차를 글로 남긴다</td></tr>
+        </tbody>
+      </table></div>
+      <p>그리고 <code>docker-compose.yml</code> 이 <code>pid: host</code> 를 쓰기 때문에(<code>docker/docker-compose.yml</code> 의 <code>ipc: host</code> 바로 아래 줄) <strong>컨테이너 안의 프로세스 번호가 호스트에서 보이는 번호와 같다.</strong>
+      즉 호스트에서 <code>pi$ fuser -v /dev/lidar</code> 로 나오는 PID 로 <strong>컨테이너 안에서 도는 드라이버를 그대로 짚을 수 있다.</strong> 실습 B 에서 이것이 정말 그런지 확인한다 — 이 가이드는 그것을 실행해 보지 못했다.</p>
+
+      <h3 id="s2-3">2-3. 장치를 컨테이너에 넘기는 것은 두 겹이다 — 보이게 하는 것과 열 수 있게 하는 것</h3>
+      <p>컨테이너는 자기만의 파일 시스템과 자기만의 장치 권한을 갖는다. 그래서 <strong>호스트에 있는 <code>/dev/lidar</code> 를 컨테이너가 쓰려면 두 가지가 다 필요하다.</strong></p>
+      <p class="small">이 블록은 전량 제공이다 — 이유: 여기 적힌 것이 <strong>한 줄만 빠져도 에러가 아니라 침묵으로 나타나기</strong> 때문이다. 다만 이 설정의 <strong>소유는 본편 02</strong> 다. 아래는 <code>docker/docker-compose.yml</code> 에 <strong>이미 들어 있는 것의 인용</strong>이고, 이 쪽에서 고치지 않는다. ⚠ <strong>주석은 이 쪽이 붙인 것</strong>이다 — 원본 파일의 주석은 글자가 다르므로 <strong>주석 문구로 <code>grep</code> 하지 말고 키 이름으로 찾는다.</strong></p>
+      <pre><code class="lang-ini"># docker/docker-compose.yml — x-ros-common 블록에서
+#   (키와 값은 인용 · '#' 뒤 설명과 ①② 는 이 쪽이 붙였다 — 원본 주석은 글자가 다르다)
+network_mode: host        # DDS 디스커버리(UDP 멀티캐스트)
+ipc: host                 # Fast DDS 공유메모리 전송
+pid: host
+
+volumes:
+  - /dev:/dev             # &lt;-- ① 장치 파일이 컨테이너 안에서 "보이게" 한다
+
+device_cgroup_rules:      # &lt;-- ② 보이는 장치를 "열 수 있게" 한다
+  - 'c 188:* rmw'         #   USB serial (/dev/ttyUSB*) — LiDAR (CP2102)
+  - 'c 166:* rmw'         #   USB CDC ACM (/dev/ttyACM*) — MCU</code></pre>
+      <p>두 겹이 각각 무엇을 막는지가 이 절의 요지다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>겹</th><th>없으면 무엇이 안 되나</th><th>증상의 모양</th></tr></thead>
+        <tbody>
+          <tr><td><strong>① <code>/dev:/dev</code> 마운트</strong></td><td>컨테이너 안에 그 <strong>이름 자체가 없다</strong></td><td><code>ls -l /dev/lidar</code> → 없다고 나온다. 드라이버는 "포트를 못 열었다" 쪽으로 죽는다</td></tr>
+          <tr><td><strong>② <code>device_cgroup_rules</code></strong></td><td>이름은 보이는데 <strong>열 수 없다</strong>. cgroup 장치 정책이 기본적으로 막기 때문</td><td><code>ls</code> 는 멀쩡히 나오는데 여는 순간 <strong>권한 쪽 오류</strong>가 난다. ①보다 훨씬 헷갈린다</td></tr>
+        </tbody>
+      </table></div>
+      <p>이 네 값이 컨테이너가 내 라이다를 쓸 수 있게 하는 전부다. <strong>값은 저장소에 이미 적혀 있고, 내 기기에서 맞는지는 내가 본다.</strong></p>
+      <div class="tbl"><table>
+        <thead><tr><th>항목</th><th>값</th><th>출처 · 등급</th><th>내 장치에서 보는 법</th></tr></thead>
+        <tbody>
+          <tr><td>장치 이름</td><td><code>/dev/lidar</code> (udev 심볼릭 링크)</td><td><code>hardware/udev/99-ros2-devices.rules</code> 의 CP2102 줄 — <strong>확정</strong></td><td><code>pi$ ls -l /dev/lidar</code> · 같은 명령을 컨테이너 안에서도</td></tr>
+          <tr><td>USB 시리얼 major</td><td><code>188</code></td><td><code>docker/docker-compose.yml</code> 의 <code>'c 188:* rmw'</code> 줄 주석 — <strong>확정</strong>(고정 번호)</td><td><code>pi$ ls -l /dev/ttyUSB*</code> 의 맨 앞 <code>c</code> 와 그 뒤 숫자 (<a href="l-00-map.html#s3-1">l-00 §3-1</a> 에서 이미 봤다)</td></tr>
+          <tr><td>파이썬 시리얼 모듈(컨테이너)</td><td><code>pyserial==3.5</code></td><td><code>docker/Dockerfile</code> 의 파이썬 의존성 블록 — <strong>확정</strong></td><td><code>ros2$ python3 -c "import serial; print(serial.__version__)"</code></td></tr>
+          <tr><td>컨테이너 사용자의 그룹</td><td><code>dialout</code> 포함</td><td><code>docker/Dockerfile</code> 의 비root 사용자 블록 — <strong>확정</strong></td><td><code>ros2$ id</code></td></tr>
+          <tr><td><code>scripts/</code> 의 마운트 여부</td><td><strong>마운트되지 않는다</strong></td><td><code>docker/docker-compose.yml</code> 의 <code>volumes</code> 목록 — <strong>확정</strong>(§2-5 가 차선을 준다)</td><td><code>ros2$ ls /repo/scripts</code> · <code>ros2$ ls /ros2_ws</code></td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout note"><span class="ct">등급 — 인용 확정 · 내 기기의 문구는 확인 과제</span>
+        <p><strong>②의 존재 이유는 저장소 안에 적혀 있다.</strong> <code>docker/docker-compose.yml</code> 의 <code>device_cgroup_rules</code> 바로 위 주석이 <em>"/dev 전체를 마운트해도 cgroup 규칙 때문에 접근이 막힐 수 있어 명시한다"</em> 라고 적고, 같은 취지를 <strong>02 §2-3</strong> 의 표가 되풀이한다(<em>"/dev 를 통째로 마운트해도 cgroup 규칙이 없으면 장치 접근이 막힌다"</em>).
+        <strong>그러나 이 가이드는 그 실패를 실제로 일으켜 문구를 본 적이 없다.</strong> 그래서 위 표의 "증상의 모양" 열은 <strong>모양만</strong>이고, 정확한 문구는 <strong>실습 C 에서 내가 처음 적는다.</strong> 이 프로젝트에 그 기록이 아직 없다.</p>
+      </div>
+      <p>⚠ <strong>이 쪽은 줄 번호로 인용하지 않는다.</strong> <code>docker-compose.yml</code> 은 앞으로도 고쳐질 파일이고, 실제로 이 계획을 세울 때 적어 둔 줄 번호와 지금 파일의 줄 번호가 이미 달랐다.
+      설정을 가리킬 때는 <strong>키 이름</strong>(<code>volumes: /dev:/dev</code> · <code>device_cgroup_rules: 'c 188:* rmw'</code>)으로 가리키고, "왜 빠지면 조용히 고장나는가"의 표는 <strong>02 §2-3</strong> 을 읽는다.</p>
+      <p>덧붙여, <code>c 188</code> 의 <code>188</code> 은 <strong>USB 시리얼 장치의 major 번호</strong>다. <a href="l-00-map.html#s3-1">l-00 §3-1</a> 의 확인 표에서 <code>ls -l /dev/ttyUSB*</code> 의 맨 앞이 <code>c</code>(문자 장치)이고 major 가 <code>188</code> 인지 이미 봤다.
+      <strong>그 값이 188 이 아니었다면 이 규칙은 내 장치를 가리키지 않는다</strong> — 그 경우가 바로 실습 C 의 ②가 저절로 일어나 있는 상태다.</p>
+
+      <h3 id="s2-4">2-4. <code>LaserScan</code> 은 내 <code>Scan</code> 과 어디가 다른가 — 네 자리에서 다르다</h3>
+      <p>세 입구를 같은 모양으로 만든다는 것은 곧 <strong><code>LaserScan</code> 메시지를 l-04 의 기준 형식으로 옮기는 일</strong>이다. 옮기려면 어디가 다른지 알아야 한다.
+      메시지의 필드 목록은 <strong>07 §1-1</strong> 에 있고, 내 컨테이너에서 직접 보는 명령은 <code>ros2 interface show sensor_msgs/msg/LaserScan</code> 이다(이해 확인 1번이 이것을 시킨다).</p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>축</th><th><code>LaserScan</code>(07 §1-1)</th><th>기준 형식 <code>.scan.jsonl</code></th><th>옮길 때 하는 일</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>각도</td><td><strong>배열에 없다.</strong> <code>angle_min</code> 과 <code>angle_increment</code> 로 <strong>복원</strong>한다 — <code>angle(i) = angle_min + i × angle_increment</code></td><td><code>a[i]</code> 에 <strong>각도가 그대로 들어 있다</strong></td><td>인덱스마다 위 식으로 각도를 계산해 <code>a</code> 를 만든다</td></tr>
+          <tr><td>2</td><td>각도의 단위</td><td><strong>라디안</strong>(<code>float32</code>)</td><td><strong>도(deg)</strong>, <code>0</code> 이상 <code>360</code> 미만</td><td><code>deg = rad × 180 / pi</code> 뒤 <strong>0~360 으로 정규화</strong></td></tr>
+          <tr><td>3</td><td>거리의 단위</td><td><strong>m</strong></td><td><strong>m</strong></td><td>없다 — <strong>여기만 이미 같다.</strong> 바꾸는 것은 시리얼 입구다(mm → m)</td></tr>
+          <tr><td>4</td><td>못 잰 방향</td><td><code>____</code> <strong>(확인 과제)</strong> — 07 §3-5 는 <em>"ranges 값이 전부 inf 나 0.0 이면 물리적 문제"</em> 라고 적어 <strong>둘 다 나타날 수 있음을 시사</strong>하지만, 이 드라이버가 무엇을 넣는지는 <strong>이 쪽이 못박지 않는다</strong> — 소스를 받아 보면 이 갈래는 한쪽으로 닫히고 그 인용은 <a href="l-07-cross-verify.html">l-07</a> 이 갖는다. 다만 <strong>받은 판이 내 설치본과 같은지는 §2-6 의 두 번째 확인이 먼저</strong>다</td><td><code>null</code></td><td>내 기기가 실제로 넣는 값을 먼저 보고, 그것을 <code>null</code> 로 바꾼다</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>1번이 이 표에서 가장 무거운 줄이다.</strong> <code>LaserScan</code> 은 각도를 <strong>버리고 등간격을 가정</strong>한다 — 점 개수와 시작 각도와 간격만 있으면 나머지는 산수로 만들 수 있다는 전제다.
+      기준 형식은 그 전제를 쓰지 않고 각도를 <strong>점마다 들고 다닌다.</strong> 어느 쪽이 옳은 것이 아니라, <strong>한쪽은 전송량을 아끼고 한쪽은 가정을 안 한다.</strong>
+      그 가정이 내 기기에서 얼마나 맞는지(각도 간격의 σ)는 <a href="l-04-one-turn.html">l-04</a> 가 재고, 그 값이 드라이버의 <code>angle_compensate</code> 판단에 어떻게 쓰이는지는 <a href="l-07-cross-verify.html">l-07</a> 이 받는다.</p>
+      <div class="callout note"><span class="ct">여기서 멈추는 자리</span>
+        <p><strong>왜 기준 형식이 <code>0</code> 도 <code>inf</code> 도 아닌 <code>null</code> 을 골랐는지</strong> — 그 논증은 <strong><a href="l-04-one-turn.html">l-04</a> 가 소유한다.</strong> 이 쪽은 <strong>기계적인 대응</strong>만 한다: 드라이버가 넣은 값이 무엇이든, 기준 형식으로 옮길 때 <code>null</code> 이 된다.
+        <a href="l-00-map.html">l-00</a> 의 이해 확인 4번이 "둘 다 옳을 수 있는가"를 이미 한 번 물었고, <em>"이 변환이 l-06 에서 실제로 나온다"</em> 고 적어 이 자리를 가리켜 두었다. 지금이 그 자리다.</p>
+      </div>
+      <p>남는 필드도 그냥 버리지 않는다. <code>intensities</code> 는 기준 형식의 <code>q</code> 자리에 대응하지만 <strong>모델에 따라 비어 있다</strong>(07 §1-1). 비어 있으면 <code>q</code> 를 생략한다 — 기준 형식이 <code>q</code> 를 선택 항목으로 둔 이유가 여기 있다.
+      <code>header.stamp</code> · <code>scan_time</code> · <code>time_increment</code> 는 이 쪽에서 쓰지 않지만 <strong>버리기 전에 한 번 본다</strong> — "한 바퀴는 순간이 아니다"라는 사실이 거기 들어 있고, 그것을 쓰는 쪽은 <a href="l-15-illusions.html">l-15</a> 다.</p>
+
+      <h3 id="s2-5">2-5. 왜 경로 A 가 컨테이너 안에서도 도는가 — 그리고 그때 무엇을 잃는가</h3>
+      <p>지금까지 경로 A 는 언제나 <code>pi$</code>(Pi 호스트)였다. 그런데 <strong>호스트에 <code>pyserial</code> 이 없거나 내가 <code>dialout</code> 그룹이 아니면</strong> 그 길이 막힌다 — l-00 실습 A 가 확인하게 한 바로 그 두 칸이다.
+      그때 쓸 수 있는 차선이 하나 있다. <strong>이미지 안에 <code>pyserial</code> 이 들어 있다</strong>(<code>docker/Dockerfile</code> 의 파이썬 의존성 블록이 <code>pip3 install --no-cache-dir pyserial==3.5</code> 를 한다 — MCU 브리지용으로 넣은 것이다).
+      그리고 컨테이너 사용자 <code>ros</code> 는 <code>dialout</code> 그룹에 들어 있다(같은 파일의 비root 사용자 블록). 즉 <strong>같은 스크립트를 컨테이너 안에서 그대로 돌릴 수 있다.</strong></p>
+      <p>⚠ <strong>그런데 한 가지가 빠져 있다 — 스크립트가 컨테이너 안에 없다.</strong> compose 가 마운트하는 것은 <code>../ros2_ws:/ros2_ws</code> 와 <code>/dev</code> 와 <code>/run/udev</code> 와 <code>/sys/class/gpio</code> 뿐이고, <strong><code>scripts/</code> 는 그 목록에 없다.</strong>
+      그래서 컨테이너 안에서 <code>python3 scripts/lidar_lab/…</code> 를 치면 파일이 없다고 나온다. 이것은 오류가 아니라 <strong>설정이 그렇게 돼 있는 것</strong>이다. 한 번 쓰고 마는 마운트를 그 자리에서 얹으면 된다:</p>
+      <pre><code class="lang-bash">pi$ cd ~/ros2_rpi5/docker
+pi$ docker compose run --rm -v ~/ros2_rpi5/scripts:/repo/scripts dev bash
+# 그러면 컨테이너 안에서 실행 꼴이 호스트와 똑같아진다
+ros2$ cd /repo &amp;&amp; python3 scripts/lidar_lab/link.py</code></pre>
+      <div class="callout why"><span class="ct">왜 이 한 줄을 compose 에 넣어 두지 않는가 — 이것은 결정이다</span>
+        <p><code>docker-compose.yml</code> 에 <code>- ../scripts:/repo/scripts</code> 를 한 줄 더하면 매번 <code>-v</code> 를 칠 일이 없어진다. <strong>그런데 이 프로젝트는 넣지 않기로 했다.</strong> 이유는 편의가 아니라 <strong>이 파일들의 성격</strong>이다.</p>
+        <p><code>scripts/lidar_lab/</code> 은 <strong>이해하려고 한 번 만들어 보고 버리는 실습 도구</strong>다. 돌아가는 로봇의 부품이 아니다. 상시 마운트는 그것을 시스템의 일부처럼 보이게 만들어 <strong>가짜 승격</strong>이 된다 — 컨테이너를 띄울 때마다 딸려 들어오는 것은 "이건 운영에 쓰는 것" 이라는 뜻이기 때문이다.</p>
+        <p><strong>그래서 compose 의 <code>volumes</code> 목록이 곧 "무엇이 로봇의 일부인가" 의 선이 된다.</strong> 지금 그 선 안에 있는 것은 <code>ros2_ws</code>(빌드되는 ROS 패키지들)와 장치들뿐이다. 이 가이드의 도구 중 <strong>살아남을 조각</strong>은 <a href="l-16-node.html">l-16</a> 에서 <code>ros2_ws/src/rpi5_lidar_tools/</code> 로 옮겨지고, <strong>그때 비로소 선 안으로 들어간다</strong>. 파이썬 도구는 버려지지 않는다 — 그 조각이 맞는지 채점하는 <strong>정답지</strong>로 남는다.</p>
+        <p class="small">그러니 위의 <code>-v</code> 한 조각을 "불편한 임시방편" 으로 읽지 말 것. <strong>아직 승격되지 않았다는 표시</strong>다.</p>
+      </div>
+
+      <p><strong>마운트 자리를 <code>/repo/scripts</code> 로 맞추는 이유</strong>는 실행 꼴을 바꾸지 않기 위해서다. 이 가이드의 도구를 돌리는 꼴은 <strong>저장소 뿌리에서 <code>python3 scripts/lidar_lab/&lt;모듈&gt;.py</code> 하나뿐</strong>이고(l-01 이 그 이유를 적었다 — 형제 모듈 <code>cmd.py</code> 가 표준 라이브러리에 가리지 않게 하는 규칙이다), 컨테이너 안에서만 다른 꼴을 쓰면 그 규칙이 깨진다.</p>
+      <div class="callout note"><span class="ct">결정 대기 — 경로 A 를 어디서 돌릴 것인가</span>
+        <p><strong>(가) Pi 호스트에서</strong> — 이 가이드가 여기까지 쓴 길이다. 얻는 것: <strong>컨테이너 없이 돈다</strong>(그래서 l-01 ~ l-05 가 본편 02 를 선행으로 갖지 않는다). 필요한 것: 호스트의 <code>python3-serial</code> 과 <code>dialout</code> 그룹.
+        ⚠ Pi OS Trixie 는 PEP 668 을 켜므로 <code>pip install</code> 이 거부되고 <code>apt install python3-serial</code> 이어야 할 수 있다 — <strong>이것은 확인되지 않았다</strong>(l-00 실습 A 의 확인 과제).</p>
+        <p><strong>(나) 컨테이너 안에서</strong> — 위의 한 줄이다. 얻는 것: 호스트에 아무것도 안 깔아도 된다. 잃는 것: <strong>그 쪽에서 "컨테이너 없이 돈다"는 성질이 사라진다</strong>(l-01 ~ l-05 가 02 를 선행으로 갖게 된다). 그리고 마운트 한 조각을 매번 기억해야 한다.
+        차이가 없는 축: <strong>스크립트가 하는 일과 그 결과는 같다(동일).</strong> 같은 <code>/dev/lidar</code> 를 같은 <code>pyserial</code> 로 연다.</p>
+        <p>이 가이드의 <strong>기본 진행</strong>은 (가)다. 지금까지의 다섯 쪽이 그렇게 쓰여 있기 때문이고, <strong>권고가 아니다.</strong> 호스트에 파이썬 시리얼이 없으면 (나)로 가도 이 쪽의 모든 실습이 그대로 닫힌다.</p>
+      </div>
+      <p class="small">⚠ 위의 <code>-v</code> 한 조각은 <strong>compose 파일을 고치지 않고</strong> 한 번만 얹는 방법이다. 내 <code>docker compose</code> 판이 <code>run</code> 에서 <code>-v</code> 를 받지 않으면 차선이 있다 — <code>scripts/lidar_lab/</code> 를 마운트돼 있는 <code>ros2_ws/</code> 아래로 임시 복사해 거기서 돌린다. 그 경우 <strong>편집은 여전히 원본에서 하고, 복사본은 실습이 끝나면 지운다</strong>(복사본을 고치면 다음 동기화 때 조용히 덮인다).</p>
+
+      <h3 id="s2-6">2-6. 네 갈래의 "③ 구현"을 여는 자리 — 드라이버 소스를 읽으려고 받는 절차</h3>
+      <p>이 가이드는 값 하나를 <strong>네 군데</strong>에서 찾는다(l-00 §2-4). ①정의 ②사양 ③구현 ④내 장치 — 이 중 <strong>③ 구현</strong>은 지금까지 한 번도 열리지 않았다. 드라이버가 <code>apt</code> 바이너리라 <strong>소스가 디스크에 없기 때문</strong>이다.
+      앞의 세 쪽이 "드라이버 소스는 l-06 에서 받는다"고 미뤄 둔 것이 이것이다. 절차 자체는 <strong>07 §3-1</strong> 이 이미 적어 두었다(그 절의 마지막 블록 — <em>"apt 버전에 문제가 있을 때만"</em> 이라는 <strong>대안</strong> 절차다).</p>
+      <p>그 절차를 <strong>읽기 목적</strong>으로 쓸 때는 두 가지를 반드시 바꿔야 한다. 이 두 줄이 이 절의 전부다.</p>
+      <ul class="steps">
+        <li><strong>① 받는 자리를 <code>/ros2_ws/src</code> 밖으로 옮긴다.</strong> 07 §3-1 의 절차는 <code>cd /ros2_ws/src</code> 에서 받는데, 그것은 <strong>빌드해서 쓰려는</strong> 절차다. 읽기만 할 소스를 거기 두면 <strong>다음 <code>colcon build</code> 가 그것을 빌드해 <code>apt</code> 드라이버 위에 얹는다</strong>(overlay 가 underlay 를 이긴다 — <code>docker/entrypoint.sh</code> 의 주석이 그 규칙을 적는다).
+        그러면 내가 지금 돌리는 드라이버가 <strong>apt 판이 아니라 방금 받은 판</strong>으로 조용히 바뀐다. 읽으려고 받은 것이 실행 대상을 바꾸는 것 — 이 가이드에서 피하려는 종류의 사고다.</li>
+        <li><strong>② 받은 것이 내가 돌리는 것과 같은 판인지 확인한다.</strong> <code>git clone -b ros2 …</code> 는 <strong>그 가지의 최신</strong>을 준다. 우리가 설치한 것은 <code>ros-humble-rplidar-ros</code> 2.1.4 다(<code>hardware/INVENTORY.md</code> §3).
+        <strong>둘이 같다는 보장이 없다.</strong> 같은 판이 아니면, 거기서 뽑은 <code>파일:줄</code> 은 <strong>내 드라이버에 대한 사실이 아니다.</strong></li>
+      </ul>
+      <div class="callout warn"><span class="ct">이 규칙은 우리 자신에게도 적용된다</span>
+        <p>이 가이드는 "1세대는 <code>sllidar_ros2</code> 를 썼으니 그 소스의 줄 번호를 우리 드라이버의 사실로 옮기지 않는다"는 규칙을 계속 지켜 왔다. <strong>같은 규칙이 우리 손으로 받은 클론에도 적용된다.</strong>
+        판이 다르면 그것도 <em>"다른 패키지의 줄 번호"</em> 와 같은 종류의 거짓 출처가 된다 — 이름이 같아서 더 위험하다.
+        <strong>판을 맞출 수 없으면 <code>파일:줄</code> 을 쓰지 않는다.</strong> 대신 "이 가지의 최신 소스에는 이렇게 돼 있었다(받은 날짜)"라고 적고, <strong>내 기기의 거동은 <code>ros2 param</code> 과 실측으로 닫는다.</strong></p>
+      </div>
+      <p>확인 명령의 모양은 이렇다(<strong>실행 확인: 미확인</strong> — 이 가이드는 Pi 에 접속하지 못했다).</p>
+      <pre><code class="lang-bash"># 컨테이너 안에서. 내가 지금 돌리는 드라이버의 판
+ros2$ dpkg -s ros-humble-rplidar-ros | grep ^Version
+Version: &lt;n&gt;.&lt;n&gt;.&lt;n&gt;-&lt;n&gt;&lt;…&gt;
+
+# 읽으려고 받는다 — 워크스페이스 밖에 둔다
+ros2$ mkdir -p ~/read-only-src &amp;&amp; cd ~/read-only-src
+ros2$ git clone -b ros2 https://github.com/Slamtec/rplidar_ros.git
+ros2$ cd rplidar_ros &amp;&amp; git log -1 --date=short --format='%h %ad %s'
+ros2$ git tag | tail -5          # 위 Version 과 같은 태그가 있는가</code></pre>
+      <p class="small">⚠ <code>~/read-only-src</code> 는 컨테이너의 홈이라 <strong>셸을 나가면 사라진다</strong>(<code>docker compose run --rm</code>). 오래 두고 읽고 싶으면 호스트에서 받아 두고 편집기로 읽는다 — <strong>어느 쪽이든 <code>/ros2_ws/src</code> 아래만 아니면 된다.</strong> 이 가이드는 소스를 저장소에 커밋하지 않는다(07 §3-3 이 같은 이유를 적는다).</p>
+
+      <h2 id="lab">3. 실습</h2>
+      <p>실습은 넷이고 <strong>순서를 지킨다.</strong> A 는 포트를 열지 않으므로 안전하고, B · C 는 포트를 <strong>일부러 다투게</strong> 하는 실습이라 위의 <strong>L4</strong> 를 먼저 읽어야 한다. D 는 B 에서 정한 순서를 실제로 쓴다.</p>
+
+      <h3 id="s3-1">3-1. 실습 A — 같은 고리가 파일에서도 시리얼에서도 돈다</h3>
+
+      <h4 id="s3-1-1">3-1-1. 확인</h4>
+      <p>이 실습이 전제하는 것은 셋이다. <strong>실행 확인: 미확인</strong> — 이 가이드를 쓴 사람은 Pi 에 접속하지 못했다. 아래는 출력의 <em>모양</em>이고 값 자리는 <code>&lt;n&gt;</code> 이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><code>pi$ ls -l scripts/lidar_lab/scans/</code></td><td><code>-rw-r--r-- &lt;…&gt; &lt;n&gt; &lt;…&gt; &lt;이름&gt;.scan.jsonl</code> 이 하나 이상</td><td><a href="l-04-one-turn.html">l-04</a> 로 돌아가 한 장 뜬다. 라이다가 없으면 <strong>이 실습은 여기서 멈추고 실습 B 도 못 한다</strong> — 그 경우 l-00 의 "가진 것 × 갈 수 있는 쪽" 표에서 다음 자리를 고른다</td></tr>
+          <tr><td>2</td><td><code>pi$ head -c 200 scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl</code></td><td>첫 줄이 <code>{"meta": {…, "source": "serial", …}}</code></td><td>머리 줄이 없으면 그 파일은 <strong>출처를 모르는 파일</strong>이다. 실습 D 의 대조가 성립하지 않는다 — l-04 로 돌아간다</td></tr>
+          <tr><td>3</td><td><code>pi$ fuser -v /dev/lidar</code> (없으면 <code>lsof /dev/lidar</code>)</td><td>아무 줄도 안 나온다 = 아무도 안 쥐고 있다</td><td>줄이 나오면 <strong>그 PID 를 먼저 정리한다.</strong> 07 의 드라이버가 떠 있는 것이 가장 흔하다 — 그 상태를 일부러 만드는 것이 실습 B 이니, 지금은 내려 둔다</td></tr>
+        </tbody>
+      </table></div>
+      <p>세 번째 줄이 이 실습의 조건이다. <strong>지금은 경로 A 가 포트를 혼자 쓴다.</strong> 두 주인은 실습 B 에서 만든다.</p>
+
+      <h4 id="s3-1-2">3-1-2. 골격</h4>
+      <p>파일 하나를 새로 만든다 — <code>scripts/lidar_lab/source.py</code>. 앞부분은 <strong>두 입구</strong>다.</p>
+      <pre><code class="lang-python">
+# scripts/lidar_lab/source.py -- three entrances, one shape.
+# Every source yields the SAME thing: l-04's Scan(a, r, q, t).
+#   a: angle list, deg, float, 0 &lt;= a &lt; 360, ascending
+#   r: range list, m, float, or None where the sensor could not measure
+#   q: quality list (int) or None      t: seconds, float, first turn is 0.0
+# len(a) == len(r); index i of a and r is the same measurement.
+#
+# WHY only ONE import sits at the top: FileSource has to work on a machine that
+# has neither pyserial nor ROS. link.py imports pyserial and TopicSource needs
+# rclpy, so both are imported inside the method that actually needs them.
+
+from turn import Scan, load_jsonl, split_turns   # l-04 -- pure, safe up here
+
+
+class FileSource:
+    """A .scan.jsonl written earlier. Opens no port, imports no ROS."""
+
+    def __init__(self, path):
+        self.path = path
+
+    def __iter__(self):
+        return iter(load_jsonl(self.path))
+
+
+class SerialSource:
+    """The live sensor on this host. Yields Scan while the head spins.
+    Invariant: what comes out here must be indistinguishable from FileSource --
+      same units (deg, m), same 'could not measure' marker (None).
+      Check WHERE mm becomes m before you write this: if split_turns() already
+      divides, doing it again here makes every range 1000x too small and nothing
+      raises an error.
+      t: this entrance is impure, so IT stamps t -- seconds since the first
+      revolution of this run, the way l-04's record() does. split_turns() is
+      pure and leaves t None on purpose; a None that slips through reaches the
+      file, and l-04's load_jsonl() refuses that line when you read it back.
+    Called from: main(). Not from a callback.
+    """
+
+    def __init__(self, dev="/dev/lidar"):
+        self.dev = dev
+
+    def __iter__(self):
+        from link import open_port, motor         # l-01 -- pulls in pyserial
+        from point import stream                  # l-03
+        # TODO(you): open the port, start the head, run the scan (l-02),
+        #   then feed stream() into split_turns() and hand out each Scan.
+        #   Stamp t on each Scan before handing it out -- see the docstring.
+        #   Leave the head in a known state when the caller stops reading.
+</code></pre>
+      <p><code>FileSource</code> 는 <strong>본문이 채워져 있다.</strong> 하는 일이 l-04 의 <code>load_jsonl()</code> 을 부르는 것뿐이고 판단이 하나도 없기 때문이다 — 여기에 <code>TODO(you)</code> 를 두면 <strong>l-04 에서 이미 푼 문제를 다시 풀게 된다.</strong>
+      <code>SerialSource</code> 는 다르다. 포트를 여는 순서와 머리를 세우는 시점이 있고, 그 순서가 틀리면 조용히 빈 결과가 나온다. 그래서 골격이다.</p>
+      <p>뒤쪽은 <strong>이 쪽의 실험 장치</strong>다.</p>
+      <pre><code class="lang-python">
+
+
+def describe(source):
+    """Print one line per turn, and NOTHING that names which source it is.
+    This loop is the experiment: if you ever need an 'if isinstance(source, ...)'
+    in here, the three entrances are not the same shape yet.
+    One line should carry at least: turn index, point count, how many are None, t.
+    """
+    # TODO(you): write the loop. Keep the line format fixed -- you will put the
+    #   three outputs side by side and they have to be comparable by eye.
+    return 0
+
+
+def main(argv):
+    """pi$   python3 scripts/lidar_lab/source.py scripts/lidar_lab/scans/&lt;name&gt;.scan.jsonl
+       pi$   python3 scripts/lidar_lab/source.py --serial /dev/lidar
+       ros2$ cd /repo &amp;&amp; python3 scripts/lidar_lab/source.py --topic /scan
+    """
+    # TODO(you): pick the source from argv, then call describe(source).
+    #   Exactly one call to describe() -- that is the point of this page.
+    return 1
+
+
+if __name__ == "__main__":
+    import sys
+    raise SystemExit(main(sys.argv[1:]))
+</code></pre>
+      <div class="callout why"><span class="ct">왜 <code>describe()</code> 안에 "어느 입구인가"를 쓰면 안 되는가</span>
+        <p>이 실습의 주장은 "세 입구가 같은 모양이다"인데, <strong>그 주장을 검사하는 것이 바로 이 함수다.</strong> 안에서 입구를 구별해야 한다면 — 예를 들어 파일일 때만 거리를 1000 으로 나눠야 한다면 — <strong>같은 모양이 아직 아니라는 뜻이고, 고칠 곳은 <code>describe()</code> 가 아니라 그 입구다.</strong>
+        이것이 뒤의 열 쪽이 "스캔이 어디서 왔는가"를 묻지 않아도 되는 유일한 이유다.</p>
+      </div>
+
+      <h4 id="s3-1-3">3-1-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><code>describe()</code> 부터 쓴다. <strong>입구보다 먼저다</strong> — 무엇을 볼 것인지 정해 놓아야 입구가 맞는지 판정할 수 있다. 한 줄에 최소한 <strong>바퀴 번호 · 점 수 · <code>None</code> 개수 · <code>t</code></strong> 를 넣는다.</li>
+        <li><code>main()</code> 에서 인자를 보고 입구를 고른다. <strong><code>describe()</code> 호출은 정확히 한 번</strong>이어야 한다. 두 번 쓰고 있다면 분기가 잘못된 자리에 있다.</li>
+        <li><code>FileSource</code> 로 먼저 돌린다 — 라이다를 안 켜고 된다. 여기서 숫자가 안 나오면 원인은 입구가 아니라 <strong>l-04 의 <code>load_jsonl()</code></strong> 이다.</li>
+        <li>그 다음 <code>SerialSource.__iter__</code> 를 채운다. 막히는 자리는 대개 <strong>세 가지</strong>다.
+          <ul>
+            <li><strong>단위</strong> — 나온 <code>r</code> 의 크기가 파일에서 읽은 것과 <strong>1000배 차이</strong>가 나면 mm/m 를 두 번 바꾸었거나 한 번도 안 바꾼 것이다. l-04 의 <code>split_turns()</code> 주석이 단위를 뭐라고 적었는지 먼저 본다.</li>
+            <li><strong>머리를 세우는 시점</strong> — 읽기를 멈추면 머리는 계속 돈다. 끝낼 때 <code>motor(ser, False)</code> 를 부르지 않으면 다음 실습에서 <strong>이미 도는 머리</strong>를 만나게 된다(그 자체는 고장이 아니다 — 그저 예상 밖이다).</li>
+            <li><strong>끝나지 않는다</strong> — 시리얼은 끝이 없다. 몇 바퀴에서 멈출지는 <strong>내가 정한다.</strong></li>
+          </ul>
+        </li>
+        <li>둘 다 되면 <strong>같은 방을 두 입구로 본다</strong> — 방금 뜬 파일과 지금 도는 센서. 숫자가 비슷해야 한다.</li>
+      </ol>
+      <p class="small">⚠ 자기시험 벡터는 이 쪽에 없다. <code>FileSource</code> · <code>SerialSource</code> 가 검사할 로직을 스스로 갖고 있지 않기 때문이다(전부 l-03 · l-04 의 순수 함수에 있고 거기서 이미 채점됐다). <strong>이 쪽에서 벡터로 채점할 수 있는 유일한 것은 §3-4 의 <code>laserscan_to_scan()</code> 이고</strong>, 거기서 만든다.</p>
+
+      <h4 id="s3-1-4">3-1-4. 돌리고 보기</h4>
+      <pre><code class="lang-bash">pi$ cd ~/ros2_rpi5
+pi$ python3 scripts/lidar_lab/source.py scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl
+pi$ python3 scripts/lidar_lab/source.py --serial /dev/lidar</code></pre>
+      <p>출력의 <strong>모양</strong>은 이런 꼴이다(형식은 내가 정한 것이므로 글자는 달라도 된다 — <strong>두 번 다 같은 형식이어야 한다</strong>는 것만 지킨다).</p>
+      <pre><code class="lang-text">turn   0  n=&lt;n&gt;  miss=&lt;n&gt;  t=0.000
+turn   1  n=&lt;n&gt;  miss=&lt;n&gt;  t=&lt;n&gt;
+…</code></pre>
+      <p>여기서 <strong>보는 것은 숫자가 아니라 두 출력의 모양</strong>이다. 노트에 적을 것:</p>
+      <ul class="steps">
+        <li>파일 입구와 시리얼 입구의 <strong>점 수가 같은 자릿수</strong>인가. 크게 다르면 어느 쪽이 다른가.</li>
+        <li><code>miss</code>(무반사)의 비율이 두 입구에서 비슷한가. <strong>파일 쪽 <code>miss</code> 가 0 인데 시리얼 쪽은 많다면</strong>, 그 파일을 뜰 때와 지금 방이 다른 것이다(창문·사람).</li>
+        <li><code>describe()</code> 안에 입구를 구별하는 코드를 넣어야 했는가 — <strong>넣었다면 어디를, 왜.</strong></li>
+      </ul>
+      <p>⚠ <strong>예상과 달라도 그것이 관찰이다.</strong> 이 쪽의 체크 항목은 "값이 같았는가"가 아니라 <strong>"무엇이 나왔는지 적었는가"</strong> 다.</p>
+
+      <h3 id="s3-2">3-2. 실습 B — 포트 소유권을 일부러 다투게 한다 <span class="tag cli">컨테이너</span> <span class="tag pi">Pi 호스트</span></h3>
+      <div class="callout warn"><span class="ct">시작 전에</span>
+        <p><strong>L4 를 다시 읽는다.</strong> 이 실습에서는 <strong>내가 명령하지 않은 시점에 머리의 회전이 바뀔 수 있다.</strong> 센서는 고정된 자리에 그대로 두고, 손·머리카락·천·케이블을 머리에서 치우고, 스캔 창 앞에 얼굴을 두지 않는다.
+        이 실습에서 보는 것은 <strong>화면의 문구</strong>이지 회전이 아니다 — 머리는 도는 채로 두고 멀리서 본다.</p>
+      </div>
+
+      <h4 id="s3-2-1">3-2-1. 확인</h4>
+      <p>터미널이 <strong>둘</strong> 필요하다. 하나는 컨테이너(경로 B), 하나는 Pi 호스트(경로 A). <strong>실행 확인: 미확인.</strong></p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>터미널 ①(컨테이너)<br><code>ros2$ ros2 launch rpi5_bringup robot.launch.py use_mcu:=false use_lidar:=true</code></td><td><code>[rplidar_node]: current scan mode: &lt;…&gt;, sample rate: &lt;…&gt;, max_distance: &lt;…&gt; m, scan frequency: &lt;…&gt; Hz</code> 꼴의 줄. <strong>마지막 값은 드라이버가 쓰는 <code>scan_frequency</code> 파라미터 값이다</strong> — 잰 회전수가 아니다(10.0 이면 주기로 환산해 100 ms 에 해당하는 수일 뿐, 내 머리가 그 주기로 돈다는 뜻이 아니다). 우리 <code>robot_params.yaml</code> 은 <code>scan_frequency</code> 를 <strong>주석 처리해 두었으므로</strong> 노드 기본값이 그대로 찍힌다. 물리 회전수는 <a href="l-04-one-turn.html">l-04</a> 가 재고, 이 한 낱말이 두 뜻으로 쓰이는 자리는 <a href="l-07-cross-verify.html">l-07</a> 이 가른다</td><td><strong>07 §3-5 로 돌아간다.</strong> 이 쪽은 드라이버를 띄우는 법을 다시 가르치지 않는다</td></tr>
+          <tr><td>2</td><td>터미널 ①<br><code>ros2$ ros2 topic hz /scan</code></td><td><code>average rate: &lt;n&gt;</code> 가 계속 갱신된다</td><td>토픽이 안 나오면 §2-1 의 층 ④ 다 — 07 §2-4 로 간다. <strong>지금 이 실습은 못 한다</strong></td></tr>
+          <tr><td>3</td><td>터미널 ②(호스트)<br><code>pi$ fuser -v /dev/lidar</code></td><td>줄이 하나 나오고 <strong>PID 가 적혀 있다</strong></td><td>아무것도 안 나오면 드라이버가 포트를 안 잡았다는 뜻이다 — 그 자체가 관찰이다. <strong>적어 두고 아래로 간다</strong></td></tr>
+          <tr><td>4</td><td>터미널 ②<br><code>pi$ ps -o pid,comm -p &lt;위의 PID&gt;</code></td><td>컨테이너 안에서 도는 드라이버가 <strong>호스트에서도 그 번호로 보인다</strong></td><td>안 보이면 <code>pid: host</code> 에 대한 §2-2 의 설명이 내 구성에서 틀린 것이다 — <strong>그것을 적는다.</strong> 실습은 그대로 할 수 있다</td></tr>
+          <tr><td>5</td><td>터미널 ①<br><code>ros2$ ros2 service list | grep motor</code></td><td><code>/lidar_node/start_motor</code> 와 <code>/lidar_node/stop_motor</code> 두 줄</td><td>안 나오면 <strong>이 실습 동안 머리를 세울 수단이 없다</strong>는 뜻이다 — 손을 더 멀리 둔다. 서비스 자체는 07 §3-8 이 소유한다</td></tr>
+        </tbody>
+      </table></div>
+      <p>5번은 <strong>안전 장치</strong>다. 실습 도중 머리를 세우고 싶어지면 포트를 뺏는 것이 아니라 <strong>드라이버에게 세우라고 시킨다</strong> — <code>ros2$ ros2 service call /lidar_node/stop_motor std_srvs/srv/Empty</code>(07 §3-8).</p>
+
+      <h4 id="s3-2-2">3-2-2. 빈 표 — 내가 처음 적는 기록</h4>
+      <p>⚠ <strong>이 표의 칸을 채운 사람은 이 프로젝트에 아직 아무도 없다.</strong> 두 경로가 같은 포트를 동시에 열 때 무슨 문구가 나는지 — 1세대 기록에도, 07 에도, 어디에도 없다. <strong>내가 처음 적는다.</strong></p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>무엇을 했나</th><th>경로 A(파이썬) 쪽에 나온 것</th><th>경로 B(드라이버) 쪽에 나온 것</th><th>머리의 회전</th></tr></thead>
+        <tbody>
+          <tr><td>B-1</td><td>드라이버가 도는 중에 <code>--serial</code> 로 연다</td><td><code>____</code> (문구를 <strong>한 글자도 바꾸지 말고</strong>)</td><td><code>____</code> (로그가 바뀌는가 · <code>topic hz</code> 가 떨어지는가)</td><td><code>____</code></td></tr>
+          <tr><td>B-2</td><td>①을 내리고, 파이썬을 먼저 연 뒤 드라이버를 띄운다</td><td><code>____</code></td><td><code>____</code> (노드가 뜨는가 · 어디서 죽는가)</td><td><code>____</code></td></tr>
+          <tr><td>B-3</td><td>B-1 에서 <strong>둘 다 열렸다면</strong> — 양쪽의 초당 바퀴 수</td><td>A: <code>____</code> 바퀴/초</td><td>B: <code>____</code> Hz (<code>topic hz</code>)</td><td>—</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-2-3">3-2-3. 채우기 — 순서를 지킨다</h4>
+      <ol class="steps">
+        <li><strong>B-1.</strong> 터미널 ①에서 드라이버를 띄운 채로, 터미널 ②에서 <code>pi$ python3 scripts/lidar_lab/source.py --serial /dev/lidar</code>. <strong>세 곳을 동시에 본다</strong> — ②의 화면, ①의 로그, 그리고 (멀리서) 머리.</li>
+        <li>둘 중 하나가 난다. <strong>(가) 파이썬이 예외를 내며 죽는다</strong> → 문구를 그대로 옮겨 적는다. <strong>(나) 둘 다 살아 있다</strong> → §2-2 의 조용한 고장이다. 곧바로 B-3 으로 간다.</li>
+        <li><strong>B-3(나 인 경우만).</strong> 양쪽을 30초쯤 두고 <strong>①의 <code>topic hz</code></strong> 와 <strong>②의 초당 바퀴 수</strong>를 적는다. 그리고 ②를 끄고 ①의 <code>hz</code> 가 <strong>돌아오는지</strong> 본다 — 돌아오면 반씩 나눠 읽고 있었다는 증거다.</li>
+        <li><strong>B-2.</strong> 순서를 뒤집는다. ①을 <kbd>Ctrl</kbd>+<kbd>C</kbd> 로 내리고, ②의 파이썬을 먼저 띄운 뒤 ①의 드라이버를 띄운다. <strong>이번엔 드라이버 쪽 로그를 읽는다</strong> — 어디서 죽는지, 아니면 죽지 않는지.</li>
+        <li>둘 다 내린다. <code>pi$ fuser -v /dev/lidar</code> 가 <strong>다시 조용해지는지</strong> 확인하고 끝낸다.</li>
+      </ol>
+      <p class="small">⚠ <strong>드라이버를 내리는 것은 <kbd>Ctrl</kbd>+<kbd>C</kbd> 한 번으로 끝나지 않을 수 있다.</strong> 런치는 여러 프로세스를 띄운다 — 내린 뒤에 <code>fuser</code> 로 <strong>정말 놓았는지</strong> 확인하는 습관이 이 쪽의 절반이다.</p>
+
+      <h4 id="s3-2-4">3-2-4. 보고 판정하기</h4>
+      <p>표를 채웠으면 <strong>한 문단</strong>을 노트에 쓴다. 그것이 이 실습의 산출물이다.</p>
+      <div class="callout note"><span class="ct">쓸 것 — "내 순서"</span>
+        <p>① 두 경로 중 <strong>어느 쪽이 먼저 포트를 잡으면</strong> 다른 쪽이 어떻게 되는가(내가 본 문구로). ② 그래서 <strong>경로를 바꿀 때 내가 할 일</strong>은 무엇인가 — 무엇을 내리고, 무엇으로 내려간 것을 확인하는가. ③ <strong>둘 다 살아 있는 경우가 있었는가</strong>. 있었다면 그때 점 수가 어떻게 됐는가.</p>
+        <p>이 문단이 뒤에서 계속 쓰인다. <a href="l-07-cross-verify.html">l-07</a> 은 <strong>같은 장면을 두 경로로 연속 촬영</strong>하는 쪽인데, 그 실습이 성립하려면 "한쪽을 확실히 내린 뒤 다른 쪽을 올린다"는 절차가 내 손에 있어야 한다. <strong>그 절차가 지금 만들어진다.</strong></p>
+      </div>
+      <p>⚠ <strong>어느 결과가 나와도 이 실습은 닫힌다.</strong> 예외가 나면 시끄러운 고장을 본 것이고, 둘 다 열리면 조용한 고장을 본 것이다 — <strong>둘 중 무엇을 봤는지 적는 것이 항목의 내용</strong>이지 어느 하나를 봐야 하는 것이 아니다.</p>
+
+      <h3 id="s3-3">3-3. 실습 C — 장치를 넘기지 않은 컨테이너를 만든다 <span class="tag cli">컨테이너</span></h3>
+      <p>실습 B 의 실패는 <strong>포트를 쥔 사람이 둘</strong>이어서 났다. 이번 실패는 <strong>포트가 아예 그 방에 없어서</strong> 난다. 두 실패의 문구가 어떻게 다른지가 이 실습의 전부다.</p>
+
+      <h4 id="s3-3-1">3-3-1. 확인 — 한 번에 하나만 바꾼다</h4>
+      <p>일부러 고장 낸 컨테이너를 띄울 때 <strong>고장이 하나여야</strong> 무엇이 원인인지 알 수 있다. 그런데 <code>docker run</code> 을 손으로 치면 compose 가 주던 것들(<code>network_mode: host</code> · <code>ipc: host</code> · <code>ROS_DOMAIN_ID</code> · <code>ROS_LOCALHOST_ONLY</code> · 워크스페이스 마운트)이 <strong>한꺼번에 사라진다.</strong>
+      그러면 <code>/scan</code> 이 안 보이는 이유가 장치인지 도메인인지 네트워크인지 가릴 수 없다 — <strong>침묵 위에 침묵을 얹는 것</strong>이고, 이 쪽이 하려는 일의 정반대다.</p>
+      <p>그래서 <strong>compose 파일을 복사해 두 줄만 지운다.</strong> 그러면 "무엇이 달라졌는가"를 <code>diff</code> 가 증명해 준다.</p>
+      <p><strong>실행 확인: 미확인</strong> — 이 가이드를 쓴 사람은 Pi 에 접속하지 못했다. 아래도 출력의 <em>모양</em>이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><code>pi$ docker ps</code></td><td><code>ros2_dev</code> 이름의 컨테이너가 <strong>없다</strong></td><td>떠 있으면 먼저 나온다. 같은 이름의 컨테이너가 둘일 수 없어 아래 명령이 그 이유로 실패한다 — <strong>그것은 이 실습이 보려는 실패가 아니다</strong></td></tr>
+          <tr><td>2</td><td>정상 컨테이너에서<br><code>ros2$ ls -l /dev/lidar</code></td><td><code>lrwxrwxrwx &lt;…&gt; /dev/lidar -&gt; ttyUSB&lt;n&gt;</code></td><td>정상 상태에서 이미 안 보이면 <strong>이 실습이 이미 일어나 있는 것</strong>이다 — 그대로 아래 기록표를 채우고 원인을 찾는다(본편 02 §3-9)</td></tr>
+          <tr><td>3</td><td><code>pi$ fuser -v /dev/lidar</code></td><td>아무 줄도 없다</td><td>실습 B 의 뒷정리가 안 된 것이다 — 내리고 온다</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-3-2">3-3-2. 빈 표 — 두 겹을 하나씩 뺀다</h4>
+      <p>§2-3 이 말한 두 겹을 <strong>각각</strong> 빼 본다. 어느 것을 뺐는지에 따라 <strong>실패의 모양이 다르다</strong>는 것이 요지다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>뺀 것</th><th><code>ls -l /dev/lidar</code></th><th>드라이버가 죽는 자리 · 문구</th><th>실습 B 와 무엇이 다른가</th></tr></thead>
+        <tbody>
+          <tr><td>C-1</td><td><code>volumes: /dev:/dev</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td>C-2</td><td><code>device_cgroup_rules</code> 만 (<code>/dev</code> 마운트는 그대로)</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">⚠ <strong>C-2 는 이 가이드가 문구를 모른다.</strong> compose 파일의 주석과 02 §2-3 이 <em>"/dev 를 통째로 마운트해도 cgroup 규칙이 없으면 장치 접근이 막힌다"</em> 고 적을 뿐, <strong>그 막힘이 어떤 글자로 나타나는지는 아무도 기록하지 않았다.</strong> 내가 적는 것이 이 프로젝트의 첫 기록이다. <strong>둘 중 하나만 해도 이 실습의 체크 항목은 닫힌다</strong> — 다만 둘 다 하면 §2-3 의 표를 내 눈으로 채우게 된다.</p>
+
+      <h4 id="s3-3-3">3-3-3. 채우기</h4>
+      <ol class="steps">
+        <li>복사본을 만든다. <strong>같은 디렉터리에 둔다</strong> — compose 파일 안의 <code>context: .</code> 와 <code>../ros2_ws</code> 가 <strong>파일이 있는 자리를 기준</strong>으로 풀리기 때문이다.
+          <pre><code class="lang-bash">pi$ cd ~/ros2_rpi5/docker
+pi$ cp docker-compose.yml compose-nodev.yml
+pi$ cp docker-compose.yml compose-nocgroup.yml</code></pre>
+        </li>
+        <li>편집기로 <code>compose-nodev.yml</code> 을 열어 <strong><code>- /dev:/dev</code> 한 줄만</strong> 주석 처리한다(<code>#</code> 를 앞에 붙인다). <code>compose-nocgroup.yml</code> 에서는 <strong><code>device_cgroup_rules:</code> 와 그 아래 목록만</strong> 주석 처리한다.</li>
+        <li><strong>한 줄만 바뀌었는지 증명한다.</strong> 이 단계를 건너뛰지 않는다 — 이것이 "한 번에 하나만"의 증거다.
+          <pre><code class="lang-bash">pi$ diff docker-compose.yml compose-nodev.yml
+pi$ diff docker-compose.yml compose-nocgroup.yml</code></pre>
+          나오는 줄이 내가 의도한 것뿐인가. <strong>더 있으면 되돌린다.</strong>
+        </li>
+        <li>망가진 쪽으로 컨테이너를 띄우고 <strong>먼저 장치를 본다.</strong>
+          <pre><code class="lang-bash">pi$ docker compose -f compose-nodev.yml run --rm dev bash
+ros2$ ls -l /dev/lidar ; ls -l /dev/ttyUSB*</code></pre>
+        </li>
+        <li>그 다음 <strong>같은 방에서 드라이버를 띄운다.</strong> 07 §3-5 와 같은 명령이다 — <strong>명령이 같은데 결과가 다르다</strong>는 것이 이 실습의 핵심이다.
+          <pre><code class="lang-bash">ros2$ ros2 launch rpi5_bringup robot.launch.py use_mcu:=false use_lidar:=true</code></pre>
+          로그가 어디서 멈추는지, 어떤 낱말이 나오는지 <strong>그대로</strong> 옮겨 적는다.
+        </li>
+        <li><code>compose-nocgroup.yml</code> 로 같은 것을 되풀이한다. <strong>이번엔 <code>ls</code> 가 성공할 것</strong>이므로, 실패가 어디로 옮겨 갔는지 본다.</li>
+        <li><strong>뒷정리.</strong> 두 복사본을 지운다 — <code>pi$ rm compose-nodev.yml compose-nocgroup.yml</code>. 일부러 고장 낸 설정을 남겨 두면 <strong>몇 주 뒤에 그것으로 띄우고 원인을 다시 찾게 된다.</strong></li>
+      </ol>
+
+      <h4 id="s3-3-4">3-3-4. 보고 판정하기</h4>
+      <p>표의 마지막 열이 이 실습의 답이다. <strong>세 실패를 한 줄로 가를 수 있게 됐는가.</strong></p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>무엇이 문제인가</th><th>구별하는 한 줄</th></tr></thead>
+        <tbody>
+          <tr><td>포트를 남이 쥐고 있다(B)</td><td>호스트에서 <code>fuser -v /dev/lidar</code> 에 <strong>다른 PID 가 있다</strong>. 장치 자체는 양쪽에서 보인다</td></tr>
+          <tr><td>장치가 컨테이너에 없다(C-1)</td><td>호스트에서는 <code>ls -l /dev/lidar</code> 가 <strong>되는데</strong> 컨테이너에서는 <strong>안 된다</strong></td></tr>
+          <tr><td>보이는데 못 연다(C-2)</td><td><code>ls</code> 는 양쪽 다 되는데 <strong>여는 순간</strong> 막힌다. 호스트에서 같은 포트를 파이썬으로 열면 <strong>열린다</strong></td></tr>
+        </tbody>
+      </table></div>
+      <p>세 줄 모두 <strong>"호스트에서는 되는가"</strong> 를 지렛대로 쓴다. 그것이 §2-1 이 말한 경로 A 의 값이다 — <strong>경로 A 가 있으면 층을 가를 수 있고, 없으면 전부 "안 된다" 하나다.</strong></p>
+      <p>⚠ <strong>둘 중 하나만 재현했어도 닫힌다.</strong> 체크 항목이 요구하는 것은 "두 변종을 다 봤다"가 아니라 <strong>"무엇을 뺐고 그때 무엇이 나왔으며 그것이 실습 B 와 어떻게 달랐는지 적었다"</strong> 이다.</p>
+
+      <h3 id="s3-4">3-4. 실습 D — <code>/scan</code> 을 세 번째 입구로 붙이고, 기준 형식으로 떨군다 <span class="tag cli">컨테이너</span></h3>
+
+      <h4 id="s3-4-1">3-4-1. 확인 — 옮기기 전에 원본을 본다</h4>
+      <p>변환 코드를 쓰기 전에 <strong>내 드라이버가 실제로 무엇을 내는지</strong> 눈으로 본다. §2-4 의 표에서 <code>____</code> 로 남겨 둔 칸이 여기서 닫힌다. <strong>실행 확인: 미확인.</strong></p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><code>ros2$ ros2 interface show sensor_msgs/msg/LaserScan</code></td><td>필드 열두 줄 — 07 §1-1 에 실린 것과 같은 목록</td><td>컨테이너가 아니다. <code>ros2</code> 명령은 컨테이너 안에서만 돈다</td></tr>
+          <tr><td>2</td><td><code>ros2$ ros2 topic echo /scan --field angle_min --once</code><br><code>ros2$ ros2 topic echo /scan --field angle_increment --once</code></td><td>라디안 값 둘. <strong>부호를 본다</strong> — <code>angle_min</code> 이 음수인가</td><td><code>/scan</code> 이 안 나온다 → §2-1 의 층 ④, 07 §2-4</td></tr>
+          <tr><td>3</td><td><code>ros2$ ros2 topic echo /scan --field ranges --once | head -20</code></td><td>실수의 목록. <strong>못 잰 자리에 무엇이 들어 있는가</strong> — <code>inf</code> 인가 <code>0.0</code> 인가 <code>nan</code> 인가</td><td>전부 같은 값뿐이면 물리적인 문제다(07 §3-5) — 렌즈 가림·모터 미회전</td></tr>
+          <tr><td>4</td><td><code>ros2$ ros2 topic echo /scan --field intensities --once | head -5</code></td><td>목록이 비어 있거나 숫자가 있다</td><td>비어 있으면 <strong>그것이 답이다</strong> — 기준 형식의 <code>q</code> 를 생략한다</td></tr>
+          <tr><td>5</td><td><code>ros2$ ros2 topic info /scan -v</code></td><td><code>Reliability: BEST_EFFORT</code></td><td>07 §2-5 로 간다. 구독자가 더 강한 것을 요구하면 <strong>콜백이 한 번도 안 불린다</strong></td></tr>
+        </tbody>
+      </table></div>
+      <p>3번의 답을 <strong>§2-4 표의 4행에 적어 넣는다.</strong> 그 값 하나가 변환 코드의 절반을 정한다. 3번과 4번은 <strong>드라이버 소스를 받아 보면 한쪽으로 닫히는 갈래</strong>이고 그 인용은 <a href="l-07-cross-verify.html">l-07</a> 이 갖는다 — 다만 <strong>받은 판이 내 설치본과 같은지는 §2-6 의 두 번째 확인이 먼저</strong>이므로, 여기 <code>____</code> 에 적는 것은 <strong>내 기기가 실제로 낸 값</strong>이다.</p>
+      <p>그리고 도구를 컨테이너 안에서 돌려야 하므로 <strong>§2-5 의 마운트 한 조각</strong>이 필요하다:</p>
+      <pre><code class="lang-bash">pi$ cd ~/ros2_rpi5/docker
+pi$ docker compose run --rm -v ~/ros2_rpi5/scripts:/repo/scripts dev bash
+ros2$ cd /repo &amp;&amp; python3 -c "import rclpy, serial; print('ok')"
+ok</code></pre>
+
+      <h4 id="s3-4-2">3-4-2. 골격</h4>
+      <p><code>source.py</code> 에 이어 붙인다. 변환을 <strong>클래스 밖의 함수로 떼어 놓는 것</strong>이 이 골격의 유일한 설계 결정이고, 이유는 <strong>그래야 ROS 없이 시험할 수 있기 때문</strong>이다.</p>
+      <pre><code class="lang-python">
+# scripts/lidar_lab/source.py -- continued. The third entrance.
+
+def laserscan_to_scan(msg, t):
+    """One sensor_msgs/msg/LaserScan -&gt; one l-04 Scan. Pure: it only reads fields,
+    so you can test it with a hand-made object that has the same attribute names.
+    Units in : msg.angle_min, msg.angle_increment are RADIANS. msg.ranges is m.
+    Units out: Scan.a is DEGREES in [0, 360). Scan.r is m, or None when the
+               driver's value means 'could not measure'.
+    Invariants:
+      - len(a) == len(r) == len(msg.ranges). Do not drop points: a missing range
+        is None at its own index, not a shorter list.
+      - msg.intensities may be empty -- then q is None, not a list of zeros.
+    """
+    # TODO(you): angle(i) = angle_min + i * angle_increment (07 1-1), rad -&gt; deg,
+    #   then normalise into [0, 360). Map the driver's no-return marker to None;
+    #   find out what that marker actually is on YOUR device first (3-4-1).
+    return Scan([], [], None, t)
+
+
+class TopicSource:
+    """/scan inside the container. The ONLY class here that needs ROS.
+    WHY rclpy is imported in the method and not at the top of this file:
+      FileSource has to work on a machine with no ROS installed. A top-level
+      'import rclpy' would make that machine fail at import time -- before it
+      ever reaches the class it can actually run.
+    QoS: the driver publishes BEST_EFFORT. A subscriber may not ask for more
+      than the publisher offers -- 07 2-5 owns that rule. Use SensorDataQoS().
+    """
+
+    def __init__(self, topic="/scan", timeout_s=10.0):
+        self.topic = topic
+        self.timeout_s = timeout_s
+
+    def __iter__(self):
+        import rclpy                                  # lazy on purpose -- see above
+        from rclpy.node import Node
+        from rclpy.qos import qos_profile_sensor_data
+        from sensor_msgs.msg import LaserScan
+        # TODO(you): make a node, subscribe with qos_profile_sensor_data, and
+        #   yield laserscan_to_scan(msg, t) for each message that arrives.
+        #   t: seconds since the FIRST message of this run, so that the file you
+        #      write here starts at 0.0 like the one l-04 wrote.
+        #   Stop after timeout_s with no message and say so -- silence here is a
+        #   RESULT (QoS / node name / no publisher), not a reason to hang forever.
+        return iter(())
+</code></pre>
+      <div class="callout why"><span class="ct">왜 <code>import rclpy</code> 가 파일 맨 위에 없는가</span>
+        <p>파이썬은 <code>import</code> 를 <strong>파일을 읽는 순간</strong> 실행한다. <code>rclpy</code> 를 맨 위에 두면 ROS 가 없는 자리에서 <code>source.py</code> 를 열기만 해도 죽는다 — <strong><code>FileSource</code> 를 쓰려는 사람도 함께 죽는다.</strong>
+        그런데 <code>FileSource</code> 는 이 가이드에서 <strong>가장 많이 쓰이는 입구</strong>다. 기록 파일 한 장으로 닫히는 쪽이 다섯이고, 그 쪽들은 컨테이너를 요구하지 않는다.
+        <strong>한 줄을 함수 안으로 옮기는 것만으로 그 다섯 쪽이 컨테이너에서 풀려난다</strong> — 이것이 "무거운 의존을 필요한 자리까지 미룬다"가 실제로 하는 일이다.</p>
+      </div>
+
+      <h4 id="s3-4-3">3-4-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><code>laserscan_to_scan()</code> 을 <strong>먼저</strong> 쓴다. ROS 가 필요 없다 — 필드 이름만 같으면 되므로 손으로 만든 객체로 바로 확인할 수 있다.</li>
+        <li>각도 세 걸음: <strong>① <code>angle_min + i × angle_increment</code>(07 §1-1 의 식) ② 라디안 → 도(<code>math.degrees</code>) ③ <code>[0, 360)</code> 으로 정규화.</strong> ③ 을 빠뜨려도 <strong>오류가 안 난다</strong> — 음수 각도가 그대로 파일에 들어가고, 뒤에서 방이 뒤집힌 채로 그려진다.</li>
+        <li>거리: §3-4-1 의 3번에서 본 값을 <code>None</code> 으로 바꾼다. <strong>길이를 줄이지 않는다</strong> — 못 잰 자리는 <code>None</code> 이 그 자리에 남아야 <code>a</code> 와 <code>r</code> 의 인덱스가 계속 짝이다.</li>
+        <li>아래 벡터로 <strong>손 채점</strong>한다. 계산은 이 가이드가 <code>python3</code> 로 직접 돌려 넣은 값이다(<code>math.degrees(angle_min + i*inc) % 360.0</code>). V1 은 정규화 규칙만 보려고 만든 <strong>합성 입력</strong>(<code>π</code> 를 자르지 않고 그대로 넣었다)이고, V2 는 실제 메시지처럼 <strong>여섯 자리에서 반올림된 십진수</strong>다 — <strong>그래서 V2 의 기댓값에는 꼬리가 남는다.</strong>
+          <div class="tbl"><table class="compact">
+            <thead><tr><th>#</th><th>입력</th><th><code>a</code> 가 이래야 한다 (deg)</th><th>무엇을 잡는가</th></tr></thead>
+            <tbody>
+              <tr><td>V1</td><td><code>angle_min = -math.pi</code>, <code>angle_increment = math.pi / 2</code>, 점 4개 <strong>(합성 입력)</strong></td><td><code>[180.0, 270.0, 0.0, 90.0]</code> — 네 값 모두 <strong>정확히</strong></td><td><strong>정규화를 아예 안 한 것.</strong> 빠뜨리면 <code>[-180.0, -90.0, 0.0, 90.0]</code> 이 나온다. ⚠ <code>if a &lt; 0: a += 360</code> 만 한 <strong>반쪽 수정은 이 벡터를 통과한다</strong>(네 값이 정답과 똑같이 나온다) — 그것을 잡는 것이 V2 다</td></tr>
+              <tr><td>V2</td><td><code>angle_min = 0.0</code>, <code>angle_increment = 0.015708</code>(한 걸음이 <code>0.9000021°</code>), 점 401개</td><td>첫 <code>0.0</code> · 400번째(i=399) ≈ <code>359.10084</code> · <strong>401번째(i=400) ≈ <code>0.00084</code></strong></td><td><strong>한 바퀴를 넘어가는 쪽의 랩어라운드.</strong> 랩을 안 하면 401번째가 <code>360.00084</code> 로 남는다 — <code>if a &lt; 0: a += 360</code> 반쪽 수정도 <strong>여기서 걸린다</strong>(그 값은 음수가 아니라 손대지 않고 지나간다)</td></tr>
+              <tr><td>V3</td><td><code>ranges</code> 의 둘째 자리가 못 잰 값, 나머지는 숫자</td><td><code>r</code> 의 길이가 <strong>줄지 않고</strong> 둘째가 <code>None</code></td><td><strong>길이 어긋남.</strong> 걸러서 빼면 각도와 거리의 짝이 통째로 밀린다</td></tr>
+            </tbody>
+          </table></div>
+          <p class="small">⚠ <strong>꼬리가 남는 것은 고장이 아니다.</strong> <code>0.015708</code> 은 0.9° 의 라디안 값을 여섯 자리에서 자른 것이라 한 걸음이 정확히 0.9° 가 아니라 <code>0.9000021°</code> 다 — 그래서 401번째가 정확히 <code>0.0</code> 이 아니라 <code>0.00084</code> 다.
+          내 출력에도 같은 종류의 꼬리가 남는다. 두 가지 이유가 겹친다 — <strong>메시지의 두 값이 <code>float32</code></strong> 라는 것(이 가이드가 V1 의 입력을 <code>float32</code> 로 반올림해 다시 돌려 보니 첫 값이 <code>180.0</code> 이 아니라 <code>179.999995</code> 였다),
+          그리고 <strong>내가 적는 수는 십진수로 잘린다</strong>는 것(V1 의 입력을 <code>-3.141593</code>·<code>1.570796</code> 으로 바꿔 넣으면 셋째가 <code>0.0</code> 이 아니라 <code>359.99994</code> 로 나온다 — 원 위에서는 같은 점이지만 <strong>화면의 숫자로는 정반대 끝</strong>이다).
+          <strong>어디까지를 같다고 볼지(허용 오차)는 내가 정해 적는다.</strong> <code>round()</code> 로 눌러 맞추면 숫자는 예뻐지지만 <strong>진짜 랩어라운드 고장까지 같이 가려진다</strong> — 그래서 이 표의 기댓값에는 <code>≈</code> 를 붙였다.</p>
+        </li>
+        <li>그 다음 <code>TopicSource.__iter__</code> 를 채운다. 여기서 막히는 자리는 <strong>QoS 하나</strong>다 — <code>qos_profile_sensor_data</code> 를 안 쓰면 <strong>메시지가 한 개도 안 온다.</strong> 오류는 없다. 07 §2-5 가 그 규칙을 소유한다.</li>
+        <li>마지막으로 받은 스캔들을 <strong>l-04 의 <code>save_jsonl()</code></strong> 로 떨군다. 머리 줄의 <code>"source"</code> 는 <strong><code>"topic"</code></strong> 이다 — 이 한 글자가 다음 절의 대조를 성립시킨다.</li>
+      </ol>
+      <p class="small">⚠ 이 쪽은 <code>tests/</code> 에 새 시험 파일을 만들지 않는다. 위 세 벡터는 <strong>변환을 디버그하는 도구</strong>이고, 이 실습의 진짜 채점은 §3-4-4 의 <strong>두 파일 대조</strong>다 — 같은 방을 두 입구로 찍어 숫자가 어긋나면 <strong>이 함수가 첫 용의자</strong>다. 벡터를 <code>tests/test_source.py</code> 로 남겨 두고 싶으면 그렇게 해도 된다(그 판단은 내 몫이다).</p>
+      <p class="small">⚠ <code>ros2 bag record /scan</code> 으로 받아 두었다가 나중에 변환하는 길도 있다(본편 <a href="10-autonomy.html">10</a> §3-7 이 그 명령을 이미 쓴다). 어느 길로 갈지는 내가 정한다 — <strong>둘 다 같은 파일에 도달한다(동일).</strong> 차이는 <code>rclpy</code> 를 쓰면 지금 바로 기준 형식이 나오고, bag 은 먼저 받아 두고 나중에 푼다는 것뿐이다.</p>
+
+      <h4 id="s3-4-4">3-4-4. 돌리고 보기 — 같은 방을 세 입구로</h4>
+      <pre><code class="lang-bash">ros2$ cd /repo &amp;&amp; python3 scripts/lidar_lab/source.py --topic /scan
+turn   0  n=&lt;n&gt;  miss=&lt;n&gt;  t=0.000
+…</code></pre>
+      <p>여기서 <strong>이 쪽의 목표가 닫힌다.</strong> 세 출력을 나란히 놓는다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>입구</th><th>어디서 돌렸나</th><th>바퀴당 점 수</th><th>무반사 비율</th><th><code>a</code> 의 처음·끝</th></tr></thead>
+        <tbody>
+          <tr><td>파일(l-04 가 뜬 것)</td><td><code>pi$</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td>시리얼</td><td><code>pi$</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td><code>/scan</code></td><td><code>ros2$</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>같은 값이 나올 것이라고 기대하지 않는다.</strong> 드라이버는 <code>angle_compensate</code> 로 점을 고르게 다시 배치할 수 있고, 모드가 다를 수도 있다. <strong>이 표가 확인하는 것은 값이 아니라 "같은 코드가 세 번 다 돌았다"는 것</strong>이다.
+      값이 왜 다른지를 숫자로 따지는 것은 <a href="l-07-cross-verify.html">l-07</a> 의 일이고, <strong>그 쪽은 이 표가 없으면 시작할 수 없다.</strong></p>
+      <p>마지막으로 <code>/scan</code> 에서 떨군 파일을 <strong>다시 첫 번째 입구로 읽는다.</strong> 고리가 닫히는 자리다.</p>
+      <pre><code class="lang-bash">ros2$ head -c 200 /repo/scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl
+{"meta": {&lt;…&gt;, "source": "topic", &lt;…&gt;}}
+pi$ python3 scripts/lidar_lab/source.py scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl</code></pre>
+      <p><strong><code>"source": "topic"</code> 한 칸이 이 실습의 산출물</strong>이다. 이제 파일 두 장이 생겼고, 둘은 같은 형식이지만 <strong>어디서 왔는지가 파일 안에 적혀 있다.</strong>
+      그것이 없으면 몇 주 뒤에 이 파일을 열었을 때 "내가 뜬 것인지 드라이버가 준 것인지"를 알 수 없고, <strong>내 기기의 판정 근거로 쓸 수 없다</strong> — 기준 형식이 머리 줄을 의무로 둔 이유다.</p>
+      <p>⚠ <strong>07 만 끝낸 사람에게는 이 절이 입구다.</strong> 라이다는 있는데 l-01 ~ l-05 를 아직 안 했더라도, 이 절만으로 <code>.scan.jsonl</code> 한 장을 만들 수 있고 <strong>그 파일 한 장이면 <a href="l-08-floor-plan.html">l-08</a> 부터 다섯 쪽이 전부 돈다.</strong></p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.
+      ⚠ 이 쪽의 항목은 전부 <strong>"무엇이 일어났는지 적었는가"</strong> 다 — 예상한 문구가 나왔는지가 아니라, 나온 것을 그대로 옮겼는가를 묻는다. <strong>여기서 나올 문구를 아직 아무도 모른다.</strong></p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="three-sources-same-shape"><span><strong>경로 통과</strong> — 같은 <code>describe()</code> 가 세 입구(파일 · 시리얼 · <code>/scan</code>)에서 돌았고, 세 출력을 한 표에 적었다. 입구를 구별하는 코드를 넣어야 했다면 어디를 왜 넣었는지도 적었다
+          <span class="sub">판정 수단: 내 도구의 출력 세 벌 · §3-1-4(파일 · 시리얼) → §3-4-4(<code>/scan</code>) · 합격선 없음 — 값이 같을 필요는 없다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="scan-topic-saved-to-file"><span><strong>경로 통과</strong> — <code>/scan</code> 에서 뜬 <code>.scan.jsonl</code> 을 <strong>다시 <code>FileSource</code> 로 읽었고</strong>, 머리 줄의 <code>"source"</code> 가 <code>"topic"</code> 인 것을 확인했다
+          <span class="sub">판정 수단: <code>head -c 200</code> 의 첫 줄 + 그 파일로 돌린 <code>describe()</code> 출력 · §3-4-4</span></span></label></li>
+        <li><label><input type="checkbox" data-key="port-ownership-resolved"><span><strong>발동 확인</strong> — 드라이버가 쥔 포트를 파이썬으로 열어 <strong>양쪽 화면에 나온 것을 그대로 적었고</strong>(예외가 났는지, 둘 다 살았는지), 경로를 바꿀 때의 <strong>내 순서</strong>를 한 문단으로 썼다
+          <span class="sub">판정 수단: 두 터미널의 출력 + §3-2-2 의 표 · §3-2-4 · 이 문단은 <a href="l-07-cross-verify.html">l-07</a> 의 연속 촬영이 그대로 쓴다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="device-passthrough-missing-fails"><span><strong>발동 확인</strong> — 장치 패스스루의 <strong>두 겹 중 하나를 빼고</strong> 컨테이너를 띄워 실패를 봤고, <strong>그것이 포트 다툼(실습 B)과 어떻게 다른지</strong> 한 줄로 적었다. 복사본 compose 파일은 지웠다
+          <span class="sub">판정 수단: <code>diff</code> 출력(한 줄만 바뀌었다는 증거) + 컨테이너 안의 <code>ls</code> 와 드라이버 로그 · §3-3-4 · 두 변종 중 <strong>하나면 닫힌다</strong></span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <p>여기 적은 것은 <strong>이 쪽의 실습에서 실제로 날 수 있는 것</strong>만이다. 장치가 아예 안 보인다 · 권한 · 전원처럼 <strong>모든 쪽에 공통인 것은 <a href="l-01-link.html#symptoms">l-01</a> 이 소유</strong>하고, 저장소 전체에 공통인 것은 <a href="99-troubleshooting.html">99</a> 가 소유한다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td>파이썬이 <code>Device or resource busy</code> 로 죽는다</td><td>드라이버가 포트를 쥐고 있다</td><td><code>pi$ fuser -v /dev/lidar</code> — PID 가 나온다</td><td>§3-2 — 한쪽을 내리고 <code>fuser</code> 가 조용해진 것을 확인한 뒤 올린다</td></tr>
+          <tr><td>두 프로그램이 <strong>오류 없이</strong> 도는데 양쪽 점 수가 절반이다</td><td>둘 다 열렸다. 리눅스의 직렬 잠금은 강제가 아니다</td><td>한쪽을 끄고 다른 쪽의 <code>topic hz</code>·바퀴 수가 <strong>돌아오는지</strong> 본다</td><td>§2-2 · §3-2-3 — 이 가이드에서 가장 조용한 고장이다</td></tr>
+          <tr><td>컨테이너 안에서만 <code>/dev/lidar</code> 가 없다</td><td><code>volumes: /dev:/dev</code> 가 빠졌다</td><td>호스트와 컨테이너에서 같은 <code>ls -l</code> 을 쳐서 대조</td><td>소유는 본편 <a href="02-docker-ros2.html">02</a> §2-3 · 재현은 §3-3(C-1)</td></tr>
+          <tr><td><code>ls</code> 는 되는데 <strong>여는 순간</strong> 막힌다</td><td><code>device_cgroup_rules</code> 에 <code>c 188:* rmw</code> 가 없거나, 내 장치의 major 가 188 이 아니다</td><td><code>pi$ ls -l /dev/ttyUSB*</code> 의 major 를 본다(<a href="l-00-map.html#s3-1">l-00 §3-1</a> 에서 이미 적었다)</td><td>소유는 02 · 재현은 §3-3(C-2)</td></tr>
+          <tr><td>드라이버는 뜨는데 <code>/scan</code> 이 안 나온다</td><td>노드 이름 불일치로 파라미터 블록이 통째로 무시됐거나, <code>serial_baudrate</code> 가 노드 기본값 1000000 이다</td><td><strong>경로 A 로 바이트가 흐르는지 먼저 본다</strong> — 흐르면 선·장치·소유권은 전부 지워진다</td><td><a href="07-lidar.html">07</a> §2-4 (소유) · 가르는 법은 §2-1</td></tr>
+          <tr><td><code>TopicSource</code> 의 콜백이 <strong>한 번도</strong> 안 불린다</td><td>구독 QoS 가 <code>BEST_EFFORT</code> 보다 강하다. 발행자보다 강한 것을 요구할 수 없다</td><td><code>ros2$ ros2 topic info /scan -v</code> 의 <code>Reliability</code></td><td>07 §2-5 (소유) · 골격의 <code>qos_profile_sensor_data</code></td></tr>
+          <tr><td>컨테이너 안에서 <code>python3 scripts/lidar_lab/…</code> 가 파일이 없다고 한다</td><td>compose 가 <code>scripts/</code> 를 마운트하지 않는다(<code>ros2_ws</code> 와 <code>/dev</code> 만 넘어간다)</td><td><code>ros2$ ls /repo/scripts</code></td><td>§2-5 의 <code>-v ~/ros2_rpi5/scripts:/repo/scripts</code> 한 조각</td></tr>
+          <tr><td>변환한 평면도가 <strong>거울처럼 뒤집혀</strong> 있거나 각도가 음수다</td><td><code>angle_min</code> 이 음수인데 <code>[0, 360)</code> 정규화를 빠뜨렸다</td><td>§3-4-3 의 벡터 V1 · 파일의 <code>a</code> 첫 값이 음수인가</td><td>§3-4-3 — <strong>오류가 안 나는 종류다</strong></td></tr>
+          <tr><td>거리가 파일과 <strong>1000배</strong> 다르다</td><td>mm → m 를 두 번 했거나 한 번도 안 했다</td><td>두 입구의 <code>r</code> 첫 값을 나란히 본다</td><td>§3-1-3 — l-04 의 <code>split_turns()</code> 가 어디서 나누는지 먼저 확인한다</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+
+      <details class="quiz"><summary>1. (네 갈래 검색) 이 쪽에서 쓴 <code>frame_id</code> 를 네 군데에서 찾아 적어 보라 — 정의 → 사양 → 구현 → 내 장치</summary>
+        <div class="ans">
+          <p><strong>① 정의</strong> — <code>ros2$ ros2 interface show sensor_msgs/msg/LaserScan</code>. <code>std_msgs/Header</code> 안의 <code>frame_id</code> 이고, 주석이 <em>"어느 좌표계인가"</em> 라고만 말한다(07 §1-1 에 같은 목록이 실려 있다). <strong>정의는 이름의 값을 정해 주지 않는다</strong> — 그것이 이 갈래가 가르쳐 주는 것이다.</p>
+          <p><strong>② 사양</strong> — <strong>없다.</strong> 데이터시트는 ROS 를 모른다. 여기서 ②가 비는 것은 프로토콜 때의 빔(데이터시트가 <em>"contact SLAMTEC"</em> 이라 적은 것)과는 종류가 다르다 — <strong>애초에 센서의 사양에 속하는 값이 아니다.</strong> "②가 비었다"에도 두 가지 뜻이 있다는 것을 여기서 본다.</p>
+          <p><strong>③ 구현</strong> — 노드 소스의 기본값은 <code>"laser_frame"</code> 이다(07 §2-4 가 그 값을 적는다). 우리 <code>robot_params.yaml</code> 은 <code>"laser_link"</code> 를 명시하고, URDF(본편 <a href="05-tf2-urdf.html">05</a>)의 링크 이름도 <code>laser_link</code> 다. <strong>소스에서 직접 확인하려면 §2-6 의 절차로 받되, 받은 판이 <code>ros-humble-rplidar-ros</code> 2.1.4 와 같은지 먼저 맞춰야 한다.</strong></p>
+          <p><strong>④ 내 장치</strong> — <code>ros2$ ros2 param get /lidar_node frame_id</code> 와 <code>ros2$ ros2 topic echo /scan --field header.frame_id --once</code>. <strong>두 개를 다 본다</strong> — 파라미터는 "내가 시킨 것", 토픽은 "실제로 나간 것"이고, 이 둘이 갈리는 것이 07 §2-4 의 함정이다. 여기서 <code>laser_frame</code> 이 나오면 <strong>파라미터 블록이 통째로 무시된 것</strong>이지 값을 잘못 적은 것이 아니다.</p>
+        </div></details>
+
+      <details class="quiz"><summary>2. <code>/scan</code> 이 안 나온다. 경로 A 를 한 번 돌려 보는 것만으로 후보 넷 중 셋이 지워지는 이유를 설명하라</summary>
+        <div class="ans"><p>경로 A 는 <strong>ROS 를 하나도 거치지 않고</strong> 같은 케이블에서 바이트를 센다. 그래서 초당 몇천 바이트가 세어지면 그 순간 ① 전기·선(전류가 모자라면 열리지도 않는다) ② 장치 파일(<code>/dev/lidar</code> 가 있고 열렸다) ③ 포트 소유권(내가 열었으니 남이 쥐고 있지 않다)이 <strong>동시에</strong> 증명된다.</p>
+        <p>남는 것은 ④ 설정뿐이고, 그것은 컨테이너 안쪽 이야기다 — 노드 이름, 보드레이트, 파라미터 블록. <strong>경로 B 만 가진 사람은 이 넷이 전부 "아무 일도 안 일어남"이라는 같은 증상으로 보인다.</strong> 07 이 함정을 잘 적어 두고도 학습자가 막히는 이유가 여기 있다 — <strong>읽을 것이 부족한 게 아니라 가를 수단이 없었다.</strong></p>
+        <p>단, 순서에 주의한다. 경로 A 로 확인하려면 <strong>드라이버를 먼저 내려야 한다</strong> — 안 내리면 이번엔 ③ 이 걸려서 A 가 실패하고, 그 실패를 ①로 오해하게 된다.</p></div></details>
+
+      <details class="quiz"><summary>3. "오류가 하나도 안 나는데 점이 절반"인 상태가 왜 이 가이드에서 가장 위험한 고장인가</summary>
+        <div class="ans"><p>리눅스의 직렬 포트 잠금은 <strong>권고</strong>라서, 둘째 프로세스가 같은 포트를 여는 것을 커널이 막지 않는다. 그러면 두 프로세스가 같은 흐름을 나눠 읽고 <strong>양쪽 다 정상처럼 동작한다</strong> — 화면에 숫자가 나오고 그림도 그려진다.</p>
+        <p>위험한 것은 그 다음이다. 점이 절반이면 학습자는 대개 <strong>센서나 스캔 모드나 회선 용량을 의심한다</strong> — 즉 이 가이드가 다섯 쪽에 걸쳐 가르친 것들을 정확히 잘못된 방향으로 쓰게 된다. 원인은 옆 터미널에 있는데, <strong>그 터미널은 아무 오류도 안 내고 있다.</strong></p>
+        <p>그래서 이 쪽은 값을 보기 전에 <code>fuser -v /dev/lidar</code> 를 치는 습관을 만든다. <strong>한 줄이면 이 가능성이 지워진다.</strong></p></div></details>
+
+      <details class="quiz"><summary>4. 장치 패스스루가 "두 겹"이라는 말의 뜻과, 두 겹이 각각 빠졌을 때 증상이 어떻게 달라지는가</summary>
+        <div class="ans"><p>첫째 겹은 <strong><code>volumes: /dev:/dev</code></strong> — 호스트의 장치 파일이 컨테이너의 파일 시스템에 <strong>보이게</strong> 한다. 둘째 겹은 <strong><code>device_cgroup_rules</code></strong> — 보이는 장치를 <strong>열 수 있게</strong> 한다. cgroup 의 장치 정책이 기본적으로 막기 때문에, 마운트만으로는 부족하다는 것이 compose 파일의 주석과 02 §2-3 에 적혀 있다.</p>
+        <p>그래서 증상이 갈린다. 첫째가 없으면 <code>ls</code> 단계에서 <strong>이름 자체가 없다.</strong> 둘째가 없으면 <code>ls</code> 는 멀쩡히 나오고 <strong>여는 순간</strong> 막힌다. 뒤쪽이 훨씬 헷갈리는데, 눈에 보이는 증거(<code>ls</code> 출력)가 "장치는 잘 있다"고 말해 주기 때문이다.</p>
+        <p>둘을 가르는 한 줄은 <strong>"호스트에서는 되는가"</strong> 다. 호스트에서 파이썬으로 열리는데 컨테이너에서만 못 열면 남는 것은 둘째 겹뿐이다.</p></div></details>
+
+      <details class="quiz"><summary>5. <code>LaserScan</code> 을 기준 형식으로 옮길 때 <strong>정규화를 일부러 빠뜨리면</strong> 무엇이 보이는가 — 그리고 왜 그 고장은 오류로 나타나지 않는가</summary>
+        <div class="ans"><p><code>angle_min</code> 이 음수인 드라이버에서는 앞쪽 점들의 각도가 <strong>음수 그대로</strong> 파일에 들어간다(§3-4-3 의 벡터 V1 이 그 자리다 — <code>[-180, -90, 0, 90]</code>). JSON 은 음수를 얼마든지 담고, 파일 크기도 줄 수도 그대로다. <strong>형식 검사로는 잡히지 않는다.</strong></p>
+        <p>드러나는 자리는 훨씬 뒤다. 각도를 직교좌표로 바꾸는 쪽에서 <code>cos</code>·<code>sin</code> 은 음수 각도도 잘 받아 준다 — 다만 <strong>방이 회전하거나 뒤집혀 그려진다.</strong> 그때 학습자는 센서 장착 방향이나 시계/반시계 규약을 의심하게 되고, 원인은 다섯 쪽 앞의 한 줄에 있다.</p>
+        <p>그래서 이 쪽은 벡터를 <strong>각도 산술까지</strong> 채점하게 만들었다. 길이나 개수만 맞춰 보는 검사는 이런 종류의 고장을 통과시킨다.</p></div></details>
+
+      <details class="quiz"><summary>6. 드라이버 소스를 받아 <code>파일:줄</code> 을 인용하려 한다. 받기 전에 반드시 확인할 것 둘은 무엇이고, 확인하지 않으면 무엇이 거짓이 되는가</summary>
+        <div class="ans"><p><strong>첫째, 받는 자리.</strong> <code>/ros2_ws/src</code> 아래에 두면 다음 <code>colcon build</code> 가 그것을 빌드하고, overlay 가 underlay 를 이기므로 <strong>내가 돌리는 드라이버가 조용히 바뀐다</strong>(<code>docker/entrypoint.sh</code> 의 주석이 그 규칙을 적는다). 읽으려고 받은 것이 실행 대상을 바꾸는 사고다.</p>
+        <p><strong>둘째, 판.</strong> <code>git clone -b ros2</code> 는 그 가지의 <strong>최신</strong>을 주고, 우리가 설치한 것은 <code>ros-humble-rplidar-ros</code> 2.1.4 다. 둘이 같다는 보장이 없다. 판이 다르면 거기서 뽑은 줄 번호는 <strong>내 드라이버에 대한 사실이 아니다</strong> — 이 가이드가 1세대의 <code>sllidar_ros2</code> 줄 번호를 옮기지 않는 것과 <strong>정확히 같은 이유</strong>이고, 이름이 같아서 오히려 더 속기 쉽다.</p>
+        <p>판을 못 맞추면 답은 간단하다. <strong><code>파일:줄</code> 을 쓰지 않는다.</strong> "이 가지의 최신 소스에는 이랬다(받은 날짜)"라고 적고, 내 기기의 거동은 <code>ros2 param</code> 과 실측으로 닫는다.</p></div></details>
+
+      <details class="quiz"><summary>7. (안전) 실습 B 에서 "내가 명령하지 않았는데 머리의 회전이 바뀌는" 일이 왜 일어나는가</summary>
+        <div class="ans"><p>이 어댑터에서는 <strong>포트를 여는 행위 자체가 DTR 선을 올린다</strong>(l-01 §2-4). 그리고 이 센서에서 DTR 은 데이터가 아니라 <strong>모터 제어</strong>에 걸려 있다. 그래서 드라이버가 머리를 돌리고 있는 중에 파이썬으로 포트를 열면 <strong>그 순간 머리가 멈출 수 있고</strong>, 반대로 내가 <code>dtr=False</code> 로 세워 둔 머리가 다른 쪽의 닫힘에 <strong>갑자기 다시 돈다.</strong></p>
+        <p>회전 자체는 위험한 크기가 아니지만, <strong>예상 밖의 시점</strong>이 문제다. 손가락·머리카락·천이 가까이 있는 채로 "지금은 멈춰 있으니까"라고 생각한 순간에 돌기 시작한다. 그래서 이 실습은 센서를 <strong>고정한 자리에 그대로 두고 멀리서 화면만 본다</strong> — 회전을 보는 실습이 아니라 문구를 읽는 실습이다.</p>
+        <p>덧붙여 보이지 않는 785 nm 레이저(L1)도 같은 성질을 갖는다. <strong>켜졌는지 눈으로 알 수 없으니 습관으로 정해 둔다</strong> — 스캔 창을 렌즈 높이에서 들여다보지 않는다.</p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>번호순 다음은</strong> → <a href="l-07-cross-verify.html">l-07</a> — 센서가 나쁜가, 내 도구가 나쁜가. <strong>이 쪽에서 만든 두 가지가 거기서 곧바로 쓰인다</strong>: 세 입구를 같은 모양으로 만든 <code>source.py</code>, 그리고 "한쪽을 확실히 내린 뒤 다른 쪽을 올린다"는 §3-2-4 의 내 순서.</li>
+          <li><strong>기하 줄기로 가려면</strong> → <a href="l-08-floor-plan.html">l-08</a> — 이 쪽에서 <code>/scan</code> 으로 뜬 파일이든 <a href="l-04-one-turn.html">l-04</a> 로 뜬 파일이든 <strong>한 장이면 다섯 쪽이 전부 돈다.</strong> 그 쪽들은 컨테이너도 07 도 요구하지 않는다.</li>
+          <li><strong>드라이버 쪽이 궁금해졌으면</strong> → <a href="07-lidar.html">07</a> §2-4 · §2-5 를 다시 읽는다. 이제 <strong>가를 수단을 갖고</strong> 읽으므로 처음 읽을 때와 다르게 읽힌다.</li>
+          <li><strong>이 쪽을 못 닫았어도</strong> — ① <strong>컨테이너가 아직 안 떴거나 07 을 안 했으면 여기서 멈추지 않는다.</strong> 이 쪽과 l-07 은 L 에서 전제가 가장 무거운 두 쪽이고, <strong>나머지 열여섯은 07 없이 닫힌다.</strong> 실습 A 만 하고(파일 입구) l-08 로 가도 잃는 것이 없다.
+          ② <strong>실습 B·C 의 문구를 못 봤어도</strong> 다음으로 갈 수 있다 — 다만 그때는 l-07 의 연속 촬영에서 두 경로를 오가야 하므로, <strong>그 자리에서 이 쪽으로 돌아온다.</strong>
+          ③ <strong>실습 D 가 안 됐으면</strong>(콜백이 안 불리거나 마운트가 안 되면) l-07 의 절반이 막힌다 — 거기서 필요한 것이 <code>/scan</code> 쪽 기록이기 때문이다. 그 경우 <code>ros2 bag record /scan</code> 으로 먼저 받아 두면 나중에 풀 수 있다.</li>
+          <li><strong>이 쪽에서 본 것은 내 노트에 적었는가</strong> — §3-2-2 의 표(두 경로가 다툴 때의 문구 <strong>양쪽 다</strong>) · §3-2-4 의 "내 순서" 한 문단 · §3-3-2 의 표(뺀 것과 그때의 문구) · §3-4-4 의 세 입구 대조표 · §2-4 표의 4행(<strong>내 드라이버가 못 잰 자리에 넣는 값</strong> — 소스로도 닫히는 갈래이니 <a href="l-07-cross-verify.html">l-07</a> 의 인용과 <strong>나란히</strong> 적어 둔다).
+          <code>hardware/INVENTORY.md</code> 에 이 쪽이 채우는 칸은 <strong>없다</strong> — 드라이버 값의 대조는 <a href="l-07-cross-verify.html">l-07</a> 이 하고, 기동 로그 네 값의 기록란은 <a href="07-lidar.html">07</a> §3-5 가 소유한다.</li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

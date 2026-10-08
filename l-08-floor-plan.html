@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L8 · 내 앞에 뭐가 있나 — 라이다 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="l-08">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">L8 · 내 앞에 뭐가 있나</p>
+      <h1>내 앞에 뭐가 있나 — 점을 방으로</h1>
+      <p class="lead"><a href="l-04-one-turn.html">l-04</a> 가 남긴 <code>.scan.jsonl</code> 한 줄은 <strong>각도와 거리의 목록</strong>이다. 사람은 그 목록을 읽고 방의 모양을 떠올리지 못한다 — 그래서 이 쪽은 그것을 <strong>위에서 내려다본 그림</strong>으로 바꾼다.
+      바꾸는 식 자체는 두 줄이다(<code>x = r cos θ</code>, <code>y = r sin θ</code>). 어려운 것은 식이 아니라 <strong>규약</strong>이다 — 0°가 어느 쪽인가, 각이 어느 방향으로 커지는가, 그 방향은 <strong>어디서 보고 한 말</strong>인가.
+      이 쪽이 붙이는 도구는 <code>geom.py</code> 이고, 여기서 정한 규약을 <strong>l-09 · l-10 · l-11 · l-12 가 그대로 물려받는다.</strong> 규약이 한 칸 어긋나면 그 네 쪽은 오류 없이 조용히 틀린다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>터미널에 <strong>방의 윤곽이 글자로 그려진다</strong> — 벽이 네 줄, 센서가 가운데 <code>+</code>, 왼쪽에 둔 책이 점 하나로. 그리고 <strong>"내 기기는 위에서 내려다봐서 어느 방향으로 각이 커지는가"</strong> 가 내 노트에 한 줄로 적힌다.
+        일부러 부호를 뒤집으면 같은 방이 <strong>거울처럼 좌우가 바뀌어</strong> 나오는 것을 보고, <code>python3 tests/test_geom.py</code> 의 마지막 줄이 <code>PASS geom 28 cases</code> 가 된다.</p>
+        <p><strong>이 쪽에 필요한 것</strong> — <code>.scan.jsonl</code> 한 장과 파이썬 3. <strong>라이다도 Pi 도 컨테이너도 필요 없다</strong>(결정 L3 — 이 쪽의 함수는 ROS 를 <code>import</code> 하지 않는 순수 파이썬이라 Mac 에서 돈다).
+        <strong>없으면</strong> — 파일이 아예 없으면 <a href="l-00-map.html#s1-3">l-00 §1-3</a> 의 표에서 지금 할 수 있는 쪽을 고른다. ⚠ <strong>파일이 있어도 그것이 "내가 장면을 아는 기록"이 아니면 이 쪽의 절반만 닫힌다</strong> — §3-1 · §3-3 · §3-4 는 남의 기록으로도 전부 돌지만,
+        <strong>§3-2(방향 판정)와 §3-1-4 의 줄자 대조는 "그때 무엇이 어디에 있었는지"를 내가 알아야만</strong> 닫힌다. 빌려 온 기록으로는 코드가 도는 것까지다(l-00 §1-3 의 셋째 갈래).</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag sim">기록 파일</span> <span class="tag mac">Mac</span> <span class="tag pi">Pi 호스트</span> <span class="tag py">Python</span></div>
+        <div><span class="k">선행</span><a href="l-04-one-turn.html">l-04</a> (한 바퀴와 기록 파일) — 실제로 쓰는 것: <code>Scan</code> 의 네 칸과 <code>load_jsonl()</code> / 또는 <a href="l-06-three-sources.html">l-06</a> 의 <code>FileSource(path)</code>. 둘 중 하나면 된다</div>
+        <div><span class="k">채우는 INVENTORY 칸</span>없음. 각도 증가 방향을 적는 칸은 <code>hardware/INVENTORY.md</code> §3 "센서 자체 검증"에 <strong>이미 있고 07 §3-9-1 이 소유</strong>한다 — 이 쪽은 <strong>그 값을 도출하는 방법</strong>만 갖고, 기록은 그 칸에 한다</div>
+        <div><span class="k">이 쪽이 요구하는 수학</span><code>sin</code> · <code>cos</code> 와 <code>atan2</code> 셋. <strong>이 가이드가 전제하는 수준이고</strong>(l-00 §2-5), 식은 §2-2 · §2-5 가 전부 준다. 내가 쓰는 것은 <strong>그 식을 어느 순서로 어디에 적용하는가</strong> 다</div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
+      </div>
+
+      <h2 id="overview">1. 개요 — 목록을 그림으로 바꾸는 두 줄, 그리고 그 두 줄이 전제하는 것</h2>
+      <p>여기서부터가 <strong>둘째 줄기</strong>다. l-01 부터 l-07 까지는 "센서가 내게 무엇을 주는가"를 물었다. 이제부터 다섯 쪽은 <strong>그 준 것으로 무엇을 만들 수 있는가</strong>를 묻고, 그 다섯 쪽은 <strong>라이다도 컨테이너도 없이 기록 파일 한 장으로 돈다</strong>(<a href="l-00-map.html#s1-1">l-00 §1-1</a>).</p>
+      <p>이 쪽이 하는 일은 세 줄로 적힌다. <strong>셋째 줄이 이 쪽의 진짜 내용</strong>이다 — 앞의 두 줄은 고등학교 삼각함수이고, 셋째 줄은 <em>합의</em>이기 때문에 관찰로만 닫힌다.</p>
+      <pre class="diagram"><code> l-04 가 남긴 것             이 쪽이 하는 일                   이 쪽이 넘기는 것
+ ────────────────────       ──────────────────────────       ──────────────────────────
+ .scan.jsonl 의 한 줄   ─►  angle_of()   인덱스 → 각도   ─►  [(x, y) | None] 의 목록
+   a[i] 각도 deg             to_xy()      극좌표 → 직교        x 앞 · y 좌 · 단위 m
+   r[i] 거리 m 또는 null     normalize()  각도의 뺄셈          인덱스가 a[] 와 짝
+                                                               무반사는 None 자리로 남는다
+                            규약 셋을 여기서 못박는다
+                              0°는 어디인가                   l-09 · l-10 · l-11 · l-12 가
+                              각은 어느 쪽으로 커지는가        이 규약만 읽는다
+                              그 말은 어디서 본 것인가</code></pre>
+      <p>새로 나오는 말을 먼저 정해 둔다. ⚠ <strong>아래 셋째 줄이 이 쪽에서 가장 자주 섞이는 말</strong>이다 — "시계 방향"은 <strong>세 가지를 함께 말해야</strong> 뜻이 생긴다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>말</th><th>이 가이드에서의 뜻</th></tr></thead>
+        <tbody>
+          <tr><td><strong>극좌표</strong></td><td>한 점을 <strong>(각도, 거리)</strong> 로 적는 방식. 센서가 주는 꼴이고 <code>.scan.jsonl</code> 이 그대로 적어 둔 꼴이다</td></tr>
+          <tr><td><strong>직교좌표</strong></td><td>같은 점을 <strong>(x, y)</strong> 로 적는 방식. 종이에 찍으려면 이 꼴이어야 하고, 두 점 사이의 거리를 재려 해도 이 꼴이 편하다(l-10 · l-11 이 그것을 쓴다)</td></tr>
+          <tr><td><strong>각도 규약</strong></td><td>세 칸이 다 채워져야 뜻이 있는 말이다 — ① <strong>0°가 몸체의 어디인가</strong> ② <strong>각이 어느 방향으로 커지는가</strong> ③ <strong>그 방향은 어디서 본 것인가</strong>(위에서 내려다본 것인가, 아래에서 올려다본 것인가). ⚠ 데이터시트는 ②만 적고 ①·③을 적지 않았다(§2-3)</td></tr>
+          <tr><td><strong>평면도</strong></td><td>스캔 한 바퀴를 <strong>위에서 내려다본 그림</strong>으로 그린 것. 이 쪽에서는 글자로 그린다 — 의존성이 없고 SSH 로도 보이기 때문이다. 그 칸들은 <strong>그냥 종이 위의 자리</strong>이지 점유·자유·미지의 세 상태가 아니다(그 세 상태는 <strong><a href="l-09-occupancy.html">l-09</a></strong> 의 일이다)</td></tr>
+          <tr><td><strong>랩어라운드</strong></td><td>359.9° 다음이 0.1° 라는 것. 각도를 <strong>보통 수처럼 빼면 틀린다</strong> — 179°와 −179°는 358° 가 아니라 <strong>2°</strong> 떨어져 있다(§2-5)</td></tr>
+          <tr><td><strong>프레임</strong></td><td>좌표가 누구를 기준으로 한 것인가. L 은 <strong><code>laser_link</code> 하나 안에서만 논다</strong> — 센서 자신을 원점으로 둔다. 그것을 차체(<code>base_link</code>)로 옮기는 일은 <strong>05 가 소유</strong>하고 이 쪽은 손대지 않는다</td></tr>
+          <tr><td><strong>순수 함수</strong></td><td>포트도 시계도 파일도 ROS 도 건드리지 않는 함수. 이 쪽의 셋이 전부 그렇다 — <strong>그래서 라이다 없는 날 Mac 에서 돌고</strong>(결정 L3), 벡터로 채점된다</td></tr>
+        </tbody>
+      </table></div>
+      <p>⚠ <strong>이 쪽이 하지 않는 것</strong>도 먼저 적어 둔다. 점이 <em>없는</em> 방향을 무엇으로 볼 것인가(격자의 세 상태)는 <a href="l-09-occupancy.html">l-09</a>, 점들을 물건 단위로 묶는 것은 <a href="l-10-clusters.html">l-10</a>, 벽을 선분으로 줄이는 것은 <a href="l-11-lines.html">l-11</a>, 벽까지의 수직 거리와 통로 폭은 <a href="l-12-clearance.html">l-12</a> 다. 이 쪽은 <strong>점 하나하나를 제자리에 놓는 데까지</strong>다.</p>
+
+      <h2 id="why">2. 원리 — 왜 식은 두 줄인데 규약은 셋인가</h2>
+
+      <h3 id="s2-1">2-1. 각도는 어디서 오는가 — 우리 형식은 싣고, <code>LaserScan</code> 은 싣지 않는다</h3>
+      <p>같은 스캔인데 두 형식이 각도를 다루는 방법이 다르다. <strong>이 차이가 이 쪽 함수의 모양을 정한다.</strong></p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th></th><th><code>.scan.jsonl</code>(이 가이드)</th><th><code>sensor_msgs/msg/LaserScan</code>(ROS)</th></tr></thead>
+        <tbody>
+          <tr><td>각도를</td><td><strong>점마다 싣는다</strong> — <code>a[i]</code></td><td><strong>싣지 않는다</strong> — <code>angle_min</code> 과 <code>angle_increment</code> 둘만 싣는다</td></tr>
+          <tr><td>i 번째 점의 각도</td><td><code>a[i]</code> 를 읽는다</td><td><code>angle_min + i × angle_increment</code> 로 <strong>계산한다</strong>(07 §1-1)</td></tr>
+          <tr><td>전제하는 것</td><td>없다</td><td><strong>점이 등간격이라는 것</strong></td></tr>
+          <tr><td>대신 치르는 것</td><td>배열이 하나 더 있다 — 점 하나에 4~8바이트가 더 든다</td><td>배열 하나를 통째로 아낀다</td></tr>
+        </tbody>
+      </table></div>
+      <p><code>LaserScan</code> 이 각도를 안 싣는 이유는 <a href="l-05-bandwidth-modes.html">l-05</a> 에서 본 것과 <strong>정확히 같은 이야기</strong>다 — 초당 나를 수 있는 바이트에는 천장이 있고, 천장이 정해져 있으면 남는 선택은 포장뿐이다. 각도 배열을 빼면 한 메시지가 절반 가까이 줄어든다.</p>
+      <p>그 절약의 값으로 치르는 것이 <strong>"점이 등간격이다"라는 전제</strong>다. 그리고 그 전제가 내 기기에서 참인지는 <a href="l-04-one-turn.html#s2-4">l-04 §2-4</a> 가 이미 재 두었다 — 각도 간격의 σ 가 그것이다. <strong>σ 가 0 이 아니면 등간격이 아니고</strong>, 그런데도 등간격으로 되돌리면 점이 조금씩 엉뚱한 방향에 앉는다.</p>
+      <p>그래서 이 쪽의 <code>angle_of(i, scan)</code> 는 <strong>두 종류의 입구를 한 함수로 받는다</strong>. 우리 <code>Scan</code> 이 오면 <code>a[i]</code> 를 그냥 돌려주고(전제를 하나도 안 한다), <code>LaserScan</code> 꼴이 오면 위 식으로 계산한다.</p>
+      <p class="small">⚠ <strong>실제로는 둘째 갈래가 이 함수에 잘 닿지 않는다</strong> — <a href="l-06-three-sources.html#s3-4-2">l-06 §3-4-2</a> 의 <code>laserscan_to_scan()</code> 이 <code>/scan</code> 을 받는 <em>그 자리에서</em> 이미 각도를 계산해 <code>Scan</code> 으로 바꿔 놓기 때문이다. 그러니 이 함수에 도달할 때쯤에는 <code>a[]</code> 가 이미 있다.
+      <strong>그런데 그 계산을 <code>TODO(you)</code> 로 남긴 것이 바로 l-06 이고, 전량으로 받는 것이 이 쪽이다</strong>(§3-1-2) — 같은 식이 두 자리에 필요했고 <strong>글로 적힌 곳은 여기뿐</strong>이다. §3-4 의 벡터 5b 도 그래서 있다.</p>
+      <div class="callout why"><span class="ct">왜 이 한 줄을 전량으로 주는가</span>
+        <p>그 식에는 <strong>눈에 안 보이는 함정이 하나</strong> 있다. <code>angle_increment</code> 는 라디안이고 우리 형식은 도이므로 환산을 거치는데, <strong>라디안을 거쳐 도로 돌아오면 마지막 점이 정확히 360.0 에 앉지 않는다.</strong>
+        집필자가 실제로 돌려 본 값이다(2026-09-23, Mac 의 <code>python3</code>): <code>math.degrees(400 × math.radians(0.9))</code> 는 <code>360.0</code> 이 아니라 <strong><code>360.00000000000006</code></strong> 이다.
+        그 값이 그대로 <code>a[]</code> 에 들어가면 <strong>l-04 의 로더가 그 줄을 거부한다</strong> — <code>a[i]=360.00000000000006 is outside [0, 360)</code>. 오류는 나지만 <strong>원인이 보이지 않는 오류</strong>다. 그래서 식에 <code>% 360.0</code> 이 붙어 있고, 그 한 줄이 §3-4 의 벡터 <strong>5b</strong> 로 채점된다.</p>
+        <p>⚠ <strong>같은 함정이 <a href="l-06-three-sources.html#s3-4-2">l-06 §3-4-2</a> 에도 있다.</strong> 거기서 <code>laserscan_to_scan()</code> 을 채울 때 이 한 줄을 빠뜨리면 <strong>만들어진 파일이 통째로 같은 거부를 당한다</strong> — 그리고 그 오류 메시지는 여기를 가리키지 않는다. l-06 을 아직 안 했거나 그 쪽에서 막혔다면 <strong>이 상자를 먼저 읽은 것이 이득</strong>이다.</p>
+      </div>
+
+      <h3 id="s2-2">2-2. <code>x = r cos θ</code>, <code>y = r sin θ</code> 가 전부다 — 남는 것은 "어느 축이 앞인가"</h3>
+      <p>변환 자체는 이 두 줄이 끝이다. 각도 θ 와 거리 r 이 있으면</p>
+      <pre><code class="lang-text">x = r × cos θ
+y = r × sin θ</code></pre>
+      <p>이고, 이것은 <strong>규약이 아니라 정의</strong>다 — 어느 문서를 열어도 같다. 규약인 것은 <strong>x 와 y 가 몸체의 어느 쪽인가</strong> 뿐이다.</p>
+      <p>이 프로젝트가 쓰는 배치는 <strong>REP-103</strong> 이고, 그 규약을 소유하는 것은 <strong>05 §2-2</strong> 다(이 쪽은 다시 가르치지 않는다). L 이 갖는 것은 <strong>도출</strong> — 그 배치를 이 쪽의 두 줄에 적용하면 이렇게 된다.</p>
+      <pre class="diagram"><code>              위에서 내려다본 그림 (REP-103)
+
+                        +x  앞
+                         │
+                         │
+            +y 왼쪽 ─────┼───── -y 오른쪽
+                         │
+                         │
+                        -x  뒤
+
+   각 θ 는 +x 에서 시작해 +y 쪽으로 커진다 = 위에서 봐서 반시계
+
+     θ =   0 도  -&gt;  앞          θ =  90 도  -&gt;  왼쪽
+     θ = 180 도  -&gt;  뒤          θ = 270 도  -&gt;  오른쪽</code></pre>
+      <p>⚠ <strong>이것이 유일한 배치가 아니다.</strong> 같은 모델을 쓴 1세대 스크립트는 <strong>다른 배치를 골랐다</strong> — <code>~/ros2/docs/lidar/lidar_map.py:42-44</code> 가 <em>"LiDAR 좌표: 0°=정면, 시계방향 → x=우, y=전방"</em> 이라 적고 <code>x = dst × sin(ang)</code> · <code>y = dst × cos(ang)</code> 로 썼다.
+      <strong>같은 점이 다른 축에 앉는다</strong> — 그 코드에서 "앞"은 y 이고 이 가이드에서 "앞"은 x 다. 그림만 보면 둘 다 멀쩡한 방이 나오고, <strong>섞어 쓸 때만 방이 90° 돌아간다.</strong></p>
+      <p class="small">⚠ 이것은 <strong>1세대가 자기 스크립트에서 고른 설계</strong>의 기록이지 기기의 성질이 아니다. <code>sllidar_ros2</code> 를 쓰던 시절의 파일이고 우리 드라이버(<code>ros-humble-rplidar-ros</code> 2.1.4)와는 무관하다 — <strong>"배치는 고르는 것이다"의 예로만 읽는다.</strong></p>
+      <p>그래서 이 쪽은 <code>geom.py</code> 머리에 <strong>계약을 글자로 박아 둔다</strong>: <code>x</code> 앞 · <code>y</code> 왼쪽 · 단위 m · 각은 반시계 +. <strong>l-09 · l-10 · l-11 · l-12 는 이 계약만 읽고 그 위에 선다.</strong> 계약을 고치고 싶으면 그 네 쪽을 같이 고쳐야 한다 — 그 불편이 바로 ROS 가 REP-103 을 <strong>문서로</strong> 못박아 둔 이유다.</p>
+
+      <h3 id="s2-3">2-3. 데이터시트는 "clockwise" 라고 적는다 — 그런데 <strong>어디서 본 것인지</strong>를 적지 않았다</h3>
+      <p>데이터시트 <strong>p.3</strong>(rev.2.2 · v3.0 — <strong>두 판의 문장이 같다.</strong> 집필자가 두 PDF 를 직접 열어 확인했다, 2026-09-23)에 이렇게 적혀 있다.</p>
+      <blockquote><p><em>"After power on each sub-system, RPLIDAR A1 start rotating and scanning <strong>clockwise</strong>."</em> — Figure 1-1 위의 System connection 문단</p></blockquote>
+      <p>한 줄로 끝난 것처럼 보이지만 <strong>이 문장으로는 내 그림의 좌우를 정할 수 없다.</strong> 회전의 방향은 <strong>보는 자리를 말하지 않으면 뜻이 반쪽</strong>이기 때문이다 — 같은 팽이를 위에서 보면 시계 방향, 아래에서 보면 반시계 방향이다. <strong>시점이 뒤집히면 결론이 정확히 반대가 된다.</strong></p>
+      <p>더 나아가, <strong>머리가 도는 방향과 각도 값이 커지는 방향이 같다는 보장도 문장에 없다.</strong> 그 둘을 잇는 것은 펌웨어이고, 데이터시트는 그 대목에서 이렇게 적는다 — <strong>p.6 Figure 1-4</strong>(rev.2.2 · v3.0 <strong>두 판 모두 p.6</strong>):</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>Data Type</th><th>Unit</th><th>Description (원문)</th></tr></thead>
+        <tbody>
+          <tr><td>Distance</td><td>mm</td><td><em>Current measured distance value between the <strong>rotating core</strong> of the RPLIDAR A1 and the sampling point</em></td></tr>
+          <tr><td>Heading</td><td>degree</td><td><em>Current heading angle of the measurement</em></td></tr>
+        </tbody>
+      </table></div>
+      <p>거리의 <strong>기준점</strong>은 여기서 닫힌다 — <strong>회전하는 코어</strong>이지 몸체의 바깥면이 아니다(줄자를 댈 때 이것을 잊으면 계통 오차가 생긴다. §3-1-4 에서 다시 본다).
+      그런데 각도는 <em>"현재 측정의 heading angle"</em> 이라고만 적혀 있고 <strong>0°가 몸체의 어디인지도, 어느 방향으로 커지는지도 적혀 있지 않다.</strong> 같은 쪽 위쪽에는 <em>"If you need detailed data format and communication protocol, please contact SLAMTEC"</em> 이 적혀 있다 — <strong>1차 문서가 답하지 않기로 한 자리</strong>다(<a href="l-02-device-id.html#s2-5">l-02 §2-5</a> 가 같은 문장을 프로토콜 쪽에서 만났다).</p>
+      <div class="callout note"><span class="ct">등급 — 확인 과제 (내 기기에서만 닫힌다)</span>
+        <p>1차 원본이 답하는 것: <strong>머리가 도는 방향이 clockwise 라는 것</strong>(시점 없음) · <strong>거리의 기준점이 회전 코어라는 것.</strong><br>
+        1차 원본이 답하지 않는 것: <strong>0°가 몸체의 어디인가</strong> · <strong>각도 값이 어느 방향으로 커지는가</strong> · <strong>그 방향은 어디서 본 것인가.</strong><br>
+        ⚠ 그래서 이 가이드는 그것을 <strong>전제가 아니라 관찰 과제</strong>로 둔다(§3-2). 흥미롭게도 <strong>저장소가 데이터시트보다 정확하다</strong> — <code>hardware/INVENTORY.md</code> §3 "센서 자체 검증" 기록란은 이미 <em>"각도가 커지는 방향 <strong>(위에서 내려다봐서)</strong>"</em> 라고 <strong>시점을 물어 두었다.</strong> 이 쪽은 그 칸을 채우는 방법을 준다(칸의 소유는 07 §3-9-1).</p>
+      </div>
+
+      <h3 id="s2-4">2-4. ROS 는 반시계가 + 다 — 이 어긋남을 누가 메우는가</h3>
+      <p>정리하면 세 곳이 서로 다른 말을 하고 있다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>어디</th><th>무엇이라 하는가</th><th>시점이 적혀 있는가</th></tr></thead>
+        <tbody>
+          <tr><td>데이터시트 p.3</td><td>머리가 <strong>clockwise</strong> 로 돈다</td><td><strong>없다</strong></td></tr>
+          <tr><td>REP-103 (05 §2-2)</td><td>각은 <strong>반시계</strong>가 +</td><td>있다 — 위에서 내려다본 기준</td></tr>
+          <tr><td>내 기기가 실제로 내는 <code>a[]</code></td><td><code>____</code></td><td>— (§3-2 에서 내가 적는다)</td></tr>
+        </tbody>
+      </table></div>
+      <p>셋이 어긋나 있으면 <strong>어딘가에서 한 번은 부호를 뒤집어야 한다.</strong> 그 "어딘가"가 어디인가는 이 프로젝트가 아직 닫지 않았고, 후보가 셋이다.</p>
+      <div class="callout note"><span class="ct">결정 대기 — 부호 보정을 어디서 한 번 하는가</span>
+        <p><strong>(가) 파일을 뜰 때</strong> — <code>.scan.jsonl</code> 에 이미 가이드 규약으로 적힌다. 뒤의 네 쪽이 아무것도 몰라도 된다. 잃는 것: <strong>파일이 더 이상 "센서가 준 값 그대로"가 아니다</strong> — 머리 줄의 <code>note</code> 에 적지 않으면 나중에 두 번 뒤집게 된다.<br>
+        <strong>(나) 읽은 직후 한 번</strong> — 파일은 센서가 준 그대로 두고, 불러온 <code>Scan</code> 의 <code>a[]</code> 를 한 줄로 고친다. 잃는 것: <strong>읽는 곳마다 그 한 줄을 잊지 않아야 한다.</strong><br>
+        <strong>(다) 드라이버에게 맡긴다</strong> — <code>robot_params.yaml</code> 의 <code>lidar_node</code> 블록에 <code>inverted: false</code> 라는 파라미터가 있고 주석은 <em>"라이다를 뒤집어 장착했다면 true"</em> 라고 적는다. 잃는 것: <strong>경로 A(호스트 파이썬)에는 그 파라미터가 없다</strong> — 두 경로가 다른 그림을 낸다. 그리고 <strong>이 파라미터가 실제로 무엇을 뒤집는지는 이 가이드가 확인하지 못했다</strong>(그 주석에는 출처가 없다 → §3-1-1 의 확인 과제, <code>ros2 param describe</code>).<br>
+        차이가 없는 축: <strong>계산량과 정확도(동일)</strong> — 부호 하나다.<br>
+        이 가이드의 <strong>기본 진행은 (나)</strong> 다. <code>to_xy()</code> 를 순수하게 두어야 벡터로 채점할 수 있고, 파일은 센서가 준 그대로 남겨야 l-07 의 두 경로 대조가 성립하기 때문이다. <strong>권고가 아니다</strong> — 고르는 것은 내 몫이고, 고른 것과 그 이유를 노트에 적는다(§3-2-4).</p>
+      </div>
+      <p>⚠ <strong>뒤집어 장착하면 좌우가 반전된다</strong>는 말(<code>INVENTORY.md</code> §3 장착 정보의 <em>"뒤집어 장착? — yes면 스캔이 좌우 반전됨"</em> · 05 §2-5)의 뿌리가 여기다. 물리적으로 뒤집으면 <strong>보는 시점이 바뀌므로</strong> 같은 회전이 반대 방향으로 보인다. <strong>장착 자체는 L 이 다루지 않는다</strong> — <a href="09a-assembly-gate.html">09a</a> 의 몫이고, 이 쪽은 <strong>책상 위의 센서 하나</strong>로 규약만 닫는다.</p>
+
+      <h3 id="s2-5">2-5. 179°와 −179°는 358°가 아니라 2° 떨어져 있다</h3>
+      <p>각도는 <strong>원 위의 값</strong>이라 보통 수처럼 빼면 틀린다. 뺄셈이 필요한 자리는 이 쪽이 아니라 뒤에 있다 — 이웃한 두 점이 얼마나 벌어져 있는가(l-10), 벽의 법선이 어느 쪽을 보는가(<a href="l-12-clearance.html">l-12</a>), 두 스캔이 얼마나 돌아가 있는가(<a href="l-14-alignment.html">l-14</a>). <strong>그 셋이 전부 이 함수 하나를 부른다.</strong></p>
+      <p>고치는 법은 한 줄이다. 각을 <strong>단위원 위의 점으로 한 번 보냈다가 되돌린다.</strong></p>
+      <pre><code class="lang-text">normalize(θ) = atan2(sin θ, cos θ)</code></pre>
+      <p><code>sin</code> 과 <code>cos</code> 는 360°마다 같은 값을 돌려주므로 <strong>몇 바퀴를 돌았든 그 정보가 지워지고</strong>, <code>atan2</code> 가 그것을 <strong>−π 이상 π 이하</strong>의 한 값으로 되돌린다. 07 §3-10 의 C++ 노드가 같은 식을 쓴다.</p>
+      <p>집필자가 실제로 돌려 확인한 값 넷이다(2026-09-23, Mac 의 <code>python3</code>). <strong>찍힌 그대로</strong>(<code>repr</code>)이지 다듬은 값이 아니다 — <strong>넷 중 셋이 함정</strong>이고 함정이 서로 다르다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>넣은 것</th><th>나온 것</th><th>무엇을 말하는가</th></tr></thead>
+        <tbody>
+          <tr><td><code>radians(179) - radians(-179)</code></td><td><code>-1.9999999999999918</code> 도</td><td>보통 뺄셈이었다면 <strong>358</strong> 이다. 틀린 것이 아니라 <strong>179배 틀린 것</strong>이다. ⚠ 정확히 <code>-2.0</code> 이 아닌 것은 아래 두 줄과 같은 이유다</td></tr>
+          <tr><td><code>3π</code></td><td><code>3.1415926535897927</code></td><td>몇 바퀴를 돌았든 한 값으로 돌아온다. ⚠ 그런데 이것은 <code>math.pi</code>(<code>3.141592653589793</code>)<strong>와 같은 float 가 아니다</strong> — 끝자리가 다르고 <code>== math.pi</code> 는 <strong>False</strong> 다. π <em>과 tol 안에서</em> 같은 것이지 같은 값이 아니다</td></tr>
+          <tr><td><code>2π</code></td><td><code>-2.4492935982947064e-16</code></td><td>같은 이유로 <strong><code>0.0</code> 이 아니다</strong> — <code>== 0.0</code> 으로 판정하지 않는다. 게다가 <strong>부호가 음수</strong>라 "0 이상인가"로 갈라도 틀린다. §2-1 의 <code>degrees(400*radians(0.9))</code> 가 <code>360.0</code> 이 아니었던 것과 <strong>같은 종류</strong>다 — <strong>비교는 언제나 tol 로</strong> 한다(<a href="#s3-4-2">§3-4-2</a> 의 <code>near()</code>)</td></tr>
+          <tr><td><code>-π</code></td><td><code>-3.141592653589793</code> (= <strong>−π</strong>)</td><td>⚠ <strong>+π 로 오지 않는다.</strong> 수학책의 (−π, π] 가 아니라 실제 결과는 <strong>[−π, π]</strong> 이고 <strong>양 끝이 다 나온다.</strong> 정확히 뒤쪽(180°)을 가리키는 값을 부호로 판정하는 코드는 여기서 갈린다 — l-12 가 법선의 방향을 정할 때 만난다</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">⚠ <strong>이 함수는 "차"에 쓰는 것이지 각도 하나를 다듬는 데 쓰는 것이 아니다.</strong> <code>a[]</code> 의 각도는 <code>.scan.jsonl</code> 의 규약대로 <code>[0, 360)</code> 에 있어야 하고, 그 범위로 되돌리는 것은 <code>% 360.0</code> 이다(§2-1). 둘을 섞으면 <code>a[]</code> 에 음수가 들어가 <strong>l-04 의 로더가 거부한다.</strong></p>
+      <p>그리고 <code>to_xy()</code> 에는 <strong>정규화가 필요 없다</strong> — <code>sin</code> 과 <code>cos</code> 자신이 360°마다 같은 값을 주기 때문이다. 필요 없는 곳에 넣으면 틀리지는 않지만, <strong>필요한 곳을 놓치기 쉬워진다.</strong></p>
+
+      <h2 id="lab">3. 실습</h2>
+      <div class="callout note"><span class="ct">이 쪽의 안전 규칙</span>
+        <p>이 쪽은 <strong>기록 파일로 도는 쪽</strong>이라 자체 안전 규칙이 없다. 다만 §3-2 에서 <strong>살아 있는 센서로 새 기록을 뜬다면</strong> <a href="l-01-link.html">l-01</a> 의 <strong>L1</strong>(보이지 않는 785 nm 레이저 — 스캔 창을 들여다보지 않는다)과 <strong>L2</strong>(도는 머리에 손·머리카락·천·케이블을 가까이 두지 않는다)를 그 쪽에서 다시 읽고 시작한다. 여기서 되풀이하지 않는다 — <strong>규칙의 소유는 l-01 이다.</strong></p>
+      </div>
+
+      <h3 id="s3-1">3-1. 실습 A — 스캔 한 바퀴를 방 그림으로 <span class="tag sim">기록 파일</span> <span class="tag mac">Mac</span></h3>
+
+      <h4 id="s3-1-1">3-1-1. 확인</h4>
+      <p>코드를 쓰기 전에 <strong>무엇이 이미 정해져 있고 무엇이 아직 빈칸인지</strong>를 한 표에 놓는다. ⚠ <strong>빈칸 셋이 이 쪽의 실습 전부</strong>다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>항목</th><th>값</th><th>출처 · 등급</th><th>내 장치에서 보는 법</th></tr></thead>
+        <tbody>
+          <tr><td>축 배치</td><td>x 앞 · y 왼쪽 · z 위</td><td>REP-103 — <strong>확정</strong>(소유는 05 §2-2)</td><td>내 URDF 의 <code>laser_link</code> 축 · 05 §3-5 의 TF 그림</td></tr>
+          <tr><td>각의 + 방향</td><td>반시계(위에서 봐서)</td><td>REP-103 — <strong>확정</strong></td><td>—(문서 규약이라 장치로 확인할 것이 없다)</td></tr>
+          <tr><td>각도 단위 · 범위</td><td>deg, <code>[0, 360)</code>, 오름차순</td><td>기준 형식 — <strong>확정</strong>(모양은 <a href="l-00-map.html#s2-3">l-00 §2-3</a>, 이유는 <a href="l-04-one-turn.html#s2-6">l-04 §2-6</a>)</td><td><code>load_jsonl()</code> 이 어긋난 줄을 거부한다</td></tr>
+          <tr><td>거리 단위</td><td>m</td><td>기준 형식 — <strong>확정</strong></td><td>머리 줄의 <code>"unit": "m"</code></td></tr>
+          <tr><td>거리의 기준점</td><td><strong>회전 코어</strong>(몸체 바깥면이 아니다)</td><td>데이터시트 p.6 Fig 1-4 — <strong>확정</strong>(rev.2.2 · v3.0 두 판 같다)</td><td>위에서 보아 회전 머리의 중심. 줄자의 0 을 여기에 맞춘다(§3-1-4)</td></tr>
+          <tr><td>머리의 회전 방향</td><td><code>clockwise</code> — <strong>시점이 적혀 있지 않다</strong></td><td>데이터시트 p.3 — <strong>미확인</strong>(§2-3)</td><td>머리를 <strong>위에서 내려다보며</strong> 눈으로 본다</td></tr>
+          <tr><td>각도가 커지는 방향</td><td><code>____</code></td><td><strong>확인 과제</strong> — 어느 1차 원본도 답하지 않는다</td><td><strong>§3-2</strong>(왼쪽 30 cm 의 책) · 기록 칸은 <code>INVENTORY.md</code> §3(07 §3-9-1 소유)</td></tr>
+          <tr><td>0°가 몸체의 어디인가</td><td><code>____</code></td><td><strong>확인 과제</strong></td><td>§3-2 의 둘째 걸음(몸체를 90° 돌려 다시 본다)</td></tr>
+          <tr><td><code>inverted</code> 파라미터가 하는 일</td><td><code>false</code> 로 두고 있다</td><td><code>ros2_ws/src/rpi5_bringup/config/robot_params.yaml</code> 의 <code>lidar_node</code> 블록 — <strong>저장소 값</strong>(옆 주석 <em>"뒤집어 장착했다면 true"</em> 에는 <strong>출처가 없다</strong>)</td><td><code>ros2$ ros2 param describe /lidar_node inverted</code> — <strong>확인 과제</strong>(경로 B 가 떠 있는 날에)</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>실행 확인: 2026-09-23 Mac 에서</strong> — 아래 1~3 은 집필자가 실제로 돌렸다(이 쪽의 함수는 ROS 를 <code>import</code> 하지 않는 순수 파이썬이다 — 결정 L3). 4 는 <strong>미확인</strong>이다(집필자에게 <code>.scan.jsonl</code> 이 없다 — 출력의 <em>모양</em>만 적었고 값 자리는 <code>&lt;n&gt;</code> 이다).</p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><code>mac$ python3 --version</code></td><td><code>Python 3.&lt;n&gt;.&lt;n&gt;</code></td><td>Pi 에서 한다(<code>pi$</code>). 이 쪽은 표준 라이브러리만 쓰므로 <strong>설치할 것이 없다</strong></td></tr>
+          <tr><td>2</td><td><code>mac$ ls scripts/lidar_lab/turn.py scripts/lidar_lab/tests/</code></td><td>두 경로가 다 나온다</td><td><a href="l-04-one-turn.html">l-04</a> 로 돌아간다. 이 쪽은 <code>load_jsonl()</code> 을 <strong>빌려 쓰지 다시 만들지 않는다</strong></td></tr>
+          <tr><td>3</td><td><code>mac$ python3 -c "import math; print(math.degrees(400*math.radians(0.9)))"</code></td><td><code>360.00000000000006</code></td><td>이 값이 <strong>정확히 360.0</strong> 으로 나오면 그것도 관찰이다 — 적어 두고 §2-1 의 함정 상자를 다시 읽는다</td></tr>
+          <tr><td>4</td><td><code>mac$ head -c 120 scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl</code></td><td><code>{"meta": {"model": …, "source": "serial", "date": …, "unit": "m", …</code></td><td>파일이 없으면 <strong>§3-1 · §3-3 · §3-4 만 할 수 있다</strong>. 빌려 올 곳은 l-00 §1-3 의 셋째 갈래이고, ⚠ <strong>빌린 파일로는 §3-2 가 닫히지 않는다</strong></td></tr>
+        </tbody>
+      </table></div>
+      <p>마지막으로 <strong>같은 값을 네 갈래가 뭐라고 하는가</strong>를 한 표에 놓는다. 이 표가 §3-2 에서 채워지고 이해 확인 1번이 되돌아온다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>갈래</th><th>어디</th><th>무엇이라 하는가</th><th>내 값</th></tr></thead>
+        <tbody>
+          <tr><td>① 정의</td><td><code>ros2$ ros2 interface show sensor_msgs/msg/LaserScan</code> 의 <code>angle_min</code></td><td>라디안. <strong>부호도 방향도 주석에 없다</strong> — 각도가 어느 쪽으로 커지는지는 <code>angle_increment</code> 의 <strong>부호</strong>가 말한다</td><td><code>____</code></td></tr>
+          <tr><td>② 사양</td><td>데이터시트 p.3 · p.6 Fig 1-4(두 판)</td><td><code>clockwise</code>(시점 없음) · <em>"current heading angle"</em>(<strong>0°의 자리도 증가 방향도 없다</strong>)</td><td>—</td></tr>
+          <tr><td>③ 구현</td><td><code>robot_params.yaml</code> 의 <code>inverted</code> · 드라이버 소스(받는 절차는 <a href="l-06-three-sources.html#s2-6">l-06 §2-6</a>)</td><td><code>____</code>(내가 열어 적는다 — <strong>집필자는 이 드라이버 소스를 열지 못했다</strong>)</td><td>—</td></tr>
+          <tr><td>④ 실물</td><td><strong>왼쪽 30 cm 에 둔 책</strong>이 몇 도로 나오는가(§3-2)</td><td>—</td><td><code>____</code></td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">넷이 다르면 <strong>④가 내 기기의 사실</strong>이고 나머지는 "무엇을 가정했는가"를 말해 준다. 어느 것이 틀렸다고 쓰지 말고 <strong>조건이 무엇이었는지</strong>를 적는다.</p>
+
+      <h4 id="s3-1-2">3-1-2. 골격</h4>
+      <p>파일은 <code>scripts/lidar_lab/geom.py</code> 하나다. 공개 이름이 셋 생긴다 — <code>angle_of()</code> · <code>normalize()</code> · <code>to_xy()</code>. 셋 다 <strong>순수</strong>하다.</p>
+      <p>머리의 <strong>CONTRACT 주석 여섯 줄을 먼저 읽는다.</strong> 그것이 뒤 네 쪽이 읽는 전부이고, 그 여섯 줄이 §2-2 · §2-4 에서 도출된 것이다.</p>
+      <pre><code class="lang-python">
+# scripts/lidar_lab/geom.py -- polar points -&gt; a top-down floor plan.
+# All three functions are PURE: no port, no ROS, no clock, no file. That is why
+# tests/test_geom.py grades them with nothing plugged in, and why this module runs
+# on the Mac on a day the lidar is on the Pi (decision L3).
+#
+# CONTRACT -- l-09, l-10, l-11 and l-12 read only this. Changing it changes them:
+#   in : scan.a[i] angle in DEGREES, 0.0 &lt;= a &lt; 360.0, ascending,
+#                  counter-clockwise positive SEEN FROM ABOVE, 0 deg along +x.
+#        scan.r[i] range in METRES, or None meaning COULD NOT MEASURE.
+#   out: to_xy(scan)[i] is (x, y) in METRES with x FORWARD and y LEFT (REP-103,
+#        owned by 05 2-2), or None at the same index for a no-return.
+#        The list is ALWAYS len(scan.a) long -- index i here is index i there.
+# Whether YOUR device's a[] already obeys the "counter-clockwise from above" half
+# of that is NOT knowable from any document (2-3). 3-2 measures it; 2-4 lists the
+# three places the one-line correction can live, and you pick one.
+
+import math
+</code></pre>
+      <p class="small">이 두 함수는 <strong>전량 제공이다 — 이유: 한 칸 어긋나면 지도가 조용히 틀린다.</strong> 인덱스↔각도 변환의 <code>% 360.0</code> 은 §2-1 의 상자가, <code>normalize</code> 의 <code>atan2</code> 꼴은 §2-5 가 각각 왜 그렇게 생겼는지 설명했다. <strong>전량이어도 왜 그런지는 원리 절이 갖는다.</strong></p>
+      <pre><code class="lang-python">
+def angle_of(i, scan):
+    """Angle of index i, in DEGREES, in [0, 360), as the SOURCE reported it.
+
+    Two kinds of source, one function -- see 2-1. In practice the first branch is
+    the one that runs: l-06 3-4-2 converts a LaserScan to a Scan at the topic, so
+    a[] already exists by the time anything here is called. The second branch is
+    written out because that conversion is a TODO(you) over there and this is the
+    only place the formula is spelled out.
+      - our Scan carries an angle per point: just read a[i]. No assumption.
+      - a LaserScan carries only angle_min and angle_increment, both in RADIANS,
+        and ASSUMES the points are evenly spaced. l-04 2-4 measured how true that
+        assumption is on this device (the sigma of the gaps).
+    The `% 360.0` is not decoration: degrees(400 * radians(0.9)) is 360.00000000000006,
+    not 360.0, and a value of 360.0 in a[] is outside the format -- l-04's loader
+    refuses that line. Vector 5b in tests/test_geom.py grades exactly this.
+    Pure. Called from to_xy() below and from anywhere that needs one angle.
+    """
+    a = getattr(scan, "a", None)
+    if a is not None:
+        return a[i]
+    return math.degrees(scan.angle_min + i * scan.angle_increment) % 360.0
+
+
+def normalize(rad):
+    """Fold an angle in RADIANS onto one turn -&gt; a value in [-pi, +pi].
+
+    Use it on a DIFFERENCE of two angles, never on an a[] entry (2-5): a[] must
+    stay in [0, 360) and `% 360.0` is what keeps it there.
+    Measured, not assumed (writer, 2026-09-23, python3): normalize(-pi) comes back
+    as -pi, NOT +pi. Both ends of the interval occur.
+    Pure. Used by l-10 (gaps), l-12 (normals) and l-14 (rotation).
+    """
+    return math.atan2(math.sin(rad), math.cos(rad))
+</code></pre>
+      <p>그리고 <strong>내가 쓸 함수 하나.</strong> 이 골격은 <strong>그대로 돌아간다</strong> — <code>to_xy()</code> 가 전부 <code>None</code> 인 목록을 돌려주므로 아래 <code>main()</code> 이 "측정 0개"라고 찍고 멈춘다. 죽지 않는 것이 정상이다.</p>
+      <pre><code class="lang-python">
+def to_xy(scan):
+    """One Scan -&gt; [(x, y) | None], in METRES, x forward and y left.
+
+    Invariants -- each one is graded by a vector in tests/test_geom.py:
+      1. len(result) == len(scan.a). A no-return keeps its slot as None; it does
+         NOT shrink the list. Every later page pairs result[i] with scan.a[i].
+      2. r == 0.0 is a measured zero, not a no-return. Only None is a no-return
+         (l-04 2-6 fixed that, and l-03 2-3 is why it matters).
+      3. Degrees in, radians into math.cos/math.sin. cos(90) is -0.448, not 0.0.
+      4. No normalize() here: cos and sin already repeat every 360 deg (2-5).
+    Pure. This is the function every page from l-09 on stands on.
+    """
+    # TODO(you): walk scan.r with its index, ask angle_of() for the angle, and
+    #   place the point. Decide invariant 2 BEFORE you write the loop -- "no
+    #   distance" and "distance zero" look the same in an `if not d:` test.
+    #   If 3-2 tells you your device counts angles the other way round, 2-4 says
+    #   where that one line goes; it is not here, because then the vectors below
+    #   would be grading your device instead of your arithmetic.
+    #   Verify with: python3 tests/test_geom.py
+    return [None] * len(scan.r)
+</code></pre>
+      <p>마지막으로 <strong>파일을 열고 그림을 찍는 껍질.</strong> 기하는 여기 없다 — <code>to_xy()</code> 를 부르고 화면에 옮길 뿐이다. ⚠ <strong>숫자 셋은 골격이 정해 주지 않는다</strong>(한 칸이 몇 m 인가, 몇 칸인가, 무엇으로 찍는가). 그것을 정하는 것이 이 실습의 절반이다.</p>
+      <pre><code class="lang-python">
+def main(argv):
+    """Draw one revolution of a .scan.jsonl as text, then stop.
+
+        pi$ python3 scripts/lidar_lab/geom.py scans/&lt;name&gt;.scan.jsonl [turn]
+
+    Not pure -- it opens a file. Everything it decides is YOURS: how many metres
+    one column is worth, how wide the picture is, which character marks a point.
+    It is a shell around to_xy(); no geometry lives here.
+    """
+    from turn import load_jsonl            # the validating loader of l-04 3-4-2
+    scans = load_jsonl(argv[1])
+    scan = scans[int(argv[2])] if len(argv) &gt; 2 else scans[0]
+    pts = to_xy(scan)
+    hit = sum(1 for p in pts if p is not None)
+    print("turn n=%d  measured=%d  no-return=%d" % (len(pts), hit, len(pts) - hit))
+    # TODO(you): build a rectangular grid of characters and print it.
+    #   Three numbers are yours and the picture is useless until you pick them:
+    #     - how many metres one COLUMN is worth,
+    #     - how many columns and rows (80 columns is a safe terminal width),
+    #     - what marks a point, what marks the sensor.
+    #   One hint that is not obvious: a terminal cell is about twice as tall as it
+    #   is wide, so if a row is worth the same metres as a column your square room
+    #   comes out as a tall rectangle. The writer used one row = two columns.
+    #   Screen rows grow DOWNWARD but +x points AWAY from you -- so the row index
+    #   runs opposite to x, and the column index runs opposite to y (y is LEFT).
+    #   Get that pair wrong and the room is mirrored: that is exactly what 3-3
+    #   makes you produce on purpose, so make sure you can tell the two apart.
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    raise SystemExit(main(sys.argv))
+</code></pre>
+
+      <h4 id="s3-1-3">3-1-3. 직접 채우기</h4>
+      <p>순서는 이렇다. <strong>1번을 먼저 하는 것이 요령이다</strong> — 실패 메시지가 곧 할 일 목록이 된다(l-04 에서 쓴 것과 같은 요령).</p>
+      <ol class="steps">
+        <li><strong><a href="#s3-4-2">§3-4-2</a> 의 시험 파일을 먼저 놓고 한 번 돌린다.</strong> <code>scripts/lidar_lab/tests/test_geom.py</code> 로 그대로 둔다. 지금 돌리면 <strong>벡터 1a 에서 멈춘다</strong>(골격의 <code>to_xy()</code> 가 전부 <code>None</code> 을 돌려주기 때문이다). 벡터 하나를 통과시킬 때마다 다음 실패로 넘어가고, <strong>그 순서가 곧 채울 순서</strong>다.</li>
+        <li><strong><code>to_xy()</code> 를 채운다.</strong> 세 걸음이다 — ① <code>scan.r</code> 을 인덱스와 함께 훑는다 ② <code>None</code> 이면 <strong>결과에도 <code>None</code> 을 한 자리 넣고</strong> 다음으로 간다 ③ 아니면 <code>angle_of()</code> 로 각을 받아 라디안으로 바꾸고 두 줄을 쓴다.
+          <br>힌트 하나: <strong><code>if not d:</code> 라고 쓰면 거리 <code>0.0</code> 이 무반사와 같은 취급을 받는다.</strong> 둘은 다른 것이다(l-03 §2-3) — 벡터 3c 가 잡는다.
+          <br>힌트 둘: <code>math.cos</code> 는 <strong>라디안</strong>을 받는다. 도를 그냥 넣으면 오류가 안 나고 <strong>그럴듯한 엉뚱한 방</strong>이 나온다 — 벡터 1d 가 잡는다.</li>
+        <li><strong>스물여덟 개가 다 통과할 때까지 그림으로 가지 않는다.</strong> 그림은 눈으로 보는 것이라 <strong>90° 돌아간 방도 방처럼 보인다.</strong> 벡터가 먼저다.</li>
+        <li><strong><code>main()</code> 의 <code>TODO</code> 를 채운다.</strong> 숫자 셋을 정해 노트에 적는다 — 한 칸 <code>____</code> m, 가로 <code>____</code> 칸 × 세로 <code>____</code> 칸, 점은 <code>____</code>. <strong>정답은 없다</strong>: 내 방이 6 m 라면 한 칸 0.1 m 로는 화면에 안 들어가고, 0.5 m 로는 책이 안 보인다. <strong>한 번 그려 보고 고치는 것이 정상 절차</strong>다.</li>
+      </ol>
+
+      <h4 id="s3-1-4">3-1-4. 돌리고 보기</h4>
+      <pre><code class="lang-bash">mac$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_geom.py
+PASS geom 28 cases
+
+mac$ cd ~/ros2_rpi5 &amp;&amp; python3 scripts/lidar_lab/geom.py scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl
+turn n=&lt;n&gt;  measured=&lt;n&gt;  no-return=&lt;n&gt;</code></pre>
+      <p>그다음 그림이 나온다. 아래는 <strong>집필자가 합성 입력으로 만든 견본</strong>이다 — 4.0 m × 3.0 m 의 빈 방 한가운데에 센서를 두고, 왼쪽 0.30 m 에 폭 0.2 m 의 책을 하나 세운 <strong>가짜 스캔</strong>(1°씩 360점)을 <code>to_xy()</code> 에 먹여 한 칸 0.1 m 로 찍은 것이다.
+      ⚠ <strong>내 방의 그림은 이것과 다르다.</strong> 이것은 "무엇이 보이면 제대로 된 것인가"의 눈 기준일 뿐이다.</p>
+      <pre class="diagram"><code>               ###############################
+               #                             #
+               #                             #
+               #                             #
+               #                             #
+               #                             #
+               #                             #
+               #                             #
+                                             #
+                                             #
+                           #  +              #
+                                             #
+                                             #
+               #                             #
+               #                             #
+               #                             #
+               #                             #
+               #                             #
+               #                             #
+               #                             #
+               ###############################</code></pre>
+      <p>이 그림에서 읽어야 하는 것 넷. <strong>넷째가 이 실습의 핵심</strong>이다.</p>
+      <ul class="steps">
+        <li><strong>닫힌 윤곽이 나오는가.</strong> 벽이 선으로 이어지지 않고 점이 흩뿌려져 있으면 단위나 축이 틀린 것이다(증상표를 본다).</li>
+        <li><strong>센서(<code>+</code>)가 그림 안의 맞는 자리에 있는가.</strong> 방 한가운데에 두었으면 가운데여야 한다.</li>
+        <li><strong>책이 있는가, 그리고 그 뒤가 비어 있는가.</strong> 견본에서 책(<code>+</code> 왼쪽의 <code>#</code>) 뒤로 왼쪽 벽이 <strong>다섯 줄쯤 끊겨 있다</strong> — 레이저가 책에 막혀 그 뒤를 못 봤기 때문이다. <strong>그 끊긴 자리를 무엇으로 볼 것인가</strong>(비었다 / 모른다)가 <strong><a href="l-09-occupancy.html">l-09</a></strong> 의 첫 질문이다. 이 쪽은 <strong>끊겨 있다는 것만</strong> 본다.</li>
+        <li><strong>줄자와 맞는가.</strong> 그림에서 벽 하나를 골라 센서에서 몇 칸인지 세고 <code>칸 수 × 한 칸의 m</code> 를 계산한 뒤, <strong>실제로 줄자를 대어 잰다.</strong> ⚠ 줄자의 0 은 <strong>회전 머리의 중심</strong>에 맞춘다(§2-3 의 Fig 1-4) — 몸체 바깥면에 맞추면 몸체 반지름만큼 계통 오차가 생긴다.</li>
+      </ul>
+      <p>노트에 적을 것. <strong>합격선은 내가 정한다</strong> — 이 그림의 해상도는 내가 고른 한 칸 크기가 정하고, 그것이 곧 내가 읽을 수 있는 최소 차이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>값</th><th>내 값</th><th>어떻게 읽는가</th></tr></thead>
+        <tbody>
+          <tr><td>한 칸의 크기 · 가로 × 세로 칸 수</td><td><code>____</code> m · <code>____</code> × <code>____</code></td><td>내가 정한 것. <strong>한 칸보다 작은 차이는 이 그림으로 판정할 수 없다</strong></td></tr>
+          <tr><td>고른 벽까지 — 그림에서 센 값</td><td><code>____</code> m</td><td>칸 수 × 한 칸의 m</td></tr>
+          <tr><td>같은 벽까지 — 줄자로 잰 값</td><td><code>____</code> m</td><td>회전 코어 중심에서 수직으로</td></tr>
+          <tr><td>차이</td><td><code>____</code> m</td><td><strong>내가 정한 합격선: <code>____</code></strong> · 근거: <code>____</code>. 한 칸 크기보다 작은 합격선은 이 도구로 못 판정한다</td></tr>
+          <tr><td>무반사 개수 · 비율</td><td><code>____</code> · <code>____</code> %</td><td><code>main()</code> 의 첫 줄. 유리·창이 많은 방이면 크다 — <strong><a href="l-15-illusions.html">l-15</a></strong> 가 받는다</td></tr>
+        </tbody>
+      </table></div>
+      <p>⚠ <strong>예상과 달라도 그것이 관찰이다.</strong> 이 쪽의 체크 항목은 "맞았는가"가 아니라 <strong>"무엇이 나왔는지 적었는가"</strong> 다. 방이 90° 돌아 보이거나 거울처럼 뒤집혀 보이면 <strong>그것을 적고 증상표로 간다</strong> — 특히 좌우 반전은 §3-3 에서 <strong>일부러 만들어 볼</strong> 바로 그 현상이다.</p>
+
+      <h3 id="s3-2">3-2. 실습 B — 왼쪽 30 cm 의 책 한 권으로 각도 규약을 닫는다</h3>
+      <p>어느 1차 원본도 답하지 않은 두 가지(0°의 자리 · 각의 증가 방향)를 <strong>물건 하나로</strong> 닫는다. 이 실습은 <strong>코드를 쓰지 않는다</strong> — 이미 만든 도구로 보고, 표를 채우고, 판정한다.</p>
+      <div class="callout warn"><span class="ct">시작 전에 — 살아 있는 센서를 쓴다면</span>
+        <p>새 기록을 뜨려면 머리가 돈다. <a href="l-01-link.html">l-01</a> 의 <strong>L1</strong>(레이저는 눈에 보이지 않는다 — 스캔 창을 렌즈 높이에서 정면으로 들여다보지 않는다)과 <strong>L2</strong>(도는 머리에 손·머리카락·천·케이블을 가까이 두지 않는다. 옮길 때는 모터를 세운 뒤 든다)를 <strong>그 쪽에서 다시 읽고</strong> 시작한다.
+        ⚠ 이 실습에서 책을 놓고 옮기는 동안 <strong>센서는 움직이지 않아야 한다</strong> — 센서가 1°만 돌아가도 이 판정이 무효가 된다(l-01 §2-5 의 "놓는 자리").</p>
+      </div>
+
+      <h4 id="s3-2-1">3-2-1. 확인</h4>
+      <p>필요한 것: <strong>내가 장면을 아는 기록</strong> 한 장. 두 길이 있다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>길</th><th>무엇을 하는가</th><th>닫히는가</th></tr></thead>
+        <tbody>
+          <tr><td>라이다가 있다</td><td><a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> 의 기록 껍질로 <strong>책을 놓은 채</strong> 몇 바퀴를 새로 뜬다</td><td><strong>닫힌다</strong></td></tr>
+          <tr><td>내가 예전에 뜬 기록이 있다</td><td>그때 <strong>무엇이 어디에 있었는지 기억나면</strong> 그 기록으로도 된다 — 책 대신 그때의 문·창·기둥을 쓴다</td><td><strong>닫힌다</strong>(기억나는 만큼만)</td></tr>
+          <tr><td>빌려 온 기록뿐이다</td><td>그 방에 무엇이 어디 있었는지 알 수 없다</td><td>⚠ <strong>닫히지 않는다.</strong> 이 실습만 열어 두고 §3-3 · §3-4 로 간다 — <strong>못 닫아도 다음 쪽으로 갈 수 있다</strong>(다음 행선지 참조)</td></tr>
+        </tbody>
+      </table></div>
+      <p>놓는 법 — <strong>한 번에 하나만 바꾼다.</strong></p>
+      <ol class="steps">
+        <li>센서를 평평한 곳에 고정하고, <strong>몸체의 어느 면을 "정면"으로 부를지 내가 먼저 정해 표시한다</strong>(테이프에 화살표). 케이블이 나오는 쪽을 기준으로 삼는 것이 흔하지만 <strong>그것이 0°라는 근거는 어디에도 없다</strong> — 지금은 그냥 <em>내가 부르는 이름</em>이다.</li>
+        <li><strong>위에서 내려다보는 자리에 선다.</strong> 이 실습의 모든 좌우는 <strong>그 시점</strong>의 좌우다(§2-3). 앉아서 옆에서 보면 좌우가 뒤집힌다.</li>
+        <li>내가 정한 정면을 기준으로 <strong>왼쪽 약 0.30 m</strong> 에 책 한 권을 세운다. 벽에서 떨어뜨려 둔다 — 벽에 붙이면 어느 점이 책인지 구별이 안 된다.</li>
+        <li>몇 바퀴를 뜬다. 그리고 <strong>책만 치우고</strong> 한 번 더 뜬다(대조군). 두 그림의 차이가 책이다.</li>
+      </ol>
+
+      <h4 id="s3-2-2">3-2-2. 빈 표 — 내가 채울 기록</h4>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>무엇</th><th>내 값</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>내가 "정면"이라 부른 면 (몸체의 무엇을 기준으로)</td><td><code>____</code></td></tr>
+          <tr><td>2</td><td>책까지의 줄자 거리 (회전 코어 중심에서)</td><td><code>____</code> m</td></tr>
+          <tr><td>3</td><td>기록에서 <strong>그 거리로 나온 점들의 각도</strong> — 가장 가까운 점의 <code>a[i]</code></td><td><code>____</code> 도</td></tr>
+          <tr><td>4</td><td>그 점이 <strong>내 평면도의 어느 쪽</strong>에 찍혔는가 (왼쪽 / 오른쪽)</td><td><code>____</code></td></tr>
+          <tr><td>5</td><td>몸체를 <strong>위에서 봐서 반시계로 90°</strong> 돌린 뒤, 같은 책의 각도</td><td><code>____</code> 도</td></tr>
+          <tr><td>6</td><td>3 → 5 로 각도가 <strong>커졌는가 작아졌는가</strong> (랩어라운드를 감안해서)</td><td><code>____</code></td></tr>
+          <tr><td>7</td><td>결론 — <strong>위에서 내려다봐서 각이 커지는 방향</strong></td><td><code>____</code> (반시계 / 시계)</td></tr>
+          <tr><td>8</td><td>결론 — <strong>0°가 몸체의 어디를 가리키는가</strong></td><td><code>____</code></td></tr>
+          <tr><td>9</td><td>내 <code>a[]</code> 는 §2-2 의 계약(반시계 +)을 <strong>그대로 만족하는가</strong></td><td><code>____</code> (예 / 아니오)</td></tr>
+          <tr><td>10</td><td>아니오라면 — <strong>보정을 §2-4 의 (가)(나)(다) 중 어디서 하기로 했는가, 왜</strong></td><td><code>____</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-2-3">3-2-3. 채우기</h4>
+      <ol class="steps">
+        <li><strong>3번을 찾는 법</strong>: 책까지의 거리를 알고 있으므로 <strong>거리로 먼저 좁힌다.</strong> <code>[(round(s.a[i],1), s.r[i]) for i in range(len(s.a)) if s.r[i] and abs(s.r[i]-0.30) &lt; 0.05]</code> 처럼 <strong>한 줄로 걸러 본다</strong> — 나오는 각도가 한 덩어리로 뭉쳐 있으면 그것이 책이다. 흩어져 있으면 그 거리에 다른 것도 있는 것이니 책을 옮기고 다시 뜬다.</li>
+        <li><strong>5번이 이 실습의 핵심</strong>이다. 각도 하나만으로는 "커지는 방향"을 말할 수 없다 — <strong>알려진 만큼 돌려서 각이 어떻게 따라 움직이는지</strong> 봐야 한다. 몸체를 돌리는 대신 <strong>책을 반대로 90° 옮겨도 같다</strong>(센서를 움직이지 않는 편이 안전하다 — 케이블과 기준선이 흔들리지 않는다).</li>
+        <li><strong>6번은 랩어라운드를 조심한다.</strong> 350° 에서 20° 로 간 것은 <strong>줄어든 것이 아니라 30° 늘어난 것</strong>이다(§2-5). 뺄셈이 아니라 <strong>어느 쪽으로 도는 것이 더 짧은가</strong>로 판정한다.</li>
+        <li><strong>9번·10번은 결정이다.</strong> §2-4 의 세 선택지를 다시 읽고 <strong>고른 이유를 한 문장으로</strong> 적는다. 이 가이드의 기본 진행은 (나)이고 <strong>권고가 아니다.</strong></li>
+      </ol>
+
+      <h4 id="s3-2-4">3-2-4. 보고 판정하기</h4>
+      <p>표의 7번·8번이 채워졌으면 <strong>그 두 줄을 <code>hardware/INVENTORY.md</code> §3 "센서 자체 검증"의 칸에 옮겨 적는다.</strong> 그 칸은 <strong>07 §3-9-1 이 소유</strong>하고 이미 <em>"각도가 커지는 방향 (위에서 내려다봐서)"</em> 라고 시점까지 물어 두었다 — L 은 <strong>그 값을 도출하는 방법</strong>만 갖는다. 칸을 새로 만들지 않는다.</p>
+      <p>⚠ <strong>세 갈래 결과가 모두 유효하다.</strong></p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>나온 것</th><th>뜻</th><th>다음</th></tr></thead>
+        <tbody>
+          <tr><td>각이 <strong>반시계로 커진다</strong>(위에서 봐서)</td><td>내 <code>a[]</code> 가 §2-2 의 계약을 그대로 만족한다. 보정할 것이 없다</td><td>§3-3 으로. 그래도 <strong>부호를 일부러 뒤집어 본다</strong> — 무엇이 달라지는지 눈으로 알아 두어야 나중에 알아본다</td></tr>
+          <tr><td>각이 <strong>시계로 커진다</strong></td><td>데이터시트 p.3 의 <code>clockwise</code> 와 <strong>같은 방향으로 읽힌 것</strong>이다. 그 문장이 위에서 본 것이었다는 증거가 하나 생겼다(내 개체에 대해서만)</td><td>§2-4 의 보정을 어디서 할지 정하고 적용한 뒤 <strong>평면도를 다시 그린다.</strong> 책이 왼쪽에 오면 닫혔다</td></tr>
+          <tr><td>책이 <strong>어느 각에서도 안 보인다</strong></td><td>책이 너무 얇거나 검거나 스캔 면보다 낮다. <strong>센서의 성질이지 내 코드의 잘못이 아니다</strong></td><td>더 크고 밝은 것(상자·책 여러 권)으로 바꾼다. 재질 때문에 안 보이는 것 자체는 <strong><a href="l-15-illusions.html">l-15</a></strong> 의 주제다</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">⚠ 이 판정은 <strong>내 개체 하나에 대한 것</strong>이다. 같은 모델의 다른 개체나 다른 펌웨어가 같다는 근거는 이 실습에 없다 — 그래서 값을 데이터시트에 되먹이지 않고 <strong>내 INVENTORY 칸에만</strong> 적는다.</p>
+
+      <h3 id="s3-3">3-3. 실습 C — 부호를 일부러 뒤집어 거울 방을 만든다 <span class="tag sim">기록 파일</span> <span class="tag mac">Mac</span></h3>
+      <p>이 실습의 목적은 <strong>고장 난 그림이 어떻게 생겼는지 눈에 넣어 두는 것</strong>이다. 좌우 반전은 <strong>오류를 내지 않는다</strong> — 방처럼 생긴 방이 나오고, 벽도 코너도 멀쩡하다. 그래서 SLAM 이 안 될 때까지 아무도 모른다. <strong>한 번 만들어 본 사람만 알아본다.</strong></p>
+
+      <h4 id="s3-3-1">3-3-1. 확인</h4>
+      <p>§3-1 의 그림이 한 번 나온 상태여야 한다. 바꾸는 것은 <strong>한 줄</strong>이고, 그 한 줄 말고는 아무것도 건드리지 않는다.</p>
+      <div class="callout warn"><span class="ct">L6 — 일부러 틀리게 만드는 실습이다</span>
+        <p>이 실습에서 만든 <strong>뒤집힌 설정을 그대로 두고 다음 쪽으로 가지 않는다.</strong> 확인이 끝나면 <strong>원래대로 되돌리고</strong> §3-1 의 그림이 다시 나오는 것을 본 뒤에 넘어간다. 뒤집힌 채로 l-09 · l-10 · l-11 을 가면 그 세 쪽의 결과가 전부 조용히 좌우가 바뀐다.</p>
+      </div>
+
+      <h4 id="s3-3-3">3-3-3. 직접 채우기 — 두 회차</h4>
+      <ol class="steps">
+        <li><strong>1회차 — 각도의 부호를 뒤집는다.</strong> 불러온 <code>Scan</code> 의 <code>a[]</code> 를 <code>(360.0 - a) % 360.0</code> 으로 바꾼다. ⚠ <strong>바꾸고 나면 오름차순이 깨지므로 <code>a</code> 와 <code>r</code> 을 짝지은 채로 다시 정렬한다</strong> — 따로 정렬하면 거리가 남의 각도에 붙어 <strong>방이 아니라 잡음</strong>이 나온다(그것도 한 번 볼 만하다).
+          <br>왜 <code>-a</code> 가 아니라 <code>(360.0 - a) % 360.0</code> 인가: 형식이 <code>[0, 360)</code> 을 요구한다(§2-1). <code>% 360.0</code> 이 없으면 0° 짜리 점이 <strong>360.0</strong> 이 되어 범위를 벗어난다 — <strong>§3-4 의 벡터 5b 가 잡는 것과 같은 함정</strong>이다.</li>
+        <li><strong>2회차 — 축을 바꿔 쓴다.</strong> <code>to_xy()</code> 의 두 줄을 <code>x = r sin θ</code> · <code>y = r cos θ</code> 로 바꾼다. 이것이 1세대 스크립트가 고른 배치다(§2-2). <strong>이번에는 방이 뒤집히지 않고 돌아간다</strong> — 두 고장을 구별할 수 있어야 한다.</li>
+        <li><strong>둘 다 되돌린다.</strong> 그리고 §3-4 의 벡터를 다시 돌려 <code>PASS geom 28 cases</code> 가 나오는 것을 확인한다.</li>
+      </ol>
+
+      <h4 id="s3-3-4">3-3-4. 돌리고 보기</h4>
+      <p>아래는 §3-1-4 와 <strong>같은 합성 입력</strong>에 1회차만 적용한 것이다. 차이는 둘이다 — <strong>책이 <code>+</code> 의 오른쪽으로 갔고, 벽의 끊긴 자리도 오른쪽으로 갔다.</strong></p>
+      <pre class="diagram"><code>               ###############################
+               #                             #
+               #                             #
+               #                             #
+               #                             #
+               #                             #
+               #                             #
+               #                             #
+               #
+               #
+               #              +  #
+               #
+               #
+               #                             #
+               #                             #
+               #                             #
+               #                             #
+               #                             #
+               #                             #
+               #                             #
+               ###############################</code></pre>
+      <p>노트에 적을 것 넷.</p>
+      <ul class="steps">
+        <li><strong>1회차의 그림이 §3-1-4 와 무엇이 다른가</strong> — 내 방의 어느 물건이 반대쪽으로 갔는지 <strong>이름으로</strong> 적는다("왼쪽 책장이 오른쪽에").</li>
+        <li><strong>2회차의 그림은 어떻게 다른가</strong> — 뒤집힌 것과 돌아간 것을 <strong>그림만 보고 구별할 수 있는가.</strong> 정사각형 방에서는 구별이 어렵다(그것도 결과다).</li>
+        <li><strong>어느 쪽도 오류를 내지 않았다</strong>는 것. 프로그램은 끝까지 돌고 그림도 나온다. <strong>무엇이 이것을 잡아 줄 수 있었는가</strong>를 한 문장으로 적는다.</li>
+        <li>되돌린 뒤 <code>PASS geom 28 cases</code> 와 §3-1-4 의 그림이 <strong>둘 다</strong> 돌아왔는가.</li>
+      </ul>
+      <p class="small">⚠ <strong>벡터는 1회차를 잡지 못한다.</strong> 부호를 뒤집은 것은 <code>to_xy()</code> 가 아니라 <strong>입력</strong>이기 때문이다 — 그래서 §2-4 가 "보정을 어디서 한 번 하는가"를 결정으로 세웠고, 그 결정의 결과를 채점해 주는 것은 <strong>벡터가 아니라 내 방의 책</strong>(§3-2)이다. 2회차는 벡터 <strong>1b</strong> 가 잡는다.</p>
+
+      <h3 id="s3-4">3-4. 실습 D — 벡터로 채점한다 <span class="tag sim">기록 파일</span> <span class="tag mac">Mac</span></h3>
+      <p>그림은 <strong>눈으로 보는 것</strong>이라 90° 돌아간 방도 방처럼 보이고, 1000배 틀린 방도 화면 밖으로 나가 버려 "점이 안 보인다"로만 보인다. <strong>산술을 채점하는 것은 벡터다.</strong></p>
+
+      <h4 id="s3-4-1">3-4-1. 확인</h4>
+      <p>이 시험은 <strong>하드웨어도 기록 파일도 필요 없다</strong> — 세 함수가 전부 순수하기 때문이다. 필요한 것은 <code>python3</code> 하나다. 무엇을 채점하는지 먼저 본다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>묶음</th><th>무엇을 지키는가</th><th>왜 그 벡터가 필요한가</th></tr></thead>
+        <tbody>
+          <tr><td><strong>1</strong> 네 방위</td><td>0°→앞 · 90°→왼쪽 · 180°→뒤 · 270°→오른쪽</td><td>축 배치와 각의 + 방향을 한꺼번에 못박는다(§2-2)</td></tr>
+          <tr><td><strong>2</strong> 30°, r=2</td><td>90의 배수가 아닌 각</td><td>부호만 맞고 <strong>산술이 틀린</strong> 구현을 잡는다 — 네 방위만으로는 라디안 환산 실수가 통과할 수 있다</td></tr>
+          <tr><td><strong>3</strong> 무반사와 0.0</td><td>자리를 지킨다 · 둘은 다른 것이다</td><td>인덱스 짝이 깨지면 뒤 네 쪽이 전부 조용히 틀린다(l-04 §2-6 · l-03 §2-3)</td></tr>
+          <tr><td><strong>4</strong> Scan 의 각도</td><td>우리 형식은 <strong>계산하지 않는다</strong></td><td>등간격 전제를 슬쩍 끼워 넣은 구현을 잡는다(§2-1)</td></tr>
+          <tr><td><strong>5</strong> LaserScan 의 각도</td><td>인덱스↔각도 · <strong><code>[0, 360)</code> 를 벗어나지 않는다</strong></td><td>360.00000000000006 함정. 이것이 l-04 의 로더에 걸리는 바로 그 값이다(§2-1)</td></tr>
+          <tr><td><strong>6</strong> 정규화</td><td>차는 원 위에서 잰다 · <strong>−π 도 나온다</strong></td><td>179/−179 가 358 로 나오면 l-10 · l-12 · l-14 가 전부 틀린다(§2-5)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-4-2">3-4-2. 골격 — 시험 파일(전량)</h4>
+      <p class="small">이 블록은 전량 제공이다 — 이유: <strong>벡터가 곧 채점표</strong>이고, 내 답을 내가 채점할 수는 없다. 벡터가 조금이라도 다르면 무엇이 통과했는지가 달라져 §2-1 · §2-2 · §2-5 에서 도출한 규칙이 <strong>채점되지 않은 채로</strong> 남는다. 기댓값은 <strong>집필자의 독립 구현이 실제로 낸 값</strong>이고, 눈대중으로 적은 것이 하나도 없다는 것을 파일 머리에 한 줄로 남겨 두었다.</p>
+      <pre><code class="lang-python">
+# scripts/lidar_lab/tests/test_geom.py -- grading vectors for geom.py.
+# Standard library only. Runs with nothing plugged in: all three functions are pure.
+#   mac$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_geom.py
+#
+# The expected values are not eyeballed. Each one was produced by the writer's own
+# reference implementation on a Mac (python3, 2026-09-23) and the awkward ones were
+# printed and pasted back in:
+#   30 deg, r=2  -&gt; x = 2*cos(radians(30)) = 1.7320508075688774  (NOT 1.7320508)
+#   index 400 at 0.9 deg/step -&gt; degrees(400*radians(0.9)) = 360.00000000000006,
+#                                and % 360.0 makes that 5.684341886080802e-14
+#   normalize(-pi) -&gt; -3.141592653589793, i.e. -pi, NOT +pi
+# Floating point never lands on 1.0 or 0.0 exactly here, so near() takes a tolerance
+# and check() is reserved for values that really are exact (lengths, None, booleans).
+
+import math, os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from turn import Scan                       # the revolution container of l-04 3-1-2
+from geom import to_xy, angle_of, normalize
+
+CASES = 0
+def check(name, got, want):
+    global CASES
+    CASES += 1
+    if got != want:
+        print("FAIL %s\n  got  %r\n  want %r" % (name, got, want)); sys.exit(1)
+
+def near(name, got, want, tol=1e-9):
+    global CASES
+    CASES += 1
+    if not isinstance(got, float) or abs(got - want) &gt; tol:
+        print("FAIL %s\n  got  %r\n  want %r (tol %g)" % (name, got, want, tol)); sys.exit(1)
+
+# A stand-in for sensor_msgs/msg/LaserScan: same field NAMES, no ROS. This is
+# what "pure" buys you -- angle_of() can be graded on both kinds of source here.
+class FakeLaserScan:
+    def __init__(self, angle_min, angle_increment, n):
+        self.angle_min = angle_min
+        self.angle_increment = angle_increment
+        self.ranges = [1.0] * n
+
+# 1. the four cardinal directions. x FORWARD, y LEFT, counter-clockwise positive.
+V1 = Scan([0.0, 90.0, 180.0, 270.0], [1.0, 1.0, 1.0, 1.0])
+xy = to_xy(V1)
+check("1a four measured points, one entry each",
+      [p is None for p in xy], [False, False, False, False])
+near("1b   0 deg -&gt; x", xy[0][0], 1.0);  near("1c   0 deg -&gt; y", xy[0][1], 0.0)
+near("1d  90 deg -&gt; x", xy[1][0], 0.0);  near("1e  90 deg -&gt; y", xy[1][1], 1.0)
+near("1f 180 deg -&gt; x", xy[2][0], -1.0); near("1g 180 deg -&gt; y", xy[2][1], 0.0)
+near("1h 270 deg -&gt; x", xy[3][0], 0.0);  near("1i 270 deg -&gt; y", xy[3][1], -1.0)
+
+# 2. an angle that is not a multiple of 90: grades the arithmetic, not just the signs.
+V2 = Scan([30.0], [2.0])
+near("2a 30 deg r=2 -&gt; x", to_xy(V2)[0][0], 1.7320508075688774)
+near("2b 30 deg r=2 -&gt; y", to_xy(V2)[0][1], 1.0)
+
+# 3. a no-return keeps its slot; a measured 0.0 m is NOT a no-return (l-03 2-3).
+V3 = Scan([0.0, 90.0, 180.0], [1.0, None, 0.0])
+xy3 = to_xy(V3)
+check("3a no-return keeps its slot", len(xy3), 3)
+check("3b no-return is None", xy3[1], None)
+check("3c range 0.0 is not a no-return", xy3[2] is None, False)
+near("3d range 0.0 -&gt; x", xy3[2][0], 0.0)
+near("3e range 0.0 -&gt; y", xy3[2][1], 0.0)
+
+# 4. our format ships an angle per point, so angle_of() must not compute anything.
+check("4 a Scan carries its own angles", [angle_of(i, V1) for i in range(4)],
+      [0.0, 90.0, 180.0, 270.0])
+
+# 5. a LaserScan ships only angle_min and angle_increment. 5b is the wraparound:
+#    the computed angle must stay inside [0, 360) or l-04's loader rejects the line.
+L = FakeLaserScan(0.0, math.radians(0.9), 400)
+near("5a index 100 -&gt; 90 deg", angle_of(100, L), 90.0, 1e-12)
+check("5b index 400 is NOT 360.0", angle_of(400, L) &lt; 360.0, True)
+near("5c index 400 wraps to ~0", angle_of(400, L), 0.0, 1e-9)
+L2 = FakeLaserScan(-math.pi, math.radians(1.0), 360)
+near("5d angle_min may be negative", angle_of(0, L2), 180.0, 1e-12)
+near("5e index 180 of that scan", angle_of(180, L2), 0.0, 1e-9)
+
+# 6. normalize() works on DIFFERENCES. 6b is the whole point of the function;
+#    6d records that both ends of [-pi, +pi] really do occur.
+near("6a normalize(0)", normalize(0.0), 0.0)
+near("6b 179 and -179 are 2 deg apart, not 358",
+     math.degrees(normalize(math.radians(179.0) - math.radians(-179.0))), -2.0, 1e-12)
+near("6c normalize(3*pi) lands on pi", normalize(3 * math.pi), math.pi, 1e-9)
+near("6d normalize(-pi) stays at -pi", normalize(-math.pi), -math.pi, 1e-12)
+near("6e normalize(pi/2)", normalize(math.pi / 2), math.pi / 2)
+near("6f normalize(2*pi) is 0, not 2*pi", normalize(2 * math.pi), 0.0, 1e-12)
+
+print("PASS geom %d cases" % CASES)
+</code></pre>
+
+      <h4 id="s3-4-3">3-4-3. 직접 채우기 — 그리고 벡터가 정말 잡는지 확인한다</h4>
+      <p>스물여덟 개를 통과시키는 것이 §3-1-3 의 일이었다. 여기서 하는 일은 그 반대다 — <strong>일부러 틀린 구현을 넣어 벡터가 실제로 잡는지 본다.</strong> 벡터를 믿고 쓰려면 <strong>벡터가 실패하는 것을 한 번은 봐야 한다.</strong></p>
+      <p>아래는 <strong>집필자가 잘못된 구현 일곱 가지를 실제로 만들어 같은 벡터에 돌려 본 결과</strong>다(2026-09-23, Mac 의 <code>python3</code>). <strong>"나온 것" 열은 화면에 찍힌 값을 그대로 옮긴 것</strong>이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>이렇게 짜면</th><th>무엇이 나오는가</th><th>잡는 벡터</th></tr></thead>
+        <tbody>
+          <tr><td>축을 바꿔 쓴다 — <code>x = r sin</code>, <code>y = r cos</code>(1세대 배치, §2-2)</td><td>0°짜리 점의 x 가 <code>1.0</code> 이 아니라 <code>0.0</code>. <strong>방은 멀쩡하고 90° 돌아간다</strong></td><td><strong>1b</strong></td></tr>
+          <tr><td>y 의 부호를 뒤집는다(시계가 +)</td><td>90°짜리 점의 y 가 <code>-1.0</code>. <strong>좌우가 거울</strong>이고 오류는 없다 — §3-3 이 눈으로 보는 그 현상</td><td><strong>1e</strong></td></tr>
+          <tr><td>도를 라디안으로 안 바꾼다</td><td>90°짜리 점의 x 가 <code>-0.4480736161291702</code>. <strong>방이 아니라 잡음</strong>이 나온다</td><td><strong>1d</strong></td></tr>
+          <tr><td>무반사를 그냥 건너뛴다</td><td>목록 길이가 3 이 아니라 <code>2</code>. <strong>인덱스가 밀려</strong> 뒤 네 쪽에서 점이 남의 각도에 붙는다</td><td><strong>3a</strong></td></tr>
+          <tr><td>거리 <code>0.0</code> 을 무반사로 본다(<code>if not d:</code>)</td><td><code>xy[2]</code> 가 <code>None</code>. <strong>"코앞에 벽"이 조용히 사라진다</strong></td><td><strong>3c</strong></td></tr>
+          <tr><td>인덱스 각도에 <code>% 360.0</code> 을 안 건다</td><td><code>got False / want True</code> 로 멈춘다 — 그 자리의 실제 값이 <code>360.00000000000006</code> 이고, 그것이 <code>a[]</code> 에 들어가면 <strong>l-04 의 로더가 그 줄을 거부한다</strong>(원인이 안 보이는 오류다)</td><td><strong>5b</strong></td></tr>
+          <tr><td><code>normalize</code> 를 <code>rad % (2π)</code> 로 쓴다</td><td>179° 와 −179° 의 차가 <code>-2.0</code> 이 아니라 <code>358.0</code>. <strong>l-10 · l-12 · l-14 가 전부 틀린다</strong></td><td><strong>6b</strong></td></tr>
+        </tbody>
+      </table></div>
+      <p>⚠ <strong>벡터가 잡지 못하는 것</strong>도 적어 둔다 — 그것이 §3-2 가 따로 있는 이유다.</p>
+      <ul class="steps">
+        <li><strong>내 기기의 각도 증가 방향.</strong> 벡터는 "입력 <code>a[]</code> 가 규약을 지킨다"를 <strong>전제하고</strong> 채점한다. 전제가 틀렸는지는 <strong>방에 놓인 물건</strong>만 안다(§3-2).</li>
+        <li><strong>0°가 몸체의 어디인가.</strong> 같은 이유다.</li>
+        <li><strong>내가 고른 한 칸 크기가 적당한가.</strong> 그림은 벡터로 채점하지 않는다 — <strong>줄자</strong>가 채점한다(§3-1-4).</li>
+      </ul>
+
+      <h4 id="s3-4-4">3-4-4. 돌리고 보기</h4>
+      <pre><code class="lang-bash">mac$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_geom.py
+PASS geom 28 cases</code></pre>
+      <p>실패하면 이런 꼴로 <strong>어느 벡터인지 · 무엇이 나왔는지 · 무엇을 기대했는지</strong> 셋을 찍고 거기서 멈춘다. <strong>그 세 줄이 곧 다음 할 일</strong>이다.</p>
+      <pre><code class="lang-text">FAIL 1d  90 deg -&gt; x
+  got  -0.4480736161291702
+  want 0.0 (tol 1e-09)</code></pre>
+      <p>노트에 적을 것: <strong>몇 번째 벡터에서 처음 멈췄는가</strong>(그것이 내가 가장 먼저 놓친 규칙이다) · §3-4-3 의 일곱 중 <strong>내가 실제로 만들어 본 것은 몇 개인가</strong> · 그중 <strong>그림만 보고 알아차렸을 것 같은 것은 몇 개인가.</strong></p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다. ⚠ <strong>항목은 "맞았는가"가 아니라 "무엇이 일어났는지 적었는가"</strong> 입니다 — 라이다는 예상과 다르게 나오는 일이 잦고, 다르게 나온 것도 닫힌 관찰입니다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="polar-to-cartesian-matches"><span><strong>경로 통과</strong> — 평면도에서 고른 벽까지의 거리를 <strong>칸으로 세어 계산한 값</strong>과 <strong>줄자로 잰 값</strong>을 나란히 적고, 그 차와 <strong>내가 정한 합격선</strong>을 함께 적었다
+          <span class="sub">판정 수단: 내 평면도 · 줄자(0 을 <strong>회전 코어 중심</strong>에 맞춘다) · §3-1-4 의 표 · 합격선은 <code>____</code> — <strong>내가 정해 적는다</strong>(한 칸 크기보다 작은 합격선은 이 도구로 판정할 수 없다)</span></span></label></li>
+        <li><label><input type="checkbox" data-key="angle-direction-determined"><span><strong>경로 통과</strong> — <strong>위에서 내려다봐서</strong> 각이 커지는 방향과 0°가 몸체의 어디인지를 적었다. 책이 안 보여 판정하지 못했다면 <strong>그 사실과 시도한 조건</strong>을 적었다
+          <span class="sub">판정 수단: §3-2-2 의 열 칸 · §3-2-4 의 세 갈래 판정 · 기록하는 곳은 <code>hardware/INVENTORY.md</code> §3 "센서 자체 검증"(칸의 소유는 <strong>07 §3-9-1</strong> — L 은 도출만 한다) · ⚠ <strong>빌려 온 기록으로는 닫히지 않는다</strong></span></span></label></li>
+        <li><label><input type="checkbox" data-key="geom-selftest-pass"><span><strong>경로 통과</strong> — <code>python3 tests/test_geom.py</code> 가 <code>PASS geom 28 cases</code> 를 찍었다
+          <span class="sub">판정 수단: 자기시험 출력 · §3-4-4 · 하드웨어도 기록 파일도 없이 돈다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="flipped-scan-reproduced"><span><strong>발동 확인</strong> — 각도 부호를 일부러 뒤집어 <strong>좌우가 반전된 평면도</strong>를 만들고, 원래 그림과 무엇이 달라졌는지를 <strong>내 방의 물건 이름으로</strong> 적었다. 그리고 <strong>되돌려 놓았다</strong>
+          <span class="sub">판정 수단: 두 장의 평면도 · §3-3-4 · 되돌린 뒤 <code>PASS geom 28 cases</code> 가 다시 나오는 것까지 확인한다(L6)</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <p>⚠ 아래 여덟 줄 중 <strong>오류 메시지가 나는 것은 둘뿐</strong>이다. 나머지 여섯은 <strong>프로그램이 끝까지 멀쩡히 도는데 결과가 틀린</strong> 것들이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td>방이 <strong>거울처럼</strong> 좌우가 바뀌어 보인다</td><td>각의 증가 방향이 규약과 반대다 — 또는 그림을 그릴 때 열 인덱스를 y 와 같은 방향으로 늘렸다</td><td>왼쪽에 둔 책이 그림의 오른쪽에 있는가(§3-2) · §3-3 의 두 그림과 견준다</td><td>§2-4 의 (가)(나)(다) 중 내가 고른 자리 / <code>main()</code> 의 열 인덱스</td></tr>
+          <tr><td>방이 <strong>90° 돌아</strong> 보인다</td><td>축을 바꿔 썼다(<code>x = r sin</code>, <code>y = r cos</code> — 1세대 배치)</td><td><code>python3 tests/test_geom.py</code> → 벡터 <strong>1b</strong> 에서 멈춘다</td><td><code>to_xy()</code> 의 두 줄 · §2-2</td></tr>
+          <tr><td>점이 <strong>전부 원점에 뭉치거나</strong> 화면 밖으로 나간다</td><td>단위가 섞였다 — 거리가 mm 로 들어와 있다(머리 줄의 <code>unit</code> 이 <code>"m"</code> 이 아니면 로더가 먼저 거부한다)</td><td><code>head -c 120</code> 로 머리 줄을 본다 · 한 점의 <code>r</code> 값이 <code>1000</code> 대인가 <code>1.0</code> 대인가</td><td>쓰는 쪽이다 — <a href="l-04-one-turn.html#s3-1-2">l-04 §3-1-2</a> 의 불변식 3</td></tr>
+          <tr><td>그림이 아예 안 나오고 <code>measured=0</code></td><td><code>to_xy()</code> 가 아직 골격이다(전부 <code>None</code> 을 돌려준다)</td><td>그 줄에 <code>TODO(you)</code> 가 남아 있는가 — <code>grep -n 'TODO(you)' scripts/lidar_lab/geom.py</code></td><td>§3-1-3</td></tr>
+          <tr><td><strong>점이 잡음처럼 흩어진다</strong> — 벽이 선으로 안 이어진다</td><td>도를 라디안으로 안 바꿨다 · 또는 <code>a</code> 와 <code>r</code> 을 <strong>따로</strong> 정렬해 거리가 남의 각도에 붙었다</td><td>벡터 <strong>1d</strong> · 같은 인덱스의 <code>a[i]</code> 와 <code>r[i]</code> 를 몇 개 손으로 찍어 본다</td><td><code>to_xy()</code> · §3-3-3 의 1회차 주의</td></tr>
+          <tr><td><code>load_jsonl</code> 이 <code>a[i]=360.00000000000006 is outside [0, 360)</code> 에서 멈춘다</td><td>인덱스에서 각도를 만들면서 <code>% 360.0</code> 을 안 걸었다</td><td>로더가 내는 줄 번호 그대로 · 벡터 <strong>5b</strong></td><td><code>angle_of()</code> · §2-1 의 상자</td></tr>
+          <tr><td>결과 목록이 <code>scan.a</code> 보다 <strong>짧다</strong>(또는 뒤 쪽에서 점이 엉뚱한 방향에 붙는다)</td><td>무반사를 건너뛰어 인덱스 짝이 깨졌다</td><td>벡터 <strong>3a</strong> · <code>len(to_xy(scan)) == len(scan.a)</code></td><td><code>to_xy()</code> 의 불변식 1</td></tr>
+          <tr><td>줄자와 <strong>늘 같은 방향으로 몇 cm</strong> 어긋난다</td><td>줄자의 0 을 몸체 바깥면에 댔다 — 데이터시트의 기준점은 <strong>회전 코어</strong>다</td><td>몸체 반지름만큼 차이가 나는가 · 세 거리에서 <strong>차가 일정한가</strong>(일정하면 계통 오차다)</td><td>재는 자리 · §2-3 의 Fig 1-4. 계통 오차를 식으로 다루는 것은 <strong><a href="l-17-acceptance.html">l-17</a></strong></td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">장치가 안 보인다 · 권한 · 전원 같은 <strong>전 쪽 공통 증상은 <a href="l-01-link.html">l-01</a> 이 소유</strong>하고, 저장소 전체 공통은 <a href="99-troubleshooting.html">99</a> 가 소유한다. 여기서 되풀이하지 않는다.</p>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+
+      <details class="quiz"><summary>1. (네 갈래 검색) <code>angle_min</code> 과 <strong>각도의 부호</strong>를 네 군데에서 찾아 적어 보라 — 정의 → 사양 → 구현 → 내 장치</summary>
+        <div class="ans"><p><strong>① 정의</strong>: <code>ros2 interface show sensor_msgs/msg/LaserScan</code> 은 <code>angle_min</code> 을 "스캔 시작 각도 [rad]" 라고만 말한다(07 §1-1). <strong>어느 쪽이 0 인지, 어느 쪽으로 커지는지는 메시지 정의에 없다</strong> — 방향을 나르는 것은 <code>angle_increment</code> 의 <strong>부호</strong>다. 정의는 "형식"만 말하지 "의미"를 말하지 않는다는 것을 여기서 배운다.</p>
+        <p><strong>② 사양</strong>: 데이터시트는 <strong>답하지 않는다.</strong> p.3(두 판)이 <code>clockwise</code> 라고 적지만 <strong>보는 시점이 없고</strong>, p.6 Figure 1-4(두 판)는 Heading 을 <em>"current heading angle"</em> 이라고만 적어 <strong>0°의 자리도 증가 방향도 주지 않는다.</strong> ⚠ <strong>"답하지 않는다는 것을 확인했다"가 유효한 ② 다</strong> — 어느 쪽에서도 못 찾았으면 그것도 결과다.</p>
+        <p><strong>③ 구현</strong>: 두 군데를 본다. 저장소의 <code>robot_params.yaml</code> 은 <code>inverted: false</code> 를 두고 주석에 "뒤집어 장착했다면 true" 라 적지만 <strong>그 주석에는 출처가 없다.</strong> 진짜 답은 드라이버 소스에 있고 받는 절차는 <a href="l-06-three-sources.html#s2-6">l-06 §2-6</a> 이다. <strong>이 가이드의 집필자는 그 소스를 열지 못했다</strong> — 열어서 <code>파일:줄</code> 을 적는 것이 내 몫이다.</p>
+        <p><strong>④ 내 장치</strong>: <strong>왼쪽 30 cm 의 책</strong>이 몇 도로 나오는가(§3-2). 넷 중 <strong>유일하게 내 개체에 대해 참인 것</strong>이고, 나머지 셋과 다르면 <strong>넷째가 사실</strong>이다. 나머지 셋은 "무엇을 가정했는가"를 말해 줄 뿐이다.</p></div></details>
+
+      <details class="quiz"><summary>2. <code>.scan.jsonl</code> 은 각도를 점마다 싣는데 <code>LaserScan</code> 은 싣지 않는다. 그 대신 <code>LaserScan</code> 이 <strong>전제하는 것</strong>은 무엇이고, 그 전제가 내 기기에서 참인지는 <strong>어느 쪽이 이미 재 두었나?</strong></summary>
+        <div class="ans"><p>전제는 <strong>"한 바퀴의 점이 등간격으로 들어온다"</strong> 이다. 각도 배열을 통째로 빼는 대신 <code>angle_min</code> 과 <code>angle_increment</code> 둘로 모든 각도를 재구성하겠다는 뜻이고, 그래서 메시지가 절반 가까이 줄어든다 — <a href="l-05-bandwidth-modes.html">l-05</a> 에서 본 것과 같은 종류의 거래다(천장이 정해져 있으면 남는 선택은 포장뿐이다).</p>
+        <p>그 전제가 참인지는 <a href="l-04-one-turn.html#s2-4">l-04 §2-4</a> 가 이미 쟀다 — <strong>각도 간격의 σ</strong> 가 그것이다. σ 가 0 이 아니면 등간격이 아니고, 그런데도 등간격으로 되돌리면 점이 조금씩 엉뚱한 방향에 앉는다. ⚠ <strong>이 σ 가 드라이버의 <code>angle_compensate</code> 에 대해 내가 가진 유일한 실측 근거</strong>이고, 그것을 파라미터와 맞춰 보는 것은 <a href="l-07-cross-verify.html">l-07</a> 의 일이다.</p></div></details>
+
+      <details class="quiz"><summary>3. 데이터시트 p.3 은 <code>clockwise</code> 라고 적었다. 이 문장만으로 <strong>내 평면도의 좌우를 정할 수 없는 이유</strong>를 두 가지 대라.</summary>
+        <div class="ans"><p><strong>하나, 보는 자리가 없다.</strong> 같은 회전을 위에서 보면 시계 방향이고 아래에서 보면 반시계 방향이다 — <strong>시점이 뒤집히면 결론이 정확히 반대가 된다.</strong> 문장에는 위인지 아래인지가 없다. (흥미롭게도 <code>hardware/INVENTORY.md</code> §3 의 기록란은 <em>"(위에서 내려다봐서)"</em> 라고 <strong>시점을 물어 둔다</strong> — 저장소가 데이터시트보다 정확하다.)</p>
+        <p><strong>둘, 머리가 도는 방향과 각도 값이 커지는 방향이 같다는 보장이 없다.</strong> 그 둘을 잇는 것은 펌웨어이고, 데이터시트는 Figure 1-4 에서 Heading 을 "current heading angle" 이라고만 적고 <strong>0°의 자리도 증가 방향도 주지 않는다.</strong> 그래서 이 가이드는 그것을 <strong>전제가 아니라 관찰 과제</strong>로 내렸다(§3-2).</p></div></details>
+
+      <details class="quiz"><summary>4. <code>to_xy()</code> 에는 <code>normalize()</code> 가 필요 없는데 <code>angle_of()</code> 에는 <code>% 360.0</code> 이 필요하다. <strong>왜 둘이 다른가?</strong></summary>
+        <div class="ans"><p><code>to_xy()</code> 가 하는 일은 <code>cos</code> 과 <code>sin</code> 에 각을 넣는 것뿐이고, <strong>그 둘은 360°마다 같은 값을 돌려준다.</strong> 370° 를 넣든 10° 를 넣든 같은 점이 나오므로 다듬을 이유가 없다.</p>
+        <p><code>angle_of()</code> 가 돌려주는 값은 다르다 — 그것은 <strong>기록 파일의 <code>a[]</code> 에 들어갈 수 있는 값</strong>이고, 기준 형식은 <code>[0, 360)</code> 을 <strong>요구한다</strong>(l-04 §2-6). 라디안을 거쳐 도로 돌아오면 마지막 점이 <code>360.00000000000006</code> 이 되는데, 그 값이 파일에 들어가면 <strong>l-04 의 로더가 그 줄을 거부한다.</strong></p>
+        <p>정리하면: <strong><code>% 360.0</code> 은 "형식을 지키는 도구"</strong>이고 <strong><code>normalize()</code> 는 "두 각의 차를 재는 도구"</strong> 다. 둘을 섞어 <code>a[]</code> 에 <code>normalize</code> 를 걸면 음수 각도가 생겨 역시 로더가 거부한다(§2-5).</p></div></details>
+
+      <details class="quiz"><summary>5. (일부러 틀리면) 각도 부호를 뒤집은 평면도는 <strong>왜 오류를 내지 않는가</strong>, 그리고 그것을 <strong>벡터가 잡지 못하는 이유</strong>는 무엇인가?</summary>
+        <div class="ans"><p>좌우 반전은 <strong>값을 망가뜨리지 않는다.</strong> 거리도 그대로이고 각도도 여전히 <code>[0, 360)</code> 안에 있으며 점의 개수도 같다 — 그래서 로더도 통과하고, 그림도 <strong>닫힌 윤곽을 가진 멀쩡한 방</strong>으로 나온다. 벽도 코너도 있다. 다만 <strong>거울일 뿐</strong>이다.</p>
+        <p>벡터가 못 잡는 이유는 <strong>뒤집힌 것이 <code>to_xy()</code> 가 아니라 입력이기 때문</strong>이다. 벡터는 "입력 <code>a[]</code> 가 규약을 지킨다"를 <strong>전제하고</strong> 산술을 채점한다. 그 전제가 내 기기에서 참인지는 <strong>문서로 알 수 없고</strong>(§2-3) <strong>방에 놓인 물건</strong>만 안다 — 그래서 §3-2 가 따로 있다. 이것이 이 가이드의 되풀이되는 구조다: <strong>순수 로직은 벡터가, 규약은 실물이 채점한다.</strong></p>
+        <p>실전에서의 값: 이 현상은 SLAM 이 수렴하지 않는 흔한 원인이고(<code>INVENTORY.md</code> §3 장착 정보의 <em>"뒤집어 장착? — yes면 스캔이 좌우 반전됨"</em>), <strong>한 번 만들어 본 사람만 알아본다.</strong></p></div></details>
+
+      <details class="quiz"><summary>6. 같은 점 하나를 두고 이 가이드는 <code>x = r cos θ</code>, 1세대 스크립트는 <code>x = r sin θ</code> 를 썼다. <strong>어느 쪽이 틀렸나?</strong></summary>
+        <div class="ans"><p><strong>어느 쪽도 틀리지 않았다.</strong> 두 줄은 "x 와 y 를 몸체의 어느 쪽으로 부르기로 했는가"라는 <strong>합의</strong>의 결과이고, 합의는 참·거짓이 아니다. 1세대 파일은 주석에 자기 합의를 적어 두었다 — <em>"0°=정면, 시계방향 → x=우, y=전방"</em>(<code>~/ros2/docs/lidar/lidar_map.py:42-44</code>). 그 안에서는 일관되고, 그림도 제대로 나온다.</p>
+        <p>문제가 되는 것은 <strong>섞을 때</strong>다. 한 곳은 x 를 앞이라 부르고 다른 곳은 y 를 앞이라 부르면 <strong>방이 90° 돌아간다</strong> — 그리고 오류는 나지 않는다. 그래서 ROS 는 REP-103 을 <strong>문서로</strong> 못박았고(05 §2-2), 이 가이드는 같은 합의를 <code>geom.py</code> 머리의 CONTRACT 주석에 글자로 박아 두었다. <strong>l-09 · l-10 · l-11 · l-12 가 읽는 것은 그 여섯 줄이 전부다.</strong></p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>번호순 다음은</strong> → <a href="l-09-occupancy.html">l-09</a> — 점이 <strong>없는</strong> 곳은 무엇인가. §3-1-4 에서 본 "책 뒤의 끊긴 벽"이 그 쪽의 첫 질문이고, 이 쪽의 <code>to_xy()</code> 가 그대로 입력이 된다.</li>
+          <li><strong>이 쪽 뒤로 갈림길이 생긴다</strong> — l-09(격자) · <a href="l-10-clusters.html">l-10</a>(덩어리) · <a href="l-13-motion.html">l-13</a>(두 장의 차) 셋이 전부 이 쪽의 계약만 읽는다. <strong>번호 순서가 권하는 순서일 뿐</strong>이고, 여러 바퀴가 든 기록이 있으면 l-13 으로 먼저 가도 막히는 것이 없다(l-00 §1-1 의 그림).</li>
+          <li><strong>라이다가 아직 손에 없어도</strong> → 이 쪽부터 다섯 쪽은 <strong>기록 파일 한 장으로 돈다</strong>(결정 L3 — ROS 를 <code>import</code> 하지 않는 순수 파이썬이라 Mac 에서도 돈다). 파일을 얻는 세 갈래는 <a href="l-00-map.html#s1-3">l-00 §1-3</a> 에 있다.</li>
+          <li><strong>컨테이너 줄기가 궁금하면</strong> → <a href="l-06-three-sources.html">l-06</a> · <a href="l-07-cross-verify.html">l-07</a> 이 열려 있다. 그 둘만 07 과 컨테이너를 선행으로 요구하고, <strong>이 쪽과는 서로 기다리지 않는다.</strong></li>
+          <li><strong>이 쪽을 못 닫았어도</strong> — ① <code>PASS geom 28 cases</code> 와 평면도 한 장이 나왔으면 <strong>§3-2 의 방향 판정이 열린 채로도 l-09 로 갈 수 있다.</strong> 격자·덩어리·선분은 <strong>좌우가 뒤집혀도 똑같이 도는 알고리즘</strong>이기 때문이다 — 다만 <strong>"왼쪽으로 돌아라" 같은 판단이 나오는 순간</strong>(l-12 의 통로, 10 의 주행) 전부 반대가 되므로 <strong>그 전에 반드시 닫는다.</strong> 열어 둔 것을 노트에 적어 둔다.
+            ② 반대로 <strong>자기시험이 통과하지 못했으면 여기서 멈춘다</strong> — 틀린 <code>to_xy()</code> 위에 네 쪽이 서면, 거기서 나는 이상한 결과의 원인을 전부 센서에서 찾게 된다. ③ 빌려 온 기록뿐이라 §3-2 가 아예 불가능하면 <strong>그 사실을 적고 넘어간다</strong> — 내 라이다가 오는 날 이 쪽의 §3-2 만 다시 온다.</li>
+          <li><strong>이 쪽에서 잰 값은 적었는가</strong> — 각이 커지는 방향과 0°의 자리 두 줄은 <code>hardware/INVENTORY.md</code> §3 "센서 자체 검증"의 칸에(칸의 소유는 <strong>07 §3-9-1</strong>), 나머지(한 칸 크기·칸 수·줄자 대조·합격선·무반사 비율·§3-3 의 두 회차)는 <strong>내 노트</strong>에. ⚠ <strong>이 쪽이 새로 만드는 INVENTORY 칸은 없다.</strong></li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

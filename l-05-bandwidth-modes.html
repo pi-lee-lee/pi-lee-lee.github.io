@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L5 · 왜 내 점은 이것뿐인가 — 라이다 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="l-05">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">L5 · 왜 내 점은 이것뿐인가</p>
+      <h1>왜 내 점은 이것뿐인가 — 대역폭이 형식을 정한다</h1>
+      <p class="lead"><a href="l-04-one-turn.html">l-04</a> 에서 회전당 점 수를 세었다. 그 숫자는 데이터시트가 말하는 샘플 주파수보다 한참 작다.
+      이 쪽은 <strong>프로토콜 바이트를 하나도 더 배우지 않고</strong> 그 차이를 산수로 도출하고, 그다음 기기에게 직접 묻는다 — 붙는 도구는 <code>conf.py</code>, 쓰는 명령은 <a href="l-02-device-id.html">l-02</a> 에서 이미 조립해 본 <code>GET_LIDAR_CONF</code> 하나뿐이다.
+      여기서 받아 적은 모드 목록과 최대 거리는 <a href="l-06-three-sources.html">l-06</a> · <a href="l-07-cross-verify.html">l-07</a> 이 드라이버가 신고하는 값과 맞대어 볼 때 정답지 쪽에 놓인다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>내 기기가 스스로 신고한 <strong>스캔 모드 목록</strong>이 표로 적혀 있다 — 모드 번호 · 이름 · us/샘플 · 최대 거리 · 응답 종류, 그리고 몇 번이 typical 인가.
+        그 옆에 내가 <strong>식과 함께 계산한</strong> 회선 예산 표가 있고, 마지막 줄에 한 문장이 적혀 있다: <em>"지금 내 도구가 쓰는 것은 모드 <code>____</code> 이고, 내 점/초의 상한을 정하는 것은 <code>____</code> 다."</em></p>
+        <p><strong>이 쪽에 필요한 것</strong> — 라이다, Pi, l-02 까지 끝낸 도구(<code>link.py</code> · <code>cmd.py</code>), l-04 에서 잰 점/초.
+        <strong>없으면</strong> — <strong>실습 A 는 계산뿐이라 기기 없이 끝까지 닫힌다</strong>(종이와 계산기면 된다). 기기가 있어야 하는 것은 실습 B(조회)와 실습 C(판정)이고, l-04 의 실측이 없으면 실습 C 의 판정 줄만 비워 둔다.
+        Pi 도 라이다도 없는 날이면 <a href="l-00-map.html">l-00</a> 의 표에서 지금 갈 수 있는 쪽을 고른다 — 이 쪽은 <strong>기록 파일로 대신할 수 없다</strong>(기록 파일에는 기기가 신고하는 값이 들어 있지 않다).</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag pi">Pi 호스트</span> <span class="tag py">Python</span></div>
+        <div><span class="k">선행</span><a href="l-02-device-id.html">l-02</a> (기기에게 묻는다) — 실제로 쓰는 것: <code>send()</code> · <code>descriptor()</code> · <code>drain()</code> · <code>stop()</code> / <a href="l-04-one-turn.html">l-04</a> (한 바퀴와 기록 파일) — 실측 점/초 · 회전당 점 수 · 회전수</div>
+        <div><span class="k">채우는 INVENTORY 칸</span>없음. 이 쪽의 값은 내 노트에 적는다 (새 행 제안 둘은 조율자 승인 뒤에 옮겨 적는다)</div>
+        <div><span class="k">이 쪽이 요구하는 수학</span>나눗셈과 단위 환산, 그리고 <strong>고정소수점 q8 환산</strong>(정수 ÷ 256) — 식은 §2-1 과 §2-4 가 준다. <a href="l-03-one-point.html">l-03</a> 의 q6 · q2 와 같은 종류다</div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
+      </div>
+
+      <h2 id="overview">1. 개요 — 정원이 정해져 있으면, 남는 선택은 포장뿐이다</h2>
+      <p><a href="l-03-one-point.html">l-03</a> 은 점 하나를 5바이트로 읽었고, <a href="l-04-one-turn.html">l-04</a> 는 그 점을 한 바퀴씩 세었다. 그 수를 데이터시트 옆에 놓으면 처음으로 <strong>맞지 않는 자리</strong>가 나온다 — 사양은 초당 8000 샘플 이상을 말하는데 내 화면에 흐르는 점은 그보다 훨씬 적다.</p>
+      <p>이 쪽의 답은 센서가 아니라 <strong>선</strong>에 있다. 회선이 초당 나를 수 있는 바이트는 이미 정해져 있고(<a href="l-01-link.html#s2-2">l-01 §2-2</a> 가 11 520 B/s 를 셌다), 점 하나를 몇 바이트로 싸느냐가 정해지면 초당 점 수의 천장도 같이 정해진다. <strong>그래서 이 센서에는 스캔 모드가 여럿이다</strong> — 모드란 "같은 회전을 어떤 포장으로 내보낼 것인가"의 다른 이름이다.</p>
+
+      <pre class="diagram"><code>   센서가 재는 속도                선이 나르는 속도              내 도구가 본 것
+   ≥8000 샘플/s (사양 §2-2) ──▶   11 520 B/s (l-01 §2-2)  ──▶   ____ 점/s (l-04)
+                                        │
+                                        │  여기서 정해지는 것은 속도가 아니라 형식이다
+                                        ▼
+                          점 하나를 몇 바이트로 싸는가
+                            legacy  5      B/점  ──▶  상한  2 304 점/s
+                            캡슐    2.625  B/점  ──▶  상한  4 388 점/s
+                            울트라  1.375  B/점  ──▶  상한  8 378 점/s</code></pre>
+
+      <p>이 쪽은 세 걸음으로 간다. <strong>산수</strong>로 천장을 먼저 계산하고(§3-1), <strong>기기에게 물어</strong> 내 개체가 실제로 무엇을 지원하는지 받아 적고(§3-2), 그 둘을 l-04 의 실측과 견주어 <strong>내 도구가 지금 어디에 서 있는지</strong>를 한 줄로 판정한다(§3-3).</p>
+      <p>새 용어 셋을 여기서 한 줄씩 정해 둔다. <strong>스캔 모드</strong> = 기기가 번호로 가진 측정·전송 설정 한 벌(이름 · 샘플 주기 · 최대 거리 · 응답 종류가 한 묶음이다). <strong>typical 모드</strong> = 아무것도 지정하지 않았을 때 기기가 고르는 번호 — 카탈로그의 값이 아니라 <strong>이 개체가 신고하는 번호</strong>다. <strong>응답 종류(<code>ans_type</code>)</strong> = 그 모드로 스캔을 시작했을 때 돌아오는 기술자의 종류 바이트, 곧 <strong>어떤 포장으로 오는가</strong>다.</p>
+      <div class="callout warn"><span class="ct">안전 — 이 쪽에서도 머리는 돈다 (L1 · L2)</span>
+        <ul>
+          <li><strong>레이저는 눈에 보이지 않는다.</strong> Class I · 785 nm(775~795)는 적외선이라 켜졌는지 눈으로 알 수 없다 — 데이터시트 Figure 2-3 "RPLIDAR A1 Optical Specification"(rev.2.2 · v3.0 둘 다 9쪽 — <code>Laser</code> 행의 Min/Typical/Max 가 775 / 785 / 795 nm 이고 비고가 <em>"Infrared Light"</em> 다)과 Class I 표기(둘 다 5쪽). <strong>스캔 창을 렌즈 높이에서 정면으로 들여다보지 않는다.</strong> Class I 은 정상 사용에서 안전으로 분류된 등급이지만, <strong>보이지 않으면 조심하는 습관 자체가 생기지 않는다</strong> — 그래서 규칙을 글로 둔다.</li>
+          <li><strong>도는 머리에 손·머리카락·천·케이블을 가까이 두지 않는다.</strong> 이 쪽은 조회할 때마다 <code>stop()</code> 으로 레이저를 세우지만 <strong>모터는 그대로 돈다</strong>(<a href="l-02-device-id.html">l-02</a> §2-3). 센서를 들거나 옮길 일이 생기면 <code>dtr=True</code> 로 모터를 세운 뒤에 든다.</li>
+        </ul>
+      </div>
+
+      <h2 id="why">2. 원리 — 왜 한 센서에 모드가 여럿이고, 왜 내 도구는 그중 하나만 쓰는가</h2>
+
+      <h3 id="s2-1">2-1. 회선의 정원을 <strong>점 하나의 예산</strong>으로 바꾼다</h3>
+      <p>회선이 초당 나를 수 있는 바이트는 이 쪽에서 다시 세지 않는다 — <a href="l-01-link.html#s2-2">l-01 §2-2</a> 가 <code>115200 ÷ 10 = 11 520 B/s</code> 를 이미 도출했다(8N1 은 한 바이트에 시작·정지 비트가 붙어 10비트가 된다. 보드레이트와 8N1 의 출처는 Figure 2-5 "RPLIDAR External Interface Signal Definition", rev.2.2 · v3.0 둘 다 10쪽).</p>
+      <p>여기서 할 일은 그 한 숫자를 <strong>나눗셈 한 번</strong>으로 다른 단위로 옮기는 것이다. 데이터시트 3쪽(두 판 모두)이 이렇게 적는다 — <em>"RPLIDAR A1's scanning frequency reached 5.5 hz when sampling 1450 points each round."</em> 회전 5.5 Hz(주기 약 182 ms)에 한 바퀴 1450 점이면 초당 샘플은 <code>1450 × 5.5 = 7 975</code> 다. 그 샘플 하나에 회선이 내줄 수 있는 평균 바이트는:</p>
+      <pre><code class="lang-text">11 520 B/s  ÷  7 975 샘플/s  =  약 1.44 B/샘플</code></pre>
+      <p>이 1.44 라는 숫자가 이 쪽의 출발점이다. 같은 데이터시트 6쪽(두 판 모두)의 Figure 1-4 "The RPLIDAR A1 Sample Point Data Information" 은 샘플 하나가 나르는 것을 넷으로 적는다 — <strong>Distance</strong>(mm) · <strong>Heading</strong>(degree) · <strong>Quality</strong>(level) · <strong>Start Flag</strong>(Boolean).
+      <a href="l-03-one-point.html">l-03</a> 에서 손으로 푼 5바이트가 바로 그 넷을 압축 없이 담은 꼴이다(품질 6비트 + 플래그 2비트 = 1 B, 각도 15비트 + 검사비트 = 2 B, 거리 = 2 B). <strong>1.44 B 안에 5 B 를 넣을 수는 없다.</strong></p>
+      <p>그래서 같은 쪽의 마지막 문장이 이렇게 이어진다 — <em>"When using 4k and above sampling frequency, the transmission data structure is different. For more information please contact SLAMTEC."</em>
+      ⚠ <strong>이 문장은 두 판에서 끊기는 자리가 다르다</strong>: rev.2.2 는 6쪽 끝에서 시작해 7쪽 첫 줄에서 끝나고, v3.0 은 6쪽 안에서 끝난다. 쪽 번호를 인용할 때 판을 같이 적어야 하는 이유가 이런 자리다.</p>
+      <div class="callout why"><span class="ct">여기서 도출된 것</span>
+        <p><strong>"전송 구조가 다르다"는 것은 성능 자랑이 아니라 산수의 결론이다.</strong> 선의 정원이 고정돼 있고 사양의 샘플 수가 그 정원을 넘으면, 남은 선택은 <strong>점 하나를 더 작게 싸는 것</strong>뿐이다. 모드가 여럿인 이유가 여기 있다.</p>
+      </div>
+
+      <h3 id="s2-2">2-2. 같은 데이터시트가 두 숫자를 말한다 — 어느 쪽도 지우지 않는다</h3>
+      <p>3쪽(두 판 모두)은 "1450 점/바퀴"라고 적었다. 그런데 8쪽 Figure 2-1 "RPLIDAR A1 Performance"(rev.2.2 · v3.0 둘 다 8쪽)의 Scan Rate 행 비고는 이렇게 적는다 — <em>"Typical value is measured when RPLIDAR A1 takes 360 samples per scan."</em> 같은 문서 안에서 한 바퀴의 점 수가 <strong>1450 과 360</strong> 으로 갈린다.</p>
+      <p>계산해 보면 둘 다 자기 자리가 있다. 아래 네 행은 <strong>두 판이 글자까지 같다</strong>(갈리는 것은 Distance Range 한 줄뿐이고, 그것은 <a href="l-01-link.html#s3-1-1">l-01 §3-1-1</a> 이 소유한다).</p>
+      <div class="tbl"><table>
+        <thead><tr><th>Figure 2-1 의 행</th><th>값 (두 판 동일)</th><th>5.5 Hz 와 맞춰 보면</th></tr></thead>
+        <tbody>
+          <tr><td>Sample Frequency</td><td>typical <strong>≥8000</strong> Hz · max 8010</td><td>3쪽(두 판 모두)의 1450 점/바퀴 × 5.5 = <strong>7 975</strong> — 이 행과 붙는다</td></tr>
+          <tr><td>Sample Duration</td><td>typical <strong>0.125</strong> ms</td><td><code>1 ÷ 0.000125 = 8 000</code> — 위 행과 같은 말이다</td></tr>
+          <tr><td>Scan Rate</td><td>min 1 · typical <strong>5.5</strong> · max 10 Hz<br>비고: <em>360 samples per scan</em></td><td>360 × 5.5 = <strong>1 980</strong> — 위의 약 1/4 이다</td></tr>
+          <tr><td>Angular Resolution</td><td>typical <strong>≤1</strong>° · 비고 <em>5.5Hz scan rate</em></td><td>360 ÷ 360 = <strong>1.000</strong>°/점 ↔ 360 ÷ 1450 = <strong>0.248</strong>°/점. <strong>≤1° 라는 말과 붙는 것은 360 쪽</strong>이다</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>가설 하나가 보인다</strong>: 두 숫자는 서로 다른 <strong>모드</strong>를 가리키는 것 아닌가. 1450 쪽은 빽빽한 모드의 값이고, 360 쪽은 legacy 로 내보낼 때의 값이 아닌가.
+      ⚠ <strong>이 가이드는 그것을 확인하지 못했다.</strong> 데이터시트는 모드라는 낱말을 한 번도 쓰지 않고, 프로토콜 장도 싣지 않았다.</p>
+      <p>대신 <strong>그 가설을 내 기기에서 닫는 시험</strong>이 있다. 실습 B 에서 모드 0 의 us/샘플을 조회해 <code>1 000 000 ÷ us</code> 를 계산하고, 그 값이 <strong>1 980 쪽</strong>에 앉는지 <strong>7 975 쪽</strong>에 앉는지 자기 표에서 본다. 어느 쪽이 나오든 그것이 관찰이고, <strong>둘 다 아닌 값이 나와도 그대로 적는다</strong> — 판정은 카탈로그가 아니라 내 개체가 한다.</p>
+
+      <h3 id="s2-3">2-3. 포장이 셋이다 — 바이트 수는 구조체에 적혀 있다</h3>
+      <p>"전송 구조가 다르다"가 구체적으로 무엇인지는 데이터시트가 답하지 않는다(<strong>두 판 모두 6쪽에서 시작하는</strong> 그 문장이 <em>"contact SLAMTEC"</em> 으로 닫는다 — 끝나는 자리가 판마다 다른 것은 §2-1 이 적었다). 답은 제조사 SDK 의 <strong>구조체 정의</strong>에 있고, 구조체는 <code>packed</code> 라서 <strong>크기를 그대로 더하면 된다</strong>.
+      아래 줄 번호는 집필자가 <code>raw.githubusercontent.com</code> 에서 <strong>2026-09-23 에 직접 받아</strong> 확인한 <code>master</code> 기준이다(<code>master</code> 는 움직인다 — 줄이 다르면 파일에서 이름으로 찾는다).</p>
+      <div class="tbl"><table>
+        <thead><tr><th>포장</th><th>한 덩어리의 크기</th><th>덩어리가 나르는 점</th><th>B/점</th><th>출처 · 등급</th></tr></thead>
+        <tbody>
+          <tr><td>legacy (<code>SCAN</code>)</td><td><strong>5 B</strong> = 1 + 2 + 2</td><td>1 점</td><td><strong>5</strong></td><td><code>sl_lidar_cmd.h:189-194</code> — <strong>SDK 소스 확정</strong>. <a href="l-03-one-point.html">l-03</a> 이 손으로 푼 그 5바이트다</td></tr>
+          <tr><td>캡슐 (<code>ans_type 0x82</code>)</td><td><strong>84 B</strong> = 1+1+2 + 5 × 16</td><td><strong>32 점</strong> (cabin 하나에 거리 둘)</td><td><strong>2.625</strong></td><td>크기 <code>sl_lidar_cmd.h:200-205,215-221</code> · 점 수 <code>handler_capsules.cpp:221,256</code>(<code>pos * 2 + cpos</code>) — <strong>SDK 소스 확정</strong></td></tr>
+          <tr><td>울트라 캡슐 (<code>ans_type 0x84</code>)</td><td><strong>132 B</strong> = 1+1+2 + 4 × 32</td><td><strong>96 점</strong> (cabin 하나에 거리 셋)</td><td><strong>1.375</strong></td><td>크기 <code>sl_lidar_cmd.h:257-262,264-270</code> · 점 수 <code>handler_capsules.cpp:475,570</code>(<code>pos * 3 + cpos</code>) — <strong>SDK 소스 확정</strong></td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">⚠ <strong>응답 종류 <code>0x84</code> 와 명령 <code>0x84</code> 는 값이 겹칠 뿐 서로 다른 것이다.</strong> 앞의 것은 "이 포장으로 보낸다"는 기술자의 종류 바이트(<code>sl_lidar_cmd.h:149</code>)이고, 뒤의 것은 이 쪽이 보낼 <code>GET_LIDAR_CONF</code> 명령이다(<code>:70</code>). 층이 다르다 — <a href="l-02-device-id.html">l-02</a> §2-2 가 기술자의 자리를, §2-1 이 명령의 자리를 보였다.</p>
+      <p>세 숫자를 회선 정원으로 나누면 <strong>모드별 천장</strong>이 나온다. 이것이 실습 A 에서 채울 표의 마지막 열이고, 그 계산은 나눗셈 한 번이다.</p>
+      <div class="callout note"><span class="ct">약점 — 이 쪽이 하지 않는 것을 먼저 밝힌다</span>
+        <p>이 쪽은 <strong>캡슐을 푸는 파서를 만들지 않는다.</strong> 위 표의 <code>0x82</code> · <code>0x84</code> 포장은 이웃한 점의 각도를 <strong>차이로</strong> 싣고 앞뒤 캡슐을 겹쳐 복원하는 방식이라, 그것을 제대로 다루려면 이 가이드가 통째로 한 쪽 더 필요하다. 프로토콜의 1차 문서가 없는 상태에서 그 쪽을 세우면 <strong>학습자가 확인할 수단 없이 따라 치는 절</strong>이 된다.</p>
+        <p>그래서 "내 도구가 센서의 몇 분의 일을 쓰는가"라는 질문은 여기서 <strong>계산으로만</strong> 닫히고, 그 위의 빠른 포장은 <strong>드라이버에게 맡긴다</strong>(<a href="l-06-three-sources.html">l-06</a> 이 같은 케이블에서 드라이버를 띄운다). <strong>이것이 이 이야기의 절정을 반쪽으로 만든다는 것을 숨기지 않는다</strong> — 내 손으로 뒤집는 대신 남이 이미 해 둔 것을 쓰고, 그 결과가 맞는지는 <a href="l-07-cross-verify.html">l-07</a> 에서 <strong>내 도구가 채점한다</strong>.</p>
+      </div>
+
+      <h3 id="s2-4">2-4. 기기에게 묻는 한 명령, 층이 셋이다 — 그리고 그 값은 <strong>실수가 아니다</strong></h3>
+      <p>모드 목록은 카탈로그가 아니라 <strong>장치가 신고한다</strong>. 묻는 수단은 명령 하나뿐이고, 그 명령은 l-02 에서 이미 조립해 봤다 — <a href="l-02-device-id.html#s3-1-1">l-02 §3-1-1</a> 의 값 표에 <code>GET_LIDAR_CONF</code> 의 바이트와 conf_type 여섯이 <code>파일:줄</code> 과 함께 실려 있다. <strong>여기서 다시 옮겨 적지 않는다.</strong> 이 절이 더하는 것은 <strong>그 한 명령이 실제로는 세 층으로 되어 있다</strong>는 것이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>층</th><th>무엇이 정해지는가</th><th>어디에 적히는가</th><th>출처 · 등급</th></tr></thead>
+        <tbody>
+          <tr><td>① 명령</td><td>"설정을 묻겠다" — <code>0x84</code>. 페이로드가 붙으므로 <strong>긴 꼴</strong>이고 끝에 XOR 체크섬이 붙는다</td><td>프레임의 둘째 바이트</td><td><code>sl_lidar_cmd.h:70</code> · 긴 꼴의 규칙은 l-02 §2-1 — <strong>SDK 소스 확정</strong></td></tr>
+          <tr><td>② conf_type</td><td><strong>무엇을</strong> 묻는가 — 개수 · us/샘플 · 최대 거리 · 응답 종류 · typical · 이름</td><td>페이로드의 첫 4바이트(u32 리틀엔디안)</td><td><code>sl_lidar_cmd.h:303-309</code> — <strong>SDK 소스 확정</strong></td></tr>
+          <tr><td>③ 모드 번호</td><td><strong>몇 번</strong> 모드를 묻는가. ⚠ <strong>항목마다 붙기도 하고 안 붙기도 한다</strong></td><td>conf_type 뒤에 u16 으로 더 붙인다</td><td>붙이는 자리 <code>sl_lidar_driver.cpp:1311,1331,1350,1369</code>(<code>&amp;scanModeID, sizeof(_u16)</code>) · 안 붙이는 자리 <code>:568,1203</code>(<code>nullptr, 0</code>) — <strong>SDK 소스 확정</strong></td></tr>
+        </tbody>
+      </table></div>
+      <p>돌아오는 대답에도 층이 있다. 기술자의 종류는 <code>0x20</code> 이고(<code>sl_lidar_cmd.h:158</code>), 본문의 <strong>첫 4바이트는 내가 물어본 conf_type 을 그대로 되돌려 준다</strong>(<code>sl_lidar_cmd.h:321-325</code> — 구조체가 <code>u32 type</code> 다음에 <code>payload[]</code> 다). SDK 자신이 그 메아리를 <strong>검사에 쓴다</strong>: 되돌아온 type 이 물어본 type 과 다르면 그대로 실패로 처리한다(<code>sl_lidar_driver.cpp:1289-1291</code>).</p>
+      <div class="callout why"><span class="ct">자기검증 — 이 메아리가 학습자에게 주는 것</span>
+        <p>프로토콜의 1차 문서가 없으니 "내가 이 명령을 옳게 만들었는가"를 문서로는 닫을 수 없다. 대신 <strong>기기가 답해 준다</strong> — 기술자가 <code>A5 5A</code> 로 시작하고(l-02 §2-2), 종류가 <code>0x20</code> 이고, 본문 첫 4바이트가 <strong>내가 보낸 conf_type 과 같으면</strong> 세 층이 모두 맞았다는 증거다. 한 바이트라도 틀리면 기기는 <strong>아무 말도 하지 않는다</strong>. 등급은 여기서도 같다 — <strong>SDK 소스 확정 · 내 기기 펌웨어는 자기검증으로</strong>.</p>
+      </div>
+      <p>남은 것이 <strong>메아리 뒤의 값을 어떻게 읽는가</strong>인데, 여기에 이 쪽에서 가장 조용한 함정이 있다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>conf_type</th><th>값의 꼴</th><th>단위로 만드는 식</th><th>출처 (<code>sl_lidar_driver.cpp</code>)</th></tr></thead>
+        <tbody>
+          <tr><td><code>0x70</code> 개수</td><td>u16</td><td>그대로</td><td><code>:1210-1211</code></td></tr>
+          <tr><td><code>0x7C</code> typical</td><td>u16</td><td>그대로 (모드 번호)</td><td><code>:573-574</code></td></tr>
+          <tr><td><code>0x71</code> us/샘플</td><td><strong>u32 · q8</strong></td><td><code>값 ÷ 256</code> → µs (<strong>소수 유지</strong>)</td><td><code>:1321</code> — <code>(float)(*result / 256.0)</code></td></tr>
+          <tr><td><code>0x74</code> 최대 거리</td><td><strong>u32 · q8</strong></td><td><code>값 &gt;&gt; 8</code> → m (<strong>SDK 는 소수를 버린다</strong>)</td><td><code>:1341</code> — <code>(float)(*result &gt;&gt; 8)</code></td></tr>
+          <tr><td><code>0x75</code> 응답 종류</td><td>u8</td><td>그대로 (<code>0x81</code>·<code>0x82</code>·<code>0x84</code> …)</td><td><code>:1360</code></td></tr>
+          <tr><td><code>0x7F</code> 이름</td><td>바이트열</td><td>널 바이트 앞까지 잘라 문자열로 (<strong>자르는 것은 내가 한다</strong>)</td><td><code>:1374-1377</code> — SDK 는 <strong>응답 크기만큼 그대로 복사</strong>할 뿐 널 절단을 하지 않는다. 페이로드가 널로 끝나는지는 내가 16진으로 보고 정한다</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>q8 은 <a href="l-03-one-point.html">l-03</a> 의 q6 · q2 와 같은 종류다</strong> — 정수 안에 소수 여덟 자리를 숨겨 나르는 고정소수점이고, 나눌 수 <code>256</code> 은 <code>2⁸</code> 이다. <strong>IEEE 실수(float)가 아니다.</strong> 이 자리를 실수로 읽거나 나눗셈을 빼먹으면 <strong>오류가 나지 않고 값만 틀린다.</strong> 최대 거리 12 m 가 실려 올 때의 네 바이트를 세 가지로 읽어 보면 이렇다:</p>
+      <pre><code class="lang-text">기기가 보낸 4바이트                       00 0C 00 00     (12 × 256 = 3072 을 리틀엔디안으로)
+
+  q8 로 읽는다  (3072 ÷ 256)          →    12.0        m   ← 맞는 읽기
+  u32 그대로 읽는다                    →    3072.0      m   ← 터무니없이 크다 (256배)
+  IEEE float32 로 읽는다               →    4.3e-42     m   ← 사실상 0 이다
+
+참고: 정말 IEEE float32 였다면 12.0 의 네 바이트는  00 00 40 41  이었을 것이다.</code></pre>
+      <p class="small">위 세 값은 집필자가 <code>python3</code> 의 <code>struct</code> 로 실제로 계산했다(<code>struct.pack('&lt;I', 12*256)</code> 의 바이트를 <code>&lt;I</code> 와 <code>&lt;f</code> 로 다시 풀었다). <strong>두 잘못이 서로 다른 증상을 낸다는 것이 중요하다</strong> — 하나는 눈에 띄게 크고(즉시 의심하게 된다), 하나는 <strong>0 에 가까워 "이 모드는 최대 거리가 없나 보다"처럼 읽힌다</strong>. 뒤엣것이 더 위험하다.</p>
+      <p>⚠ <strong>SDK 자신이 두 항목을 다르게 다룬다</strong>: <code>0x74</code> 는 <code>&gt;&gt; 8</code> 로 소수를 버리고, <code>0x71</code> 은 <code>÷ 256.0</code> 으로 소수를 남긴다. 정수부는 같으므로 <strong>어느 쪽을 쓸지는 내가 정한다</strong> — 다만 <strong>내 표에 어느 쪽으로 적었는지는 적어 둔다</strong>. <a href="l-07-cross-verify.html">l-07</a> 에서 드라이버가 로그에 찍는 <code>max_distance</code> 와 맞대어 볼 때 소수 한 자리가 달라 보일 수 있다.</p>
+
+      <h3 id="s2-5">2-5. 같은 숫자 1.24 가 세 곳에 있다 — <strong>서로 다른 주장</strong>이다</h3>
+      <p>모드 목록은 모델이 아니라 <strong>펌웨어</strong>에 달렸다. 이 쪽을 준비하며 세 군데서 <code>1.24</code> 를 만났는데, 숫자가 같다고 같은 말은 아니다. <strong>셋을 합치지 말고 나란히 둔다.</strong></p>
+      <div class="tbl"><table>
+        <thead><tr><th>어디</th><th>무엇을 주장하는가</th><th>등급</th></tr></thead>
+        <tbody>
+          <tr><td>데이터시트 <strong>rev.2.2</strong> 4쪽 각주 ①</td><td><em>"R1 and R2 models only support the radar 2k times per second ranging frequency. R3 and R4 models need to update the firmware to 1.24 to support 8k times per second ranging frequency."</em> — <strong>8k 로 재는 능력</strong>의 조건이다</td><td>데이터시트 직접 인용 — <strong>확정</strong></td></tr>
+          <tr><td><code>sl_lidar_cmd.h:70</code> 의 주석</td><td><code>//added in fw 1.24</code> — <strong>이 조회 명령 자체</strong>가 그 펌웨어에서 생겼다는 말이다. 재는 능력과는 다른 이야기다</td><td><strong>SDK 소스 확정</strong></td></tr>
+          <tr><td><code>sl_lidar_driver.cpp:1176-1193</code></td><td>제조사 드라이버가 조회 전에 실제로 가른다 — <code>firmware_version &gt;= ((0x1 &lt;&lt; 8) | 24)</code>. 즉 <strong>구현이 그 경계를 지키고 있다</strong>(신형 모델은 모델 번호로 먼저 통과시킨다)</td><td><strong>SDK 소스 확정</strong></td></tr>
+        </tbody>
+      </table></div>
+      <p>⚠ <strong>v3.0 은 그 각주를 지웠다.</strong> 개정 이력(17~18쪽, 2020-10-15)의 세 번째 항목이 <em>"Delete the description of R2, R3, R4 and other models in P4 label 2"</em> 다. 그래서 v3.0 만 보면 4쪽의 <em>"more than 8000 times per second"</em> 에 <strong>아무 조건도 붙어 있지 않다.</strong>
+      최대 거리에서 일어난 일과 같은 종류다(<a href="l-01-link.html#s3-1-1">l-01 §3-1-1</a>) — <strong>문서에서 조건이 사라진 것이지 기기에서 사라진 것이 아니다.</strong> 저장소 옆에 rev.2.2 를 두는 값이 여기서 나온다.</p>
+      <p>내게 필요한 것은 하나다: <strong>내 펌웨어 번호</strong>. <a href="l-02-device-id.html">l-02</a> 의 <code>GET_INFO</code> 가 이미 읽어 놓았다 — 그 값을 여기 §3-2 의 표 첫 줄에 옮겨 적고, <strong>1.24 보다 낮으면 조회 자체가 대답 없이 끝날 수 있다</strong>는 것을 알고 시작한다. 그것도 관찰이다. 그때는 §3-1 의 산수와 §3-3 의 판정만 닫고 넘어간다.</p>
+
+      <h3 id="s2-6">2-6. 같은 모델에서 실제로 일어난 일 — 6배가 났을 때 무엇을 먼저 의심했는가</h3>
+      <p>같은 모델(A1M8)을 쓴 1세대 기록에 이 쪽과 똑같은 자리가 있다 — <code>~/ros2/docs/camera_lidar/LIDAR_MODES.md</code> §0, <code>NOMINAL(gen1-record, 2026-07-14)</code>. <strong>같은 모델에서 이런 일이 있었다는 뜻이고, 내 개체인지는 아직 확인되지 않았다.</strong></p>
+      <p>이야기는 이렇게 흘렀다. legacy 만 쓰는 도구로 실험을 돌려 <em>"이 센서는 특정 재질을 크게 놓친다"</em> 는 결론을 냈고, 그 결론이 설계 판단까지 밀어 올렸다 — 카메라 융합이 <strong>"없으면 사고 난다"</strong> 로 격상됐다. 그런데 나중에 모드를 바꿔 다시 재자 그 숫자가 크게 내려갔고, <strong>결론이 스스로 하향 정정됐다.</strong> 센서가 달라진 것이 아니라 <strong>도구가 달라진 것</strong>이다.</p>
+      <div class="callout why"><span class="ct">가져오는 것은 값이 아니라 이 한 줄이다</span>
+        <p><strong>데이터시트 스펙과 실측이 몇 배씩 차이 나면, 센서가 아니라 자기 도구를 먼저 의심하라.</strong></p>
+        <p>그 재질 숫자들은 이 쪽에 싣지 않는다 — 1세대의 그 방, 그 거리, 그 조명의 값이고 <strong>내 방에서 다시 재야 뜻이 생긴다</strong>(l-15 가 받는다). 여기서 가져오는 것은 <strong>의심의 순서</strong>뿐이다.</p>
+      </div>
+      <p>그래서 이 쪽 끝의 판정(§3-3)은 "센서가 느리다"로 끝나지 않는다. 내 점/초가 사양보다 작을 때 먼저 볼 자리가 셋이다 — ① <strong>내 포장</strong>의 천장(5 B/점이면 얼마인가) ② <strong>이 모드의 us/샘플</strong>이 정하는 천장 ③ <strong>내 파이썬이 흘리는 양</strong>. ③ 은 이 쪽에서 닫히지 않는다. 두 경로를 나란히 찍어 가르는 것이 <a href="l-07-cross-verify.html">l-07</a> 의 일이고, 이 쪽은 ①②를 숫자로 만들어 거기에 넘긴다.</p>
+
+      <h2 id="lab">3. 실습</h2>
+      <p>세 실습이 순서대로 붙는다. <strong>A 는 기기 없이 계산만으로 끝난다.</strong> B 는 기기에게 묻고, C 는 A · B · <a href="l-04-one-turn.html">l-04</a> 의 실측 셋을 한자리에 놓고 판정한다.</p>
+
+      <h3 id="s3-1">3-1. 실습 A — 천장을 손으로 계산한다 <span class="small">(코드 없음)</span></h3>
+
+      <h4 id="s3-1-1">3-1-1. 확인 — 계산에 넣을 값이 어디서 오는가</h4>
+      <p>표의 값 가운데 <strong>내가 만든 것은 하나도 없다.</strong> 어디서 왔고 내 장치에서 어떻게 다시 볼 수 있는지를 한 행에 같이 둔다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>항목</th><th>값</th><th>출처 · 등급</th><th>내 장치에서 보는 법</th></tr></thead>
+        <tbody>
+          <tr><td>보드레이트</td><td>115200 · 8N1</td><td>Figure 2-5 "RPLIDAR External Interface Signal Definition"(rev.2.2 · v3.0 둘 다 10쪽) — <strong>확정</strong></td><td><code>pi$ stty -F /dev/lidar</code></td></tr>
+          <tr><td>회선 용량</td><td>11 520 B/s</td><td><code>115200 ÷ 10</code> — <strong>산술</strong>(도출은 <a href="l-01-link.html">l-01</a> §2-2)</td><td><code>pi$ python3 scripts/lidar_lab/link.py</code> 가 실제로 센다 (l-01 §3-4)</td></tr>
+          <tr><td>legacy 한 점의 크기</td><td>5 B</td><td><code>sl_lidar_cmd.h:189-194</code> — <strong>SDK 소스 확정</strong></td><td><a href="l-03-one-point.html">l-03</a> 에서 손으로 푼 그 5바이트</td></tr>
+          <tr><td>캡슐 · 울트라의 B/점</td><td>2.625 · 1.375</td><td>§2-3 의 구조체 계산 — <strong>SDK 소스 확정</strong></td><td>내 모드의 응답 종류를 <code>0x75</code> 로 조회(§3-2)하면 어느 포장인지 알 수 있다</td></tr>
+          <tr><td>사양 샘플 주파수</td><td>typical ≥8000 Hz (Sample Duration 0.125 ms)</td><td>Figure 2-1 "RPLIDAR A1 Performance"(두 판 다 8쪽) — <strong>확정</strong></td><td>내 모드의 us/샘플을 <code>0x71</code> 로 조회(§3-2)해 <code>1 000 000 ÷ us</code></td></tr>
+          <tr><td>사양 회전수</td><td>typical 5.5 Hz(주기 약 182 ms) · min 1 · max 10</td><td>같은 Figure 2-1 — <strong>확정</strong></td><td><a href="l-04-one-turn.html">l-04</a> 에서 잰 내 회전수. ⚠ <a href="07-lidar.html">07</a> §3-5 의 드라이버 로그 <code>scan frequency</code> 는 <strong>같은 것을 재는지 미확정</strong>이다 — 그 판정은 <a href="l-07-cross-verify.html">l-07</a> 이 받는다</td></tr>
+          <tr><td>내 실측 점/초</td><td><code>____</code></td><td>l-04 — <strong>확인 과제</strong>(내가 잰다)</td><td>l-04 의 도구가 찍은 회전당 점 수 × 회전수</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-1-2">3-1-2. 빈 표 — 내가 채울 두 표</h4>
+      <p><strong>표 ①: 한 샘플의 예산.</strong> 사양대로 재면 한 점에 몇 바이트가 허락되는가.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>묻는 것</th><th>식</th><th>내 값</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>3쪽(두 판 모두)이 말하는 초당 샘플</td><td><code>1450 점/바퀴 × 5.5 회전/s</code></td><td><code>____</code> 샘플/s</td></tr>
+          <tr><td>2</td><td>샘플 하나의 예산</td><td><code>11 520 ÷ (1번)</code></td><td><code>____</code> B/샘플</td></tr>
+          <tr><td>3</td><td>legacy 로 8000 샘플/s 를 내보내려면</td><td><code>8 000 × 5</code></td><td><code>____</code> B/s</td></tr>
+          <tr><td>4</td><td>그것은 회선의 몇 배인가</td><td><code>(3번) ÷ 11 520</code></td><td><code>____</code> 배</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>표 ②: 포장별 천장.</strong> ⚠ <strong>가운데 열은 지금 채우지 않는다</strong> — us/샘플은 내 기기가 신고하는 값이라 §3-2 를 끝낸 뒤에 돌아와 채운다. <strong>지금 채울 수 있는 것은 회선 열뿐이다.</strong></p>
+      <div class="tbl"><table>
+        <thead><tr><th>포장</th><th>B/점</th><th>ⓐ 회선이 허용하는 점/초<br><code>11 520 ÷ (B/점)</code></th><th>ⓑ 이 모드의 샘플률이 허용하는 점/초<br><code>1 000 000 ÷ (us/샘플)</code></th><th>천장 = min(ⓐ, ⓑ)</th></tr></thead>
+        <tbody>
+          <tr><td>legacy (<code>0x81</code>)</td><td>5</td><td><code>____</code></td><td><code>____</code> (§3-2 뒤)</td><td><code>____</code></td></tr>
+          <tr><td>캡슐 (<code>0x82</code>)</td><td>2.625</td><td><code>____</code></td><td><code>____</code> (§3-2 뒤)</td><td><code>____</code></td></tr>
+          <tr><td>울트라 (<code>0x84</code>)</td><td>1.375</td><td><code>____</code></td><td><code>____</code> (§3-2 뒤)</td><td><code>____</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-1-3">3-1-3. 채우기 — 쓰는 식은 넷뿐이다</h4>
+      <p>이 쪽이 요구하는 수학은 나눗셈과 단위 환산이 전부다. 식을 <strong>값 옆에 같이 적는다</strong> — 나중에 숫자가 이상할 때 어느 식이 틀렸는지 찾는 것이 값보다 빠르다.</p>
+      <ol class="steps">
+        <li><strong>회선 천장</strong> [점/s] <code>= 11 520 ÷ (B/점)</code>. 표 ② 의 ⓐ 열 세 칸.</li>
+        <li><strong>샘플률 천장</strong> [점/s] <code>= 1 000 000 ÷ (us/샘플)</code>. µs 를 s 로 바꾸는 나눗셈이다 — §3-2 뒤에 돌아와 채운다.</li>
+        <li><strong>회선 대비 비율</strong> [%] <code>= (B/점 × 점/초) ÷ 11 520 × 100</code>. 내 실측 점/초를 넣으면 <strong>내 도구가 선을 얼마나 쓰고 있는지</strong>가 나온다.</li>
+        <li><strong>각도 간격</strong> [°/점] <code>= 360 ÷ (점/바퀴)</code>, 그리고 <code>점/바퀴 = 점/초 ÷ 회전수</code>. l-04 가 잰 값으로 확인해 본다 — 두 길로 같은 수가 나와야 한다.</li>
+      </ol>
+      <p><strong>막히는 자리 하나</strong>: 3번의 결과가 100 %를 넘으면 계산이 아니라 <strong>입력이 틀린 것</strong>이다. 선이 나를 수 있는 것보다 많이 받을 수는 없다 — 점/초를 잘못 세었거나(l-04 로 돌아간다), 포장을 잘못 골랐다(legacy 가 아닐 수 있다 — §3-2 에서 <code>0x75</code> 로 확인한다).</p>
+      <p class="small">계산기는 무엇이든 좋다. Pi 가 켜져 있다면 <code>pi$ python3 -c "print(11520/5)"</code> 한 줄이면 된다 — 이 실습은 포트를 열지 않으므로 라이다가 꺼져 있어도 된다.</p>
+
+      <h4 id="s3-1-4">3-1-4. 보고 판정하기</h4>
+      <p>표 둘을 채웠으면 세 물음에 <strong>한 줄씩</strong> 답을 적는다. 답의 근거는 방금 쓴 식이다.</p>
+      <ol class="steps">
+        <li><strong>사양대로 재는 것과 사양대로 보내는 것은 같은 일인가?</strong> 표 ① 의 4번이 1 보다 크면 답은 이미 나와 있다.</li>
+        <li><strong>legacy 로 얻을 수 있는 최선의 각도 간격은 얼마인가?</strong> ⓐ 열의 legacy 값을 내 회전수로 나눠 점/바퀴를 만들고, 식 4번을 쓴다. 그 값이 데이터시트의 <strong>≤1°</strong> 안에 드는가 밖으로 나가는가 — <strong>어느 쪽이든 그대로 적는다.</strong></li>
+        <li><strong>내 실측은 그 천장의 몇 %인가?</strong> l-04 의 점/초를 ⓐ 열의 legacy 값으로 나눈다. <strong>100 % 에 가까우면</strong> 선이 꽉 찬 것이고, <strong>한참 아래면</strong> 선 말고 다른 것이 정하고 있다는 뜻이다. 그 "다른 것"이 무엇인지는 §3-2 와 §3-3 이 받는다.</li>
+      </ol>
+      <p>⚠ <strong>여기서 결론을 내지 않는다.</strong> 이 실습이 만든 것은 판정이 아니라 <strong>비교할 자</strong>다. → 체크 <code>byte-budget-computed</code>.</p>
+
+      <h3 id="s3-2">3-2. 실습 B — 기기에게 모드 목록을 묻는다</h3>
+
+      <h4 id="s3-2-1">3-2-1. 확인 — 묻기 전에 넷을 눈으로 본다</h4>
+      <p><strong>실행 확인:</strong> 미확인 — 집필자는 Pi 에 접속하지 못했고 라이다를 돌려 보지 못했다. 아래는 출력의 <em>모양</em>이고 값 자리는 <code>&lt;n&gt;</code> 이다. <strong>가짜 숫자를 넣지 않았다.</strong></p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><code>pi$ ls -l /dev/lidar</code></td><td><code>lrwxrwxrwx … /dev/lidar -&gt; ttyUSB&lt;n&gt;</code></td><td>udev 규칙이 아직 없다 → <a href="l-01-link.html">l-01</a> §2-3. 임시로 <code>/dev/ttyUSB&lt;n&gt;</code> 를 써도 되지만 <strong>부팅마다 바뀔 수 있다</strong></td></tr>
+          <tr><td>2</td><td><code>pi$ fuser -v /dev/lidar</code></td><td><strong>아무 출력도 없어야 한다</strong></td><td>누가 잡고 있다(드라이버 · 앞 실습의 파이썬). 그 프로세스를 먼저 끝낸다. 포트를 다투면 무슨 일이 나는지는 <a href="l-06-three-sources.html">l-06</a> 이 실습으로 다룬다</td></tr>
+          <tr><td>3</td><td><code>pi$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_cmd.py</code></td><td><code>PASS cmd 17 cases</code></td><td><a href="l-02-device-id.html">l-02</a> 로 돌아간다. <strong>명령 조립이 틀린 채로 이 쪽을 하면 기기가 침묵하고, 그 침묵의 원인을 라이다에서 찾게 된다</strong></td></tr>
+          <tr><td>4</td><td><code>pi$ python3 scripts/lidar_lab/cmd.py /dev/lidar</code></td><td>l-02 의 네 줄 — <code>model</code> · <code>firmware</code> · <code>hardware</code> · <code>serial</code> 이 한 줄씩(<code>firmware &lt;n&gt;.&lt;n&gt;</code> 꼴)</td><td>l-02 §3-1-4. ⚠ <strong>여기서 읽은 firmware 를 적어 둔다</strong> — 1.24 보다 낮으면 이 실습의 조회가 대답 없이 끝날 수 있다(§2-5)</td></tr>
+        </tbody>
+      </table></div>
+      <p>그리고 이 쪽의 네 갈래 대조 표를 <strong>지금 열어 둔다.</strong> 대상은 <strong><code>scan_mode</code></strong> 이고, <strong>갈래 넷이 다 열리지 않는다</strong> — 그것 자체가 이 쪽의 관찰이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>갈래</th><th>어디</th><th>무엇이라 하는가</th><th>내 값</th></tr></thead>
+        <tbody>
+          <tr><td>① 정의</td><td>—</td><td><strong>없다.</strong> <code>scan_mode</code> 는 ROS 메시지의 필드가 아니라 드라이버의 파라미터다(<code>ros2_ws/src/rpi5_bringup/config/robot_params.yaml</code>). <code>LaserScan</code> 의 정의는 이 낱말을 모른다</td><td>—</td></tr>
+          <tr><td>② 사양</td><td>데이터시트 두 판</td><td><strong>답하지 않는다.</strong> 스캔 모드라는 개념이 없다 — "mode" 라는 글자가 나오는 자리는 시리얼의 <code>Working mode 8N1</code>(Figure 2-5 — <strong>두 판 모두 10쪽</strong>)과 전원 절의 <em>recommended power mode</em>(<strong>두 판 모두 11쪽</strong>)뿐이고 둘 다 스캔과 무관하다. 스캔에 대해서는 <strong>두 판 모두 6쪽에서 시작하는</strong> 문장이 <em>"4k and above … structure is different"</em> 까지만 말하고 <em>contact SLAMTEC</em> 으로 닫는다(끝나는 자리는 §2-1)</td><td>—</td></tr>
+          <tr><td>③ 구현</td><td><code>sl_lidar_cmd.h:303-309</code> 의 <code>0x7F</code> 이름 · <code>0x7C</code> typical</td><td>이름도 기본값도 <strong>문서가 아니라 기기가 신고하는 것</strong>이라고 말한다. 즉 구현은 "목록이 개체마다 다를 수 있다"를 전제한다</td><td>—</td></tr>
+          <tr><td>④ 실물</td><td>내 기기가 신고한 목록 (§3-2-4)</td><td>—</td><td><code>____</code></td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">넷이 다르면 <strong>④가 내 기기의 사실</strong>이고 나머지는 "무엇을 가정했는가"를 말해 준다. ⚠ <strong>어느 문서가 틀렸다고 쓰지 않는다</strong> — 조건이 무엇이었는지를 적는다. 드라이버가 같은 낱말을 어떻게 쓰는지는 <a href="l-07-cross-verify.html">l-07</a> 이 <code>ros2 param</code> 으로 받는다.</p>
+
+      <h4 id="s3-2-2">3-2-2. 골격 — <code>conf.py</code></h4>
+      <p>이 쪽이 도구에 더하는 파일은 하나다. <strong>앞의 두 쪽에서 만든 것을 그대로 쓴다</strong> — 포트 열기는 <code>link.py</code>, 명령 조립과 기술자 읽기는 <code>cmd.py</code> 다. 프로토콜 상수도 <strong>다시 쓰지 않고 <code>cmd.py</code> 에서 가져온다</strong>(<a href="l-02-device-id.html#s3-1-2">l-02 §3-1-2</a> 가 그 여섯 개를 이미 선언해 두었다).</p>
+      <p>⚠ <strong>실행 꼴은 하나다</strong> — 저장소 뿌리에서 <code>pi$ python3 scripts/lidar_lab/conf.py</code>. <code>python3 -m lidar_lab.conf</code> 로 부르면 <code>sys.path[0]</code> 이 뿌리가 되어 형제 <code>cmd.py</code> 대신 <strong>표준 라이브러리의 <code>cmd</code></strong> 가 잡히고, <strong>오류 없이 빈 모듈이 온다</strong>(l-01 이 이 규칙을 적었다).</p>
+      <p>먼저 머리와 왕복 한 번이다. 주석이 단위 · 불변식 · 호출 문맥을 말한다.</p>
+      <pre><code class="lang-python">
+# scripts/lidar_lab/conf.py -- ask the device which scan modes it has (l-05).
+# Not pure: every call needs a live Serial. Run from the repo root:
+#   pi$ python3 scripts/lidar_lab/conf.py /dev/lidar
+#
+# Protocol source: Slamtec rplidar_sdk, master branch (fetched 2026-09-23)
+#   sl_lidar_cmd.h:70         GET_LIDAR_CONF = 0x84            (added in fw 1.24)
+#   sl_lidar_cmd.h:303-309    the six conf types
+#   sl_lidar_cmd.h:158        ANS_TYPE_GET_LIDAR_CONF = 0x20   (descriptor's type byte)
+#   sl_lidar_cmd.h:321-325    reply = u32 echo of the type, then the payload
+#   sl_lidar_driver.cpp:1321  us_per_sample = u32 / 256.0      (q8, microseconds)
+#   sl_lidar_driver.cpp:1341  max_distance  = u32 &gt;&gt; 8         (q8, metres)
+
+import struct
+import sys
+from collections import namedtuple
+
+from cmd import (CMD_GET_LIDAR_CONF, CONF_SCAN_MODE_ANS_TYPE, CONF_SCAN_MODE_COUNT,
+                 CONF_SCAN_MODE_MAX_DISTANCE, CONF_SCAN_MODE_NAME,
+                 CONF_SCAN_MODE_TYPICAL, CONF_SCAN_MODE_US_PER_SAMPLE,
+                 descriptor, drain, send, stop)
+from link import open_port
+
+ANS_TYPE_GET_LIDAR_CONF = 0x20
+
+# One row of the device's own mode table. The units are fixed here because l-07
+# lays this table beside the driver's start-up log.
+#   id             int, the number this device uses for the mode (0 .. count-1)
+#   name           str, from conf 0x7F. Cut at the first NUL byte if the payload
+#                  has one -- you check that in hex; the SDK only copies (2-4).
+#   us_per_sample  float, microseconds. Raw field is u32 q8 -&gt; divide by 256.
+#                  NOT an IEEE float, NOT an integer -- see 2-4.
+#   max_distance   float, metres. Raw field is u32 q8 -&gt; your choice: &gt;&gt;8 (what
+#                  the SDK does, it drops the fraction) or /256.0 (it keeps the
+#                  fraction). See 2-4, and write down which one you used.
+#   ans_type       int, 0x81 legacy / 0x82 capsule / 0x84 ultra capsule
+ModeInfo = namedtuple("ModeInfo", "id name us_per_sample max_distance ans_type")
+
+
+def _conf(ser, conf_type, mode=None):
+    """One GET_LIDAR_CONF round trip -&gt; the reply payload WITHOUT the echoed type,
+    or b"" when the device said nothing (firmware below 1.24, or a bad frame).
+    Layers (2-4):
+      payload sent = u32 conf_type little endian, plus u16 mode when mode is given
+      reply        = 7-byte descriptor (size, ans_type), then size bytes
+    Invariants -- the device checks your framing for you, so check its answer:
+      - ans_type must be 0x20; anything else is not a conf reply
+      - the first 4 reply bytes must equal conf_type (the vendor driver rejects
+        the reply otherwise: sl_lidar_driver.cpp:1289-1291)
+    Called from: scan_modes(), max_distance(), typical_mode(). This function stops
+    and drains the port itself, so no caller has to remember to.
+    """
+    # TODO(you): stop + drain, build the payload, send, read the descriptor, read `size`
+    #   bytes, check the two invariants above, return everything after byte 4.
+    return b""
+
+</code></pre>
+      <p>나머지 셋은 <code>_conf()</code> 를 부르고 <strong>바이트를 단위로 바꾸는</strong> 일만 한다. 시그니처는 <strong>바꾸지 않는다</strong> — l-07 이 이 이름으로 이 표를 받아 간다.</p>
+      <pre><code class="lang-python">
+def typical_mode(ser):
+    """The mode number this device picks when nothing is asked for -&gt; int, or None.
+    conf 0x7C, no mode index. Payload is u16 (sl_lidar_driver.cpp:573-574).
+    """
+    # TODO(you): one _conf() call, then read two bytes as u16 little endian.
+    return None
+
+
+def max_distance(ser, mode):
+    """Largest distance this mode reports -&gt; float metres, or None.
+    conf 0x74 WITH the u16 mode index. Payload is u32 q8 (sl_lidar_driver.cpp:1341).
+    Reading it as a plain u32 is 256x too large; reading it as an IEEE float is ~0.
+    Both are silent failures -- print the four raw bytes once and look at them.
+    """
+    # TODO(you): one _conf() call, then undo the q8 scaling.
+    return None
+
+
+def scan_modes(ser):
+    """Every mode this device declares -&gt; [ModeInfo], mode 0 first ([] on failure).
+    Order of questions (2-4): count first (0x70, no index), then per mode
+    0x71 us/sample, 0x74 max distance, 0x75 ans type, 0x7F name.
+    Invariant: len(result) == count. A short list means a reply was lost, not that
+    the device has fewer modes -- do not silently shorten it.
+    """
+    # TODO(you): read the count, then loop and build one ModeInfo per mode.
+    return []
+
+
+def main():                              # given whole: it only calls the three above
+    ser = open_port(sys.argv[1] if len(sys.argv) &gt; 1 else "/dev/lidar")
+    print("typical:", typical_mode(ser))
+    for m in scan_modes(ser):
+        print(m)
+    stop(ser)
+    ser.close()
+
+
+if __name__ == "__main__":
+    main()
+</code></pre>
+      <p class="small"><code>main()</code> 은 전량 제공이다 — 이유: 위 세 함수를 부르는 것 말고 하는 일이 없고 분기가 없다. 판단은 전부 세 함수 안에 있으므로 여기에 <code>TODO(you)</code> 를 두면 <strong>이미 푼 문제를 다시 풀게 된다</strong>. 껍질에 분기가 생기는 순간 그것은 골격으로 돌려야 하는 신호다.</p>
+
+      <h4 id="s3-2-3">3-2-3. 직접 채우기 — 그리고 손으로 검산한다</h4>
+      <p>⚠ <strong>이 쪽에는 자기시험 파일이 없다.</strong> <code>conf.py</code> 는 포트를 여는 함수뿐이라 하드웨어 없이 채점할 수 있는 순수 로직이 없기 때문이다. 대신 <strong>채점은 기기와 내 손이 한다</strong> — 아래 7번이 그 자리다.</p>
+      <ol class="steps">
+        <li><strong><code>_conf()</code> 부터</strong>. 첫 줄은 <code>stop(ser)</code> 과 <code>drain(ser)</code> 다. 왜 명령마다 앞을 비워야 하는지는 <a href="l-02-device-id.html#s2-4">l-02 §2-4</a> 가 적었다 — <code>reset_input_buffer()</code> 로는 부족하다.</li>
+        <li><strong>페이로드의 모양은 이미 봤다.</strong> l-02 §3-1-3 의 시험 벡터에 <code>A5 84 06 74 00 00 00 03 00 50</code> 이 있다. 이 열 바이트에서 <strong>어느 네 바이트가 conf_type 이고 어느 두 바이트가 모드 번호인지</strong>를 16진에서 먼저 짚어 보라. 그것을 짚으면 <code>struct</code> 형식 문자열은 저절로 정해진다.</li>
+        <li><strong>기술자를 읽는다</strong> — <code>descriptor(ser)</code> 가 <code>(size, ans_type)</code> 를 준다. <code>ans_type</code> 이 <code>0x20</code> 이 아니면 거기서 실패로 돌린다. 이 검사가 있으면 "스캔 바이트가 섞여 들어온 것"을 conf 응답으로 오해하지 않는다.</li>
+        <li><strong>본문을 <code>size</code> 만큼 읽고 앞 4바이트를 검사한다.</strong> 내가 보낸 conf_type 과 같은가. 다르면 실패다 — 이것이 §2-4 의 자기검증이다.</li>
+        <li><strong>세 함수의 차이는 마지막 환산뿐이다.</strong> <code>0x70</code>·<code>0x7C</code> 는 u16, <code>0x75</code> 는 u8, <code>0x7F</code> 는 바이트열(<strong>널로 끝나는지 16진으로 보고 자르는 것은 내 몫이다</strong> — SDK 는 그대로 복사만 한다), <code>0x71</code>·<code>0x74</code> 는 <strong>u32 q8</strong>(§2-4 의 표).</li>
+        <li><strong>순서를 지킨다.</strong> 개수를 먼저 묻고(모드 번호를 붙이지 <strong>않는다</strong>), 그다음 0번부터 모드별로 넷을 묻는다(모드 번호를 붙인다). 이 갈림은 §2-4 의 층 ③ 이다.</li>
+        <li><strong>손 검산 — 처음 한 번만.</strong> <code>max_distance()</code> 가 값을 내기 전에 <strong>원시 네 바이트를 16진으로 한 줄 찍어 본다.</strong> 그 네 바이트를 §2-4 의 세 가지 읽기로 종이에서 계산해 보고, <strong>어느 읽기가 사람이 쓸 만한 미터 값을 내는지</strong> 확인한다. 그것이 이 쪽의 채점표다. 확인이 끝나면 그 줄은 지운다.</li>
+      </ol>
+      <p><strong>막히기 쉬운 네 자리.</strong></p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>증상</th><th>먼저 볼 곳</th></tr></thead>
+        <tbody>
+          <tr><td>첫 조회부터 아무것도 안 온다</td><td>펌웨어 번호(§3-2-1 의 4번). 1.24 미만이면 이 명령 자체가 없다(§2-5)</td></tr>
+          <tr><td>개수는 오는데 모드별 조회가 빈다</td><td>모드 번호 u16 을 안 붙였거나, 반대로 <code>0x70</code>·<code>0x7C</code> 에 붙였다</td></tr>
+          <tr><td>이름이 깨진 글자로 나온다</td><td>고정 길이로 자르고 있다. 길이는 <strong>기술자가 말한 <code>size</code></strong> 가 정한다. 그 안에서 <strong>널로 끝나는지는 16진으로 찍어 보고 내가 자른다</strong> — SDK 는 복사만 한다(§2-4)</td></tr>
+          <tr><td>거리·주기 값이 터무니없다</td><td>q8 나눗셈(§2-4). 256배 크면 나눗셈을 뺐고, 0 에 가까우면 실수로 읽었다</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-2-4">3-2-4. 돌리고 보기</h4>
+      <pre><code class="lang-bash">pi$ python3 scripts/lidar_lab/conf.py /dev/lidar</code></pre>
+      <p>출력의 <strong>모양</strong>은 이렇다. 값은 내 기기가 정한다.</p>
+      <pre><code class="lang-text">typical: &lt;n&gt;
+ModeInfo(id=0, name='&lt;이름&gt;', us_per_sample=&lt;n&gt;, max_distance=&lt;n&gt;, ans_type=&lt;n&gt;)
+ModeInfo(id=1, name='&lt;이름&gt;', us_per_sample=&lt;n&gt;, max_distance=&lt;n&gt;, ans_type=&lt;n&gt;)
+  …  (개수는 내 기기가 신고한 만큼)</code></pre>
+      <p>그 출력을 <strong>내 표</strong>로 옮긴다. 마지막 두 열은 내가 계산해 넣는 것이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>모드</th><th>이름</th><th>us/샘플</th><th>최대 거리 (m)</th><th><code>ans_type</code></th><th>포장 (§2-3)</th><th>이론 점/초<br><code>1 000 000 ÷ us</code></th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td>1</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td>…</td><td colspan="6">내 기기가 신고한 개수만큼 줄을 늘린다. <strong>typical 번호에 표시</strong>를 한다: <code>____</code></td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>그리고 §3-1-2 의 표 ② 로 돌아간다.</strong> 이제 ⓑ 열(샘플률 천장)을 채울 수 있고, <code>천장 = min(ⓐ, ⓑ)</code> 가 모드마다 결정된다. <strong>어느 모드에서 회선이 먼저 막히고 어느 모드에서 샘플률이 먼저 막히는가</strong> — 그것이 이 표가 보여 주는 것이다.</p>
+      <div class="callout note"><span class="ct">참고 — 같은 모델에서는 이렇게 나왔다 (내 값이 아니다)</span>
+        <p><code>NOMINAL(gen1-record, 2026-07-14)</code> · <code>~/ros2/docs/camera_lidar/LIDAR_MODES.md</code> §1 — <strong>같은 모델(A1M8), 펌웨어 1.29 인 어떤 개체</strong>가 다섯을 신고했다. <strong>내 개체인지는 아직 확인되지 않았고</strong>(카메라·라이다가 1세대와 같은 개체인지는 미확정이다), <strong>모드 목록은 펌웨어에 달렸다</strong>. 그러니 이것은 <em>답</em>이 아니라 <strong>표가 대략 어떤 모양으로 나오는지</strong>의 예다.</p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>모드</th><th>이름</th><th>us/샘플</th><th><code>ans_type</code></th><th>내 값</th></tr></thead>
+          <tbody>
+            <tr><td>0</td><td>Standard</td><td>508</td><td><code>0x81</code></td><td><code>____</code></td></tr>
+            <tr><td>1</td><td>Express</td><td>254</td><td><code>0x82</code></td><td><code>____</code></td></tr>
+            <tr><td>2</td><td>Boost</td><td>127</td><td><code>0x84</code></td><td><code>____</code></td></tr>
+            <tr><td>3</td><td>Sensitivity <span class="small">(그 기기의 typical)</span></td><td>127</td><td><code>0x84</code></td><td><code>____</code></td></tr>
+            <tr><td>4</td><td>Stability</td><td>201</td><td><code>0x84</code></td><td><code>____</code></td></tr>
+          </tbody>
+        </table></div>
+        <p class="small">⚠ <strong>내 표의 개수·이름·번호가 이것과 다르면 그것이 내 기기의 사실이다.</strong> 같아도 "같은 개체다"의 증거는 아니다 — 같은 펌웨어면 같은 표가 나온다.</p>
+      </div>
+      <p>마지막으로 <strong>최대 거리</strong> 한 줄을 따로 적어 둔다. 내가 조회한 값은 <code>____</code> m 이고, <strong>드라이버 기동 로그의 <code>max_distance</code> 와 같은지 다른지는 여기서 판정하지 않는다</strong> — 그 줄은 <a href="07-lidar.html">07</a> §3-5 가 채우고, 두 값을 맞대는 것은 l-07 의 일이다. 지금은 <strong>내 경로의 값만 재서 옆에 놓는다.</strong></p>
+      <p class="small">6 m ↔ 12 m 라는 두 판의 갈림을 여기서 다시 논증하지 않는다 — <a href="l-01-link.html#s3-1-1">l-01 §3-1-1</a> 이 소유한다. 이 쪽은 그 세 경로 가운데 <strong>둘째(<code>GET_LIDAR_CONF</code>)</strong> 를 실제로 돌려 본 것이다. → 체크 <code>modes-queried-from-device</code> · <code>max-distance-queried</code>.</p>
+
+      <div class="callout note"><span class="ct">해 볼 수 있는 것 — 회전 속도는 명령으로 바꿀 수 있는가 (확인 과제)</span>
+        <p>같은 <code>_conf()</code> 로 물어볼 수 있는 것이 더 있다. <code>sl_lidar_cmd.h:297-300</code> 에 <code>DESIRED_ROT_FREQ 0x01</code> · <code>MIN_ROT_FREQ 0x04</code> · <code>MAX_ROT_FREQ 0x05</code> 가 있고, 제조사 드라이버가 <code>getMotorInfo()</code> 에서 실제로 그 셋을 읽는다(<code>sl_lidar_driver.cpp:1033,1040,1047</code>). 궁금하면 <strong>물어봐도 된다.</strong></p>
+        <p>다만 <strong>대답이 없는 것이 정상일 수 있다</strong>. SDK 는 속도 제어 지원 여부를 <strong>모델 번호의 상위 4비트</strong>로 가른다(<code>sl_lidar_driver.cpp:833-875</code>, <code>checkMotorCtrlSupport()</code>): <code>model &gt;&gt; 4</code> 가 <strong>6 이상이면</strong> RPM 명령, <strong>2 이상이면</strong> 보조 보드에 다시 물어 PWM 명령, <strong>그 아래면 <code>MotorCtrlSupportNone</code></strong> 이다(문턱 값은 같은 파일 <code>:382-383</code>). 그리고 <code>None</code> 일 때 <code>setMotorSpeed()</code> 가 실제로 하는 일은 <strong>DTR 을 올렸다 내리는 것뿐</strong>이다(<code>:992-999</code>) — 우리가 l-01 에서 이미 쓰고 있는 그 켬/끔이다.</p>
+        <p>그러니 <strong>확인 과제</strong>는 하나다: l-02 에서 읽은 내 <code>model</code> 을 4비트 오른쪽으로 밀어 그 값이 <strong>두 문턱(2 · 6) 어디에 앉는지</strong> 적는다. <span class="small">참고로 같은 모델을 쓴 1세대 기록의 개체는 <code>model=0x18</code> 이었고 상위 4비트는 <code>1</code> 이다 — 두 문턱 어느 쪽에도 못 미친다(<code>NOMINAL(gen1-record, 2026-07-14)</code>, <code>~/ros2/docs/camera_lidar/LIDAR_MODES.md</code> 머리말). <strong>내 개체인지는 확인되지 않았다.</strong></span></p>
+        <p>⚠ <strong>이것을 실습으로 세우지 않았고 체크 항목도 두지 않았다.</strong> "안 되는 것이 정상일 수 있는 일"을 뼈대에 넣으면, 학습자가 <strong>자기가 뭘 잘못했다고 생각하며 시간을 쓴다.</strong> 1세대도 이 항목을 <strong>[확인불가]</strong> 로 남겼다. 회전수가 바뀌는지 궁금하면 <strong>바꾸려 하지 말고 재는 편이 싸다</strong> — <a href="l-04-one-turn.html">l-04</a> 가 그 방법을 준다.</p>
+      </div>
+
+      <h3 id="s3-3">3-3. 실습 C — 세 천장을 한자리에 놓고 판정한다 <span class="small">(코드 없음)</span></h3>
+
+      <h4 id="s3-3-1">3-3-1. 확인 — 새 명령은 없다, 숫자 셋을 모으는 일이다</h4>
+      <p>이 실습은 기기에 아무것도 보내지 않는다. 앞의 세 곳에서 이미 나온 숫자를 한 표에 놓는 것이 전부다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>숫자</th><th>어디서 오는가</th><th>등급</th></tr></thead>
+        <tbody>
+          <tr><td>① 회선 천장 [점/s]</td><td>§3-1-2 표 ② 의 ⓐ 열 — <strong>내가 쓰는 포장</strong>의 줄</td><td><strong>산술</strong> (11 520 ÷ B/점)</td></tr>
+          <tr><td>② 샘플률 천장 [점/s]</td><td>§3-2-4 내 표 — <strong>내가 쓰는 모드</strong>의 <code>1 000 000 ÷ us</code></td><td><strong>MEASURED</strong> (기기가 신고한 us/샘플)</td></tr>
+          <tr><td>③ 내 실측 [점/s]</td><td><a href="l-04-one-turn.html">l-04</a> — 회전당 점 수 × 회전수</td><td><strong>MEASURED</strong> (내 도구)</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>내가 쓰는 포장을 먼저 확정한다.</strong> <a href="l-03-one-point.html">l-03</a> 에서 <code>SCAN</code>(<code>A5 20</code>)을 보낸 뒤 <strong>기술자의 종류를 적어 두었다면</strong> 그 값을 본다 — <code>0x81</code> 이면 legacy, 5 B/점이다. <strong>안 적어 뒀으면 지금 한 번 확인한다</strong>(<a href="l-02-device-id.html">l-02</a> §2-2 의 일곱 바이트에서 마지막이 종류다). <strong>확인하지 않고 legacy 라고 전제하지 않는다</strong> — 이 쪽의 계산 전부가 그 한 바이트 위에 선다. 내 표(§3-2-4)에서 <code>ans_type</code> 이 <code>0x81</code> 인 줄을 찾으면 <strong>내가 쓰는 모드가 몇 번인지</strong>가 나온다. <strong>typical 번호와 같을 수도, 다를 수도 있다</strong> — 다르면 그 사실이 이 쪽의 가장 큰 발견이다.</p>
+
+      <h4 id="s3-3-2">3-3-2. 빈 표 — 천장 셋과 두 비율</h4>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>무엇</th><th>내 값</th><th>식</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>내가 쓰는 포장 · 모드 번호</td><td><code>____</code> · <code>____</code></td><td>기술자 종류 <code>0x81</code> ↔ §3-2-4 표</td></tr>
+          <tr><td>2</td><td>① 회선 천장</td><td><code>____</code> 점/s</td><td><code>11 520 ÷ 5</code></td></tr>
+          <tr><td>3</td><td>② 샘플률 천장</td><td><code>____</code> 점/s</td><td><code>1 000 000 ÷ us</code></td></tr>
+          <tr><td>4</td><td>③ 내 실측</td><td><code>____</code> 점/s</td><td>l-04</td></tr>
+          <tr><td>5</td><td>실측이 낮은 천장의 몇 %인가</td><td><code>____</code> %</td><td><code>③ ÷ min(①, ②) × 100</code></td></tr>
+          <tr><td>6</td><td>내 도구가 선을 얼마나 쓰는가</td><td><code>____</code> %</td><td><code>(B/점 × ③) ÷ 11 520 × 100</code> (legacy 면 <code>5</code>)</td></tr>
+          <tr><td>7</td><td>내가 "근처"라고 부를 선</td><td><code>____</code> %</td><td><strong>내가 정한다</strong> — 이 가이드는 정하지 않는다</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-3-3">3-3-3. 채우기 — 그리고 일부러 한 번 틀려 본다</h4>
+      <ol class="steps">
+        <li><strong>표를 채운다.</strong> 7번(내 "근처" 기준)을 <strong>먼저</strong> 정해 적는다 — 결과를 보고 나서 기준을 정하면 그것은 판정이 아니다.</li>
+        <li><strong>일부러 포장을 틀리게 놓아 본다.</strong> 6번의 <code>B/점</code> 자리에 캡슐의 <code>2.625</code> 를 넣어 다시 계산하고, 2번의 <code>÷ 5</code> 도 <code>÷ 2.625</code> 로 바꿔 5번을 다시 낸다. <strong>두 비율이 어떻게 움직이는지 적는다.</strong></li>
+        <li><strong>그 틀린 표가 무슨 결론을 부르는지 한 줄로 쓴다.</strong> 선에 여유가 많아 보이는가, 실측이 천장에 붙어 보이는가. 그리고 <strong>실제 기술자 종류를 다시 확인하고</strong>(<code>0x81</code>) 표를 되돌린다.</li>
+      </ol>
+      <div class="callout warn"><span class="ct">일부러 틀리게 만든 것은 되돌린다 (L6 의 취지)</span>
+        <p>2번에서 만든 표는 <strong>계산 연습이지 내 기기의 기록이 아니다.</strong> 노트에 남길 때 <strong>"틀린 포장으로 계산한 것"</strong> 이라고 적어 두지 않으면, 나중에 <a href="l-07-cross-verify.html">l-07</a> 에서 이 숫자를 정답지 옆에 놓게 된다.</p>
+      </div>
+
+      <h4 id="s3-3-4">3-3-4. 보고 판정하기 — 세 갈래 모두 유효한 결과다</h4>
+      <p>5번의 값이 어디에 앉느냐에 따라 세 갈래다. <strong>어느 갈래든 이 실습은 닫힌다.</strong></p>
+      <div class="tbl"><table>
+        <thead><tr><th>관찰</th><th>무슨 뜻인가</th><th>그래서 무엇을 하는가</th></tr></thead>
+        <tbody>
+          <tr><td><strong>(가)</strong> ③ 이 ① 에 붙어 있다 (내가 정한 선 위)</td><td><strong>회선이 막고 있다.</strong> 포장을 바꾸지 않는 한 더 얻을 수 없다 — 이 쪽 전체가 도출한 그림 그대로다</td><td>더 얻으려면 포장을 바꿔야 하고, 그것은 이 가이드가 드라이버에게 맡긴 몫이다(<a href="l-06-three-sources.html">l-06</a>)</td></tr>
+          <tr><td><strong>(나)</strong> ③ 이 ② 에 붙어 있고 ① 보다 한참 아래다</td><td><strong>기기의 샘플 주기가 막고 있다.</strong> 이 모드에서는 선에 여유가 남아 있다</td><td>§3-2-4 의 표에서 us/샘플이 더 작은 모드가 있는지 본다. 있으면 "센서는 더 낼 수 있는데 내가 안 쓰고 있다"가 숫자로 증명된 것이다</td></tr>
+          <tr><td><strong>(다)</strong> ③ 이 ①·② <strong>둘 다보다 한참 아래</strong>다</td><td><strong>계산으로 설명되지 않는 간극이다.</strong> 기기가 그만큼만 내는 것인지, 내 파이썬이 흘리는 것인지 <strong>이 쪽에서는 가를 수 없다</strong></td><td>간극을 숫자로 적어 두고 넘어간다. 두 경로를 나란히 찍어 가르는 것이 <strong>l-07</strong> 의 일이다 — 그 쪽이 이 숫자를 입력으로 받는다</td></tr>
+        </tbody>
+      </table></div>
+      <p>⚠ <strong>(다) 는 드문 일이 아니다.</strong> 같은 모델을 쓴 1세대 기록에서도 legacy 실측은 계산된 두 천장 어느 쪽에도 닿지 않았고, <strong>그 간극은 그 기록에서도 끝내 닫히지 않았다</strong>(<code>NOMINAL(gen1-record, 2026-07-14)</code>). 그러니 (다) 가 나왔다고 해서 <strong>내가 뭘 잘못한 것이라고 먼저 결론 내지 않는다</strong> — 적어 두고 l-07 로 가져간다.</p>
+      <p>마지막으로 <strong>한 문장</strong>을 노트에 적는다. 이것이 이 쪽의 산출물이다:</p>
+      <pre><code class="lang-text">지금 내 도구가 쓰는 것은 모드 ____ (____ , ans_type 0x__ , ____ B/점) 이고,
+내 점/초 ____ 의 상한을 정하는 것은 ____ 다.   (회선 / 샘플률 / 둘 다 아님)
+근거: 회선 천장 ____ · 샘플률 천장 ____ · 실측 ____ · 낮은 천장 대비 ____ %</code></pre>
+      <p>→ 체크 <code>legacy-limit-hit</code>. <strong>막혔다고 적어도 닫히고, 안 막혔다고 적어도 닫힌다</strong> — 이 항목이 묻는 것은 "예상한 것을 봤는가"가 아니라 <strong>"무엇이 일어났는지 숫자로 적었는가"</strong> 다.</p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.
+      ⚠ 이 쪽의 항목은 "<strong>예상한 것을 봤는가</strong>"가 아니라 "<strong>무엇이 일어났는지 적었는가</strong>"로 쓰여 있다 — 예상과 다른 관찰도 이 항목을 닫는다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="byte-budget-computed"><span><strong>경로 통과</strong> — §3-1-2 의 두 표를 <strong>식과 함께</strong> 채웠다. 한 샘플의 예산, legacy·캡슐·울트라의 회선 천장, 그리고 §3-1-4 의 세 물음에 한 줄씩 답했다. 계산이 이상해 다시 한 자리가 있었다면 <strong>무엇이 틀렸었는지</strong>도 적었다
+          <span class="sub">판정 수단: 내 노트의 표(식이 값 옆에 있는가) · §3-1-4 · <strong>기기 없이 닫힌다</strong> · 합격선 없음</span></span></label></li>
+        <li><label><input type="checkbox" data-key="modes-queried-from-device"><span><strong>경로 통과</strong> — <code>pi$ python3 scripts/lidar_lab/conf.py /dev/lidar</code> 가 낸 목록을 §3-2-4 의 표로 옮겼다(모드 번호 · 이름 · us/샘플 · 최대 거리 · <code>ans_type</code> · typical). <strong>대답이 아예 안 왔으면 그 사실과 내 펌웨어 번호를 적었다</strong> — 그것도 이 항목을 닫는다
+          <span class="sub">판정 수단: 내 도구의 출력 · §3-2-4 · 개수·이름은 펌웨어에 달렸다(§2-5) — <strong>1세대 표와 같아야 하는 것이 아니다</strong></span></span></label></li>
+        <li><label><input type="checkbox" data-key="max-distance-queried"><span><strong>경로 통과</strong> — <code>0x74</code> 로 조회한 최대 거리를 모드마다 적었고, <strong>q8 로 읽었는지 <code>&gt;&gt;8</code> 로 읽었는지</strong>도 같이 적었다. 드라이버 로그의 <code>max_distance</code> 와 맞대어 볼 <strong>빈칸을 노트에 만들어 두었다</strong>(그 비교는 <a href="l-07-cross-verify.html">l-07</a> 에서 한다)
+          <span class="sub">판정 수단: 내 도구의 출력 · §3-2-4 · 6 m ↔ 12 m 의 판정은 여기서 하지 않는다 — <a href="l-01-link.html#s3-1-1">l-01 §3-1-1</a> 의 세 경로 중 둘째를 돌린 것이다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="legacy-limit-hit"><span><strong>발동 확인</strong> — §3-3-2 의 표를 채워 내 실측이 <strong>회선 천장에 막혔는지 · 샘플률 천장에 막혔는지 · 어느 쪽에도 닿지 않았는지</strong>를 숫자로 적었다. 그리고 §3-3-3 2번에서 <strong>포장을 일부러 틀리게 놓아</strong> 두 비율이 어떻게 움직이고 결론이 어떻게 뒤집히는지 봤다
+          <span class="sub">판정 수단: 내 노트의 표 · §3-3-4 의 세 갈래 · <strong>"근처"의 기준은 내가 §3-3-2 7번에 먼저 적은 값</strong> · 어느 갈래든 닫힌다</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td>첫 조회부터 기술자가 안 온다</td><td>펌웨어가 1.24 미만이라 이 명령이 없다 / 명령 바이트나 체크섬이 틀렸다</td><td><code>pi$ python3 scripts/lidar_lab/cmd.py /dev/lidar</code> 로 firmware 를 먼저 읽는다 · <code>pi$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_cmd.py</code></td><td>§2-5 / <a href="l-02-device-id.html">l-02</a> §3-1-3</td></tr>
+          <tr><td>기술자는 오는데 종류가 <code>0x20</code> 이 아니다</td><td>앞 명령의 스캔 바이트가 남아 있다 — <code>drain</code> 을 건너뛰었다</td><td>받은 첫 7바이트를 16진으로 찍어 <code>A5 5A</code> 로 시작하는지 본다</td><td>§3-2-3 1번 / l-02 §2-4</td></tr>
+          <tr><td>최대 거리가 <strong>256배로</strong> 크다 (예: 3072)</td><td>q8 나눗셈을 빼먹고 u32 그대로 읽었다</td><td>원시 네 바이트를 16진으로 찍어 §2-4 의 세 읽기와 견준다</td><td>§2-4 표 / §3-2-3 7번</td></tr>
+          <tr><td>최대 거리·주기가 <strong>0 에 가깝다</strong></td><td>IEEE 실수(<code>&lt;f&gt;</code>)로 읽었다. 이쪽이 더 위험하다 — "이 모드는 값이 없나 보다"처럼 읽힌다</td><td>같은 네 바이트를 q8 로도 읽어 본다. 사람이 쓸 만한 미터가 나오는 쪽이 맞는 읽기다</td><td>§2-4 / §3-2-3 7번</td></tr>
+          <tr><td>모드 개수가 1 로 온다</td><td>조회 자체는 되는데 이 개체·펌웨어가 하나만 신고한다</td><td>firmware 번호와 함께 적는다. <strong>이것은 고장이 아니라 관찰이다</strong></td><td>§2-5 · 체크 항목은 그대로 닫는다</td></tr>
+          <tr><td>모드 이름이 깨진 글자다</td><td>고정 길이로 잘랐다. 길이는 기술자의 <code>size</code> 가 정한다 — 널로 끝나는지는 내가 16진으로 보고 자른다(SDK 는 복사만 한다)</td><td>받은 바이트 전체를 그대로 16진으로 찍어 본다</td><td>§3-2-3 5번</td></tr>
+          <tr><td>같은 조회를 두 번 하면 값이 다르다</td><td>모드 번호를 붙일 자리와 안 붙일 자리가 섞였다 / 앞 응답의 꼬리가 남았다</td><td><code>0x70</code>·<code>0x7C</code> 에 u16 을 붙이지 않았는지 확인한다</td><td>§2-4 층 ③ / §3-2-3 6번</td></tr>
+          <tr><td>실측 점/초가 두 천장 어느 쪽에도 못 미친다</td><td>이 쪽에서는 가를 수 없다 — 기기가 그만큼만 내는 것일 수도, 내 파이썬이 흘리는 것일 수도 있다</td><td>간극을 숫자로 적어 둔다. 두 경로를 나란히 찍어 가른다</td><td>§3-3-4 (다) → <a href="l-07-cross-verify.html">l-07</a></td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">장치가 안 보인다 · 권한 · USB 전류 · 포트를 누가 잡고 있다 — 이 넷은 <strong><a href="l-01-link.html">l-01</a> 이 소유한다</strong>. 저장소 전체에 걸친 것은 <a href="99-troubleshooting.html">99</a> 를 본다.</p>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+
+      <details class="quiz"><summary>1. (네 갈래 검색) <code>scan_mode</code> 라는 낱말을 네 군데에서 찾아 적어 보라 — 정의 → 사양 → 구현 → 내 장치</summary>
+        <div class="ans"><p>① <strong>정의는 없다.</strong> <code>scan_mode</code> 는 ROS 메시지의 필드가 아니다 — <code>ros2 interface show sensor_msgs/msg/LaserScan</code> 에 이런 이름은 나오지 않는다. 그것은 <strong>드라이버의 파라미터</strong>이고 우리 저장소에서는 <code>ros2_ws/src/rpi5_bringup/config/robot_params.yaml</code> 에 <code>scan_mode: ""</code> 로 적혀 있다. 즉 이 낱말은 메시지 규격이 아니라 <strong>드라이버와 기기 사이의 낱말</strong>이다.</p>
+        <p>② <strong>사양은 답하지 않는다.</strong> 데이터시트 두 판 어디에도 스캔 모드라는 개념이 없다 — "mode" 라는 글자는 시리얼의 <code>Working mode 8N1</code>(Figure 2-5 — <strong>두 판 모두 10쪽</strong>)과 전원 절의 <em>recommended power mode</em>(<strong>두 판 모두 11쪽</strong>)에만 나온다. 스캔에 대해서는 <strong>두 판 모두 6쪽에서 시작하는</strong> 문장이 <em>"When using 4k and above sampling frequency, the transmission data structure is different. For more information please contact SLAMTEC."</em> 까지만 말한다. <strong>"답하지 않는다는 것을 두 판 6쪽에서 확인했다"가 유효한 ② 다.</strong></p>
+        <p>③ <strong>구현이 처음으로 이름을 준다.</strong> <code>sl_lidar_cmd.h:303-309</code> 가 여섯 conf_type 을 두고, 그중 <code>0x7F</code> 가 <strong>이름</strong>, <code>0x7C</code> 가 <strong>typical 번호</strong>다. 구현이 이렇게 생겼다는 것 자체가 한 가지를 말한다 — <strong>목록은 개체·펌웨어마다 다를 수 있다</strong>고 전제하고 있다.</p>
+        <p>④ <strong>내 장치가 마지막 말을 한다.</strong> §3-2-4 의 내 표가 그것이다. 넷이 다르면 ④가 내 기기의 사실이고, 나머지 셋은 "무엇을 가정했는가"를 말해 준다. 드라이버가 같은 낱말로 무엇을 하는지(<code>scan_mode: ""</code> 가 무엇으로 낙착되는가)는 <strong><a href="l-07-cross-verify.html">l-07</a></strong> 이 <code>ros2 param</code> 과 기동 로그로 받는다.</p></div></details>
+
+      <details class="quiz"><summary>2. 회선 용량 11 520 B/s 를 "샘플 하나에 1.44 B" 로 바꾼 나눗셈은 무엇을 가정하고 있는가?</summary>
+        <div class="ans"><p><code>11 520 ÷ 7 975 = 1.44</code> 에서 <strong>7 975 는 데이터시트 3쪽(rev.2.2 · v3.0 두 판 모두)의 "1450 점/바퀴 × 5.5 회전/s"</strong> 다. 즉 이 나눗셈은 <strong>"그 사양대로 재고, 그것을 하나도 버리지 않고 전부 내보낸다"</strong>를 가정한다.</p>
+        <p>둘 다 조건이다. 기기가 그 속도로 재지 않으면(모드가 다르면) 분모가 달라지고, 재고도 일부만 내보내면 그 값은 상한일 뿐 실제가 아니다. 그래서 이 숫자는 <strong>"이 이상은 불가능하다"는 천장</strong>으로만 쓸 수 있고, "내가 이만큼 받는다"로는 쓸 수 없다. 내가 실제로 받는 양은 <a href="l-01-link.html">l-01</a> §3-4 가 세었고 이 쪽 §3-3-2 의 6번이 그 비율을 낸다.</p>
+        <p>그리고 이 가정이 깨지는 것이 바로 §3-3-4 의 (다) 갈래다 — 두 천장 어느 쪽에도 닿지 않는 실측.</p></div></details>
+
+      <details class="quiz"><summary>3. 같은 데이터시트가 한 바퀴의 점 수를 1450 과 360 으로 말한다. 어느 쪽이 틀렸는가?</summary>
+        <div class="ans"><p><strong>"어느 쪽이 틀렸는가"가 틀린 물음이다.</strong> 계산해 보면 둘 다 자기 자리가 있다 — 1450 × 5.5 = 7 975 는 Sample Frequency 행의 <strong>≥8000</strong> 과 붙고, 360 × 5.5 = 1 980 은 그 4분의 1 이다. 그리고 Angular Resolution 의 <strong>≤1°</strong> 와 맞아떨어지는 것은 360 쪽이다(360 ÷ 360 = 1.000°, 360 ÷ 1450 = 0.248°).</p>
+        <p>보이는 가설은 <strong>두 숫자가 서로 다른 모드를 가리킨다</strong>는 것이다. 하지만 <strong>이 가이드는 그것을 확인하지 못했다</strong> — 데이터시트는 모드라는 개념을 싣지 않았다.</p>
+        <p>닫는 방법은 내 기기에 있다. §3-2-4 에서 모드 0 의 us/샘플을 조회해 <code>1 000 000 ÷ us</code> 를 계산하고, 그 값이 1 980 쪽에 앉는지 7 975 쪽에 앉는지 본다. <strong>둘 다 아닌 값이 나와도 그것이 내 답이다.</strong></p></div></details>
+
+      <details class="quiz"><summary>4. 명령 <code>0x84</code> 와 응답 종류 <code>0x84</code> 는 어떻게 다른가? 하나 더 — 응답 종류 <code>0x81</code> 이 나에게 말해 주는 것은 무엇인가?</summary>
+        <div class="ans"><p><strong>층이 다르다.</strong> 명령 <code>0x84</code> 는 내가 보내는 <code>GET_LIDAR_CONF</code> 다(<code>sl_lidar_cmd.h:70</code>). 응답 종류 <code>0x84</code> 는 기기가 돌려주는 <strong>7바이트 기술자 안의 종류 바이트</strong>이고 "울트라 캡슐 포장으로 보낸다"는 뜻이다(<code>:149</code>). 값이 겹칠 뿐 서로 다른 자리의 서로 다른 것이다 — <a href="l-02-device-id.html">l-02</a> §2-1 이 명령의 자리를, §2-2 가 기술자의 자리를 보였다.</p>
+        <p><code>0x81</code> 은 legacy 포장이다. 내가 <code>SCAN</code> 을 보냈을 때 기술자가 <code>0x81</code> 로 왔다면, 그때부터 흘러나오는 것은 <strong>점 하나당 5바이트</strong>다(<code>sl_lidar_cmd.h:189-194</code>) — <a href="l-03-one-point.html">l-03</a> 이 손으로 푼 그 5바이트다. 그래서 <code>ans_type</code> 을 보는 것만으로 <strong>내 천장이 11 520 ÷ 5 인지 ÷ 2.625 인지 ÷ 1.375 인지</strong>가 정해진다. 이것이 §3-3-1 에서 "내가 쓰는 포장"을 확정하는 방법이다.</p></div></details>
+
+      <details class="quiz"><summary>5. (일부러 틀리면) <code>0x74</code> 의 네 바이트를 u32 그대로 읽으면 무엇이 보이고, IEEE 실수로 읽으면 무엇이 보이는가? 둘 중 어느 잘못이 더 위험한가?</summary>
+        <div class="ans"><p>최대 거리 12 m 는 q8 이라 <code>12 × 256 = 3072</code>, 리틀엔디안으로 <code>00 0C 00 00</code> 이다. u32 그대로 읽으면 <strong>3072</strong> 이 나오고 — <strong>정확히 256배</strong>다. IEEE float32 로 읽으면 <strong>4.3e-42</strong>, 사실상 0 이다. (정말 실수였다면 12.0 의 네 바이트는 <code>00 00 40 41</code> 이었을 것이다.)</p>
+        <p><strong>실수로 읽은 쪽이 더 위험하다.</strong> 3072 m 는 누구나 이상하다고 느껴 곧바로 의심하지만, 0 에 가까운 값은 <strong>"이 모드는 최대 거리 정보가 없나 보다"</strong> 처럼 읽혀 그대로 표에 적히고, 나중에 <code>nav2</code> 의 <code>laser_max_range</code> 같은 자리까지 조용히 따라간다.</p>
+        <p>두 잘못 모두 <strong>예외를 내지 않는다</strong>. 그래서 채점 수단이 필요하고, 이 쪽에서는 그것이 <strong>원시 네 바이트를 한 번 눈으로 보는 것</strong>이다(§3-2-3 7번). ⚠ SDK 자신도 <code>0x74</code> 는 <code>&gt;&gt;8</code> 로 소수를 버리고 <code>0x71</code> 은 <code>÷256.0</code> 으로 남긴다 — 정수부는 같으니 어느 쪽을 쓸지는 내가 정하되, <strong>어느 쪽으로 적었는지를 표에 적어 둔다</strong>.</p></div></details>
+
+      <details class="quiz"><summary>6. <code>1.24</code> 라는 숫자를 세 군데서 봤다. 셋은 같은 말을 하고 있는가?</summary>
+        <div class="ans"><p><strong>아니다. 숫자만 같고 주장이 셋 다 다르다.</strong> ① 데이터시트 rev.2.2 4쪽 각주는 <strong>R3·R4 모델이 8k 로 재려면</strong> 펌웨어를 1.24 로 올려야 한다고 말한다 — <em>재는 능력</em>의 조건이다. ② <code>sl_lidar_cmd.h:70</code> 의 주석은 <strong>이 조회 명령 자체가</strong> 1.24 에서 생겼다고 말한다 — <em>묻는 수단</em>의 조건이다. ③ <code>sl_lidar_driver.cpp:1176-1193</code> 은 제조사 드라이버가 <strong>실제로 그 경계를 지키고 있다</strong>는 증거다(<code>firmware_version &gt;= ((0x1 &lt;&lt; 8) | 24)</code>).</p>
+        <p>셋을 합쳐 "1.24 미만이면 아무것도 안 된다"고 쓰면 과장이다. 정확히는 <strong>1.24 미만이면 조회가 안 될 수 있고(②③), 8k 로 재지 못할 수 있다(①)</strong> — 그리고 그 둘은 별개다.</p>
+        <p>덧붙여 이것은 데이터시트 두 판을 같이 두는 이유의 가장 또렷한 예다. <strong>v3.0 은 ① 의 각주를 통째로 지웠다</strong>(개정 이력 2020-10-15, <em>"Delete the description of R2, R3, R4 and other models in P4 label 2"</em>). v3.0 만 보면 4쪽의 "8000 times per second" 에 조건이 하나도 없어 보인다 — <strong>문서에서 조건이 사라진 것이지 기기에서 사라진 것이 아니다.</strong></p></div></details>
+
+      <details class="quiz"><summary>7. (안전) 이 쪽은 조회할 때마다 <code>stop()</code> 을 부른다. 그러면 센서를 손으로 들어도 되는가?</summary>
+        <div class="ans"><p><strong>안 된다.</strong> <code>STOP</code>(<code>A5 25</code>)이 세우는 것은 <strong>측정과 데이터 출력</strong>이고 <strong>모터는 그대로 돈다</strong>(l-02 §2-3). 그러니 조회 중에도 머리는 계속 돌고 있다 — 손·머리카락·천·케이블을 가까이 두지 않는다.</p>
+        <p>모터를 세우는 것은 다른 신호다. 어댑터의 DTR 을 <strong>올리면</strong>(<code>dtr=True</code>) 소리가 바뀌며 머리가 선다 — 그 배선에는 1차 출처가 없고 관찰(소리)로만 확인된다는 것을 l-01 §2-4 가 적었다. 들거나 옮길 일이 있으면 <strong>모터를 세운 뒤에</strong> 든다.</p>
+        <p>그리고 레이저는 <strong>눈에 보이지 않는다</strong>. Class I · 785 nm 는 적외선이라 켜졌는지 눈으로 알 수 없다(Figure 2-3 · Class I 표기 — rev.2.2 · v3.0 두 판 모두 9쪽 · 5쪽). Class I 은 정상 사용에서 안전으로 분류된 등급이지만 <strong>보이지 않으면 조심하는 습관이 생기지 않는다</strong> — 스캔 창을 렌즈 높이에서 정면으로 들여다보지 않는 것을 규칙으로 둔다.</p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>번호순 다음은</strong> → <a href="l-06-three-sources.html">l-06</a> — 세 개의 입구. 이 쪽에서 "포장을 바꾸는 일은 드라이버에게 맡긴다"고 적은 그 드라이버를 거기서 띄운다. <strong><a href="07-lidar.html">07</a> 을 아직 안 했으면 l-06 · <a href="l-07-cross-verify.html">l-07</a> 은 거기서 막힌다.</strong></li>
+          <li><strong>컨테이너가 아직 안 떴으면</strong> → l-06 · l-07 을 건너뛰고 <a href="l-08-floor-plan.html">l-08</a> 로 간다. <a href="l-04-one-turn.html">l-04</a> 가 만든 <code>.scan.jsonl</code> 한 장이면 공간 인식 다섯 쪽이 전부 돈다 — 이 쪽에서 적은 모드 표는 그때까지 노트에서 기다린다.</li>
+          <li><strong>이 쪽을 못 닫았어도</strong> — ① <strong>조회가 아예 안 됐어도(펌웨어 1.24 미만 등) 다음으로 갈 수 있다.</strong> 실습 A 의 산수만으로도 "내 포장의 천장"은 나오고, 뒤 쪽이 이 쪽에서 요구하는 것은 그 숫자와 <strong>최대 거리 한 줄</strong>뿐이다. ② 최대 거리를 못 받았으면 그 칸은 <strong>07 §3-5 의 드라이버 로그</strong>가 대신 채운다 — 세 경로 중 하나만 닫혀도 <a href="l-01-link.html">l-01</a> §3-1-1 의 빈칸은 메워진다. ③ 다만 <strong>§3-3-2 의 표는 비워 두지 말 것</strong> — l-07 이 이 숫자들을 정답지 옆에 놓고 "센서가 나쁜가, 내 도구가 나쁜가"를 가른다. 표가 비면 그 쪽에서 판정할 대상이 없다.</li>
+          <li><strong>이 쪽에서 잰 값은 내 노트에 적었는가</strong> — 모드 목록 전체(번호 · 이름 · us/샘플 · 최대 거리 · <code>ans_type</code> · typical), 회선 예산 표 둘, 세 천장과 두 비율, 내가 정한 "근처"의 기준, 그리고 §3-3-4 의 한 문장. <code>hardware/INVENTORY.md</code> 에 이 쪽이 채우는 칸은 <strong>아직 없다</strong> — <strong>모드 목록</strong>과 <strong>수신 B/s 와 회선 대비 비율</strong>을 담을 행은 조율자에게 제안해 두었다. 행이 생기면 모드 목록은 <code>MEASURED(&lt;날짜&gt;, GET_LIDAR_CONF)</code>, 수신 B/s 는 <code>MEASURED(&lt;날짜&gt;, lidar_lab/link.py)</code> 꼴로 옮겨 적는다 — <strong>낱말을 지우지 않는다</strong>(<code>scripts/check_nominal.sh</code> 가 그 낱말이 있는 줄을 센다).</li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L17 · 내 도구로 내 라이다를 판정한다 — 라이다 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="l-17">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">L17 · 내 도구로 내 라이다를 판정한다</p>
+      <h1>내 도구로 내 라이다를 판정한다</h1>
+      <p class="lead">열일곱 쪽 동안 만든 것을 여기서 <strong>한 번 쓴다</strong> — 새 도구를 만들지 않고, 이미 있는 도구로 <strong>내 라이다가 지금 어떤 상태인가</strong>를 표 한 장에 적는다.
+      가운데 실습은 <strong>줄자를 정답지로 두고 거리의 계통 오차를 재는 것</strong>이다. <a href="07-lidar.html">07</a> §3-9-1 이 세 점에서 <em>차</em>를 적는 데까지 갔으니, 이 쪽은 같은 벽에 줄자를 여러 번 대어
+      <code>d_true = a · d_lidar + b</code> 의 <code>a</code>(기울기) · <code>b</code>(오프셋) · <strong>잔차</strong>를 낸다. 합격선은 <strong>주지 않는다</strong> — 데이터시트에 그 줄이 없다는 것을 §2-3 에서 함께 확인하고, 내가 정해 근거와 같이 적는다.
+      붙는 도구는 <a href="l-15-illusions.html">l-15</a> 의 <code>record_sheet()</code> 하나다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>내 벽에서 잰 (줄자, 라이다) 쌍 여러 개와 그것으로 낸 <code>a</code> · <code>b</code> · 잔차가 노트에 적히고, <strong>내가 정한 합격선과 그 근거</strong>가 그 아래 한 줄로 붙는다.
+        그리고 L 의 열여덟 쪽이 만든 기록이 <strong>수용 표 한 장</strong>으로 모인다 — 닫힌 행은 값과 함께, <strong>못 닫은 행은 왜 못 닫았는지와 함께</strong>. 마지막으로 차체에 달면 다시 봐야 할 것들의 목록이 남는다.</p>
+        <p><strong>이 쪽에 필요한 것</strong> — 실습 A 에만 <strong>라이다 · Pi · 줄자 · 평평한 벽(또는 판)</strong> 이 필요하다. 실습 B · C · D 는 기록 파일과 노트로 닫힌다.
+        <strong>없으면</strong> — 줄자나 라이다가 없으면 실습 A 의 표가 빈 채로 남고 <code>bias-fit-recorded</code> 가 열린 채 남는다. <strong>그래도 이 쪽을 여는 값이 있다</strong>: 실습 B 는 <em>내가 어디까지 왔는지</em>를 세는 일이라 지금 당장 닫히고,
+        실습 D 는 <code>.scan.jsonl</code> 한 장이면 <a href="l-08-floor-plan.html">l-08</a>~<a href="l-12-clearance.html">l-12</a> 와 같은 조건에서 돈다(결정 L3 — 순수 파이썬은 Mac 에서도 돈다).
+        못 닫은 행을 <strong>비워 두지 말고 "아직 안 함"으로 적는 것</strong>이 이 쪽의 산출물이다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag pi">Pi 호스트</span> <span class="tag py">Python</span> <span class="small">(실습마다 붙은 배지가 정본이다 — 센서와 줄자를 만지는 것은 실습 A 뿐이고, 실습 D 는 <span class="tag mac">Mac</span> 에서도 돈다)</span></div>
+        <div><span class="k">선행</span><a href="l-04-one-turn.html">l-04</a> (한 바퀴와 기록 파일) — <code>load_jsonl()</code> 과 기준 형식 / <a href="l-05-bandwidth-modes.html">l-05</a> (왜 점이 이것뿐인가) — 지금 쓰는 <strong>모드 이름</strong>과 그 모드의 최대 거리 / <a href="l-07-cross-verify.html">l-07</a> (두 경로) — <strong>함수 하나만</strong> 쓴다: <code>sector_profile()</code>. 순수해서 <strong>l-07 의 하드웨어 실습을 끝내지 않아도 된다</strong> / <a href="l-08-floor-plan.html">l-08</a> (점을 방으로) — §2-2 의 <strong>각도 규약</strong>(벽이 몇 번 빈에 오는지를 이것으로 안다) / <a href="l-15-illusions.html">l-15</a> (착시와 재질) — <code>record_sheet()</code> · <code>no_return_rate()</code> / <a href="l-11-lines.html">l-11</a> (선분) — <strong>실습 A 의 선택 경로</strong>에서만: <code>fit_lines()</code> / <strong><a href="l-16-node.html">l-16</a></strong> — 두 구현 대조 행을 수용 표에 넣을 때만</div>
+        <div><span class="k">채우는 INVENTORY 칸</span>없음 — 제안 행("거리 계통 오차 fit 과 내가 정한 합격선")은 조율자가 <code>hardware/INVENTORY.md</code> §3 에 만든 뒤에 옮겨 적는다. <strong>그때까지는 내 노트가 정본이고, 이 쪽의 체크 항목은 노트만으로 닫힌다.</strong> 07 §3-9-1 이 소유하는 "센서 자체 검증" 칸은 <strong>거기서</strong> 채운다</div>
+        <div><span class="k">이 쪽이 요구하는 수학</span>미지수 둘짜리 최소자승 한 번과 잔차. <strong>식은 §2-2 가 통째로 준다</strong> — 계산기로 풀린다. 어려운 것은 계산이 아니라 <strong>무엇을 <code>d_lidar</code> 로 삼을 것인가</strong>다(§2-5)</div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
+      </div>
+
+      <h2 id="overview">1. 개요 — 마지막 쪽이 하는 일은 새 지식이 아니라 판정이다</h2>
+      <p>두 줄기가 여기서 만난다. <strong>A 연결</strong>(l-01 ~ l-07)은 전선에서 바이트를 꺼내 한 바퀴를 파일로 만들었고, <strong>B 공간</strong>(l-08 ~ l-15)은 그 파일을 방으로 바꿨다.
+      두 줄기 모두 쪽마다 "내 값 <code>____</code>" 을 남겼다. 이 쪽은 그 빈칸들을 <strong>한자리에 모아 놓고 판정</strong>한다 — 그리고 판정에 쓸 자가 하나 모자라다는 것을 먼저 인정한다.
+      <strong>거리가 맞는지는 아직 아무도 제대로 재지 않았다.</strong></p>
+      <p><a href="07-lidar.html">07</a> §3-9-1 이 그 일을 시작해 뒀다. 줄자로 0.5 · 1.0 · 2.0 m 를 맞추고 <code>/scan</code> 의 값과 <strong>차</strong>를 적는 칸이 <code>hardware/INVENTORY.md</code> §3 에 있다.
+      거기서 멈춘 이유가 있다 — <strong>세 점으로는 "얼마나 틀렸나"까지만 나오고 "어떻게 틀렸나"가 안 나온다.</strong> 전부 2 cm 씩 먼 것과, 멀수록 비례해서 커지는 것과, 그냥 흩어지는 것은
+      <strong>고치는 방법이 서로 다른데</strong> 차를 세 번 적는 것으로는 셋이 구별되지 않는다. 이 쪽이 얹는 층이 그것이다.</p>
+
+      <pre class="diagram"><code>           07 §3-9-1            --&gt;   l-17  이 쪽          --&gt;   <a href="09a-assembly-gate.html">09a</a>
+  언제     지금, 벤치                 지금, 벤치                 차체에 달고 나서
+  무엇을   줄자 3점의 차              같은 벽, 여러 거리         장착 · 가림 · 중첩
+  결과     0도 방향·회전 방향         a · b · 잔차               주행 중 필터 · 전원
+  소유     07                         L (이 쪽)                  09a</code></pre>
+
+      <p>오른쪽 칸은 <strong>이 쪽의 일이 아니다.</strong> 장착 위치 · 장착 방향 · 차체 가림 · 스캔 중첩 · 주행 중 필터 · 최종 전원 여섯 줄은 <strong><a href="09a-assembly-gate.html">09a</a></strong> 가 소유한다.
+      가운데 칸에서 닫을 수 있는 것과 차체가 있어야 닫히는 것을 섞으면, 책상 위에서 끝낼 수 있는 일이 "로봇을 다 만든 뒤"로 밀린다. 이 쪽은 <strong>책상 위에서 닫히는 것만</strong> 판정하고, 차체에 달면 달라질 것들은 <strong>목록으로 넘긴다</strong>(§3-3).</p>
+
+      <div class="callout note"><span class="ct">이 쪽에서 처음 나오는 말 셋</span>
+        <p><strong>계통 오차(bias)</strong> — 값이 <em>한쪽으로</em> 치우친 정도. 같은 자리에서 몇 번을 재도 없어지지 않는다.
+        <strong>산포(spread)</strong> — 같은 것을 여러 번 쟀을 때 값들이 서로 흩어진 정도. 많이 재서 평균 내면 줄어든다.
+        <strong>잔차(residual)</strong> — 측정값에서 <em>맞춘 직선</em>을 뺀 나머지. 계통 오차를 직선으로 걷어내고도 남은 것이라, 잔차가 크면 "직선으로 설명되지 않는 무엇"이 있다는 뜻이다.</p>
+      </div>
+
+      <p>순서는 넷이다. <strong>A</strong> 줄자로 <code>a</code> · <code>b</code> · 잔차를 낸다 <span class="tag bench">벤치</span> → <strong>B</strong> L 의 기록을 수용 표 한 장으로 모은다 → <strong>C</strong> 차체에 달면 다시 볼 것을 목록으로 남긴다 →
+      <strong>D</strong> 그 표를 찍은 도구가 <strong>나쁜 입력을 조용히 통과시키지 않는지</strong> 확인한다. D 는 마지막에 두었지만 <strong>B 보다 먼저 해도 된다</strong> — 오히려 그 편이 자연스럽다(§3-4).</p>
+
+      <h2 id="why">2. 원리 — 왜 "재서 적는 것"만으로는 판정이 안 되는가</h2>
+
+      <h3 id="s2-1">2-1. 정답지의 자격은 "옳음"이 아니라 "독립"이다 — 그리고 줄자만 센서 밖에 있다</h3>
+      <p><a href="l-07-cross-verify.html#s2-1">l-07 §2-1</a> 이 못박은 것부터 다시 꺼낸다. <strong>체크섬 0건은 바이트가 온전히 왔다는 것만 말한다.</strong>
+      프레이밍이 완벽해도 고정소수점 자리를 한 칸 잘못 밀면 거리는 4배가 되고, 그래도 체크섬은 통과한다. 그래서 <a href="l-07-cross-verify.html#s2-2">l-07 §2-2</a> 는 정답지의 자격을 <strong>"옳음"이 아니라 "독립"</strong>으로 정했다 —
+      두 경로가 같은 잘못을 <em>같이</em> 저지를 수 있으면 대조는 그 잘못을 못 본다.</p>
+      <p>이 쪽이 쓰는 정답지는 <strong>줄자</strong>다. 왜 줄자인지는 후보 셋을 나란히 놓으면 보인다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>정답지 후보</th><th>무엇과 독립인가</th><th>무엇을 <strong>못</strong> 보는가</th></tr></thead>
+        <tbody>
+          <tr><td><strong>줄자</strong> — 이 쪽</td><td>측정 원리가 통째로 다르다. 라이다는 반사광의 <strong>각도</strong>로 거리를 내고(삼각측량), 줄자는 눈금이 새겨진 띠다. 둘이 같은 이유로 틀릴 길이 없다</td><td>줄자 자신의 오차 — <strong>사람이 읽고 사람이 기준점을 짚는다.</strong> 이 불확실성은 §3-1-3 에서 내가 적는다</td></tr>
+          <tr><td>다른 스캔 모드 (<a href="l-05-bandwidth-modes.html">l-05</a>)</td><td>포장과 샘플 주기가 다르다</td><td><strong>계통 오차.</strong> 같은 광학·같은 코어라 거리 계통은 대체로 같이 움직인다 — 모드를 바꿔 같은 값이 나와도 "둘 다 2 cm 멀다"일 수 있다</td></tr>
+          <tr><td>다른 구현 (<strong><a href="l-16-node.html">l-16</a></strong>)</td><td>언어와 코드가 다르다</td><td><strong>센서.</strong> 두 구현은 <em>같은 파일</em>을 먹는다 — 센서가 틀리면 둘 다 똑같이 틀린 답을 낸다. 잡는 것은 <strong>내 코드의 잘못</strong>이지 센서의 잘못이 아니다</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">셋 다 값이 있고, 셋이 잡는 것이 서로 다르다. 우열이 아니라 <strong>겨냥하는 대상이 다르다</strong> — 이 쪽이 줄자를 쓰는 것은 여기서 겨냥하는 것이 <strong>센서의 거리</strong>이기 때문이다.</p>
+      <p>그리고 <a href="l-07-cross-verify.html#s2-3">l-07 §2-3</a> 의 두 번째 규칙이 그대로 살아 있다 — <strong>한 지표로 판정하지 않는다.</strong>
+      거기서는 형상(<code>corr</code>)과 오프셋(거리차 중앙값)이 서로를 못 봤다. 여기서는 <strong>기울기 <code>a</code> 와 절편 <code>b</code></strong> 가 그 자리에 온다.
+      <code>b</code> 만 보면 "멀수록 벌어지는 잘못"을 놓치고, <code>a</code> 만 보면 "전 구간에서 똑같이 2 cm 먼 잘못"을 놓친다. 둘을 <strong>같이</strong> 봐야 하고, 둘을 걷어내고도 남는 것이 <strong>잔차</strong>다.</p>
+
+      <h3 id="s2-2">2-2. 산포와 계통 오차는 다른 양이다 — 그리고 아직 아무도 계통을 안 쟀다</h3>
+      <p>같은 벽을 백 번 재서 값이 <strong>1 mm 안에 모여 있어도</strong>, 그 값 전부가 참값보다 2 cm 멀 수 있다. 흩어짐(산포)은 <strong>많이 재면 줄어들고</strong>, 치우침(계통)은 <strong>아무리 재도 안 줄어든다.</strong>
+      로봇에게 중요한 것은 대개 뒤쪽이다 — 벽에서 20 cm 를 남기고 서라는 명령이 <strong>일관되게</strong> 18 cm 에서 서게 만드는 것이 계통 오차다.</p>
+
+      <pre class="diagram"><code>  참값 y = d_true (줄자, m)
+   ^
+   |                        .          기울기 a = 1, 절편 b = 0  이면 점들이 대각선 위에 있다
+   |                    .              a != 1  : 멀수록 벌어진다        (배율 · 단위 · 기준점)
+   |                .                  b != 0  : 전 구간이 같이 밀렸다  (오프셋)
+   |            .                      직선에서 남는 것 = 잔차          (설명되지 않은 나머지)
+   |        .
+   |    .
+   +------------------------------&gt; x = d_lidar (내 라이다가 읽은 값, m)
+
+   a 와 b 는 둘 다 필요하다.  b 만 보면 기울기를 못 보고, a 만 보면 평행이동을 못 본다.</code></pre>
+
+      <p>같은 모델에서 <strong>산포 쪽은 이미 재 본 기록이 있다</strong> — 나무문 9.0 mm(0.68 %) · 흰 벽 9.7 mm(0.64 %) · 유리문 3.5 mm(0.23 %)로, 데이터시트의 <code>&lt;1 %</code> 줄을 만족했다.
+      <span class="small">NOMINAL(gen1-record, 2026-07-14) — <code>~/ros2/docs/camera_lidar/RESULTS.md</code>. <strong>같은 모델(A1M8)에서 이런 결과가 나왔다는 뜻이고, 내 개체인지는 아직 확인되지 않았다.</strong> 내 값은 §3-1 에서 잰다.</span>
+      그런데 <strong>같은 기록이 계통 오차 항목을 "아직 측정 안 함"으로 남겼다</strong>(<code>~/ros2/docs/camera_lidar/LIDAR_OPTIMIZATION.md</code> §2-A). 절차까지 적어 놓고 재지 않았다.
+      그 문서가 합격 기준 후보를 하나 적어 두기도 했지만 <strong>이 가이드는 그 숫자를 옮기지 않는다</strong> — 제안이었을 뿐이고, <code>hardware/INVENTORY.md</code> §3 의 "내가 정한 합격선" 칸은 <strong>비워 둔 채로 넘어왔다.</strong> 그 칸의 주인은 나다.</p>
+
+      <div class="callout why"><span class="ct">식은 여기서 전부 준다 — 미지수가 둘이라 계산기로 풀린다</span>
+        <p>측정 쌍을 <code>(x_i, y_i)</code> 라 하자. <strong><code>x</code> = 내 라이다가 읽은 값, <code>y</code> = 줄자로 잰 값, 둘 다 미터다</strong>(이 쪽에는 각도가 나오지 않는다 — 라디안·도를 섞을 자리가 없다).
+        점이 <code>n</code> 개일 때 <code>y = a·x + b</code> 의 최소자승 해는 합 넷으로 끝난다.</p>
+        <pre class="diagram"><code>  a = (n·Sxy - Sx·Sy) / (n·Sxx - Sx·Sx)         Sx  = x 들의 합
+  b = (Sy - a·Sx) / n                            Sy  = y 들의 합
+  잔차  r_i = y_i - (a·x_i + b)      [m]         Sxx = x·x 들의 합
+                                                 Sxy = x·y 들의 합</code></pre>
+        <p><strong>분모가 0 이 되는 경우가 있다</strong> — <code>x</code> 가 전부 같을 때, 즉 <strong>한 거리에서만 쟀을 때</strong>다. 기울기를 알려면 서로 다른 거리가 최소한 둘 있어야 한다. 그때의 답은 <code>0</code> 이 아니라 <strong>"낼 수 없다"</strong> 이다.</p>
+        <p><strong>몇 점을 재야 하는가.</strong> 직선 하나에 미지수가 둘이므로 잔차가 뜻을 가지려면 점이 <strong>셋 이상</strong>이어야 한다. <code>n = 2</code> 면 직선이 두 점을 정확히 지나 <strong>잔차가 언제나 0</strong> 이고, 그 0 은 "잘 맞았다"가 아니라 <strong>"잴 것이 없었다"</strong> 이다.
+        <code>n = 3</code> 이면 잔차가 남기는 하지만 자유도가 1 이라 우연히 작게 나오기 쉽다. 그래서 <a href="07-lidar.html">07</a> 의 <strong>3점은 차를 적기까지</strong>였고, 이 쪽이 줄자를 다시 드는 것이다. <strong>몇 점을 어디에 둘지는 §3-1-2 에서 내가 정한다.</strong></p>
+      </div>
+
+      <h3 id="s2-3">2-3. 데이터시트의 거리 사양은 한 행에 조건이 둘이다 — 그리고 찾는 행이 아예 없다</h3>
+      <p>합격선을 정하려면 먼저 <strong>제조사가 무엇을 약속했는지</strong>를 봐야 한다. 성능 표는 두 판 모두 8쪽에 있다 — <strong>rev.2.2 8쪽 Figure 2-1</strong> "RPLIDAR A1 Performance" 와 <strong>v3.0 8쪽 Figure 2-1</strong>(같은 제목).
+      거리에 관한 행은 <code>Distance Resolution</code> 하나이고, <strong>그 한 행이 값 둘과 조건 둘을 갖는다.</strong> 집필자가 두 판을 직접 열어 확인했고, <strong>이 행은 두 판이 글자까지 같다.</strong></p>
+      <p class="small"><strong>내 사본을 여는 곳</strong> — 1세대 자료에 rev.2.2 사본이 있다: <code>~/ros2/datasheet/RPLiDAR-A1M8_Slamtec_lidar.pdf</code>(18쪽짜리, <a href="07-lidar.html">07</a> §2-1 이 같은 경로를 적어 두었다).
+      <strong>이 절에 필요한 것은 rev.2.2 하나면 된다</strong> — 이 행은 두 판이 같기 때문이고, 두 판이 갈리는 <code>Distance Range</code> 는 <a href="l-01-link.html#s3-1-1">l-01 §3-1-1</a> 의 몫이다. 쪽 번호를 인용할 때는 <strong>판을 같이 적는다</strong>(두 판은 전체 쪽 수가 18쪽 ↔ 19쪽으로 다르다).</p>
+      <div class="tbl"><table>
+        <thead><tr><th>Item</th><th>Unit</th><th>Typical</th><th>Comments (= 조건)</th></tr></thead>
+        <tbody>
+          <tr><td rowspan="2"><code>Distance Resolution</code></td><td rowspan="2">mm</td><td><code>&lt;0.5</code></td><td><code>&lt;1.5 meters</code></td></tr>
+          <tr><td><code>&lt;1% of the distance</code></td><td><code>All distance range*</code></td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>조건을 떼면 이 줄은 뜻이 없다.</strong> 1 m 에서는 위 줄이 <code>0.5 mm</code> 를, 아래 줄이 <code>10 mm</code> 를 말한다 — 스무 배 차이다. 두 줄이 모순인 것이 아니라 <strong>적용 구간이 다르다</strong>(단위도 다르다: 위는 길이, 아래는 백분율).
+      3 m 에서는 위 줄이 해당하지 않고 아래 줄만 남아 <code>30 mm</code> 다. <strong>내 합격선을 거리마다 다르게 둘 것인가</strong>가 여기서 갈린다.</p>
+      <p class="small"><code>All distance range</code> 뒤의 별표(<code>*</code>)가 무엇을 가리키는지 <strong>집필자는 찾지 못했다</strong> — 같은 쪽에서 각주를 보지 못했고, 바로 아래에 있는 것은 Figure 2-2 를 소개하는 Note 문장이다(§2-4). <strong>확인 과제</strong>로 둔다: 내 사본의 같은 쪽에서 별표의 짝을 찾아 노트에 적는다.</p>
+
+      <div class="callout warn"><span class="ct">⚠ 이 표에 <code>Accuracy</code> 라는 행은 없다</span>
+        <p>집필자가 두 판의 성능 표 행을 전부 세었다 — <code>Distance Range</code> · <code>Angular Range</code> · <code>Scan Field Flatness</code> · <code>Distance Resolution</code> · <code>Angular Resolution</code> · <code>Sample Duration</code> · <code>Sample Frequency</code> · <code>Scan Rate</code> <strong>여덟이고, 정확도 행은 없다.</strong>
+        <a href="07-lidar.html">07</a> §3-9-1 이 이미 짚어 둔 구분이 여기서 결과를 낸다 — <strong>분해능(resolution)</strong> 은 "구별할 수 있는 가장 작은 차"이고 <strong>정확도(accuracy)</strong> 는 "참값에서 벗어난 정도"다.
+        이 쪽이 재는 <code>a</code> 와 <code>b</code> 는 <strong>정확도 쪽</strong>이고, 데이터시트는 그것을 약속한 적이 없다.</p>
+        <p><strong>그래서 합격선을 이 가이드가 줄 수 없다.</strong> 못 주는 것이지 안 주는 것이 아니다. <code>&lt;1 % of the distance</code> 를 그대로 합격선으로 삼는 것도 선택이지만, 그러면 <strong>분해능 사양을 정확도 합격선으로 빌려 쓰는 것</strong>임을 알고 써야 한다.
+        잔차는 직선 주위의 흩어짐이라 오히려 분해능 쪽에 가깝고, <code>b</code> 는 어느 사양과도 짝이 없다. <strong>정하고, 왜 그렇게 정했는지를 옆에 적는다</strong> — 그것이 §3-1-4 의 산출물이다.</p>
+      </div>
+
+      <h3 id="s2-4">2-4. 이론 곡선은 무엇을 말하는가 — 그림 한 장에서 두 가지를 읽는다</h3>
+      <p>같은 8쪽, 표 바로 아래에 Note 한 줄과 그림이 있다(두 판 모두 <strong>Figure 2-2</strong> "The Trend Graph of RPLIDAR A1 Resolution"). Note 는 <em>"the triangulation range system resolution changes along with distance"</em> 라 적는다 — <strong>삼각측량이라 분해능이 거리에 따라 변한다</strong>는 것이고, 그림은 그 <strong>이론적인</strong> 변화다.</p>
+      <p>그림에는 곡선이 둘, 세로축이 둘 있다. 범례는 <code>Resoultion</code> 과 <code>Precent</code> — <strong>둘 다 데이터시트의 오타</strong>다(<code>Resolution</code> · <code>Percent</code>). 오른쪽 축은 <code>0.00%</code> 부터 <code>0.20%</code> 까지 0.02 % 눈금이고, <strong>왼쪽 축은 0 부터 12 까지인데 단위가 적혀 있지 않다.</strong>
+      가로축도 단위 없이 <code>10</code> 부터 <code>5890</code>(rev.2.2) · <code>5810</code>(v3.0) 까지다.</p>
+      <div class="callout why"><span class="ct">단위가 안 적힌 축을 산수로 읽는다 — 내가 읽은 것이지 문서가 적은 것이 아니다</span>
+        <p>두 곡선이 <strong>같은 양의 두 표현</strong>이라면(백분율 = 분해능 ÷ 거리), 오른쪽 끝에서 둘이 맞아떨어져야 한다. 오른쪽 끝에서 <code>Precent</code> 곡선은 위쪽 눈금 <code>0.20%</code> 에 닿고, 가로축은 거기서 5890 이다.
+        <strong>0.20 % × 5890 = 11.78</strong> 이고 그 자리에서 <code>Resoultion</code> 곡선은 왼쪽 눈금 12 바로 아래에 있다. <strong>맞는다</strong> — 그러면 가로축 단위는 mm 이고(5890 mm = 5.89 m, R4 계열의 최대 거리 근처다) 왼쪽 축도 mm 다.</p>
+        <p>⚠ <strong>이 계산은 집필자가 그림을 눈으로 읽어 한 것이다.</strong> 문서에 축 단위가 적혀 있지 않으므로 등급은 <strong>확인 과제</strong>다 — <span class="small">내 사본의 같은 그림에서 오른쪽 끝의 두 눈금을 읽고 곱해 본다. 다른 값이 나오면 그것을 적는다.</span>
+        같은 산수가 하나 더 말해 준다: 백분율 곡선이 <strong>직선으로 올라간다</strong>면 분해능(mm)은 거리의 <strong>제곱</strong>으로 커진다(백분율 = 분해능 ÷ 거리이므로). <code>hardware/INVENTORY.md</code> §3 의 "원거리 → 정밀도 저하" 줄이 가리키는 것이 이것이다.</p>
+      </div>
+      <p><strong>여기서 두 숫자가 갈린다.</strong> 표의 <code>&lt;1 % of the distance</code> 는 <strong>사양</strong>(지키겠다는 약속)이고, 그림의 최대 <strong>0.2 %</strong> 는 <strong>이론</strong>(이 방식이면 이만큼은 된다)이다. 다섯 배 차이가 나며, 둘 다 틀린 것이 아니다.
+      내 잔차가 <strong>0.2 % 보다 나쁘고 1 % 보다 좋다면</strong> 사양은 통과지만 이론보다는 나쁜 것이고, 그 차이를 만드는 후보는 <strong>표면(무엇을 겨눴는가) · 광량 · 모드</strong>다(<a href="l-05-bandwidth-modes.html">l-05</a> · <a href="l-15-illusions.html">l-15</a>). <strong>센서 고장을 먼저 의심할 자리가 아니다.</strong></p>
+      <p class="small">⚠ 한 가지를 그대로 적어 둔다 — <strong>v3.0 은 표의 <code>Distance Range</code> 를 <code>0.15-12</code> 한 줄로 바꿨지만, 같은 쪽 Figure 2-2 의 가로축은 여전히 5810 에서 끝난다.</strong> rev.2.2 는 5890 에서 끝난다. 사실을 나란히 적고 <strong>어느 쪽이 틀렸다고 쓰지 않는다</strong> — 6 m 와 12 m 의 갈림은 <a href="l-01-link.html#s3-1-1">l-01 §3-1-1</a> 이 소유한다. 내 개체가 어느 쪽인지는 거기서 닫는다.</p>
+
+      <h3 id="s2-5">2-5. 재기 전에 정할 것 — "라이다가 읽은 값"이 무엇인가</h3>
+      <p>줄자는 한 숫자를 준다. 라이다는 <strong>한 바퀴에 수백에서 천 개가 넘는 점</strong>을 준다. <code>x_i</code> 자리에 넣을 숫자 하나를 <strong>내가 정의해야</strong> 하고, 그 정의가 <code>a</code> · <code>b</code> 를 움직인다.
+      세 갈래가 있고 <strong>셋 다 성립한다.</strong> 고르고, 고른 것을 적고, <strong>끝까지 같은 것을 쓴다</strong> — 중간에 바꾸면 <code>a</code> · <code>b</code> 가 센서가 아니라 <em>방법의 차이</em>를 흡수한다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>갈래</th><th>어떻게</th><th>치우치는 방향</th><th>드는 것</th></tr></thead>
+        <tbody>
+          <tr><td><strong>(가) 빈 중앙값</strong><br><span class="small">이 쪽의 기본 경로</span></td><td><a href="l-07-cross-verify.html#s2-4">l-07</a> 의 <code>sector_profile(scans, bin_deg)</code> 에서 벽을 향한 빈 하나를 읽는다. 여러 바퀴의 점이 한 통에 들어가 중앙값이 된다</td><td><strong>멀게</strong> — 한쪽으로만. 아래 상자를 본다</td><td>이미 있는 순수 함수 하나. 호스트에서 돈다</td></tr>
+          <tr><td>(나) 부채꼴 최소값</td><td><a href="07-lidar.html">07</a> §3-9-1 의 <code>probe</code> — 부채꼴 안에서 <strong>가장 가까운 유효 점</strong>을 고른다. 평평한 벽에서 그것이 수선의 발이다</td><td><strong>가깝게</strong> — 잡음이 있으면 작은 쪽으로 치우친다(07 이 그렇게 적어 두었다)</td><td>컨테이너와 <code>/scan</code> 이 필요하다</td></tr>
+          <tr><td>(다) 선분의 수직 거리</td><td><a href="l-11-lines.html">l-11</a> 의 <code>fit_lines()</code> 로 판을 선분으로 맞추고 거기까지의 수직 거리를 낸다</td><td>치우침이 가장 작다. 대신 <strong>맞춤이 실패하면 크게 틀린다</strong></td><td>l-11 · <a href="l-12-clearance.html">l-12</a> 를 끝냈어야 한다</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout why"><span class="ct">(가)가 왜 "멀게" 치우치는가 — 계통 오차를 재는 절차가 스스로 계통 오차를 만든다</span>
+        <p>벽에 내린 수선의 길이를 <code>d</code>, 빈의 폭을 <code>bin_deg</code> 라 하자. 수선 방향이 빈의 한가운데라면 그 빈의 점들은 수선에서 최대 <code>h = bin_deg / 2</code> 만큼 벌어진 방향을 본다.
+        평평한 벽에서 각도 <code>h</code> 만큼 벗어난 방향의 거리는 <code>d / cos(h)</code> 다 — <strong><code>h</code> 는 각도이고, <code>cos</code> 에 넣을 때 라디안으로 바꾼다</strong>(<code>math.radians</code>). <code>cos</code> 은 1 이하이므로 <strong>그 거리는 언제나 <code>d</code> 이상</strong>이다.
+        즉 빈 안의 점들은 <code>d</code> 부터 <code>d / cos(h)</code> 사이에 퍼져 있고, 중앙값은 <strong>반드시 <code>d</code> 보다 크거나 같다.</strong></p>
+        <p><strong>이 부풀림이 어느 칸에 들어가는지가 중요하다.</strong> 배율 <code>1 / cos(h)</code> 에는 거리가 들어 있지 않다 — 어느 거리에서 재든 <strong>같은 비율</strong>로 커진다.
+        그러면 <code>x</code> 가 <code>y</code> 에 비례해 부풀려진 것이므로 <strong><code>b</code>(평행이동)가 아니라 <code>a</code>(기울기)에 들어간다.</strong>
+        빈 안에서 각도가 고르게 퍼져 있다면 중앙값은 대략 <code>d / cos(h/2)</code> 이고(범위의 중앙이 아니라 <em>각도의 중앙값</em> 자리다), 그러면 fit 의 <code>a</code> 는 대략 <code>cos(h/2)</code> — <strong>1 보다 조금 작게</strong> 나온다.</p>
+        <pre class="diagram"><code>  빈 폭 bin_deg   반폭 h    개별 점의 상한   중앙값의 어림    그때 a 는 대략   3 m 에서의 길이
+                            1/cos(h)         1/cos(h/2)       cos(h/2)
+      5 도         2.5 도    1.00095          1.00024          0.99976          0.7 mm
+     10 도         5.0 도    1.00382          1.00095          0.99905          2.9 mm
+     20 도        10.0 도    1.01543          1.00382          0.99619         11.5 mm
+     30 도        15.0 도    1.03528          1.00863          0.99144         25.9 mm</code></pre>
+        <p class="small">집필자가 <code>python3</code> 로 계산했다(<code>1/math.cos(math.radians(h))</code>). 가운데 두 열은 <strong>어림</strong>이다 — 실제 값은 점이 빈 안에 어떻게 퍼졌는지와 벽이 빈의 한가운데에 있는지에 달렸다.
+        그래도 자릿수는 이것으로 잡힌다: <strong>20 도 빈으로 3 m 를 재면 찾으려는 계통 오차와 맞먹는 크기를 절차가 스스로 만든다.</strong> 빈을 좁히면 이 오차는 줄고 <strong>표본 수도 같이 준다</strong> — 어디서 멈출지는 §3-1-2 에서 내가 정한다.</p>
+      </div>
+      <p><strong>줄자의 기준점도 같은 성질이다.</strong> 데이터시트는 거리를 <em>"the rotating core of the RPLIDAR A1 and the sampling point"</em> 사이로 정의한다(rev.2.2 6쪽 Figure 1-4 "The RPLIDAR A1 Sample Point Data Information").
+      줄자를 몸체의 앞면이나 받침 모서리에 대면 그 차이가 <strong>전 구간에 같은 길이로</strong> 들어가 <code>b</code> 가 된다 — 07 §3-9-1 의 증상표가 "세 거리가 모두 같은 <em>길이</em>만큼 틀림"으로 이미 적어 둔 행이다. <strong>여기서는 그것이 증상이 아니라 측정 대상이라</strong>, 기준점을 어디로 잡았는지 노트에 적어야 <code>b</code> 를 해석할 수 있다.</p>
+
+      <h3 id="s2-6">2-6. 여기서 멈추는 이유 — 차체에 달면 달라지는 값이 있다</h3>
+      <p>이 쪽의 판정은 <strong>책상 위의 라이다</strong>에 대한 것이다. 같은 센서를 차체에 올리면 <strong>다시 봐야 하는 값</strong>과 <strong>그럴 필요가 없는 값</strong>이 갈리고, 그 선은 취향이 아니라 물리로 그어진다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>L 이 만든 기록</th><th>차체에 달면 달라지는가</th><th>왜</th></tr></thead>
+        <tbody>
+          <tr><td>기기 신원(model · firmware · hardware · serial) — <a href="l-02-device-id.html">l-02</a></td><td><strong>아니다</strong></td><td>개체 고유값이다</td></tr>
+          <tr><td>지원 스캔 모드 목록 · typical 모드 — <a href="l-05-bandwidth-modes.html">l-05</a></td><td><strong>아니다</strong></td><td>펌웨어에 달렸다</td></tr>
+          <tr><td>점/초 · 각도 간격 σ · 회전수 — <a href="l-04-one-turn.html">l-04</a></td><td><strong>그렇다</strong></td><td>회전수는 급전에 달렸고, 차체의 최종 전원은 09a 에서 정해진다</td></tr>
+          <tr><td>수신 B/s 와 회선 용량 대비 비율 — <a href="l-01-link.html">l-01</a> · l-05</td><td><strong>그렇다</strong></td><td>같은 이유(점/초와 한 몸이다)</td></tr>
+          <tr><td>거리 fit <code>a</code> · <code>b</code> — <strong>이 쪽</strong></td><td><strong>그럴 수 있다</strong></td><td>판 위로 올라가고 진동 · 발열 · 급전이 바뀐다. <strong>다시 재야 하는지 아닌지를 이 프로젝트는 모른다</strong> — 그래서 "다시 재서 같은지 본다"가 과제로 남는다</td></tr>
+          <tr><td>재질별 무반사율 — <a href="l-15-illusions.html">l-15</a></td><td><strong>그렇다</strong></td><td>차체 가림이 생기면 섹터가 통째로 달라진다</td></tr>
+        </tbody>
+      </table></div>
+      <p>오른쪽 열이 "그렇다"인 넷은 <strong>지금 다시 잴 수 없다</strong> — 차체가 없기 때문이다. 할 수 있는 일은 <strong>목록으로 남기는 것</strong>이고, 그것이 §3-3 이다. 목록을 안 남기면 조립 뒤에 "무엇이 달라졌는지"를 비교할 기준이 없어진다.</p>
+
+      <h2 id="lab">3. 실습</h2>
+
+      <div class="callout warn"><span class="ct">⚠ 이 쪽은 줄자를 대는 동안 머리가 돈다</span>
+        <p><strong>레이저는 눈에 보이지 않는다.</strong> Class I · 785 nm(775~795)는 적외선이라 켜졌는지 눈으로 알 수 없다(rev.2.2 9쪽 Figure 2-3 · 5쪽).
+        <strong>스캔 창을 들여다보지 않는다</strong> — 특히 렌즈 높이에서 정면으로. 실습 A 는 몸을 굽혀 벽과 센서 사이를 재는 자세가 되기 쉽다. <strong>얼굴을 센서 높이에 두지 않는다.</strong></p>
+        <p><strong>도는 머리에 손 · 머리카락 · 줄자 끝 · 케이블을 가까이 두지 않는다.</strong> 이 쪽은 같은 센서를 여러 거리로 <strong>여러 번 옮기는</strong> 실습이다 — 옮길 때마다 <strong>모터를 세운 뒤</strong>(<code>dtr=True</code>, <a href="l-01-link.html#s3-3">l-01 §3-3</a>) 들고,
+        놓은 다음 다시 돌린다. 줄자의 금속 띠가 도는 머리에 닿으면 튕겨 나간다. 케이블은 <strong>당기지 않을 만큼 여유</strong>를 두고, 옮길 때마다 여유를 다시 본다 — 센서가 끌려가면 그 회차의 측정이 통째로 버려진다.</p>
+      </div>
+
+      <h3 id="s3-1">3-1. 실습 A — 줄자를 정답지로 <code>a</code> · <code>b</code> · 잔차를 낸다 <span class="tag bench">벤치</span></h3>
+      <p>코드를 새로 쓰지 않는 실습이다. 쓰는 것은 이미 있는 <code>load_jsonl()</code> 과 <code>sector_profile()</code> 둘이고, 계산은 §2-2 의 식 넷이라 <strong>계산기로 끝난다.</strong>
+      이 실습에서 진짜 어려운 것은 산수가 아니라 <strong>같은 조건을 여러 번 만드는 것</strong>이다.</p>
+
+      <h4 id="s3-1-1">3-1-1. 확인 — 재기 전에 알고 있어야 하는 값 아홉</h4>
+      <p>첫째 표는 <strong>어디서 온 값인지</strong>와 <strong>내가 어떻게 확인하는지</strong>를 한 줄에 같이 둔다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>항목</th><th>값</th><th>출처 · 등급</th><th>내 장치에서 보는 법</th></tr></thead>
+        <tbody>
+          <tr><td>거리 분해능 (근거리)</td><td><code>&lt;0.5</code> mm</td><td>rev.2.2 8쪽 Fig 2-1 · v3.0 8쪽 Fig 2-1(두 판 같다) — <strong>확정(사양)</strong>. 조건 <code>&lt;1.5 meters</code></td><td>1.5 m 안쪽 점들의 잔차와 §3-1-4 에서 견준다</td></tr>
+          <tr><td>거리 분해능 (전 구간)</td><td><code>&lt;1% of the distance</code></td><td>같은 표 같은 행 — <strong>확정(사양)</strong>. 조건 <code>All distance range*</code></td><td>각 점의 잔차 ÷ 그 점의 거리</td></tr>
+          <tr><td>정확도 사양</td><td><strong>없다</strong></td><td>같은 표에 <code>Accuracy</code> 행이 없다(집필자가 두 판의 여덟 행을 세었다) — <strong>확인 과제</strong></td><td>내 사본의 8쪽에서 행 이름을 직접 센다(§2-3)</td></tr>
+          <tr><td>이론 분해능의 최대 백분율</td><td>약 <code>0.2 %</code></td><td><strong>rev.2.2</strong> 8쪽 Fig 2-2 의 오른쪽 축 최대 눈금 — <strong>그림을 눈으로 읽음</strong></td><td>내 사본에서 오른쪽 끝의 두 눈금을 읽고 곱해 본다(§2-4)</td></tr>
+          <tr><td>거리의 기준점</td><td>rotating core</td><td>rev.2.2 6쪽 Fig 1-4 — <strong>확정</strong></td><td>줄자의 0 을 여기에 맞춘다. 맞추기 어려우면 <strong>어디에 맞췄는지 적는다</strong></td></tr>
+          <tr><td>최소 거리</td><td>약 <code>0.15</code> m</td><td>rev.2.2 8쪽 Fig 2-1 <code>Distance Range</code> 의 <strong>아래</strong> 한계(v3.0 도 <code>0.15-12</code> 로 같다) — <strong>확정(사양)</strong></td><td>가장 가까운 측정점을 이보다 <strong>넉넉히</strong> 멀리 둔다</td></tr>
+          <tr><td>최대 거리</td><td><code>____</code></td><td>두 판이 갈린다(6 m ↔ 12 m) — <strong>확인 과제</strong>. 논증은 <a href="l-01-link.html#s3-1-1">l-01 §3-1-1</a></td><td><a href="l-05-bandwidth-modes.html">l-05</a> 의 <code>GET_LIDAR_CONF</code> · 드라이버 로그 · 본체 라벨</td></tr>
+          <tr><td>지금 쓰는 스캔 모드</td><td><code>____</code></td><td>l-05 — <strong>MEASURED(<code>____</code>, GET_LIDAR_CONF)</strong></td><td>내 기록 파일 머리 줄의 <code>meta.mode</code></td></tr>
+          <tr><td>내 회전수</td><td><code>____</code> Hz <span class="small">(한 바퀴의 주기 = 1000 ÷ 회전수 = <code>____</code> ms)</span></td><td><a href="l-04-one-turn.html">l-04</a> — <strong>MEASURED(<code>____</code>, lidar_lab/turn.py)</strong></td><td>한 회차에 몇 초를 뜰지의 근거가 된다(§3-1-2). <strong>데이터시트의 5.5 Hz(주기 약 182 ms)를 쓰지 않는다</strong> — 그 값은 typical 이고 <code>360 samples per scan</code> 조건이 붙어 있다(<strong>rev.2.2</strong> 8쪽 Fig 2-1 · <strong>v3.0</strong> 8쪽 Fig 2-1 — 이 줄은 두 판이 같다)</td></tr>
+        </tbody>
+      </table></div>
+
+      <p><strong>실행 확인:</strong> 미확인 — 집필자는 Pi 에 접속하지 못했고 라이다를 돌려 보지 못했다. 아래는 출력의 <em>모양</em>이고 값 자리는 <code>&lt;n&gt;</code> 이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><code>pi$ ls -l scripts/lidar_lab/scans/</code></td><td><code>-rw-r--r-- … &lt;이름&gt;.scan.jsonl</code> 이 하나 이상</td><td>기록을 뜨는 절차는 <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> 다. 이 실습은 거리마다 새로 뜨므로 <strong>지금 없어도 된다</strong></td></tr>
+          <tr><td>2</td><td><code>pi$ ls -l /dev/lidar</code></td><td><code>lrwxrwxrwx … /dev/lidar -&gt; ttyUSB&lt;n&gt;</code></td><td><a href="l-01-link.html">l-01</a> 의 증상표로. 전 쪽 공통 증상은 l-01 이 소유한다</td></tr>
+          <tr><td>3</td><td><code>pi$ cd scripts/lidar_lab &amp;&amp; python3 -c "import verify, turn, checks; print('ok')"</code></td><td><code>ok</code></td><td>세 모듈 중 없는 것이 있으면 그 쪽으로 돌아간다(<a href="l-07-cross-verify.html">l-07</a> · l-04 · <a href="l-15-illusions.html">l-15</a>). <strong>이 쪽은 새 파일을 만들지 않는다</strong></td></tr>
+          <tr><td>4</td><td>줄자를 벽에 대고 <strong>같은 거리를 두 번</strong> 읽는다</td><td>같은 값. 다르면 그 차이가 <strong>내 줄자 읽기의 불확실성</strong>이다</td><td>줄자가 없으면 이 실습은 열린 채 남는다(§3-1-4 의 마지막 줄)</td></tr>
+        </tbody>
+      </table></div>
+
+      <p>셋째 표는 <strong>같은 값을 네 갈래가 뭐라고 하는가</strong>다. 대상은 <code>&lt;1 % of the distance</code> — 이 쪽의 이해 확인 1번이 같은 표를 다시 묻는다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>갈래</th><th>어디</th><th>무엇이라 하는가</th><th>내 값</th></tr></thead>
+        <tbody>
+          <tr><td>① 정의</td><td><code>ros2$ ros2 interface show sensor_msgs/msg/LaserScan</code></td><td><strong>아무 말도 하지 않는다</strong> — 메시지에 오차·정확도 필드가 없다. <code>ranges</code> 는 숫자일 뿐이고 얼마나 믿을지는 <strong>메시지 밖의 지식</strong>이다</td><td>—</td></tr>
+          <tr><td>② 사양</td><td>rev.2.2 8쪽 Fig 2-1 · v3.0 8쪽 Fig 2-1</td><td><code>&lt;1% of the distance</code> <strong>@ All distance range</strong> — 그리고 이것은 <strong>분해능</strong> 행이다(§2-3)</td><td>—</td></tr>
+          <tr><td>③ 구현</td><td>드라이버 소스</td><td><strong>이 갈래는 이 쪽에서 열리지 않는다</strong> — 드라이버는 거리를 나르지 보정하지 않는다(내가 확인한 것이 아니라 <strong>확인 과제</strong>다: <code>grep</code> 으로 거리에 곱해지는 상수가 있는지 본다)</td><td><code>____</code></td></tr>
+          <tr><td>④ 실물</td><td>내 fit 의 잔차</td><td>—</td><td><code>____</code> m · 거리 대비 <code>____</code> %</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">넷이 다르면 <strong>④가 내 기기의 사실</strong>이고 나머지는 "무엇을 가정했는가"를 말해 준다. 특히 ①이 비어 있다는 것이 중요하다 — <strong><code>/scan</code> 을 받는 어떤 노드도 그 값이 얼마나 정확한지 모른다.</strong> 09 의 SLAM 도, 08d 의 융합도 <strong>이 쪽에서 내가 적은 숫자</strong> 말고는 근거가 없다.</p>
+
+      <h4 id="s3-1-2">3-1-2. 빈 표 — 먼저 내가 정하고, 그다음에 잰다</h4>
+      <p>아래 일곱 줄은 <strong>이 가이드가 정해 주지 않는 것</strong>이다. 정하지 않고 재기 시작하면 중간에 바뀌고, 중간에 바뀐 조건으로 낸 <code>a</code> · <code>b</code> 는 센서가 아니라 <em>내 마음</em>을 잰 것이 된다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>정할 것</th><th>내 값</th><th>정할 때 보는 것</th></tr></thead>
+        <tbody>
+          <tr><td>거리 목록 — 몇 개, 어디에</td><td><code>____</code> m ×<code>____</code>개</td><td>셋 이상(§2-2). 최소 거리 0.15 m 보다 넉넉히 멀고 <strong>내 모드의 최대 거리 안쪽</strong>. <strong>로봇이 실제로 쓸 구간</strong>을 덮는가 — 5 m 까지 쓸 일이 없다면 5 m 점은 fit 을 엉뚱한 곳으로 끌 뿐이다</td></tr>
+          <tr><td>한 회차에 몇 초를 뜨는가</td><td><code>____</code> s</td><td>내 회전수(<a href="l-04-one-turn.html">l-04</a>) × 초 = 바퀴 수. 빈 하나에 들어올 점 수 ≈ 바퀴 수 × (빈 폭 ÷ 내 각도 간격)</td></tr>
+          <tr><td>빈 폭 <code>bin_deg</code></td><td><code>____</code> 도</td><td>§2-5 의 표 — 좁히면 치우침이 줄고 표본도 준다. <strong>둘 중 무엇이 아쉬운지는 내 숫자를 보고 정한다</strong></td></tr>
+          <tr><td>같은 거리에서 몇 번 반복하는가</td><td><code>____</code> 회</td><td>적어도 한 거리에서는 <strong>3회</strong>. 이 셋의 폭이 §3-1-4 의 <strong>진단 줄</strong>이 된다</td></tr>
+          <tr><td><code>x</code>(라이다 값)의 정의</td><td>(가) / (나) / (다)</td><td>§2-5 의 세 갈래. <strong>고른 것을 적고 끝까지 같은 것을 쓴다</strong></td></tr>
+          <tr><td>줄자의 기준점</td><td><code>____</code></td><td>회전축 중심이 정의다(§2-5). 못 맞췄으면 <strong>어디에 맞췄는지</strong>를 적는다 — <code>b</code> 를 해석할 때 필요하다</td></tr>
+          <tr><td>합격선</td><td><code>____</code></td><td><strong>재기 전에 적지 않는다.</strong> §3-1-4 에서 내 잔차를 보고 정하고 <strong>근거를 같이</strong> 적는다</td></tr>
+        </tbody>
+      </table></div>
+      <p>그다음이 채울 표다. 한 행 = 한 거리다.</p>
+      <pre class="diagram"><code>거리 fit 기록 — 날짜 ____  모드 ____  회전수 ____ Hz  bin_deg ____ 도
+x 의 정의 ____ (가/나/다)   줄자 기준점 ____   벽/판의 재질 ____
+
+ #   줄자 y [m]   기록 파일                        빈 k   라이다 x [m]   반복 폭 [m]
+ 1   ____         scans/bias_____.scan.jsonl       ____   ____           ____
+ 2   ____         scans/bias_____.scan.jsonl       ____   ____           ____
+ 3   ____         scans/bias_____.scan.jsonl       ____   ____           ____
+ 4   ____         scans/bias_____.scan.jsonl       ____   ____           ____
+ …
+
+Sx ____   Sy ____   Sxx ____   Sxy ____   n ____
+a ____    b ____ m
+잔차 r_i ____ · ____ · ____ · ____      |r| 최대 ____ m   거리 대비 최대 ____ %
+내가 정한 합격선 ____        근거 ____</code></pre>
+      <p class="small">"반복 폭"은 같은 거리에서 여러 번 뜬 <code>x</code> 들의 <strong>최대 − 최소</strong>다. 한 거리만 반복해도 되고, 그 칸은 나머지 행에서 비어도 된다.</p>
+
+      <h4 id="s3-1-3">3-1-3. 채우기 — 그리고 계산 절차를 먼저 시험한다</h4>
+      <ol class="steps">
+        <li><strong>자리를 만든다.</strong> 평평한 벽이나 판을 고르고(유리 · 거울 · 검은 무광은 피한다 — <a href="l-15-illusions.html">l-15</a> 가 왜인지 보였다), 라이다와 벽 사이를 비운다. 센서는 <a href="l-01-link.html#s3-2">l-01 §3-2</a> 에서 만든 받침에 <strong>평평하게</strong> 놓는다.</li>
+        <li><strong>벽이 몇 번 빈인지 먼저 찾는다.</strong> 한 번 기록해 프로파일을 찍어 보고, 벽 방향의 빈 번호 <code>k</code> 를 고른다. 빈 <code>k</code> 가 덮는 각도는 <code>k × bin_deg</code> 이상 <code>(k+1) × bin_deg</code> 미만이다(<a href="l-07-cross-verify.html#s2-4">l-07 §2-4</a>). 각도가 어느 쪽으로 커지는지는 <a href="l-08-floor-plan.html#s2-2">l-08 §2-2</a> 에서 정한 규약이다.
+        <strong>센서를 돌리지 않는 한 <code>k</code> 는 모든 회차에서 같아야 한다</strong> — 달라졌다면 센서가 움직인 것이다.</li>
+        <li><strong>거리마다 기록한다.</strong> 줄자를 맞추고, 손을 치우고, <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> 의 기록 껍질로 정한 초만큼 뜬다. 파일 이름에 거리를 넣어 두면 나중에 헷갈리지 않는다.
+        <strong>기록 중에 센서 앞을 지나다니지 않는다</strong> — 지나간 바퀴가 그 빈의 중앙값을 끌어내린다.</li>
+        <li><strong>빈 값을 읽는다.</strong> 저장소 뿌리에서:</li>
+      </ol>
+      <pre><code class="lang-bash">pi$ cd scripts/lidar_lab &amp;&amp; python3</code></pre>
+      <pre><code class="lang-python">from turn import load_jsonl          # l-04
+from verify import sector_profile    # l-07
+
+scans = load_jsonl("scans/bias_1m_&lt;날짜&gt;.scan.jsonl")
+p = sector_profile(scans, &lt;내 bin_deg&gt;)
+len(p), p[&lt;k&gt;]        # -&gt; (&lt;빈 개수&gt;, &lt;그 빈의 거리 중앙값 m&gt;)  또는 p[k] 가 None</code></pre>
+      <p><code>p[k]</code> 가 <code>None</code> 이면 <strong>그 빈에 유효한 점이 하나도 없었다</strong>는 뜻이다 — <code>0.0</code> 이 아니다(<a href="l-07-cross-verify.html">l-07</a> 이 그렇게 정했다). 벽을 놓쳤거나 빈 번호가 틀렸거나 모터가 안 돈 것이고, <strong>그 행은 비워 두고 왜인지 적는다.</strong></p>
+      <p><strong>이제 계산인데, 그 전에 계산 절차부터 시험한다.</strong> 아래 두 묶음을 §2-2 의 식에 넣어 오른쪽 값이 나오면 내 계산(계산기든, 표 계산이든, 내가 쓴 다섯 줄이든)이 맞는 것이다. <strong>내 실제 측정값을 넣기 전에</strong> 한다 — 내 값으로는 답이 맞는지 알 길이 없다.</p>
+      <pre><code class="lang-python"># 묶음 A — 라이다가 전 구간에서 2 cm 씩 짧게 읽는 기기.  (x, y) = (라이다, 줄자)
+A = [(0.48, 0.50), (0.98, 1.00), (1.98, 2.00), (2.98, 3.00)]
+#   n = 4   Sx = 6.42   Sy = 6.5   Sxx = 13.9916   Sxy = 14.12
+a = 1.0
+b = 0.020000000000000018
+r = [0.0, 0.0, 0.0, 0.0]
+
+# 묶음 F — 잔차가 남는 기기.
+F = [(0.50, 0.52), (1.00, 1.03), (2.00, 2.02), (3.00, 3.05)]
+#   n = 4   Sx = 6.5   Sy = 6.62   Sxx = 14.25   Sxy = 14.479999999999999
+a = 1.0094915254237284
+b = 0.014576271186441225
+r = [0.0006779661016945715, 0.0059322033898303594,
+     -0.013559322033898091, 0.006949152542373049]</code></pre>
+      <p class="small">집필자가 <code>python3</code> 로 <strong>실제로 돌려 찍힌 그대로</strong>다(반올림하지 않았다). <code>b</code> 가 <code>0.02</code> 가 아니라 <code>0.020000000000000018</code> 인 것과 <code>Sxy</code> 가 <code>14.479999999999999</code> 인 것은 <strong>이진 부동소수의 자취</strong>다 — 계산기나 다른 순서로 더하면 <strong>마지막 몇 자리가 다르게 나오는 것이 정상</strong>이고, 그것이 <strong><a href="l-16-node.html">l-16</a></strong> 에서 두 구현의 답이 미세하게 갈리는 것과 같은 일이다. 앞 열 자리쯤이 맞으면 됐다.</p>
+      <p><strong>두 묶음이 각각 무엇을 잡는지</strong>가 요점이다. 집필자가 잘못된 계산 넷을 실제로 만들어 같은 묶음을 먹여 본 결과다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>흔한 잘못</th><th>어느 묶음이 잡는가</th><th>그때 나오는 값</th></tr></thead>
+        <tbody>
+          <tr><td><strong><code>x</code> 와 <code>y</code> 를 바꿔 넣었다</strong>(줄자를 <code>x</code> 로)</td><td><strong>A</strong> — <code>b</code> 의 <strong>부호</strong>로 드러난다</td><td><code>a = 1.0</code> 은 그대로인데 <code>b = -0.02</code>. <strong>라이다가 짧게 읽으면 <code>b</code> 는 양수다</strong> — 참값이 더 크니까</td></tr>
+          <tr><td>같은 잘못, 배율이 있는 기기</td><td><strong>F</strong></td><td><code>a = 0.990527…</code> — 1 을 사이에 두고 반대쪽으로 간다</td></tr>
+          <tr><td>절편 없이 <code>y = a·x</code> 로 맞췄다</td><td><strong>A</strong></td><td><code>a = 1.0091769…</code>, <code>|r|</code> <strong>최대</strong> <code>0.01559…</code>. 잔차 넷이 <code>+0.01559…</code> · <code>+0.01100…</code> · <code>+0.00182…</code> · <code>-0.00734…</code> 로 <strong>거리가 멀어질수록 한 방향으로 흘러내린다</strong> — 부호가 섞인다는 것이 아니라 <strong>이 흐름</strong>이 표식이다(§3-1-4 의 "한쪽으로 몰려 있다"의 한 꼴). <strong>오프셋 기기를 "비례해서 틀린다"고 오진한다</strong></td></tr>
+          <tr><td>잔차를 <code>y - a·x</code> 로 냈다(<code>b</code> 를 빼먹었다)</td><td><strong>A</strong></td><td>잔차가 0 이 아니라 전부 <code>0.02</code> — 완벽히 맞은 기기가 불합격이 된다</td></tr>
+          <tr><td>한 거리에서만 쟀다 / 점이 하나다</td><td>—</td><td>분모 <code>n·Sxx - Sx·Sx</code> 가 <strong>0</strong> 이다. 답은 <code>0</code> 이 아니라 <strong>"낼 수 없다"</strong>(§2-2)</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>절차가 두 묶음을 통과하면 내 값을 넣는다</strong> — 합 넷 → <code>a</code> → <code>b</code> → 잔차 순으로 §3-1-2 의 표를 채우고, 마지막으로 <strong>같은 거리를 반복한 회차의 폭</strong>을 낸다. 그 폭이 다음 절의 <strong>진단 줄</strong>이 된다.</p>
+
+      <h4 id="s3-1-4">3-1-4. 보고 판정하기 — 값 한 줄, 진단 한 줄</h4>
+      <p>노트에 남는 것은 두 줄이다. <strong>아랫줄이 값이고 윗줄이 진단</strong>이라는 구조는 <a href="l-15-illusions.html#s3-2-2">l-15 §3-2-2</a> 와 같다 — 값만 보고 판정하지 않으려고 둘을 나란히 둔다.</p>
+      <pre class="diagram"><code>진단   n=____ 점   서로 다른 거리 ____ 개   같은 거리 반복 폭 ____ m   p[k] 가 None 이던 회차 ____
+값     a=____   b=____ m   |r| 최대 ____ m (거리 대비 ____ %)</code></pre>
+      <p><strong>진단 줄을 먼저 읽는다.</strong> <span class="small">반복 폭이 <code>|r|</code> 최대보다 크면, 내가 본 잔차는 센서의 성질이 아니라 <strong>내 반복성의 한계</strong>다 — 그 숫자로 합격선을 정하면 안 된다.
+      더 오래 기록하거나(바퀴 수를 늘린다), 빈을 좁히거나(§2-5), 자리를 더 단단히 한다. <strong>이것을 확인하지 않으면 잔차가 무엇의 크기인지 모르는 채로 판정하게 된다.</strong></span></p>
+      <p>그다음 값 줄을 세 조각으로 읽는다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>무엇</th><th>어떻게 읽는가</th><th>같이 봐야 하는 것</th></tr></thead>
+        <tbody>
+          <tr><td><code>a</code> (기울기)</td><td>1 에서 얼마나 벗어났는가를 <strong>길이로 바꿔</strong> 본다 — 내가 쓸 가장 먼 거리 <code>D</code> 에서 <code>|a - 1| × D</code> 가 그 오차다. <code>a = 1.01</code> 이면 3 m 에서 3 cm</td><td><strong>내 절차가 만든 배율.</strong> 빈 폭이 넓으면 <code>a</code> 가 <strong>1 보다 작게</strong> 나온다(§2-5 의 표 — 20 도 빈이면 <code>0.996</code> 근처). 크게 벗어났다면(1.5 나 0.5 근처) 센서가 아니라 <strong>내 변환</strong>을 먼저 본다 — mm ↔ m, 고정소수점 자리(<a href="l-03-one-point.html">l-03</a>)</td></tr>
+          <tr><td><code>b</code> (오프셋)</td><td>전 구간에 같은 길이로 들어간 치우침. 양수면 <strong>라이다가 짧게 읽는다</strong>(참값이 더 크다)</td><td><strong>줄자의 기준점.</strong> 회전축이 아니라 몸체 끝에서 쟀다면 그 길이가 통째로 여기 들어 있다(§2-5). <strong>둘은 이 측정만으로 구별되지 않는다</strong> — 그래서 기준점을 적어 두었다</td></tr>
+          <tr><td>잔차</td><td>직선을 걷어내고 남은 것. <strong>부호가 섞여 있어야</strong> 정상이다 — 한쪽으로 몰려 있으면 직선이 아닌 무엇이 남아 있다는 뜻이다(가까운 점만 맞는다 등)</td><td><strong>사양 두 줄</strong>(§2-3): 1.5 m 안쪽 점은 <code>&lt;0.5 mm</code> 줄과, 전 구간은 <code>&lt;1 % of the distance</code> 줄과 견준다. 그리고 <strong>이론</strong> 0.2 %(§2-4)</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>이제 합격선을 정한다.</strong> 이 가이드는 숫자를 주지 않는다 — 줄 수 있는 것은 근거의 후보뿐이다.</p>
+      <ul class="steps">
+        <li><strong>줄자 쪽의 불확실성</strong> — §3-1-1 의 4번에서 같은 거리를 두 번 읽어 본 그 차이. <strong>내 자보다 정밀한 합격선은 뜻이 없다.</strong></li>
+        <li><strong>절차가 만든 치우침</strong> — 내 <code>bin_deg</code> 가 만드는 상한(§2-5 의 표). 이보다 작은 <code>b</code> 를 문제 삼을 수 없다.</li>
+        <li><strong>사양</strong> — <code>&lt;1 % of the distance</code>. 다만 <strong>분해능 사양을 정확도 합격선으로 빌려 쓰는 것</strong>임을 옆에 적는다(§2-3).</li>
+        <li><strong>쓰임</strong> — 로봇이 벽에서 얼마를 남기고 서야 하는가. 여유가 10 cm 인데 2 cm 오차를 잡느라 시간을 쓰는 것은 다른 일이다. <a href="l-12-clearance.html">l-12</a> 의 여유가 이 판단의 재료다.</li>
+      </ul>
+      <p><strong>세 결과가 모두 유효하다.</strong> ① 합격선 안에 들었다 → 값과 선을 적는다. ② 넘었다 → <strong>넘었다고 적는다.</strong> 이 프로젝트는 아직 보정을 넣지 않으므로, 지금 할 일은 고치는 것이 아니라 <strong>얼마나 틀리는지 아는 것</strong>이다.
+      ③ 못 쟀다(줄자가 없다 · <code>p[k]</code> 가 계속 <code>None</code> 이다 · 벽이 없다) → <strong>못 쟀다고 적는다.</strong> 셋 다 <code>bias-fit-recorded</code> 를 닫지만, 닫는 내용이 다르다.</p>
+
+      <h3 id="s3-2">3-2. 실습 B — L 의 기록을 수용 표 한 장으로 모은다 <span class="tag sim">기록 파일</span></h3>
+      <p>여기서 새로 재는 것은 없다. <strong>이미 잰 것을 한자리에 놓는 일</strong>이고, 그게 왜 따로 실습인가 하면 — 흩어져 있는 동안은 <strong>무엇이 비어 있는지가 안 보이기 때문</strong>이다.</p>
+
+      <h4 id="s3-2-1">3-2-1. 확인 — 세 상태를 구별할 수 있는가</h4>
+      <p>표를 찍기 전에 <strong>칸에 들어갈 세 가지</strong>를 구별해 둔다. 이 구별이 무너지면 <strong>재지 못한 시험이 만점으로 통과한다.</strong></p>
+      <div class="tbl"><table>
+        <thead><tr><th>칸에 적히는 것</th><th>뜻</th><th>어디서 오는가</th></tr></thead>
+        <tbody>
+          <tr><td><code>____</code></td><td><strong>아직 안 했다.</strong> 그 쪽을 열지 않았거나 부품이 없었다</td><td>내가 적는다</td></tr>
+          <tr><td><code>None</code></td><td><strong>도구가 "못 쟀다"고 답했다.</strong> 잰 칸이 하나도 없었다는 뜻이다</td><td><code>no_return_rate()</code> 의 빈 섹터(<a href="l-15-illusions.html">l-15</a>) · <code>sector_profile()</code> 의 빈 빈(<a href="l-07-cross-verify.html">l-07</a>) · <code>passage_width()</code> 의 못 찾음(<a href="l-12-clearance.html">l-12</a>)</td></tr>
+          <tr><td>숫자 — <code>0.0</code> 을 포함해서</td><td><strong>쟀다.</strong> <code>0.0</code> 은 잰 값이고, 무반사율이라면 <strong>가장 좋은 결과</strong>다</td><td>도구의 출력</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><span class="ct">⚠ <code>record_sheet()</code> 는 판단하지 않는다 — 그래서 <code>None</code> 이 그대로 칸에 찍힌다</span>
+        <p><a href="l-15-illusions.html#s3-2-2">l-15 §3-2-2</a> 가 이 함수를 일부러 바보로 만들었다 — <em>반올림하지 않고, 판정하지 않고, 빈칸을 채우지 않는다.</em> 좋은 성질이지만 대가가 있다: <strong><code>None</code> 이 적힌 칸과 <code>0.0</code> 이 적힌 칸이 표에서 나란히 보인다.</strong>
+        표를 훑는 사람(며칠 뒤의 나 자신)은 <code>None</code> 을 "0 이었나 보다"로 읽기 쉽고, 그러면 <strong>아무것도 못 잰 시험이 가장 좋은 결과로 둔갑한다.</strong>
+        표를 찍은 뒤 <strong><code>None</code> 이 있는 행에는 반드시 "왜" 를 적는다</strong> — 그 한 칸이 이 표의 값어치 전부다. <strong>실습 D 가 그것을 눈으로 보여 준다.</strong></p>
+      </div>
+
+      <h4 id="s3-2-2">3-2-2. 빈 표 — 열다섯 행, 이름은 체크 항목의 이름 그대로</h4>
+      <p>행 이름을 <strong>체크 항목의 이름(<code>data-key</code>)</strong> 으로 쓴다. 표 왼쪽의 글자를 보고 <strong>어느 쪽으로 돌아가야 하는지</strong> 바로 알기 위해서다.
+      <strong>안 한 쪽의 행은 지우지 않는다</strong> — 지우면 그 쪽이 표에서 사라져 "안 했다"는 사실까지 같이 사라진다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>행 이름</th><th>쪽</th><th>내 값에 무엇이 들어가는가</th><th>비고</th></tr></thead>
+        <tbody>
+          <tr><td><code>bytes-per-second-counted</code></td><td><a href="l-01-link.html">l-01</a></td><td>수신 B/s · 회선 용량 11 520 B/s 대비 %</td><td>차체에서 다시 본다(§3-3)</td></tr>
+          <tr><td><code>device-identity-read</code></td><td><a href="l-02-device-id.html">l-02</a></td><td>model · firmware · hardware · serial</td><td>개체 고유값</td></tr>
+          <tr><td><code>points-per-turn-measured</code></td><td><a href="l-04-one-turn.html">l-04</a></td><td>점/회전 · 각도 간격 중앙값 · σ · 회전수</td><td>차체에서 다시 본다</td></tr>
+          <tr><td><code>modes-queried-from-device</code></td><td><a href="l-05-bandwidth-modes.html">l-05</a></td><td>모드 목록과 typical 모드 번호</td><td>펌웨어에 달렸다</td></tr>
+          <tr><td><code>max-distance-queried</code></td><td>l-05</td><td>내 모드의 최대 거리 [m]</td><td>6 m ↔ 12 m 갈림의 세 경로 중 하나</td></tr>
+          <tr><td><code>driver-log-mode-judged</code></td><td><a href="l-07-cross-verify.html">l-07</a></td><td>기동 로그의 모드가 목록의 <strong>어느 것</strong>인가</td><td>컨테이너가 필요하다</td></tr>
+          <tr><td><code>tool-or-sensor-judged</code></td><td>l-07</td><td>두 경로 대조의 <code>corr</code> · 거리차 중앙값 · 일치율</td><td>컨테이너가 필요하다</td></tr>
+          <tr><td><code>angle-direction-determined</code></td><td><a href="l-08-floor-plan.html">l-08</a></td><td>각도가 커지는 방향(반시계 / 시계)</td><td>뒤 다섯 쪽이 전부 이것에 매달려 있다</td></tr>
+          <tr><td><code>grid-time-vs-scan-period</code></td><td><a href="l-09-occupancy.html">l-09</a></td><td>격자 한 장에 걸린 시간 [ms] ↔ 내 회전 주기 [ms]</td><td>예산은 내 회전수에서 나온다</td></tr>
+          <tr><td><code>corners-match-tape</code></td><td><a href="l-11-lines.html">l-11</a></td><td>코너 위치와 줄자의 차 [m]</td><td>이 쪽의 <code>b</code> 와 같은 방향으로 움직인다</td></tr>
+          <tr><td><code>passage-width-judged</code></td><td><a href="l-12-clearance.html">l-12</a></td><td>통로 폭 [m] · 통과 판정</td><td>⚠ 못 찾으면 <code>None</code> 이다 — <code>0.0</code> 이 아니다</td></tr>
+          <tr><td><code>wall-control-sector-zero</code></td><td><a href="l-15-illusions.html">l-15</a></td><td>대조군 벽 섹터의 무반사율</td><td>⚠ <code>0.0</code> 이 <strong>가장 좋은 결과</strong>다. <code>None</code> 이면 잰 점이 없었다는 뜻</td></tr>
+          <tr><td><code>material-miss-rates-measured</code></td><td>l-15</td><td>재질별 무반사율(벽 · 유리 · 천 · 검은 무광)</td><td>차체 가림이 생기면 통째로 달라진다</td></tr>
+          <tr><td><code>same-file-same-answer</code></td><td><strong><a href="l-16-node.html">l-16</a></strong></td><td>같은 파일에 대한 두 구현의 차이</td><td>센서가 아니라 <strong>내 코드</strong>를 채점한 행이다(§2-1)</td></tr>
+          <tr><td><code>bias-fit-recorded</code></td><td><strong>이 쪽 §3-1</strong></td><td><code>a</code> · <code>b</code> · <code>|r|</code> 최대 · 내가 정한 합격선</td><td>차체에서 다시 볼 수 있다</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">07 이 소유하는 네 칸(최대 거리 로그 · 회전수 대조 3행 · 0° 방향과 줄자 3점 · 장착 정보)은 <strong>이 표에 다시 넣지 않는다.</strong> 그 칸들은 <code>hardware/INVENTORY.md</code> §3 에 있고 채우는 절차는 <a href="07-lidar.html">07</a> §3-5 · §3-9-1 이다 — <strong>비어 있으면 거기로 돌아간다.</strong>
+      장착 · 방향 · 가림 · 중첩 · 주행 중 필터 · 최종 전원 여섯 줄도 넣지 않는다(<strong><a href="09a-assembly-gate.html">09a</a></strong> 소유).</p>
+
+      <h4 id="s3-2-3">3-2-3. 채우기</h4>
+      <ol class="steps">
+        <li><strong>사이드바의 체크 상태를 보며 행마다 채운다.</strong> 체크가 되어 있어도 <strong>값이 노트에 없으면 그 행은 <code>____</code></strong> 다 — 체크는 "했다"를 말하지 "얼마였다"를 말하지 않는다.</li>
+        <li><strong>못 닫은 행에 이유를 적는다.</strong> 부품이 없었는가(줄자 · 거울 · 천), 환경이 없었는가(컨테이너 · 07), 아니면 하다가 막혔는가. <strong>세 이유는 다음에 할 일이 서로 다르다.</strong></li>
+        <li><strong>표로 찍는다.</strong> <a href="l-15-illusions.html">l-15</a> 에서 만든 <code>record_sheet(headers, rows)</code> 를 쓴다. 저장소 뿌리에서:</li>
+      </ol>
+      <pre><code class="lang-bash">pi$ cd scripts/lidar_lab &amp;&amp; python3</code></pre>
+      <pre><code class="lang-python">from checks import record_sheet       # l-15
+
+headers = ["행 이름", "쪽", "내 값", "못 닫았으면 왜"]
+rows = [
+    ["bias-fit-recorded", "l-17", "a=&lt;n&gt; b=&lt;n&gt; |r|max=&lt;n&gt;", ""],
+    ["passage-width-judged", "l-12", "None", "센서 가림 — 통로를 못 찾았다"],
+    ["material-miss-rates-measured", "l-15", "____", "천이 없었다"],
+    # … 열다섯 행
+]
+print(record_sheet(headers, rows))</code></pre>
+      <p><code>record_sheet</code> 를 아직 안 채웠다면 <strong>표를 노트에 손으로 그려도 이 항목은 닫힌다.</strong> <a href="l-15-illusions.html#s3-2-3">l-15 §3-2-3</a> 은 이 쪽에서 그 함수가 "한 번은 필요해진다"고 예고했지만, <strong>이 쪽이 요구하는 것은 표의 내용이지 그것을 찍은 수단이 아니다</strong> — 남는 것은 형식이 아니라 기록이다.
+      다만 위 세 행을 <strong>일부러 그렇게 써 두었다</strong>: <code>None</code> 과 <code>____</code> 와 숫자가 <strong>한 표에 같이</strong> 있을 때 어떻게 보이는지가 실습 D 의 재료다.</p>
+
+      <h4 id="s3-2-4">3-2-4. 보고 판정하기</h4>
+      <p>표를 다 채우면 <strong>세 숫자</strong>를 아래에 적는다 — 닫힌 행 수 / <code>None</code> 인 행 수 / <code>____</code> 인 행 수. 셋의 합이 열다섯이다.</p>
+      <pre class="diagram"><code>수용 표 — 날짜 ____
+닫힘 ____ / None ____ / 아직 안 함 ____   (합 15)
+못 닫은 것 중 부품이 없어서 ____ · 환경이 없어서 ____ · 막혀서 ____
+이 표를 다시 볼 날 ____ (조립 뒤 — 09a)</code></pre>
+      <p><strong>"전부 닫힘"이 목표가 아니다.</strong> 이 프로젝트는 부품과 시간이 제한돼 있고, <strong>무엇이 왜 비어 있는지 아는 상태</strong>가 모르는 채 다 채운 것보다 낫다.
+      특히 <code>None</code> 인 행은 <strong>닫힌 것도 안 한 것도 아니다</strong> — 도구가 "못 쟀다"고 답한 것이고, 그 이유는 대개 장면에 있다(센서를 딴 데 두었다 · 벽이 너무 멀다 · 섹터를 잘못 잡았다).</p>
+
+      <h3 id="s3-3">3-3. 실습 C — 차체에 달면 다시 볼 것을 목록으로 남긴다 (코드 없음)</h3>
+      <p>노트와 연필뿐인 실습이다. 부품도 환경도 필요 없고, <strong>5분이면 끝나며</strong>, 안 하면 조립 뒤에 비교할 기준이 없어진다.</p>
+
+      <h4 id="s3-3-2">3-3-2. 빈 표 — 넷을 옮겨 적는다</h4>
+      <p>§2-6 에서 "차체에 달면 달라진다"로 갈린 넷이다. <strong>지금 값</strong>은 실습 B 의 표에서 그대로 가져오고, 오른쪽 두 칸은 조립 뒤에 채운다.</p>
+      <pre class="diagram"><code>조립 뒤 다시 볼 것 — 벤치 기준값 기록일 ____
+
+ 무엇                          지금 값(벤치)   조립 뒤 값   같은가   다르면 무엇이 달라졌나
+ 점/회전 · 간격 σ · 회전수     ____            ____         ____     ____
+ 수신 B/s · 회선 대비 %        ____            ____         ____     ____
+ 거리 fit  a / b / |r|max      ____            ____         ____     ____
+ 재질별 무반사율(벽 대조군)    ____            ____         ____     ____
+
+ 다시 잴 때 같아야 하는 조건: 모드 ____ · 기록 초 ____ s · bin_deg ____ 도 · 벽/판 ____
+ 이 표를 넘기는 곳: <a href="09a-assembly-gate.html">09a</a></code></pre>
+
+      <h4 id="s3-3-3">3-3-3. 채우기</h4>
+      <ol class="steps">
+        <li><strong>왼쪽 두 열만 채운다.</strong> 오른쪽은 차체가 있어야 채워진다 — <strong>비워 두는 것이 이 표의 정상 상태</strong>다.</li>
+        <li><strong>"다시 잴 때 같아야 하는 조건" 줄을 꼭 채운다.</strong> 이것이 없으면 조립 뒤의 값이 달라졌을 때 <strong>차체 때문인지 조건이 바뀐 탓인지 구별되지 않는다.</strong> 모드가 바뀌면 점/초가 통째로 달라지고(<a href="l-05-bandwidth-modes.html">l-05</a>), <code>bin_deg</code> 가 바뀌면 <code>b</code> 가 움직인다(§2-5).</li>
+        <li><strong>넷 중 셋은 전원과 한 몸이라는 것을 적어 둔다.</strong> 회전수 · 점/초 · 수신 B/s 는 급전이 바뀌면 같이 움직인다. 차체의 최종 급전은 <strong>09a</strong> 에서 정해진다 — 그 전까지 이 셋의 "정답"은 없다.</li>
+      </ol>
+
+      <h4 id="s3-3-4">3-3-4. 보고 판정하기</h4>
+      <p>이 표는 지금 <strong>판정되지 않는다</strong> — 그것이 정상이다. 여기서 확인할 것은 하나다: <strong>조립 뒤의 나 자신이 이 표만 보고 같은 측정을 재현할 수 있는가.</strong>
+      모드 · 기록 시간 · 빈 폭 · 벽이 적혀 있지 않으면 재현이 안 되고, 그러면 이 표는 숫자 목록일 뿐 기준이 아니다. <strong>빠진 조건을 지금 채운다.</strong></p>
+      <p class="small">⚠ 이 표에 <strong>장착 위치 · 장착 방향 · 차체 가림 · 스캔 중첩 · 주행 중 필터 · 최종 전원</strong>을 넣지 않는다. 그 여섯은 <strong><a href="09a-assembly-gate.html">09a</a></strong> 가 자기 목록으로 갖는다 — 여기에 적으면 두 곳에서 관리되고, 두 곳이 어긋나면 어느 쪽이 정본인지 아무도 모른다.</p>
+
+      <h3 id="s3-4">3-4. 실습 D — 도구에 나쁜 입력을 먹인다 <span class="tag sim">기록 파일</span></h3>
+      <p>지금까지 이 쪽은 <strong>도구의 출력을 믿고</strong> 표를 만들었다. 마지막 실습은 그 믿음을 시험한다 — <strong>도구가 이상한 입력을 받았을 때 멈추는가, 아니면 그럴듯한 답을 내는가.</strong>
+      라이다가 <a href="l-15-illusions.html">l-15</a> 에서 그랬듯 <strong>도구도 조용히 틀린다.</strong> 이 실습은 기록 파일 한 장이면 되고 라이다가 필요 없다.</p>
+
+      <h4 id="s3-4-1">3-4-1. 확인 — <code>load_jsonl</code> 이 무엇을 거부하는지 다시 읽는다</h4>
+      <p><a href="l-04-one-turn.html#s3-4-2">l-04 §3-4-2</a> 의 로더는 단순한 파서가 아니라 <strong>검사하는 로더</strong>다. 여섯 가지를 거부하고, <strong>거부할 때 줄 번호를 말한다.</strong></p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>#</th><th>무엇을 거부하는가</th><th>나오는 말(꼴)</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>머리 줄이 없다</td><td><code>line 1 must be the head line: {"meta": {...}}</code> / 파일이 비었으면 <code>&lt;경로&gt; is empty: there is no head line</code></td></tr>
+          <tr><td>2</td><td><code>unit</code> 이 <code>"m"</code> 이 아니다</td><td><code>line 1: unit is 'mm', the format fixes "m"</code></td></tr>
+          <tr><td>3</td><td><code>len(a) != len(r)</code> 또는 <code>n</code> 이 안 맞는다</td><td><code>line &lt;n&gt;: n=&lt;v&gt; but len(a)=&lt;m&gt;</code></td></tr>
+          <tr><td>4</td><td><code>a</code> 가 오름차순이 아니다</td><td><code>line &lt;n&gt;: a[&lt;i&gt;]=&lt;v&gt; breaks ascending order</code></td></tr>
+          <tr><td>5</td><td><code>a</code> 가 <code>[0, 360)</code> 밖이다</td><td><code>line &lt;n&gt;: a[&lt;i&gt;]=&lt;v&gt; is outside [0, 360)</code></td></tr>
+          <tr><td>6</td><td><code>t</code> 가 수가 아니다</td><td><code>line &lt;n&gt;: t is None -- the recorder did not stamp it</code></td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>왜 이만큼 까다로운가</strong> — 이 형식 위에 여섯 쪽이 서 있기 때문이다. 각도가 뒤섞인 파일을 <a href="l-08-floor-plan.html">l-08</a> 이 받으면 점이 <strong>남의 각도에 붙고</strong>, 그 평면도는 <strong>그럴듯하게 틀린다.</strong> 오류가 아니라 거울상이나 일그러진 방으로 나오므로 스스로 알아챌 수 없다.
+      <strong>읽기가 틀리면 뒤의 모든 쪽이 조용히 틀린다</strong> — 그래서 로더는 전량으로 주어졌고, 그래서 여기서 그 검사가 <em>정말로</em> 도는지 확인한다.</p>
+      <div class="callout note"><span class="ct">같은 검사가 C++ 판에도 있는가</span>
+        <p><strong><a href="l-16-node.html">l-16</a></strong> 이 이 형식을 읽는 C++ 판을 만든다. 거기서 <code>[Scan]</code> 만 구현하고 여섯 검사를 옮기지 않으면 <strong>검사는 오류 없이 사라진다</strong> — 같은 나쁜 파일을 C++ 쪽은 말없이 먹는다.
+        l-16 을 이미 했다면 <strong>아래 다섯 회차를 C++ 판에도 먹여 보고 결과를 나란히 적는다.</strong> 옮기지 않기로 했다면 그것도 선택이지만, <strong>그 대가가 무엇인지 알고 한 선택</strong>이어야 한다.</p>
+      </div>
+
+      <h4 id="s3-4-2">3-4-2. 빈 표 — 여섯 회차, 두 부류</h4>
+      <p>앞의 다섯은 <strong>도구가 멈춰야 하는</strong> 입력이고, 마지막 하나는 <strong>멈추지 않는 것이 옳은</strong> 입력이다. 둘을 가르는 것이 이 실습의 전부다.</p>
+      <pre class="diagram"><code>나쁜 입력 시험 — 날짜 ____   쓴 원본 파일 ____
+
+ #  무엇을 망가뜨렸나        기대          실제로 나온 말(그대로)               멈췄나
+ 1  빈 파일                  거부          ____                                 ____
+ 2  머리 줄을 지웠다         거부          ____                                 ____
+ 3  unit 을 "mm" 로          거부          ____                                 ____
+ 4  a 두 개를 맞바꿨다       거부          ____                                 ____
+ 5  n 을 1 늘렸다            거부          ____                                 ____
+ 6  멀쩡한 파일 + 빈 섹터    멈추지 않음   ____                                 ____
+
+ 6번이 표(또는 한 줄)에 찍힌 글자 ____   그 글자를 "0" 으로 읽을 뻔했는가 ____</code></pre>
+
+      <h4 id="s3-4-3">3-4-3. 채우기 — 원본은 건드리지 않는다</h4>
+      <p>망가뜨린 사본은 <code>/tmp</code> 에 만든다. <strong><code>scans/</code> 안의 기록은 손대지 않는다</strong> — 나중에 그 파일이 정상인지 아닌지 알 수 없게 된다.</p>
+      <pre><code class="lang-bash">pi$ cd scripts/lidar_lab
+pi$ S=scans/&lt;내 파일&gt;.scan.jsonl
+pi$ : &gt; /tmp/d1.scan.jsonl                                    # 1. 0 바이트
+pi$ tail -n +2 "$S" &gt; /tmp/d2.scan.jsonl                       # 2. 머리 줄을 지운다
+pi$ sed '1s/"unit": *"m"/"unit": "mm"/' "$S" &gt; /tmp/d3.scan.jsonl   # 3. 단위를 바꾼다
+pi$ head -3 /tmp/d3.scan.jsonl | cut -c1-90                    # 바뀌었는지 눈으로 본다</code></pre>
+      <p>4번과 5번은 한 줄을 JSON 으로 열어 고치는 것이 빠르다.</p>
+      <pre><code class="lang-python">import json
+src = "scans/&lt;내 파일&gt;.scan.jsonl"
+lines = open(src).read().splitlines()
+
+row = json.loads(lines[1])                       # 첫 스캔 줄
+row["a"][5], row["a"][6] = row["a"][6], row["a"][5]      # 4. 이웃한 두 각도를 맞바꾼다
+open("/tmp/d4.scan.jsonl", "w").write("\n".join([lines[0], json.dumps(row)]) + "\n")
+
+row = json.loads(lines[1])
+row["n"] = row["n"] + 1                                   # 5. 개수만 늘린다
+open("/tmp/d5.scan.jsonl", "w").write("\n".join([lines[0], json.dumps(row)]) + "\n")</code></pre>
+      <p>여섯 회차를 차례로 먹인다. 앞 다섯은 <strong>예외가 나야</strong> 하고, 그 예외의 문장을 <strong>그대로</strong> 표에 옮긴다.</p>
+      <pre><code class="lang-python">from turn import load_jsonl
+from verify import sector_profile
+from checks import record_sheet
+
+for p in ["/tmp/d1.scan.jsonl", "/tmp/d2.scan.jsonl", "/tmp/d3.scan.jsonl",
+          "/tmp/d4.scan.jsonl", "/tmp/d5.scan.jsonl"]:
+    try:
+        load_jsonl(p)
+        print(p, "-&gt; 통과했다 (!)")
+    except ValueError as e:
+        print(p, "-&gt;", e)</code></pre>
+      <p>6번은 다르다. <strong>멀쩡한 파일</strong>을 그대로 읽고, <strong>아무 점도 없는 섹터</strong>를 골라 표에 넣는다.</p>
+      <pre><code class="lang-python">scans = load_jsonl("scans/&lt;내 파일&gt;.scan.jsonl")     # 멀쩡하다. 예외가 나지 않는다
+p = sector_profile(scans, &lt;내 bin_deg&gt;)
+k = [i for i, v in enumerate(p) if v is None]         # 빈 빈의 번호들
+print(len(k), k[:5])                                 # -&gt; &lt;n&gt; [&lt;i&gt;, …]   하나도 없으면 0 []
+
+val = p[k[0]] if k else None       # 빈 빈의 값. 정의상 None 이다 -- 예외는 나지 않았다
+print(record_sheet(["행 이름", "내 값"],
+                   [["wall-control-sector-zero", str(val)],     # 아무것도 못 쟀다
+                    ["passage-width-judged", "0.0"]]))          # 진짜로 잰 0.0</code></pre>
+      <p class="small"><code>record_sheet</code> 가 아직 <a href="l-15-illusions.html#s3-2-3">l-15</a> 의 골격(<code>return ""</code>)이면 <strong>빈 줄만 나온다.</strong> 그래도 이 관찰은 닫힌다 — <code>print(val, 0.0)</code> 으로 <strong>두 값을 한 줄에 나란히 찍기만 해도</strong> 글자 <code>None</code> 과 글자 <code>0.0</code> 이 같은 줄에 서는 것을 볼 수 있다. 이 실습이 보려는 것은 표의 모양이 아니라 <strong>두 글자가 나란히 있을 때 어떻게 읽히는가</strong>다.</p>
+      <p class="small">빈 빈이 하나도 없으면(방이 사방으로 닫혀 있으면) 6번은 <strong>일부러 만든다</strong> — <code>no_return_rate(scans, (&lt;아무 좁은 섹터&gt;))</code> 를 점이 없는 각도 구간에 대고 부르거나, 사본에서 한 바퀴의 점 몇 개를 지운다. <strong>"안 만들어졌다"도 관찰이니 그대로 적는다.</strong></p>
+
+      <h4 id="s3-4-4">3-4-4. 보고 판정하기 — 멈추는 실패와 멈추지 않는 실패</h4>
+      <p>다섯 회차의 결과부터 본다. <strong>멈췄다면 좋은 것이다</strong> — 예외는 사고가 아니라 <strong>도구가 제 일을 한 증거</strong>다. 하나라도 통과했다면 그 검사가 내 로더에 빠져 있는 것이고, 그 줄은 <a href="l-04-one-turn.html#s3-4-2">l-04 §3-4-2</a> 에 있다.</p>
+      <p>진짜 볼 것은 <strong>6번</strong>이다. 파일이 멀쩡하므로 <strong>아무도 멈추지 않는다.</strong> <code>sector_profile</code> 은 <code>None</code> 을 돌려주고, <code>record_sheet</code> 는 그것을 글자 <code>None</code> 으로 찍고, 그 옆 줄에는 진짜로 잰 <code>0.0</code> 이 있다.
+      표만 보면 <strong>둘 다 "숫자가 적힌 행"으로 보인다.</strong> 그런데 하나는 <strong>가장 좋은 결과</strong>(무반사가 하나도 없었다)이고 하나는 <strong>아무것도 못 잰 것</strong>이다.</p>
+      <div class="callout warn"><span class="ct">⚠ 이것이 이 쪽에서 가장 비싸게 틀릴 수 있는 자리다</span>
+        <p>수용 표의 칸을 <code>None</code> → <code>0</code> 으로 읽으면 <strong>재지 못한 시험이 만점으로 통과한다.</strong> 같은 일이 세 곳에서 같은 모양으로 일어난다 —
+        <code>no_return_rate()</code> 의 <code>None</code> 은 "잰 칸이 없다"이지 "무반사가 없다"가 아니고, <code>passage_width()</code> 의 <code>None</code> 은 "통로를 못 찾았다"이지 "폭이 0"이 아니며(<a href="l-12-clearance.html">l-12</a>), 기준 형식의 <code>null</code> 은 "못 쟀다"이지 "0 m 에 물체"가 아니다(<a href="l-04-one-turn.html">l-04</a>).
+        <strong>가장 위험한 것은 통로 폭이다</strong> — <code>None</code> 을 <code>inf</code> 로 읽는 구현이라면 "지나갈 수 있다"가 되어, 아무것도 못 본 상태가 <strong>통과 판정</strong>이 된다.</p>
+        <p>그래서 §3-2-1 의 규칙을 표에 적용한다: <strong><code>None</code> 이 있는 행에는 "왜"를 같이 적는다.</strong> 표를 다시 열었을 때 그 한 칸이 있으면 오독이 일어나지 않는다.</p>
+      </div>
+      <p><strong>적을 것은 하나다</strong> — 6번이 표(또는 한 줄)에 찍힌 글자와, 그 글자를 잠깐이라도 "0" 으로 읽었는지. 안 읽었어도 좋다. <strong>읽을 뻔했다면 그것이 이 실습의 소득</strong>이고, 그 경험이 며칠 뒤 이 표를 다시 열 때를 막아 준다.</p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다. <strong>이 쪽의 항목은 "합격했는가"가 아니라 "무엇이 나왔는지 적었는가"로 쓰여 있다</strong> — 합격선은 내가 정하는 것이라, 정하기 전에는 합격이라는 말이 성립하지 않는다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="bias-fit-recorded"><span><strong>경로 통과</strong> — 줄자와 라이다 쌍 셋 이상으로 <code>a</code> · <code>b</code> · 잔차를 내고, <strong>내가 정한 합격선과 그 근거</strong>를 옆에 적었다. 못 쟀으면 <strong>못 쟀다고</strong> 적었다
+          <span class="sub">판정 수단: §3-1-2 의 표 · §3-1-4 의 두 줄 · 합격선 <code>____</code>(데이터시트에 정확도 행이 없다 — §2-3)</span></span></label></li>
+        <li><label><input type="checkbox" data-key="datasheet-spec-row-copied"><span><strong>경로 통과</strong> — 데이터시트 성능 표의 거리 관련 행을 <strong>조건까지</strong> 옮겨 적었다(두 줄 · 두 조건). 그리고 그 표에 정확도 행이 있는지 없는지를 <strong>내 사본에서 직접 세어</strong> 적었다
+          <span class="sub">판정 수단: 내 노트 · §2-3 · 07 §3-9-1 이 소유하는 <code>hardware/INVENTORY.md</code> §3 "센서 자체 검증" 칸이 비어 있으면 <strong>거기서</strong> 채운다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="bench-record-sheet-filled"><span><strong>경로 통과</strong> — 수용 표 열다섯 행이 값 · <code>None</code> · <code>____</code> 중 하나로 채워졌고, <strong><code>None</code> 과 <code>____</code> 인 행에는 왜인지가 같이 적혔다</strong>
+          <span class="sub">판정 수단: <code>record_sheet()</code> 의 출력 또는 손으로 그린 표 · §3-2-4 의 세 숫자. <strong>내 노트만으로 닫힌다</strong> — INVENTORY 에 새 행이 생겼는지와 무관하다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="recheck-after-mount-listed"><span><strong>경로 통과</strong> — 차체에 달면 달라지는 넷과 <strong>다시 잴 때 같아야 하는 조건</strong>을 노트에 적었다
+          <span class="sub">판정 수단: §3-3-2 의 표 · 재현에 필요한 조건 네 가지(모드 · 기록 초 · <code>bin_deg</code> · 벽)가 다 적혔는가</span></span></label></li>
+        <li><label><input type="checkbox" data-key="tool-rejects-bad-input"><span><strong>발동 확인</strong> — 망가뜨린 파일 다섯을 먹여 <strong>무슨 말이 나왔는지 그대로</strong> 적었고, <strong>멈추지 않는 여섯째</strong>(빈 섹터의 <code>None</code>)가 표에서 어떻게 보이는지 봤다
+          <span class="sub">판정 수단: §3-4-2 의 표 · 다섯 회차의 실제 문장 · 여섯째가 표<strong>(또는 한 줄)</strong>에 찍힌 글자. <strong>통과해 버린 회차가 있으면 그것도 닫는 관찰이다</strong> — 어느 검사가 빠졌는지 적는다</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td><code>a</code> 가 1 에서 크게 벗어난다(1.5 · 0.5 · 1000 근처)</td><td>단위(mm ↔ m) 또는 고정소수점 자리 / <code>x</code> 와 <code>y</code> 를 바꿔 넣었다</td><td>§3-1-3 의 묶음 A 를 내 계산에 먹여 본다. <code>a=1.0, b=+0.02</code> 가 나와야 한다</td><td>§3-1-3 · <a href="l-03-one-point.html">l-03</a> · 파일 머리 줄의 <code>unit</code></td></tr>
+          <tr><td><code>a</code> 가 1 보다 <strong>조금</strong> 작다(0.99 대)</td><td>빈 폭이 넓어 중앙값이 부풀려졌다 — 절차가 만든 배율이다</td><td><code>bin_deg</code> 를 반으로 줄여 같은 파일을 다시 읽는다. <code>a</code> 가 1 쪽으로 움직이면 이것이다</td><td>§2-5 · §3-1-2 의 <code>bin_deg</code></td></tr>
+          <tr><td><code>b</code> 가 수 cm 로 크다</td><td>줄자의 기준점이 회전축 중심이 아니다(몸체 끝·받침 모서리에서 쟀다)</td><td>기준점을 옮겨 <strong>한 거리만</strong> 다시 재 본다. 차이가 <code>b</code> 만큼이면 이것이다</td><td>§2-5 · 07 §3-9-1 의 같은 증상 행</td></tr>
+          <tr><td>잔차가 거리에 비례해 커진다</td><td>삼각측량의 성질일 수 있다(§2-4) / 먼 점의 표면·광량이 다르다</td><td>각 점의 <strong>잔차 ÷ 거리</strong> 를 낸다. 0.2 % 근처면 이론에 가깝고, 1 % 를 넘으면 사양 밖이다</td><td>§2-3 · §2-4 · <a href="l-15-illusions.html">l-15</a>(재질)</td></tr>
+          <tr><td>가까운 점만 맞고 먼 점이 한쪽으로 몰린다</td><td>벽이 비스듬하거나 센서가 기울었다 / 빈 안에 벽이 아닌 것이 섞였다</td><td><a href="l-08-floor-plan.html">l-08</a> 의 평면도로 그 빈이 정말 벽을 향하는지 본다</td><td>§3-1-3 의 2번(빈 번호) · l-08</td></tr>
+          <tr><td><code>p[k]</code> 가 <code>None</code> 이다</td><td>빈 번호가 틀렸다 / 벽이 최대 거리 밖이다 / 모터가 안 돈다 / 기록이 비었다</td><td><code>sector_profile</code> 전체를 찍어 값이 있는 빈을 본다. 전부 <code>None</code> 이면 기록 자체를 의심한다</td><td>§3-1-3 · <a href="l-01-link.html#s3-3">l-01 §3-3</a>(모터) · <a href="l-04-one-turn.html">l-04</a>(기록)</td></tr>
+          <tr><td>같은 거리 반복 폭이 잔차보다 크다</td><td>바퀴 수가 모자라다 / 자리가 흔들린다 / 케이블이 센서를 당긴다</td><td>§3-1-4 의 진단 줄. 기록 초를 두 배로 늘려 반복 폭이 줄면 표본 문제다</td><td>§3-1-2 의 기록 초 · <a href="l-01-link.html#s3-2">l-01 §3-2</a>(자리 고정)</td></tr>
+          <tr><td>망가뜨린 파일이 로더를 통과한다</td><td>내 <code>load_jsonl</code> 에 그 검사가 빠졌다</td><td>§3-4-1 의 여섯 줄과 내 코드를 나란히 본다</td><td><a href="l-04-one-turn.html#s3-4-2">l-04 §3-4-2</a>(전량으로 주어진 로더)</td></tr>
+          <tr><td>수용 표의 여러 행이 못 닫힌다</td><td>부품 · 환경 — <strong>고장이 아니다</strong></td><td>§3-2-4 의 세 숫자로 센다</td><td>못 닫은 이유를 적는 것이 이 쪽의 산출물이다(§3-2-3)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+
+      <details class="quiz"><summary>1. (네 갈래 검색) 이 쪽이 쓴 <code>&lt;1 % of the distance</code> 를 네 군데에서 찾아 적어 보라 — 정의 → 사양 → 구현 → 내 장치</summary>
+        <div class="ans"><p><strong>① 정의</strong> — <code>ros2$ ros2 interface show sensor_msgs/msg/LaserScan</code>. 찾으면 <strong>없다는 것을 알게 된다</strong>: 메시지에는 거리와 각도와 시각은 있어도 <strong>그 값이 얼마나 정확한지를 담는 필드가 없다.</strong> <code>ranges</code> 를 받는 쪽은 정확도를 <strong>메시지 밖에서</strong> 알아야 한다. 이것도 유효한 ①이다 — 카탈로그가 "아무 말도 하지 않는다"는 것 자체가 정보다.</p>
+        <p><strong>② 사양</strong> — rev.2.2 8쪽 Figure 2-1 · v3.0 8쪽 Figure 2-1(두 판이 같다). <code>Distance Resolution</code> 행의 <strong>아래 줄</strong>이고 조건은 <code>All distance range</code> 다. 같은 행의 <strong>위 줄</strong>은 <code>&lt;0.5 mm @ &lt;1.5 meters</code> 로, <strong>한 행에 조건이 둘</strong>이다. 그리고 이 행의 이름은 <strong>분해능</strong>이지 정확도가 아니다.</p>
+        <p><strong>③ 구현</strong> — <strong>이 갈래는 이 쪽에서 닫히지 않는다.</strong> 드라이버가 거리에 무엇을 곱하거나 더하는지는 소스를 열어야 알 수 있는데, 이 쪽은 그것을 확인하지 않았다. 확인 과제로 남는다 — 거리 계산에 상수가 개입하는 곳이 있는지 <code>grep</code> 으로 찾아본다.</p>
+        <p><strong>④ 실물</strong> — 내 fit 의 잔차다. 각 점에서 <code>|r_i| ÷ y_i</code> 를 내면 "거리 대비 몇 %" 가 나오고, 그것이 내 기기가 실제로 내는 숫자다. ②는 조건부 약속이고 ④는 사실이다. 다르면 <strong>어느 쪽이 틀렸다고 쓰지 말고</strong> 조건(모드 · 표면 · 빈 폭 · 거리 구간)을 적는다.</p></div></details>
+
+      <details class="quiz"><summary>2. 다른 스캔 모드로 다시 재서 같은 거리가 나왔다. "계통 오차가 없다"고 말할 수 있는가?</summary>
+        <div class="ans"><p>없다. 모드가 달라도 <strong>같은 광학 · 같은 회전 코어</strong>를 쓰므로, 거리를 만들어 내는 계산의 치우침은 대체로 같이 움직인다. 두 모드가 같은 값을 냈다면 "포장과 샘플 주기를 바꿔도 값이 안 변한다"까지가 말할 수 있는 전부이고, <strong>둘 다 2 cm 멀다</strong>는 가능성은 그대로 남는다.</p>
+        <p>이것이 <a href="l-07-cross-verify.html#s2-2">l-07 §2-2</a> 가 정답지의 자격을 "옳음"이 아니라 <strong>"독립"</strong> 으로 정한 이유다. 계통 오차를 잡으려면 <strong>거리를 다른 원리로 얻는 것</strong>이 있어야 하고, 이 쪽에서 그것이 줄자다. 모드 비교는 다른 것을 잡는다 — 점 수 · 무반사율 · 각도 간격처럼 <strong>모드가 실제로 바꾸는 것</strong>들이다.</p></div></details>
+
+      <details class="quiz"><summary>3. 두 거리에서만 재서 fit 했더니 잔차가 정확히 0 이었다. 좋은 결과인가?</summary>
+        <div class="ans"><p>아니다 — <strong>그 0 은 측정이 아니라 산수의 결과</strong>다. 직선에는 미지수가 둘(<code>a</code> · <code>b</code>)이고 점이 둘이면 직선이 두 점을 정확히 지난다. 어떤 기기를 갖다 놔도 잔차는 0 이 나온다. §3-1-3 의 두 묶음은 <strong>둘 다 점이 넷</strong>이라 이 경우가 없는데, 묶음 <code>F</code> 에서 <strong>앞의 두 점만</strong> 골라 같은 식에 넣어 보면 바로 보인다 — 잔차가 <strong>0</strong> 이다(집필자가 돌려 찍힌 값은 <code>4.440892098500626e-16</code> · <code>6.661338147750939e-16</code> 로, 이진 부동소수의 자취만 남은 0 이다).</p>
+        <p>잔차가 뜻을 가지려면 점이 <strong>셋 이상</strong>이어야 하고, 셋이면 자유도가 1 이라 우연히 작게 나오기 쉽다. 그래서 <a href="07-lidar.html">07</a> 의 3점은 <strong>차를 적기까지</strong>였고 이 쪽이 줄자를 다시 든 것이다. 그리고 거리가 <strong>서로 달라야</strong> 한다 — 같은 거리에서만 여러 번 재면 <code>n·Sxx - Sx·Sx</code> 가 0 이 되어 기울기 자체가 <strong>나오지 않는다</strong>(답은 0 이 아니라 "낼 수 없다").</p></div></details>
+
+      <details class="quiz"><summary>4. <code>&lt;1 % of the distance</code> 를 그대로 합격선으로 삼으면, 무엇을 빌려 쓰는 것인가?</summary>
+        <div class="ans"><p><strong>분해능 사양을 정확도 합격선으로</strong> 빌려 쓰는 것이다. 성능 표의 그 행 이름은 <code>Distance Resolution</code> 이고, 분해능은 "구별할 수 있는 가장 작은 차", 정확도는 "참값에서 벗어난 정도"라 <strong>다른 양</strong>이다(<a href="07-lidar.html">07</a> §3-9-1 이 이미 구분해 두었다).</p>
+        <p>이 쪽이 재는 <code>a</code> 와 <code>b</code> 는 정확도 쪽이고, <strong>두 판의 성능 표 어디에도 정확도 행이 없다</strong>(집필자가 여덟 행을 세었다 — 내 사본에서도 세어 본다). 잔차는 직선 주위의 흩어짐이라 그나마 분해능에 가깝지만, <code>b</code> 는 어느 사양과도 짝이 없다.</p>
+        <p>빌려 쓰는 것이 틀렸다는 말은 아니다 — 근거가 없는 것보다 낫다. 다만 <strong>빌려 왔다는 것을 옆에 적어야</strong> 나중에 그 선을 다시 볼 때 무엇을 근거로 정했는지 알 수 있다.</p></div></details>
+
+      <details class="quiz"><summary>5. (일부러 틀려 보기) <code>bin_deg</code> 를 5 도에서 30 도로 키우면 <code>a</code> 와 <code>b</code> 중 어느 쪽이 움직이는가?</summary>
+        <div class="ans"><p><strong><code>a</code> 가 움직인다</strong> — 1 보다 작은 쪽으로. 빈이 넓어지면 벽을 비스듬히 본 점들이 같이 들어오고, 그 점들의 거리는 <code>d / cos(θ)</code> 라 <strong>언제나 수선 거리보다 크다.</strong> 중앙값이 부풀려지는데, 그 부풀림이 <strong>배율</strong>(거리에 비례)이라 평행이동이 아니라 기울기에 들어간다. §2-5 의 어림으로는 30 도 빈에서 <code>a</code> 가 <code>0.991</code> 근처, 3 m 에서 26 mm 다.</p>
+        <p>직접 해 보는 것이 가장 빠르다 — <strong>같은 기록 파일</strong>을 <code>bin_deg</code> 만 바꿔 두 번 읽고 <code>a</code> 를 비교한다. 센서도 벽도 그대로이므로 움직인 것은 <strong>내 절차</strong>뿐이다.</p>
+        <p>그리고 <strong>비교 대상</strong>을 기억해 둔다: 줄자의 기준점을 잘못 잡으면 <strong><code>b</code> 가</strong> 움직인다(거리와 무관한 같은 길이가 더해지므로). 절차가 만드는 두 오차가 <strong>서로 다른 칸</strong>에 들어가기 때문에, <code>a</code> 와 <code>b</code> 를 따로 보면 어느 쪽을 고쳐야 하는지가 보인다. 실험이 끝나면 <strong>정한 값으로 되돌려 놓는다.</strong></p></div></details>
+
+      <details class="quiz"><summary>6. 수용 표에 <code>None</code> 인 행과 <code>0.0</code> 인 행이 나란히 있다. 어느 쪽이 좋은 소식인가?</summary>
+        <div class="ans"><p>행이 무엇이냐에 달렸지만, <strong><code>0.0</code> 이 좋은 소식이고 <code>None</code> 은 소식이 아니다.</strong> 무반사율이 <code>0.0</code> 이면 그 섹터에서 <strong>못 잰 방향이 하나도 없었다</strong>는 뜻이라 가장 좋은 결과다. 같은 칸의 <code>None</code> 은 <strong>그 섹터에 점이 하나도 없었다</strong>는 뜻이라 아무것도 말해 주지 않는다.</p>
+        <p>통로 폭은 더 나쁘다 — <code>None</code> 은 "통로를 못 찾았다"이고 <code>0.0</code> 은 "폭이 0, 막혔다"다(<a href="l-12-clearance.html">l-12</a>). 두 값 다 "지나가면 안 된다"로 이어지지만, 같은 자리에서 <code>inf</code> 로 읽는 구현이라면 <strong>아무것도 못 본 상태가 통과 판정</strong>이 된다.</p>
+        <p>그래서 이 가이드 전체가 <strong>"없음"을 0 으로 쓰지 않는다.</strong> 기준 형식의 무반사는 <code>null</code> 이고, <code>no_return_rate</code> 와 <code>passage_width</code> 와 <code>sector_profile</code> 은 잴 것이 없으면 <code>None</code> 을 돌려준다. 표에서는 그 구별이 글자 하나뿐이라 <strong>왜 인지를 옆에 적는 것</strong>이 규칙이다(§3-2-1).</p></div></details>
+
+      <details class="quiz"><summary>7. (안전) 거리를 바꾸려고 센서를 옮길 때 왜 모터를 세우고 드는가? 그리고 레이저가 눈에 안 보이는 것이 왜 문제인가?</summary>
+        <div class="ans"><p>이 쪽은 같은 센서를 <strong>여러 거리로 반복해 옮기는</strong> 실습이라 손이 머리 가까이 가는 횟수가 다른 어느 쪽보다 많다. 도는 머리에 손가락 · 머리카락 · 줄자의 금속 띠 · 케이블이 닿으면 튕기거나 감긴다. 옮길 때마다 <code>dtr=True</code> 로 세우고, 놓은 뒤 다시 돌린다 — <a href="l-01-link.html#s3-3">l-01 §3-3</a> 에서 만든 그 한 줄이다.</p>
+        <p>레이저는 Class I · 785 nm 로 <strong>적외선이라 눈에 보이지 않는다</strong>(rev.2.2 9쪽 Figure 2-3). 위험이 크다는 뜻이 아니라 — Class I 은 "정상 사용에서 안전"으로 분류된 등급이다 — <strong>켜져 있다는 신호가 눈에 들어오지 않아 습관이 안 생긴다</strong>는 뜻이다. 빨간 점이 보이면 얼굴을 치우게 되지만, 아무것도 안 보이면 벽과 센서 사이를 들여다보며 줄자를 맞추게 된다. <strong>스캔 창 높이에 얼굴을 두지 않는다</strong>는 것을 규칙으로 기억해 두는 이유다.</p>
+        <p>케이블 여유도 같은 이유로 매 회차 다시 본다. 케이블이 당기면 센서가 조금 끌려가고, 그러면 그 회차의 <code>x</code> 가 다른 자리에서 잰 값이 되어 <strong>잔차에 섞인다</strong> — 안전 규칙이 측정 품질과 같은 줄에 있는 자리다.</p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>라이다 가이드는 여기서 끝난다.</strong> 열여덟 쪽이 만든 것은 <strong>도구 목록</strong>이 아니라 <strong>내 기기에 대한 숫자와, 그 숫자를 어떻게 얻었는지의 기록</strong>이다. 도구는 버려도 기록은 남는다.</li>
+          <li><strong>다음은 차체다</strong> → <strong><a href="09a-assembly-gate.html">09a</a></strong>. §3-3 의 목록이 거기서 오른쪽 두 칸을 채운다. 장착 · 방향 · 가림 · 중첩 · 주행 중 필터 · 최종 전원 여섯 줄은 <strong>거기서 처음 열린다.</strong></li>
+          <li><strong>지도를 만들러 간다면</strong> → <a href="09-slam-nav2.html">09</a>. <a href="l-09-occupancy.html">l-09</a> 의 격자 한 장과 <a href="l-14-alignment.html">l-14</a> 의 정합 원리가 그 쪽의 입구다. 이 쪽에서 잰 <code>a</code> · <code>b</code> · 잔차는 <strong>09 에서 최대 사용 거리를 정할 때</strong> 근거가 된다 — 잔차가 커지는 거리부터는 지도가 흐려진다.</li>
+          <li><strong>라이다를 자로 쓰는 쪽</strong> → <a href="08d-tracking-fusion.html">08d</a>. 거기서 라이다의 거리 오차를 하나의 숫자로 가정하는 자리가 있다. <strong>이 쪽에서 잰 내 숫자가 그 가정을 대신할 수 있는 유일한 근거</strong>다 — 다만 값을 고치는 것은 그 쪽의 일이니, 내 값은 노트에 적어 두고 가리킨다.</li>
+          <li><strong>C++ 로 옮기는 쪽을 아직 안 했으면</strong> → <strong><a href="l-16-node.html">l-16</a></strong>. 수용 표의 <code>same-file-same-answer</code> 행이 거기서 채워지고, §3-4 의 나쁜 입력 다섯을 C++ 판에도 먹여 볼 수 있다.</li>
+          <li><strong>이 쪽을 못 닫았어도</strong> — 줄자나 벽이 없어 <code>bias-fit-recorded</code> 가 열려 있어도 <strong>다음으로 갈 수 있다.</strong> 막히는 것은 하나다: 거리 오차를 모르는 채로 09 의 지도나 08d 의 거리 가정을 쓰게 되고, 나중에 "지도가 조금 어긋난다"의 원인 후보에서 <strong>센서를 지울 수 없다.</strong> 조립 뒤 09a 에서 줄자를 다시 들 기회가 있으니, <strong>지금은 "안 쟀다"고 적어 두는 것으로 충분하다.</strong></li>
+          <li>이 쪽에서 잰 값은 내 노트에 적었는가. <code>hardware/INVENTORY.md</code> §3 에 <strong>거리 fit 행이 아직 없다</strong> — 조율자가 만들면 옮겨 적는다. 07 §3-9-1 이 소유하는 "센서 자체 검증" 칸(0° 방향 · 줄자 3점 · <strong>데이터시트 사양</strong> · <strong>내가 정한 합격선</strong>)은 비어 있으면 <strong>07 에서</strong> 채운다 — 이 쪽이 그 칸을 대신 채우지 않는다.</li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

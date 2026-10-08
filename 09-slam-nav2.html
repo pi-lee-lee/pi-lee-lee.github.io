@@ -34,7 +34,7 @@
 
       <div class="callout warn"><span class="ct">전제 조건 — 하나라도 빠지면 여기서 반드시 막힌다</span>
         <ul>
-          <li><code>/odom</code> 이 정확하다 (06 단계 직진 2 m / 360도 캘리브레이션 완료)</li>
+          <li><code>/odom</code> 이 정확하다 (<a href="09a-assembly-gate.html">09a</a>의 직진 2 m / 360도 주행 캘리브레이션 완료 — 06 에서 옮겨 간 절차)</li>
           <li><code>/scan</code> 이 정확하고 방향이 맞다 (07 단계 벽 1 m 검증 완료)</li>
           <li>TF 트리가 <code>odom → base_footprint → base_link → laser_link</code> 로 이어진다 (<code>ros2 run tf2_tools view_frames</code>)</li>
         </ul>
@@ -76,7 +76,7 @@
 
    t=N    루프 클로저: "여기 아까 왔던 곳이다!"
             → 그동안 쌓인 오차를 전체 지도에 분산시켜 보정 (지도가 한 번 "출렁"인다)</code></pre>
-      <p><strong>오도메트리가 정확할수록 스캔 매칭이 쉬워진다.</strong> 매칭은 "오도메트리가 말한 위치 근처"에서 정답을 찾기 때문이다. 06 단계 캘리브레이션이 여기서 값을 한다.
+      <p><strong>오도메트리가 정확할수록 스캔 매칭이 쉬워진다.</strong> 매칭은 "오도메트리가 말한 위치 근처"에서 정답을 찾기 때문이다. 09a 의 주행 캘리브레이션(옛 06 §3-9)이 여기서 값을 한다.
       그리고 SLAM 이 계산한 "오도메트리가 얼마나 틀렸는가"가 바로 05 단계에서 배운 <code>map → odom</code> 변환이다.</p>
 
       <h3>2-2. slam_toolbox — 동작 모드</h3>
@@ -149,7 +149,7 @@
           <tr><td>범위</td><td>지도 전체</td><td>로봇 주변 3 m 정도 (<code>rolling_window</code>)</td></tr>
           <tr><td>기준 프레임</td><td><code>map</code> (정적 지도)</td><td><code>odom</code> (센서 실시간, 연속적)</td></tr>
           <tr><td>용도</td><td>전체 경로 계획 (planner)</td><td>즉각적 장애물 회피 (controller)</td></tr>
-          <tr><td>갱신</td><td>느림 (1 Hz)</td><td>빠름 (5~10 Hz)</td></tr>
+          <tr><td>갱신</td><td>느림 (1 Hz = 1 s 주기)</td><td>빠름 (5~10 Hz = 200~100 ms 주기)</td></tr>
           <tr><td>레이어</td><td>static + obstacle + inflation</td><td>obstacle + inflation</td></tr>
         </tbody>
       </table></div>
@@ -303,7 +303,7 @@ ros2 topic info /scan -v                           # slam_toolbox 구독자의 Q
         </tbody>
       </table></div>
       <div class="callout warn"><span class="ct">지도가 두 겹으로 보이거나 휘면</span>
-        <p>SLAM 파라미터를 만지기 전에 <strong>06 단계 오도메트리 캘리브레이션을 의심하십시오.</strong> 원인 1위다. 특히 <code>wheel_separation</code> 이 틀리면 회전량이 계속 어긋나고, SLAM 은 이를 보정하려다 지도를 뭉갠다.
+        <p>SLAM 파라미터를 만지기 전에 <strong>09a 의 오도메트리 캘리브레이션(옛 06 §3-9)을 의심하십시오.</strong> 원인 1위다. 특히 <code>wheel_separation</code> 이 틀리면 회전량이 계속 어긋나고, SLAM 은 이를 보정하려다 지도를 뭉갠다.
         두 번째는 07 의 <code>lidar_yaw</code>(지도 전체가 회전) 와 뒤집힘(좌우 반전)이다.</p>
       </div>
 
@@ -332,10 +332,10 @@ scp pi5:~/ros2_rpi5/maps/my_room.pgm /tmp/ &amp;&amp; open /tmp/my_room.pgm</cod
           <tr><td><code>laser_max_range</code></td><td><code>amcl</code></td><td>07 실측 <code>max_distance</code></td><td>실측값 그대로</td></tr>
           <tr><td><code>raytrace_max_range</code></td><td>양쪽 costmap <code>obstacle_layer</code></td><td>07 실측 <code>max_distance</code></td><td>실측값 그대로 (이 거리까지 "비어 있음"을 지운다)</td></tr>
           <tr><td><code>obstacle_max_range</code></td><td>양쪽 costmap <code>obstacle_layer</code></td><td>07 실측 <code>max_distance</code></td><td>실측의 0.7~0.8 배 (먼 점은 장애물로 안 찍는다)</td></tr>
-          <tr><td><code>robot_radius</code></td><td>양쪽 costmap</td><td>INVENTORY 6절 (섀시 실측)</td><td>로봇을 감싸는 원의 반지름. local/global 같은 값</td></tr>
-          <tr><td><code>inflation_radius</code></td><td>양쪽 costmap <code>inflation_layer</code></td><td><code>robot_radius</code> + 5~10 cm</td><td>§2-6</td></tr>
-          <tr><td><code>max_vel_x</code>, <code>max_vel_theta</code></td><td><code>controller_server.FollowPath</code></td><td>06 <code>max_linear_vel</code> / <code>max_angular_vel</code></td><td>브리지의 제한 <strong>이하</strong>로. 첫 주행은 0.15 m/s</td></tr>
-          <tr><td><code>acc_lim_x</code></td><td><code>controller_server.FollowPath</code></td><td>실험</td><td>크면 바퀴가 헛돈다 → 오도메트리가 틀어진다</td></tr>
+          <tr><td><code>robot_radius</code></td><td>양쪽 costmap</td><td><a href="09a-assembly-gate.html#s3-3">09a 세팅 B</a> 가 채웠다 — 여기서는 확인·튜닝</td><td>로봇을 감싸는 원의 반지름(INVENTORY 6절 외곽에서 산출). local/global 같은 값</td></tr>
+          <tr><td><code>inflation_radius</code></td><td>양쪽 costmap <code>inflation_layer</code></td><td><a href="09a-assembly-gate.html#s3-3">09a 세팅 B</a> 가 채웠다 — 여기서는 확인·튜닝</td><td><code>robot_radius</code> + 내가 정한 여유. ⚠ <strong>“5~10 cm” 는 출처 없는 옛 수치라 09a 는 옮기지 않았다</strong> — 근거와 함께 내가 정한다(§2-6)</td></tr>
+          <tr><td><code>max_vel_x</code>, <code>max_vel_theta</code></td><td><code>controller_server.FollowPath</code></td><td><a href="09a-assembly-gate.html#s3-5">09a 세팅 D</a> 가 실측해 채웠다 — 여기서는 확인·튜닝</td><td>브리지의 제한 <strong>이하</strong>로. 첫 주행은 0.15 m/s</td></tr>
+          <tr><td><code>acc_lim_x</code></td><td><code>controller_server.FollowPath</code></td><td><a href="09a-assembly-gate.html#s3-5">09a 세팅 D</a> 에서 실험해 넣었다 — 여기서는 확인·튜닝</td><td>크면 바퀴가 헛돈다 → 오도메트리가 틀어진다</td></tr>
           <tr><td><code>odom_topic</code></td><td><code>bt_navigator</code>, <code>controller_server</code>, <code>velocity_smoother</code></td><td>06 의 EKF 사용 여부</td><td>EKF 를 쓰면 <code>/odometry/filtered</code>, 아니면 <code>/odom</code>. TF <code>odom→base_footprint</code> 는 어느 쪽이든 하나의 노드만 발행한다</td></tr>
           <tr><td><code>max_velocity</code> 등</td><td><code>velocity_smoother</code></td><td>위와 같은 값</td><td>controller 와 다르면 smoother 가 잘라내며 예측이 어긋난다</td></tr>
         </tbody>
@@ -466,24 +466,24 @@ ros2 bag play /maps/nav_test --rate 0.3 --clock      # 천천히 재생하며 Fo
 
       <h2>✅ 검증 체크포인트</h2>
       <ul class="checklist">
-        <li><label><input type="checkbox"><span><code>ros2 pkg list</code> 에 <code>slam_toolbox</code>, <code>nav2_bringup</code> 이 보인다 (Dockerfile 2-B 블록 반영)</span></label></li>
-        <li><label><input type="checkbox"><span><code>/maps</code> 가 컨테이너에 마운트되어 쓰기가 된다</span></label></li>
-        <li><label><input type="checkbox"><span><code>rpi5_bringup/config/slam_params.yaml</code> 을 기본 파일에서 복사해 프레임·<code>max_laser_range</code>·<code>use_sim_time: false</code> 를 고쳤고 install 에 보인다</span></label></li>
-        <li><label><input type="checkbox"><span>SLAM 을 <code>use_sim_time:=false</code> 로 띄웠고 <code>ros2 param get /slam_toolbox use_sim_time</code> 이 <code>False</code> 다</span></label></li>
-        <li><label><input type="checkbox"><span><code>slam_toolbox</code> 로 <code>/map</code> 이 발행되고 Foxglove 에 지도가 그려진다</span></label></li>
-        <li><label><input type="checkbox"><span><code>ros2 topic info /scan -v</code> 에서 slam_toolbox 와 costmap 구독자의 QoS 가 발행자와 호환됨을 확인했다</span></label></li>
-        <li><label><input type="checkbox"><span>방을 한 바퀴 돌아 닫힌(구멍 없는) 지도를 만들었다</span></label></li>
-        <li><label><input type="checkbox"><span>출발점 복귀 시 지도가 겹치지 않고 하나로 맞는다 (루프 클로저 성공)</span></label></li>
-        <li><label><input type="checkbox"><span><code>map_saver_cli</code> 로 <code>/maps/my_room</code> 을 저장하고 <code>.pgm</code> 을 Mac 에서 눈으로 확인했다</span></label></li>
-        <li><label><input type="checkbox"><span><code>view_frames</code> 에 <code>map → odom → base_footprint</code> 가 이어진다 (mapping 에서는 slam_toolbox 가, navigation 에서는 amcl 이 발행)</span></label></li>
-        <li><label><input type="checkbox"><span><code>nav2_params.yaml</code> 의 <code>____</code> 를 전부 실측값으로 채웠다</span></label></li>
-        <li><label><input type="checkbox"><span>Nav2 를 띄우고 <code>ros2 lifecycle get</code> 으로 주요 노드가 전부 <code>active</code> 임을 확인했다</span></label></li>
-        <li><label><input type="checkbox"><span>Foxglove 의 Publish pose estimate 로 초기 위치를 설정했고 <code>/scan</code> 이 지도 벽과 겹친다</span></label></li>
-        <li><label><input type="checkbox"><span>Foxglove 의 Publish pose 로 목표점을 주면 <code>/plan</code> 에 경로가 그려진다</span></label></li>
-        <li><label><input type="checkbox"><span><code>ros2 action send_goal … --feedback</code> 으로 <code>distance_remaining</code> 이 줄어드는 것을 읽었고, Ctrl+C 로 취소해 로봇이 멈추는 것을 봤다</span></label></li>
-        <li><label><input type="checkbox"><span>로봇이 실제로 목표까지 주행해 도착한다 (<code>SUCCEEDED</code>)</span></label></li>
-        <li><label><input type="checkbox"><span>주행 중 사람이 앞을 막으면 멈추거나 우회한다</span></label></li>
-        <li><label><input type="checkbox"><span>rosbag(mcap) 으로 주행을 기록하고 Foxglove 에서 재생해 봤다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp0"><span><code>ros2 pkg list</code> 에 <code>slam_toolbox</code>, <code>nav2_bringup</code> 이 보인다 (Dockerfile 2-B 블록 반영)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp1"><span><code>/maps</code> 가 컨테이너에 마운트되어 쓰기가 된다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp2"><span><code>rpi5_bringup/config/slam_params.yaml</code> 을 기본 파일에서 복사해 프레임·<code>max_laser_range</code>·<code>use_sim_time: false</code> 를 고쳤고 install 에 보인다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp3"><span>SLAM 을 <code>use_sim_time:=false</code> 로 띄웠고 <code>ros2 param get /slam_toolbox use_sim_time</code> 이 <code>False</code> 다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp4"><span><code>slam_toolbox</code> 로 <code>/map</code> 이 발행되고 Foxglove 에 지도가 그려진다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp5"><span><code>ros2 topic info /scan -v</code> 에서 slam_toolbox 와 costmap 구독자의 QoS 가 발행자와 호환됨을 확인했다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp6"><span>방을 한 바퀴 돌아 닫힌(구멍 없는) 지도를 만들었다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp7"><span>출발점 복귀 시 지도가 겹치지 않고 하나로 맞는다 (루프 클로저 성공)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp8"><span><code>map_saver_cli</code> 로 <code>/maps/my_room</code> 을 저장하고 <code>.pgm</code> 을 Mac 에서 눈으로 확인했다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp9"><span><code>view_frames</code> 에 <code>map → odom → base_footprint</code> 가 이어진다 (mapping 에서는 slam_toolbox 가, navigation 에서는 amcl 이 발행)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp10"><span><code>nav2_params.yaml</code> 의 <code>____</code> 를 전부 실측값으로 채웠다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp11"><span>Nav2 를 띄우고 <code>ros2 lifecycle get</code> 으로 주요 노드가 전부 <code>active</code> 임을 확인했다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp12"><span>Foxglove 의 Publish pose estimate 로 초기 위치를 설정했고 <code>/scan</code> 이 지도 벽과 겹친다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp13"><span>Foxglove 의 Publish pose 로 목표점을 주면 <code>/plan</code> 에 경로가 그려진다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp14"><span><code>ros2 action send_goal … --feedback</code> 으로 <code>distance_remaining</code> 이 줄어드는 것을 읽었고, Ctrl+C 로 취소해 로봇이 멈추는 것을 봤다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp15"><span>로봇이 실제로 목표까지 주행해 도착한다 (<code>SUCCEEDED</code>)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp16"><span>주행 중 사람이 앞을 막으면 멈추거나 우회한다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp17"><span>rosbag(mcap) 으로 주행을 기록하고 Foxglove 에서 재생해 봤다</span></label></li>
       </ul>
       <p class="progress-line"></p>
       <div class="progress-bar"><span></span></div>
@@ -491,7 +491,7 @@ ros2 bag play /maps/nav_test --rate 0.3 --clock      # 천천히 재생하며 Fo
       <h2>🤔 이해 확인</h2>
       <details class="quiz"><summary>1. SLAM 지도가 휘거나 두 겹으로 보인다. SLAM 파라미터부터 만지면 안 되는 이유는?</summary>
         <div class="ans">원인 1위가 <strong>오도메트리 부정확</strong>이기 때문이다. 특히 <code>wheel_separation</code> 이 틀리면 회전량이 계속 어긋나고, SLAM 은 이를 보정하려다 지도를 뭉갠다.
-        06 단계 캘리브레이션을 먼저 검증해야 한다. 파라미터로 덮으려 하면 근본 문제가 남아 Nav2(AMCL)에서 다시 터진다.</div></details>
+        09a 의 주행 캘리브레이션을 먼저 검증해야 한다. 파라미터로 덮으려 하면 근본 문제가 남아 Nav2(AMCL)에서 다시 터진다.</div></details>
       <details class="quiz"><summary>2. 전역/지역 코스트맵을 나누는 이유는?</summary>
         <div class="ans">전역은 정적 지도 기준으로 <strong>전체 경로</strong>를 계획하고(느려도 됨), 지역은 실시간 센서로 <strong>갑자기 나타난 장애물</strong>을 즉시 피한다(빨라야 함).
         요구되는 갱신 주기와 범위가 달라서 하나로 합치면 둘 다 나빠진다. 지역이 <code>odom</code> 기준인 것은 제어기가 튀지 않는 좌표계를 써야 하기 때문이다.</div></details>

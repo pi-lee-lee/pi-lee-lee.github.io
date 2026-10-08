@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L4 · 한 바퀴는 어디서 끝나는가 — 라이다 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="l-04">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">L4 · 한 바퀴는 어디서 끝나는가</p>
+      <h1>한 바퀴는 어디서 끝나는가</h1>
+      <p class="lead"><a href="l-03-one-point.html">l-03</a> 의 <code>stream()</code> 은 점을 <strong>하나씩 끝없이</strong> 흘려보낸다. 방의 모양을 보려면 그 흐름을 <strong>한 바퀴 단위</strong>로 잘라야 하고, 자르고 나서야 "회전당 점이 몇 개인가"를 물을 수 있다.
+      이 쪽이 붙이는 도구는 <code>turn.py</code> — 흐름을 바퀴로 자르는 <code>split_turns()</code>, 한 바퀴를 담는 <code>Scan</code>, 그리고 그것을 파일에 적고 되읽는 <code>save_jsonl()</code> · <code>load_jsonl()</code> 이다.
+      여기서 만든 <strong>첫 <code>.scan.jsonl</code> 한 장</strong>이 두 줄기로 갈린다 — ROS 로 올라가는 쪽(l-06 · l-07)과 기하로 올라가는 쪽(l-08 부터 여덟 쪽)이 <strong>둘 다 이 파일을 입력으로 쓴다.</strong></p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>화면에 <code>rev &lt;n&gt;: &lt;n&gt; points</code> 같은 줄이 바퀴마다 한 줄씩 찍히고, 열 바퀴의 점 수가 내 숫자로 적힌다.
+        회전당 점 수 · 각도 간격의 중앙값 · σ · 초당 회전수 <strong>네 값</strong>이 나오고, <code>scripts/lidar_lab/scans/</code> 에 첫 <code>.scan.jsonl</code> 이 생겨 <strong>다시 읽어도 같은 점 수</strong>가 나온다.
+        <code>python3 tests/test_turn.py</code> 의 마지막 줄은 <code>PASS turn 11 cases</code> 다.</p>
+        <p><strong>이 쪽에 필요한 것</strong> — 라이다, Pi, l-03 까지 끝낸 도구(<code>link.py</code> · <code>cmd.py</code> · <code>point.py</code>).
+        <strong>없으면</strong> — 라이다가 없어도 <strong>골격과 자기시험(§3-1-2 · §3-1-3 · §3-2-2)은 전부 된다</strong>. <code>split_turns</code> 와 <code>turn_stats</code> 는 포트도 시계도 건드리지 않는 순수 함수라 센서를 뽑아 둔 채로 채점된다.
+        살아 있는 센서가 필요한 것은 §3-1-4 · 실습 B 의 측정 · 실습 D · 실습 E 이고, 그 넷의 체크 항목은 열어 둔다. Pi 자체가 없으면 시작하지 못한다 — <a href="l-00-map.html#s1-3">l-00 §1-3</a> 의 표에서 지금 할 수 있는 쪽을 고른다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag pi">Pi 호스트</span> <span class="tag py">Python</span></div>
+        <div><span class="k">선행</span><a href="l-03-one-point.html">l-03</a> (점 해독) — 실제로 쓰는 것: <code>stream()</code> 이 내는 <code>(deg, mm, q, start)</code> 네 칸과 <code>parse_point()</code> / <a href="l-02-device-id.html">l-02</a> — <code>send()</code> · <code>drain()</code> / <a href="l-01-link.html">l-01</a> — <code>open_port()</code></div>
+        <div><span class="k">채우는 INVENTORY 칸</span>없음. 이 쪽의 네 숫자를 담을 행은 <code>hardware/INVENTORY.md</code> §3 에 <strong>아직 없다</strong> — 내 노트에 적고, 행이 생기면 그때 옮겨 적는다. §3 의 <strong>회전수 대조 3행은 07 이 소유</strong>하므로 다시 채우지 않고 §3-2-4 에서 <strong>네 번째 줄로 견준다</strong></div>
+        <div><span class="k">이 쪽이 요구하는 수학</span>중앙값과 표준편차, 그리고 원형 위의 차(랩어라운드) — <strong>정의는 §2-4 가 전부 준다.</strong> 처음 보는 말이어도 이 쪽 안에서 닫힌다. 계산을 어떤 순서로 하는지는 내가 쓴다</div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
+      </div>
+
+      <h2 id="overview">1. 개요 — 흐름을 바퀴로 자르고, 바퀴를 파일로 남긴다</h2>
+      <p>l-03 까지는 점 하나가 옳은지만 물었다. 점 하나는 <strong>방향과 거리</strong>를 말할 뿐이고, 그것만으로는 "내 앞이 어떻게 생겼는가"를 물을 수 없다.
+      방의 모양은 <strong>한 바퀴가 다 모였을 때</strong> 비로소 생긴다. 그래서 이 쪽의 일은 둘이다 — <strong>어디서 자를 것인가</strong>를 정하는 일, 그리고 자른 것을 <strong>다시 읽을 수 있게 적어 두는 일</strong>이다.</p>
+      <p>둘째 일이 첫째보다 덜 중요해 보이지만 그렇지 않다. 살아 있는 센서만 가지고는 두 번 돌리면 두 번 다 다른 숫자가 나와서, 값이 달라졌을 때 <strong>내 코드가 바뀐 건지 방이 바뀐 건지</strong> 구별할 수 없다(§2-5).
+      그리고 이 파일 한 장이 있으면 라이다가 손에 없는 날에도 뒤의 다섯 쪽이 그대로 돈다.</p>
+      <pre class="diagram"><code> l-03 이 넘기는 것         이 쪽이 만드는 것                     이 쪽이 남기는 것
+ ───────────────────       ──────────────────────────────        ────────────────────────
+ (deg, mm, q, start)  ─►   split_turns()                    ─►   scans/&lt;이름&gt;.scan.jsonl
+ 점 하나씩 끝없이          start 로 자른다 · mm→m · 0→null       한 줄 = 한 바퀴
+ 흐른다                    Scan(a, r, q, t)  한 바퀴             머리 줄에 source·unit
+                           turn_stats()  점/회전·간격·σ          l-06·l-07 과 l-08~l-15 가
+                                                                 둘 다 이 파일을 읽는다</code></pre>
+      <p>새로 나오는 말을 먼저 한 줄씩 정해 둔다. <strong>낱말을 섞으면 뒤에서 값이 섞인다</strong> — 특히 아래 첫 세 줄은 서로 다른 세 가지다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>말</th><th>이 가이드에서의 뜻</th></tr></thead>
+        <tbody>
+          <tr><td><strong>회전수</strong></td><td>머리가 <strong>초에 몇 바퀴 도는가</strong>(Hz). 물리량이고 주기와 짝이다 — 5.5 Hz 는 <strong>한 바퀴에 약 182 ms</strong> 다. 드라이버 파라미터 이름 <code>scan_frequency</code> 를 이 뜻으로 쓰지 않는다 — 그 이름은 <strong>뜻이 둘</strong>이고, 어느 쪽인지는 <a href="l-07-cross-verify.html">l-07</a> 이 파라미터를 열어 판정한다</td></tr>
+          <tr><td><strong>점/회전</strong> · <strong>점/초</strong></td><td>한 바퀴에 들어온 점의 개수 · 1초에 들어온 점의 개수. 둘은 <strong>회전수로 이어져 있다</strong>: 점/초 = 점/회전 × 회전수 (§2-2)</td></tr>
+          <tr><td><strong>각도 간격</strong></td><td>한 바퀴 안에서 <strong>이웃한 두 점의 각도 차</strong>. 값 하나가 아니라 <strong>분포</strong>이므로 중앙값과 σ 로 말한다(§2-4). "각 분해능"이라고 부르지 않는다 — 조건 없이는 뜻이 없는 말이다(§2-3)</td></tr>
+          <tr><td><strong>랩어라운드</strong></td><td>359.9° 다음이 0.1° 라는 것. 한 바퀴의 점을 각도로 정렬하면 <strong>마지막 점과 첫 점 사이에도 간격이 하나 있다</strong> — 그것을 빼먹으면 반쪽만 재고도 고르게 보인다(§2-4)</td></tr>
+          <tr><td><strong>기준 형식</strong></td><td><code>.scan.jsonl</code>. 이 가이드가 정해 둔 기록 파일 형식이고 <strong>한 줄이 한 바퀴</strong>다. 모양은 <a href="l-00-map.html#s2-3">l-00 §2-3</a> 에 있고, <strong>왜 그 모양이라야 하는가는 이 쪽(§2-6)이 갖는다</strong></td></tr>
+          <tr><td><strong>무반사</strong></td><td>그 방향의 거리를 <strong>못 쟀다</strong>는 것. "빈 곳"이라고 부르지 않는다 — 격자의 자유공간(<a href="l-09-occupancy.html">l-09</a>)과 섞인다</td></tr>
+          <tr><td><strong>순수 함수</strong></td><td>포트도 시계도 파일도 건드리지 않는 함수. 이 쪽에서는 <code>split_turns</code> 와 <code>turn_stats</code> 가 그렇다 — <strong>그래서 라이다 없이 채점되고, l-16 이 C++ 로 옮길 수 있는 것도 이 둘뿐이다</strong></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="why">2. 원리 — 왜 한 바퀴가 경계이고, 왜 이 형식이라야 하는가</h2>
+
+      <h3 id="s2-1">2-1. 한 바퀴는 어떻게 알아보는가 — 단서는 둘이고, 쓰는 것은 하나다</h3>
+      <p>센서는 "여기서 한 바퀴가 끝났다"고 따로 알려 주지 않는다. 대신 단서가 둘 있다.</p>
+      <ul>
+        <li><strong>기기가 말해 주는 단서 — Start Flag.</strong> 데이터시트 Figure 1-4(rev.2.2 · v3.0 <strong>두 판 모두 6쪽</strong>)는 점 하나가 나르는 것 넷을 <em>Distance · Heading · Quality · Start Flag</em> 로 적고, Start Flag 의 설명을 <em>"Flag of a new scan"</em> 이라고 단다. 바로 다음 그림 Figure 1-5(같은 6쪽)가 그 플래그를 점의 흐름 위에 하나 세워 <em>"A new scan"</em> 이라 표시한다. 우리 도구에서 이것은 l-03 의 <code>stream()</code> 이 내는 네 번째 칸 <code>start</code> 다.</li>
+        <li><strong>기하가 말해 주는 단서 — 각도의 되감김.</strong> 각도가 계속 커지다가 갑자기 작아지면 한 바퀴가 넘어간 것이다. 플래그를 전혀 안 믿어도 쓸 수 있다.</li>
+      </ul>
+      <p>이 쪽은 <strong>플래그를 쓰고, 되감김은 검산으로만 쓴다.</strong> 이유는 둘이다 — ① 플래그는 <strong>기기가 선언한 것</strong>이고 되감김은 <strong>내가 추론한 것</strong>이다. 우리는 이미 l-03 에서 같은 비트로 프레이밍을 검사했으므로, 플래그를 믿는 것은 <strong>새로운 신뢰를 하나 더 얹는 일이 아니다.</strong>
+      ② 되감김 판정은 문턱이 필요하다("얼마나 작아져야 되감김인가"). 각도 간격이 고르지 않으면(§2-4) 그 문턱이 곧 <strong>내가 정해야 할 또 하나의 값</strong>이 된다. 이 쪽에서는 그것을 피한다.</p>
+      <p>플래그를 쓰기로 하면 <strong>세는 방법이 곧 정해진다.</strong> 한 바퀴는 <em>어떤 플래그부터 다음 플래그 직전까지</em>다. 그러면 자연히 이렇게 된다.</p>
+      <div class="callout why"><span class="ct">여기서 정해지는 것 셋 — §3-1 의 골격이 이것을 그대로 불변식으로 적는다</span>
+        <ul>
+          <li><strong>플래그 N 개 → 완전한 바퀴 N−1 개.</strong> N 개가 아니다. 이것을 틀리면 점/회전이 한 개 분량만큼 낮게 나온다.</li>
+          <li><strong>첫 플래그 이전의 점은 바퀴가 아니다.</strong> 포트를 열었을 때 스캔은 이미 어딘가를 돌고 있었으므로, 맨 앞 조각은 <strong>바퀴의 일부</strong>다. 그것을 한 바퀴로 세면 점 수가 <strong>아무 값이나</strong> 나온다.</li>
+          <li><strong>마지막 플래그 이후의 점도 바퀴가 아니다.</strong> 읽기를 멈춘 순간 진행 중이던 바퀴다. 같은 이유로 버린다.</li>
+        </ul>
+      </div>
+      <p class="small">⚠ <strong>같은 모델에서 다르게 한 예가 있다.</strong> 1세대의 자체 도구 <code>~/ros2/docs/camera_lidar/rplidar_ctl.py:86-118</code> 은 플래그를 만날 때마다 지금까지 모은 것을 한 바퀴로 밀어 넣는다 — 그래서 <strong>그 도구가 내놓는 첫 "바퀴"는 조각</strong>이다.
+      <strong>어느 쪽이 옳다는 이야기가 아니다.</strong> 저 도구는 3바퀴를 받아 점을 한 덩어리로 쓰는 용도라 조각이 섞여도 결과가 달라지지 않았다. 이 쪽은 <strong>바퀴마다 점 수를 세는 것이 목적</strong>이라 달라진다. 중요한 것은 "내 도구가 지금 무엇을 세고 있는지 내가 아는가"다 — 그것을 눈으로 보는 것이 실습 E 다.</p>
+
+      <h3 id="s2-2">2-2. 회전당 점 수는 센서가 정한 값이 아니라 <strong>결과</strong>다</h3>
+      <p>"이 라이다는 한 바퀴에 점이 몇 개인가"에는 답이 없다. 세 값이 한 식으로 묶여 있고, 그중 <strong>둘이 각각 다른 것에 달려 있기 때문</strong>이다.</p>
+      <pre class="diagram"><code> 점/초  =  점/회전  ×  회전수(Hz)          ←  이 셋 중 둘을 재면 나머지가 나온다
+
+ 점/초    ← 선이 나를 수 있는 양과 모드가 정한다 (한 점에 몇 바이트를 쓰는가)
+ 회전수   ← 모터에 걸린 전압과 부하가 정한다     (사양은 범위로만 적혀 있다)
+ 점/회전  ← 위 둘의 나눗셈. 센서 안에 이런 상수는 없다</code></pre>
+      <p>데이터시트 Figure 2-1(rev.2.2 · v3.0 <strong>두 판 모두 8쪽</strong>)이 세 행을 각각 이렇게 적는다 — <strong>Sample Duration</strong> typical 0.125 ms, <strong>Sample Frequency</strong> typical ≥8000 Hz(주기 0.125 ms) · max 8010 Hz, <strong>Scan Rate</strong> min 1 · typical 5.5 Hz(주기 약 182 ms) · max 10 Hz.
+      회전수가 <strong>하나의 값이 아니라 범위</strong>로 적혀 있다는 것이 핵심이다. 같은 센서가 상황에 따라 다르게 돈다는 뜻이고, 그래서 점/회전도 따라 달라진다.</p>
+      <p>그리고 <strong>사양의 샘플 주파수가 곧 내 선 위의 점 수는 아니다.</strong> 한 점이 5바이트인 지금 방식에서는 회선의 천장 11 520 B/s(<a href="l-01-link.html#s2-2">l-01 §2-2</a>)가 먼저 걸린다.
+      <strong>그 상한이 정확히 얼마이고 왜 모드가 여럿인지는 이 쪽이 논증하지 않는다</strong> — <a href="l-05-bandwidth-modes.html">l-05</a> 가 산수로 도출한다. 이 쪽이 하는 일은 <strong>내 기기에서 실제로 몇 개가 오는지를 세어 두는 것</strong>이고, l-05 는 그 숫자를 받아서 "내 도구가 이 센서의 몇 분의 일을 쓰고 있는가"를 판정한다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>값</th><th>같은 모델(A1M8)에서 나온 기록 — <strong>참고</strong></th><th>내 값</th></tr></thead>
+        <tbody>
+          <tr><td>점/초 (legacy 5바이트 방식)</td><td>1 396</td><td><code>____</code></td></tr>
+          <tr><td>점/회전</td><td>254</td><td><code>____</code></td></tr>
+          <tr><td>회전수 = 점/초 ÷ 점/회전</td><td>1 396 ÷ 254 = 5.50 Hz(주기 약 182 ms)</td><td><code>____</code></td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">출처 · 등급: <strong>NOMINAL(gen1-record, 2026-07-14)</strong> — <code>~/ros2/docs/camera_lidar/LIDAR_MODES.md</code> §2 "실측 성능" 표의 legacy SCAN 행. <strong>같은 모델(A1M8)에서 이런 결과가 나왔다는 것이지 내 개체의 값이 아니다</strong> — 카메라·라이다가 그 기기와 같은 개체인지는 아직 확인되지 않았다. 셋째 줄의 나눗셈은 이 가이드가 앞의 두 값으로 계산한 것이다(<strong>산술</strong>). 내 값은 §3-2-4 에서 잰다.</p>
+
+      <h3 id="s2-3">2-3. 각 분해능도 결과다 — "약 1°"는 조건 없이는 어느 모드에도 해당하지 않는다</h3>
+      <p>각도 간격의 대푯값은 점/회전에서 바로 나온다.</p>
+      <pre class="diagram"><code> 각도 간격(대푯값)  =  360°  ÷  점/회전</code></pre>
+      <p>그러니 점/회전이 고정값이 아니면(§2-2) 각도 간격도 고정값이 아니다. <strong>데이터시트는 이것을 숨기지 않고 조건으로 적어 두었다.</strong>
+      Figure 2-1(두 판 모두 8쪽)의 Angular Resolution 행은 typical <strong>≤1</strong> Degree 이고, 같은 행의 Comments 열이 <strong><em>"5.5Hz scan rate"</em></strong> 다. 바로 아래 Scan Rate 행의 Comments 열은 한 걸음 더 나간다 — <em>"Typical value is measured when RPLIDAR A1 takes 360 samples per scan"</em>.
+      즉 <strong>"≤1°"는 "한 바퀴에 360 점일 때"라는 조건 위의 값</strong>이고, 360 ÷ 360 = 1.000° 다. 조건을 떼면 이 숫자는 아무 말도 하지 않는다.</p>
+      <div class="callout note"><span class="ct">등급 — 저장소 안에 조건이 떨어져 나간 자리가 있다</span>
+        <p><code>hardware/INVENTORY.md</code> §3 의 "각 분해능" 행은 <strong>약 1°</strong> 라고만 적혀 있고 출처도 조건도 없다. 이 쪽은 그 칸을 고치지 않는다(그 표는 이 쪽의 소유가 아니다).
+        대신 <strong>조건을 붙여 읽는 법</strong>과 <strong>내 기기에서 재는 절차</strong>를 준다 — 그것이 §3-2 다. 재고 나서 내 값이 1° 보다 크더라도 <strong>센서가 고장 난 것이 아니다</strong>. 무엇이 그 값을 정하는지는 <a href="l-05-bandwidth-modes.html">l-05</a> 가 도출한다.</p>
+      </div>
+      <p class="small">같은 모델의 기록으로 크기를 가늠해 두면 — legacy 5바이트 방식에서 254 점/회전이었으므로 360 ÷ 254 = <strong>1.42°</strong> 다(NOMINAL(gen1-record, 2026-07-14) 의 두 값에서 이 가이드가 계산한 <strong>산술</strong>).
+      사양의 ≤1° 와 어긋나지만 <strong>어느 쪽이 틀린 것이 아니다</strong> — 조건이 다르다. 내 값은 <code>____</code> 이고 §3-2-4 에서 적는다.</p>
+
+      <h3 id="s2-4">2-4. 간격이 고른가 — 중앙값과 σ, 그리고 이 숫자가 무엇에 대한 근거인가</h3>
+      <p>§2-3 의 <code>360 ÷ 점/회전</code> 은 <strong>평균적인</strong> 간격이다. 실제로 이웃한 두 점이 언제나 그만큼 떨어져 있는지는 <strong>전혀 다른 질문</strong>이고, 그 답은 나눗셈으로 나오지 않는다 — 재야 한다.</p>
+      <p>재는 방법은 이렇다. 한 바퀴의 점을 <strong>각도로 정렬</strong>한 다음 이웃끼리 뺀다. 그러면 점 수보다 하나 적은 간격이 나오는데, <strong>한 바퀴는 원이므로 하나가 더 있다</strong> — 마지막 점에서 첫 점으로 돌아오는 간격이다.</p>
+      <pre class="diagram"><code> a = [0.1, 90.0, 180.0, 359.9]
+
+ 간격 = [90.0 - 0.1,  180.0 - 90.0,  359.9 - 180.0,  0.1 + 360 - 359.9]
+      = [   89.9,          90.0,          179.9,           0.2        ]
+                                                            └── 랩 간격. 빼먹으면
+                                                                반원만 재고도 고르게 보인다</code></pre>
+      <p>이렇게 모은 간격들의 <strong>중앙값</strong>과 <strong>σ</strong> 를 낸다. 정의는 이 두 줄이 전부다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>이름</th><th>정의 (이 쪽이 쓰는 뜻)</th></tr></thead>
+        <tbody>
+          <tr><td>중앙값 (median)</td><td>값들을 크기순으로 줄 세웠을 때 <strong>한가운데 값</strong>. 개수가 짝수면 가운데 둘의 평균</td></tr>
+          <tr><td>σ (표준편차)</td><td><strong>평균에서 얼마나 흩어져 있는가.</strong> 각 값에서 평균을 빼고, 제곱하고, 그 평균을 낸 뒤, 제곱근. 이 쪽은 <strong>N 으로 나누는 모집단 σ</strong> 를 쓴다(N−1 이 아니다) — 시험 벡터가 그 정의로 계산돼 있다</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>왜 평균이 아니라 중앙값인가.</strong> 한 섹터를 통째로 못 재면(유리·검은 천·측정 범위 밖) 그 자리에 <strong>거대한 간격 하나</strong>가 생긴다. 평균은 그 하나에 끌려가지만 중앙값은 꿈쩍하지 않는다.
+      "대부분의 이웃은 얼마나 떨어져 있는가"를 묻는 데는 중앙값이 맞고, "얼마나 흩어져 있는가"는 σ 가 따로 말한다. <strong>둘을 같이 봐야 한 쌍이 된다</strong> — 시험 벡터 9 가 정확히 이것을 채점한다.</p>
+      <div class="callout why"><span class="ct">이 σ 하나가 무엇에 대한 근거인가 — 이 쪽에서 선언해 둔다</span>
+        <p>드라이버에는 <code>angle_compensate</code> 라는 파라미터가 있다(<a href="07-lidar.html">07</a> §3-2). 이름이 말하듯 <strong>각도를 보정해 등간격으로 만들어 내보내는</strong> 쪽의 스위치이고, 켜면 <code>LaserScan</code> 이 <strong>"점들이 <code>angle_increment</code> 만큼 고르게 떨어져 있다"는 가정</strong> 위에 서게 된다.</p>
+        <p>그 가정이 내 기기에서 얼마나 참인지 말해 주는 숫자는 <strong>이 σ 하나뿐이다.</strong> 카탈로그도, 드라이버 로그도, <code>LaserScan</code> 의 필드도 이 값을 주지 않는다 — <strong>각도를 통째로 버리고 등간격을 가정한 뒤이기 때문</strong>이다. 그래서 기준 형식이 <code>a</code> 를 <code>r</code> 과 같은 길이로 남겨 두는 것이고(§2-6 · <a href="l-00-map.html#s2-3">l-00 §2-3</a>), 그것이 <strong>이 파일이 <code>LaserScan</code> 과 다른 점</strong>이다.</p>
+        <p>이 σ 를 켜고 끄는 판단에 어떻게 쓸지는 <a href="l-07-cross-verify.html">l-07</a> 이 받는다. <strong>이 쪽은 값을 만들고, 판정은 넘긴다.</strong></p>
+      </div>
+      <p class="small">같은 모델의 기록에 간격 산포가 한 줄 있다 — <strong>0.344° ± 0.123°</strong>(NOMINAL(gen1-record, 2026-07-14), <code>~/ros2/docs/camera_lidar/LIDAR_MODES.md</code> §3 "파서 검증" 표).
+      ⚠ <strong>그 줄은 legacy 가 아니라 고속 모드의 값</strong>이라 내가 지금 재는 것과 직접 견줄 수 없다. legacy 의 σ 는 <strong>어디에도 기록돼 있지 않다.</strong> 그래도 읽을 것이 하나 있다 — <strong>σ 가 중앙값의 3분의 1이나 된다.</strong> 간격이 고르다는 가정은 그 기기에서도 자명하지 않았다. 내 값은 <code>____</code> 다.</p>
+
+      <h3 id="s2-5">2-5. 왜 파일로 남기는가 — 같은 입력에 같은 답을 요구할 수 있어야 도구를 의심할 수 있다</h3>
+      <p>살아 있는 센서만 가지고 도구를 고치면 이런 일이 벌어진다. 코드를 한 줄 고치고 다시 돌렸더니 숫자가 달라졌다. <strong>고친 것이 효과가 있었던 걸까, 아니면 그 사이에 누가 지나간 걸까?</strong> 알 방법이 없다. 두 번 돌리면 두 번 다 다른 입력이기 때문이다.</p>
+      <p>파일 한 장을 떠 두면 그 질문이 닫힌다. <strong>같은 파일에 다른 답이 나왔다면 바뀐 것은 내 코드뿐이다.</strong> 이것이 뒤의 여덟 쪽이 전부 파일을 입력으로 쓰는 이유이고, l-16 이 "같은 입력에 파이썬과 C++ 이 같은 답을 내는가"를 물을 수 있는 이유다.</p>
+      <p>자기시험 벡터(§3-1-3)와는 역할이 다르다. <strong>벡터는 내가 만든 다섯 줄</strong>이라 내가 상상한 경우만 덮는다. <strong>파일은 내 방이 만든 것</strong>이라 내가 상상하지 못한 것이 들어 있다 — 갑자기 비는 섹터, 이상하게 가까운 점, 한 바퀴만 유난히 점이 적은 구간. 둘 다 필요하다.</p>
+      <p>그래서 형식에 <strong>머리 줄</strong>이 하나 붙는다. <code>source</code> 가 없는 파일은 <strong>내 기기에 대한 판정 근거로 쓸 수 없다</strong> — 내가 뜬 것인지, 남의 기록을 빌린 것인지, <code>/scan</code> 에서 받은 것인지에 따라 그 파일이 증명할 수 있는 것이 전혀 다르기 때문이다.</p>
+
+      <h3 id="s2-6">2-6. 못 잰 방향을 무엇으로 적는가 — <code>LaserScan</code> 이 <code>inf</code> 와 <code>NaN</code> 을 고정한 것과 같은 종류의 결정</h3>
+      <p>기준 형식의 모양은 <a href="l-00-map.html#s2-3">l-00 §2-3</a> 에 이미 있다. 거기서 남겨 둔 것이 하나 있다 — <strong>못 잰 방향을 <code>0</code> 도 <code>inf</code> 도 아닌 <code>null</code> 로 적는 이유</strong>다. 이 쪽이 그것을 닫는다. <strong>세 갈래가 있다는 것이 아니라, 왜 이 갈래라야 뒤의 다섯 쪽이 조용히 틀리지 않는가</strong>가 물음이다.</p>
+      <p>판단 기준을 먼저 정한다. 세 표기 중 어느 것도 <strong>더 정확하지 않다</strong> — 셋 다 "못 쟀다"를 적을 수는 있다. 갈리는 축은 하나뿐이다.</p>
+      <blockquote><strong>이 값을 처리하는 것을 깜빡한 코드가, 에러를 내는가 아니면 그럴듯한 숫자를 내는가.</strong></blockquote>
+      <p>이 축으로 셋을 놓으면 이렇게 된다. 셋째 열은 상상이 아니라 <strong>뒤의 쪽들이 실제로 그 값에 하는 일</strong>이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>표기</th><th>산술에서 무엇인가</th><th>처리를 깜빡하면 뒤에서 무슨 일이 나는가</th></tr></thead>
+        <tbody>
+          <tr><td><code>0</code><br><span class="small">센서가 주는 값 그대로</span></td><td><strong>정상적인 수</strong>. 모든 연산이 조용히 받는다</td><td>"센서 코앞에 물체"로 읽힌다. 통로 폭(<a href="l-12-clearance.html">l-12</a>)은 0 이 되어 <strong>지나갈 수 있는 길을 못 지나간다</strong>고 답하고, 두 스캔을 겹쳐 맞추는 계산(<a href="l-14-alignment.html">l-14</a>)은 원점 쪽으로 끌린다. <strong>어디에서도 에러가 나지 않는다</strong></td></tr>
+          <tr><td><code>inf</code><br><span class="small"><code>LaserScan</code> 과 같은 꼴</span></td><td><strong>부동소수에서는 이것도 수</strong>다. 비교도 되고 최소값도 구해진다</td><td>"아주 멀리 있다"로 읽힌다. 그래서 그 방향의 광선을 격자에 그으면 <strong>지나는 칸을 전부 '비어 있음'으로 칠한다</strong> — 못 잰 방향이 갈 수 있는 길로 바뀐다(<a href="l-09-occupancy.html">l-09</a> 가 이것을 일부러 일으켜 보는 항목을 갖고 있다). 그리고 평균·중앙값에 섞이면 결과가 통째로 <code>inf</code> 가 된다</td></tr>
+          <tr><td><strong><code>null</code></strong><br><span class="small">이 형식이 고른 것</span></td><td><strong>수가 아니다.</strong> 파이썬에서는 <code>None</code> 이라 더하기 한 번에 <code>TypeError</code></td><td><strong>첫 줄에서 멈춘다.</strong> 그럴듯한 지도도, 그럴듯한 통로 폭도 나오지 않는다. 대신 "이 값을 어떻게 다룰지 네가 정하라"는 요구가 <strong>코드를 쓰는 사람 앞으로</strong> 온다</td></tr>
+        </tbody>
+      </table></div>
+      <p>세 번째가 이기는 이유는 "예쁘다"가 아니다. <strong>틀린 읽기를 시끄럽게 만들기 때문</strong>이다. 앞의 둘에서 생기는 고장은 전부 <strong>에러 없이 그럴듯한 값</strong>이라, 원인을 찾을 때 코드가 아니라 <strong>센서를 먼저 의심하게 된다.</strong> 라이다에서 그것이 가장 비싼 실수다.</p>
+      <p class="small">차이가 없는 축도 적어 둔다 — <strong>파일 크기와 읽기 속도는 셋이 사실상 같다</strong>(<code>null</code> 이 네 글자, <code>0.0</code> 이 세 글자). 이 축은 판단에 쓰이지 않았다.</p>
+      <h4 id="s2-6-1">2-6-1. 그러면 <code>LaserScan</code> 은 왜 반대로 골랐는가 — 고를 수 있는 것이 달랐다</h4>
+      <p><code>sensor_msgs/msg/LaserScan</code> 의 <code>ranges</code> 는 <strong>고정 폭 실수 배열</strong>이다. 배열의 한 칸은 반드시 실수 하나를 담아야 하고, <strong>"비어 있음"이라는 칸은 존재할 수 없다.</strong> 그러니 그 규약에게 <code>null</code> 은 선택지가 아니었다 — 실수 중에서 골라야 했고, 그래서 <code>inf</code> 와 <code>NaN</code> 을 <strong>규약으로 고정</strong>했다.</p>
+      <p>그 선택의 값은 우리 표의 둘째 행 그대로다. 걸러 주는 사람이 없으면 조용히 틀린다. 그래서 <strong>받는 쪽이 그 비용을 대신 낸다</strong> — <a href="07-lidar.html">07</a> §1-1 이 이 값들을 "물체가 없다"가 아니라 <strong>"측정 실패"</strong> 라고 못박아 두고, 07 §3-10 의 C++ 노드는 <code>inf</code> · <code>NaN</code> 을 걸러 내는 줄을 <strong>따로</strong> 갖고 있다. 규약이 못 막아 주는 것을 코드가 매번 막는 구조다.</p>
+      <div class="callout why"><span class="ct">같은 종류의 결정이라는 것</span>
+        <p>둘 다 <strong>"못 쟀다"를 어떻게 적을지 한 번 정해 못박았다.</strong> 다른 것은 <strong>고를 수 있는 것의 폭</strong>이었다 — 고정 폭 실수 배열에는 <code>null</code> 이 없고, 한 줄짜리 JSON 에는 있다. 그래서 답이 갈렸다.</p>
+        <p>여기서 가져갈 것은 "우리 쪽이 낫다"가 아니다. <strong>메시지 형식이 왜 한 번 정하면 바꾸기 어려운가</strong>다. 이 형식에 필드를 하나 더하고 싶으면 <strong>파이썬 로더와 C++ 로더를 같이 고쳐야 한다</strong>(<a href="l-16-node.html">l-16</a>). 읽는 쪽이 둘뿐인데도 그렇다. <code>LaserScan</code> 은 읽는 쪽이 수천 개다.</p>
+      </div>
+      <p><strong>그래서 이 변환을 어디서 하는가가 중요해진다.</strong> mm → m 과 <code>0 → null</code> 은 <strong><code>split_turns()</code> 안에서</strong> 일어난다 — 파일에 쓰는 자리가 아니라. 쓰는 함수는 채점되지 않으므로(§3-4-2), 거기서 한 글자를 놓치면 <strong>형식은 멀쩡한데 값이 1000배 틀린 파일</strong>이 나오고 l-08 부터 l-16 까지 아무도 불평하지 않는다. 채점되는 자리에 두면 벡터 1이 그 자리에서 잡는다.</p>
+      <p><strong>내 몫으로 남는 것</strong>은 위 표를 내 말로 다시 쓰는 것(§3-3), <code>q</code>(품질)를 남길 것인가, <code>note</code> 에 무엇을 적을 것인가다. <strong>형식 자체는 정해져 있다</strong> — 바꾸면 뒤의 쪽들이 주는 골격과 시험 벡터가 그 자리에서 깨진다.</p>
+
+      <h3 id="s2-7">2-7. 왜 <code>rosbag</code> 이 아닌가 — 둘 다 열어 둔다</h3>
+      <p>저장소에는 이미 기록 수단이 있다. <a href="10-autonomy.html">10</a> §3-7 이 <code>ros2 bag record</code> 로 <code>/scan</code> 을 포함한 토픽들을 통째로 받아 둔다. 그런데도 이 쪽이 형식을 따로 두는 이유는 둘이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>이유</th><th>무엇이 달라지는가</th></tr></thead>
+        <tbody>
+          <tr><td><strong>ROS 없이 읽혀야 한다</strong></td><td>bag 을 열려면 ROS 가 있어야 하고, 그러면 컨테이너가 떠 있어야 한다. 이 파일은 <strong>경로 A(바이트)에서 먼저 만들어지고</strong> 표준 라이브러리만으로 읽힌다 — 그래서 컨테이너가 안 뜬 날에도 뒤의 다섯 쪽이 돈다</td></tr>
+          <tr><td><strong>드라이버를 거치지 않은 기록이어야 한다</strong></td><td>bag 안의 <code>/scan</code> 은 <strong>이미 드라이버가 해석한 결과</strong>다. 드라이버가 맞는지 채점하려면 드라이버를 거치지 않은 기록이 있어야 한다 — 두 경로를 맞대어 보는 것이 <a href="l-07-cross-verify.html">l-07</a> 의 일이다</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>둘 중 하나를 버리는 것이 아니다.</strong> <a href="l-06-three-sources.html">l-06</a> 이 <code>/scan</code> 에서 이 형식으로 받아 적는 길을 따로 만든다 — 07 만 끝낸 사람이 파일 한 장을 얻어 l-08 부터 갈 수 있게. bag 은 bag 대로 10 에서 쓰인다.</p>
+
+      <h2 id="lab">3. 실습</h2>
+      <div class="callout warn"><span class="ct">먼저 — 이 쪽은 머리를 30초 동안 계속 돌린다</span>
+        <ul>
+          <li><strong>레이저는 눈에 보이지 않는다.</strong> 이 센서의 광원은 785 nm 적외선이고 Class I 로 분류돼 정상 사용에서 안전하다고 표시돼 있다(데이터시트 rev.2.2 · v3.0 두 판 모두 5쪽 · Figure 2-3 두 판 모두 9쪽). 문제는 위험의 크기가 아니라 <strong>켜졌는지 눈으로 알 수 없다는 것</strong>이다 — 그래서 습관이 생기지 않는다. <strong>스캔 창을 렌즈 높이에서 정면으로 들여다보지 않는다.</strong> 실습 D 는 30초, 실습 E 는 그보다 더 오래 돌아간다.</li>
+          <li><strong>도는 머리에 손·머리카락·천·케이블을 가까이 두지 않는다.</strong> 이 쪽은 l-03 과 달리 센서 앞에 손을 댈 일이 없다 — 재는 것이 시간과 개수이기 때문이다. 자리를 옮기거나 들어 올릴 일이 생기면 <strong>모터를 세운 뒤</strong>(<code>dtr=True</code>) 든다.</li>
+          <li>센서가 실습 도중에 움직이면 §3-2 의 σ 가 무엇을 잰 것인지 알 수 없게 된다. <a href="l-01-link.html#s3-2">l-01 §3-2</a> 에서 만든 자리에 그대로 두고, 케이블이 당기지 않게 여유를 둔다.</li>
+        </ul>
+      </div>
+
+      <h3 id="s3-1">3-1. 실습 A — 흐름을 바퀴로 자른다</h3>
+
+      <h4 id="s3-1-1">3-1-1. 확인</h4>
+      <p>이 실습이 전제하는 값들을 먼저 한 표에 놓는다. <strong>오른쪽 끝 열이 이 표의 핵심</strong>이다 — 값이 어디서 왔는지와 <strong>내가 어떻게 확인하는지</strong>가 한 줄에 같이 있어야 한다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>항목</th><th>값</th><th>출처 · 등급</th><th>내 장치에서 보는 법</th></tr></thead>
+        <tbody>
+          <tr><td>Start Flag 의 뜻</td><td>"새 스캔의 표시"</td><td>데이터시트 Figure 1-4 · Figure 1-5(rev.2.2 · v3.0 두 판 모두 6쪽) — <strong>확정</strong></td><td><code>start</code> 가 참인 점의 개수를 센다. 한 바퀴에 <strong>정확히 한 번</strong>이면 이 이해가 옳다</td></tr>
+          <tr><td>5바이트 안에서 S 비트의 자리</td><td>b0 의 비트0</td><td><a href="l-02-device-id.html#s2-5">l-02 §2-5</a> 가 출처 사슬을 갖는다(SDK 소스 확정 · 내 기기 펌웨어는 자기검증으로) — <strong>여기서 다시 주장하지 않는다</strong></td><td>이미 <a href="l-03-one-point.html#s3-1-4">l-03 §3-1-4</a> 에서 확인했다. 틀렸으면 이 쪽의 모든 바퀴가 틀린다</td></tr>
+          <tr><td>거리 <code>0</code> 의 뜻</td><td>"못 쟀다"</td><td>데이터시트가 말하지 않는다 · NOMINAL(gen1-record, 2026-07-14) — <strong>미확인 1차</strong></td><td>허공을 향한 방향에서 <code>0</code> 이 나오는지 센다(<a href="l-03-one-point.html#s3-2-4">l-03 §3-2-4</a>). 이 쪽은 그 <code>0</code> 을 <code>null</code> 로 바꾼다(§2-6)</td></tr>
+          <tr><td>회전수</td><td>min 1 · typical 5.5 Hz(주기 약 182 ms) · max 10</td><td>데이터시트 Figure 2-1(두 판 모두 8쪽) — <strong>확정</strong>(단, <strong>범위</strong>다)</td><td>§3-2-4 — 내가 받은 바퀴 수 ÷ 경과 시간</td></tr>
+          <tr><td>회선 용량</td><td>11 520 B/s</td><td><code>115200 ÷ 10</code> — <strong>산술</strong>(<a href="l-01-link.html#s2-2">l-01 §2-2</a>)</td><td><a href="l-01-link.html#s3-4">l-01 §3-4</a> 에서 이미 직접 셌다</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>실행 확인:</strong> 미확인 — 집필자는 Pi 에 접속하지 못했고 라이다를 돌려 보지 못했다. 아래는 출력의 <em>모양</em>이고 값 자리는 <code>&lt;n&gt;</code> 이다. <strong>가짜 숫자를 넣지 않았다.</strong></p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><code>pi$ ls scripts/lidar_lab/</code></td><td><code>cmd.py  link.py  point.py  scans  tests</code> — <code>turn.py</code> 는 <strong>아직 없다</strong>. 이 쪽에서 만든다</td><td><code>scans/</code> 가 없으면 <code>pi$ mkdir -p scripts/lidar_lab/scans</code>. 폴더 자체가 없으면 <a href="l-00-map.html#s3-4">l-00 §3-4</a> 로</td></tr>
+          <tr><td>2</td><td><code>pi$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_point.py</code></td><td><code>PASS point 10 cases</code></td><td><strong>여기서 멈춘다.</strong> 각도 해독이 틀린 채로 바퀴를 자르면 점 수도 간격도 전부 틀리고, 그 원인을 라이다에서 찾게 된다 → <a href="l-03-one-point.html#s3-1-3">l-03 §3-1-3</a></td></tr>
+          <tr><td>3</td><td><code>pi$ grep -n 'yield' scripts/lidar_lab/point.py</code></td><td><code>yield</code> 가 내보내는 것이 <strong>네 칸</strong>(<code>deg, mm, q, start</code>)인 줄</td><td>세 칸이면 <code>start</code> 를 안 붙인 것이다 — 이 쪽이 자를 근거가 없다 → <a href="l-03-one-point.html#s3-1-2">l-03 §3-1-2</a> 의 <code>stream()</code> 골격</td></tr>
+          <tr><td>4</td><td><code>pi$ python3 -c 'import serial, sys; print(serial.__version__, sys.version.split()[0])'</code></td><td><code>&lt;n&gt;.&lt;n&gt; 3.&lt;n&gt;.&lt;n&gt;</code> 두 값이 한 줄에</td><td><code>ModuleNotFoundError</code> 면 호스트 파이썬에 <code>pyserial</code> 이 없다 → <a href="l-00-map.html#s3-1">l-00 §3-1</a> 의 두 길(호스트 설치 / 컨테이너 안에서 같은 스크립트)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-1-2">3-1-2. 골격</h4>
+      <p>파일은 <code>scripts/lidar_lab/turn.py</code> 하나다. 이 쪽이 끝나면 여기에 공개 이름이 다섯 생긴다 — <code>Scan</code> · <code>split_turns()</code> · <code>turn_stats()</code>(§3-2) · <code>save_jsonl()</code> · <code>load_jsonl()</code>(§3-4).</p>
+      <p>⚠ <strong>다섯이 두 무리로 갈린다.</strong> 앞의 셋은 <strong>순수</strong>하다 — 포트도 시계도 파일도 건드리지 않는다. 뒤의 둘은 파일을 건드린다. 이 경계가 이 파일의 설계 전부이고, 세 군데에서 값을 한다.
+      ① 순수한 쪽은 <strong>라이다 없이 채점된다</strong>(§3-1-3). ② 순수한 쪽만 <strong><a href="l-16-node.html">l-16</a> 이 C++ 로 옮길 수 있다.</strong> ③ 단위 변환과 <code>null</code> 변환을 순수한 쪽에 두면 <strong>벡터가 그것을 잡는다</strong>(§2-6 의 마지막 문단).</p>
+      <p>주석의 불변식 다섯 개를 <strong>먼저 읽는다.</strong> 다섯 개가 전부 §2-1 과 §2-6 에서 도출된 것이고, 다섯 개가 전부 시험 벡터로 채점된다.</p>
+      <pre><code class="lang-python"># scripts/lidar_lab/turn.py -- cut the point stream into revolutions and record them.
+# split_turns() and turn_stats() are PURE: no port, no clock, no file. That is why
+# tests/test_turn.py grades them with the lidar unplugged, and why l-16 can port
+# exactly these two to C++ later. Everything that touches a clock or a file lives
+# in the shell at the bottom of this module.
+
+
+class Scan:
+    """One complete revolution, already in the reference format of 2-6.
+
+    a : [float] angle in DEGREES, ascending, 0.0 &lt;= a[i] &lt; 360.0
+    r : [float | None] range in METERS. None means COULD NOT MEASURE.
+        It never means 0 m and it never means "far away".
+    q : [int] | None  raw quality level, same length as a when present
+    t : float | None  seconds since the first recorded revolution.
+        split_turns() leaves this None on purpose -- a pure function has no clock.
+        The recorder in 3-4 stamps it before save_jsonl() writes the line.
+    """
+
+    __slots__ = ("a", "r", "q", "t")
+
+    def __init__(self, a, r, q=None, t=None):
+        self.a, self.r, self.q, self.t = a, r, q, t
+
+    def __len__(self):
+        return len(self.a)
+
+
+def split_turns(points):
+    """Iterate (deg, mm, quality, start) from l-03's stream() -&gt; yield one Scan per
+    COMPLETE revolution.
+
+    Invariants -- every one of these is graded by a vector in tests/test_turn.py:
+      1. A revolution runs from one start flag up to (not including) the next one.
+         N start flags therefore produce N-1 Scans, never N.
+      2. Points seen BEFORE the first start flag are a fragment, not a revolution.
+         Drop them. Points after the last start flag are the revolution still in
+         progress. Drop them too.
+      3. mm -&gt; m here (divide by 1000), and mm == 0 -&gt; None here. NOT at save time:
+         save_jsonl() is not graded, so a slip there would write a well-formed file
+         that is wrong by a factor of 1000 and every page from l-08 on would read
+         it without complaining.
+      4. Inside a Scan the points come out in ASCENDING angle, with r and q moved
+         along with their own angle. The stream is roughly ascending already, but
+         "roughly" is not the format (2-6), and the gap statistics of 3-2 are only
+         defined on a sorted list.
+      5. A point whose angle is not in [0, 360) is outside the format -- drop it.
+         l-03 2-2 showed the field is 15 bits and reaches 511.98 when a shift is
+         wrong, so this is a real value, not a theoretical one.
+    Pure: no serial, no clock, no file. Called from the recorder below.
+    Verify with: python3 tests/test_turn.py
+    """
+    # TODO(you): keep one list for the revolution being built and one flag for
+    #   "have I seen a start yet". Decide what happens on a start flag BEFORE you
+    #   decide what happens to the point that carries it -- the point with
+    #   start=True belongs to the NEW revolution, not the one that just ended.
+    return iter(())</code></pre>
+
+      <h4 id="s3-1-3">3-1-3. 직접 채우기 — 그리고 벡터로 채점한다</h4>
+      <p>순서는 이렇다. <strong>2번을 먼저 하는 것이 요령이다</strong> — 실패 메시지가 곧 할 일 목록이 된다.</p>
+      <ol class="steps">
+        <li><strong>골격을 그대로 한 번 돌린다.</strong> <code>split_turns</code> 는 빈 반복자를 돌려주므로 <code>for scan in split_turns(...)</code> 가 <strong>조용히 0번 돌고 끝난다.</strong> 멈추거나 죽지 않는 것이 정상이다 — 이것이 골격이 "그대로 돌아간다"는 뜻이다.</li>
+        <li><strong>시험 파일을 먼저 놓고 돌린다.</strong> 아래 블록을 <code>scripts/lidar_lab/tests/test_turn.py</code> 로 그대로 둔다. 지금 돌리면 <strong>벡터 1에서 멈춘다</strong>. 벡터 하나를 통과시킬 때마다 다음 실패로 넘어가고, <strong>그 순서가 곧 채울 순서</strong>다.</li>
+        <li><strong><code>split_turns</code> 를 채운다.</strong> 네 걸음으로 쪼개서 생각한다 — ① 플래그를 만났을 때 무엇을 내보내는가 ② 무엇을 버리는가(앞 조각 · 진행 중인 바퀴) ③ 점 하나를 어떤 값으로 바꿔 담는가(mm → m, <code>0</code> → <code>None</code>, 범위 밖은 버린다) ④ 내보내기 직전에 각도로 정렬한다.
+          <br>힌트 하나: <strong>플래그를 단 그 점은 새 바퀴에 속한다.</strong> "내보내기"와 "담기"의 순서를 거꾸로 하면 바퀴마다 점 하나씩 앞 바퀴로 밀린다 — 벡터 1이 잡는다.
+          <br>힌트 둘: 정렬은 <strong>세 리스트를 따로 정렬하면 안 된다.</strong> <code>r</code> 과 <code>q</code> 는 자기 각도를 따라가야 한다 — 벡터 6이 잡는다.</li>
+        <li><strong>11개가 다 통과할 때까지 실물로 가지 않는다.</strong> 여기까지는 라이다가 없어도 전부 된다.</li>
+      </ol>
+      <p class="small">이 블록은 전량 제공이다 — 이유: <strong>벡터가 곧 채점표</strong>이고(내 답을 내가 채점할 수 없다), 벡터가 조금이라도 다르면 무엇이 통과했는지가 달라져 §2-1 · §2-4 · §2-6 에서 도출한 규칙이 채점되지 않은 채로 남는다. 기댓값은 집필자의 독립 구현이 낸 것이고, <strong>두 통계 벡터의 계산은 파일 머리에 한 줄로 남겨 두었다.</strong></p>
+      <pre><code class="lang-python"># scripts/lidar_lab/tests/test_turn.py -- grading vectors for split_turns() and turn_stats().
+# Standard library only. Runs with the lidar unplugged: both functions are pure.
+#   pi$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_turn.py
+#
+# Input rows are what l-03's stream() yields: (deg, mm, quality, start).
+# Expected values were produced by the writer's own reference implementation and
+# re-checked by hand; the two statistics vectors were computed as:
+#   gaps(V8)  = [10,10,10, 0+360-30=330] -&gt; median 10.0, pstdev 138.5640646055102
+#   gaps(V9)  = [1,1,1,197, 0+360-200=160] -&gt; median 1.0 (mean would be 72.0)
+
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from turn import split_turns, turn_stats
+
+CASES = 0
+def check(name, got, want):
+    global CASES
+    CASES += 1
+    if got != want:
+        print("FAIL %s\n  got  %r\n  want %r" % (name, got, want))
+        sys.exit(1)
+
+def shape(scans):
+    return [(s.a, s.r, s.q) for s in scans]
+
+# 1. two complete turns; the third is still in progress -&gt; dropped.
+#    Also grades mm -&gt; m and "0 mm means could not measure" -&gt; None.
+V1 = [(10.0, 1000.0, 15, True), (20.0, 2000.0, 15, False), (30.0, 0.0, 0, False),
+      (40.0,  500.0, 20, True), (50.0, 1500.0, 20, False),
+      (60.0,  250.0, 20, True)]
+check("1 two turns, units, no-return",
+      shape(split_turns(V1)),
+      [([10.0, 20.0, 30.0], [1.0, 2.0, None], [15, 15, 0]),
+       ([40.0, 50.0], [0.5, 1.5], [20, 20])])
+
+# 2. the arc before the first start flag is not a revolution -&gt; dropped.
+V2 = [(5.0, 100.0, 1, False), (6.0, 100.0, 1, False),
+      (10.0, 1000.0, 2, True), (20.0, 2000.0, 2, False),
+      (30.0, 3000.0, 2, True)]
+check("2 leading fragment dropped", [s.a for s in split_turns(V2)], [[10.0, 20.0]])
+
+# 3. one start flag = zero complete turns. Not an error.
+V3 = [(10.0, 1000.0, 1, True), (20.0, 2000.0, 1, False)]
+check("3 one flag -&gt; no turn", [s.a for s in split_turns(V3)], [])
+
+# 4. no start flag at all -&gt; nothing, and no crash.
+V4 = [(10.0, 1000.0, 1, False)]
+check("4 no flag -&gt; nothing", [s.a for s in split_turns(V4)], [])
+
+# 5. three flags in a row: two turns of a single point each.
+V5 = [(10.0, 1000.0, 1, True), (20.0, 2000.0, 1, True), (30.0, 3000.0, 1, True)]
+check("5 one-point turns", [s.a for s in split_turns(V5)], [[10.0], [20.0]])
+
+# 6. a revolution does not start at 0 deg: it wraps through 360.
+#    Inside the Scan the points must come out in ascending angle, r and q following.
+V6 = [(359.9, 1000.0, 3, True), (0.1, 2000.0, 3, False), (180.0, 3000.0, 3, False),
+      (90.0, 4000.0, 3, False), (10.0, 500.0, 3, True)]
+check("6 sorted, r follows",
+      shape(split_turns(V6)),
+      [([0.1, 90.0, 180.0, 359.9], [2.0, 4.0, 3.0, 1.0], [3, 3, 3, 3])])
+
+# 7. the angle field is 15 bits (l-03 2-2): a wrong shift can reach 511.98 deg.
+#    Such a point is outside the format and is dropped, not clamped.
+V7 = [(10.0, 1000.0, 1, True), (511.98, 2000.0, 1, False), (20.0, 3000.0, 1, False),
+      (30.0, 4000.0, 1, True)]
+check("7 out-of-range angle dropped",
+      shape(split_turns(V7)), [([10.0, 20.0], [1.0, 3.0], [1, 1])])
+
+# 8. gaps include the wrap gap a[0]+360-a[-1]. Here the points sit in one quarter,
+#    so the wrap gap is 330 and the spread is large even though the median is 10.
+V8 = [(0.0, 1000.0, 1, True), (10.0, 1000.0, 1, False), (20.0, 1000.0, 1, False),
+      (30.0, 1000.0, 1, False), (0.0, 1000.0, 1, True)]
+st = turn_stats(split_turns(V8))
+check("8a wrap gap counted (median)", st["gap_median"], 10.0)
+check("8b wrap gap counted (sigma)", round(st["gap_sigma"], 6), 138.564065)
+
+# 9. one big hole moves the mean but not the median. This is why the four numbers
+#    of 3-2 are median + sigma and not mean.
+V9 = [(0.0, 1000.0, 1, True), (1.0, 1000.0, 1, False), (2.0, 1000.0, 1, False),
+       (3.0, 1000.0, 1, False), (200.0, 1000.0, 1, False), (0.0, 1000.0, 1, True)]
+check("9 median not mean", turn_stats(split_turns(V9))["gap_median"], 1.0)
+
+# 10. a turn of one point has no gap at all -&gt; no division by zero, no crash.
+check("10 one-point turn has no gap",
+      turn_stats(split_turns(V5))["gap_median"], None)
+
+print("PASS turn %d cases" % CASES)</code></pre>
+      <p>이 열한 개가 무엇을 지키는지 한눈에 보려면 반대로 보는 것이 빠르다. 아래는 <strong>집필자가 잘못된 구현 여덟 가지를 실제로 만들어 같은 벡터에 돌려 본 결과</strong>다(2026-09-23, Mac 의 <code>python3</code> — 순수 함수라 여기서 돈다).</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>이렇게 짜면</th><th>무엇이 나오는가</th><th>잡는 벡터</th></tr></thead>
+        <tbody>
+          <tr><td>앞 조각을 한 바퀴로 센다</td><td>바퀴가 하나 늘고 <strong>첫 바퀴의 점 수가 아무 값</strong>이 된다 — §2-1 의 각주가 말한 그 구현이다</td><td><strong>2</strong></td></tr>
+          <tr><td>진행 중인 바퀴까지 내보낸다</td><td>마지막 바퀴의 점 수가 아무 값이 된다. 10바퀴를 받으면 한 줄만 이상하다</td><td><strong>1</strong></td></tr>
+          <tr><td>mm 를 m 로 안 바꾼다</td><td>거리가 <strong>1000배</strong>. 파일 형식은 멀쩡하다</td><td><strong>1</strong></td></tr>
+          <tr><td>거리 <code>0</code> 을 <code>0.0</code> 으로 둔다</td><td>못 잰 방향이 <strong>"코앞에 벽"</strong>이 된다(§2-6). 에러는 없다</td><td><strong>1</strong></td></tr>
+          <tr><td>각도로 정렬하지 않는다</td><td><code>a</code> 가 오름차순이 아니다 → §3-4 의 로더가 그 줄에서 거부한다. 정렬을 세 리스트에 따로 해도 같은 벡터가 잡는다</td><td><strong>6</strong></td></tr>
+          <tr><td>랩 간격을 안 센다</td><td>반쪽만 재고도 <strong>σ 가 0</strong> 으로 나와 "완벽하게 고르다"고 보고한다</td><td><strong>8b</strong></td></tr>
+          <tr><td>중앙값 대신 평균을 쓴다</td><td>구멍 하나에 대푯값이 끌려간다(벡터 8 에서 10.0 이 90.0 으로)</td><td><strong>8a · 9</strong></td></tr>
+          <tr><td>각도 360 이상을 남긴다</td><td>511.98° 짜리 점이 바퀴에 섞여 간격 통계를 흔든다(l-03 §2-2)</td><td><strong>7</strong></td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-1-4">3-1-4. 돌리고 보기</h4>
+      <p>열 바퀴를 받아 바퀴마다 한 줄씩 찍게 한다. <strong>몇 바퀴를 받을지, 옵션 이름을 무엇으로 할지는 내가 정한다</strong> — 아래는 출력의 <em>모양</em>이다.</p>
+      <pre><code class="lang-bash">pi$ python3 scripts/lidar_lab/turn.py
+rev  1: &lt;n&gt; points   a[0]=&lt;n&gt;.&lt;n&gt;  a[-1]=&lt;n&gt;.&lt;n&gt;  null=&lt;n&gt;
+rev  2: &lt;n&gt; points   a[0]=&lt;n&gt;.&lt;n&gt;  a[-1]=&lt;n&gt;.&lt;n&gt;  null=&lt;n&gt;
+...
+rev 10: &lt;n&gt; points   a[0]=&lt;n&gt;.&lt;n&gt;  a[-1]=&lt;n&gt;.&lt;n&gt;  null=&lt;n&gt;</code></pre>
+      <p class="small">⚠ 도구를 돌리는 꼴은 <strong>저장소 뿌리에서</strong> <code>python3 scripts/lidar_lab/&lt;모듈&gt;.py</code> 하나다. <code>python3 -m lidar_lab.turn</code> 으로 부르지 않는다 — 형제 모듈 <code>cmd.py</code> 대신 파이썬 표준 라이브러리의 <code>cmd</code> 가 잡히고, <strong>에러 없이 빈 모듈처럼 동작한다</strong>(이유는 <a href="l-01-link.html#s3-3">l-01 §3-3</a>).</p>
+      <p>열 줄을 노트에 옮겨 적고 아래 셋을 읽는다. <strong>합격선은 없다</strong> — 이 값들은 모드와 전원에 따라 달라지고, 무엇이 그것을 정하는지는 <a href="l-05-bandwidth-modes.html">l-05</a> 가 도출한다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>무엇을 보는가</th><th>읽는 법</th></tr></thead>
+        <tbody>
+          <tr><td>줄이 열 개 나오는가</td><td>안 나오고 프로그램이 안 끝나면 플래그가 한 번도 안 왔거나(§3-1-1 표 3번) 아직 골격 그대로다. <strong>끝없이 기다리는 것과 0개를 내고 끝나는 것은 다른 증상</strong>이다</td></tr>
+          <tr><td>열 줄의 점 수가 서로 얼마나 다른가</td><td>가장 큰 값과 가장 작은 값을 적고 <strong>차가 몇 %인지 내가 계산한다.</strong> 몇 %까지를 "같다"고 볼지는 <strong>내가 정해 적는다</strong> — 정해진 값이 없다</td></tr>
+          <tr><td>첫 줄이나 마지막 줄만 유난히 작은가</td><td><strong>앞 조각이나 진행 중인 바퀴를 안 버린 것</strong>이다(§2-1). 벡터 1·2 로 돌아간다. 열 줄 중 여덟 줄만 비슷하면 <strong>양 끝 둘을 의심한다</strong></td></tr>
+        </tbody>
+      </table></div>
+      <p>⚠ 열 줄이 서로 크게 다르거나 예상과 다르더라도 <strong>그대로 적고 넘어간다.</strong> 이 쪽의 체크 항목은 "예상한 것을 봤는가"가 아니라 <strong>"무엇이 일어났는지 적었는가"</strong> 다. 점 수가 들쭉날쭉한 것 자체가 l-05 와 l-07 이 받는 관찰이다.</p>
+
+      <h3 id="s3-2">3-2. 실습 B — 네 숫자를 낸다: 점/회전 · 간격 중앙값 · σ · 회전수</h3>
+
+      <h4 id="s3-2-1">3-2-1. 확인 — 같은 값을 네 갈래가 뭐라고 하는가</h4>
+      <p>이 실습이 만드는 숫자와 짝이 되는 값이 <code>LaserScan</code> 에 하나 있다 — <code>angle_increment</code> 다. <strong>같은 것을 가리키는 네 출처를 먼저 한 표에 놓는다.</strong> 실습이 끝나면 마지막 열을 채운다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>갈래</th><th>어디</th><th>무엇이라 하는가</th><th>내 값</th></tr></thead>
+        <tbody>
+          <tr><td>① 정의</td><td><code>sensor_msgs/msg/LaserScan</code> 의 <code>angle_increment</code></td><td>"점 사이 각도 간격" <strong>[rad] 값 하나</strong>. 필드가 하나라는 것 자체가 <strong>등간격을 전제</strong>한다 — 인덱스에서 각도를 <code>angle_min + i × angle_increment</code> 로 되살리기 때문이다(<a href="07-lidar.html">07</a> §1-1). ⚠ <code>ros2 interface show</code> 로 직접 여는 것은 <strong>컨테이너가 필요하다</strong> — 확인 과제</td><td>—</td></tr>
+          <tr><td>② 사양</td><td>데이터시트 Figure 2-1(rev.2.2 · v3.0 두 판 모두 8쪽)</td><td>Angular Resolution typical <strong>≤1</strong>°, Comments 열에 <strong>"5.5Hz scan rate"</strong>. 아래 Scan Rate 행이 조건을 한 겹 더 단다 — <strong>"360 samples per scan"</strong> 일 때의 값(§2-3)</td><td>—</td></tr>
+          <tr><td>③ 구현</td><td><code>rplidar_ros</code> 2.1.4 의 소스 — 드라이버가 이 값을 <strong>무엇으로 나눠 계산하는가</strong></td><td><code>____</code> — <strong>이 칸은 내가 채운다.</strong> 소스를 받는 절차는 <a href="l-06-three-sources.html">l-06</a> 이, 받은 소스의 <code>파일:줄</code> 인용은 <a href="l-07-cross-verify.html">l-07</a> 이 갖는다. ⚠ 받은 판이 <strong>내 설치본 2.1.4 와 같은 판인지</strong>를 먼저 확인해야 그 줄이 내 드라이버의 출처가 된다. ⚠ 1세대가 쓰던 <code>sllidar_ros2</code> 는 <strong>다른 패키지</strong>라 그 줄을 여기에 옮기면 없는 출처가 된다 — <strong>확인 과제</strong></td><td>—</td></tr>
+          <tr><td>④ 실물</td><td>내 도구가 낸 간격 <strong>중앙값과 σ</strong></td><td>—</td><td><code>____</code> · <code>____</code></td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">넷이 다르면 <strong>④가 내 기기의 사실</strong>이고 나머지는 "무엇을 가정했는가"를 말해 준다. 어느 것이 틀렸다고 쓰지 말고 <strong>조건이 무엇이었는지</strong>를 적는다. 이 표에서 특히 봐 둘 것 — <strong>④에만 σ 가 있다.</strong> ①·②·③ 중 어느 것도 "고른가"를 말하지 않는다(§2-4).</p>
+
+      <h4 id="s3-2-2">3-2-2. 골격</h4>
+      <p><code>turn.py</code> 에 함수 하나를 더한다. <strong><code>split_turns</code> 와 마찬가지로 순수</strong>하고, 각도만 본다 — 시계를 쓰지 않는다. 회전수는 시계가 있어야 나오므로 <strong>실습 D 의 기록 껍질이 따로 잰다</strong>(§3-4-2).</p>
+      <pre><code class="lang-python">def turn_stats(scans, gap_max=None):
+    """[Scan] -&gt; a dict of the numbers 3-2 asks for. PURE: angles only, no clock.
+
+    Returns: {"turns": int,
+              "points": [int],        one entry per revolution
+              "points_median": float,
+              "gap_median": float | None,
+              "gap_sigma":  float | None}
+
+    A gap is the angle difference between neighbouring points of ONE revolution,
+    pooled over all revolutions. The list is circular: after the last point comes
+    the first one again, so the last gap of a revolution is a[0] + 360 - a[-1].
+    Forget that one and a scan that covers only part of the circle looks perfectly
+    even (vector 8b catches exactly this).
+
+    Definitions this module uses -- write them out, do not import a stats library:
+      median  = middle value of the sorted list; with an even count, the mean of
+                the two middle ones.
+      sigma   = population standard deviation: sqrt(mean((g - mean(g))**2)).
+                Divide by N, not by N-1. The vectors assume N.
+    Why median and not mean: one missing sector puts one huge gap in the list. The
+    mean follows it, the median does not (vector 9).
+
+    gap_max: drop gaps larger than this before the statistics. THE DEFAULT IS None
+    (drop nothing) because the cutoff is YOUR decision, not this guide's -- see 3-2-3.
+    A revolution with fewer than two points contributes no gap at all and must not
+    make this function divide by zero (vector 10).
+    """
+    # TODO(you): 1) collect the counts, 2) collect the pooled gaps including the
+    #   wrap gap, 3) apply gap_max if the caller gave one, 4) median and sigma.
+    #   Return the five keys above even when there is nothing to compute (None).
+    return {"turns": 0, "points": [], "points_median": None,
+            "gap_median": None, "gap_sigma": None}</code></pre>
+
+      <h4 id="s3-2-3">3-2-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><strong>간격을 먼저 모은다.</strong> 한 바퀴 안에서 이웃끼리 빼고, <strong>마지막 하나(랩 간격)를 잊지 않는다</strong>(§2-4). 바퀴가 여럿이면 전부 한 리스트에 모은다 — 바퀴마다 따로 중앙값을 내는 것이 아니다.</li>
+        <li><strong>중앙값과 σ 를 직접 쓴다.</strong> 정의는 §2-4 의 표에 있다. 라이브러리를 부르지 말고 두 줄로 써 본다 — <strong>σ 를 N 으로 나눌지 N−1 로 나눌지</strong>가 손으로 써 봐야 눈에 들어온다. 벡터는 N 으로 계산돼 있다.</li>
+        <li><strong>점이 하나뿐인 바퀴를 어떻게 다룰지 정한다.</strong> 간격이 하나도 안 나오는 바퀴다. <strong>0으로 나누지 않고 그냥 건너뛰면 된다</strong> — 벡터 10이 이것만 본다.</li>
+        <li><strong><code>gap_max</code> 를 어떻게 할지 <strong>내가</strong> 정한다.</strong> 큰 간격을 버리면 "센서가 제대로 잰 구간에서 얼마나 고른가"를 재는 것이고, 안 버리면 "한 바퀴 전체가 얼마나 고른가"를 재는 것이다. <strong>둘은 다른 질문이고 답도 다르다.</strong>
+          <br>이 가이드는 값을 정해 주지 않는다. 문턱을 <code>____</code> 로 두고 <strong>왜 그 값인지 한 줄</strong>을 노트에 적는다. 같은 모델을 쓴 1세대 도구는 <code>0 &lt; 간격 &lt; 5°</code> 만 남겼는데(<code>~/ros2/docs/camera_lidar/verify_ultra.py:89-95</code>), <strong>그 5° 는 그 기기·그 모드에서 고른 값이지 내 값이 아니다.</strong> 방법은 빌리고 숫자는 내가 정한다.</li>
+        <li><strong>다시 채점받는다.</strong> <code>pi$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_turn.py</code> 가 <code>PASS turn 11 cases</code> 여야 실물로 간다. 벡터는 <code>gap_max</code> 를 주지 않고 부르므로 <strong>기본값이 "아무것도 안 버린다"여야</strong> 통과한다.</li>
+      </ol>
+
+      <h4 id="s3-2-4">3-2-4. 돌리고 보기</h4>
+      <p>열 바퀴(또는 그 이상)를 받아 네 숫자를 찍는다. <strong>회전수는 <code>turn_stats</code> 가 아니라 기록 껍질이 잰다</strong> — 바퀴 수를 세고 경과 시간으로 나눈다(§3-4-2).</p>
+      <pre><code class="lang-bash">pi$ python3 scripts/lidar_lab/turn.py
+turns      = &lt;n&gt;
+points/rev = &lt;n&gt;   (min &lt;n&gt;  max &lt;n&gt;)
+gap median = &lt;n&gt;.&lt;n&gt; deg   sigma = &lt;n&gt;.&lt;n&gt; deg   (gap_max = &lt;내가 정한 값&gt;)
+rev/s      = &lt;n&gt;.&lt;n&gt; Hz    (= turns / elapsed)</code></pre>
+      <p>노트에 이 표를 그려 채운다. <strong>가운데 열이 이 실습의 산출물</strong>이고, 오른쪽 열은 그 숫자가 무엇과 이어지는지다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>값</th><th>내 값</th><th>어디로 이어지는가</th></tr></thead>
+        <tbody>
+          <tr><td>점/회전 (중앙값)</td><td><code>____</code></td><td><a href="l-05-bandwidth-modes.html">l-05</a> 가 "내 도구가 이 센서의 몇 분의 일을 쓰는가"를 판정할 때의 입력</td></tr>
+          <tr><td>각도 간격 중앙값</td><td><code>____</code> °</td><td>360 ÷ 점/회전 과 <strong>맞는지 내가 검산한다</strong>(§2-3). 크게 어긋나면 랩 간격이나 정렬을 의심한다</td></tr>
+          <tr><td>각도 간격 σ</td><td><code>____</code> °</td><td><code>angle_compensate</code> 의 등간격 가정이 내 기기에서 얼마나 참인지에 대한 <strong>유일한 실측 근거</strong>(§2-4). <a href="l-07-cross-verify.html">l-07</a> 이 받는다</td></tr>
+          <tr><td>회전수</td><td><code>____</code> Hz</td><td>아래 4행 대조</td></tr>
+          <tr><td>내가 고른 <code>gap_max</code> 와 그 이유</td><td><code>____</code></td><td>σ 가 무엇을 잰 값인지를 말해 주는 조건. <strong>값만 적고 조건을 안 적으면 나중에 내 숫자를 내가 못 읽는다</strong></td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>회전수는 한 줄 더 있다.</strong> <code>hardware/INVENTORY.md</code> §3 에는 이미 <strong>회전수 대조 3행</strong>이 있고 그것은 <a href="07-lidar.html">07</a> §3-5 가 채우는 칸이다 — <strong>그 칸을 다시 채우지 않는다.</strong> 대신 내 노트에 네 번째 줄로 나란히 적어 견준다.</p>
+      <pre><code class="lang-text">드라이버 로그의 scan frequency          : ____ Hz      ← 07 §3-5 가 채운다
+ros2 topic hz /scan 의 average rate     : ____ Hz      ← 07 §3-5 가 채운다
+메시지의 scan_time                      : ____ s       ← 07 §3-5 가 채운다
+내 도구가 센 바퀴 수 ÷ 경과 시간        : ____ Hz      ← 이 쪽(§3-2-4)
+
+넷이 같은가 : ____        다르면 어느 둘이 얼마나 다른가 : ____</code></pre>
+      <p class="small">네 번째 줄이 다른 셋과 다를 수 있다 — <strong>그것도 관찰이다.</strong> 위의 셋은 드라이버를 거친 값이고 네 번째는 <strong>바이트를 직접 센 값</strong>이라 서로 다른 것을 재고 있을 수 있다. 어느 쪽이 맞다고 쓰지 말고 <strong>둘 다 적어 둔다</strong> — 이 네 줄을 맞대어 보는 것이 <a href="l-07-cross-verify.html">l-07</a> 의 일이다. 07 이 아직이면 네 번째 줄만 적어 두고 넘어간다.</p>
+      <p>마지막으로 §3-2-1 대조 표의 ④ 칸을 채운다. ③은 <code>____</code> 로 남는다 — <strong>소스를 아직 못 받았기 때문이고, 그 사실을 적는 것이 이 항목을 닫는 방법이다.</strong></p>
+
+      <h3 id="s3-3">3-3. 실습 C — 형식을 읽고 판단한다 (코드 없음)</h3>
+      <p>이 실습에는 코드가 없다. <strong>쓰는 것은 문장이고, 산출물은 내 노트 한 쪽</strong>이다. 뒤의 여섯 쪽이 이 형식 위에 서기 때문에, <strong>형식을 이해하지 못한 채로 통과하면 그 여섯 쪽에서 나는 이상한 결과의 원인을 엉뚱한 데서 찾게 된다.</strong></p>
+
+      <h4 id="s3-3-2">3-3-2. 채울 표</h4>
+      <p>⚠ <strong>§2-6 을 다시 읽기 전에 먼저 채운다.</strong> 기억나는 대로 쓰고, 그 뒤에 §2-6 을 열어 견주는 것이 이 실습의 순서다(§3-3-3).</p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>물음</th><th>내 답 (내 말로)</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>못 잰 방향을 <code>0</code> 으로 적으면 <strong>뒤의 어느 쪽이 무엇을 잘못 답하는가.</strong> 쪽 하나와 그 쪽이 내놓을 답을 구체적으로</td><td><code>____</code></td></tr>
+          <tr><td>2</td><td><code>inf</code> 로 적으면? 같은 꼴로 — 쪽 하나와 그 답</td><td><code>____</code></td></tr>
+          <tr><td>3</td><td><code>null</code> 이 그 둘과 <strong>결정적으로 다른 점</strong>을 한 문장으로. (힌트: 프로그램이 조용한가 시끄러운가)</td><td><code>____</code></td></tr>
+          <tr><td>4</td><td><code>LaserScan</code> 은 왜 <code>null</code> 을 고를 수 <strong>없었는가</strong></td><td><code>____</code></td></tr>
+          <tr><td>5</td><td>그래서 <code>LaserScan</code> 을 받는 코드가 <strong>대신 하는 일</strong>은 무엇이고, 이 저장소의 어느 쪽 어느 절에 그 줄이 있는가</td><td><code>____</code></td></tr>
+          <tr><td>6</td><td>mm → m 과 <code>0</code> → <code>null</code> 을 <strong><code>save_jsonl</code> 이 아니라 <code>split_turns</code> 안에</strong> 둔 이유</td><td><code>____</code></td></tr>
+          <tr><td>7</td><td><strong>내 결정</strong> — <code>q</code>(품질)를 파일에 남길 것인가. 남기면 무엇이 좋고 안 남기면 무엇이 좋은가</td><td><code>____</code></td></tr>
+          <tr><td>8</td><td><strong>내 결정</strong> — 머리 줄의 <code>note</code> 에 무엇을 적을 것인가. <strong>반년 뒤의 내가 이 파일을 열었을 때 알아야 할 것</strong>을 기준으로</td><td><code>____</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-3-3">3-3-3. 채우기</h4>
+      <ol class="steps">
+        <li><strong>먼저 덮고 쓴다.</strong> 1~6번을 기억과 추론만으로 채운다. 막히면 <strong>비워 두고</strong> 다음으로 간다 — 비운 칸이 어디인지가 정보다.</li>
+        <li><strong>그다음 §2-6 을 열어 견준다.</strong> 내 문장과 다른 곳에 표시를 하고, <strong>내 문장을 지우지 말고 옆에 덧붙인다.</strong> 무엇을 몰랐는지가 남아야 한다.</li>
+        <li><strong>5번은 저장소에서 확인한다.</strong> <a href="07-lidar.html">07</a> §1-1 과 07 §3-10 을 열어 <code>inf</code> · <code>NaN</code> 이 나오는 자리를 찾는다. <strong>그 줄이 왜 있어야 하는지</strong>가 4번의 답과 이어지면 이 실습은 닫힌 것이다.</li>
+        <li><strong>7·8번은 지금 정한다.</strong> 실습 D 가 그 결정대로 파일을 쓴다. <strong>정답이 없는 칸</strong>이고, 이 가이드는 값을 정해 주지 않는다 — 다만 <strong>정하고 나서 적어 두지 않으면</strong> 나중에 파일을 열었을 때 왜 그렇게 했는지 모른다.</li>
+      </ol>
+
+      <h4 id="s3-3-4">3-3-4. 보고 판정하기</h4>
+      <p>판정 기준은 "§2-6 과 같은 말을 썼는가"가 <strong>아니다.</strong> 아래 둘이다.</p>
+      <ul>
+        <li><strong>1번과 2번의 답에 뒤 쪽의 이름이 하나 이상 들어 있는가.</strong> "값이 이상해진다"로는 부족하다 — "l-12 의 통로 폭이 0 이 되어 지나갈 수 있는 길을 못 지나간다"처럼 <strong>구체적인 잘못된 답</strong>이 나와야 한다. 이것이 형식을 "알았다"와 "쓸 줄 안다"의 차이다.</li>
+        <li><strong>3번의 문장이 "더 깔끔하다" 같은 말을 쓰지 않았는가.</strong> 셋 다 "못 쟀다"를 적을 수 있다. 갈리는 축은 <strong>틀린 읽기가 조용한가 시끄러운가</strong> 하나뿐이다.</li>
+      </ul>
+      <p class="small">⚠ 이 표를 채우지 못했더라도 실습 D 로 갈 수 있다 — <strong>다만 비워 둔 칸을 그대로 두고 간다.</strong> l-09 에서 "못 잰 방향을 자유공간으로 칠하는" 고장을 직접 일으켜 보고 나면 1·2번이 갑자기 쉬워진다. 그때 돌아와 채우는 것도 닫는 방법이다.</p>
+
+      <h3 id="s3-4">3-4. 실습 D — 30초를 파일로 남기고, 다시 읽는다</h3>
+
+      <h4 id="s3-4-1">3-4-1. 확인 — 머리 줄에 들어갈 값은 이미 내 손에 있다</h4>
+      <p>파일을 쓰기 전에 <strong>머리 줄에 무엇을 적을지부터 정한다.</strong> 나중에 채우려고 비워 두면 그 파일은 §2-5 가 말한 "판정 근거로 쓸 수 없는 파일"이 된다. 일곱 칸 중 다섯은 <strong>앞 쪽에서 이미 얻었다.</strong></p>
+      <div class="tbl"><table>
+        <thead><tr><th><code>meta</code> 필드</th><th>어디서 얻는가</th><th>내 값</th></tr></thead>
+        <tbody>
+          <tr><td><code>model</code></td><td>본체 라벨에서 읽어 적어 둔 것 — <a href="l-01-link.html#s3-1">l-01 §3-1</a></td><td><code>____</code></td></tr>
+          <tr><td><code>firmware</code></td><td><code>GET_INFO</code> 로 기기가 답한 값 — <a href="l-02-device-id.html#s3-1-4">l-02 §3-1-4</a></td><td><code>____</code></td></tr>
+          <tr><td><code>mode</code></td><td>⚠ <strong>아직 모른다.</strong> 지금 쓰는 것이 5바이트짜리 legacy <code>SCAN</code> 이라는 것만 안다 — 모드 <strong>번호와 이름</strong>은 기기에게 물어야 나오고 그것은 <a href="l-05-bandwidth-modes.html">l-05</a> 의 일이다. 지금은 <code>"legacy"</code> 처럼 <strong>내가 알아볼 수 있는 글자</strong>를 적고 넘어간다</td><td><code>____</code></td></tr>
+          <tr><td><code>source</code></td><td>경로 A 로 직접 떴으므로 <code>"serial"</code>. <code>/scan</code> 에서 받은 파일은 <code>"topic"</code> 이고 그 길은 <a href="l-06-three-sources.html">l-06</a> 이 만든다</td><td><code>serial</code></td></tr>
+          <tr><td><code>date</code></td><td>오늘 — <code>pi$ date +%F</code></td><td><code>____</code></td></tr>
+          <tr><td><code>unit</code></td><td><strong>형식이 고정했다</strong>(§2-6). <code>"m"</code> 외의 값은 아래 로더가 거부한다</td><td><code>m</code></td></tr>
+          <tr><td><code>note</code></td><td><strong>내가 정한다</strong> — §3-3 의 8번에서 이미 정했다</td><td><code>____</code></td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">파일 이름과 자리 규약: <code>scripts/lidar_lab/scans/&lt;내가 고른 이름&gt;.scan.jsonl</code>. 이 폴더는 <strong>버전 관리에 넣지 않는다</strong>(기록 파일은 금세 커지고, 내 방의 기록이지 코드가 아니다).</p>
+
+      <h4 id="s3-4-2">3-4-2. 골격 — 쓰는 쪽은 골격, <strong>읽는 쪽은 전량</strong></h4>
+      <p>둘의 대접이 다른 데는 이유가 있다. <strong>쓰기가 틀리면 파일 하나가 틀리고, 읽기가 틀리면 뒤의 모든 쪽이 조용히 틀린다.</strong> 그래서 읽는 쪽은 아래에 전량으로 주고, 대신 <strong>검사하게</strong> 만들었다 — 이 로더를 통과한 파일은 §2-6 이 고정한 성질을 지킨다는 것이 보장된다.</p>
+      <p>그리고 이 껍질이 <strong>시계가 나오는 유일한 자리</strong>다. <code>split_turns</code> 는 순수해서 시각을 찍을 수 없고(§3-1-2), 그 경계가 곧 l-16 이 C++ 로 옮길 수 있는 선이다.</p>
+      <pre><code class="lang-python">import json, time
+
+
+def save_jsonl(path, scans, meta):
+    """Write the head line and then one line per Scan. NOT pure: it writes a file.
+
+    The head line is {"meta": {...}} and it is not optional -- a file without a
+    source cannot be used later as evidence about MY device (2-5). meta must carry
+    at least source / unit / date; unit is the string "m" and nothing else.
+    One JSON object per line, no blank lines, no trailing comma, newline at the end.
+    Each scan line is {"t":, "n":, "a":[...], "r":[...], "q":[...]} and "q" may be
+    left out entirely when you decided not to keep quality (3-3). "r" carries null
+    for a direction that could not be measured -- json.dump writes None as null,
+    so if split_turns() did its job there is nothing to do here.
+    Whatever you write here, load_jsonl() below will refuse it if it is malformed.
+    """
+    # TODO(you): open the file once, write the head line, then loop. n must agree
+    #   with len(a) -- write it from the list, never from a counter you keep by hand.
+    return
+
+
+def record(ser, seconds, path, meta):
+    """The impure shell: stream -&gt; split -&gt; STAMP THE CLOCK -&gt; save. Not graded.
+
+    This is the only place a clock appears. split_turns() cannot stamp t because a
+    pure function has no clock, and that is the boundary l-16 will port along.
+    t is seconds since the FIRST recorded revolution, so the first line is 0.0.
+    """
+    from point import stream                      # l-03
+    t0 = None
+    scans = []
+    for scan in split_turns(stream(ser)):
+        now = time.perf_counter()
+        if t0 is None:
+            t0 = now
+        scan.t = now - t0
+        scans.append(scan)
+        # TODO(you): stop after `seconds` have passed, then save_jsonl(path, scans, meta).
+        #   Note WHICH clock reading you compare -- the one above is taken when the
+        #   revolution ENDS, which is what you want on the line. Print the revolution
+        #   count and len(scan.a) as you go so 3-1-4 has something to read.
+    return scans</code></pre>
+      <p class="small">이 블록은 전량 제공이다 — 이유: <strong>읽기가 틀리면 뒤의 모든 쪽이 조용히 틀린다.</strong> 형식이 §2-6 으로 고정돼 있기 때문에 전량으로 줄 수 있다(형식을 학습자가 정하는데 로더를 전량으로 주면 그 둘은 동시에 성립하지 않는다). <strong>집필자가 Mac 의 <code>python3</code> 로 왕복 시험을 돌려 확인했다(2026-09-23)</strong> — 정상 파일을 읽고, 아래 여섯 가지 고장난 파일이 각각 어느 줄에서 거부되는지까지.</p>
+      <pre><code class="lang-python">import json
+
+def load_jsonl(path, with_meta=False):
+    """Read a .scan.jsonl file -&gt; [Scan]  (or (meta, [Scan]) when with_meta=True).
+
+    This loader is given in full and it VALIDATES. A file that survives it obeys the
+    four fixed properties of the reference format; anything else raises ValueError
+    naming the line, because a quietly wrong file makes every later page quietly wrong.
+    """
+    meta, scans = None, []
+    with open(path, "r") as f:
+        for ln, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except ValueError as e:
+                raise ValueError("line %d: not JSON (%s)" % (ln, e))
+            if meta is None:
+                if not isinstance(row, dict) or "meta" not in row:
+                    raise ValueError("line 1 must be the head line: {\"meta\": {...}}")
+                meta = row["meta"]
+                for k in ("source", "unit", "date"):
+                    if k not in meta:
+                        raise ValueError("line 1: meta is missing %r" % k)
+                if meta["unit"] != "m":
+                    raise ValueError("line 1: unit is %r, the format fixes \"m\"" % meta["unit"])
+                continue
+            a, r = row.get("a"), row.get("r")
+            if not isinstance(a, list) or not isinstance(r, list):
+                raise ValueError("line %d: a and r must both be lists" % ln)
+            if len(a) != len(r):
+                raise ValueError("line %d: len(a)=%d but len(r)=%d" % (ln, len(a), len(r)))
+            if row.get("n") != len(a):
+                raise ValueError("line %d: n=%r but len(a)=%d" % (ln, row.get("n"), len(a)))
+            if not isinstance(row.get("t"), (int, float)):
+                raise ValueError("line %d: t is %r -- the recorder did not stamp it" % (ln, row.get("t")))
+            prev = -1.0
+            for i, deg in enumerate(a):
+                if not isinstance(deg, (int, float)) or not (0.0 &lt;= deg &lt; 360.0):
+                    raise ValueError("line %d: a[%d]=%r is outside [0, 360)" % (ln, i, deg))
+                if deg &lt; prev:
+                    raise ValueError("line %d: a[%d]=%r breaks ascending order" % (ln, i, deg))
+                prev = deg
+            for i, d in enumerate(r):
+                if d is not None and not isinstance(d, (int, float)):
+                    raise ValueError("line %d: r[%d]=%r is neither a number nor null" % (ln, i, d))
+            q = row.get("q")
+            if q is not None and len(q) != len(a):
+                raise ValueError("line %d: q has %d entries, a has %d" % (ln, len(q), len(a)))
+            scans.append(Scan(a, r, q, row["t"]))
+    if meta is None:
+        raise ValueError("%s is empty: there is no head line" % path)
+    return (meta, scans) if with_meta else scans</code></pre>
+      <p class="small">⚠ 두 블록을 한 파일에 합칠 때 <code>import json</code> 이 겹친다 — 맨 위에 한 번만 두면 된다. 로더는 <code>Scan</code> 을 쓰므로 <strong>클래스 정의보다 아래</strong>에 둔다.</p>
+
+      <h4 id="s3-4-3">3-4-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><strong><code>save_jsonl</code> 을 채운다.</strong> 머리 줄 하나, 그다음 바퀴마다 한 줄. <code>n</code> 은 <strong>리스트 길이에서 쓴다</strong> — 따로 세던 변수를 쓰면 언젠가 어긋나고, 그때 로더가 그 줄에서 멈춘다.</li>
+        <li><strong><code>record</code> 의 <code>TODO</code> 를 채운다.</strong> 몇 초를 받을지, 언제 멈출지. <strong>어느 시계 읽기와 비교하는지</strong>를 의식한다 — 위의 <code>now</code> 는 바퀴가 <em>끝난</em> 순간이고 그것이 줄에 적힐 값이다.</li>
+        <li><strong>30초를 뜬다.</strong> 그동안 센서 앞을 지나다니지 않는다 — 나중에 이 파일을 열었을 때 "그때 누가 지나갔나"를 알 수 없다. <strong>머리가 계속 돈다</strong>(§3 머리의 주의 상자).</li>
+        <li><strong>다시 읽어 확인한다.</strong> 같은 바퀴 수, 같은 점 수, 같은 <code>null</code> 개수가 나와야 한다. <strong>셋 중 하나라도 다르면 쓰기와 읽기 중 하나가 틀린 것</strong>이고, 로더는 전량으로 주어졌으므로 쓰기 쪽이다.</li>
+      </ol>
+
+      <h4 id="s3-4-4">3-4-4. 돌리고 보기</h4>
+      <pre><code class="lang-bash">pi$ python3 scripts/lidar_lab/turn.py
+recorded &lt;n&gt; revolutions in &lt;n&gt;.&lt;n&gt; s  -&gt; scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl
+
+pi$ ls -l scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl
+-rw-r--r-- 1 &lt;user&gt; &lt;group&gt; &lt;n&gt; &lt;날짜&gt; scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl
+
+pi$ wc -l scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl
+&lt;n&gt; scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl
+
+pi$ head -c 200 scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl
+{"meta": {"model": "...", "firmware": "...", "mode": "...", "source": "serial", ...</code></pre>
+      <p>그다음 되읽기. <strong>같은 도구로 읽지 말고 한 줄짜리로 따로 읽는다</strong> — 같은 함수가 쓰고 읽으면 서로의 실수를 덮어 준다.</p>
+      <pre><code class="lang-bash">pi$ cd scripts/lidar_lab &amp;&amp; python3 -c "
+from turn import load_jsonl
+meta, scans = load_jsonl('scans/&lt;이름&gt;.scan.jsonl', with_meta=True)
+print(meta['source'], meta['unit'], len(scans))
+print([len(s.a) for s in scans][:10])
+print('null =', sum(1 for s in scans for v in s.r if v is None))
+print('t =', scans[0].t, '..', scans[-1].t)"
+serial m &lt;n&gt;
+[&lt;n&gt;, &lt;n&gt;, &lt;n&gt;, ...]
+null = &lt;n&gt;
+t = 0.0 .. &lt;n&gt;.&lt;n&gt;</code></pre>
+      <p>노트에 적을 것 넷. <strong>합격선은 없다</strong> — 파일 크기도 <code>null</code> 비율도 내 방과 내 모드가 정한다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>값</th><th>내 값</th><th>어떻게 읽는가</th></tr></thead>
+        <tbody>
+          <tr><td>줄 수 · 바퀴 수</td><td><code>____</code> · <code>____</code></td><td><strong>줄 수 = 바퀴 수 + 1</strong>(머리 줄). 같으면 머리 줄을 안 쓴 것이다 — 로더가 첫 줄에서 거부한다</td></tr>
+          <tr><td>파일 크기</td><td><code>____</code> B</td><td>총 점 수로 나누면 <strong>한 점이 파일에서 몇 바이트를 쓰는지</strong> 나온다. 선 위에서는 한 점이 5바이트였다(l-03) — <strong>몇 배인가, 그리고 왜 그런가</strong>를 한 줄 적는다</td></tr>
+          <tr><td><code>null</code> 개수 · 비율</td><td><code>____</code> · <code>____</code> %</td><td>내 방의 무반사 비율이다. <strong>지금은 숫자만 적어 둔다</strong> — 재질별로 왜 이렇게 되는지는 <a href="l-15-illusions.html">l-15</a> 가 다룬다</td></tr>
+          <tr><td>첫 <code>t</code> 와 마지막 <code>t</code></td><td><code>0.0</code> · <code>____</code> s</td><td>첫 값이 <code>0.0</code> 이 아니면 기준 시각을 안 뺀 것이다. 마지막 값 ÷ 바퀴 수로 <strong>회전 주기</strong>가 나온다 — §3-2-4 의 회전수와 맞는지 검산한다</td></tr>
+        </tbody>
+      </table></div>
+      <p>로더가 어디서 멈추는지도 알아 두면 좋다. 집필자가 고장난 파일 여섯을 만들어 돌려 본 결과다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>파일이 이러면</th><th>로더가 내는 말</th></tr></thead>
+        <tbody>
+          <tr><td>머리 줄이 없다</td><td><code>line 1 must be the head line: {"meta": {...}}</code></td></tr>
+          <tr><td><code>a</code> 와 <code>r</code> 의 길이가 다르다</td><td><code>line 2: len(a)=3 but len(r)=2</code></td></tr>
+          <tr><td><code>a</code> 가 오름차순이 아니다</td><td><code>line 2: a[1]=5.0 breaks ascending order</code></td></tr>
+          <tr><td><code>a</code> 에 360 이상이 있다</td><td><code>line 2: a[0]=400.0 is outside [0, 360)</code></td></tr>
+          <tr><td><code>t</code> 가 <code>null</code> 이다</td><td><code>line 2: t is None -- the recorder did not stamp it</code></td></tr>
+          <tr><td><code>unit</code> 이 <code>"mm"</code> 이다</td><td><code>line 1: unit is 'mm', the format fixes "m"</code></td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">여섯 줄이 전부 <strong>§2-6 이 고정한 성질</strong>이다. 로더가 이것을 검사하기 때문에 뒤의 쪽들은 파일을 열자마자 계산을 시작할 수 있다 — <strong>검사를 어디서 한 번 할 것인가</strong>가 형식을 고정하는 일의 절반이다.</p>
+
+      <h3 id="s3-5">3-5. 실습 E — 회전 경계를 일부러 틀리게 한다</h3>
+      <p>지금까지는 "맞게 짰는가"만 봤다. 이 실습은 반대다 — <strong>틀리게 짜면 무엇이 보이는지를 눈으로 본다.</strong> 회전 경계는 틀려도 에러가 나지 않는 자리라, <strong>틀린 모습을 한 번 봐 두지 않으면 나중에 알아보지 못한다.</strong></p>
+
+      <h4 id="s3-5-1">3-5-1. 확인 — 두 가지를 각각 한 줄씩 바꾼다</h4>
+      <div class="tbl"><table>
+        <thead><tr><th>회차</th><th>무엇을 바꾸는가</th><th>무엇이 나올 것 같은가 (먼저 적는다)</th></tr></thead>
+        <tbody>
+          <tr><td><strong>기본</strong></td><td>바꾸지 않는다. 비교의 기준</td><td>—</td></tr>
+          <tr><td><strong>(가)</strong></td><td><strong>플래그를 하나 걸러 하나만</strong> 경계로 쓴다 — 예를 들어 플래그 횟수를 세어 <strong>짝수 번째에만</strong> 바퀴를 내보낸다</td><td><code>____</code></td></tr>
+          <tr><td><strong>(나)</strong></td><td><strong>첫 플래그 이전의 조각도 한 바퀴로</strong> 내보낸다(§2-1 의 각주가 말한 구현)</td><td><code>____</code></td></tr>
+          <tr><td><strong>되돌린 뒤</strong></td><td>두 변경을 모두 되돌린다</td><td>기본과 같아야 한다</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">⚠ <strong>먼저 예상을 적고 나서 돌린다.</strong> 예상과 같든 다르든 그것이 이 실습의 산출물이다. 그리고 <strong>이 회차들의 결과를 파일로 저장하지 않는다</strong> — 망가진 파일이 <code>scans/</code> 에 섞이면 뒤의 쪽에서 그 원인을 라이다에서 찾게 된다.</p>
+
+      <h4 id="s3-5-3">3-5-3. 직접 채우기 — 네 회차</h4>
+      <p>회차마다 같은 네 값을 적는다. <strong>회차 사이에 센서를 움직이지 않는다</strong> — 방이 그대로여야 숫자의 차이가 코드의 차이가 된다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>회차</th><th>바퀴 수</th><th>점/회전 (중앙값)</th><th>간격 중앙값</th><th>첫 20개 각도의 모양</th></tr></thead>
+        <tbody>
+          <tr><td>기본</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code> °</td><td><code>____</code></td></tr>
+          <tr><td>(가) 하나 걸러</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code> °</td><td><code>____</code></td></tr>
+          <tr><td>(나) 앞 조각 포함</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code> °</td><td><code>____</code></td></tr>
+          <tr><td>되돌린 뒤</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code> °</td><td><code>____</code></td></tr>
+        </tbody>
+      </table></div>
+      <p>마지막 열이 이 실습에서 가장 많은 것을 말한다. <strong>개수만 보면 (가)와 "센서가 두 배로 잘 잡는 것"을 구별할 수 없다</strong> — 각도를 봐야 한다.</p>
+
+      <h4 id="s3-5-4">3-5-4. 돌리고 보기</h4>
+      <p>읽는 법은 이렇다. <strong>숫자를 맞히는 것이 목적이 아니라 무엇이 일어났는지 적는 것이 목적</strong>이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>회차</th><th>무엇을 보는가</th></tr></thead>
+        <tbody>
+          <tr><td><strong>(가)</strong></td><td>한 "바퀴"가 두 바퀴를 담고 있으므로 <strong>점 수가 대략 두 배</strong>가 되고, 그것을 각도로 정렬했으므로 <strong>간격 중앙값이 대략 절반</strong>으로 떨어진다. 그리고 첫 20개 각도를 보면 <strong>거의 같은 각도가 둘씩 짝지어</strong> 나타난다 — 두 바퀴가 같은 방향을 각각 한 번씩 봤기 때문이다. <strong>이 셋이 같이 움직이는 것이 증거</strong>이고, 개수 하나만으로는 증거가 되지 않는다</td></tr>
+          <tr><td><strong>(나)</strong></td><td>바퀴 수가 하나 늘고 <strong>첫 줄만</strong> 점 수가 유난히 다르다. 나머지 줄은 기본과 같다. 중앙값으로 보면 거의 티가 안 난다 — <strong>그래서 §3-1-4 에서 "첫 줄과 마지막 줄만 유난히 작은가"를 따로 물었다.</strong> 바퀴가 10개면 10 %가 쓰레기인데 평균을 보면 그럴듯하다</td></tr>
+          <tr><td><strong>예상과 달랐으면</strong></td><td><strong>그대로 적는다.</strong> 예를 들어 (가)에서 점 수가 두 배가 안 됐다면 이유가 따로 있다 — 짝수 번째만 내보내면서 <strong>홀수 번째 바퀴를 버렸을</strong> 수도 있다(그러면 점 수는 그대로이고 바퀴 수만 절반이 된다). 어느 쪽이 일어났는지가 곧 내가 무엇을 짰는지다</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><span class="ct">끝나면 반드시 되돌린다</span>
+        <p>두 변경을 지우고 <strong>네 번째 회차가 기본과 같은지</strong> 확인한다. 망가뜨린 코드를 남긴 채 l-05 로 가면 <strong>거기서 나는 이상한 숫자의 원인을 센서나 모드에서 찾게 된다.</strong> §3-4 에서 뜬 파일도 <strong>기본 상태에서 뜬 것인지</strong> 다시 확인한다 — 이 파일 한 장 위에 뒤의 여덟 쪽이 선다.</p>
+      </div>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.
+      ⚠ 이 쪽의 항목은 "<strong>예상한 것을 봤는가</strong>"가 아니라 "<strong>무엇이 일어났는지 적었는가</strong>"로 쓰여 있다 — 예상과 다른 관찰도 이 항목을 닫는다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="turn-selftest-pass"><span><strong>경로 통과</strong> — <code>python3 tests/test_turn.py</code> 의 마지막 줄이 <code>PASS turn 11 cases</code> 다. 도중에 실패한 벡터가 있었다면 <strong>몇 번이 무엇을 냈는지</strong>도 노트에 남겼다
+          <span class="sub">판정 수단: 자기시험 출력 · §3-1-3 · 라이다 없이 닫힌다 · 이 열한 개는 프레이밍이 아니라 <strong>세는 방법과 단위와 정렬</strong>을 채점한다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="rotation-split-works"><span><strong>경로 통과</strong> — 열 바퀴의 점 수를 한 줄씩 적었고, <strong>가장 큰 값과 가장 작은 값의 차가 몇 %인지</strong> 계산해 적었다. 첫 줄·마지막 줄이 다른 줄과 달랐는지도 그대로 적었다
+          <span class="sub">판정 수단: 내 도구의 출력 · §3-1-4 · <strong>합격선 없음</strong> — 몇 %까지를 "같다"고 볼지는 내가 정해 적는다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="points-per-turn-measured"><span><strong>경로 통과</strong> — 점/회전 · 각도 간격 중앙값 · σ · 회전수 <strong>네 값</strong>과, 내가 고른 <code>gap_max</code> 와 그 이유를 적었다. 회전수는 07 §3-5 의 세 줄 옆에 <strong>네 번째 줄</strong>로 놓고 같은지 다른지까지 적었다
+          <span class="sub">판정 수단: 내 도구의 출력 · §3-2-4 · <strong>합격선 없음</strong>(모드와 전원에 따라 달라진다 — 이유는 l-05 가 준다) · 07 이 아직이면 네 번째 줄만 적는다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="format-choice-justified"><span><strong>경로 통과</strong> — 못 잰 방향을 <code>null</code> 로 적는 이유를 <strong>내 말로</strong> 썼고, <code>0</code> · <code>inf</code> 각각이 <strong>뒤의 어느 쪽에서 어떤 잘못된 답</strong>을 내는지 쪽 이름과 함께 적었다. <code>LaserScan</code> 이 <code>inf</code>/<code>NaN</code> 을 고정한 이유와 무엇이 달랐는지도 적었다
+          <span class="sub">판정 수단: 내 노트 · §3-3-2 의 표 · §3-3-4 의 두 기준 · 채우지 못한 칸은 비운 채로 표시해 두었다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="scan-file-recorded"><span><strong>경로 통과</strong> — <code>scans/</code> 에 <code>.scan.jsonl</code> 이 생겼고 머리 줄의 일곱 칸을 채웠다. <strong>다시 읽었을 때 바퀴 수 · 점 수 · <code>null</code> 개수가 같았다.</strong> 파일 크기 ÷ 총 점 수로 한 점당 바이트를 내고 선 위의 5바이트와 견주어 적었다
+          <span class="sub">판정 수단: <code>ls -l</code> · <code>wc -l</code> · <code>load_jsonl</code> 의 되읽기 출력 · §3-4-4 · 로더가 거부했으면 <strong>어느 줄에서 무슨 말을 했는지</strong>를 적는 것으로도 닫힌다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="turn-boundary-off-by-one"><span><strong>발동 확인</strong> — 회전 경계를 <strong>두 가지로</strong> 일부러 틀리게 해 네 회차를 돌리고, 바퀴 수 · 점/회전 · 간격 중앙값 · <strong>첫 20개 각도의 모양</strong>을 회차마다 적었다. 예상과 달랐으면 무엇이 달랐는지도 적었고, 끝나고 <strong>되돌려 기본과 같아진 것</strong>을 확인했다
+          <span class="sub">판정 수단: 내 도구의 출력 네 벌 · §3-5-3 의 표 · §3-5-4 · 각도의 짝지음까지 봤는가가 이 항목의 핵심이다(개수만으로는 구별되지 않는다)</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td>바퀴가 하나도 안 잘리고 프로그램이 <strong>끝나지 않는다</strong></td><td><code>start</code> 가 한 번도 참이 아니다 — <code>stream()</code> 이 네 번째 칸을 안 붙였거나 늘 <code>False</code> 를 붙인다</td><td><code>pi$ grep -n 'yield' scripts/lidar_lab/point.py</code> — 내보내는 칸이 셋인가 넷인가</td><td><a href="l-03-one-point.html#s3-1-2">l-03 §3-1-2</a> 의 <code>stream()</code></td></tr>
+          <tr><td>0개를 내고 <strong>바로 끝난다</strong></td><td>골격의 <code>return iter(())</code> 가 그대로다. 위와 <strong>다른 증상</strong>이다 — 기다리지 않고 끝난다</td><td>§3-1-3 1번이 말한 정상 상태다</td><td>§3-1-3 3번</td></tr>
+          <tr><td>첫 줄이나 마지막 줄만 점 수가 유난히 다르다</td><td>앞 조각 또는 진행 중인 바퀴를 안 버렸다. <strong>나머지 줄은 멀쩡해 보인다</strong></td><td><code>python3 tests/test_turn.py</code> — 벡터 <strong>1·2</strong> 가 걸린다</td><td>§2-1 의 상자 · §3-1-3 3번</td></tr>
+          <tr><td>거리가 실제의 <strong>1000배</strong> (또는 <code>0.0</code> 이 많다)</td><td>mm → m 을 안 했다 / <code>0</code> 을 <code>None</code> 으로 안 바꿨다. <strong>파일 형식은 멀쩡해서 로더도 통과한다</strong></td><td>벡터 <strong>1</strong>. 그리고 §3-4-4 의 되읽기에서 <code>null = 0</code> 이면 의심한다</td><td>§3-1-2 의 불변식 3 — <strong>변환은 <code>split_turns</code> 안</strong></td></tr>
+          <tr><td>간격 σ 가 <code>0.0</code> 으로 나온다</td><td>랩 간격을 안 셌다. 반원만 재고도 "완벽하게 고르다"가 된다</td><td>벡터 <strong>8b</strong></td><td>§2-4 의 그림 · §3-2-3 1번</td></tr>
+          <tr><td>간격 중앙값이 <code>360 ÷ 점/회전</code> 과 크게 다르다</td><td>각도로 정렬하지 않았거나, <code>gap_max</code> 로 너무 많이 버렸다</td><td>§3-2-4 의 검산 한 줄 · 벡터 <strong>6</strong></td><td>§3-1-2 의 불변식 4 · §3-2-3 4번</td></tr>
+          <tr><td>점 수가 <strong>매 바퀴 크게</strong> 다르다(양 끝 줄만이 아니라)</td><td>회전수가 흔들린다(전원) 또는 모드가 다르다. <strong>코드의 문제가 아닐 수 있다</strong></td><td>§3-2-4 의 회전수를 두 번 재서 견준다. 머리 소리가 일정한지도 듣는다</td><td>고치는 것이 아니라 적어 둔다 — 원인은 <a href="l-05-bandwidth-modes.html">l-05</a> 가 도출한다</td></tr>
+          <tr><td><code>load_jsonl</code> 이 <code>t is None ... did not stamp it</code> 에서 멈춘다</td><td>기록 껍질이 시각을 안 찍었다. <code>split_turns</code> 는 순수해서 못 찍는다(§3-4-2)</td><td>로더가 내는 줄 번호 그대로</td><td>§3-4-2 의 <code>record()</code></td></tr>
+          <tr><td>30초를 도는 동안 머리가 <strong>멈추거나 느려진다</strong></td><td>USB 전류. 이 구성은 루트 저장장치까지 USB 다</td><td>도는 중에 다른 USB 장치를 꽂거나 뽑지 않았는지. 어댑터를 바꿔 본다</td><td><a href="l-01-link.html">l-01</a> 이 소유한다</td></tr>
+          <tr><td>장치가 안 보인다 · 권한이 없다 · 바이트가 아예 0</td><td>전 쪽 공통 증상이다</td><td>—</td><td><a href="l-01-link.html">l-01</a> 의 증상표가 소유한다. 저장소 전체 공통은 <a href="99-troubleshooting.html">99</a></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. (네 갈래 검색) 이 쪽에서 잰 <strong>각도 간격</strong>에 대응하는 <code>angle_increment</code> 를 네 군데에서 찾아 적어 보라 — 정의 → 사양 → 구현 → 내 장치</summary>
+        <div class="ans"><p><strong>① 정의</strong>: <code>sensor_msgs/msg/LaserScan</code> 의 <code>angle_increment</code> 는 "점 사이 각도 간격"이고 단위는 라디안이다(<a href="07-lidar.html">07</a> §1-1 의 필드 해설). 여기서 새로 알게 되는 것은 값이 아니라 <strong>구조</strong>다 — <strong>필드가 하나뿐이다.</strong> 그래서 인덱스에서 각도를 <code>angle_min + i × angle_increment</code> 로 되살릴 수 있고, 동시에 <strong>간격이 고르지 않다는 사실을 담을 자리가 없다.</strong> ⚠ <code>ros2 interface show sensor_msgs/msg/LaserScan</code> 으로 직접 여는 것은 컨테이너가 필요하다 — <strong>확인 과제</strong>다.</p>
+        <p><strong>② 사양</strong>: 데이터시트 Figure 2-1(rev.2.2 · v3.0 <strong>두 판 모두 8쪽</strong>)의 Angular Resolution 행이 typical <strong>≤1</strong> Degree 이고, 같은 행 Comments 열이 <em>"5.5Hz scan rate"</em> 다. 아래 Scan Rate 행은 조건을 한 겹 더 단다 — <em>"Typical value is measured when RPLIDAR A1 takes 360 samples per scan"</em>. 여기서 알게 되는 것: <strong>이 값은 값이 아니라 조건부 값</strong>이고, 조건을 떼면 아무 말도 하지 않는다. "약 1°"라고만 적힌 자리(<code>hardware/INVENTORY.md</code> §3)는 그 조건이 떨어져 나간 것이다.</p>
+        <p><strong>③ 구현</strong>: <code>rplidar_ros</code> 2.1.4 가 이 필드를 <strong>무엇으로 나눠 채우는가</strong> — <code>____</code>. <strong>이 칸은 이 쪽이 채워 주지 않는다.</strong> 소스를 받는 절차는 <a href="l-06-three-sources.html">l-06</a> 이 갖고, 받은 소스에서 이 필드를 채우는 줄의 <code>파일:줄</code> 인용은 <a href="l-07-cross-verify.html">l-07</a> 이 갖는다. ⚠ 받은 판이 <strong>내 설치본 2.1.4 와 같은 판인지</strong>가 먼저다 — 다르면 그 줄 번호는 내 드라이버의 출처가 아니다. ⚠ 1세대가 쓰던 <code>sllidar_ros2</code> 는 <strong>다른 패키지</strong>라 그 줄 번호를 여기에 옮기면 <strong>존재하지 않는 출처</strong>가 된다. <strong>확인 과제로 남긴다.</strong></p>
+        <p><strong>④ 내 장치</strong>: §3-2-4 에서 잰 간격 중앙값 <code>____</code> ° 와 σ <code>____</code> °. 여기서 알게 되는 것이 앞의 셋에는 없다 — <strong>④에만 σ 가 있다.</strong> ①은 담을 칸이 없고, ②는 조건을 달았을 뿐이고, ③은 계산식일 뿐이다. 넷이 다르면 <strong>④가 내 기기의 사실</strong>이고 나머지는 무엇을 가정했는지를 말해 준다.</p></div></details>
+      <details class="quiz"><summary>2. 한 바퀴를 알아보는 단서가 둘인데 이 쪽은 하나만 쓴다. 어느 것을 왜 골랐고, 안 고른 쪽을 쓰려면 무엇이 더 필요한가</summary>
+        <div class="ans"><p>Start Flag 를 쓴다. 이유 둘 — ① 플래그는 <strong>기기가 선언한 것</strong>이고 각도 되감김은 <strong>내가 추론한 것</strong>이다. 그리고 우리는 이미 l-03 에서 <strong>같은 비트</strong>로 프레이밍을 검사했으므로, 플래그를 믿는 것은 새로운 신뢰를 하나 더 얹는 일이 아니다. ② 되감김 판정에는 "얼마나 작아져야 되감김인가"라는 <strong>문턱</strong>이 필요하다.</p>
+        <p>그 문턱이 왜 성가신지가 이 쪽의 뒷부분과 이어진다. 간격이 고르다면 문턱을 "간격 하나쯤"으로 잡으면 되는데, <strong>고른지 아닌지가 바로 §2-4 에서 재는 것</strong>이다. 즉 되감김을 쓰려면 <strong>아직 재지 않은 값에 의존하는 문턱</strong>을 먼저 정해야 한다. 그래서 되감김은 검산으로만 쓴다 — 잘라 놓고 나서 "각도가 정말 한 번만 되감겼는가"를 보는 데는 문턱이 필요 없다.</p></div></details>
+      <details class="quiz"><summary>3. "이 라이다는 한 바퀴에 점이 몇 개인가"라는 질문에 왜 답이 없는가. 그리고 <code>hardware/INVENTORY.md</code> 의 "약 1°"를 어떻게 읽어야 하는가</summary>
+        <div class="ans"><p>세 값이 <code>점/초 = 점/회전 × 회전수</code> 로 묶여 있는데 <strong>왼쪽 둘이 각각 다른 것에 달려 있기 때문</strong>이다. 점/초는 한 점에 몇 바이트를 쓰는가(모드)와 회선 용량이 정하고, 회전수는 모터에 걸린 전압과 부하가 정한다. 데이터시트 Figure 2-1 조차 Scan Rate 를 <strong>min 1 · typical 5.5 · max 10</strong> 이라는 <strong>범위</strong>로 적는다. 점/회전은 그 둘의 나눗셈이고, 센서 안에 그런 상수는 없다.</p>
+        <p>그러니 "약 1°"는 <strong>360 샘플/바퀴일 때</strong>라는 조건 위의 값이다(<code>360 ÷ 360 = 1.000</code>). 조건을 붙여 읽고, 내 기기에서 재서 다르면 <strong>센서가 고장 난 것이 아니라 조건이 다른 것</strong>이다. 같은 모델의 legacy 기록으로 254 점/회전이면 <code>360 ÷ 254 = 1.42°</code> 가 된다 — 사양과 어긋나 보이지만 <strong>다른 조건의 값</strong>이다. 무엇이 그 조건을 정하는지는 l-05 가 도출한다.</p></div></details>
+      <details class="quiz"><summary>4. 간격의 대푯값으로 평균이 아니라 중앙값을 쓰는 이유는? 그리고 랩 간격을 빼먹으면 왜 <strong>σ 가 0</strong> 이 되는가</summary>
+        <div class="ans"><p>한 섹터를 통째로 못 재면(유리·검은 천·범위 밖) 그 자리에 <strong>거대한 간격 하나</strong>가 생긴다. 평균은 그 하나에 끌려가지만 중앙값은 꿈쩍하지 않는다 — 시험 벡터 9 가 정확히 이것이다(간격 <code>[1,1,1,197,160]</code> 의 중앙값은 1.0, 평균은 72.0). "대부분의 이웃은 얼마나 떨어져 있는가"에는 중앙값이 답하고, "얼마나 흩어져 있는가"는 σ 가 따로 답한다. <strong>둘을 같이 봐야 한 쌍</strong>이다.</p>
+        <p>랩 간격은 마지막 점에서 첫 점으로 돌아오는 간격이다. 한 바퀴의 점이 <strong>원의 일부에만 몰려 있어도</strong>, 그 몰린 구간 안에서는 이웃 간격이 고르므로 σ 가 0 이 나온다. 벡터 8 이 그 상황이다 — 점이 0·10·20·30° 에만 있으면 간격은 <code>[10,10,10]</code> 이라 완벽하게 고르지만, 랩 간격 <code>0 + 360 − 30 = 330</code> 을 넣으면 σ 가 138.6 으로 뛴다. <strong>빼먹으면 "반쪽만 재고 있다"는 사실이 숫자에서 사라진다.</strong></p></div></details>
+      <details class="quiz"><summary>5. 못 잰 방향을 <code>null</code> 로 적는데 <code>LaserScan</code> 은 <code>inf</code> 와 <code>NaN</code> 을 쓴다. 둘은 같은 종류의 결정인가, 다른 종류의 결정인가</summary>
+        <div class="ans"><p><strong>같은 종류다.</strong> 둘 다 "못 쟀다"를 어떻게 적을지 <strong>규약이 한 번 정해 못박았다.</strong> 다른 것은 <strong>고를 수 있는 것의 폭</strong>이었다 — <code>LaserScan</code> 의 <code>ranges</code> 는 고정 폭 실수 배열이라 <strong>"비어 있는 칸"이 존재할 수 없고</strong>, 그래서 실수 중에서 골라야 했다. 한 줄짜리 JSON 에는 <code>null</code> 이 있다.</p>
+        <p>고르는 축은 "어느 쪽이 정확한가"가 아니다 — 셋 다 "못 쟀다"를 적을 수는 있다. 축은 <strong>이 값을 처리하는 것을 깜빡한 코드가 에러를 내는가 그럴듯한 숫자를 내는가</strong> 하나다. <code>0</code> 은 "코앞에 벽"이 되고, <code>inf</code> 는 "멀리 있다"가 되어 격자에서는 <strong>그 방향의 칸을 전부 비어 있음으로 칠한다.</strong> 둘 다 에러가 나지 않는다. <code>null</code> 은 수가 아니라 첫 계산에서 멈춘다.</p>
+        <p><code>LaserScan</code> 이 그 비용을 어디서 내는지도 저장소에서 보인다 — 07 §1-1 이 이 값들을 "물체가 없다"가 아니라 <strong>"측정 실패"</strong> 라고 못박아 두고, 07 §3-10 의 C++ 노드는 <code>inf</code> · <code>NaN</code> 을 걸러 내는 줄을 <strong>따로</strong> 갖는다. <strong>규약이 못 막아 주는 것을 코드가 매번 막는다.</strong></p></div></details>
+      <details class="quiz"><summary>6. (일부러 틀리면) 플래그를 하나 걸러 하나만 경계로 쓰면 무엇이 보이는가. 그리고 <strong>점 수만 보고는</strong> 왜 알 수 없는가</summary>
+        <div class="ans"><p>한 "바퀴"가 두 바퀴를 담으므로 <strong>점 수가 대략 두 배</strong>가 되고, 각도로 정렬하고 나면 <strong>간격 중앙값이 대략 절반</strong>으로 떨어진다. 그리고 첫 20개 각도를 보면 <strong>거의 같은 각도가 둘씩 짝지어</strong> 나타난다 — 두 바퀴가 같은 방향을 각각 한 번씩 봤기 때문이다.</p>
+        <p>점 수만 보면 이것과 <strong>"센서가 갑자기 두 배로 잘 잡는 것"</strong>이 구별되지 않는다. 둘 다 점이 두 배다. 구별해 주는 것은 <strong>각도의 모양</strong>이다 — 진짜로 점이 두 배면 각도가 고르게 촘촘해지고, 두 바퀴가 겹친 것이면 짝을 지어 몰린다. <strong>개수는 증상이고 각도가 증거다.</strong> l-03 의 재동기 실습에서 "개수가 아니라 각도의 이어짐을 보라"고 한 것과 같은 교훈이다.</p></div></details>
+      <details class="quiz"><summary>7. (안전) 이 쪽은 머리를 30초 넘게 계속 돌린다. 그동안 지키는 것 둘과 그 이유</summary>
+        <div class="ans"><p><strong>① 스캔 창을 렌즈 높이에서 정면으로 들여다보지 않는다.</strong> 광원은 785 nm 적외선이고 Class I 로 분류돼 정상 사용에서 안전하다고 표시돼 있다(데이터시트 rev.2.2 · v3.0 두 판 모두 5쪽 · Figure 2-3 두 판 모두 9쪽). 문제는 위험의 크기가 아니라 <strong>보이지 않는다는 것</strong>이다 — 켜졌는지 눈으로 알 수 없으니 "지금은 꺼져 있겠지"라는 습관이 생긴다. 그래서 크기가 아니라 <strong>규칙</strong>으로 적는다.</p>
+        <p><strong>② 도는 머리에 손·머리카락·천·케이블을 가까이 두지 않고, 옮길 일이 있으면 모터를 세운 뒤(<code>dtr=True</code>) 든다.</strong> 이 쪽은 l-03 과 달리 센서 앞에 손을 댈 일이 아예 없다 — 재는 것이 시간과 개수이기 때문이다. 덤으로, 센서가 실습 중에 조금이라도 움직이면 §3-2 의 σ 가 <strong>방의 산포인지 손의 산포인지</strong> 알 수 없게 되어 그 숫자가 통째로 못 쓰게 된다.</p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>번호순 다음은</strong> → <a href="l-05-bandwidth-modes.html">l-05</a> — 왜 내 점은 이것뿐인가. 이 쪽에서 잰 <strong>점/초와 점/회전</strong>을 그대로 받아, 회선 용량과 모드로 "내 도구가 이 센서의 몇 분의 일을 쓰고 있는가"를 산수로 판정한다. §3-2-4 의 네 숫자를 손에 들고 가야 그 쪽이 성립한다.</li>
+          <li><strong>파일 한 장이 생겼으므로</strong> — 컨테이너가 아직 안 떴거나 07 을 아직 안 했으면 l-06 · l-07 을 건너뛰고 <strong><a href="l-08-floor-plan.html">l-08</a> 부터 다섯 쪽</strong>으로 갈 수 있다. 거기부터는 라이다를 뽑아 두고도, <a href="l-00-map.html#s1-3">l-00 §1-3</a> 의 표대로라면 Mac 에서도 돈다. 다만 <strong>여러 바퀴가 이어진 기록</strong>이 필요한 쪽(l-13 · l-14)을 위해 30초짜리를 한 장 더 떠 두면 좋다.</li>
+          <li><strong><code>ros2 bag</code> 과의 관계</strong> — 이 파일이 bag 을 대신하는 것이 아니다(§2-7). <a href="10-autonomy.html">10</a> §3-7 의 bag 은 ROS 안에서 여러 토픽을 같이 받는 데 쓰고, 이 파일은 <strong>ROS 없이 · 드라이버를 거치지 않고</strong> 읽혀야 하는 자리에 쓴다. <code>/scan</code> 에서 이 형식으로 받아 적는 길은 <a href="l-06-three-sources.html">l-06</a> 이 만든다.</li>
+          <li><strong>이 쪽을 못 닫았어도</strong> — ① <code>PASS turn 11 cases</code> 까지 갔고 파일이 한 장 생겼으면 <strong>실습 B·E 의 관찰이 안 됐어도 l-05 로 갈 수 있다.</strong> 다만 네 숫자가 없으면 l-05 의 판정(실습 C)이 반쪽이 되므로 나중에 돌아와 잰다. ② 반대로 <strong>자기시험이 통과하지 못했으면 여기서 멈춘다</strong> — 바퀴가 잘못 잘린 파일 위에 여덟 쪽이 서면, 거기서 나는 이상한 결과의 원인을 전부 라이다에서 찾게 된다. ③ 점 수가 들쭉날쭉한 것, 회전수가 07 의 세 줄과 다른 것, <code>null</code> 이 예상보다 많은 것은 <strong>전부 적어 두고 넘어가도 된다</strong> — l-05 · l-07 · l-15 가 각각 받는다.</li>
+          <li><strong>이 쪽에서 잰 값은 내 노트에 적었는가</strong> — 열 바퀴의 점 수, 네 숫자와 내가 고른 <code>gap_max</code> 와 그 이유, 회전수 4행 대조, 파일 크기·줄 수·<code>null</code> 비율·한 점당 바이트, §3-3 의 여덟 칸, 그리고 실습 E 의 네 회차. <code>hardware/INVENTORY.md</code> 에 <strong>이 쪽이 채우는 칸은 아직 없다</strong> — 전부 내 노트이고, 점/초 · 점/회전 · 간격(중앙값·σ)을 담을 행이 생기면 그때 옮겨 적는다.</li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

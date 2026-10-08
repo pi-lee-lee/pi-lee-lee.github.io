@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F6 · 1 kHz 박자와 워치독 — MCU 펌웨어 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="fw-06">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">F6 · 1 kHz 박자와 워치독</p>
+      <h1>1 ms 마다 정확히 깨어나고, 멈추면 스스로 리셋한다</h1>
+      <p class="lead"><a href="fw-05-cli.html">fw-05</a> 까지의 펌웨어는 주 루프 하나로 돈다 — 언제 깨어날지 정해진 것이 없고, 멈추면 멈춘 채로 있다.
+      이 쪽은 두 가지를 더한다: 하드웨어 타이머가 만드는 <strong>1 kHz(주기 1 ms) 박자</strong>와, 그 박자나 주 루프가 멈추면 보드를 되살리는 <strong>하드웨어 워치독(IWDG)</strong>.
+      여기서 만든 박자 위에 뒤의 PID · 보호 · 상태 송신이 전부 올라가고, 여기서 처음 세우는 표 두 장(NVIC 우선순위 표 · 워치독 예산표)에 뒤 쪽들이 행을 더해 간다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>명령 창에 <code>stat</code> 을 치면 1 kHz(주기 1 ms) 루프가 실제로 몇 µs 간격으로 돌았는지(최소 · 최대)와 한 번 도는 데 걸린 최장 시간이 나온다.
+        <code>hang main</code> 이나 <code>hang isr</code> 을 치면 보드가 스스로 리셋하고, 부팅 배너의 reset 줄이 IWDG 를 가리킨다. 중단점에서 오래 멈춰 있어도 리셋되지 않게 만든 것까지 눈으로 확인한다.</p>
+        <p><strong>이 쪽에 필요한 것</strong> — NUCLEO-H723ZG, USB 케이블, fw-05 까지 끝낸 프로젝트(<code>firmware/h723zg/</code>). 초 단위를 잴 수 있는 시계(휴대전화 스톱워치면 된다).
+        <strong>없으면</strong> — 더 살 부품은 없다. 실습 C 만은 <a href="fw-04-debugger.html">fw-04</a> 의 gdb 연결이 돼 있어야 한다. 안 돼 있으면 실습 A · B 까지 하고 체크 항목 하나(<code>iwdg-frozen-on-halt</code>)를 남긴 채 fw-04 를 끝낸 뒤 돌아온다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag mx">CubeMX</span> <span class="tag mac">Mac</span></div>
+        <div><span class="k">선행</span><a href="fw-05-cli.html">fw-05</a> — <code>cli_register()</code> · <a href="fw-03-clock-console.html">fw-03</a> — 배너의 reset 줄, 클럭 트리(타이머 260 MHz) · <a href="fw-04-debugger.html">fw-04</a> — 실습 C 의 gdb 연결</div>
+        <div><span class="k">채우는 INVENTORY 칸</span>없음 (지터 기록과 예산표는 내 노트에 적는다)</div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
+      </div>
+
+      <h2 id="overview">1. 개요 — 박자 하나, 감시자 하나, 표 두 장</h2>
+      <p>본편 <a href="06a-mcu-protocol.html">06a</a> §2-9 의 주기 사다리에서 맨 안쪽 칸이 "MCU 제어 · 안전 루프 1 kHz(1 ms)"였다. 그 칸을 실제로 만드는 쪽이 여기다.
+      다만 이 쪽에서는 박자 위에 <strong>아무 일도 올리지 않는다.</strong> 빈 박자가 얼마나 정확한지부터 재 두어야, 나중에 PID 를 올렸을 때 늘어난 만큼이 PID 의 몫이라고 말할 수 있다.</p>
+      <pre class="diagram"><code> 박자가 생기는 길
+   HSE 8 MHz -&gt; PLL1 -&gt; 타이머 클럭 260 MHz -&gt; TIM6 (/260, /1000) -&gt; 1 ms 마다 업데이트 인터럽트
+
+ [ISR 문맥 - 선점 우선순위 1]   HAL_TIM_PeriodElapsedCallback()
+   ++tick_ms -&gt; (뒤 쪽의 *_step_1khz 가 올 자리) -&gt; wdg_checkin_tick() -&gt; 통계 갱신
+
+ [main 문맥]                    app_loop()
+   명령 한 줄 처리 -&gt; tick_loop_mark() -&gt; wdg_service_main()
+                                          두 쪽이 다 살아 있을 때만 IWDG 를 다시 채운다 (kick)
+
+ 워치독이 도는 길 (주 클럭과 무관)
+   LSI 32 kHz -&gt; IWDG1 12비트 내림 카운터 -&gt; 0 에 닿으면 시스템 리셋 -&gt; 배너의 reset 줄이 IWDG</code></pre>
+      <p>새로 나오는 말을 먼저 한 줄씩 정해 둔다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>말</th><th>이 가이드에서의 뜻</th></tr></thead>
+        <tbody>
+          <tr><td>박자(tick)</td><td>TIM6 이 1 ms 마다 내는 업데이트 인터럽트. 셀 수 있고(<code>n</code>), 시각이 된다(<code>tick_get_ms()</code>)</td></tr>
+          <tr><td>지터(jitter)</td><td>이웃한 두 박자 사이 간격이 1000 µs 에서 벗어난 정도. 평균이 아니라 <strong>최소 · 최대</strong>로 본다 — 제어는 최악의 한 번에 깨진다</td></tr>
+          <tr><td>하드웨어 워치독(IWDG)</td><td>주 클럭과 따로 도는 내림 카운터. 0 에 닿으면 칩을 리셋한다. <strong>명령 워치독</strong>(200 ms 동안 명령이 없으면 목표 0 — 계약 v2, 소프트웨어)과 다른 것이다. 이 쪽은 앞의 것만 다룬다</td></tr>
+          <tr><td>kick</td><td>IWDG 카운터를 다시 채우는 것(<code>HAL_IWDG_Refresh()</code>). "나는 살아 있다"는 신고다</td></tr>
+          <tr><td>워치독 예산표</td><td>"정상 동작에서 kick 사이가 가장 길어지는 구간이 어디고 몇 ms 인가"를 모은 표. IWDG 의 주기는 이 표에서 나온다</td></tr>
+          <tr><td>선점 우선순위</td><td>어느 인터럽트가 어느 인터럽트를 끊고 들어갈 수 있는가를 정하는 숫자. <strong>작을수록 높다</strong>(0 이 최고)</td></tr>
+        </tbody>
+      </table></div>
+      <p>이 쪽이 남기는 것을 뒤에서 누가 쓰는가: 박자 위에는 <a href="fw-13-pid-protection.html">fw-13</a> 의 <code>control_step_1khz()</code> 와 <a href="fw-17-link-v2.html">fw-17</a> 의 <code>comm_frame_step_1khz()</code> 가 올라가고,
+      <code>tick_get_ms()</code> 는 계약의 <code>tick_ms</code> 와 로그의 시각이 된다(<code>log.h</code> 의 <code>LOG_NOW_MS()</code> 를 이것으로 바꾼다). <code>stat</code> 의 기록은 fw-13 의 "ISR 안인가 주 루프인가" 결정과 <a href="fw-19-bench-acceptance.html">fw-19</a> 의 수용 시험에 들어간다.
+      그리고 이 쪽 뒤부터 <code>FW_ASSERT</code> 와 HardFault 는 "LD3 를 켜고 선 채로 있다"가 아니라 "멈춤 → IWDG 리셋 → 배너"로 끝난다.</p>
+      <div class="callout note"><span class="ct">이 쪽의 숫자는 fw-03 의 클럭 트리 위에 서 있다</span>
+        <p>아래의 분주값은 전부 "타이머 클럭 = 260 MHz"에서 나온다. 그것은 <a href="fw-03-clock-console.html">fw-03</a> 의 클럭 트리(SYSCLK 520 MHz — VOS0, 옵션 바이트 CPU_FREQ_BOOST = 0 공장 기본값 그대로, HCLK 260 MHz, APB 130 MHz)가 걸려 있을 때만 참이다.
+        시작하기 전에 배너 둘째 줄이 <code>SYSCLK 520000000</code> 인지 본다. <code>550000000</code> 이 보이면 누군가 실수로 550 을 넣은 것이다 — CubeMX Clock Configuration 화면이 CPU 상한을 550 MHz 로 안내하고 부스트 비트는 말하지 않는다. 부스트 0 인 칩에서 550 은 오류 없이 규격 밖으로 돈다. 그때 타이머 클럭은 275 MHz 이고, 같은 분주값으로 박자는 1 ms 보다 짧아진다(1 s 에 세는 박자 수가 약 5.8 % 많다). 고치는 곳은 fw-03 이다.</p>
+      </div>
+
+      <h2 id="why">2. 원리 — 왜 타이머가 박자를 만들고, 왜 워치독의 주기는 표에서 나오는가</h2>
+
+      <h3 id="s2-1">2-1. <code>HAL_Delay</code> 로 만든 주기와 타이머 인터럽트로 만든 주기</h3>
+      <p>1 ms 마다 무언가를 하려면 가장 먼저 떠오르는 것이 주 루프 끝의 <code>HAL_Delay(1)</code> 이다. 이것이 왜 박자가 못 되는지는 HAL 소스 열다섯 줄에 다 있다.</p>
+      <ul>
+        <li><code>HAL_Delay()</code> 는 <code>HAL_GetTick()</code> 이 <code>Delay</code> 만큼 늘 때까지 도는 빈 루프다(<code>stm32h7xx_hal.c:405-419</code>). 그리고 <strong>"최소한 그만큼"</strong>을 보장하려고 1 을 더한다(<code>:413</code> <code>wait += uwTickFreq</code>). <code>HAL_Delay(1)</code> 은 1 ms 가 아니라 1~2 ms 다.</li>
+        <li>더 큰 문제는 구조다. 한 바퀴 = <strong>일한 시간 + 기다린 시간</strong>이므로, 일이 길어지면 주기가 그만큼 늘어난다. 지금 콘솔 송신은 블로킹이다(fw-03) —
+        460800 8N1 은 1바이트에 10비트이므로 초당 46 080 B, 60 B 짜리 한 줄에 60 ÷ 46 080 = 1.3 ms 가 든다. 글자 한 줄을 찍은 바퀴는 그것만으로 한 주기를 넘긴다.</li>
+        <li>속도 PID 는 식 안에 <code>dt</code> 를 상수(0.001 s)로 넣는다. 실제 간격이 1.0 ms 였다가 2.3 ms 였다가 하면 적분항과 미분항의 실효 게인이 바퀴마다 달라진다 — 같은 게인인데 어떤 날은 떨고 어떤 날은 안 떠는 제어기가 된다.</li>
+      </ul>
+      <pre class="diagram"><code> (가) 주 루프에서  일하고 -&gt; HAL_Delay(1)  을 되풀이한다
+      원하는 격자   |         |         |         |         |         |         |
+      실제          WW.dddddd WW.dddddd WWWWWWWWWWWWWW.dddddd WW.dddddd
+                                        ^ 이 바퀴에서 글자 한 줄을 찍었다 (60 B = 1.3 ms)
+      한 바퀴 = 일한 시간(W) + 1~2 ms(d).  일이 길어진 만큼 밀리고, 밀린 것은 되돌아오지 않는다
+
+ (나) TIM6 업데이트 인터럽트
+      하드웨어 격자 |         |         |         |         |         |         |
+      ISR 진입      *         *          *        *            *      *         *
+                                         ^ 조금 늦음           ^ 많이 늦음 (인터럽트가 막혀 있었다)
+      격자는 CPU 가 무엇을 하든 제자리다.  늦은 바퀴가 있어도 다음 바퀴는 다시 격자에서 출발한다</code></pre>
+      <p>타이머는 이 구조를 뒤집는다. TIM6 의 카운터는 CPU 와 무관하게 0 → ARR 을 세고 스스로 0 으로 돌아가며 그때마다 업데이트 이벤트를 낸다. 주기는 분주값만으로 정해진다:</p>
+      <pre><code class="lang-text">260 000 000 Hz ÷ (PSC + 1 = 260)  = 1 000 000 Hz   카운터 한 칸 = 1 µs
+  1 000 000 Hz ÷ (ARR + 1 = 1000) =     1 000 Hz   업데이트 주기 = 1.000 ms (나머지 0)</code></pre>
+      <p>CPU 가 ISR 에 <strong>들어가는 시각</strong>은 늦을 수 있다(그것이 지터다). 그러나 늦은 것이 <strong>쌓이지 않는다</strong> — 다음 업데이트 이벤트는 하드웨어 격자 위에서 난다. (가)는 오차가 누적되고 (나)는 누적되지 않는다는 것이 둘의 차이다.</p>
+      <div class="callout note"><span class="ct">260 000 을 둘로 쪼개는 법은 여럿이다 — 주기는 동일, 다른 것은 카운터 한 칸의 크기뿐</span>
+        <p>TIM6 은 16비트라(65 535 까지) 260 000 을 한 번에 셀 수 없다. (PSC + 1) × (ARR + 1) = 260 000 = 2⁵ × 5⁴ × 13 을 만족하면서 둘 다 16비트에 드는 조합은 56개다. 대표 몇 개:
+        PSC 259 / ARR 999(1 MHz 틱 — 한 칸 1 µs) · PSC 51 / ARR 4999(5 MHz 틱) · PSC 25 / ARR 9999(10 MHz 틱) · PSC 3 / ARR 64 999(65 MHz 틱 — ARR 이 16비트 상한 근처). 모두 나머지 0 으로 정확히 1 ms 다.
+        이 가이드의 <strong>예시값</strong>은 PSC 259 / ARR 999 다 — 한 칸이 1 µs 라 카운터 값을 그대로 µs 로 읽을 수 있어서이고, ST 의 예제도 같은 꼴을 쓴다
+        (<code>$FW_H7/Projects/NUCLEO-H723ZG/Examples/HAL/HAL_TimeBase_TIM/Src/stm32h7xx_hal_timebase_tim.c:99</code> "1MHz counter clock", <code>:110</code>). 한 칸의 크기가 뜻을 갖는 것은 §2-3 에서 "TIM6 의 CNT 로 지연을 잰다"를 고를 때뿐이다.</p>
+      </div>
+
+      <h3 id="s2-2">2-2. ISR 안에 무엇을 둘 것인가 — 선택지를 세워 두고, 결정은 fw-13 에서</h3>
+      <p>박자가 생기면 다음 질문은 "그 1 ms 마다 하는 일을 <strong>어디서</strong> 돌리는가"다. 예전 초안 펌웨어는 엔코더 읽기 · 명령 워치독 · 안전 판정 · 바퀴 4개의 PID · 50 Hz(20 ms 주기) 상태 프레임 만들기 · IWDG kick 을 전부 TIM6 ISR 한 함수 안에 넣었다.
+      그것이 틀렸다는 것이 아니라 <strong>선택지와 대가를 따져 본 적이 없었다.</strong> 길은 적어도 셋이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th></th><th>(가) ISR 안에서 전부</th><th>(나) ISR 은 박자만, 계산은 주 루프</th><th>(다) 나눠 싣기</th></tr></thead>
+        <tbody>
+          <tr><td>1 kHz 일이 시작되는 시각</td><td>ISR 진입 지연만큼만 늦는다. 이보다 높은 우선순위가 없으면 주 루프가 무엇을 하든 상관없다</td><td>주 루프가 그때 하던 일이 끝나야 시작된다. 블로킹 송신 한 줄(1.3 ms)이면 한 박자를 통째로 놓친다</td><td>시각에 민감한 것(엔코더 표본 · PWM 쓰기 · 출력 차단)만 ISR, 나머지는 주 루프</td></tr>
+          <tr><td>그 안에서 부를 수 있는 것</td><td>블로킹 금지, <code>LOG_*</code> 금지, <code>HAL_GetTick()</code> 에 기대는 타임아웃 금지(§2-8) — 부르는 모든 함수가 이 규칙을 지켜야 한다</td><td>제약 없음(main 문맥)</td><td>ISR 쪽 함수만 제약</td></tr>
+          <tr><td>다른 문맥과 값을 주고받기</td><td>주 루프 · 수신 콜백이 쓰는 값(목표 속도 등)을 ISR 이 읽는다 → 반쯤 갱신된 값을 읽지 않게 넘겨주는 장치가 필요</td><td>1 kHz 일과 CLI 가 같은 문맥이라 그 사이에는 장치가 필요 없다. 수신 콜백과는 여전히 필요</td><td>ISR ↔ 주 루프 사이에 필요</td></tr>
+          <tr><td>낮은 우선순위 인터럽트에 주는 영향</td><td>ISR 실행 시간만큼 UART · I2C 의 ISR 이 밀린다(§2-8 의 숫자)</td><td>거의 없다(ISR 이 몇 줄)</td><td>ISR 에 남긴 만큼</td></tr>
+          <tr><td>주 루프가 멈췄을 때</td><td>제어는 계속 돈다(그래서 "주 루프가 죽은 것"을 다른 수단으로 잡아야 한다 — §2-5)</td><td>제어도 멈춘다. PWM 은 마지막 듀티로 남는다</td><td>ISR 에 남긴 부분만 돈다</td></tr>
+          <tr><td>놓친 박자의 처리</td><td>실행 시간이 1 ms 를 넘을 때만 생긴다</td><td>주 루프가 늦을 때마다 생긴다 → 밀린 만큼 여러 번 돌릴지, 한 번만 돌릴지 정해야 한다</td><td>주 루프 쪽 일에만</td></tr>
+        </tbody>
+      </table></div>
+      <p>차이가 없는 축도 있다: 박자를 만드는 TIM6 설정, <code>tick_get_ms()</code>, IWDG, 그리고 계약 v2 의 와이어 형식은 셋 다 <strong>동일</strong>하다.</p>
+      <p>이 결정은 PID 와 보호 판정의 실제 실행 시간을 알아야 내릴 수 있으므로 <a href="fw-13-pid-protection.html">fw-13</a> 의 몫이다. 이 쪽이 하는 일은 그때 쓸 <strong>자</strong>를 만드는 것이다:
+      <code>stat</code> 의 <code>exec_us_max</code>(ISR 안에서 쓴 최장 시간)는 (가)의 비용을, <code>loop_us_max</code>(주 루프 최장 한 바퀴)는 (나)에서 박자를 놓치는 크기를 숫자로 보여 준다.</p>
+
+      <h3 id="s2-3">2-3. 지터를 재는 법 — 찍는 행위가 지터를 만든다</h3>
+      <p>재려는 것은 "이웃한 두 ISR 진입 사이가 몇 µs 였는가"다. 시계가 둘 있다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th></th><th>DWT 의 <code>CYCCNT</code></th><th>TIM6 의 <code>CNT</code></th></tr></thead>
+        <tbody>
+          <tr><td>무엇인가</td><td>코어 안의 32비트 사이클 카운터(<code>core_cm7.h:1131</code>). CPU 클럭 한 주기에 1 씩 는다</td><td>박자를 만드는 바로 그 카운터. 업데이트 순간 0 으로 돌아간다</td></tr>
+          <tr><td>한 칸</td><td>1 ÷ 520 MHz ≈ 1.92 ns. µs 로는 <code>SystemCoreClock / 1000000</code>(= 520)으로 나눈다</td><td>PSC 259 면 1 µs, PSC 3 이면 65 MHz 틱(§2-1)</td></tr>
+          <tr><td>재는 법</td><td>진입 때 읽은 값 − 직전 진입 때 읽은 값(부호 없는 32비트 뺄셈)</td><td>진입 직후의 <code>CNT</code> 가 곧 "격자에서 몇 칸 늦게 들어왔는가"다</td></tr>
+          <tr><td>넘침</td><td>2³² ÷ 520 000 000 ≈ 8.26 s 마다 한 바퀴. 부호 없는 뺄셈은 넘침을 <strong>한 번까지</strong> 바르게 처리한다 — 1 ms 간격에는 충분하고, 8.26 s 넘게 멈췄던 간격은 틀린다</td><td>매 박자 0 으로 돌아가므로 두 박자에 걸친 시간은 못 잰다(실행 시간은 1 ms 미만일 때만)</td></tr>
+          <tr><td>켜는 법</td><td>네 걸음 — ① <code>CoreDebug-&gt;DEMCR</code> 의 TRCENA ② <strong><code>DWT-&gt;LAR = 0xC5ACCE55</code></strong>(Cortex-M7 의 DWT 잠금 해제 — 아래 상자) ③ <code>DWT-&gt;CYCCNT = 0</code> ④ <code>DWT-&gt;CTRL</code> 의 CYCCNTENA. 비트 이름은 <code>core_cm7.h:1211</code> · <code>:1702</code>, <code>LAR</code> 은 <code>:1154</code>. 같은 팩의 ST 코드가 이 넷을 켠다(<code>$FW_H7/Projects/STM32H735G-DK/Applications/mbedTLS/Crypto_Selftest/Src/timing_alt.c:64-74</code> — ST 는 ④ 뒤에 ③ 을 둔다. 값은 뺄셈으로만 쓰므로 ③④ 의 순서는 동일)</td><td>따로 없다</td></tr>
+        </tbody>
+      </table></div>
+      <p>이 가이드의 골격은 <code>CYCCNT</code> 로 쓴다 — 진입 간격(<code>dt_us</code>) · 실행 시간(<code>exec_us</code>) · 주 루프 한 바퀴(<code>loop_us</code>)를 <strong>같은 시계 하나로</strong> 잴 수 있어서다. TIM6 의 <code>CNT</code> 로 가면 시계가 늘지 않는 대신 주 루프 한 바퀴는 따로 재야 한다. 어느 쪽이든 <code>stat</code> 의 출력 꼴은 동일하다.</p>
+      <div class="callout note"><span class="ct">등급 — 확정 (LAR · TRCENA, 팩의 ST 코드) · 확인 과제는 남긴다</span>
+        <p><code>core_cm7.h:1154</code> 의 <code>LAR</code>(Lock Access Register)은 장식이 아니다. Cortex-M7 에서는 <code>CYCCNT</code> 를 켜기 전에 이 레지스터에 <code>0xC5ACCE55</code> 를 써서 DWT 의 잠금을 풀어야 한다 —
+        같은 FW_H7 V1.13.0 팩의 ST 코드가 <code>#if (__CORTEX_M == 0x07U)</code> 아래에 "in Cortex M7, the trace needs to be unlocked via the DWT-&gt;LAR register with 0xC5ACCE55 value" 라고 적고 그대로 쓴다(<code>timing_alt.c:65-70</code>, 원본 템플릿 <code>$FW_H7/Middlewares/Third_Party/mbedTLS/library/templates/timing_alt_template.c:67-72</code>). TRCENA 도 같은 코드가 먼저 켠다(<code>:64</code>).
+        이 줄이 빠지면 <code>CTRL</code> 의 CYCCNTENA 쓰기가 먹지 않아 <code>dt_us</code> · <code>exec_us</code> · <code>loop_us</code> 가 <strong>전부 0</strong> 으로 나온다 — 증상 ↔ 원인 표의 그 행이다. (같은 팩의 <code>Middlewares/ST/STM32_Network_Library/core/net_os.c:786-787</code> 은 LAR 없이 <code>CTRL</code> 만 켠다 — 골격은 M7 조건부 줄이 있는 <code>timing_alt.c</code> 를 따른다.)
+        <strong>확인 과제</strong>: 그래도 실습 A 에서 <code>dt_us</code> 가 전부 0 이면 gdb 로 <code>0xE0001004</code>(<code>CYCCNT</code>)를 두 번 읽어 값이 변하는지 보고, <code>grep -n LAR User/Src/System/tick.c</code> 로 ② 가 있는지 본다. 결과를 노트에 적는다. 그래도 막히면 TIM6 의 <code>CNT</code> 방식으로 바꿔도 이 쪽의 체크포인트는 전부 닫힌다.</p>
+      </div>
+      <p><strong>그리고 재는 값을 그 자리에서 찍으면 안 된다.</strong> 박자마다 간격을 한 줄씩 찍는다고 하자. 30 B 짜리 줄이 초당 1000 개면 30 000 B/s — 링크 용량 46 080 B/s 의 65 % 다.
+      게다가 지금의 송신은 블로킹이라 한 줄에 30 ÷ 46 080 = 0.65 ms 동안 CPU 가 UART 를 기다린다. 1 ms 짜리 박자를 재겠다면서 그 안에 0.65 ms 짜리 일을 넣는 셈이다 — 찍힌 숫자는 "찍는 데 걸린 시간"이 된다. 그래서 규칙은 하나다:</p>
+      <ul>
+        <li>1 kHz 경로는 <strong>RAM 에 통계만 쌓는다</strong>(개수 · 최소 · 최대). 글자는 사람이 <code>stat</code> 을 쳤을 때 주 루프가 한 줄 찍는다.</li>
+        <li>시간에 따른 모양이 필요하면(fw-13 의 계단 응답) RAM 배열에 잡아 뒀다가 끝난 뒤 한꺼번에 쏟는다.</li>
+      </ul>
+      <p>통계를 ISR 이 쓰고 주 루프가 읽으면 작은 문제가 하나 생긴다. 32비트 값 하나를 읽는 것은 이 코어에서 끊기지 않지만, <strong>여섯 개를 한 묶음으로</strong> 읽는 도중에는 ISR 이 끼어들 수 있다 — <code>n</code> 은 새 값, <code>dt_us_max</code> 는 옛 값인 줄이 찍힌다.
+      <code>stat reset</code> 도 같다: 주 루프가 구조체를 0 으로 지우는 도중에 ISR 이 갱신하면 반쯤 지워진 통계가 남는다.
+      이 쪽의 골격은 두 가지 장치를 주석으로만 가리킨다 — 읽기는 "인터럽트를 아주 잠깐 막고 통째로 복사", 지우기는 "주 루프는 요청 플래그만 세우고 실제로 지우는 것은 ISR". 이것은 fw-13 · fw-17 에서 본격적으로 다룰 <strong>문맥 사이의 값 넘겨주기</strong>의 가장 작은 예다.</p>
+
+      <h3 id="s2-4">2-4. IWDG 가 잡는 것과 못 잡는 것</h3>
+      <p>IWDG1 은 주 클럭이 아니라 칩 안의 저속 RC 발진기(LSI, 32 kHz)로 도는 12비트 내림 카운터다(RM0468 §50.3.1 그림 565). PLL 이 죽어도 돌고, 한번 시작하면 <strong>소프트웨어로는 멈출 수 없다</strong>("Once running, the IWDG cannot be stopped" — 같은 절).
+      카운터가 0 에 닿기 전에 키 레지스터에 <code>0xAAAA</code> 를 써 주지 않으면 시스템 리셋이 난다. 리셋 중과 직후에는 대부분의 GPIO 가 아날로그 모드(Hi-Z)로 돌아간다(RM0468 §11.3.1). 나중에 연결될 <code>MOTOR_EN</code> 핀도 그렇게 놓이고, 그 선을 LOW 로 끌어내리는 것은 드라이버 모듈의 풀다운이다(<a href="fw-08-pwm-safe-output.html">fw-08</a> 에서 실물로 확인한다).
+      "펌웨어가 멈추면 출력단이 꺼진다"로 가는 길의 첫 고리가 이 리셋이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>IWDG 가 잡는 것 — "kick 이 멈춘다"</th><th>IWDG 가 못 잡는 것 — "kick 은 계속 온다"</th></tr></thead>
+        <tbody>
+          <tr><td>무한 루프에 빠진 주 루프(끝나지 않는 <code>while</code> 대기, 응답 없는 센서를 기다리는 블로킹 호출)</td><td>살아서 <strong>틀린 일을 하는</strong> 코드. 루프는 돌고 kick 도 오는데 출력이 엉뚱하다</td></tr>
+          <tr><td><code>FW_ASSERT</code> · <code>Error_Handler()</code> · HardFault 핸들러의 "여기서 멈춤"</td><td>끊어진 센서가 주는 그럴듯한 값(0, 마지막 값)</td></tr>
+          <tr><td>ISR 안의 무한 루프(그 아래 우선순위 전부와 주 루프가 굶는다)</td><td>너무 짧게 잡은 제어 주기 예산(박자를 놓치지만 멈추지는 않는다 → <code>overrun</code> 이 세야 한다)</td></tr>
+          <tr><td>주 클럭 상실</td><td>명령이 끊긴 것(→ 200 ms 명령 워치독의 몫. fw-13 · fw-18)</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout why"><span class="ct">1세대 기록(2026-07-18) — 워치독이 있었어도 못 잡았을 사고</span>
+        <p>1세대 벤치에서 엔코더의 GND 선 하나가 끊어져 있었다. 속도가 늘 0 으로 읽히니 PID 는 목표에 못 미친다고 보고 적분을 끝까지 쌓았고, 듀티는 최대가 되어 모터가 전속으로 돌았다.
+        그동안 펌웨어는 <strong>완벽하게 살아 있었다</strong> — 루프는 제시간에 돌았고, 폴트는 하나도 뜨지 않았고, 정지 명령으로도 서지 않았다(<code>~/ros2/docs/bench/motor_bench_findings_2026-07-17.md:41</code>).
+        하드웨어 워치독은 이런 고장에 아무 말도 하지 않는다. 이것을 잡는 것은 "듀티를 이만큼 줬는데 속도가 안 나온다"를 보는 보호 판정이고, 그것은 <a href="fw-13-pid-protection.html">fw-13</a> 에서 만든다. <strong>IWDG 는 맨 아래층이지 유일한 층이 아니다.</strong></p>
+      </div>
+
+      <h3 id="s2-5">2-5. kick 을 어디서 하는가</h3>
+      <p>kick 은 "살아 있다"는 신고인데, <strong>누가</strong> 신고하느냐에 따라 잡히는 고장이 달라진다. 이제 이 펌웨어에는 살아 있어야 하는 것이 둘이다 — 주 루프와 1 kHz 박자.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>kick 의 자리</th><th>주 루프만 멈췄을 때</th><th>박자만 멈췄을 때(타이머가 꺼짐 · 인터럽트가 막힘)</th><th>ISR 안에서 멈췄을 때</th></tr></thead>
+        <tbody>
+          <tr><td>1 kHz ISR 에서 무조건</td><td><strong>리셋 안 됨</strong> — ISR 은 계속 오고 계속 신고한다. 명령 창과 (뒤에는) 통신이 죽은 채로 남는다</td><td>리셋</td><td>리셋</td></tr>
+          <tr><td>주 루프에서 무조건</td><td>리셋</td><td><strong>리셋 안 됨</strong> — 제어가 죽었는데 주 루프가 대신 신고한다. PWM 은 마지막 듀티로 남는다</td><td>리셋(주 루프도 굶으므로)</td></tr>
+          <tr><td>두 쪽이 <strong>다 살아 있다는 증거가 모였을 때만</strong></td><td>리셋</td><td>리셋</td><td>리셋</td></tr>
+        </tbody>
+      </table></div>
+      <p>예전 초안 펌웨어는 kick 을 TIM6 ISR 의 맨 끝 줄에 뒀다 — 표의 첫 줄이고, 주 루프의 멈춤을 잡지 못하는 꼴이다. 셋째 줄을 만드는 꼴은 여러 가지다. 박자 쪽이 "나 돌았다"는 표시를 남기고(<code>wdg_checkin_tick()</code>), 주 루프가 그 표시를 확인한 바퀴에서만 kick 하고 표시를 지우는 것(<code>wdg_service_main()</code>)이 가장 작은 꼴이고, 이 가이드의 골격이 그 자리를 비워 뒀다.
+      "표시 하나면 되는가, 직전 kick 뒤로 박자가 N 번 이상 왔어야 하는가"는 내가 정한다 — 앞의 것은 박자가 완전히 섰을 때만 잡고, 뒤의 것은 박자가 심하게 느려진 것까지 잡는 대신 N 이 예산표(§2-6)의 숫자와 묶인다.</p>
+      <p>하지 말아야 할 자리도 있다: SysTick 핸들러, DMA 완료 콜백처럼 <strong>내 코드의 건강과 무관하게 계속 불리는 곳</strong>. 거기서 하는 kick 은 "칩에 전원이 들어와 있다"는 것밖에 증명하지 못한다.</p>
+
+      <h3 id="s2-6">2-6. 워치독 예산표 v1 — IWDG 의 주기는 고르는 값이 아니라 나오는 값이다</h3>
+      <p>IWDG 의 타임아웃은 레지스터 둘로 정해진다 — LSI 를 나누는 분주기(<code>IWDG_PR</code>: ÷4 ~ ÷256, RM0468 §50.4.2)와 12비트 재장전값(<code>IWDG_RLR</code>: 0 ~ 4095, §50.4.3). ST 예제의 주석이 식을 준다
+      (<code>$FW_H7/Projects/NUCLEO-H723ZG/Examples/IWDG/IWDG_WindowMode/Src/main.c:100-102</code>): <code>Reload = LsiFreq(Hz) × Timeout(ms) ÷ (prescaler × 1000)</code>. 뒤집으면 타임아웃 ≈ Reload × prescaler ÷ 32 000 Hz 다.
+      정확히는 <strong>(Reload + 1) × prescaler ÷ <code>f_LSI</code></strong> — 카운터는 Reload 에서 0x000 까지 내려가서 리셋을 내므로 Reload + 1 칸을 쓴다(RM0468 §50.3.1 "counts down … when it reaches the end of count value (0x000) a reset signal is generated" · HAL 의 최소 타임아웃 "~125us"(<code>stm32h7xx_hal_iwdg.c:53</code>)가 곧 Reload = 0 · ÷4 의 <strong>한 칸</strong> = 4 ÷ 32 000 s 다).
+      예제 주석의 식은 +1 을 뺀 근사식이다 — Reload 가 수천이면 차이는 0.02 % 지만, Reload 를 작게 잡으면 1 ÷ Reload 만큼 어긋난다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>Prescaler</th><th>÷4</th><th>÷8</th><th>÷16</th><th>÷32</th><th>÷64</th><th>÷128</th><th>÷256</th></tr></thead>
+        <tbody>
+          <tr><td>Reload 한 칸</td><td>0.125 ms</td><td>0.25 ms</td><td>0.5 ms</td><td>1 ms</td><td>2 ms</td><td>4 ms</td><td>8 ms</td></tr>
+          <tr><td>Reload = 4095(= 4096 칸)일 때</td><td>약 512 ms</td><td>약 1.02 s</td><td>약 2.05 s</td><td>약 4.10 s</td><td>약 8.19 s</td><td>약 16.4 s</td><td>약 32.8 s</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">산술: 한 칸 = prescaler ÷ 32 000 s, 칸 수 = Reload + 1 (4095 · ÷4 → 4096 × 4 ÷ 32 000 = 512.0 ms). CubeMX 에서 IWDG1 을 켜기만 하면 Prescaler 4 · Reload 4095 가 기본값이다(CubeMX 의 IP 정의 <code>IWDG-iwdg1_v2_0_Modes.xml</code>) — 즉 아무것도 고르지 않으면 약 512 ms 가 된다. "워치독은 500 ms 쯤"이라는 말은 흔히 이 기본값에서 온다. 도출된 값이 아니다.</p>
+      <p>32 kHz 도 정확한 값이 아니다. LSI 는 RC 발진기라 25 °C · 3.3 V 에서 31.4 ~ 32.6 kHz, −40 ~ 110 °C 전 범위에서 29.76 ~ 33.6 kHz 다(DS13313 표 38, 117쪽).
+      LSI 가 빠르면 워치독도 빨리 터진다 — 가장 빠를 때 타임아웃은 계산값의 32 ÷ 33.6 = 0.952 배다. 예산은 <strong>가장 짧아진 타임아웃</strong>에 맞춘다.</p>
+      <p>그러면 주기는 어떻게 정하는가. 두 물음 사이에 낀 값이다.</p>
+      <ul>
+        <li><strong>아래쪽 한계</strong> — 정상 동작에서 kick 과 kick 사이가 가장 길어지는 구간은 어디고, 몇 ms 인가? 타임아웃이 이보다 짧으면 멀쩡한 펌웨어가 스스로 리셋한다. 이 물음의 답을 모은 것이 <strong>워치독 예산표</strong>다.</li>
+        <li><strong>위쪽 한계</strong> — 펌웨어가 멈춘 채로(뒤에는: PWM 이 마지막 듀티로 남은 채로) 둘 수 있는 가장 긴 시간은? 이것은 내가 정하는 값이고, 조립한 로봇에서는 "그동안 굴러가는 거리"로 다시 따진다.</li>
+      </ul>
+      <p>지금 이 표에 들어갈 행은 둘뿐이다. 숫자는 내가 재서 채운다(실습 A · B).</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>구간</th><th>최장 시간</th><th>출처</th><th>처리</th></tr></thead>
+        <tbody>
+          <tr><td>초기화 (<code>MX_*_Init</code> ~ <code>app_init()</code> 끝)</td><td>____ ms</td><td>실측 — <code>wdg_started_at_ms()</code> (§3-2-4)</td><td>§2-7 의 (가)면 IWDG 가 아직 돌기 전이라 예산에 들어오지 않는다 / (나)면 가장 긴 조각이 들어온다</td></tr>
+          <tr><td>주 루프 최장 1회전</td><td>____ ms</td><td>실측 — <code>stat</code> 의 <code>loop_us_max</code> (§3-1-4)</td><td>kick 은 주 루프와 1 kHz 박자가 둘 다 살아 있을 때만(§2-5)</td></tr>
+        </tbody>
+      </table></div>
+      <p>이 표는 <strong>v1</strong> 이다. 뒤 쪽들이 긴 대기를 하나씩 들고 온다 — fw-13 의 CSV 덤프(행 수 × 줄 길이 ÷ 46 080 B/s), <a href="fw-14-wt901.html">fw-14</a> 의 WT901 설정 절차, <a href="fw-15-bno055.html">fw-15</a> 의 BNO055 전원 투입 대기,
+      그리고 fw-16 의 내장 플래시 섹터 지우기(전형 1.1 ~ 2 s, 최대 2.2 ~ 4 s — DS13313 표 44, 122쪽). 마지막 것은 어떤 "위쪽 한계"와도 부딪힐 만큼 길어서, 표는 <a href="fw-16-flash-store.html">fw-16</a> 에서 "지우는 동안 워치독을 어떻게 할 것인가"를 정하며 닫힌다.
+      그러니 지금 정하는 주기는 확정값이 아니다. <strong>표의 가장 긴 행이 바뀌면 주기를 다시 계산한다</strong> — 그 절차를 지금 익혀 두는 것이 이 소절의 목적이다.</p>
+      <pre><code class="lang-text">내 v1 계산 (노트에 적는다)
+  가장 긴 행            = ____ ms
+  여유 (내가 정한다)    = ____ 배          → 필요한 최소 타임아웃 = ____ ms
+  LSI 가 가장 빠를 때   ÷ 0.952            → 계산상 타임아웃      = ____ ms 이상
+  위쪽 한계 (내가 정한다) = ____ ms 이하
+  고른 값: Prescaler ____ · Reload ____    → ____ ms (가장 빠른 LSI 에서 ____ ms)</code></pre>
+
+      <h3 id="s2-7">2-7. <code>HAL_IWDG_Init()</code> 은 곧 시작이다 — 시작을 어디에 둘 것인가</h3>
+      <p>다른 주변장치는 "초기화"와 "시작"이 따로다(TIM6 도 <code>HAL_TIM_Base_Init()</code> 뒤에 <code>HAL_TIM_Base_Start_IT()</code> 를 따로 부른다). IWDG 는 아니다.
+      <code>HAL_IWDG_Init()</code> 의 첫 동작이 시작 키를 쓰는 것이다 — <code>stm32h7xx_hal_iwdg.c:189</code> 의 <code>__HAL_IWDG_START(hiwdg)</code>(<code>KR = 0xCCCC</code>), 그 뒤 <code>:196-197</code> 에서 PR · RLR 을 쓴다. 그리고 한번 시작하면 멈출 수 없다(§2-4).</p>
+      <p>CubeMX 는 켜 놓은 주변장치의 <code>MX_*_Init()</code> 호출을 <code>main()</code> 의 <code>/* Initialize all configured peripherals */</code> 아래, <strong><code>USER CODE BEGIN 2</code> 앞</strong>에 늘어놓는다. 그래서 IWDG1 을 켜고 그대로 생성하면 이런 순서가 된다:</p>
+      <pre><code class="lang-c">  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_USART3_UART_Init();
+  MX_TIM6_Init();
+  MX_IWDG1_Init();          /* &lt;- 이 줄부터 워치독이 이미 돌고 있다 (함수 이름은 생성 후 확인) */
+  /* USER CODE BEGIN 2 */
+  app_init();               /* 배너, CLI, 나중에는 센서 전원 투입 대기 ... 이제 전부 워치독과 경주한다 */
+  /* USER CODE END 2 */</code></pre>
+      <p>지금은 <code>app_init()</code> 이 짧아서 아무 일도 없다. 그러나 뒤에서 초기화에 긴 대기(센서 전원 투입 대기 등)가 하나 들어오는 순간 "부팅 도중 리셋 → 다시 부팅 → 다시 리셋"이 되고, 밖에서는 <strong>보드가 죽은 것처럼</strong> 보인다. 막는 길은 둘이다.</p>
+      <div class="callout note"><span class="ct">결정 대기 — IWDG 를 어디서 시작하는가</span>
+        <p><strong>(가) 시작을 초기화 뒤로 옮긴다</strong> — CubeMX 에서 <code>MX_IWDG1_Init</code> 의 <strong>호출만</strong> 생성하지 않게 하고(함수 정의는 생성된다), <code>USER CODE BEGIN 2</code> 안에서 <code>app_init()</code> 다음 줄에 내가 직접 부른다.
+        사실: 초기화 구간이 예산표에 들어오지 않는다 / 초기화 <strong>도중의</strong> 멈춤은 아무도 잡지 못한다(NRST 를 누를 때까지 선 채로 있다) / CubeMX 화면의 체크 하나에 달려 있어서, 누가 그 체크를 풀고 다시 생성하면 시작이 말없이 맨 앞으로 돌아간다(그래서 grep 체크포인트를 둔다).</p>
+        <p><strong>(나) 생성된 자리(맨 앞)에 두고, 초기화의 모든 긴 대기를 조각낸다</strong> — 대기를 타임아웃보다 짧은 조각으로 나누고 조각 사이마다 <code>wdg_kick_init_phase()</code> 를 부른다.
+        사실: 초기화 도중의 멈춤도 잡힌다(리셋이 되풀이되고 배너의 reset 줄이 IWDG 로 찍힌다) / 앞으로 생기는 <strong>모든</strong> 모듈의 초기화가 이 규칙을 지켜야 한다 / "살아 있는지 확인하지 않는 kick"이 초기화 코드 곳곳에 놓인다 / 가장 긴 조각이 예산표의 행이 된다.</p>
+        <p>차이가 없는 축: 초기화가 끝난 뒤의 동작, 타임아웃 값, "시작하면 못 멈춘다"는 사실은 둘이 <strong>동일</strong>하다.
+        이 가이드의 <strong>기본 진행</strong>은 (가)다. 뒤의 벤치 수용 시험(fw-19)이 "IWDG 는 초기화 뒤에 시작한다"는 문장으로 적혀 있어서이고, 권고가 아니다. (나)로 가면 그 문장을 "초기화의 모든 대기가 조각나 있다"로 바꿔 읽고, §3-2-4 의 grep 도 (나) 쪽 줄을 쓴다.</p>
+      </div>
+      <p class="small">참고로 옵션 바이트로 IWDG 를 전원 투입 순간부터 켜 두는 "하드웨어 워치독" 모드도 있다(RM0468 §50.3.4). 이 가이드는 옵션 바이트를 fw-03 의 한 비트 말고는 건드리지 않는다.</p>
+
+      <h3 id="s2-8">2-8. NVIC 우선순위 표 초판 — 숫자는 선택, 제약은 사실</h3>
+      <p>이 프로젝트의 NVIC 는 선점 우선순위 16단계(0 이 가장 높다), 부우선순위 없음이다 — <code>.ioc</code> 의 <code>NVIC.PriorityGroup=NVIC_PRIORITYGROUP_4</code>. SysTick 은 CubeMX 기본값으로 15(가장 낮다)에 있다(<code>NVIC.SysTick_IRQn=true\:15\:0\:…</code>, <code>stm32h7xx_hal_conf.h</code> 의 <code>TICK_INT_PRIORITY</code>).
+      TIM6 인터럽트를 켜는 지금이 인터럽트가 둘 이상 되는 첫 순간이므로, 표를 여기서 시작한다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>IRQ</th><th>선점 우선순위</th><th>왜 그 자리인가</th><th>같은 값이어야 하는 짝</th></tr></thead>
+        <tbody>
+          <tr><td>(비워 둠)</td><td>0</td><td>나중에 비상정지를 타이머의 브레이크 입력으로 올리게 되면 쓸 자리. 지금은 아무것도 두지 않는다</td><td>—</td></tr>
+          <tr><td><code>TIM6_DAC</code></td><td>1</td><td>제어 박자. 통신 수신은 늦어져도 버퍼가 받아 두게 만들 수 있지만(<a href="fw-07-memory-dma.html">fw-07</a> 의 Circular DMA), 늦어진 제어 박자는 되돌릴 수 없다 → 제어 지터를 우선한다</td><td>—</td></tr>
+          <tr><td><code>USART3</code></td><td>6</td><td>명령 창(뒤에는 계약 v2). 사람의 타자와 50 Hz(20 ms) 명령은 수십 µs 늦어도 된다</td><td>fw-07 에서 켜는 USART3 의 RX · TX DMA 스트림과 <strong>서로 같게</strong></td></tr>
+          <tr><td><code>SysTick</code></td><td>15</td><td>HAL 의 ms 시계. 기본값 그대로 둔다</td><td>—</td></tr>
+        </tbody>
+      </table></div>
+      <p>숫자 1 · 6 · 15 는 이 가이드가 전 쪽에 걸쳐 같이 쓰려고 정한 <strong>[제안] 예시값</strong>이다. 2 ~ 5 와 7 은 뒤 쪽이 채운다(버튼 · ADC · WT901 · I2C) — 인터럽트를 새로 켜는 쪽마다 "NVIC 표에 더하는 행" 상자가 있고, <a href="fw-19-bench-acceptance.html">fw-19</a> 가 전 행을 모아 최종판을 만든다.
+      숫자는 바꿔도 되지만 다음 셋은 <strong>사실에서 나오는 제약</strong>이라 바꿀 수 없다.</p>
+      <ol>
+        <li><strong>제어 박자(TIM6)가 통신 수신(UART · 그 DMA)보다 높다.</strong></li>
+        <li><strong>한 링크의 USART IRQ 와 그 RX DMA 스트림 IRQ 는 같은 선점 우선순위다.</strong> DMA 수신의 콜백은 두 길(USART 의 IDLE, DMA 의 절반 · 끝)로 들어오는데, 값이 다르면 콜백이 자기 자신을 끊고 들어가 읽던 위치를 깨뜨린다. fw-07 에서 실제로 쓰게 된다.</li>
+        <li><strong>EXTI 13 번 선(온보드 B1 = PC13)과 15 번 선(<code>ESTOP_SENSE</code> = PE15 [제안])은 벡터 <code>EXTI15_10</code> 하나를 같이 쓴다</strong>(<code>hardware/pinmap-h723.md</code> §5-3). 우선순위를 따로 줄 수 없고, 핸들러 안에서 어느 선인지 가린다. <a href="fw-11-power-sequence.html">fw-11</a> 에서 쓴다.</li>
+      </ol>
+      <div class="callout warn"><span class="ct">SysTick 보다 높은 ISR 안에서는 HAL 의 시계가 멈춘다</span>
+        <p><code>HAL_GetTick()</code> 의 값은 SysTick 인터럽트(15)가 올린다. TIM6 ISR(1) 안에 있는 동안 SysTick 은 끼어들지 못하므로 그 안에서 <code>HAL_GetTick()</code> 은 <strong>변하지 않는다.</strong>
+        결과 둘: ① ISR 안의 <code>HAL_Delay()</code> 는 영원히 돌아오지 않는다(<code>stm32h7xx_hal.c:416</code> 의 <code>while</code> 이 tick 을 기다린다) — 뜻하지 않은 <code>hang isr</code> 이다
+        ② 타임아웃 인자를 받는 HAL 블로킹 함수(<code>HAL_UART_Transmit(…, timeout)</code> 등)는 타임아웃이 작동하지 않는다. 그래서 1 kHz 경로에서는 블로킹 HAL 호출을 쓰지 않는다. 시각이 필요하면 <code>tick_get_ms()</code> 를 쓴다 — 그것은 이 ISR 자신이 올린다.</p>
+      </div>
+      <p>한 가지 더 — 지금 명령 창의 수신은 fw-05 의 1바이트 인터럽트다. 460800 8N1 에서 바이트는 10 ÷ 460 800 = 21.7 µs 마다 온다. TIM6 ISR 이 그보다 오래 CPU 를 쥐면, (USART 의 FIFO 를 켜지 않았다면) 붙여넣기 같은 연속 입력에서 다음 바이트가 앞 바이트를 덮는 수신 오류(ORE)가 날 수 있다.
+      지금은 ISR 이 거의 비어 있어 문제가 안 되고, fw-05 의 오류 재무장이 받아 주며, fw-07 에서 수신을 DMA 로 바꾸면 이 제약 자체가 풀린다. <code>exec_us_max</code> 를 볼 때 이 21.7 µs 를 기억해 둔다.</p>
+
+      <h3 id="s2-9">2-9. USB 를 뽑는 시험은 워치독 시험이 아니다</h3>
+      <p>"Pi 가 죽거나 케이블이 빠지면 멈춘다"를 확인하려고 USB 케이블을 뽑아 보고 싶어진다. 이 보드에서 그것은 <strong>다른 것을 시험한다.</strong>
+      NUCLEO-H723ZG 의 기본 급전은 ST-LINK 쪽 USB 다(JP2 [1-2] = 5V_USB_STLK — UM2407 §6.1 표 4). 케이블을 뽑으면 MCU 의 전원이 같이 사라진다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>확인하려는 것</th><th>그것을 실제로 시험하는 방법</th><th>판정은 무엇으로</th><th>어느 쪽</th></tr></thead>
+        <tbody>
+          <tr><td>펌웨어가 멈추면 리셋되는가 (하드웨어 워치독, IWDG)</td><td><code>hang main</code> · <code>hang isr</code> — 전원은 그대로 두고 펌웨어만 멈춘다</td><td>부팅 배너의 reset 줄</td><td>이 쪽 (실습 B)</td></tr>
+          <tr><td>명령이 200 ms 끊기면 목표가 0 이 되는가 (명령 워치독)</td><td>전원도 링크도 그대로 두고 <strong>명령 송신만</strong> 멈춘다</td><td>Mac 의 시계가 아니라 <strong>MCU 의 tick</strong>(<code>tick_get_ms()</code> 축)</td><td><a href="fw-13-pid-protection.html">fw-13</a> · <a href="fw-18-safety-fsm.html">fw-18</a></td></tr>
+          <tr><td>전원이 사라지면 MOTOR_EN 이 LOW 로 떨어지는가</td><td>USB 를 뽑는다 — 이것이 USB 분리 시험의 <strong>진짜 뜻</strong>이다</td><td>DMM + Hi-Z 판정법</td><td><a href="fw-08-pwm-safe-output.html">fw-08</a> · fw-18</td></tr>
+        </tbody>
+      </table></div>
+      <p>셋은 서로를 대신하지 못한다. USB 를 뽑아서 모터가 섰다고 해서 워치독이 동작한다는 증거가 되지 않는다 — 그때 MCU 는 멈춘 것이 아니라 <strong>꺼진 것</strong>이다. 그리고 VCP 도 같이 끊기므로 관찰할 창도 없다.</p>
+
+      <h2 id="lab">3. 실습</h2>
+      <p>실습은 셋이고 각각 빌드 · 플래시 · 관찰 한 번이다. A 박자와 <code>stat</code> → B 워치독과 <code>hang</code> → C 디버거로 멈춘 동안의 워치독. 끝자리 번호의 뜻은 늘 같다(1 = CubeMX, 2 = 골격, 3 = 직접 채우기, 4 = 굽고 보기).</p>
+      <div class="callout tip"><span class="ct">채울 자리마다 힌트 카드가 있다 — 읽는 순서</span>
+        <p>골격의 채울 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 붙어 있고(이 쪽은 T1 ~ T11), 그 주석 안에 <strong>번호 걸음</strong>이 있다. 먼저 걸음을 보고 직접 써 본다.
+        막히면 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인.</p>
+        <p>완결 코드는 이 프로젝트의 컴파일러로 빌드(링크까지)를 통과한 코드다(2026-10-02 — TIM6 · IWDG1 의 핸들은 임시 정의로 대신했다. 내 프로젝트에서는 §3-1-1 · §3-2-1 의 CubeMX 생성물이 그 자리를 채운다). 보드에서 도는 것은 "굽고 보기"에서 내가 확인한다.
+        붙여 넣는 것으로 끝내지 않는다 — 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다. 이 쪽에는 <strong>내가 정하는 것</strong>(overrun 의 정의, "박자가 살아 있다"의 뜻)이 있다 — 카드는 그 가운데 한 가지 답이고, 설명의 "다르게 써도 되는 곳"이 다른 답을 가리킨다.</p>
+      </div>
+
+      <h3 id="s3-1">3-1. 실습 A — TIM6 1 kHz 박자와 <code>stat</code></h3>
+
+      <h4 id="s3-1-1">3-1-1. CubeMX 설정 <span class="tag mx">CubeMX</span></h4>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>항목</th><th>값</th><th>왜</th><th><code>.ioc</code> 키 (생성 후 grep)</th></tr></thead>
+        <tbody>
+          <tr><td>TIM6</td><td>Activated</td><td>핀이 없는 기본 타이머. 1 kHz 제어 박자 전용(<code>hardware/pinmap-h723.md</code> 의 "제어 루프 1 kHz" 행)</td><td><code>VP_TIM6_VS_ClockSourceINT.Mode</code> <em>(생성 후 확인 — 철자는 다른 계열의 CubeMX 보드 프리셋에서 확인했다: STM32L4R9 의 <code>F41_…STEVAL-MKSBOX1V1…_Board_AllConfig.ioc</code> 에 <code>VP_TIM6_VS_ClockSourceINT.Mode=Enable_Timer</code>. H7 프리셋에는 TIM6 항목이 없다)</em></td></tr>
+          <tr><td>Prescaler (PSC - 16 bits value)</td><td>259</td><td>타이머 클럭 260 MHz ÷ 260 = 1 MHz → 한 칸 1 µs (<a href="fw-03-clock-console.html#s2-6">fw-03 §2-6</a> 의 클럭 트리에서). 이 가이드의 예시값 — 다른 후보는 §2-1</td><td><code>TIM6.Prescaler</code> <em>(같은 L4R9 프리셋에 <code>TIM6.Prescaler</code> · <code>TIM6.Period</code> 가 있다 · H7 은 생성 후 확인)</em></td></tr>
+          <tr><td>Counter Period (AutoReload Register - 16 bits value)</td><td>999</td><td>1 MHz ÷ 1000 = 1 kHz(주기 1 ms)</td><td><code>TIM6.Period</code> <em>(생성 후 확인)</em></td></tr>
+          <tr><td>TIM6 global interrupt, DAC1_CH1 and DAC1_CH2 underrun error interrupts</td><td>Enabled · Preemption Priority 1</td><td>§2-8 의 표</td><td><code>NVIC.TIM6_DAC_IRQn</code> <em>(생성 후 확인. 꼴은 <code>NVIC.SysTick_IRQn=true\:15\:0\:…</code> 와 같다 — 둘째 칸이 선점 우선순위)</em></td></tr>
+          <tr><td>USART3 global interrupt</td><td>Preemption Priority 6 (Enable 은 fw-05 에서 이미 했다)</td><td>§2-8 의 표</td><td><code>NVIC.USART3_IRQn</code> <em>(생성 후 확인)</em></td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">항목 이름은 CubeMX 6.18.1 의 IP 정의 파일(<code>TIM6_7H7-gptimer2_v3_x_Cube_Modes.xml</code> · <code>NVIC-STM32H72_Modes.xml</code>)에서 글자 그대로 옮긴 것이다. SYS 의 Timebase Source 는 기본값 <strong>SysTick</strong> 그대로여야 한다(<code>.ioc</code> 의 <code>VP_SYS_VS_Systick</code>) — TIM6 을 HAL 의 시계로 내주면 이 실습과 부딪힌다(증상 ↔ 원인 표).</p>
+      <p class="small"><strong>화면 확인: 미확인 (CubeMX 6.18.1)</strong> — 아래 경로는 CubeMX 의 DB 파일과 ST 문서에서 추정한 것이다.
+      화면이 다르면 <strong>화면이 맞다.</strong> 다른 곳을 발견하면 값 표(위)의 항목 이름으로 검색하고, 달랐던 경로를 노트에 적어 둔다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>#</th><th>위치 (화면 경로)</th><th>설정</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>왼쪽 <strong>Timers → TIM6</strong></td><td><strong>Activated</strong> 체크</td></tr>
+          <tr><td>2</td><td>TIM6 → <strong>Parameter Settings</strong> → Counter Settings</td><td>Prescaler = 259, Counter Period = 999 (나머지는 그대로)</td></tr>
+          <tr><td>3</td><td>TIM6 → <strong>NVIC Settings</strong></td><td>TIM6 global interrupt … <strong>Enabled</strong></td></tr>
+          <tr><td>4</td><td>왼쪽 <strong>System Core → NVIC</strong></td><td>TIM6 행의 Preemption Priority = 1, USART3 global interrupt = 6. Priority Group 과 SysTick(15)은 그대로</td></tr>
+          <tr><td>5</td><td><strong>GENERATE CODE</strong></td><td>—</td></tr>
+        </tbody>
+      </table></div>
+      <pre><code class="lang-bash">cd firmware/h723zg
+grep -n "^TIM6\.\|NVIC.TIM6_DAC\|NVIC.USART3\|NVIC.SysTick" h723zg.ioc       # 값 표의 다섯 행이 .ioc 에 있는가
+grep -n "MX_TIM6_Init\|htim6" Core/Src/main.c                                # 초기화가 생성됐는가
+grep -n "TIM6_DAC_IRQHandler" Core/Src/stm32h7xx_it.c                         # 핸들러가 생성됐는가
+grep -n "HAL_TIM_MODULE_ENABLED" Core/Inc/stm32h7xx_hal_conf.h                # HAL 의 TIM 모듈이 켜졌는가
+grep -n "HAL_TIM_Base_Start" Core/Src/*.c                                     # (기대: 아무것도 안 나온다)</code></pre>
+      <pre><code class="lang-text">(기대: .ioc 에서 TIM6 으로 시작하는 줄에 259 와 999 가 보이고, NVIC 세 줄의 둘째 칸이 각각 1 · 6 · 15 다.
+ main.c 에는 MX_TIM6_Init 의 선언 · 호출 · 정의와 htim6 가, stm32h7xx_it.c 에는 TIM6_DAC_IRQHandler 가 나온다.
+ hal_conf.h 의 HAL_TIM_MODULE_ENABLED 줄이 주석에서 풀려 있다.
+ 마지막 줄이 비어 있다는 것이 중요하다 — CubeMX 는 TIM6 을 "초기화"만 하고 "시작"하지 않는다. 시작은 내 몫이다.)</code></pre>
+      <p class="small">재생성 규칙(fw-02): 생성물은 <code>USER CODE BEGIN/END</code> 사이만 고친다. <code>cmake/stm32cubemx/</code> 는 다시 생성된다. 내 소스는 <code>User/</code> 에 두고 최상위 <code>CMakeLists.txt</code> 의 <code># Add user sources here</code> 에 등록한다.</p>
+
+      <h4 id="s3-1-2">3-1-2. 골격</h4>
+      <p>새 파일은 <code>User/Inc/System/tick.h</code> · <code>User/Src/System/tick.c</code> 둘이다. <code>System/</code> 묶음(MCU 를 떠받치는 기반 — <a href="fw-02-toolchain.html#s2-2-1">fw-02 §2-2-1</a>)은 여기서 처음 생긴다: <code>mkdir -p ~/ros2_rpi5/firmware/h723zg/User/{Inc,Src}/System</code>. 골격은 그대로 빌드된다(그 상태에서 <code>stat</code> 은 아무것도 찍지 않는다). HAL 콜백 <code>HAL_TIM_PeriodElapsedCallback()</code> 의 <strong>정의</strong>는 생성물이 아니라 여기에 둔다 — HAL 안의 약한 기본 구현을 덮는 것이라 어느 파일에 있어도 된다.</p>
+      <pre><code class="lang-c">/* User/Inc/System/tick.h — 1 kHz 박자(TIM6)와 그 시간 통계. */
+#ifndef TICK_H
+#define TICK_H
+#include &lt;stdint.h&gt;
+
+typedef struct {
+  uint32_t n;            /* 통계를 마지막으로 지운 뒤 모은 표본 수 */
+  uint32_t dt_us_min;    /* 두 ISR 진입 사이의 최단 간격 [us] */
+  uint32_t dt_us_max;    /* 두 ISR 진입 사이의 최장 간격 [us] */
+  uint32_t exec_us_max;  /* 1 kHz 콜백 안에서 쓴 최장 시간 [us] */
+  uint32_t overrun;      /* 1 kHz 일이 제 주기 안에 끝나지 못한 횟수 */
+  uint32_t loop_us_max;  /* app_loop() 한 바퀴의 최장 시간 [us] — main 문맥에서 잰다 */
+} tick_stat_t;
+
+void     tick_init(void);                  /* 사이클 카운터를 켜고 TIM6 을 인터럽트와 함께 시작한다. main 문맥, 한 번 */
+uint32_t tick_get_ms(void);                /* tick_init() 이후의 ms; 계약의 tick_ms 가 쓰는 시간축 */
+void     tick_loop_mark(void);             /* app_loop() 한 바퀴에 한 번: loop_us_max 를 채운다. main 문맥 */
+void     tick_stat_get(tick_stat_t *out);  /* CLI 에 줄, 어긋나지 않은 사본 한 벌. main 문맥 */
+void     tick_stat_reset(void);            /* 요청만 한다; 실제로 지우는 것은 ISR. main 문맥 */
+void     tick_cli_register(void);          /* "stat" 을 등록한다 */
+#endif</code></pre>
+      <pre><code class="lang-c">/* User/Src/System/tick.c — TIM6 1 kHz 콜백 + 지터 통계.
+   순수 로직이 아니다: TIM6 과 DWT 사이클 카운터를 만지므로 이 파일에는 호스트 시험이 없다. */
+#include "main.h"
+#include "System/tick.h"
+#include "System/wdg.h"
+#include "Tools/cli.h"
+#include "Tools/log.h"
+
+extern TIM_HandleTypeDef htim6;            /* CubeMX 가 Core/Src/main.c 에 정의한다 */
+
+static volatile uint32_t s_tick_ms;        /* ISR 만 쓴다 */
+static tick_stat_t       s_stat;           /* ISR 이 쓴다; loop_us_max 만은 main 이 쓴다 */
+static volatile uint8_t  s_reset_req;      /* main 이 세우고 ISR 이 지운다 */
+
+/* 표본 하나를 통계에 접어 넣는다. 정수만 받고 하드웨어는 없다: §3-1-3 의 표로 손으로 확인한다.
+ *   dt_us     : 직전 ISR 진입 이후의 간격 [us] (맨 첫 진입은 호출하는 쪽이 건너뛴다)
+ *   exec_us   : 이번 틱의 일에 쓴 시간 [us]
+ *   period_us : 명목 주기 [us] (1000)
+ * 불변식: 첫 표본 뒤에는 dt_us_min &lt;= dt_us_max; n 은 인터럽트가 아니라 표본을 센다. */
+static void tick_stat_update(tick_stat_t *s, uint32_t dt_us, uint32_t exec_us, uint32_t period_us)
+{
+  /* TODO(you) [T1]: 표본 하나를 통계에 더한다 - 힌트 카드 T1
+       1) 첫 표본(s-&gt;n == 0)이면 dt_us_min 과 dt_us_max 를 둘 다 dt_us 로 시작한다
+       2) 아니면 dt_us 가 더 작을 때 dt_us_min 을, 더 클 때 dt_us_max 를 고친다
+       3) exec_us 가 더 크면 exec_us_max 를 고친다
+       4) overrun 을 센다 - 무엇을 overrun 으로 볼지는 내가 정한다(§3-1-3 의 표 아래)
+       5) s-&gt;n 을 1 올린다
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)s; (void)dt_us; (void)exec_us; (void)period_us;
+}
+
+void tick_init(void)
+{
+  /* TODO(you) [T2]: 사이클 카운터를 켜고 TIM6 을 시작한다 - 힌트 카드 T2
+       1) 사이클 카운터를 켠다. 네 줄을 이 순서로 (§2-3):
+            CoreDebug-&gt;DEMCR |= TRCENA;  DWT-&gt;LAR = 0xC5ACCE55 (Cortex-M7 잠금 해제: 없으면 CYCCNTENA 가 무시된다);
+            DWT-&gt;CYCCNT = 0;  DWT-&gt;CTRL |= CYCCNTENA
+       2) HAL_TIM_Base_Start_IT(&amp;htim6) 를 부른다 — CubeMX 는 TIM6 을 초기화만 하고 시작하지 않는다
+       3) 그 반환값이 HAL_OK 가 아닐 때 어떻게 할지 정한다(fw-05 의 T1 과 같은 물음이다) */
+}
+
+uint32_t tick_get_ms(void) { return s_tick_ms; }   /* 이 코어에서 32비트 읽기 한 번은 원자적이다 */</code></pre>
+      <p>같은 <code>tick.c</code> 의 뒷부분이다 — 1 kHz 콜백, 주 루프 쪽 함수 셋, 그리고 <code>stat</code> 명령.</p>
+      <pre><code class="lang-c">/* User/Src/System/tick.c — 이어서: 콜백 · 주 루프 쪽 함수 · "stat" 명령 */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)   /* ISR 문맥, 선점 우선순위 1 */
+{
+  if (htim-&gt;Instance != TIM6) { return; }  /* 모든 타이머의 업데이트가 이 콜백 하나로 들어온다 */
+  /* TODO(you) [T3]: 1 ms 마다: 시각을 재고, ms 시계를 올리고, 통계를 쌓는다 - 힌트 카드 T3
+   *  1. t_in = DWT-&gt;CYCCNT. dt = t_in - t_prev 를 uint32_t 로 (한 바퀴 돎(wrap)에 안전). 직전 진입이 없으면 -&gt; dt 표본 없음
+   *  2. ++s_tick_ms
+   *  3. (뒤 쪽들이 여기에 *_step_1khz() 를 넣거나, app_loop() 용 플래그만 세운다 — fw-13 에서 정한다)
+   *  4. wdg_checkin_tick()
+   *  5. exec = DWT-&gt;CYCCNT - t_in. 사이클 -&gt; us: 상수 520 이 아니라 (SystemCoreClock / 1000000u) 로 나눈다
+   *  6. s_reset_req 면: s_stat 을 여기서(main 이 아니라) 지우고 이번 표본은 버린다; 아니면 tick_stat_update(...)
+   * 이 문맥의 규칙: LOG_* 금지, HAL_GetTick() 을 기다리는 HAL 호출 금지, 블로킹 금지.
+   * 채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)s_reset_req; (void)s_stat; (void)tick_stat_update;
+}
+
+void tick_loop_mark(void)
+{
+  /* TODO(you) [T4]: app_loop() 한 바퀴가 몇 us 걸렸는지 재서 최댓값을 남긴다 - 힌트 카드 T4
+       1) now = DWT-&gt;CYCCNT
+       2) 직전 호출이 있었으면: (now - 직전 값) 사이클을 us 로 바꾸고, s_stat.loop_us_max 보다 크면 고친다
+       3) now 를 "직전 값"으로 기억한다(함수 안의 static 변수) */
+}
+
+void tick_stat_get(tick_stat_t *out)
+{
+  /* TODO(you) [T5]: s_stat 을 어긋나지 않은 한 벌로 복사한다 (§2-3) - 힌트 카드 T5
+       1) 인터럽트를 막는다
+       2) *out = s_stat;  (막아 둔 동안 하는 일은 이 복사 하나뿐이다)
+       3) 인터럽트를 다시 연다
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)out;
+}
+
+void tick_stat_reset(void)              { s_reset_req = 1u; }
+
+static void cmd_stat(int argc, char *argv[])
+{
+  /* TODO(you) [T6]: stat / stat reset - 힌트 카드 T6
+       1) argc 가 1 이면(인자 없음): tick_stat_get() 으로 사본을 받아 한 줄로 찍는다
+            stat n=.. dt_us_min=.. dt_us_max=.. exec_us_max=.. overrun=.. loop_us_max=..
+       2) argc 가 2 이고 argv[1] 이 "reset" 이면: tick_stat_reset(); 뒤 "OK stat"
+       3) 그 밖에는 "ERR stat bad-arg"
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)argc; (void)argv;
+}
+
+void tick_cli_register(void)
+{
+  bool ok = cli_register("stat", cmd_stat);
+  FW_ASSERT(ok);                         /* 등록이 거절되면 프로그래밍 오류다 (fw-05) */
+}</code></pre>
+      <p class="small">명령 함수의 시그니처와 <code>cli_register()</code> 의 인자는 <a href="fw-05-cli.html">fw-05</a> 의 <code>cli.h</code> 그대로 쓴다 — 위의 <code>(int argc, char *argv[])</code> 는 자리표시다. <code>wdg.h</code> 는 실습 B 에서 만든다. 실습 A 만 먼저 빌드하려면 <code>wdg_checkin_tick()</code> 호출과 <code>#include "System/wdg.h"</code> 를 실습 B 까지 빼 둔다.</p>
+
+      <h4 id="s3-1-3">3-1-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><strong><code>tick_stat_update()</code> 부터.</strong> 하드웨어가 없는 산술이라 종이로 확인할 수 있다. 아래 표본 다섯 개를 차례로 넣었을 때의 결과를 먼저 손으로 구하고, 내 코드가 같은 답을 내는지 본다(확인은 gdb 로 <code>s_stat</code> 을 읽거나, 이 함수만 임시 파일에 옮겨 Mac 의 <code>cc</code> 로 돌려도 된다).
+          "첫 표본"에서 최소값이 어떻게 되어야 하는지가 이 함수의 유일한 함정이다.</li>
+        <li><strong><code>tick_init()</code>.</strong> 사이클 카운터를 켜고(§2-3 의 순서), <code>HAL_TIM_Base_Start_IT(&amp;htim6)</code> 를 부른다(<code>stm32h7xx_hal_tim.c:462</code>). <code>_IT</code> 가 빠진 <code>HAL_TIM_Base_Start()</code> 는 카운터만 돌리고 인터럽트를 켜지 않는다.</li>
+        <li><strong>콜백.</strong> 주석의 1 ~ 6 을 순서대로. 간격은 <code>(uint32_t)(t_in - t_prev)</code> 한 줄이다 — 넘침을 따로 처리하지 않는다. 확인용 벡터: <code>t_prev = 0xFFFFFF00</code>, <code>t_in = 0x00000226</code> 이면 간격은 806 사이클(= 1.47 µs)이다. 부호 있는 형으로 빼면 이 답이 안 나온다.
+          사이클 → µs 환산에 상수 520 을 쓰지 않는다. <code>SystemCoreClock / 1000000u</code> 를 쓴다 — 클럭을 바꿔도(예: 실수로 550 이 들어간 빌드) 맞는 값이 나오게.</li>
+        <li><strong><code>tick_loop_mark()</code> · <code>tick_stat_get()</code>.</strong> 앞의 것은 같은 뺄셈을 main 문맥에서 한 번 더 하는 것이다. 뒤의 것은 §2-3 의 "통째로 복사" — 인터럽트를 막는 구간은 구조체 복사 한 번이어야 한다(그 안에서 글자를 찍지 않는다).</li>
+        <li><strong><code>cmd_stat()</code>.</strong> 출력은 fw-05 의 규약대로 한 줄, <code>키=값</code> 정수. 단위는 키 이름에 이미 있다.</li>
+        <li><strong>엮기.</strong> <code>app_init()</code> 에 <code>tick_init();</code> · <code>tick_cli_register();</code> 를, <code>app_loop()</code> 에 <code>tick_loop_mark();</code> 를 더한다. 최상위 <code>CMakeLists.txt</code> 에 <code>User/Src/System/tick.c</code> 를 등록한다.
+          그리고 <code>log.h</code> 의 <code>LOG_NOW_MS()</code> 정의 한 줄을 <code>HAL_GetTick()</code> 에서 <code>tick_get_ms()</code> 로 바꾸고, 같은 파일의 <code>#include</code> 줄들에 <code>#include "System/tick.h"</code> 를 더한다(없으면 <code>LOG_*</code> 를 쓰는 모든 파일에서 <code>implicit declaration of function 'tick_get_ms'</code> 가 난다) — 이제부터 로그의 시각은 계약의 <code>tick_ms</code> 와 같은 축이다(<code>tick_init()</code> 전에 찍힌 줄은 0 으로 나온다).</li>
+      </ol>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>표본 #</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>다섯 개를 다 넣은 뒤</th></tr></thead>
+        <tbody>
+          <tr><td><code>dt_us</code></td><td>1000</td><td>998</td><td>1003</td><td>1000</td><td>2001</td><td rowspan="2"><code>n=5</code> · <code>dt_us_min=998</code> · <code>dt_us_max=2001</code> · <code>exec_us_max=1000</code> · <code>overrun</code> 은 내 정의에 따라 1 또는 2</td></tr>
+          <tr><td><code>exec_us</code></td><td>12</td><td>15</td><td>1000</td><td>9</td><td>14</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small"><code>overrun</code> 을 "실행 시간이 한 주기를 다 먹었다"(표본 3)만으로 셀지, "박자 하나가 통째로 지나갔다"(표본 5 — 간격이 두 주기 이상)까지 셀지는 내가 정하고 노트에 정의를 적는다. 이 표의 숫자는 시험용으로 지어낸 입력이고 측정값이 아니다(기대값은 2026-09-22 에 Mac 의 <code>cc</code> 로 같은 입력을 돌려 확인했다).</p>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 1 = T1 · 걸음 2 = T2 · 걸음 3 = T3 · 걸음 4 = T4 · T5 · 걸음 5 = T6. 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>tick_stat_update()</code> · 표본 하나를 통계에 더한다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 1 kHz 콜백이 틱마다 "이번 간격(<code>dt_us</code>)과 이번 실행 시간(<code>exec_us</code>)"을 넘겨준다. 그것을 받아 최소 · 최대 · 개수를 고친다. 하드웨어를 만지지 않는 순수한 산술이라 종이나 Mac 에서 확인할 수 있다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T1 - User/Src/System/tick.c */
+static void tick_stat_update(tick_stat_t *s, uint32_t dt_us, uint32_t exec_us, uint32_t period_us)
+{
+  if (s-&gt;n == 0u) {                       /* 첫 표본이 최소 · 최대의 시작값이 된다 - 리셋이 남긴 0 이 아니라 */
+    s-&gt;dt_us_min = dt_us;
+    s-&gt;dt_us_max = dt_us;
+  } else {
+    if (dt_us &lt; s-&gt;dt_us_min) { s-&gt;dt_us_min = dt_us; }
+    if (dt_us &gt; s-&gt;dt_us_max) { s-&gt;dt_us_max = dt_us; }
+  }
+  if (exec_us &gt; s-&gt;exec_us_max) { s-&gt;exec_us_max = exec_us; }
+  if (exec_us &gt;= period_us)     { s-&gt;overrun++; }   /* 일이 한 주기를 다 먹었다 */
+  if (dt_us &gt;= 2u * period_us)  { s-&gt;overrun++; }   /* 박자 하나가 처리되지 못하고 지나갔다 */
+  s-&gt;n++;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>tick_stat_t *s</code> · <code>s-&gt;n</code> — 통계 구조체를 <strong>포인터</strong>로 받는다(복사본이 아니라 원본을 고치려고). 포인터의 필드는 화살표(<code>-&gt;</code>)로 고른다.</li>
+          <li><code>if (s-&gt;n == 0u) { … }</code> — <strong>이 함수의 유일한 함정.</strong> 통계를 지우면 <code>dt_us_min</code> 이 0 이 된다. 그 0 과 견주면 어떤 간격도 "더 작지" 않으므로 최소값이 영영 0 으로 남는다. 그래서 첫 표본은 견주지 않고 그대로 최소 · 최대의 시작값으로 삼는다.</li>
+          <li><code>else</code> 안의 두 줄 — 둘째 표본부터는 더 작으면 최소를, 더 크면 최대를 고친다.</li>
+          <li><code>if (exec_us &gt; s-&gt;exec_us_max)</code> — 실행 시간은 최대만 본다. 지운 뒤의 0 에서 시작해도 되므로(어떤 값이든 0 보다 크거나 같다) 첫 표본을 따로 다루지 않는다.</li>
+          <li><code>overrun</code> 두 줄 — <strong>다르게 써도 되는 곳.</strong> 이 코드는 둘을 다 센다: "실행 시간이 한 주기를 다 먹었다"(<code>exec_us &gt;= period_us</code>)와 "간격이 두 주기 이상 벌어졌다 = 박자 하나가 지나갔다"(<code>dt_us &gt;= 2u * period_us</code>). §3-1-3 의 표본 다섯 개에서 2 가 나온다.
+            한 조건만 세도 되고(그러면 1), 실행이 끝났을 때 TIM6 의 업데이트 플래그가 다시 서 있는지를 보는 꼴도 있다. 고른 정의를 노트에 적는다.</li>
+          <li><code>s-&gt;n++;</code> — 맨 끝에 둔다. 위의 <code>n == 0u</code> 판정이 "이번이 첫 표본인가"로 읽히려면 올리기 전이어야 한다.</li>
+          <li>그 밖의 다른 꼴 — 최소값을 <code>UINT32_MAX</code> 로 미리 채워 두면 첫 표본 분기가 없어진다(대신 <code>stat reset</code> 직후의 출력에 그 큰 수가 보인다). 평균을 더한다면 합을 64 비트로 둔다 — µs 의 합은 32 비트로 약 71 분에 넘친다(2³² ÷ 1000 ÷ 1000 ÷ 60).</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>첫 표본을 따로 다루지 않았다</td><td>아무 말도 없다. <code>stat</code> 의 <code>dt_us_min</code> 이 늘 0 이다</td><td><code>n == 0u</code> 분기</td></tr>
+            <tr><td><code>s-&gt;n++</code> 를 맨 위에 뒀다</td><td>아무 말도 없다. 첫 표본 분기가 한 번도 돌지 않는다 — 위와 같은 증상</td><td>맨 끝으로</td></tr>
+            <tr><td><code>s.n</code> (점으로 썼다)</td><td><code>error: 's' is a pointer; did you mean to use '-&gt;'?</code></td><td><code>s-&gt;n</code></td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-1-3 의 표본 다섯 개(위 걸음 1번). 이 완결 코드에 그 다섯을 넣으면 <code>n=5</code> · <code>dt_us_min=998</code> · <code>dt_us_max=2001</code> · <code>exec_us_max=1000</code> · <code>overrun=2</code> 다(2026-10-02 에 Mac 의 <code>cc</code> 로 돌려 확인).</p>
+        </div></details>
+
+      <details class="hint" id="hint-t2"><summary>힌트 T2 — <code>tick_init()</code> · 사이클 카운터를 켜고 TIM6 을 시작한다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 부팅 때 한 번. 시간을 잴 시계(DWT 의 사이클 카운터)를 켜고, 1 kHz 박자를 만드는 TIM6 을 <strong>인터럽트와 함께</strong> 돌리기 시작한다. CubeMX 가 만든 <code>MX_TIM6_Init()</code> 은 설정만 하고 시작하지 않는다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T2 - User/Src/System/tick.c */
+void tick_init(void)
+{
+  CoreDebug-&gt;DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;   /* 1) 코어의 트레이스 장치(DWT)를 켠다 */
+  DWT-&gt;LAR = 0xC5ACCE55u;                           /* 2) Cortex-M7 의 DWT 잠금 해제 */
+  DWT-&gt;CYCCNT = 0u;                                 /* 3) 사이클 카운터를 0 에서 */
+  DWT-&gt;CTRL |= DWT_CTRL_CYCCNTENA_Msk;              /* 4) 세기 시작 */
+
+  HAL_StatusTypeDef st = HAL_TIM_Base_Start_IT(&amp;htim6);
+  FW_ASSERT(st == HAL_OK);
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>CoreDebug-&gt;DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;</code> — <code>CoreDebug</code> · <code>DWT</code> 는 CMSIS 가 정의한 "레지스터 묶음을 가리키는 포인터"다(<code>main.h</code> 를 포함하면 따라 들어온다). <code>|=</code> 는 "다른 비트는 그대로 두고 이 비트만 1 로" — <code>a |= b</code> 는 <code>a = a | b</code> 다. <code>…_Msk</code> 는 그 비트 자리만 1 인 값이다(<code>core_cm7.h:1702</code>).</li>
+          <li><code>DWT-&gt;LAR = 0xC5ACCE55u;</code> — Cortex-M7 에서는 이 값을 써서 DWT 의 잠금을 풀어야 다음 줄들이 먹는다(§2-3 의 상자). 빠지면 오류 없이 <strong>모든 시간이 0</strong> 으로 나온다.</li>
+          <li><code>DWT-&gt;CYCCNT = 0u;</code> 그리고 <code>DWT-&gt;CTRL |= DWT_CTRL_CYCCNTENA_Msk;</code> — 카운터를 0 으로 놓고 세기 시작한다. 이제 CPU 클럭마다 1 씩 오른다.</li>
+          <li><code>HAL_StatusTypeDef st = HAL_TIM_Base_Start_IT(&amp;htim6);</code> — TIM6 을 돌리고 업데이트 인터럽트를 켠다. <code>htim6</code> 은 CubeMX 가 <code>main.c</code> 에 만든 핸들이고(파일 위의 <code>extern</code> 줄), 주소를 넘기므로 <code>&amp;</code> 를 붙인다. 이름 끝의 <code>_IT</code> 가 중요하다 — 없는 쪽(<code>HAL_TIM_Base_Start</code>)은 카운터만 돌리고 인터럽트를 켜지 않는다.</li>
+          <li><code>FW_ASSERT(st == HAL_OK);</code> — 박자를 못 걸었으면 그 자리에서 멈춘다(fw-05 의 T1 과 같은 판단이다. 다르게 써도 되는 곳 — 멈추지 않고 LD3 만 켜고 가는 답도 있다).</li>
+          <li>순서 — 시계를 <strong>먼저</strong> 켜고 TIM6 을 나중에 시작한다. 거꾸로면 첫 콜백이 아직 돌지 않는 시계를 읽는다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>stm32h7xx_hal_tim.h:2202</code>(정의는 <code>stm32h7xx_hal_tim.c:462</code>). 반환값은 <code>HAL_OK</code> / <code>HAL_ERROR</code>(타이머가 준비 상태가 아닐 때)다. 부르는 문맥은 main.</p>
+        <pre><code class="lang-c">HAL_StatusTypeDef HAL_TIM_Base_Start_IT(TIM_HandleTypeDef *htim);</code></pre>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>HAL_TIM_Base_Start(&amp;htim6)</code> (<code>_IT</code> 없음)</td><td>아무 말도 없다. <code>stat</code> 의 <code>n</code> 이 0 에서 움직이지 않는다</td><td><code>…_Start_IT</code></td></tr>
+            <tr><td><code>LAR</code> 줄을 빼먹었다</td><td>아무 말도 없다. <code>dt_us</code> · <code>exec_us</code> · <code>loop_us</code> 가 전부 0</td><td>둘째 줄</td></tr>
+            <tr><td><code>tick_init()</code> 을 <code>app_init()</code> 에서 부르지 않았다</td><td>빌드는 된다. <code>n</code> 이 0, 로그의 시각이 늘 0</td><td>§3-1-3 의 6번(엮기)</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-1-4. <code>stat</code> 의 <code>n</code> 이 1 초에 1000 씩 늘면 TIM6 이, <code>dt_us_min</code> · <code>dt_us_max</code> 가 1000 근처면 사이클 카운터가 도는 것이다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t3"><summary>힌트 T3 — <code>HAL_TIM_PeriodElapsedCallback()</code> · 1 ms 마다 불리는 박자</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — TIM6 이 한 바퀴(1 ms) 돌 때마다 HAL 이 이 함수를 부른다(fw-05 의 수신 콜백과 같은 "내가 정의하고 HAL 이 부르는" 함수다). 들어온 시각을 재고, ms 시계를 1 올리고, 워치독에 "박자가 살아 있다"고 알리고, 통계를 쌓는다. <strong>ISR 문맥</strong>이라 찍지도 기다리지도 않는다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T3 - User/Src/System/tick.c */
+#define TICK_PERIOD_US 1000u               /* [us] TIM6 의 명목 주기. 함수 위, 파일 범위에 둔다 */
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)   /* ISR 문맥, 선점 우선순위 1 */
+{
+  static uint32_t t_prev;                  /* 직전 진입 때의 CYCCNT */
+  static uint8_t  have_prev;               /* 0 = 아직 직전 진입이 없다 */
+  uint32_t t_in, cyc_per_us, dt_us, exec_us;
+
+  if (htim-&gt;Instance != TIM6) { return; }  /* 모든 타이머의 업데이트가 이 콜백 하나로 들어온다 */
+
+  t_in = DWT-&gt;CYCCNT;                                        /* 1. 들어온 시각 */
+  cyc_per_us = SystemCoreClock / 1000000u;
+  dt_us = (uint32_t)(t_in - t_prev) / cyc_per_us;
+  ++s_tick_ms;                                               /* 2. ms 시계 */
+                                                             /* 3. (뒤 쪽들이 여기에 일을 넣는다) */
+  wdg_checkin_tick();                                        /* 4. "박자가 살아 있다" */
+  exec_us = (uint32_t)(DWT-&gt;CYCCNT - t_in) / cyc_per_us;     /* 5. 이번 틱에 쓴 시간 */
+
+  if (s_reset_req) {                                         /* 6. 통계 */
+    s_stat = (tick_stat_t){ 0 };
+    s_reset_req = 0u;                      /* 지운 틱의 표본은 버린다 */
+  } else if (have_prev) {
+    tick_stat_update(&amp;s_stat, dt_us, exec_us, TICK_PERIOD_US);
+  }
+  t_prev = t_in;
+  have_prev = 1u;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>#define TICK_PERIOD_US 1000u</code> — 명목 주기에 이름을 붙였다. 골격에는 없던 줄이다. 함수 위, 파일 범위에 둔다.</li>
+          <li><code>static uint32_t t_prev;</code> · <code>static uint8_t have_prev;</code> — 함수 안의 <code>static</code> 변수는 함수가 돌아가도 값이 남는다(fw-05 의 T9). "직전 진입의 시각"과 "직전 진입이 있었는가"를 다음 호출까지 기억한다. 처음 값은 둘 다 0 이다.</li>
+          <li><code>if (htim-&gt;Instance != TIM6) { return; }</code> — 골격에 있던 줄. 모든 타이머의 업데이트가 이 콜백 하나로 들어오므로 TIM6 이 아니면 돌아간다. 뒤 쪽에서 다른 타이머를 켜도 이 줄이 박자를 지킨다.</li>
+          <li><code>t_in = DWT-&gt;CYCCNT;</code> — 할 일의 <strong>맨 처음</strong>에 시각을 읽는다. 다른 일을 먼저 하면 그만큼 늦게 읽혀 간격이 흔들려 보인다.</li>
+          <li><code>cyc_per_us = SystemCoreClock / 1000000u;</code> — 1 µs 가 몇 사이클인지. 520 MHz 면 520 이지만 상수 520 을 쓰지 않는다 — 클럭이 달라진 빌드에서도 맞는 값이 나오게 HAL 이 관리하는 변수 <code>SystemCoreClock</code> 에서 구한다.</li>
+          <li><code>dt_us = (uint32_t)(t_in - t_prev) / cyc_per_us;</code> — 직전 진입과의 간격. <strong>부호 없는 32 비트 뺄셈</strong>이라 카운터가 한 바퀴 넘어가도(약 8.26 s 마다) 답이 맞다: <code>0x00000226 - 0xFFFFFF00</code> = 806. 부호 있는 형으로 빼면 이 답이 나오지 않는다.</li>
+          <li><code>++s_tick_ms;</code> — ms 시계. <code>tick_get_ms()</code> 와 로그의 시각이 이 변수다. 고치는 곳은 이 한 줄뿐이다.</li>
+          <li><code>wdg_checkin_tick();</code> — 실습 B 에서 만드는 함수다. 실습 A 만 먼저 빌드할 때는 이 줄과 <code>#include "System/wdg.h"</code> 를 잠시 빼 둔다(§3-1-2 아래의 작은 글).</li>
+          <li><code>exec_us = (uint32_t)(DWT-&gt;CYCCNT - t_in) / cyc_per_us;</code> — 카운터를 <strong>한 번 더</strong> 읽어 "이번 틱의 일에 쓴 시간"을 구한다. 그래서 이 줄은 일들 뒤에 있다.</li>
+          <li><code>if (s_reset_req) { s_stat = (tick_stat_t){ 0 }; s_reset_req = 0u; }</code> — <code>stat reset</code> 의 실제 지우기. 주 루프는 요청만 세우고(<code>tick_stat_reset()</code>) 지우는 것은 ISR 이 한다 — 통계를 고치는 문맥을 하나로 모으면 "반쯤 지워진 통계"가 생기지 않는다(§2-3). <code>(tick_stat_t){ 0 }</code> 은 "모든 필드가 0 인 구조체 값"이다. 지운 틱의 표본은 넣지 않는다.</li>
+          <li><code>else if (have_prev) { tick_stat_update(…); }</code> — 직전 진입이 있을 때만 표본을 넣는다. 맨 첫 진입에는 견줄 직전 시각이 없어서 <code>dt_us</code> 가 뜻이 없다.</li>
+          <li><code>t_prev = t_in; have_prev = 1u;</code> — 다음 호출을 위해 기억한다. 어느 가지로 갔든 실행돼야 하므로 <code>if</code> 밖에 있다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 콜백의 선언은 <code>stm32h7xx_hal_tim.h:2375</code>. 이름과 인자가 글자 하나 다르지 않아야 불린다. 이 안에서 부르면 안 되는 것은 골격의 주석에 있다: <code>LOG_*</code>, <code>HAL_Delay()</code>, 타임아웃을 받는 HAL 블로킹 호출(§2-8 — 이 ISR 안에서는 <code>HAL_GetTick()</code> 이 멈춰 있다).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>t_prev</code> 에서 <code>static</code> 을 뺐다</td><td>아무 말도 없다. <code>dt_us</code> 가 뜻 없는 큰 수다</td><td><code>static</code></td></tr>
+            <tr><td><code>s_stat = { 0 };</code></td><td><code>error: expected expression before '{' token</code></td><td><code>(tick_stat_t){ 0 }</code> — 대입에서는 앞에 형 이름이 필요하다</td></tr>
+            <tr><td>간격을 <code>int32_t</code> 로 뺐다</td><td>아무 말도 없다. 8.26 s 에 한 번, 카운터가 넘어갈 때 <code>dt_us_max</code> 에 엉뚱한 값이 찍힌다</td><td><code>(uint32_t)(t_in - t_prev)</code></td></tr>
+            <tr><td><code>/ 520u</code> 로 나눴다</td><td>지금은 맞는다. 클럭이 다른 빌드에서 모든 시간이 조용히 틀린다</td><td><code>SystemCoreClock / 1000000u</code></td></tr>
+            <tr><td>첫 진입도 통계에 넣었다</td><td>부팅 뒤 첫 <code>stat</code> 의 <code>dt_us_max</code> 가 터무니없이 크다</td><td><code>have_prev</code></td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-1-4. 10 s 뒤 <code>n</code> 이 약 10 000, <code>dt_us_min</code> · <code>dt_us_max</code> 가 1000 을 사이에 두고 벌어져 있다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t4"><summary>힌트 T4 — <code>tick_loop_mark()</code> · 주 루프 한 바퀴의 최장 시간</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — <code>app_loop()</code> 가 한 바퀴 돌 때마다 한 번 불린다. 직전 호출부터 지금까지 몇 µs 였는지 재서, 지금까지의 최댓값보다 크면 고친다. T3 과 같은 뺄셈을 main 문맥에서 하는 것이다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T4 - User/Src/System/tick.c */
+void tick_loop_mark(void)
+{
+  static uint32_t t_prev;                  /* 직전 호출 때의 CYCCNT */
+  static uint8_t  have_prev;
+  uint32_t now = DWT-&gt;CYCCNT;
+
+  if (have_prev) {
+    uint32_t us = (uint32_t)(now - t_prev) / (SystemCoreClock / 1000000u);
+    if (us &gt; s_stat.loop_us_max) { s_stat.loop_us_max = us; }
+  }
+  t_prev = now;
+  have_prev = 1u;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>static uint32_t t_prev;</code> · <code>static uint8_t have_prev;</code> — T3 과 같은 기억 장치다. 이름이 같아도 함수가 다르면 서로 다른 변수다.</li>
+          <li><code>uint32_t now = DWT-&gt;CYCCNT;</code> — 지금 시각.</li>
+          <li><code>if (have_prev) { … }</code> — 첫 호출에는 견줄 직전 시각이 없다. 둘째 호출부터 잰다.</li>
+          <li><code>uint32_t us = (uint32_t)(now - t_prev) / (SystemCoreClock / 1000000u);</code> — T3 의 간격 계산과 같은 꼴이다.</li>
+          <li><code>if (us &gt; s_stat.loop_us_max) { s_stat.loop_us_max = us; }</code> — 최댓값만 남긴다. <code>s_stat</code> 의 필드 가운데 <strong>이것만 main 이 쓴다</strong>(골격의 선언 주석). <code>stat reset</code> 과 겹치는 순간에는 지워진 값 위에 방금 잰 값이 다시 쓰일 수 있다 — 진단용 숫자라 받아들인다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다(레지스터 읽기 하나).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>app_loop()</code> 에서 부르지 않았다</td><td><code>loop_us_max</code> 가 늘 0</td><td>§3-1-3 의 6번(엮기)</td></tr>
+            <tr><td>한 바퀴에 두 번 불렀다</td><td><code>loop_us_max</code> 가 "한 바퀴"가 아니라 "두 호출 사이"가 된다</td><td>한 번만</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-1-4 의 셋째 항목. <code>help</code> 를 연달아 친 뒤 <code>loop_us_max</code> 가 늘고 <code>dt_us_max</code> 는 그대로다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t5"><summary>힌트 T5 — <code>tick_stat_get()</code> · 어긋나지 않은 사본 한 벌</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 통계 여섯 칸을 부른 쪽의 구조체에 복사해 준다. 복사하는 <strong>도중에</strong> ISR 이 끼어들어 통계를 고치면 <code>n</code> 은 새 값, <code>dt_us_max</code> 는 옛 값인 사본이 나온다(§2-3). 그래서 복사하는 동안만 인터럽트를 막는다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T5 - User/Src/System/tick.c */
+void tick_stat_get(tick_stat_t *out)
+{
+  __disable_irq();                         /* 여기부터 ISR 이 끼어들지 못한다 */
+  *out = s_stat;                           /* 구조체 복사 한 번 - 막아 둔 구간은 이것뿐이다 */
+  __enable_irq();
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>__disable_irq();</code> — CMSIS 의 함수(<code>cmsis_gcc.h:960</code>). CPU 가 인터럽트를 받지 않게 한다. 그동안 온 인터럽트는 사라지지 않고 기다렸다가 다시 열릴 때 들어온다.</li>
+          <li><code>*out = s_stat;</code> — 구조체는 <code>=</code> 한 번으로 통째로 복사된다. <code>out</code> 은 fw-05 의 T3 과 같은 출력 인자다.</li>
+          <li><code>__enable_irq();</code> — 다시 연다(<code>cmsis_gcc.h:949</code>). 이 줄을 빠뜨리면 그 뒤로 <strong>모든 인터럽트가 죽는다.</strong></li>
+          <li><strong>막아 둔 구간에는 복사 한 줄만 둔다.</strong> 여기서 글자를 찍으면 찍는 몇 ms 동안 박자가 통째로 밀린다 — 재려는 지터를 내가 만든다. 찍는 것은 사본을 받은 쪽(T6)이 인터럽트가 열린 뒤에 한다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — 이 함수는 인터럽트가 열려 있는 main 문맥에서만 부르므로 끝에서 무조건 연다. ISR 안이나 이미 막아 둔 구간에서도 부를 수 있는 함수라면 "들어올 때의 상태를 저장했다가 그대로 되돌리는" 꼴(<code>__get_PRIMASK()</code> / <code>__set_PRIMASK()</code>)로 쓴다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>__disable_irq()</code> · <code>__enable_irq()</code>. 인자도 반환값도 없다.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>__enable_irq()</code> 를 빼먹었다</td><td>아무 말도 없다. <code>stat</code> 을 한 번 친 뒤로 명령 창이 죽고 <code>n</code> 이 멈춘다(워치독이 있으면 곧 리셋)</td><td>셋째 줄</td></tr>
+            <tr><td>막아 둔 구간 안에서 <code>printf</code></td><td>빌드는 된다. <code>stat</code> 을 칠 때마다 <code>dt_us_max</code> 가 몇 ms 로 뛴다</td><td>복사만 하고 연 뒤에 찍는다</td></tr>
+            <tr><td>막지 않고 복사했다</td><td>거의 늘 멀쩡하다. 드물게 칸끼리 어긋난 줄이 찍힌다</td><td>두 줄로 감싼다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — <code>stat</code> 을 여러 번 쳐도 명령 창이 살아 있고 <code>n</code> 이 계속 는다. <code>stat</code> 을 치는 것만으로 <code>dt_us_max</code> 가 ms 단위로 뛰지 않는다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t6"><summary>힌트 T6 — <code>cmd_stat()</code> · <code>stat</code> 과 <code>stat reset</code></summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 인자가 없으면 통계 한 줄을 찍고, <code>reset</code> 이면 통계를 지우라고 요청하고, 그 밖에는 오류 줄을 찍는다. 출력은 fw-05 §2-4 의 규약대로 한 줄 · <code>키=값</code> · 정수다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T6 - User/Src/System/tick.c */
+#include &lt;string.h&gt;                        /* strcmp. 파일 위쪽의 #include 줄들 아래에 더한다 */
+
+static void cmd_stat(int argc, char *argv[])
+{
+  if (argc == 1) {
+    tick_stat_t st;
+    tick_stat_get(&amp;st);
+    printf("stat n=%lu dt_us_min=%lu dt_us_max=%lu exec_us_max=%lu overrun=%lu loop_us_max=%lu\r\n",
+           (unsigned long)st.n, (unsigned long)st.dt_us_min, (unsigned long)st.dt_us_max,
+           (unsigned long)st.exec_us_max, (unsigned long)st.overrun, (unsigned long)st.loop_us_max);
+  } else if (argc == 2 &amp;&amp; strcmp(argv[1], "reset") == 0) {
+    tick_stat_reset();
+    printf("OK stat\r\n");
+  } else {
+    printf("ERR stat bad-arg\r\n");
+  }
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>#include &lt;string.h&gt;</code> — <code>strcmp()</code> 가 여기 있다. 골격의 <code>tick.c</code> 에는 없던 줄이라 더한다(<code>printf</code> 의 <code>&lt;stdio.h&gt;</code> 는 <code>Tools/log.h</code> 가 이미 끌고 온다).</li>
+          <li><code>if (argc == 1)</code> — <code>stat</code> 만 쳤다(<code>argv[0]</code> 하나). <code>tick_stat_t st;</code> 로 내 사본을 놓을 자리를 만들고 <code>tick_stat_get(&amp;st);</code> 로 채운다. 원본 <code>s_stat</code> 을 직접 읽지 않는 이유가 T5 다.</li>
+          <li><code>printf("stat n=%lu …\r\n", (unsigned long)st.n, …);</code> — 자리표시 여섯에 값 여섯이 순서대로 들어간다. <code>uint32_t</code> 를 <code>%lu</code> 로 찍을 때의 <code>(unsigned long)</code> 캐스트는 fw-05 의 T9 와 같다. 인자가 길어 세 줄로 나눠 썼다.</li>
+          <li><code>else if (argc == 2 &amp;&amp; strcmp(argv[1], "reset") == 0)</code> — <code>&amp;&amp;</code> 는 앞이 거짓이면 뒤를 보지 않는다. 그래서 <code>argc</code> 가 2 임을 확인한 <strong>뒤에만</strong> <code>argv[1]</code> 을 읽는다(fw-05 의 T6 과 같은 조심).</li>
+          <li><code>tick_stat_reset();</code> — 요청 표시만 세운다. 실제로 지워지는 것은 다음 1 kHz 틱(1 ms 안)이다 — T3 의 여섯째 걸음.</li>
+          <li><code>(void)argc; (void)argv;</code> — 골격의 자리표시는 지웠다. 이제 둘 다 쓴다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>printf</code> · <code>strcmp</code> · 같은 파일의 <code>tick_stat_get()</code> · <code>tick_stat_reset()</code>.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>&lt;string.h&gt;</code> 를 빼먹었다</td><td><code>error: implicit declaration of function 'strcmp'</code></td><td>첫 줄</td></tr>
+            <tr><td><code>%u</code> 로 찍었다</td><td><code>warning: format '%u' expects argument of type 'unsigned int', but argument 2 has type 'uint32_t' {aka 'long unsigned int'}</code></td><td><code>%lu</code> + <code>(unsigned long)</code></td></tr>
+            <tr><td>키 이름 · 순서가 골격의 주석과 다르다</td><td>빌드는 된다. 뒤 쪽의 Mac 스크립트가 이 줄을 못 읽는다</td><td>주석의 꼴 그대로</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-1-4. <code>stat reset</code> 에 <code>OK stat</code>, <code>stat</code> 에 여섯 칸짜리 한 줄, <code>stat x</code> 에 <code>ERR stat bad-arg</code>.</p>
+        </div></details>
+
+      <h4 id="s3-1-4">3-1-4. 굽고 보기</h4>
+      <pre><code class="lang-bash">cd firmware
+tools/flash.sh                            # flash.sh 가 build.sh 를 먼저 부른다(fw-02) · 인자 없음 = TEXT 모드</code></pre>
+      <p>fw-03 에서 쓰던 터미널(460800 8N1)을 열고, 시계를 준비한다.</p>
+      <pre><code class="lang-text">&gt; stat reset
+OK stat
+        ... 시계로 10 s 를 잰다 ...
+&gt; stat
+stat n=&lt;n&gt; dt_us_min=&lt;n&gt; dt_us_max=&lt;n&gt; exec_us_max=&lt;n&gt; overrun=&lt;n&gt; loop_us_max=&lt;n&gt;</code></pre>
+      <ul>
+        <li><code>n</code> 은 1 s 에 1000 씩 는다 → 10 s 뒤 약 10 000. 손으로 재는 것이니 ± 수백은 내 반응 시간이다. 5 % 넘게(9500 미만 · 10 500 초과) 벗어나면 분주값이나 클럭 트리를 의심한다. 실수로 550 이 들어간 보드(타이머 클럭 275 MHz)라면 약 5.8 % 많게 나오지만, 그 차이는 손으로 재는 오차(± 수백)와 겹쳐 이 숫자만으로는 가를 수 없다 — 그것을 가르는 것은 §1 의 상자대로 먼저 본 배너의 <code>SYSCLK</code> 다.</li>
+        <li><code>dt_us_min</code> · <code>dt_us_max</code> 는 1000 을 사이에 두고 벌어져 있다. 그 폭이 지금 이 펌웨어의 지터다. <strong>값을 노트에 적는다</strong> — 빈 박자의 기준선이고, fw-13 에서 PID 를 올린 뒤 같은 명령으로 다시 재서 견준다.</li>
+        <li>명령 창에 긴 줄을 몇 번 찍게 한 뒤(<code>help</code> 를 연달아) 다시 <code>stat</code> 을 본다. <code>loop_us_max</code> 는 늘고 <code>dt_us_max</code> 는 그대로여야 한다 — 주 루프의 블로킹 송신이 ISR 의 박자를 흔들지 못한다는 것(§2-1)을 숫자로 본 것이다. <code>loop_us_max</code> 의 값은 예산표 v1 의 둘째 행에 적는다.</li>
+        <li>합격선은 이 가이드가 주지 않는다. 기록을 보고 내가 정한다: 지터 ____ µs 이내.</li>
+      </ul>
+
+      <h3 id="s3-2">3-2. 실습 B — IWDG 와 <code>hang</code></h3>
+      <p>먼저 §2-6 의 계산 칸을 채워 Prescaler 와 Reload 를 정한다(실습 A 의 <code>loop_us_max</code> 가 첫 재료다). 처음에는 <strong>넉넉한 값</strong>으로 시작해도 된다 — 타임아웃이 1 s 를 넘으면 <code>hang</code> 뒤 리셋까지의 시간을 시계로 확인할 수 있다.</p>
+
+      <h4 id="s3-2-1">3-2-1. CubeMX 설정 <span class="tag mx">CubeMX</span></h4>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>항목</th><th>값</th><th>왜</th><th><code>.ioc</code> 키 (생성 후 grep)</th></tr></thead>
+        <tbody>
+          <tr><td>IWDG1 (H7 에서의 인스턴스 이름)</td><td>Activated</td><td>§2-4</td><td><code>Mcu.IP…=IWDG1</code> <em>(생성 후 확인)</em></td></tr>
+          <tr><td>IWDG counter clock prescaler</td><td>____ (내 예산표에서)</td><td>§2-6. 기본값 4 를 그대로 두면 최대 약 512 ms 다</td><td><code>IWDG1.Prescaler</code> <em>(생성 후 확인)</em></td></tr>
+          <tr><td>IWDG down-counter reload value</td><td>____ (내 예산표에서)</td><td>§2-6. 기본값은 4095</td><td><code>IWDG1.Reload</code> <em>(생성 후 확인)</em></td></tr>
+          <tr><td><code>MX_IWDG1_Init</code> 의 호출 생성 — <strong>(가)를 골랐을 때만</strong></td><td>끔 (함수 정의는 남긴다)</td><td>§2-7. 호출은 <code>USER CODE BEGIN 2</code> 에서 내가 한다</td><td><code>ProjectManager.functionlistsort</code> 의 <code>MX_IWDG1_Init</code> 토막 <em>(아래 설명)</em></td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">IWDG window value 는 기본값 4095 그대로 둔다 = 창 기능 끔(RM0468 §50.3.3). 항목 이름은 CubeMX 의 <code>IWDG-iwdg1_v2_0_Modes.xml</code> 에서 옮겼다.
+      <code>functionlistsort</code> 의 꼴은 실제 <code>.ioc</code> 에서 확인했다: <code>1-SystemClock_Config-RCC-false-HAL-false,0-MX_CORTEX_M7_Init-CORTEX_M7-false-HAL-true</code>. 마지막 칸은 <code>static</code> 여부와 맞아떨어진다. <strong>넷째 칸이 "호출을 생성하지 않음"이라는 것은 [추정]</strong>이다 —
+      체크하기 전에 <code>.ioc</code> 를 복사해 두고, 체크 · 생성 뒤 <code>diff</code> 로 무엇이 바뀌었는지 직접 본다. 그 결과를 노트에 적는다.</p>
+      <p class="small"><strong>화면 확인: 미확인 (CubeMX 6.18.1)</strong> — 아래 경로는 CubeMX 의 DB 파일과 ST 문서에서 추정한 것이다.
+      화면이 다르면 <strong>화면이 맞다.</strong> 다른 곳을 발견하면 값 표(위)의 항목 이름으로 검색하고, 달랐던 경로를 노트에 적어 둔다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>#</th><th>위치 (화면 경로)</th><th>설정</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>왼쪽 <strong>System Core → IWDG1</strong></td><td><strong>Activated</strong> 체크</td></tr>
+          <tr><td>2</td><td>IWDG1 → <strong>Parameter Settings</strong> → Watchdog Clocking</td><td>prescaler · reload value 에 내 값</td></tr>
+          <tr><td>3</td><td>(가)만: 위쪽 탭 <strong>Project Manager → Advanced Settings</strong> → 생성 함수 목록의 <code>MX_IWDG1_Init</code> 행</td><td><strong>Do Not Generate Function Call</strong> 체크. "Generate Code" 쪽은 그대로 둔다(정의까지 사라지면 안 된다)</td></tr>
+          <tr><td>4</td><td><strong>GENERATE CODE</strong></td><td>—</td></tr>
+        </tbody>
+      </table></div>
+      <pre><code class="lang-bash">cd firmware/h723zg
+grep -n "^IWDG1\.\|functionlistsort" h723zg.ioc                                # 내 Prescaler · Reload, 그리고 MX_IWDG1_Init 토막
+grep -n "HAL_IWDG_MODULE_ENABLED" Core/Inc/stm32h7xx_hal_conf.h                # 주석에서 풀렸는가
+grep -n "hal_iwdg" cmake/stm32cubemx/CMakeLists.txt                            # 드라이버 소스가 빌드에 들어왔는가
+grep -n "hiwdg\|IWDG_PRESCALER\|Init.Reload\|Init.Window" Core/Src/main.c      # 핸들 이름과 생성된 값</code></pre>
+      <pre><code class="lang-text">(기대: 핸들 이름(hiwdg1 일 것이다 — 다르면 wdg.c 의 extern 을 고친다), 내가 넣은 분주 · 재장전값,
+ Window 는 4095. 시작 순서의 확인은 코드를 다 넣은 뒤 §3-2-4 에서 한다.)</code></pre>
+      <p class="small">재생성 규칙은 §3-1-1 과 같다.</p>
+
+      <h4 id="s3-2-2">3-2-2. 골격</h4>
+      <p>새 파일은 <code>User/Inc/System/wdg.h</code> · <code>User/Src/System/wdg.c</code>. 그리고 이 쪽은 생성물 <code>Core/Src/main.c</code> 의 두 마커 사이를 고친다 — <code>USER CODE BEGIN Includes</code> 에 헤더 한 줄, <code>USER CODE BEGIN 2</code> 에 호출 세 줄. 시작 순서는 생성된 호출의 자리에 달려 있어서 <code>User/</code> 안에서는 정할 수 없기 때문이다(fw-02 가 <code>app.h</code> 를 넣은 것과 같은 자리 · 같은 꼴).</p>
+      <p class="small">이 블록 둘(<code>main.c</code> 의 네 줄 · <code>wdg.c</code> 의 앞부분)은 전량 제공이다 — 이유: 순서 한 줄이 틀리면 "초기화 중 리셋 반복"이 되어 보드가 죽은 것처럼 보이고, 학습 내용과 무관한 곳에서 멈춘다. 왜 이 순서인지는 §2-7 이 설명했다.
+      <code>#include "System/wdg.h"</code> 한 줄도 블록의 일부다 — <code>main.c</code> 는 <code>main.h</code> 만 포함하므로 이 줄이 없으면 <code>wdg_mark_started()</code> 가 선언 없이 불리고, C99 이후의 컴파일러는 그것을 오류로 낸다(Mac 의 <code>cc</code>: "ISO C99 and later do not support implicit function declarations" · 프로젝트의 arm-none-eabi-gcc 14.3.1 도 기본이 오류다).
+      (Mac 에서 HAL 을 흉내 낸 빈 헤더로 <code>cc -std=c11 -Wall -Wextra -fsyntax-only</code> 까지 확인했다 — 그 헤더 줄을 빼면 위의 오류가 그대로 난다.)</p>
+      <pre><code class="lang-c">/* Core/Src/main.c — (가) 경로. BEGIN 2 블록 위에 생성되던 MX_IWDG1_Init() 호출은 CubeMX 에서 꺼 둔다. */
+/* USER CODE BEGIN Includes */
+#include "app.h"         /* fw-02 부터 있던 줄 */
+#include "System/wdg.h"  /* 새 줄: wdg_mark_started() 를 선언한다. 없으면 아래 호출이 암시적 선언 = 빌드 오류 */
+/* USER CODE END Includes */
+
+  /* ... main() 안, MX_..._Init() 호출들 뒤 ... */
+  /* USER CODE BEGIN 2 */
+  app_init();            /* 모든 모듈 초기화. 필요한 만큼 기다려도 된다: 워치독은 아직 돌지 않는다 */
+  MX_IWDG1_Init();       /* 안의 HAL_IWDG_Init() 이 KR = 0xCCCC 를 쓴다 -&gt; IWDG 는 여기서 시작한다. 단 한 번, 되돌릴 수 없이 */
+  wdg_mark_started();
+  /* USER CODE END 2 */</code></pre>
+      <pre><code class="lang-c">/* User/Inc/System/wdg.h — IWDG1 시작 기록과 kick 정책. */
+#ifndef WDG_H
+#define WDG_H
+#include &lt;stdint.h&gt;
+
+void     wdg_mark_started(void);     /* IWDG 를 시작한 바로 다음 줄에서 부른다. main 문맥 */
+uint32_t wdg_started_at_ms(void);    /* 그 순간의 HAL_GetTick() = 초기화 단계의 길이 [ms]; 0 = 시작 안 됨 */
+void     wdg_kick_init_phase(void);  /* (나) 전용: 긴 초기화 대기를 조각낸 사이마다 정책을 거치지 않고 바로 refresh */
+void     wdg_checkin_tick(void);     /* 1 kHz 콜백에서 부른다. ISR 문맥 */
+void     wdg_service_main(void);     /* app_loop() 한 바퀴에 한 번 부른다: 양쪽이 모두 살아 있을 때만 refresh */
+void     wdg_cli_register(void);     /* "hang" 을 등록한다 */
+#endif</code></pre>
+      <pre><code class="lang-c">/* User/Src/System/wdg.c — 1/2부 (전량 제공): IWDG 가 시작되는 자리와, 정책을 거치지 않는 유일한 refresh. */
+#include "main.h"
+#include "System/wdg.h"
+
+extern IWDG_HandleTypeDef hiwdg1;     /* CubeMX 가 Core/Src/main.c 에 정의한다 — 이름은 생성 후 확인 */
+
+static uint32_t s_started_at_ms;      /* 워치독을 시작한 때의 HAL_GetTick() */
+static uint8_t  s_started;            /* wdg_mark_started() 전까지 0 */
+
+void wdg_mark_started(void)
+{
+  /* MX_IWDG1_Init() 이 돌아왔다: HAL_IWDG_Init() 이 이미 KR = 0xCCCC 를 썼다.
+     여기서부터 내려 세는 카운터가 돌고, 무엇으로도 멈출 수 없다 (RM0468 §50.3.1). */
+  s_started_at_ms = HAL_GetTick();
+  s_started = 1u;
+}
+
+uint32_t wdg_started_at_ms(void)
+{
+  return s_started ? s_started_at_ms : 0u;
+}
+
+void wdg_kick_init_phase(void)
+{
+  /* (나) 전용. 시작 전에는 아무것도 하지 않으므로, 대기 조각 사이에서 이것을 부르는
+     초기화 코드는 (가) 에서도 그대로 돈다. 자체 탈출 조건이 없는 루프 안에서는 절대 부르지 않는다:
+     드러내야 할 바로 그 멈춤을 숨기게 된다. */
+  if (s_started) { (void)HAL_IWDG_Refresh(&amp;hiwdg1); }
+}</code></pre>
+      <p>여기부터는 골격이다. 같은 <code>wdg.c</code> 의 뒷부분에 잇는다(<code>#include</code> 두 줄은 파일 머리로 올린다).</p>
+      <pre><code class="lang-c">/* User/Src/System/wdg.c — 2/2부 (골격): kick 정책과 "hang" 명령. */
+#include "Tools/cli.h"
+#include "Tools/log.h"
+
+static volatile uint8_t s_tick_seen;      /* ISR 문맥에서 세우고 main 문맥에서 지운다 */
+static volatile uint8_t s_hang_isr_req;   /* "hang isr": 다음 1 kHz 진입이 돌아오지 않는다 */
+
+void wdg_checkin_tick(void)               /* ISR 문맥 — 1 kHz 콜백에서 부른다 */
+{
+  /* TODO(you) [T7]: 박자가 살아 있다고 알린다 - 힌트 카드 T7
+       1) s_hang_isr_req 가 서 있으면 바로 여기서 돈다: for (;;) { }   ("hang isr" 실험)
+       2) 아니면 1 kHz 쪽이 살아 있다고 기록한다(s_tick_seen)
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)s_tick_seen; (void)s_hang_isr_req;
+}
+
+void wdg_service_main(void)               /* main 문맥 — app_loop() 한 바퀴에 한 번 */
+{
+  /* TODO(you) [T8]: 양쪽이 다 살아 있을 때만 워치독을 되감는다 - 힌트 카드 T8
+       1) 직전 refresh 뒤로 박자 쪽이 살아 있음을 보였는지 본다
+          ("살아 있다"의 뜻은 내가 정해 노트에 적는다: 박자를 1 번 이상 봤다? N 번 이상?)
+       2) 보였으면 그 증거를 지우고 HAL_IWDG_Refresh(&amp;hiwdg1) 를 부른다
+       3) 안 보였으면 아무것도 하지 않는다(그대로 두면 워치독이 리셋한다) */
+}
+
+static void cmd_hang(int argc, char *argv[])
+{
+  /* TODO(you) [T9]: hang main / hang isr - 힌트 카드 T9
+       1) "hang main": "OK hang" 을 찍고 바로 여기서 for (;;) { } (main 문맥; 1 kHz ISR 은 계속 돈다)
+       2) "hang isr" : "OK hang" 을 찍고 s_hang_isr_req 를 세운다 (ISR 이 제자리에서 돌고, main 도 따라 굶는다)
+       3) 그 밖      : "ERR hang bad-arg"
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)argc; (void)argv;
+}
+
+void wdg_cli_register(void)
+{
+  bool ok = cli_register("hang", cmd_hang);
+  FW_ASSERT(ok);
+}</code></pre>
+      <p><code>app.c</code> 의 주 루프에는 두 가지를 더한다 — kick 정책의 호출 한 줄과, 초기화 구간을 한 번 찍는 조각(걸음 4).</p>
+      <pre><code class="lang-c">/* User/Src/app.c - app_loop() 안, 다른 일들 다음 */
+  wdg_service_main();
+  /* TODO(you) [T10]: 초기화 구간의 길이를 첫 바퀴에서 한 번만 찍는다 - 힌트 카드 T10
+       1) "이미 찍었는가"를 함수 안의 static 변수로 기억한다
+       2) 아직이면 표시를 세우고, LOG_INF 로 wdg_started_at_ms() 를 한 줄 찍는다 */</code></pre>
+
+      <h4 id="s3-2-3">3-2-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><strong>시작 순서를 넣는다.</strong> (가)면 위의 <code>main.c</code> 블록 그대로 — <code>USER CODE BEGIN Includes</code> 의 <code>#include "System/wdg.h"</code> 까지. (나)면 생성된 호출을 그대로 두고 <code>USER CODE BEGIN 2</code> 를 <code>wdg_mark_started(); app_init();</code> 순서로 쓴 뒤(헤더 한 줄은 (가)와 같다), 초기화 안의 모든 대기를 조각내 사이마다 <code>wdg_kick_init_phase()</code> 를 넣는다.</li>
+        <li><strong>kick 정책</strong> — <code>wdg_checkin_tick()</code> 과 <code>wdg_service_main()</code>. §2-5 의 표 셋째 줄을 만든다. "박자 쪽이 살아 있다"의 정의(표시 하나 / N 번 이상)를 먼저 노트에 적고 코드를 쓴다. <code>app_loop()</code> 에 <code>wdg_service_main();</code> 을 더한다.</li>
+        <li><strong><code>cmd_hang()</code>.</strong> <code>OK hang</code> 을 <strong>먼저</strong> 찍고 멈춘다(송신이 블로킹이라 글자는 멈추기 전에 다 나간다). <code>app_init()</code> 에 <code>wdg_cli_register();</code>, <code>CMakeLists.txt</code> 에 <code>User/Src/System/wdg.c</code>.</li>
+        <li><strong>초기화 구간을 찍는다.</strong> <code>app_loop()</code> 의 첫 바퀴에서 한 번만 <code>wdg_started_at_ms()</code> 를 <code>LOG_INF</code> 로 찍는다(1 kHz 경로가 아니라 주 루프에서). 예산표 v1 의 첫 행에 들어갈 숫자다.</li>
+      </ol>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 2 = T7 · T8 · 걸음 3 = T9 · 걸음 4 = T10 (걸음 1 의 <code>main.c</code> 블록은 전량 제공이라 카드가 없다). 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <details class="hint" id="hint-t7"><summary>힌트 T7 — <code>wdg_checkin_tick()</code> · 박자가 살아 있다고 알린다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 1 kHz 콜백(T3)이 틱마다 부른다. "박자가 한 번 왔다"는 표시를 남긴다. 그리고 <code>hang isr</code> 실험이 요청돼 있으면 일부러 여기서 멈춘다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T7 - User/Src/System/wdg.c */
+void wdg_checkin_tick(void)               /* ISR 문맥 - 1 kHz 콜백에서 부른다 */
+{
+  if (s_hang_isr_req) {
+    for (;;) { }                          /* "hang isr": 일부러 여기서 돌아가지 않는다 */
+  }
+  s_tick_seen = 1u;                       /* 박자가 한 번 왔다 */
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>if (s_hang_isr_req) { for (;;) { } }</code> — <code>for (;;) { }</code> 는 조건이 없는 반복 = 영원히 돈다. ISR 이 돌아가지 않으므로 그보다 낮은 우선순위의 인터럽트와 주 루프가 전부 굶는다. 아무도 kick 하지 못하니 IWDG 가 리셋한다 — 그것을 보려는 실험 장치다.</li>
+          <li><code>s_tick_seen = 1u;</code> — "박자가 왔다"는 표시. <strong>여기서는 세우기만 한다.</strong> 지우는 것은 주 루프(T8)다. ISR 과 main 이 같이 보는 변수라 선언에 <code>volatile</code> 이 붙어 있다.</li>
+          <li><strong>여기서 워치독을 되감지 않는다.</strong> ISR 에서 무조건 kick 하면 주 루프가 죽어도 리셋되지 않는다(§2-5 표의 첫 줄).</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>여기서 <code>HAL_IWDG_Refresh()</code> 를 불렀다</td><td><code>hang main</code> 뒤 아무리 기다려도 리셋되지 않는다</td><td>§3-2-4 의 "일부러 틀려 보기 ①" 이 바로 이것이다. kick 은 T8 에서</td></tr>
+            <tr><td>T3 의 콜백에서 이 함수를 부르지 않았다</td><td>부팅하고 타임아웃 뒤부터 리셋이 되풀이된다(<code>reset IWDG</code>)</td><td>T3 의 넷째 걸음</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-2-4 의 <code>hang isr</code>. <code>OK hang</code> 뒤 타임아웃만큼 조용하다가 배너가 <code>reset IWDG</code> 로 다시 찍힌다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t8"><summary>힌트 T8 — <code>wdg_service_main()</code> · 양쪽이 다 살아 있을 때만 되감는다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — <code>app_loop()</code> 가 한 바퀴에 한 번 부른다. 이 함수가 불렸다는 것이 "주 루프가 살아 있다"의 증거이고, <code>s_tick_seen</code> 이 서 있다는 것이 "박자가 살아 있다"의 증거다. <strong>둘이 다 있을 때만</strong> 워치독을 되감는다(§2-5 표의 셋째 줄).</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T8 - User/Src/System/wdg.c */
+void wdg_service_main(void)               /* main 문맥 - app_loop() 한 바퀴에 한 번 */
+{
+  if (s_tick_seen) {                      /* 직전 kick 뒤로 박자가 한 번 이상 왔는가 */
+    s_tick_seen = 0u;                     /* 증거를 쓰고 지운다: 다음 kick 에는 새 증거가 필요하다 */
+    (void)HAL_IWDG_Refresh(&amp;hiwdg1);
+  }
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>if (s_tick_seen)</code> — 직전 kick 뒤로 박자가 한 번이라도 왔는가. 안 왔으면 아무것도 하지 않고 돌아간다 — 그 상태가 이어지면 워치독이 리셋한다. 그것이 바라는 동작이다.</li>
+          <li><code>s_tick_seen = 0u;</code> — 증거를 <strong>쓰고 지운다.</strong> 지우지 않으면 한 번 선 표시가 영원히 남아 "주 루프에서 무조건 kick"과 같아진다(박자가 죽어도 리셋되지 않는다).</li>
+          <li><code>(void)HAL_IWDG_Refresh(&amp;hiwdg1);</code> — 워치독의 카운터를 재장전값으로 되돌린다. 이 HAL 함수는 늘 <code>HAL_OK</code> 를 돌려주므로(<code>stm32h7xx_hal_iwdg.c:259-266</code>) 반환값을 <code>(void)</code> 로 버렸다. <code>hiwdg1</code> 은 CubeMX 가 만든 핸들이다(파일 위의 <code>extern</code>).</li>
+          <li><strong>다르게 써도 되는 곳 — "살아 있다"의 뜻.</strong> 이 코드는 "박자를 1 번 이상 봤다"로 정했다. 박자가 완전히 섰을 때만 잡는다. "직전 kick 뒤로 박자가 N 번 이상 왔다"로 정하면 박자가 심하게 느려진 것까지 잡는다 — 대신 <code>s_tick_seen</code> 을 세는 변수로 바꿔야 하고, N 이 주 루프의 주기 · 예산표(§2-6)의 숫자와 묶인다. 어느 쪽을 골랐는지 노트에 적는다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong></p>
+        <pre><code class="lang-c">HAL_StatusTypeDef HAL_IWDG_Refresh(IWDG_HandleTypeDef *hiwdg);</code></pre>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>s_tick_seen = 0u;</code> 를 빼먹었다</td><td><code>hang main</code> · <code>hang isr</code> 은 리셋된다. 박자만 세운 실험(§3-2-4 의 ②)에서는 리셋되지 않는다</td><td>둘째 줄</td></tr>
+            <tr><td><code>app_loop()</code> 에서 부르지 않았다</td><td>부팅하고 타임아웃 뒤부터 리셋이 되풀이된다</td><td>T10 의 첫 줄</td></tr>
+            <tr><td>핸들 이름이 다르다</td><td>링크에서 <code>undefined reference to `hiwdg1'</code></td><td>§3-2-1 의 grep 에서 본 이름으로 <code>extern</code> 을 고친다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 평소에는 리셋이 없다(배너가 다시 찍히지 않는다). <code>hang main</code> 에서는 타임아웃 뒤 <code>reset IWDG</code>.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t9"><summary>힌트 T9 — <code>cmd_hang()</code> · 일부러 멈춘다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 워치독이 정말 리셋하는지 보려고 펌웨어를 <strong>일부러</strong> 멈추는 명령이다. <code>hang main</code> 은 주 루프를, <code>hang isr</code> 은 1 kHz ISR 을 멈춘다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T9 - User/Src/System/wdg.c */
+#include &lt;string.h&gt;                        /* strcmp. 파일 위쪽의 #include 줄들 아래에 더한다 */
+
+static void cmd_hang(int argc, char *argv[])
+{
+  if (argc == 2 &amp;&amp; strcmp(argv[1], "main") == 0) {
+    printf("OK hang\r\n");                /* 먼저 찍는다: 송신이 블로킹이라 멈추기 전에 다 나간다 */
+    for (;;) { }                          /* main 문맥이 여기서 멈춘다. 1 kHz ISR 은 계속 돈다 */
+  } else if (argc == 2 &amp;&amp; strcmp(argv[1], "isr") == 0) {
+    printf("OK hang\r\n");
+    s_hang_isr_req = 1u;                  /* 다음 1 kHz 진입이 wdg_checkin_tick() 에서 멈춘다 */
+  } else {
+    printf("ERR hang bad-arg\r\n");
+  }
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>#include &lt;string.h&gt;</code> — <code>strcmp()</code>. <code>wdg.c</code> 의 위쪽 <code>#include</code> 줄들 아래에 더한다.</li>
+          <li><code>argc == 2 &amp;&amp; strcmp(argv[1], "main") == 0</code> — T6 과 같은 꼴의 인자 검사다.</li>
+          <li><code>printf("OK hang\r\n");</code> 을 <strong>먼저</strong> — 송신이 블로킹이라 이 줄이 돌아왔을 때 글자는 이미 다 나갔다. 멈춘 뒤에는 찍을 수 없다.</li>
+          <li><code>for (;;) { }</code> — 명령 함수가 돌아가지 않으므로 <code>app_loop()</code> 도 돌아가지 않는다 = 주 루프가 멈췄다. 1 kHz ISR 은 계속 와서 <code>s_tick_seen</code> 을 세우지만, kick 을 해 줄 주 루프(T8)가 없다 → 리셋.</li>
+          <li><code>s_hang_isr_req = 1u;</code> — 여기서는 멈추지 않고 표시만 세운다. 다음 1 kHz 틱이 T7 에서 그 표시를 보고 ISR 안에서 멈춘다. 명령 함수 안에서 직접 "ISR 을 멈출" 방법은 없다 — ISR 은 인터럽트가 불러야 도는 코드다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>printf</code> · <code>strcmp</code>.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>for (;;) { }</code> 를 <code>printf</code> 앞에 뒀다</td><td><code>OK hang</code> 이 찍히지 않는다(리셋은 된다)</td><td>먼저 찍고 멈춘다</td></tr>
+            <tr><td><code>wdg_cli_register()</code> 를 <code>app_init()</code> 에서 부르지 않았다</td><td><code>ERR hang unknown-command</code></td><td>§3-2-3 의 3번</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-2-4. 두 명령 모두 <code>OK hang</code> → 타임아웃만큼 조용 → 배너의 <code>reset IWDG</code>. <code>hang x</code> 에는 <code>ERR hang bad-arg</code>.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t10"><summary>힌트 T10 — <code>app_loop()</code> · kick 정책의 호출과, 초기화 구간을 한 번 찍기</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 주 루프에 두 가지를 더한다. 한 바퀴마다 <code>wdg_service_main()</code> 을 부르고, <strong>첫 바퀴에서 한 번만</strong> "부팅에서 워치독 시작까지 몇 ms 였는가"를 찍는다. 그 숫자가 예산표 v1 의 첫 행이다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T10 - User/Src/app.c 의 app_loop() 안 */
+  wdg_service_main();
+
+  static bool s_wdg_logged;               /* 처음 값은 false */
+  if (!s_wdg_logged) {
+    s_wdg_logged = true;
+    LOG_INF("wdg", "started_at_ms=%lu", (unsigned long)wdg_started_at_ms());
+  }</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>wdg_service_main();</code> — T8. 주 루프의 일들 <strong>다음</strong>에 둔다 — "이번 바퀴를 끝까지 돌았다"가 곧 주 루프가 살아 있다는 증거이기 때문이다.</li>
+          <li><code>static bool s_wdg_logged;</code> — "이미 찍었는가". 함수 안의 <code>static</code> 이라 값이 남고, 처음 값은 <code>false</code> 다. <code>bool</code> 은 <code>&lt;stdbool.h&gt;</code> 에 있다(fw-05 에서 <code>app.c</code> 에 포함했다).</li>
+          <li><code>if (!s_wdg_logged) { s_wdg_logged = true; … }</code> — <code>!</code> 는 "아니다". 아직 안 찍었을 때만 들어가고, 들어가자마자 표시를 세우므로 둘째 바퀴부터는 건너뛴다.</li>
+          <li><code>LOG_INF("wdg", "started_at_ms=%lu", (unsigned long)wdg_started_at_ms());</code> — fw-05 의 T9 와 같은 꼴의 로그 한 줄. 1 kHz 경로가 아니라 주 루프에서 찍는다. <code>#include "System/wdg.h"</code> 가 <code>app.c</code> 에 있어야 한다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — <code>app_init()</code> 의 끝에서는 찍을 수 없다((가) 경로에서는 그때 워치독이 아직 시작되지 않아 0 이 나온다). 그래서 주 루프의 첫 바퀴다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>wdg_started_at_ms()</code>(<code>wdg.c</code> 의 전량 제공 부분) · <code>LOG_INF</code>.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>static</code> 을 뺐다</td><td>로그 줄이 끝없이 찍힌다(바퀴마다 <code>false</code> 로 새로 생긴다)</td><td><code>static</code></td></tr>
+            <tr><td><code>#include "System/wdg.h"</code> 가 없다</td><td><code>error: implicit declaration of function 'wdg_service_main'</code></td><td><code>app.c</code> 위쪽에 더한다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 부팅 직후 배너 아래에 <code>[&lt;ms&gt;] I wdg: started_at_ms=&lt;n&gt;</code> 이 <strong>한 번</strong> 찍힌다. 그 값을 예산표 v1 의 첫 행에 적는다.</p>
+        </div></details>
+
+      <h4 id="s3-2-4">3-2-4. 굽고 보기</h4>
+      <pre><code class="lang-bash">cd firmware
+tools/flash.sh                            # 빌드까지 한다(fw-02)
+cd h723zg
+grep -n "include \"wdg.h\"\|USER CODE .* Includes\|Initialize all configured\|MX_IWDG1_Init\|app_init\|wdg_mark_started\|USER CODE BEGIN 2\|USER CODE END 2" Core/Src/main.c</code></pre>
+      <pre><code class="lang-text">(기대 — 공통: #include "System/wdg.h" 가 USER CODE BEGIN Includes 와 END Includes 사이에 한 번 있다.
+ (가): MX_IWDG1_Init 이 나오는 줄은 선언 · 호출 · 정의 셋이고, "호출"은 USER CODE BEGIN 2 와 END 2 사이에,
+ app_init 다음 · wdg_mark_started 앞에 단 한 번 있다. "Initialize all configured" 와 USER CODE BEGIN 2 사이에는 없다.
+ (나): 호출이 USER CODE BEGIN 2 앞에 있고, 추가로  grep -rn "HAL_Delay" User/Src  의 모든 줄이 타임아웃보다 짧은 조각이다.
+ 줄 번호는 사람마다 다르다. 이 출력을 노트에 붙여 둔다 — .ioc 를 다시 생성할 때마다 이 grep 을 다시 친다.)</code></pre>
+      <pre><code class="lang-text">&gt; hang main
+OK hang
+        ... 내 타임아웃만큼 조용하다 (1 s 가 넘으면 시계로 잰다) ...
+build &lt;...&gt;
+SYSCLK 520000000 PCLK1 130000000
+reset IWDG
+&gt; hang isr
+OK hang
+        ... 같은 일이 한 번 더 ...
+reset IWDG</code></pre>
+      <ul>
+        <li>배너의 <code>reset</code> 줄이 <code>IWDG</code> 다. <code>PIN</code> 으로 나오면 <a href="fw-03-clock-console.html#s2-10">fw-03 §2-10</a> 을 다시 본다 — IWDG1 리셋은 IWDG1RSTF 와 PINRSTF 를 <strong>함께</strong> 세운다(RM0468 §8.4.4 표 52).</li>
+        <li>NRST 버튼을 눌러 한 번 더 리셋한다. 이번에는 <code>PIN</code> 이어야 한다 — 앞의 IWDG 플래그가 지워져 있다는 확인이다.</li>
+        <li><strong>일부러 틀려 보기 ①</strong> — <code>wdg_service_main()</code> 의 kick 을 <code>wdg_checkin_tick()</code> 안으로 옮겨 "ISR 에서 무조건"으로 만들고 <code>hang main</code> 을 친다. 타임아웃의 몇 배를 기다려도 리셋되지 않는다 — §2-5 표의 첫 줄을 본 것이다. NRST 로 되살리고 <strong>원래대로 돌려놓는다.</strong></li>
+        <li><strong>일부러 틀려 보기 ② (선택)</strong> — <code>hang</code> 에 셋째 인자 <code>tick</code> 을 임시로 더해 <code>HAL_TIM_Base_Stop_IT(&amp;htim6)</code>(<code>stm32h7xx_hal_tim.c:504</code>)만 부르게 한다[제안 — 명령 표(<code>hang &lt;main|isr&gt;</code>)에 없는 인자다. <strong>실험이 끝나면 지운다</strong> — 남겨 두면 표와 어긋난 명령이 펌웨어에 남는다]. 박자만 서고 주 루프는 산다. 내 정책이 옳다면 리셋되고, "주 루프에서 무조건"이었다면 리셋되지 않는다.
+          <code>hang isr</code> 은 주 루프도 함께 굶기므로 이 차이를 가려 주지 못한다 — 그래서 이 실험이 따로 있다.</li>
+        <li>로그에 찍힌 초기화 구간(ms)을 예산표 v1 의 첫 행에 적고, 표 전체를 노트에 옮긴다.</li>
+      </ul>
+
+      <h3 id="s3-3">3-3. 실습 C — 디버거로 멈춘 동안의 IWDG</h3>
+      <p>CubeMX 는 열지 않는다(동결은 레지스터 한 비트이고, 코드 한 줄로 세운다). IWDG 는 CPU 가 중단점에 서 있는 동안에도 센다(RM0468 §50.3.7). 세지 않게 하려면 디버그 블록의 동결 비트를 세운다 —
+      <code>DBGMCU_APB4FZ1</code>(기준 주소 <code>0x5C001000</code> + <code>0x054</code>)의 bit 18 "IWDG1 stop in debug"(RM0468 §65.5.7), HAL 매크로는 <code>__HAL_DBGMCU_FREEZE_IWDG1()</code>(<code>stm32h7xx_hal.h:905</code>).
+      이 비트는 코어가 디버그로 <strong>멈춰 있을 때만</strong> 작용하므로, 디버거를 붙이지 않은 보드에서는 세워 둬도 워치독이 평소대로 돈다.</p>
+      <div class="callout warn"><span class="ct">비교 순서가 중요하다 — DBGMCU 는 리셋으로 지워지지 않는다</span>
+        <p>"The DBGMCU registers are not reset by a system reset, only by a power on reset"(RM0468 §65.5.7). 한번 세운 동결 비트는 NRST · IWDG 리셋 · 재플래시를 넘어 살아남는다.
+        그래서 <strong>"동결 없음"을 먼저</strong> 보고 "동결 있음"을 나중에 본다. 순서를 바꿨다면 USB 케이블을 뽑았다 꽂아(전원 재인가) 비트를 지우고 시작한다.
+        디버거가 붙으면서 이 비트를 스스로 세우는지는 이 가이드가 확인하지 못했다 — 그래서 매번 <strong>읽어서</strong> 확인한다.</p>
+      </div>
+
+      <h4 id="s3-3-2">3-3-2. 골격</h4>
+      <pre><code class="lang-c">/* User/Src/System/wdg.c — wdg_mark_started() 에 넣거나, app_init() 에서 한 번 부른다. 한 줄. */
+  __HAL_DBGMCU_FREEZE_IWDG1();   /* DBGMCU-&gt;APB4FZ1 비트 18: 디버거가 코어를 멈춘 동안 IWDG1 이 세지 않는다 */
+  /* TODO(you) [T11]: __HAL_DBGMCU_FREEZE_TIM6() (stm32h7xx_hal.h:869) 를 쓸지 정하고 이유를 노트에 적는다 - 힌트 카드 T11 */</code></pre>
+      <p class="small">TIM6 의 동결은 선택이다. 세우면 멈춘 동안 박자도 서서 <code>n</code> 과 <code>tick_get_ms()</code> 가 "CPU 가 돈 시간"만 센다. 안 세우면 멈춘 동안 업데이트 이벤트는 계속 나지만 밀린 인터럽트는 하나로 합쳐지므로(업데이트 플래그는 한 비트다) 멈춘 시간이 <code>tick_ms</code> 에서 빠지는 것은 같고, 이어 간 직후의 <code>dt_us_max</code> 가 크게 찍힌다. 어느 쪽이든 디버거를 쓴 뒤에는 <code>stat reset</code> 을 한다. TIM1 · TIM8(PWM)의 동결은 <a href="fw-08-pwm-safe-output.html">fw-08</a> 의 몫이다.</p>
+
+      <details class="hint" id="hint-t11"><summary>힌트 T11 — 디버그 동결 · <code>__HAL_DBGMCU_FREEZE_TIM6()</code> 을 쓸 것인가</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 코드로는 한 줄이고, 실제로 할 일은 <strong>정하는 것</strong>이다: 디버거가 코어를 멈춘 동안 1 kHz 박자(TIM6)도 같이 세울 것인가. IWDG1 의 동결 줄은 골격이 이미 줬다.</p>
+        <p><strong>완결 코드</strong> — 둘 다 넣은 모습이다. 둘째 줄이 내가 정하는 줄이다.</p>
+        <pre><code class="lang-c">/* 완결 코드 T11 - User/Src/System/wdg.c 의 wdg_mark_started() 안, 맨 끝 */
+  __HAL_DBGMCU_FREEZE_IWDG1();   /* DBGMCU-&gt;APB4FZ1 비트 18: 디버거가 코어를 멈춘 동안 IWDG1 이 세지 않는다 */
+  __HAL_DBGMCU_FREEZE_TIM6();    /* 선택 - 멈춘 동안 1 kHz 박자도 세운다. 이 줄은 빼도 된다 */</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li>두 줄 모두 HAL 의 매크로다(<code>stm32h7xx_hal.h:905</code> · <code>:869</code>). 디버그 블록의 레지스터에서 비트 하나를 세운다. 이 비트는 <strong>코어가 디버거로 멈춰 있을 때만</strong> 작용하므로, 디버거를 붙이지 않은 보드에서는 세워 둬도 평소와 같다.</li>
+          <li>자리 — <code>wdg_mark_started()</code> 의 맨 끝(부팅 때 한 번 실행되는 곳). <code>app_init()</code> 에서 한 번 불러도 같다.</li>
+          <li><strong>TIM6 줄을 넣으면</strong> — 멈춘 동안 박자도 선다. <code>n</code> 과 <code>tick_get_ms()</code> 가 "CPU 가 실제로 돈 시간"만 센다.</li>
+          <li><strong>TIM6 줄을 빼면</strong> — 멈춘 동안에도 타이머는 돈다. 밀린 인터럽트는 하나로 합쳐지므로 멈춘 시간이 <code>tick_ms</code> 에서 빠지는 것은 같고, 이어 간 직후의 <code>dt_us_max</code> 가 크게 찍힌다.</li>
+          <li>차이가 없는 축 — 디버거를 붙이지 않았을 때의 동작, 워치독의 동결. 어느 쪽이든 디버거를 쓴 뒤에는 <code>stat reset</code> 을 한다. 고른 쪽과 이유를 노트에 적는다.</li>
+        </ul>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>동결 빌드를 먼저 굽고 "동결 없음"을 나중에 본다</td><td>[1] 에서 리셋이 나지 않는다 — 비트가 리셋을 넘어 살아남았다</td><td>USB 를 뽑았다 꽂아 지우고 다시(§3-3 의 경고 상자)</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-3-4. gdb 의 <code>x/wx 0x5C001054</code> 에서 bit 18 이 1 이고, 멈춘 채 타임아웃의 2 배를 기다린 뒤 이어 가도 배너가 다시 찍히지 않는다.</p>
+        </div></details>
+
+      <h4 id="s3-3-4">3-3-4. 굽고 보기</h4>
+      <p>gdb 를 붙이는 방법은 <a href="fw-04-debugger.html#s3-1-4">fw-04 §3-1-4</a> 그대로다(굽고 → 서버 → gdb). 콘솔 터미널도 같이 열어 둔다 — 판정은 배너로 한다.</p>
+      <pre><code class="lang-text">[1] 동결 줄을 넣지 않은 빌드 — USB 를 뽑았다 꽂은 뒤
+(gdb) hbreak app_loop
+(gdb) continue
+(gdb) x/wx 0x5C001054            &lt;- bit 18 (0x00040000) 이 0 인지 읽어 노트에 적는다
+        ... 멈춘 채로 타임아웃의 2배쯤 기다린다 ...
+(gdb) delete
+(gdb) continue
+        콘솔: 배너가 새로 찍힌다, reset IWDG        &lt;- 멈춰 있는 동안 워치독이 터졌다
+
+[2] 동결 줄을 넣은 빌드
+(gdb) x/wx 0x5C001054            &lt;- bit 18 이 1
+        ... 같은 시간만큼 기다린다 ...
+(gdb) continue
+        콘솔: 배너가 찍히지 않는다.  stat 의 n 이 이어서 는다</code></pre>
+      <p>[1] 에서 gdb 쪽 화면이 어떻게 되는지(연결이 끊기는지, 리셋 뒤 다시 서는지)는 확인하지 못했다 — 본 대로 노트에 적는다. 멈춰 있던 시간이 타임아웃보다 길었는데도 [1] 에서 리셋이 없었다면 비트가 이미 서 있던 것이다(읽은 값을 본다).</p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="tick-1khz-counted"><span><strong>경로 통과</strong> — <code>stat reset</code> 뒤 10 s 를 재고 <code>stat</code> 을 치면 <code>n</code> 이 약 10 000 이다(1 s 에 1000)
+          <span class="sub">판정 수단: 명령 창 출력 + 시계 · §3-1-4 · 5 % 넘게 벗어나면 분주값 · 클럭 트리를 본다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="jitter-stat-read"><span><strong>경로 통과</strong> — <code>stat</code> 이 1 kHz(1 ms) 박자의 <code>dt_us_min</code> · <code>dt_us_max</code> · <code>exec_us_max</code> · <code>loop_us_max</code> 를 찍고, 그 값을 노트에 적었다
+          <span class="sub">판정 수단: 명령 창 출력 · §3-1-4 · 합격 수치는 내가 정해 노트에 적는다(지터 ____ µs 이내)</span></span></label></li>
+        <li><label><input type="checkbox" data-key="nvic-priorities-match-ioc"><span><strong>경로 통과</strong> — <code>.ioc</code> 의 선점 우선순위가 TIM6 = 1 · USART3 = 6 · SysTick = 15 다(내가 다른 숫자를 골랐다면 "TIM6 이 USART3 보다 작은 수")
+          <span class="sub">판정 수단: <code>grep</code> 출력 · §3-1-1</span></span></label></li>
+        <li><label><input type="checkbox" data-key="iwdg-start-order-grep"><span><strong>경로 통과</strong> — IWDG 가 시작되는 줄이 내가 고른 길대로 있다: (가) <code>MX_IWDG1_Init()</code> 호출이 <code>USER CODE BEGIN 2</code> 안, <code>app_init()</code> 뒤에 단 한 번 / (나) 초기화의 모든 대기가 조각나 있다
+          <span class="sub">판정 수단: <code>grep</code> 출력 · §3-2-4 · <code>.ioc</code> 를 다시 생성할 때마다 다시 친다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="iwdg-trips-on-main-hang"><span><strong>발동 확인</strong> — <code>hang main</code> 뒤 보드가 스스로 리셋하고 배너의 reset 줄이 <code>IWDG</code> 다
+          <span class="sub">판정 수단: 부팅 배너 3줄 · §3-2-4 · "ISR 에서 무조건" 으로 바꾸면 리셋되지 않는 것도 봤다(일부러 틀려 보기 ①)</span></span></label></li>
+        <li><label><input type="checkbox" data-key="iwdg-trips-on-isr-hang"><span><strong>발동 확인</strong> — <code>hang isr</code> 뒤에도 같은 배너가 나온다. 이어서 NRST 를 누르면 <code>PIN</code> 으로 바뀐다
+          <span class="sub">판정 수단: 부팅 배너 3줄 · §3-2-4</span></span></label></li>
+        <li><label><input type="checkbox" data-key="iwdg-frozen-on-halt"><span><strong>발동 확인</strong> — 동결 줄이 없는 빌드는 중단점에서 타임아웃보다 오래 서 있으면 리셋되고, 동결 줄을 넣은 빌드는 같은 시간 서 있어도 리셋되지 않는다. 두 번 다 <code>0x5C001054</code> 의 bit 18 을 읽어 적었다
+          <span class="sub">판정 수단: 부팅 배너 + gdb 의 <code>x/wx</code> · §3-3-4 · fw-04 가 선행</span></span></label></li>
+        <li><label><input type="checkbox" data-key="budget-table-v1-written"><span><strong>경로 통과</strong> — 워치독 예산표 v1(두 행의 실측 ms)과 §2-6 의 계산 칸, kick 정책의 정의("박자가 살아 있다"의 뜻)가 내 노트에 있다
+          <span class="sub">판정 수단: 내 노트의 표 · §2-6 · §3-2-4 · fw-13 ~ fw-16 에서 이 표에 행을 더한다</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td><code>stat</code> 의 <code>n</code> 이 0 에서 움직이지 않는다</td><td><code>HAL_TIM_Base_Start_IT()</code> 를 부르지 않았다(CubeMX 는 시작하지 않는다) · <code>_IT</code> 없는 쪽을 불렀다 · NVIC Enable 이 빠졌다 · 콜백의 <code>Instance</code> 비교가 틀렸다</td><td><code>grep -rn "Base_Start" User/Src</code> · <code>grep -n TIM6_DAC Core/Src/stm32h7xx_it.c</code></td><td>§3-1-1 · §3-1-3</td></tr>
+          <tr><td>빌드가 <code>multiple definition of HAL_TIM_PeriodElapsedCallback</code> 로 멈춘다</td><td>SYS 의 Timebase Source 가 TIM 으로 돼 있다 — 그러면 CubeMX 가 <code>main.c</code> 에 이 콜백을 직접 생성한다(<code>HAL_IncTick()</code> 을 부르는 꼴 — 같은 팩의 <code>Projects/NUCLEO-H743ZI/Applications/FreeRTOS/FreeRTOS_MPU/Src/main.c:548</code>)</td><td><code>grep -n "VP_SYS_VS" h723zg.ioc</code> — <code>Systick</code> 이어야 한다</td><td>CubeMX 의 SYS → Timebase Source 를 SysTick 으로(화면 미확인)</td></tr>
+          <tr><td><code>dt_us_min=0</code> 이거나 <code>stat reset</code> 직후 <code>dt_us_max</code> 가 터무니없이 크다</td><td>첫 표본(직전 시각이 없다)을 건너뛰지 않았다 · 통계를 main 에서 직접 지웠다 · 디버거로 멈췄다 이어 갔다</td><td>§3-1-3 의 표본 표로 <code>tick_stat_update()</code> 를 확인</td><td>§3-1-3 · §2-3</td></tr>
+          <tr><td><code>dt_us</code> · <code>exec_us_max</code> · <code>loop_us_max</code> 가 전부 0 이다</td><td><code>CYCCNT</code> 가 돌지 않는다 — <code>DWT-&gt;LAR = 0xC5ACCE55</code> 가 빠졌거나(Cortex-M7 은 이 줄 없이는 CYCCNTENA 쓰기가 무시된다) TRCENA 를 켜지 않았다(§2-3 의 네 걸음)</td><td><code>grep -n "LAR\|TRCENA\|CYCCNTENA" User/Src/System/tick.c</code> · gdb 로 <code>x/wx 0xE0001004</code> 를 두 번</td><td>§2-3 · §3-1-3</td></tr>
+          <tr><td><code>n</code> 이 10 s 에 10 500 을 넘고(약 5.8 % 많다), <code>dt_us</code> 가 1000 보다 작다</td><td>보드에 실수로 550 MHz 가 들어갔다(타이머 클럭 275 MHz) — CubeMX Clock Configuration 화면의 안내(상한 550)나 Board Selector 의 AllConfig 프리셋을 그대로 따랐다</td><td>배너 둘째 줄의 SYSCLK — <code>550000000</code> 이면 이것</td><td><a href="fw-03-clock-console.html">fw-03</a></td></tr>
+          <tr><td>IWDG 를 켠 뒤 배너가 끝없이 되풀이된다(reset 줄 = <code>IWDG</code>)</td><td>시작이 초기화 앞에 있고 초기화가 타임아웃보다 길다 · kick 의 조건이 한 번도 참이 되지 않는다 · 타임아웃이 <code>loop_us_max</code> 보다 짧다</td><td>§3-2-4 의 grep · 내 계산 칸</td><td>§2-7 · §2-5 · §2-6. 플래시가 안 잡히면 fw-02 의 증상 표</td></tr>
+          <tr><td><code>hang main</code> 을 쳐도 리셋되지 않는다</td><td>kick 이 ISR 쪽에서 조건 없이 나간다</td><td><code>grep -rn "IWDG_Refresh" User/Src</code> — 몇 군데서 부르는가</td><td>§2-5</td></tr>
+          <tr><td><code>hang</code> 뒤 배너가 <code>IWDG</code> 가 아니라 <code>PIN</code> 이다</td><td>판독 순서 — IWDG1 리셋은 PINRSTF 도 같이 세운다(RM0468 표 52) · 플래그를 지우지 않아 앞의 원인이 남았다</td><td>호스트 시험 <code>test_reset_cause</code></td><td><a href="fw-03-clock-console.html#s2-10">fw-03 §2-10</a></td></tr>
+          <tr><td>중단점에서 생각하다 <code>continue</code> 하면 처음부터 다시 돈다</td><td>멈춘 동안 IWDG 가 셌다</td><td>콘솔의 새 배너 · <code>x/wx 0x5C001054</code></td><td>§3-3</td></tr>
+          <tr><td>동결 줄을 뺐는데도 멈춘 동안 리셋이 안 난다</td><td>DBGMCU 는 시스템 리셋으로 지워지지 않는다 — 앞서 세운 비트가 남아 있다</td><td><code>x/wx 0x5C001054</code> 의 bit 18</td><td>USB 를 뽑았다 꽂는다 · §3-3</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. (4중 검색) 이 쪽에서 쓴 <code>HAL_TIM_PeriodElapsedCallback</code> 을 네 군데에서 찾아 적어 보라 — 헤더 → <code>__weak</code> → 호출 시점 → 예제</summary>
+        <div class="ans"><p>찾는 명령(<code>$HAL</code> · <code>$FW_H7</code> 는 fw-02 에서 정한 경로):</p>
+        <pre><code class="lang-bash">grep -n "PeriodElapsedCallback" $HAL/Inc/stm32h7xx_hal_tim.h            # ① 헤더: 시그니처
+grep -n "__weak.*PeriodElapsedCallback" $HAL/Src/stm32h7xx_hal_tim.c    # ② 약한 기본 구현
+grep -n "PeriodElapsedCallback(htim)" $HAL/Src/stm32h7xx_hal_tim.c      # ③ 누가 언제 부르는가
+grep -rln "PeriodElapsedCallback" $FW_H7/Projects/NUCLEO-H723ZG/Examples | head   # ④ ST 예제</code></pre>
+        <p>① <code>stm32h7xx_hal_tim.h:2375</code> — 인자는 <code>TIM_HandleTypeDef *</code> 하나. 어느 타이머인지는 인자로만 알 수 있으므로 <code>htim-&gt;Instance == TIM6</code> 비교가 필수다.
+        ② <code>stm32h7xx_hal_tim.c:5803</code> 의 <code>__weak</code> 빈 함수 — 내가 같은 이름을 <code>tick.c</code> 에 정의하면 링커가 내 것을 고른다. 생성물을 고치지 않고 끼어드는 길이 이것이다.
+        ③ 호출은 두 군데다. <code>:3971</code> 은 <code>HAL_TIM_IRQHandler()</code>(<code>:3834</code> 에서 시작) 안의 "TIM Update event" 가지이고, 바로 앞 <code>:3967</code> 에서 업데이트 플래그를 지운 <strong>뒤에</strong> 부른다 — 우리가 가는 길이다(<code>TIM6_DAC_IRQHandler</code> → <code>HAL_TIM_IRQHandler</code> → 콜백).
+        <code>:6871</code> 은 <code>TIM_DMAPeriodElapsedCplt()</code>(<code>:6859</code>) 안 — <code>HAL_TIM_Base_Start_DMA()</code> 로 돌릴 때만 오는 DMA 완료 길이고 인터럽트 핸들러와 무관하다.
+        ④ <code>Examples/HAL/HAL_TimeBase_TIM/Src/stm32h7xx_hal_timebase_tim.c</code> — ST 는 같은 TIM6 · 같은 1 MHz 분주(<code>:99</code>) · <code>HAL_TIM_Base_Start_IT()</code>(<code>:117</code>)로 HAL 의 ms 시계를 만들고, 콜백(<code>:156</code>)에서 <code>HAL_IncTick()</code> 을 부른다. 우리와 설정은 같고 쓰임만 다르다.</p></div></details>
+      <details class="quiz"><summary>2. <code>HAL_Delay(1)</code> 루프와 TIM6 인터럽트의 차이를 "누적"이라는 말로 설명해 보라. 그리고 (일부러 틀리면) 그 <code>HAL_Delay(1)</code> 을 TIM6 ISR 안에서 부르면 무엇이 보이는가?</summary>
+        <div class="ans"><p><code>HAL_Delay</code> 루프의 한 바퀴는 "일한 시간 + 기다린 시간(1~2 ms)"이라 일이 길어진 만큼 주기가 늘고 그 늦음이 다음 바퀴로 넘어간다 — 오차가 <strong>누적</strong>된다. 블로킹 송신 한 줄(60 B ÷ 46 080 B/s = 1.3 ms)이면 한 주기를 넘긴다.
+        타이머는 격자를 하드웨어가 만들므로 ISR 진입이 늦어도 다음 업데이트 이벤트는 제자리에서 난다.
+        ISR 안에서 부르면 돌아오지 않는다: <code>HAL_Delay()</code> 는 <code>HAL_GetTick()</code> 이 늘기를 기다리는데(<code>stm32h7xx_hal.c:416</code>) 그 값을 올리는 SysTick(15)은 TIM6 ISR(1)을 끊고 들어오지 못한다. 주 루프도 굶고 kick 이 끊겨 IWDG 가 리셋한다 — 밖에서 보면 <code>hang isr</code> 과 같다.</p></div></details>
+      <details class="quiz"><summary>3. <code>stat</code> 의 <code>exec_us_max</code> 와 <code>loop_us_max</code> 는 각각 §2-2 의 어느 선택지의 비용을 보여 주는가? 왜 박자마다 찍지 않고 RAM 에 쌓는가?</summary>
+        <div class="ans"><p><code>exec_us_max</code> 는 (가) "ISR 안에서 전부"의 비용이다 — 그 시간만큼 낮은 우선순위의 인터럽트가 밀리고, 1000 µs 에 가까워지면 박자를 놓친다. <code>loop_us_max</code> 는 (나) "계산은 주 루프"에서 1 kHz 일이 늦어지는 크기다 — 1 ms 를 넘는 바퀴마다 박자를 하나씩 놓친다.
+        박자마다 찍으면 30 B × 1000 줄/s = 30 000 B/s 로 링크(46 080 B/s)의 65 % 를 쓰고, 블로킹 송신이면 줄마다 0.65 ms 를 UART 를 기다리며 보낸다 — 찍힌 숫자는 "찍는 데 걸린 시간"이 된다.</p></div></details>
+      <details class="quiz"><summary>4. 1세대의 "엔코더 GND 단선 → 전속 회전" 사고에서 IWDG 가 있었다면 막았겠는가?</summary>
+        <div class="ans"><p>아니다. 그때 펌웨어는 멈추지 않았다 — 루프는 제시간에 돌았고 kick 도 (있었다면) 계속 나갔을 것이다. IWDG 는 "kick 이 멈춘 것"만 본다. 살아서 틀린 일을 하는 코드, 끊어진 센서가 주는 그럴듯한 값은 보지 못한다.
+        그 고장을 잡는 것은 "준 듀티에 비해 속도가 안 나온다"를 보는 보호 판정(fw-13)이고, 명령이 끊긴 것은 200 ms 명령 워치독이 잡는다. 층마다 잡는 것이 다르다.</p></div></details>
+      <details class="quiz"><summary>5. kick 을 TIM6 ISR 맨 끝에 한 줄로 두면 어떤 고장을 놓치는가? 주 루프에만 두면?</summary>
+        <div class="ans"><p>ISR 에만 두면 <strong>주 루프의 멈춤</strong>을 놓친다 — 주 루프가 무한 대기에 빠져도 ISR 은 계속 오고 계속 신고한다. 명령 창과 통신이 죽은 채로 남는다.
+        주 루프에만 두면 <strong>박자의 멈춤</strong>(타이머가 꺼짐, 인터럽트가 막힘)을 놓친다 — 제어가 죽었는데 주 루프가 대신 신고하고, PWM 은 마지막 듀티로 남는다.
+        둘 다 잡으려면 두 쪽이 살아 있다는 증거가 모였을 때만 kick 한다. <code>hang main</code> 은 앞의 구멍을, 박자만 세우는 실험(일부러 틀려 보기 ②)은 뒤의 구멍을 드러낸다.</p></div></details>
+      <details class="quiz"><summary>6. CubeMX 에서 IWDG1 을 켜고 그대로 생성하면, 뒤에 초기화가 길어졌을 때 무슨 일이 생기는가? 왜 <code>HAL_IWDG_Init()</code> 을 "초기화"라고만 읽으면 안 되는가?</summary>
+        <div class="ans"><p><code>HAL_IWDG_Init()</code> 의 첫 동작이 시작 키를 쓰는 것이고(<code>stm32h7xx_hal_iwdg.c:189</code>), 시작한 IWDG 는 멈출 수 없다. CubeMX 는 그 호출을 <code>USER CODE BEGIN 2</code> <strong>앞</strong>에 놓으므로 워치독이 <code>app_init()</code> 보다 먼저 돈다.
+        초기화가 타임아웃보다 길어지는 순간 "부팅 중 리셋"이 되풀이되고 밖에서는 보드가 죽은 것처럼 보인다. 막는 길은 시작을 초기화 뒤로 옮기거나(호출 생성을 끄고 직접 부른다), 초기화의 대기를 전부 조각내 사이마다 kick 하는 것이다.
+        앞의 길은 초기화 도중의 멈춤을 못 잡고, 뒤의 길은 모든 모듈의 초기화가 규칙을 지켜야 한다.</p></div></details>
+      <details class="quiz"><summary>7. (안전) 벤치에서 USB 케이블을 뽑았더니 (나중에) 모터가 섰다. 이것으로 "워치독이 동작한다"고 적어도 되는가?</summary>
+        <div class="ans"><p>안 된다. 이 보드는 기본 구성에서 ST-LINK 쪽 USB 로 급전된다(JP2 [1-2] = 5V_USB_STLK). 케이블을 뽑으면 MCU 는 멈춘 것이 아니라 <strong>꺼진다</strong> — 시험된 것은 "전원이 사라지면 MOTOR_EN 이 LOW 로 떨어지는가"다.
+        하드웨어 워치독은 전원을 둔 채 <code>hang</code> 으로, 200 ms 명령 워치독은 전원과 링크를 둔 채 <strong>명령 송신만</strong> 멈추고 MCU 의 tick 으로 판정한다. 세 시험은 서로를 대신하지 못하므로 따로 기록한다.</p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>Nucleo 와 USB 만 있으면</strong> → <a href="fw-07-memory-dma.html">fw-07</a> — 메모리 지도. 명령 창의 수신을 Circular DMA 로 바꾸고, <strong>내 노트의</strong> NVIC 표(초판은 이 쪽 §2-8)에 USART3 의 DMA 스트림 행(USART3 와 같은 값)을 더한다 — 그 행은 fw-07 의 "NVIC 표에 더하는 행" 상자가 낸다. 이 쪽의 표는 고치지 않는다.</li>
+          <li><strong>DMM 과 IBT-2 가 있으면</strong> → <a href="fw-08-pwm-safe-output.html">fw-08</a> 로 갈 수 있다(선행은 이 쪽 · <a href="fw-04-debugger.html">fw-04</a> · <a href="fw-01-pinmap.html">fw-01</a>). 다만 번호 순서가 하는 순서다 — fw-07 을 건너뛰는 것이 아니라, 부품을 기다리는 동안 할 수 있는 차선을 알려 두는 것이다.</li>
+          <li><strong>fw-04 를 아직 안 했으면</strong> → 실습 C 의 체크 하나(<code>iwdg-frozen-on-halt</code>)가 열려 있다. fw-04 를 끝내고 돌아와 닫는다. 모터 전원을 넣는 쪽에서 중단점을 쓰기 전에 닫혀 있어야 한다.</li>
+          <li>이 쪽은 <code>hardware/INVENTORY.md</code> 에 적는 값이 없다. 대신 내 노트에 셋이 있는가: 빈 박자의 <code>stat</code> 기록, 워치독 예산표 v1 과 계산 칸, NVIC 우선순위 표 초판.</li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

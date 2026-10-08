@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F4 · 디버거 — MCU 펌웨어 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="fw-04">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">F4 · 디버거</p>
+      <h1>멈춰서 들여다보고, 죽은 자리의 주소를 함수 이름으로 바꾼다</h1>
+      <p class="lead"><a href="fw-02-toolchain.html">fw-02</a> 에서 만든 ELF 와 <a href="fw-03-clock-console.html">fw-03</a> 의 콘솔 위에, 세 번째 관측 수단인 <strong>디버거</strong>를 얹는다.
+      여기서 익힌 두 가지 — "멈춘 CPU 에서 변수를 읽는 법"과 "fault 가 난 주소를 함수 이름으로 바꾸는 법" — 은 뒤에서 계속 쓰인다.
+      <a href="fw-06-tick-watchdog.html">fw-06</a> 은 디버거로 멈춘 채 하드웨어 워치독(IWDG)이 어떻게 되는지를 보고, <a href="fw-08-pwm-safe-output.html">fw-08</a> 은 멈춘 동안 PWM 핀이 어떻게 되는지를 보고, <a href="fw-17-link-v2.html">fw-17</a> · <a href="fw-18-safety-fsm.html">fw-18</a> 은 글자 창이 사라진 V2 모드에서 카운터를 gdb 로 읽는다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p><code>app_loop</code> 의 중단점에서 멈춘 gdb 프롬프트에서 변수를 읽고 바꾸면 LD1 의 점멸이 달라진다.
+        그리고 일부러 낸 HardFault 뒤에 <code>p/x s_last</code> 가 보여 주는 <code>pc</code> 값을 <code>.map</code> 파일(또는 <code>arm-none-eabi-addr2line</code>)에 넣으면 <code>hardfault_poll</code> 이라는 함수 이름이 나온다.</p>
+        <p><strong>이 쪽에 필요한 것</strong> — NUCLEO-H723ZG, USB 케이블(ST-LINK 쪽 CN1), fw-02 까지 끝낸 프로젝트(ELF 가 만들어지고 구워진다). 도구는 STM32CubeCLT 1.21.0 안의 <code>ST-LINK_gdbserver</code> 와 <code>arm-none-eabi-gdb</code> 다 — 새로 설치할 것은 없다.
+        <strong>없으면</strong> — 보드가 없으면 실습 B 의 호스트 시험(§3-2-3)과 "주소 → 함수 이름" 연습(§3-2-4 의 뒤쪽 절반, 보드 없이 ELF 만으로 된다)까지 할 수 있다. 중단점 · HardFault 포획은 보드가 있어야 한다.
+        fw-03 을 아직 안 했으면 fault 줄이 콘솔에 찍히지 않을 뿐이고, gdb 로 읽는 경로는 그대로 닫힌다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag mac">Mac</span></div>
+        <div><span class="k">선행</span>fw-02 (툴체인과 빈 프로젝트) — 실제로 쓰는 것: ELF · <code>.map</code> · <code>firmware/tools/build.sh</code> · <code>firmware/tools/flash.sh</code> · <code>app_loop()</code>. fw-03 (클럭과 VCP 콘솔)은 <strong>있으면</strong> 쓴다 — <code>LOG_ERR</code> 로 fault PC 를 글자로도 본다</div>
+        <div><span class="k">채우는 INVENTORY 칸</span>없음 (이 쪽은 값을 확정하지 않는다)</div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h (정적 HTML 은 입력을 저장하지 못한다 — 내 노트에 적는다)</div>
+      </div>
+
+      <h2 id="overview">1. 개요 — 세 번째 창</h2>
+      <p>지금까지 보드 안을 들여다보는 창은 둘이었다. <strong>LED</strong>(fw-02)와 <strong>VCP 콘솔의 글자</strong>(fw-03).
+      둘 다 "펌웨어가 스스로 말해 주는 것"만 보인다. 펌웨어가 말할 틈도 없이 죽었거나, 말할 창이 없는 빌드(V2 모드)에서는 아무것도 안 보인다.
+      디버거는 방향이 반대다 — <strong>밖에서 CPU 를 세우고</strong> 메모리와 레지스터를 읽는다. 펌웨어의 협조가 필요 없다.</p>
+
+      <pre class="diagram"><code> Mac                                           NUCLEO-H723ZG
+┌─────────────────────────────┐               ┌──────────────────────────────────────────────┐
+│ arm-none-eabi-gdb  + ELF    │               │  ST-LINK/V3E                 STM32H723ZG     │
+│       │  TCP 61234          │               │ ┌────────────┐            ┌───────────────┐  │
+│       ▼                     │   USB (CN1)   │ │            │            │               │  │
+│ ST-LINK_gdbserver ──────────┼───────────────┼─┤ debug      ├── PA13 ────┤ SWDIO         │  │
+│                             │               │ │            ├── PA14 ────┤ SWCLK         │  │
+│                             │   same cable  │ │            │            │               │  │
+│ miniterm / screen ──────────┼───────────────┼─┤ VCP        ├── PD8/PD9 ─┤ USART3        │  │
+│                             │               │ │ SWO input  ├── PB3 ─────┤ TIM2_CH2      │  │
+└─────────────────────────────┘               │ └────────────┘   (SB32)   └───────────────┘  │
+                                              └──────────────────────────────────────────────┘
+  gdb        : 심볼(ELF)을 알고 명령을 받는다. 보드와 직접 말하지 않는다
+  gdbserver  : gdb 의 요청을 SWD 동작으로 바꾼다. TCP 포트 기본값 61234
+  PB3        : 이 프로젝트에서는 FL 엔코더 B 다. SWO 로 쓰지 않는다 (§2-5)</code></pre>
+
+      <p>이 쪽에서 새로 나오는 말을 먼저 한 줄씩 정리한다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>말</th><th>뜻</th></tr></thead>
+        <tbody>
+          <tr><td>SWD</td><td>Serial Wire Debug. 선 두 가닥(SWDIO = PA13, SWCLK = PA14)으로 CPU 를 세우고 메모리를 읽는 길. 이 보드의 ST-LINK/V3E 는 H7 에 대해 <strong>SWD 와 VCP 만</strong> 지원한다(UM2407 §7.3)</td></tr>
+          <tr><td>gdbserver</td><td>gdb 와 ST-LINK 사이의 통역. Mac 에서 도는 프로그램이고, gdb 는 TCP 로 여기에 붙는다(UM2576 그림 1)</td></tr>
+          <tr><td>ELF · 심볼</td><td>빌드 산출물 <code>.elf</code> 에는 기계어 말고도 "이 주소는 이 함수 · 이 줄"이라는 표가 들어 있다. 보드의 플래시에는 기계어만 들어간다 — 이름은 <strong>Mac 쪽 ELF 에만</strong> 있다</td></tr>
+          <tr><td><code>.map</code></td><td>링커가 "무엇을 어느 주소에 놓았는가"를 적어 둔 글자 파일. 도구 없이 눈으로 주소 → 함수를 찾을 수 있다</td></tr>
+          <tr><td>HardFault</td><td>CPU 가 처리할 수 없는 일(정의되지 않은 명령, 닿을 수 없는 주소 …)을 만났을 때 들어가는 예외. 다른 fault 예외가 꺼져 있으면 전부 여기로 모인다</td></tr>
+          <tr><td>예외 스택 프레임</td><td>예외에 들어가는 순간 CPU 가 <strong>하드웨어로</strong> 스택에 밀어 넣는 레지스터 여덟 개. 그 안에 "어디서 죽었는가"(PC)가 있다</td></tr>
+          <tr><td>SWV · SWO</td><td>Serial Wire Viewer. PB3(SWO) 핀으로 트레이스 글자를 내보내는 기능. 이 프로젝트는 <strong>쓰지 않는다</strong></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="why">2. 원리 — 왜 주소 하나로 죽은 자리를 알 수 있는가</h2>
+
+      <h3 id="s2-1">2-1. 예외에 들어가는 순간 CPU 가 스택에 남기는 것</h3>
+      <p>Cortex-M 은 예외(인터럽트 · fault)에 들어갈 때 <strong>소프트웨어의 도움 없이</strong> 레지스터 여덟 개를 그때 쓰던 스택에 밀어 넣는다.
+      핸들러가 C 함수처럼 생겨도 되는 이유가 이것이다 — 호출 규약이 "함수가 망가뜨려도 되는 레지스터"로 정한 것들을 CPU 가 미리 치워 준다.
+      우리에게 중요한 것은 그 여덟 칸 가운데 두 칸이다.</p>
+      <pre class="diagram"><code> 자리 (SP 기준)   내용     hardfault_frame_t 의 칸
+ SP + 0x1C        xPSR     xpsr     ← 가장 먼저 밀려 들어간다 (가장 높은 주소)
+ SP + 0x18        PC       pc       ← 돌아갈 주소 = "어디서 죽었는가"
+ SP + 0x14        LR       lr       ← 죽은 함수를 부른 쪽으로 돌아갈 주소 = "누가 불렀는가"
+ SP + 0x10        R12      r12
+ SP + 0x0C        R3       r3
+ SP + 0x08        R2       r2
+ SP + 0x04        R1       r1
+ SP + 0x00        R0       r0       ← 예외 진입 직후의 SP 가 여기를 가리킨다</code></pre>
+      <p>이 순서를 직접 확인할 수 있는 자리가 H7 팩 안에 있다. FreeRTOS 의 Cortex-M7 포트는 새 태스크를 만들 때 "예외에서 막 돌아올 것처럼" 가짜 프레임을 손으로 쌓는다 —
+      <code>$FW_H7/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM7/r0p1/port.c:198-206</code> 에 위에서부터 xPSR · PC · LR · (R12 · R3 · R2 · R1) · R0 순서가 주석과 함께 적혀 있다. 이 가이드는 RTOS 를 쓰지 않지만 프레임의 생김새를 보여 주는 1차 자료로는 충분하다.</p>
+
+      <p><strong>핸들러 안의 LR 은 돌아갈 주소가 아니다.</strong> 예외에 들어가면 CPU 는 LR 에 <code>EXC_RETURN</code> 이라는 특수한 값을 넣는다. 값의 목록은 <code>$FW_H7/Drivers/CMSIS/Include/core_cm7.h:1863-1868</code> 에 있다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>값</th><th>이름 (core_cm7.h)</th><th>뜻</th></tr></thead>
+        <tbody>
+          <tr><td><code>0xFFFFFFF1</code></td><td><code>EXC_RETURN_HANDLER</code></td><td>다른 핸들러 안에서 예외가 났다. 돌아가면 MSP 를 쓴다</td></tr>
+          <tr><td><code>0xFFFFFFF9</code></td><td><code>EXC_RETURN_THREAD_MSP</code></td><td>보통 코드(thread)에서 났고 그 코드는 <strong>MSP</strong> 를 쓰고 있었다</td></tr>
+          <tr><td><code>0xFFFFFFFD</code></td><td><code>EXC_RETURN_THREAD_PSP</code></td><td>보통 코드에서 났고 그 코드는 <strong>PSP</strong> 를 쓰고 있었다(RTOS 의 태스크)</td></tr>
+          <tr><td><code>0xFFFFFFE1</code> · <code>E9</code> · <code>ED</code></td><td><code>…_FPU</code></td><td>위 셋과 같고, 부동소수 상태까지 같이 쌓였다</td></tr>
+        </tbody>
+      </table></div>
+      <p><code>F9</code> 와 <code>FD</code> 를 이진수로 적어 보면 다른 비트는 하나뿐이다(<code>1001</code> ↔ <code>1101</code>). 그 비트가 "프레임이 어느 스택에 있는가"를 말해 준다 — 어느 비트인지는 §3-2-3 에서 직접 찾아 호스트 시험으로 확인한다.
+      이 가이드의 펌웨어는 RTOS 가 없어서 리셋 뒤 줄곧 MSP 하나만 쓴다. 그래서 실제로 보게 될 값은 <code>0xFFFFFFF9</code> 계열이다. 그래도 PSP 쪽을 한 줄로 같이 다루는 까닭은 비용이 한 줄이고, 다루지 않으면 나중에 스택을 나누는 날 핸들러가 조용히 틀린 주소를 읽기 때문이다.</p>
+      <div class="callout note"><span class="ct">등급 — 추정</span>
+        <p><code>_FPU</code> 값이 찍히는 경우(부동소수 연산을 한 뒤의 fault)에도 앞의 여덟 칸의 자리는 같고 그 뒤에 부동소수 레지스터가 더 쌓인다는 것은 Cortex-M 의 일반 동작으로 알려진 것이다.
+        이 Mac 에는 Arm 의 구조 문서가 없어 1차 출처로 확인하지 못했다. 내 보드에서 <code>exc_return</code> 이 <code>E9</code> 로 찍히면 그때의 <code>pc</code> 가 여전히 옳은 함수를 가리키는지 노트에 적어 둔다.</p>
+      </div>
+
+      <p><strong>그래서 핸들러는 "프롤로그 없는" 함수여야 한다.</strong> 프레임의 주소는 "예외 진입 직후의 SP"다. 그런데 C 컴파일러는 함수 첫머리에 자기 몫의 레지스터를 스택에 밀어 넣는 코드(프롤로그)를 붙인다 — 그 순간 SP 가 움직인다.
+      이 Mac 의 CubeCLT GCC 14.3.1 로 <code>-O0</code> 빌드한 <code>HardFault_Handler</code> 를 역어셈블해 보면 첫 두 명령이 <code>push {r7}</code> · <code>add r7, sp, #0</code> 다. SP 가 4 바이트(한 칸) 내려갔으므로, 그 뒤에 읽은 SP 를 프레임의 시작으로 믿으면 <strong>모든 칸이 한 칸씩 밀린다</strong> — <code>pc</code> 칸에 실제로는 LR 이 들어온다.
+      죽은 자리가 아니라 "죽은 함수를 부른 쪽"을 가리키게 되는데, 그럴듯한 코드 주소라서 틀린 줄도 모르기 쉽다. 밀리는 칸 수는 컴파일러 · 최적화 수준 · 핸들러 본문에 따라 달라진다.</p>
+      <p>GCC 의 <code>naked</code> 속성은 프롤로그 · 에필로그를 만들지 않게 한다. 생성물의 <code>void HardFault_Handler(void)</code> 정의 자체는 고칠 수 없지만(USER CODE 블록 밖이다), GCC 는 <strong>앞선 선언에 붙인 속성을 뒤의 정의에 합친다.</strong>
+      그래서 <code>USER CODE BEGIN PFP</code> 블록에 <code>void HardFault_Handler(void) __attribute__((naked));</code> 한 줄을 두면 된다. 속성이 실제로 먹었는지는 믿지 말고 역어셈블로 본다(§3-2-4) — 첫 명령이 <code>push</code> 가 아니어야 한다.</p>
+      <div class="callout why"><span class="ct">왜 생성물에 손을 대는가</span>
+        <p>이 가이드의 규칙은 "내 코드는 전부 <code>User/</code>, 생성물에는 호출 한 줄"이다(<code>firmware/README.md</code> 규칙 1). HardFault 핸들러는 그 예외 셋 가운데 하나다 —
+        벡터 테이블이 가리키는 <code>HardFault_Handler</code> 의 정의가 생성물 <code>Core/Src/stm32h7xx_it.c</code> 안에 있어서, <code>User/</code> 에 같은 이름을 또 정의하면 링크에서 부딪힌다.
+        그래서 생성물에는 <strong>USER CODE 블록 세 군데에 몇 줄</strong>만 두고(포함 한 줄 · 선언 한 줄 · 어셈블리 네 줄) 나머지는 전부 <code>User/Src/Tools/hardfault.c</code> 로 뺀다.</p>
+      </div>
+      <p>하나 더. HardFault 핸들러는 설정할 수 있는 어떤 인터럽트보다도 우선순위가 높다(고정). 그 안에서는 SysTick 이 끼어들지 못하므로 <code>HAL_GetTick()</code> 이 멈춘다.
+      <code>HAL_Delay()</code> 는 그 값이 늘기를 기다리는 빈 루프라서(<code>stm32h7xx_hal.c:405-419</code>) <strong>영원히 돌아오지 않는다.</strong> fault 핸들러에서 쓸 수 있는 것은 "기다리지 않는" 동작뿐이다 — 메모리에 적기, 핀 하나 켜기, 폴링 송신.</p>
+
+      <h3 id="s2-2">2-2. <code>.map</code> 과 심볼 — 주소를 이름으로 바꾸는 표는 Mac 에 있다</h3>
+      <p>보드의 플래시에는 기계어만 들어간다. "<code>0x0800….</code> 은 어느 함수인가"에 답하는 표는 <strong>빌드할 때 Mac 에 남는 두 파일</strong>에 있다.
+      둘 다 CubeMX 가 만든 <code>cmake/gcc-arm-none-eabi.cmake</code> 의 플래그에서 나온다(사용자의 H723 생성물에서 확인한 줄).</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>플래그 (생성된 툴체인 파일)</th><th>결과</th><th>이 쪽에서의 쓸모</th></tr></thead>
+        <tbody>
+          <tr><td><code>-Wl,-Map=${CMAKE_PROJECT_NAME}.map</code></td><td>빌드 디렉터리에 <code>&lt;프로젝트&gt;.map</code> 이 생긴다. 프리셋의 <code>binaryDir</code> 가 <code>build/${presetName}</code> 이므로 Debug 프리셋이면 <code>build/Debug/</code> 아래</td><td>글자 파일이다. <code>grep</code> 과 눈으로 주소 → 함수를 찾는다</td></tr>
+          <tr><td><code>-ffunction-sections</code> (+ <code>-Wl,--gc-sections</code>)</td><td>함수마다 <code>.text.&lt;함수이름&gt;</code> 이라는 자기 섹션을 갖는다. 아무도 안 부르는 함수는 링크에서 빠진다</td><td><code>.map</code> 에 함수 하나가 "시작 주소 + 크기" 한 줄로 나온다 → 범위 비교가 쉽다</td></tr>
+          <tr><td>Debug: <code>-O0 -g3</code></td><td>ELF 에 줄 번호 · 변수 · <strong>매크로</strong>까지 들어간다</td><td>gdb 에서 <code>p/x SCB-&gt;CFSR</code> 처럼 CMSIS 매크로를 그대로 쓸 수 있다</td></tr>
+          <tr><td>Release: <code>-Os -g0</code></td><td>디버그 정보가 없다. 심볼 테이블(함수 이름 ↔ 주소)은 남는다</td><td><code>addr2line</code> 이 함수 이름은 주지만 파일:줄은 <code>??:?</code> 로 나온다(이 Mac 에서 확인)</td></tr>
+        </tbody>
+      </table></div>
+      <p><code>.map</code> 에서 함수 하나는 이렇게 생겼다(모양만 — 주소는 빌드마다 다르다).</p>
+      <pre><code class="lang-text"> .text.hardfault_poll
+                0x&lt;시작주소&gt;       0x&lt;크기&gt; CMakeFiles/h723zg.dir/User/Src/Tools/hardfault.c.obj
+                0x&lt;시작주소&gt;                hardfault_poll</code></pre>
+      <p>스택에서 꺼낸 <code>pc</code> 가 <code>시작주소 ≤ pc &lt; 시작주소 + 크기</code> 안에 들어오는 줄을 찾으면 그 함수다(섹션 이름이 짧은 함수는 주소와 크기가 이름과 같은 줄에 나온다). 같은 일을 하는 도구가 셋 있다. 결과는 같아야 한다 — 다르면 ELF 와 보드의 내용이 서로 다른 빌드다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>수단</th><th>필요한 것</th><th>주는 것</th></tr></thead>
+        <tbody>
+          <tr><td><code>.map</code> 을 눈으로</td><td><code>.map</code> 파일</td><td>함수 이름, 어느 <code>.obj</code> 에서 왔는가. 도구가 없어도 된다</td></tr>
+          <tr><td><code>arm-none-eabi-addr2line -e &lt;elf&gt; -f -p &lt;pc&gt;</code></td><td>ELF</td><td>함수 이름 + (Debug 빌드면) 파일:줄</td></tr>
+          <tr><td>gdb 의 <code>info symbol &lt;pc&gt;</code> · <code>list *&lt;pc&gt;</code></td><td>ELF (보드에 붙지 않아도 된다)</td><td>함수 이름 + 오프셋, 그 줄 주변의 소스</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><span class="ct">주소는 빌드마다 움직인다</span>
+        <p>코드를 한 줄 고치고 다시 빌드하면 그 뒤의 함수들이 전부 밀린다. <strong>보드에 구운 바로 그 빌드의 ELF · <code>.map</code></strong> 으로 찾아야 한다.
+        "빌드만 하고 굽지 않은 채" 디버거를 붙이면 gdb 는 새 ELF 의 표로 옛 기계어를 해석한다 — 중단점이 엉뚱한 줄에서 멈추고 변수 값이 말이 안 된다.</p>
+      </div>
+
+      <h3 id="s2-3">2-3. 디버거로 멈춰도 주변장치는 계속 돈다</h3>
+      <p>중단점에서 멈추는 것은 <strong>CPU 코어</strong>다. 타이머 · 워치독 같은 주변장치는 자기 클럭으로 계속 돈다. 멈춘 동안에도 도는 것과 서는 것을 가르면 이렇다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>대상</th><th>CPU 가 멈춘 동안</th><th>그래서 생기는 일</th><th>다루는 쪽</th></tr></thead>
+        <tbody>
+          <tr><td>내 코드 · 인터럽트 핸들러 · <code>HAL_GetTick()</code> 의 시간</td><td><strong>선다</strong> (실행할 CPU 가 없다)</td><td>소프트웨어로 세는 시간은 전부 멈춘다 — 나중의 명령 워치독(200 ms)도 멈춘 동안에는 늙지 않는다</td><td>이 쪽 §3-1-4 에서 눈으로 본다</td></tr>
+          <tr><td>하드웨어 워치독 IWDG</td><td><strong>계속 센다</strong> — 동결 비트를 세우지 않았다면(RM0468 §50.3.7)</td><td>중단점에서 생각하는 사이에 보드가 리셋된다. 다시 <code>continue</code> 하면 처음부터 돈다</td><td><a href="fw-06-tick-watchdog.html">fw-06</a> 의 실습 C — <code>__HAL_DBGMCU_FREEZE_IWDG1()</code></td></tr>
+          <tr><td>TIM1 · TIM8 의 PWM 출력</td><td><strong>계속 나간다</strong> — 마지막에 써 둔 듀티 그대로(동결하지 않았다면)</td><td>제어 루프는 멈췄는데 모터에는 마지막 듀티가 계속 걸린다 = 브레이크 없는 정속 회전</td><td><a href="fw-08-pwm-safe-output.html">fw-08</a> — 동결 + OSSI + idle LOW</td></tr>
+          <tr><td>엔코더 타이머(TIM2 · 5 · 23 · 24)</td><td>계속 센다(동결하지 않았다면)</td><td>동결하지 않으면 멈춘 동안 손으로 돌린 회전분까지 위치에 이어진다. 동결하면 그 회전분을 <strong>잃는다.</strong> 동결은 대상마다 얻는 것과 잃는 것이 다른 선택이다</td><td><a href="fw-08-pwm-safe-output.html">fw-08</a> · <a href="fw-09-encoder.html">fw-09</a></td></tr>
+          <tr><td>USART 수신</td><td>하드웨어는 계속 받는다. 꺼내 갈 코드가 없다</td><td>멈춘 동안 들어온 바이트가 넘치면 수신 오류(ORE)가 선다</td><td><a href="fw-05-cli.html">fw-05</a> 의 오류 재무장</td></tr>
+        </tbody>
+      </table></div>
+      <p>"동결"은 <code>DBGMCU</code> 라는 블록의 레지스터 비트다. 비트를 세워 둔 주변장치는 코어가 디버그로 멈출 때 클럭이 같이 멈춘다(RM0468 §65.5.7).
+      고급 타이머에 대해서는 한 가지가 더 붙는다 — RM0468 §43.3.29: 카운터가 동결로 멈추면 안전을 위해 <strong>출력이 MOE = 0 인 것처럼 비활성화</strong>되고, 그때 핀이 어떻게 되는가는 OSSI 가 정한다(OSSI = 1 이면 비활성 레벨로 강제, 0 이면 GPIO 로 넘어가 보통 Hi-Z).</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>동결 대상</th><th>레지스터 (오프셋)</th><th>비트</th><th>HAL 매크로 (<code>stm32h7xx_hal.h</code>)</th></tr></thead>
+        <tbody>
+          <tr><td>TIM2 · TIM6</td><td><code>DBGMCU_APB1LFZ1</code> (0x03C)</td><td>0 · 4</td><td><code>__HAL_DBGMCU_FREEZE_TIM2()</code> :865 · <code>…_TIM6()</code> :869</td></tr>
+          <tr><td>TIM1 · TIM8</td><td><code>DBGMCU_APB2FZ1</code> (0x04C)</td><td>0 · 1</td><td><code>__HAL_DBGMCU_FREEZE_TIM1()</code> :892 · <code>…_TIM8()</code> :893</td></tr>
+          <tr><td>IWDG1</td><td><code>DBGMCU_APB4FZ1</code> (0x054)</td><td>18</td><td><code>__HAL_DBGMCU_FREEZE_IWDG1()</code> :905</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">출처: RM0468 Rev 3 §65.5.7 의 레지스터 절(오프셋 · 비트), 코어에서 보는 기준 주소 <code>0x5C001000</code>(같은 절 · <code>stm32h723xx.h:2371</code>). 줄 번호는 FW_H7 V1.13.0 에서 직접 확인했다.</p>
+      <p>이 레지스터에는 알아 둘 성질이 하나 있다. <strong>시스템 리셋으로는 지워지지 않고 전원 리셋에서만 지워진다</strong>(RM0468 §65.5.7). NRST 버튼을 눌러도 앞서 세운 동결 비트가 남는다는 뜻이고, 거꾸로 "어떤 도구가 나 몰래 세워 둔 비트"도 남는다.
+      그래서 이 쪽의 실습 A 는 지금 상태를 <strong>읽어서 적어 두는 것</strong>까지 한다. 세우는 일은 fw-06 과 fw-08 의 몫이다.</p>
+      <div class="callout warn"><span class="ct">예고 — 모터 전원을 넣은 뒤의 중단점</span>
+        <p>모터 전원(24 V 계)이 들어간 상태에서 중단점을 쓰려면 <strong><a href="fw-08-pwm-safe-output.html">fw-08</a> 의 "TIM1 · TIM8 동결 + OSSI + idle LOW"가 먼저 끝나 있어야 한다.</strong>
+        그 전에 멈추면 PWM 핀에는 마지막 듀티가 계속 나가고, 그 사이 제어 루프 · 보호 3종 · 명령 워치독은 전부 멈춰 있다 — 바퀴를 세울 코드가 하나도 돌지 않는다.
+        이 쪽(fw-04)에서는 모터 드라이버를 결선하지 않으므로 해당이 없다. fw-11 이후에 디버거를 다시 꺼낼 때 이 상자를 떠올린다.</p>
+      </div>
+
+      <h3 id="s2-4">2-4. V2 모드에는 글자 창이 없다 — 그때 남는 창이 gdb 다</h3>
+      <p>이 가이드는 VCP 하나를 빌드 스위치 <code>LINK_MODE</code> 로 두 가지 용도에 쓴다. TEXT 모드에서는 명령 창(CLI)과 <code>LOG_*</code> 글자가 나가고, V2 모드에서는 Pi 와 주고받는 <strong>이진 프레임만</strong> 나간다.
+      V2 에서 글자가 한 줄이라도 새면 프레임이 깨지므로 <code>LOG_*</code> 는 컴파일 단계에서 사라진다. 그리고 계약 v2 에는 바퀴별 카운트 · 듀티 · 수신 오류 카운터 같은 벤치 관측값이 없다(<a href="06a-mcu-protocol.html">06a</a> §4-2) — 그것을 보려고 계약을 넓히지도 않는다.</p>
+      <p>그러면 V2 모드에서 "CRC 오류가 몇 번 났는가", "수신이 몇 번 재무장됐는가"를 무엇으로 보는가. <strong>모듈 안의 <code>static</code> 카운터를 gdb 로 읽는다.</strong> 그래서 이 쪽의 실습 A 가 일부러 <code>static</code> 변수를 읽고 바꾸는 것으로 되어 있다.</p>
+      <ul>
+        <li>이 가이드의 규칙은 "전역 변수를 모듈 밖으로 내놓지 않는다"다. gdb 에게는 상관없다 — <code>static</code> 도 ELF 의 심볼 표에 있으므로 <code>p s_loop_count</code> 로 읽힌다. 같은 이름이 여러 파일에 있으면 <code>p 'app.c'::s_loop_count</code> 처럼 파일을 짚는다.</li>
+        <li>gdb 는 CPU 를 <strong>세운 동안에만</strong> 메모리를 읽는다(이 쪽에서 쓰는 방식 기준). 카운터를 읽는 그 짧은 동안 제어 루프도 선다 — §2-3 의 예고 상자가 V2 모드에서 그대로 적용된다. <a href="fw-18-safety-fsm.html">fw-18</a> 이 모터를 돌리는 절에서 gdb 를 쓸 때 이 조건을 다시 확인한다.</li>
+        <li>보드를 <strong>리셋하지 않고</strong> 나중에 붙는 방법이 있다. <code>ST-LINK_gdbserver</code> 의 <code>-g</code>(<code>--attach</code>) — "리셋이나 새 프로그램 다운로드 없이 돌고 있는 프로그램에 붙는다"(UM2576 §1.1). 이미 이상해진 보드의 카운터와 <code>s_last</code> 를 현장 그대로 읽는 길이다. 실습 B 의 마지막에 해 본다.</li>
+        <li>SWD 와 VCP 는 <strong>USB 케이블 한 가닥</strong>을 같이 쓴다(ST-LINK/V3E, UM2407 §7.3). 벤치에서는 그 케이블이 Mac 에 꽂혀 있어 둘 다 Mac 의 것이지만, 조립 뒤에는 Pi 에 꽂힌다 — 그때 gdb 를 붙이려면 케이블을 Mac 으로 옮기거나 Mac 을 로봇 곁에 둬야 한다. 조립 뒤의 재플래시 · 관측 동선을 어떻게 할지는 <a href="fw-20-after-assembly.html">fw-20</a> 에서 정하는 결정 대기 항목이다.</li>
+        <li>코드가 읽지 않고 <strong>쓰기만 하는</strong> 변수는 최적화 빌드에서 컴파일러가 저장을 줄이거나 없앨 수 있다(C 언어가 허용한다). 이 Mac 의 GCC 14.3.1 <code>-Os</code> 로 작은 예를 컴파일했을 때는 저장이 남아 있었지만, 그것은 보장이 아니다. gdb 로만 읽을 변수의 저장을 보장받고 싶으면 <code>volatile</code> 로 선언한다 — 대가는 그 변수에 대한 최적화를 포기하는 것이다.</li>
+      </ul>
+
+      <h3 id="s2-5">2-5. SWO 를 포기한 이유 — PB3 는 FL 엔코더의 B 상이다</h3>
+      <p>"printf 를 SWO 로 빼면 UART 를 안 써도 된다"는 방법이 널리 알려져 있다. 이 프로젝트는 그 길을 <strong>쓰지 않는다.</strong> 핀 하나 때문이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>사실</th><th>출처</th><th>등급</th></tr></thead>
+        <tbody>
+          <tr><td>SWO 는 PB3 에만 나온다. 그리고 PB3 는 이 프로젝트에서 <code>ENC_FL_B</code>(TIM2_CH2, Zio D23 · CN7-15)다. TIM5 가 PA0/PA1 을 가져가므로 TIM2 의 CH2 후보는 PB3 밖에 남지 않는다</td><td><code>hardware/pinmap-h723.md</code> §2-B · CubeMX DB <code>STM32H723ZGTx.xml</code>(<code>DEBUG_JTDO-SWO</code> 신호를 가진 핀은 PB3 하나)</td><td>확정</td></tr>
+          <tr><td>PB3 는 리셋 직후부터 <code>MX_GPIO_Init</code> 이 돌 때까지 아날로그가 아니라 <strong>AF0(JTDO/TRACESWO), floating</strong> 이다</td><td>RM0468 §11.3.1 (<code>hardware/pinmap-h723.md</code> §2-B 의 PB3 행)</td><td>확정</td></tr>
+          <tr><td>그 구간에 디버거가 SWV 를 켜면 MCU 가 PB3 를 <strong>출력으로 구동</strong>한다 → 엔코더의 B 상 출력과 맞붙는다</td><td><code>hardware/pinmap-h723.md</code> §2-B · <code>hardware/pinmap-h723.md</code> §5-2</td><td>추정 (SWJ-DP 동작에서)</td></tr>
+          <tr><td>SB32(기본 ON)는 PB3 를 ST-LINK 의 SWO <strong>입력</strong>에 잇는다 — 구동원이 아니라 부하다. SB32 를 떼도 위의 "MCU 가 구동" 문제는 그대로다</td><td>UM2407 표 14 (<code>hardware/pinmap-h723.md</code> §4-3)</td><td>확정</td></tr>
+        </tbody>
+      </table></div>
+      <p>그래서 조건은 둘이다. ① CubeMX 에서 Debug 를 <strong>Serial Wire</strong> 로 두고 PB3 의 잠금을 푼다(fw-02 에서 했다 — 이 쪽은 grep 으로 재확인만 한다). ② 디버그를 시작하는 쪽에서 <strong>SWV 를 켜지 않는다.</strong></p>
+      <p>②가 <code>ST-LINK_gdbserver</code> 에서 무엇인지는 도움말과 매뉴얼에서 확인했다. SWV 에는 "끄는 스위치"가 없다 — <strong>켜는 옵션 셋을 주지 않는 것이 끈 것이다.</strong></p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>옵션</th><th>도움말의 설명 (<code>ST-LINK_gdbserver -h</code>, 7.13.0)</th><th>이 가이드에서</th></tr></thead>
+        <tbody>
+          <tr><td><code>-z &lt;port&gt;</code> · <code>--swo-port</code></td><td>SWO output port number [use for SWV]</td><td><strong>주지 않는다</strong></td></tr>
+          <tr><td><code>-a &lt;Hz&gt;</code> · <code>--cpu-clock</code></td><td>CPU clock speed in Hz [use for SWV]</td><td><strong>주지 않는다</strong> (SWO 의 비트 주기를 계산하는 데 쓰이는 값이다)</td></tr>
+          <tr><td><code>-b &lt;div&gt;</code> · <code>--swo-clock-div</code></td><td>Divide CPU clock by SWO CLOCKDIV</td><td><strong>주지 않는다</strong></td></tr>
+          <tr><td><code>-d</code> · <code>--swd</code></td><td>Enable SWD debug mode [use for SWV]</td><td><strong>준다.</strong> 설명 끝의 "[use for SWV]"는 "SWV 를 쓰려면 SWD 여야 한다"는 뜻이지 이것이 SWV 를 켠다는 뜻이 아니다 — 이 보드는 SWD 로만 붙는다</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">UM2576 Rev 7 §1.1: "Use the –z, –a, and –b options together to specify the speed of the SWO." 같은 설치본의 예시 설정 파일(<code>STLink-gdb-server/bin/config.txt</code>)도 "Options without SWV" 를 <code>-e -d -cp …</code> 로, "Options with SWV" 를 거기에 <code>-z 61235 -a … -b …</code> 를 더한 것으로 적는다. 매뉴얼은 CubeCLT 안에 있다: <code>/opt/ST/STM32CubeCLT_1.21.0/STLink-gdb-server/doc/DM00613038.pdf</code>.</p>
+      <div class="callout note"><span class="ct">등급 — 추정 / 확인 과제</span>
+        <p>"세 옵션을 주지 않으면 gdbserver 가 트레이스 관련 레지스터를 전혀 건드리지 않는다"까지는 문서에 적혀 있지 않다. 그래서 실습 A 에서 <code>DBGMCU_CR</code>(기준 주소 + 0x004)의 bit 20 <code>TRACECLKEN</code>(트레이스 포트 클럭, RM0468 §65.5.7)을 gdb 로 <strong>읽어서 적는다.</strong>
+        0 이면 트레이스 포트 클럭이 꺼져 있다. 1 로 읽히면 — 이 레지스터는 전원 리셋에서만 지워지므로 — USB 를 뽑았다 꽂은 뒤 다시 읽어 보고, 그래도 1 이면 어떤 도구가 세우는지 노트에 적어 둔다(<a href="fw-09-encoder.html">fw-09</a> 에서 FL 엔코더를 꽂기 전에 다시 본다).</p>
+      </div>
+      <p>gdb 를 VS Code 의 cortex-debug 확장으로 감싸 쓰는 것은 선택지다(하는 일은 같다 — gdbserver 와 gdb 를 대신 띄워 준다. 차이는 화면과 설정 파일의 유무다). 그쪽에서 SWV 에 해당하는 것은 <code>launch.json</code> 의 <code>swoConfig</code> 이고 <code>enabled</code> 의 기본값은 <code>false</code> 다(이 Mac 에 설치된 확장 1.12.1 의 <code>package.json</code> 에서 확인). <strong><code>swoConfig</code> 를 두지 않거나 <code>"enabled": false</code> 로 둔다.</strong></p>
+
+      <h2 id="lab">3. 실습</h2>
+      <p>실습은 둘이다. <strong>A</strong> 는 붙어서 멈추고 읽고 바꾸는 것, <strong>B</strong> 는 일부러 죽이고 죽은 자리를 이름으로 바꾸는 것. 끝자리 번호의 뜻은 다른 쪽과 같다(1 = CubeMX, 2 = 골격, 3 = 직접 채우기, 4 = 굽고 보기).
+      빌드와 플래시는 <a href="fw-02-toolchain.html">fw-02</a> 가 만든 <code>firmware/tools/build.sh</code> · <code>firmware/tools/flash.sh</code> 만 부른다. 모터 드라이버 · 센서는 아무것도 꽂지 않는다.</p>
+      <div class="callout tip"><span class="ct">채울 자리마다 힌트 카드가 있다 — 읽는 순서</span>
+        <p>골격의 채울 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 붙어 있고(이 쪽은 T1 ~ T8 — 실습 A 의 <code>app.c</code> 에 셋, 실습 B 의 헤더 · <code>hardfault.c</code> · 생성물에 다섯), 그 주석 안에 <strong>번호 걸음</strong>이 있다. 먼저 걸음을 보고 직접 써 본다.
+        막히면 "직접 채우기" 절에서 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인. gdb 세션(<code>(gdb)</code> 로 시작하는 글자 블록)은 코드 골격이 아니라서 카드가 없다 — 그것은 그대로 쳐 보는 것이다.</p>
+        <p>완결 코드는 Mac 의 호스트 시험(<code>PASS hardfault 3 cases</code>, <code>-fsanitize=undefined,address</code> 까지 조용)과 이 프로젝트의 펌웨어 빌드(링크까지, <code>User/</code> 경고 0 — 역어셈블에서 <code>HardFault_Handler</code> 의 첫 명령이 <code>mrs r0, MSP</code> 이고 <code>udf #255</code> 가 <code>.map</code> 의 <code>.text.hardfault_poll</code> 범위 안에 드는 것까지)를 통과한 코드다(2026-10-04). 보드에서 도는 것 — LD3 · <code>s_last</code> · <code>bt</code> — 은 "굽고 보기"에서 내가 확인한다.
+        붙여 넣는 것으로 끝내지 않는다 — 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
+      </div>
+
+      <h3 id="s3-1">3-1. 실습 A — 붙어서, 멈추고, 읽고, 바꾼다</h3>
+
+      <h4 id="s3-1-1">3-1-1. CubeMX 설정 — 새로 켜는 것 없음(재확인만)</h4>
+      <p>이 쪽은 CubeMX 를 열지 않는다. <a href="fw-02-toolchain.html#s3-1-1">fw-02 §3-1-1</a> 에서 한 Debug 설정이 <code>.ioc</code> 에 그대로 있는지만 grep 으로 본다. 어긋나 있을 때만 아래 위치 표로 고친다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>항목</th><th>값</th><th>왜</th><th><code>.ioc</code> 키 (grep 으로 확인)</th></tr></thead>
+        <tbody>
+          <tr><td>Debug</td><td>Serial Wire</td><td>JTAG · Trace 계열 모드는 PB3 를 디버그 기능에 잠근다. Serial Wire 가 쓰는 신호는 SWCLK · SWDIO 둘뿐이다(CubeMX DB <code>DEBUG-STM32H7_sys_v1_1_Modes.xml</code> 의 <code>Serial_Wire</code> 모드) — <code>hardware/pinmap-h723.md</code> §6 #2</td><td><code>PA13(JTMS/SWDIO).Mode=Serial_Wire</code> · <code>PA14(JTCK/SWCLK).Mode=Serial_Wire</code> <em>(철자: CubeMX 에 든 STM32H7S78-DK 보드 프리셋의 같은 줄에서 확인. 내 <code>.ioc</code> 에서는 아래 grep 으로 확인)</em></td></tr>
+          <tr><td>PB3</td><td>SWO 가 <strong>아니다</strong></td><td>보드 선택 프리셋(<code>…NUCLEO-H723ZG…_Board_AllConfig.ioc</code> L121-125)은 PB3 를 <code>Trace_Asynchronous_SW</code> · 잠금 · 라벨 <code>SWO</code> 로 잡아 둔다. 그대로면 fw-09 에서 TIM2_CH2 를 놓을 수 없고 §2-5 의 충돌 조건이 된다</td><td><code>PB3(JTDO/TRACESWO).Mode=Trace_Asynchronous_SW</code> 줄이 <strong>없어야</strong> 한다</td></tr>
+        </tbody>
+      </table></div>
+      <pre><code class="lang-bash">cd firmware/h723zg
+grep -n "SWDIO\|SWCLK\|TRACESWO" h723zg.ioc          # Debug 핀 세 개에 관한 줄 전부
+grep -n "^Mcu\.IP[0-9]*=DEBUG" h723zg.ioc             # H7 에서는 Debug 가 DEBUG 라는 IP 로 저장된다</code></pre>
+      <pre><code class="lang-text">(기대: PA13 · PA14 의 .Mode= 줄이 Serial_Wire 로 끝난다.
+ PB3 에 관한 줄은 아예 없거나(아직 아무것도 배정하지 않았다), 있더라도 Trace_Asynchronous_SW 가 아니다.
+ Mcu.IPn=DEBUG 줄이 하나 나온다. 줄 번호와 n 은 사람마다 다르다.)</code></pre>
+      <p class="small"><strong>화면 확인: 미확인 (CubeMX 6.18.1)</strong> — 고쳐야 할 때만 쓴다. 아래 경로는 CubeMX 의 DB 파일에서 추정한 것이다. 화면이 다르면 <strong>화면이 맞다.</strong> 달랐던 경로는 노트에 적어 둔다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>#</th><th>위치 (화면 경로)</th><th>설정</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>왼쪽 목록의 <strong>DEBUG</strong> — H7 에서는 Debug 항목이 SYS 가 아니라 <code>DEBUG</code> 라는 별도 IP 에 들어 있다(CubeMX DB <code>STM32H723ZGTx.xml</code> 의 IP 목록에서 확인). 어느 범주 아래에 보이는지는 확인하지 못했다 → 왼쪽 위 검색창에 <code>DEBUG</code></td><td>Debug = <strong>Serial Wire</strong></td></tr>
+          <tr><td>2</td><td><strong>Pinout view</strong> 의 PB3</td><td>신호가 SWO 로 잡혀 있으면 <strong>Reset_State</strong> 로. 핀 잠금 표시가 있으면 푼다</td></tr>
+        </tbody>
+      </table></div>
+      <p>고쳤으면 fw-02 의 생성 → 빌드 절차로 돌아가 다시 굽고 온다. 재생성 규칙은 같다: 생성물은 <code>USER CODE BEGIN/END</code> 사이만, 내 소스는 <code>User/</code>, 등록은 최상위 <code>CMakeLists.txt</code> 의 <code># Add user sources here</code>.</p>
+
+      <h4 id="s3-1-2">3-1-2. 골격 — 읽을 변수와 바꿀 변수</h4>
+      <p>디버거로 볼 것이 있어야 한다. fw-02 에서 만든 <code>User/Src/app.c</code> 에 <code>static</code> 변수 두 개를 더한다. 하나는 <strong>읽을</strong> 것(주 루프가 몇 바퀴 돌았는가), 하나는 <strong>바꿀</strong> 것(LD1 의 점멸 주기)이다. fw-02 에서 주기를 매크로나 숫자 그대로 썼다면 gdb 가 바꿀 메모리가 없다 — 변수로 옮겨야 한다.</p>
+      <pre><code class="lang-c">/* User/Src/app.c - 이 쪽에서 더하는 것. fw-02 가 이미 넣은 것은 그대로 둔다. */
+
+/* LD1 뒤집기 주기 [ms]. volatile: gdb 가 컴파일러 모르게 써 넣는다. */
+static volatile uint32_t s_blink_ms;
+/* 부팅 뒤 app_loop() 가 돈 횟수. 펌웨어 안에서는 아무도 읽지 않고 gdb 가 읽는다. */
+static uint32_t s_loop_count;
+
+void app_init(void)
+{
+  /* ... fw-02 가 넣은 것 ... */
+  /* TODO(you) [T1]: s_blink_ms 에 fw-02 에서 고른 주기를 넣는다 [ms] - 힌트 카드 T1
+       1) fw-02 의 app_loop() 에서 비교에 쓴 상수(이름이든 숫자든)를 여기서 s_blink_ms 에 대입한다
+       2) 그 상수는 T3 의 비교에서 사라진다 - 두 자리에 같은 값이 남아 있으면 gdb 가 바꿔도 소용없다 */
+}
+
+void app_loop(void)
+{
+  /* TODO(you) [T2]: 이번 바퀴를 s_loop_count 에 센다 - 힌트 카드 T2
+       1) 함수의 첫 줄에서 s_loop_count 를 1 올린다 - if 안이 아니다(바퀴 수이지 뒤집은 횟수가 아니다) */
+  /* TODO(you) [T3]: 지난 시간을 fw-02 의 상수 대신 s_blink_ms 와 비교한다 - 힌트 카드 T3
+       1) fw-02 에서 쓴 심박 코드(static last, now = HAL_GetTick(), 뒤집기)는 그대로 둔다
+       2) (now - last) &gt;= &lt;상수&gt; 의 &lt;상수&gt; 자리에 s_blink_ms 를 쓴다
+       3) 상수의 이름(또는 숫자)은 T1 의 대입 한 곳에만 남는다 */
+}</code></pre>
+      <p class="small">TODO 를 채우기 전에도 빌드는 된다(<code>s_loop_count</code> 에 "defined but not used" 경고 한 줄이 나온다 — <code>volatile</code> 인 <code>s_blink_ms</code> 에는 GCC 가 이 경고를 내지 않는다(arm-gcc 14.3.1 로 확인). 채우면 사라진다).</p>
+
+      <h4 id="s3-1-3">3-1-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li>위의 TODO 셋을 채운다. 막히면 아래 카드 T1 ~ T3 을 연다. fw-02 의 <code>app_loop()</code> 는 기다리지 않고 곧바로 돌아오는 함수라서 1 초에도 수없이 불린다 — <code>s_loop_count</code> 는 "LD1 이 뒤집힌 횟수"가 아니라 "주 루프가 돈 바퀴 수"다.</li>
+        <li><strong>Debug 프리셋으로</strong> 빌드되는지 확인한다. Release 는 <code>-Os -g0</code> 이라 변수도 줄 번호도 ELF 에 없다(§2-2). fw-02 의 <code>build.sh</code> 는 <code>FW_PRESET</code> 을 따로 주지 않으면 Debug 다 — 셸에 <code>FW_PRESET=Release</code> 가 남아 있지 않은지만 본다(<code>echo $FW_PRESET</code>).</li>
+        <li>gdbserver 가 ST-LINK 를 잡고 있는 동안에는 <code>flash.sh</code> 가 실패한다(둘 다 같은 ST-LINK 를 쓴다 — UM2576 부록 A 의 오류 코드 1 "something is already connected to the board, such as STM32CubeProgrammer"). 순서는 <strong>굽고 → 서버를 띄운다.</strong> 다시 구우려면 서버를 먼저 끈다.
+          다른 길도 있다: gdb 안에서 <code>load</code> 를 치면 gdbserver 가 STM32CubeProgrammer 를 불러 직접 굽는다(UM2576 §2.3). 어느 쪽이든 결과는 같다(동일). 이 가이드는 굽는 길을 <code>flash.sh</code> 하나로 두려고 앞의 순서로 적는다.</li>
+      </ol>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 1 = T1 · T2 · T3. 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>app_init()</code> · <code>s_blink_ms</code> 에 fw-02 의 주기를 넣는다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 입력은 없다. 끝났을 때 참이어야 하는 것: <code>s_blink_ms</code> 에 fw-02 에서 고른 주기 [ms] 가 들어 있고, 그 숫자(또는 이름)는 코드에서 <strong>이 한 곳</strong>에만 나온다. <code>app_init()</code> 은 <code>main()</code> 이 모든 <code>MX_*_Init()</code> 뒤에 한 번 부른다(fw-02).</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T1 - User/Src/app.c 의 app_init() 안 */
+  s_blink_ms = HEARTBEAT_MS;               /* fw-02 에서 고른 주기 [ms]. 이름은 fw-02 에서 쓴 것 그대로 */</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>s_blink_ms = HEARTBEAT_MS;</code> — <code>HEARTBEAT_MS</code> 는 fw-02 의 <code>app_loop()</code> 에서 비교에 썼던 <strong>그 이름</strong>이다. fw-02 에서 매크로 이름을 다르게 지었으면 그 이름을, 숫자를 그대로 썼으면 그 숫자를 적는다. 이 가이드가 숫자를 적지 않은 것은 주기가 학습자의 선택이기 때문이다(fw-02 §3-3-3).</li>
+          <li>왜 <code>app_init()</code> 에 있는가 — <code>static</code> 변수는 <code>.bss</code> 에 있어 부팅 때 0 으로 시작한다. 0 이면 T3 의 비교 <code>(now - last) &gt;= 0</code> 이 늘 참이라 LD1 이 바퀴마다 뒤집힌다(눈에는 어둡게 켜진 것처럼 보인다). 첫 바퀴 전에 값이 있어야 하므로 초기화 자리인 <code>app_init()</code> 이다.</li>
+          <li><code>volatile</code>(선언에 있다) — "이 변수는 컴파일러가 모르는 사이에 바뀔 수 있으니 매번 메모리에서 다시 읽어라". fw-05 T2 에서는 ISR 이 바꾸는 변수에 붙였고, 여기서는 gdb 가 바꾼다. 없으면 T3 의 비교에서 컴파일러가 값을 레지스터에 들고 있어 gdb 가 써 넣은 새 값이 반영되지 않을 수 있다(<code>-O0</code> 에서는 대개 반영되지만 보장이 아니다 — §2-4 마지막 항목).</li>
+          <li><strong>다르게 써도 되는 곳</strong> — 선언에서 바로 <code>static volatile uint32_t s_blink_ms = HEARTBEAT_MS;</code> 로 초기화해도 된다(동일). 그때는 <code>app_init()</code> 의 이 줄이 없다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>fw-02 에서 쓰지 않은 이름을 적었다(또는 철자가 다르다)</td><td><code>error: 'HEARTBEAT_MS' undeclared (first use in this function)</code></td><td>fw-02 의 <code>app.c</code> 에서 비교에 쓴 이름 · 숫자 그대로</td></tr>
+            <tr><td>대입은 했는데 T3 의 비교에 옛 상수가 남아 있다</td><td>빌드는 된다. <code>set var s_blink_ms</code> 를 해도 점멸이 그대로다(증상 표)</td><td>T3</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 이 자리만으로는 보이는 것이 없다. T3 까지 채운 뒤 §3-1-4 의 <code>set var s_blink_ms = …</code> 에서 LD1 의 빠르기가 달라진다(체크포인트 <code>gdb-breakpoint-var-read</code>).</p>
+        </div></details>
+
+      <details class="hint" id="hint-t2"><summary>힌트 T2 — <code>app_loop()</code> · 이번 바퀴를 센다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — <code>app_loop()</code> 가 불릴 때마다 <code>s_loop_count</code> 가 정확히 1 는다. 끝났을 때 참이어야 하는 것: <code>hbreak app_loop</code> 에서 <code>continue</code> 할 때마다 <code>p s_loop_count</code> 가 1 씩 는다. 펌웨어 안에서는 아무도 이 값을 읽지 않는다 — gdb 만 읽는다(§2-4).</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T2 - User/Src/app.c 의 app_loop() 첫 줄 */
+  s_loop_count++;                          /* 한 바퀴 = 1. LD1 이 뒤집힌 횟수가 아니다 */</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>s_loop_count++;</code> — <code>x++</code> 는 "x 를 1 올린다"(<code>x = x + 1</code> 과 같다). 변수가 32비트라 넘치면 0 으로 돌아가지만 이 쪽의 쓸모(두 값의 차가 1 인가)에는 지장이 없다.</li>
+          <li>왜 함수의 <strong>첫 줄</strong>인가 — 어떤 <code>if</code> 안에도 들어가지 않아야 "주 루프가 돈 바퀴 수"가 된다. 심박의 <code>if</code> 안에 넣으면 "LD1 이 뒤집힌 횟수"가 되어 §3-1-4 의 <code>continue</code> 한 번에 1 이 아니라 거의 늘 같은 값이 나온다.</li>
+          <li><code>volatile</code> 이 <strong>없다</strong> — 쓰기만 하는 변수는 최적화 빌드에서 저장이 줄거나 사라질 수 있다(§2-4 마지막 항목). Debug(<code>-O0</code>) 빌드에서는 남는다. <strong>다르게 써도 되는 곳</strong>: gdb 로만 읽을 변수의 저장을 Release 에서도 보장받고 싶으면 선언에 <code>volatile</code> 을 붙인다 — 대가는 그 변수에 대한 최적화를 포기하는 것이다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>채우지 않았다</td><td><code>warning: 's_loop_count' defined but not used [-Wunused-variable]</code> — 빌드는 된다</td><td>채운다</td></tr>
+            <tr><td>심박의 <code>if</code> 안에 넣었다</td><td>빌드는 된다. §3-1-4 에서 <code>continue</code> 마다 1 이 아니라 거의 늘 같은 값(주기에 한 번만 는다)</td><td>함수의 첫 줄로</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-1-4 의 <code>p s_loop_count</code> 두 번: 둘째 값 = 첫째 값 + 1(체크포인트 <code>gdb-breakpoint-var-read</code>).</p>
+        </div></details>
+
+      <details class="hint" id="hint-t3"><summary>힌트 T3 — <code>app_loop()</code> · 상수 대신 <code>s_blink_ms</code> 와 비교한다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — fw-02 의 심박 코드는 그대로 두고, 비교에 쓰던 상수 한 자리만 변수 <code>s_blink_ms</code> 로 바꾼다. 끝났을 때 참이어야 하는 것: gdb 가 <code>s_blink_ms</code> 에 다른 값을 써 넣으면 <strong>다음 뒤집기부터</strong> 주기가 바뀐다 — 다시 굽지 않고.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T3 - User/Src/app.c 의 app_loop() 안, fw-02 의 심박을 고친 모습 */
+  static uint32_t last_ms;                 /* 마지막으로 뒤집은 시각 [ms], 부팅 때 0 */
+  uint32_t now_ms = HAL_GetTick();
+
+  if ((uint32_t)(now_ms - last_ms) &gt;= s_blink_ms) {   /* fw-02 의 HEARTBEAT_MS 자리에 변수 */
+    last_ms = now_ms;
+    HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
+  }</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li>이 블록은 fw-02 §3-3-3 에서 쓴 심박 그대로다 — 바뀐 글자는 <code>&gt;= HEARTBEAT_MS</code> 가 <code>&gt;= s_blink_ms</code> 로 된 것 하나다. fw-02 에서 변수 이름을 다르게 지었으면 그대로 둔다.</li>
+          <li><code>static uint32_t last_ms;</code> — 함수 안의 <code>static</code>: 함수가 돌아가도 값이 남는다(fw-05 T9 와 같다). 초기값은 0.</li>
+          <li><code>(uint32_t)(now_ms - last_ms) &gt;= s_blink_ms</code> — 부호 없는 뺄셈은 <code>HAL_GetTick()</code> 이 32비트 끝에서 0 으로 돌아가도 차가 맞다(fw-02 이해 확인 4). 오른쪽이 <code>volatile</code> 변수라서 컴파일러는 <strong>비교할 때마다</strong> 메모리에서 다시 읽는다 — gdb 가 써 넣은 값이 바로 다음 비교에 보인다. 이 비교가 <strong>루프 안</strong>에 있어야 하는 이유다(증상 표 "변수를 읽는 자리가 루프 밖이다").</li>
+          <li>왜 상수를 두 자리에 두지 않는가 — <code>app_init()</code> 의 대입(T1)과 여기의 비교에 같은 매크로가 둘 다 남아 있으면 gdb 가 변수를 바꿔도 비교는 상수를 본다. 숫자는 T1 한 곳, 여기는 변수.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — fw-02 에서 열어 둔 선택 그대로다: <code>last_ms = now_ms</code> 와 <code>last_ms += s_blink_ms</code>(앞의 것은 루프가 늦으면 늦은 만큼 밀리고, 뒤의 것은 평균 주기를 지키는 대신 오래 멈췄다 돌아오면 밀린 만큼 연달아 뒤집는다 — LED 에서는 어느 쪽이든 된다(동일)), <code>TogglePin</code> 과 "상태 변수 + <code>WritePin</code>"(동일).</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 둘 다 fw-02 에서 쓴 것이다. <code>uint32_t HAL_GetTick(void)</code>(<code>stm32h7xx_hal.c:338</code>, <code>__weak</code>): SysTick 핸들러가 1 ms 마다 올리는 <code>uwTick</code> 을 돌려준다, 인자 없음. <code>void HAL_GPIO_TogglePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin)</code>(<code>stm32h7xx_hal_gpio.h:267</code>): 핀 하나를 뒤집는다, 반환 없음. 문맥은 둘 다 주 루프.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>비교에 상수가 그대로 남아 있다</td><td>빌드는 된다. <code>set var s_blink_ms</code> 뒤에도 점멸이 그대로다</td><td><code>&gt;=</code> 오른쪽을 <code>s_blink_ms</code> 로</td></tr>
+            <tr><td>"변수로 기다리면 되겠지" 하고 <code>HAL_Delay(s_blink_ms)</code> 로 바꿨다</td><td>빌드는 된다. Ctrl-C 로 세운 <code>bt</code> 가 늘 <code>HAL_Delay</code> 안이다 — fw-05 의 명령 창이 이 루프에 들어오면 입력이 막힌다</td><td>fw-02 의 규칙: 기다리지 않는다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-1-4: 중단점을 지운 뒤 <code>set var s_blink_ms = &lt;지금 값의 1/5 쯤&gt;</code> · <code>continue</code> → LD1 이 눈에 띄게 빨라진다(체크포인트 <code>gdb-breakpoint-var-read</code>). 보드 동작은 거기서 내가 본다.</p>
+        </div></details>
+
+      <h4 id="s3-1-4">3-1-4. 굽고 보기</h4>
+      <p>터미널을 둘 연다(fw-03 을 했으면 콘솔용으로 하나 더 — VCP 와 디버그는 같은 케이블의 다른 통로라서 같이 열어 둘 수 있다 [추정 — 내 보드에서 되는지 적어 둔다]).</p>
+      <pre><code class="lang-bash"># 터미널 1 - 굽고, 서버를 띄운다. 서버는 끝나지 않고 계속 돈다 (끄려면 Ctrl-C)
+cd firmware
+tools/flash.sh                          # build.sh 를 먼저 부른 뒤 굽는다 (fw-02)
+cd h723zg
+ST-LINK_gdbserver -d -e -p 61234 \
+  -cp /opt/ST/STM32CubeCLT_1.21.0/STM32CubeProgrammer/bin \
+  -f build/gdbserver.log</code></pre>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>옵션</th><th>뜻 (UM2576 §1.1 · <code>-h</code>)</th></tr></thead>
+        <tbody>
+          <tr><td><code>-d</code></td><td>JTAG 대신 SWD 로 붙는다. 이 보드는 SWD 뿐이다</td></tr>
+          <tr><td><code>-e</code></td><td>persistent 모드 — gdb 가 끊어도 서버가 살아서 다음 연결을 기다린다. 이 모드에서는 gdb 쪽이 <code>target extended-remote</code> 로 붙는다(UM2576 §2.2)</td></tr>
+          <tr><td><code>-p 61234</code></td><td>gdb 가 붙을 TCP 포트. 61234 는 기본값이다(적지 않아도 같다)</td></tr>
+          <tr><td><code>-cp &lt;경로&gt;</code></td><td>STM32CubeProgrammer 가 설치된 자리. 서버가 플래시 작업에 이것을 쓴다(UM2576 §1.3 의 시작 예시도 <code>-d -v -cp …</code> 다)</td></tr>
+          <tr><td><code>-f &lt;파일&gt;</code></td><td>로그 파일. 주지 않으면 실행한 자리에 <code>debug_log.txt</code> 가 생긴다 → 무시 목록에 든 <code>build/</code> 아래로 보낸다</td></tr>
+          <tr><td>(없음)</td><td><code>-z</code> · <code>-a</code> · <code>-b</code> 는 <strong>주지 않는다</strong> = SWV 끔(§2-5)</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout note"><span class="ct">보드에서 확인하지 못한 것</span>
+        <p>옵션의 뜻은 설치된 도구의 도움말과 매뉴얼에서 확인했다. 그러나 이 가이드를 쓰는 환경에서는 보드에 접속하지 않았으므로 <strong>서버가 처음 내는 글자, 붙는 순간 보드가 리셋되어 서는지</strong>는 적지 못했다.
+        서버를 띄운 순간 LD1 의 점멸이 멈추는지 눈으로 보고, 서버의 첫 화면에서 장치 이름 · 포트가 나오는 줄을 노트에 옮겨 둔다. 실행 파일이 PATH 에 없으면 전체 경로는 <code>/opt/ST/STM32CubeCLT_1.21.0/STLink-gdb-server/bin/ST-LINK_gdbserver</code> 다.</p>
+      </div>
+      <pre><code class="lang-bash"># 터미널 2 - gdb. ELF 는 방금 구운 바로 그 빌드의 것 (Debug 프리셋의 기본 자리)
+cd firmware/h723zg
+arm-none-eabi-gdb build/Debug/h723zg.elf</code></pre>
+      <pre><code class="lang-text">(gdb) target extended-remote localhost:61234
+(gdb) hbreak app_loop
+(gdb) continue
+      ... app_loop 의 첫 줄에서 멈춘다. LD1 도 그 상태로 멈춘다 ...
+(gdb) p s_loop_count
+$1 = &lt;n&gt;
+(gdb) continue
+(gdb) p s_loop_count
+$2 = &lt;n+1&gt;
+(gdb) delete
+(gdb) set var s_blink_ms = &lt;지금 값의 1/5 쯤&gt;
+(gdb) continue
+      ... LD1 이 눈에 띄게 빨리 깜박인다. Ctrl-C 로 세운다 ...
+(gdb) bt
+(gdb) info registers
+(gdb) p uwTick
+(gdb) p uwTick</code></pre>
+      <p>보면서 확인할 것:</p>
+      <ul>
+        <li><strong><code>hbreak</code></strong> — UM2576 §2.4 는 코드가 플래시에 있으면 <code>break</code> 대신 <code>hbreak</code>(하드웨어 중단점)를 쓰라고 적는다. 플래시는 gdb 가 명령어를 바꿔 끼울 수 없는 메모리이기 때문이다. 하드웨어 중단점의 개수는 칩마다 정해져 있다(같은 절의 Note) — 몇 개까지 걸리는지는 직접 늘려 보며 세어 노트에 적는다.</li>
+        <li><strong><code>continue</code> 한 번에 정확히 1</strong> — <code>app_loop()</code> 가 곧바로 돌아오는 함수라서 중단점을 둔 채 <code>continue</code> 하면 바로 다음 호출에서 다시 선다. 중단점을 <code>delete</code> 로 지운 뒤에야 LD1 이 다시 깜박인다.</li>
+        <li><strong><code>bt</code></strong> — Ctrl-C 로 세운 자리는 <code>app_loop</code> · <code>HAL_GetTick</code> · <code>main</code> 의 <code>while</code> 가운데 어디다. 아래로 <code>main</code> 까지 이어지는 호출 사슬은 gdb 가 스택을 거꾸로 읽어 만든 것이다 — 실습 B 에서 같은 일을 손으로 한다.</li>
+        <li><strong><code>p uwTick</code> 을 두 번</strong> — 첫 번째와 두 번째 사이에 10 초쯤 기다린다. 값이 같다. <code>uwTick</code> 은 SysTick 핸들러가 올리는 HAL 의 시계다(<code>stm32h7xx_hal.c:71</code> · <code>:327-330</code>). CPU 가 서 있으면 핸들러도 돌지 않는다 — §2-3 표의 첫 줄을 눈으로 본 것이다.</li>
+        <li><code>-g3</code> 빌드라서 CMSIS 매크로가 gdb 안에서 그대로 통한다. 멈춘 채로 아래를 쳐서 <strong>값을 노트에 적어 둔다</strong>(fw-06 · fw-08 에서 동결 비트를 세우기 전의 기준선이고, <code>CR</code> 의 bit 20 은 §2-5 의 확인 과제다).</li>
+      </ul>
+      <pre><code class="lang-text">(gdb) p/x DBGMCU-&gt;CR
+(gdb) p/x DBGMCU-&gt;APB1LFZ1
+(gdb) p/x DBGMCU-&gt;APB2FZ1
+(gdb) p/x DBGMCU-&gt;APB4FZ1
+      ... 매크로를 못 찾는다고 하면 주소로: x/wx 0x5C001004  (CR)   0x5C00103C  0x5C00104C  0x5C001054 ...</code></pre>
+      <p>마지막으로 SWV 가 꺼져 있다는 것을 <strong>내 명령줄에서</strong> 확인한다. 기억이 아니라 돌고 있는 프로세스를 본다.</p>
+      <pre><code class="lang-bash"># 터미널 3
+ps -o args= -p "$(pgrep -f ST-LINK_gdbserver)"      # 돌고 있는 서버의 인자 전부</code></pre>
+      <pre><code class="lang-text">(기대: 인자 목록에 -z, -a, -b, --swo-port, --cpu-clock, --swo-clock-div 가 하나도 없다.
+ -c &lt;설정파일&gt; 로 띄웠다면 그 파일 안에도 없어야 한다.)</code></pre>
+      <p>gdb 는 <code>quit</code>, 서버는 Ctrl-C 로 끈다. persistent 모드라 gdb 만 끄면 서버는 남아서 ST-LINK 를 계속 잡고 있다 — 그 상태에서 <code>flash.sh</code> 를 부르면 실패한다(증상 표의 첫 줄).</p>
+
+      <h3 id="s3-2">3-2. 실습 B — 일부러 죽이고, 죽은 자리를 이름으로 바꾼다</h3>
+      <p>이 실습은 CubeMX 를 열지 않는다(3-2-1 없음). 파일은 넷이다: 새로 만드는 <code>User/Inc/Tools/hardfault.h</code> · <code>User/Src/Tools/hardfault.c</code> · <code>host_tests/test_hardfault.c</code>, 그리고 USER CODE 블록 세 군데에 몇 줄을 더하는 생성물 <code>Core/Src/stm32h7xx_it.c</code>.</p>
+
+      <h4 id="s3-2-2">3-2-2. 골격</h4>
+      <p>헤더는 HAL 을 포함하지 않는다. 그래서 프레임을 푸는 두 함수를 Mac 의 <code>cc</code> 로 먼저 시험할 수 있다.</p>
+      <pre><code class="lang-c">/* User/Inc/Tools/hardfault.h - 마지막 HardFault 의 예외 스택 프레임을 보관한다.
+ * 순수 헤더(HAL 포함 없음): host_tests/test_hardfault.c 가 그대로 포함한다. */
+#ifndef HARDFAULT_H
+#define HARDFAULT_H
+#include &lt;stdint.h&gt;
+#include &lt;stdbool.h&gt;
+
+/* 예외 진입 때 코어가 밀어 넣는 여덟 워드, 낮은 주소부터. */
+typedef struct {
+  uint32_t r0, r1, r2, r3, r12, lr, pc, xpsr;
+} hardfault_frame_t;
+
+typedef struct {
+  hardfault_frame_t frame;  /* 스택에 쌓인 워드의 사본                       */
+  uint32_t exc_return;      /* 핸들러 안에서 본 LR (0xFFFFFFxx)              */
+  uint32_t cfsr;            /* 잡은 순간의 SCB-&gt;CFSR                         */
+  uint32_t hfsr;            /* 잡은 순간의 SCB-&gt;HFSR                         */
+  uint32_t count;           /* 이 RAM 이 마지막으로 초기화된 뒤 잡은 횟수    */
+} hardfault_record_t;
+
+/* EXC_RETURN 이 "프레임은 프로세스 스택(PSP)에 쌓였다"고 말하면 true. */
+static inline bool hardfault_frame_on_psp(uint32_t exc_return)
+{
+  /* TODO(you) [T4]: EXC_RETURN 의 비트 하나로 "PSP 인가"를 답한다 - 힌트 카드 T4
+       1) 0xFFFFFFF9 와 0xFFFFFFFD 를 이진수로 적어 다른 자리(bit n)를 찾는다
+       2) (exc_return &amp; (1u &lt;&lt; n)) != 0u 을 돌려준다 - 값 전체를 == 로 견주지 않는다(_FPU 값도 있다)
+     채우기 시작하면 아래 두 줄(빌드용 자리표시)은 지운다. */
+  (void)exc_return;
+  return false;
+}
+
+/* 'stacked'(= 예외 진입 때의 SP)의 8 워드를 *out 에 복사한다. */
+static inline void hardfault_decode(const uint32_t *stacked, hardfault_frame_t *out)
+{
+  /* TODO(you) [T5]: *out 의 여덟 필드를 모두 채운다 - 힌트 카드 T5
+       1) §2-1 그림을 아래칸(SP + 0x00)부터 읽는다: out-&gt;r0 = stacked[0] 이 첫 줄
+       2) 같은 꼴로 r1 r2 r3 r12 lr pc xpsr 까지 여덟 줄 - 인덱스 5 · 6 · 7 이 lr · pc · xpsr 다
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)stacked; (void)out;
+}
+
+/* HardFault_Handler 에서만 부른다(핸들러 모드, 설정할 수 있는 모든 우선순위보다 위).
+ * msp, psp: 핸들러 진입 때의 두 스택 포인터. 돌아오지 않는다. */
+void hardfault_capture(const uint32_t *msp, const uint32_t *psp, uint32_t exc_return);
+
+/* app_loop() 한 바퀴에 한 번 부른다. gdb 가 요청하면 자체 시험용 트랩을 일으킨다. */
+void hardfault_poll(void);
+
+#endif</code></pre>
+      <pre><code class="lang-c">/* User/Src/Tools/hardfault.c - SysTick 이 끼어들지 못하는 채로 돈다: 여기서는 HAL_GetTick() 이
+ * 멈추고 HAL_Delay() 는 돌아오지 않는다. 기다리지 않는 동작만 쓸 수 있다. */
+#include "Tools/hardfault.h"
+#include "main.h"                          /* SCB, LD3 라벨 */
+
+static hardfault_record_t s_last;          /* gdb: p/x s_last                  */
+static volatile uint32_t  s_trap_request;  /* gdb: set var s_trap_request = 1  */
+
+void hardfault_capture(const uint32_t *msp, const uint32_t *psp, uint32_t exc_return)
+{
+  /* TODO(you) [T6]: 프레임을 s_last 에 보관하고, 밖에 알리고, 머문다 - 힌트 카드 T6
+       1) hardfault_frame_on_psp(exc_return) 이 true 면 psp, 아니면 msp 를 stacked 로 고른다
+       2) hardfault_decode(stacked, &amp;s_last.frame); exc_return · SCB-&gt;CFSR · SCB-&gt;HFSR 을 s_last 에 보관; s_last.count++
+       3) 디버거 없이도 보이게 한다: HAL_GPIO_WritePin 으로 LD3 켜기. fw-03 을 마쳤다면 LOG_ERR 한 줄(pc · lr · cfsr · hfsr)
+       4) for (;;) { } 에 머문다 - 돌아가면 fault 를 낸 명령을 다시 실행한다
+     채우기 시작하면 (void)… 줄(빌드용 자리표시)은 지운다. for (;;) 줄은 걸음 4 로 남는다. */
+  (void)msp; (void)psp; (void)exc_return; (void)s_last;
+  for (;;) { }
+}
+
+void hardfault_poll(void)
+{
+  /* TODO(you) [T7]: gdb 의 요청이 있으면 일부러 fault 를 낸다 - 힌트 카드 T7
+       1) s_trap_request 가 0 이 아니면
+       2) 먼저 0 으로 지우고
+       3) __builtin_trap() 을 부른다 - 정의되지 않은 명령 하나가 HardFault 가 된다
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)s_trap_request;
+}</code></pre>
+      <p>생성물 <code>Core/Src/stm32h7xx_it.c</code> 에는 세 군데만 손댄다. 전부 이미 있는 <code>USER CODE</code> 블록 안이다(블록 이름은 사용자의 H723 생성물에서 확인했다).</p>
+      <pre><code class="lang-c">/* USER CODE BEGIN Includes */
+#include "Tools/hardfault.h"
+/* USER CODE END Includes */
+
+/* USER CODE BEGIN PFP */
+/* 앞선 선언에 붙인 속성은 아래의 생성된 정의에 합쳐진다. */
+void HardFault_Handler(void) __attribute__((naked));
+/* USER CODE END PFP */
+
+void HardFault_Handler(void)               /* 생성물 - 이 줄은 고치지 않는다 */
+{
+  /* USER CODE BEGIN HardFault_IRQn 0 */
+  /* TODO(you) [T8]: 인라인 어셈블리 명령 네 개로 hardfault_capture 에 넘긴다 - 힌트 카드 T8
+       1) __asm volatile ( "..." "..." ); 꼴 - 명령 하나가 문자열 하나이고, 문자열 끝마다 \n 을 둔다
+       2) r0 = MSP, r1 = PSP 는 mrs 로, r2 = LR (EXC_RETURN) 은 mov 로 - C 호출 규약의 인자 1 · 2 · 3 자리다
+       3) 마지막은 b hardfault_capture - bl 이 아니다(돌아올 일이 없다)
+     여기에는 C 문장을 쓰지 않는다: naked 함수에는 자기 스택 프레임이 없다. */
+  /* USER CODE END HardFault_IRQn 0 */
+  while (1)                                /* 생성물 */
+  {
+  }
+}</code></pre>
+      <p>그리고 <code>app_loop()</code> 에 호출 한 줄(<code>hardfault_poll();</code>)과 포함 한 줄, 최상위 <code>CMakeLists.txt</code> 의 <code># Add user sources here</code> 에 <code>User/Src/Tools/hardfault.c</code> 한 줄을 더한다(등록 방법은 fw-02 와 같다).</p>
+      <p>골격 그대로도 빌드되고 구울 수 있다. 그 상태에서 HardFault 가 나면 생성물의 <code>while (1)</code> 에서 조용히 멈춘다 — 지금까지의 동작과 같다.</p>
+      <div class="callout note"><span class="ct">남는 <code>while (1)</code> — GCC 에서만 통하는 꼴이다</span>
+        <p>생성물의 <code>while (1)</code> 은 USER CODE 밖이라 지울 수 없다. 그래서 어셈블리를 채운 뒤에도 <code>naked</code> 함수 안에 C 문장 하나가 남는다.
+        GCC 매뉴얼(14.3, §6.33.5 ARM Function Attributes 의 <code>naked</code>)은 "basic <code>asm</code> 만 안전하고, basic <code>asm</code> 과 C 코드를 섞는 것은 동작하는 것처럼 보여도 지원되지 않는다"고 적는다.
+        이 Mac 의 CubeCLT GCC 14.3.1 은 <code>-O0</code> · <code>-Os</code> 모두 경고 없이 그 문장을 <code>b.w hardfault_capture</code> 뒤의 <strong>도달하지 않는 <code>b.n</code> 한 줄</strong>로 만든다(§3-2-4 ① 의 역어셈블에서 보인다) — <code>b.w</code> 가 돌아오지 않으므로 동작에는 지장이 없다.
+        같은 CubeCLT 에 든 <code>starm-clang</code> 21.1.1 은 같은 소스에 <code>error: non-ASM statement in naked function is not supported</code> 를 내고 <code>while (1)</code> 줄을 가리킨다(이 Mac 에서 확인). 툴체인을 GCC 밖으로 바꾸는 날에는 이 핸들러의 방법을 다시 정해야 한다.</p>
+      </div>
+
+      <h4 id="s3-2-3">3-2-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><strong>호스트 시험부터 만든다.</strong> 아래 파일을 <code>firmware/host_tests/test_hardfault.c</code> 로 둔다(디렉터리가 없으면 만든다). 골격 그대로 돌리면 첫 <code>assert</code> 에서 멈춘다 — 정상이다.</li>
+        <li><code>hardfault_decode()</code> 를 채운다. §2-1 의 그림이 곧 답의 재료다. 시험의 case 1 이 통과하면 자리가 맞은 것이다.</li>
+        <li><code>hardfault_frame_on_psp()</code> 를 채운다. <code>0xFFFFFFF9</code> 와 <code>0xFFFFFFFD</code> 를 이진수로 적어 다른 비트를 찾는다. case 3 이 <code>_FPU</code> 값과 핸들러 값까지 넣어 확인한다.</li>
+        <li><code>hardfault_capture()</code> 를 채운다. 힌트: fault 상태 레지스터는 CMSIS 의 <code>SCB-&gt;CFSR</code> · <code>SCB-&gt;HFSR</code>(<code>core_cm7.h:470-471</code>). LD3 는 fw-02 에서 단 User Label 로 켠다(<code>HAL_GPIO_WritePin</code>).
+          콘솔이 있으면 <code>LOG_ERR("hardfault", …)</code> 한 줄 — 값은 <code>%08lx</code> 에 <code>(unsigned long)</code> 으로 넘긴다. <strong><code>HAL_Delay</code> 나 "기다리는" 호출을 넣지 않는다</strong>(§2-1 끝).
+          "ISR 안에서 <code>LOG_*</code> 를 부르지 않는다"는 fw-03 의 규칙에 이 한 줄은 예외다 — 그 규칙의 이유는 블로킹 송신이 ISR 을 붙잡아 다른 일을 늦춘다는 것인데, fault 핸들러는 돌아가지 않는 막다른 길이라 늦출 것이 남아 있지 않다(<code>FW_ASSERT</code> 가 글자를 찍고 멈추는 것과 같은 자리다).</li>
+        <li><code>HardFault_Handler</code> 의 어셈블리 네 줄을 쓴다. 힌트: GCC 인라인 어셈블리는 <code>__asm volatile ("… \n" "… \n");</code> 꼴이고, 스택 포인터 둘은 <code>mrs r0, msp</code> 같은 특수 레지스터 읽기 명령으로 꺼낸다.
+          마지막은 <code>bl</code>(돌아올 주소를 LR 에 적는 호출)이 아니라 <code>b</code>(그냥 건너뜀)다. 돌아올 일이 없으므로 <code>b</code> 로 충분하고, <code>bl</code> 은 LR 의 <code>EXC_RETURN</code> 을 덮어쓴다 — 값은 이미 <code>r2</code> 로 옮겼으니 포획에는 지장이 없지만, gdb 가 <code>bt</code> 에서 예외 경계를 알아볼 단서가 LR 에서 사라진다 [추정 — gdb 의 동작].
+          인자 셋이 <code>r0</code> · <code>r1</code> · <code>r2</code> 로 가는 까닭은 C 호출 규약이 앞의 네 인자를 그 순서로 <code>r0</code>~<code>r3</code> 에 받기 때문이다.</li>
+        <li><code>hardfault_poll()</code> 을 채운다. fault 를 내는 수단은 <code>__builtin_trap()</code> 하나로 정한다. "없는 주소에 쓰기" 식의 방법은 그 주소가 이 칩에서 정말 fault 를 내는지부터 확인해야 하는데, <code>__builtin_trap()</code> 은 컴파일러가 <strong>정의되지 않은 명령</strong>을 심어 주므로 그런 가정이 필요 없다(이 Mac 의 GCC 14.3.1 은 Thumb 에서 <code>udf #255</code>, 기계어 <code>0xdeff</code> 를 낸다 — 역어셈블로 확인).</li>
+      </ol>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 2 = T5 · 걸음 3 = T4 · 걸음 4 = T6 · 걸음 5 = T8 · 걸음 6 = T7. 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <details class="hint" id="hint-t4"><summary>힌트 T4 — <code>hardfault_frame_on_psp()</code> · EXC_RETURN 의 비트 하나로 스택을 고른다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 입력은 핸들러 안에서 본 LR(<code>EXC_RETURN</code>, §2-1 의 표). 출력은 "프레임이 PSP 에 쌓였는가". 끝났을 때 참이어야 하는 것: <code>0xFFFFFFF9</code> · <code>E9</code> · <code>F1</code> → <code>false</code>, <code>FD</code> · <code>ED</code> → <code>true</code> — 호스트 시험 case 3 의 다섯 줄 그대로다. 순수 함수라 Mac 에서 채점한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T4 - User/Inc/Tools/hardfault.h */
+static inline bool hardfault_frame_on_psp(uint32_t exc_return)
+{
+  /* 0xFFFFFFF9 = ...1001, 0xFFFFFFFD = ...1101 - 다른 자리는 bit 2 하나다. 1 이면 PSP. */
+  return (exc_return &amp; (1u &lt;&lt; 2)) != 0u;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li>이진수로 적어 본다: <code>F9</code> = <code>1111 1001</code>, <code>FD</code> = <code>1111 1101</code>. 다른 자리는 오른쪽에서 셋째, <strong>bit 2</strong>(값 4) 하나다. <code>_FPU</code> 값(<code>E9</code> = <code>1110 1001</code>, <code>ED</code> = <code>1110 1101</code>)도 같은 자리가 가른다 — 그래서 값 전체가 아니라 비트 하나를 본다.</li>
+          <li><code>1u &lt;&lt; 2</code> — 1 을 왼쪽으로 두 칸 민 값, <code>0b100</code> = 4. "bit n" 을 숫자로 적는 관용구다(fw-05 의 <code>&amp; (N - 1)</code> 과 같은 비트 연산). <code>&amp;</code> 는 비트 AND — 그 자리만 남기고 나머지는 0 으로 만든다.</li>
+          <li><code>!= 0u</code> — 남은 값(0 또는 4)을 참 · 거짓으로 바꾼다. C 에서는 0 이 아닌 값이 곧 참이라 이 비교가 없어도 동작은 같지만(동일 — 시험도 통과한다), "비트 검사의 결과를 <code>bool</code> 로 만든다"는 뜻이 글자로 남는다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① <code>exc_return &amp; 0x4u</code>(동일). ② 이 판단을 C 가 아니라 <code>HardFault_Handler</code> 의 어셈블리에서 해도 된다: <code>tst lr, #4</code> · <code>ite eq</code> · <code>mrseq r0, msp</code> · <code>mrsne r0, psp</code> 로 골라 <code>r0</code> 하나만 넘기는 꼴(이 Mac 의 arm-gcc 14.3.1 로 어셈블됨을 확인). 그러면 <code>hardfault_capture()</code> 의 인자가 둘(<code>stacked</code> · <code>exc_return</code>)로 줄지만, 스택 고르기가 호스트 시험 밖으로 나간다. 이 가이드는 시험이 닿게 C 에 뒀다 — 둘 다 된다. ③ <code>EXC_RETURN_THREAD_PSP</code> 와 <code>==</code> 로 견주는 것은 <strong>안 된다</strong> — case 3 의 <code>_FPU</code> 줄에서 멈춘다(아래 표).</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 헤더). 값의 이름 · 목록은 <code>core_cm7.h:1863-1868</code>.</p>
+        <p><strong>흔한 실수</strong> — 컴파일러는 셋 다 조용하고 호스트 시험이 잡는다(줄 번호는 §3-2-3 의 파일을 그대로 옮겼을 때의 것).</p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th><code>/tmp/test_hardfault</code> 가 멈추는 곳</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>골격 그대로(<code>return false</code>) — T5 는 채운 뒤</td><td><code>Assertion failed: (hardfault_frame_on_psp(0xFFFFFFFDu) == true), function main, file test_hardfault.c, line 34.</code></td><td>채운다</td></tr>
+            <tr><td>bit 3(<code>1u &lt;&lt; 3</code>)을 봤다</td><td><code>Assertion failed: (hardfault_frame_on_psp(0xFFFFFFF9u) == false), … line 33.</code> — <code>F9</code> 와 <code>FD</code> 모두 bit 3 이 1 이다</td><td>bit 2</td></tr>
+            <tr><td><code>exc_return == 0xFFFFFFFDu</code></td><td><code>Assertion failed: (hardfault_frame_on_psp(0xFFFFFFEDu) == true), … line 36.</code></td><td>값이 아니라 비트</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — case 3 이 통과해 <code>PASS hardfault 3 cases</code>(체크포인트 <code>frame-decode-host-pass</code>). 보드에서는 RTOS 가 없어 <code>exc_return</code> 이 <code>F9</code>(또는 <code>E9</code>)로 찍히고 이 함수는 <code>false</code> → <code>msp</code> 가 골라진다(§2-1).</p>
+        </div></details>
+
+      <details class="hint" id="hint-t5"><summary>힌트 T5 — <code>hardfault_decode()</code> · 스택의 여덟 워드를 구조체로 옮긴다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 입력 <code>stacked</code> 는 예외 진입 직후의 SP 가 가리키던 주소(§2-1 그림의 맨 아래칸, 가장 낮은 주소). 출력 인자 <code>out</code> 에 여덟 칸을 순서대로 채운다. 끝났을 때 참이어야 하는 것: <code>out-&gt;pc == stacked[6]</code>, <code>out-&gt;lr == stacked[5]</code> — 호스트 시험 case 1 이 여덟 칸 전부를, case 2 가 "한 칸 밀림"의 모양을 채점한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T5 - User/Inc/Tools/hardfault.h */
+static inline void hardfault_decode(const uint32_t *stacked, hardfault_frame_t *out)
+{
+  out-&gt;r0   = stacked[0];                  /* SP + 0x00 - 예외 진입 직후의 SP 가 가리키는 칸 */
+  out-&gt;r1   = stacked[1];
+  out-&gt;r2   = stacked[2];
+  out-&gt;r3   = stacked[3];
+  out-&gt;r12  = stacked[4];
+  out-&gt;lr   = stacked[5];                  /* SP + 0x14 - 누가 불렀는가 */
+  out-&gt;pc   = stacked[6];                  /* SP + 0x18 - 어디서 죽었는가 */
+  out-&gt;xpsr = stacked[7];                  /* SP + 0x1C - 가장 먼저 밀려 들어간 칸 */
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>stacked[0]</code> — 포인터에 <code>[i]</code> 를 붙이면 "그 주소에서 i 번째 칸"이다(<code>*(stacked + i)</code> 와 같다 — fw-07 T3 에서 포인터에 정수를 더한 것과 같은 규칙). <code>uint32_t</code> 포인터라 한 칸 = 4 바이트 = 그림의 <code>SP + 0x04</code> 한 줄이다.</li>
+          <li><code>out-&gt;r0</code> — <code>-&gt;</code> 는 포인터로 받은 구조체의 칸(fw-05 T2 와 같다). <code>const uint32_t *stacked</code> 의 <code>const</code> 는 "이 함수는 스택을 읽기만 한다"(fw-07 T4 와 같다).</li>
+          <li>순서 — §2-1 의 그림을 <strong>아래에서 위로</strong> 읽은 것이다. 그림은 높은 주소가 위라서 <code>xpsr</code> 이 맨 위에 있지만 인덱스는 7 이다. FreeRTOS 포트가 같은 순서로 프레임을 손으로 쌓는 자리(<code>port.c:198-206</code>)에서 확인할 수 있다.</li>
+          <li>왜 여덟 줄을 따로 쓰는가 — 칸 이름과 인덱스가 한 줄에 같이 보인다. case 2 가 재현하는 "한 칸 밀려 <code>pc</code> 칸에 <code>lr</code> 이 들어온다"를 읽을 때 어느 칸이 어디서 왔는지 눈으로 좇을 수 있다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — <code>memcpy(out, stacked, sizeof *out);</code> 한 줄(<code>#include &lt;string.h&gt;</code> 가 필요하다). 구조체의 칸이 선언 순서대로 틈 없이 놓인다는 것(<code>uint32_t</code> 여덟 개)에 기댄다. 시험과 sanitizer 모두 통과한다(2026-10-04 확인) — 둘은 같다(동일).</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 헤더).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · <code>/tmp/test_hardfault</code> 가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>out.r0 = stacked[0];</code></td><td>Mac 의 <code>cc</code>: <code>error: member reference type 'hardfault_frame_t *' is a pointer; did you mean to use '-&gt;'?</code> · arm-gcc: <code>error: 'out' is a pointer; did you mean to use '-&gt;'?</code></td><td><code>-&gt;</code></td></tr>
+            <tr><td>인덱스를 1 부터 시작했다</td><td><code>Assertion failed: (f.r0 == 0xF00D0000u &amp;&amp; f.r1 == 0xF00D0001u &amp;&amp; f.r2 == 0xF00D0002u &amp;&amp; f.r3 == 0xF00D0003u), function main, file test_hardfault.c, line 20.</code></td><td>0 부터</td></tr>
+            <tr><td>그림을 위에서부터 읽어 <code>xpsr = stacked[0]</code> 으로 시작했다</td><td>같은 줄(line 20)에서 멈춘다 — <code>r0</code> 에 <code>xpsr</code> 자리의 값이 들어 있다</td><td>SP 가 가리키는 아래칸이 <code>[0]</code></td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>걸음대로 채울 때 시험이 어디까지 가는가</strong> — §3-2-3 의 명령으로 돌린다(2026-10-04 에 완결 코드를 걸음 단위로 잘라 직접 돌려 확인).</p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>채운 곳</th><th><code>/tmp/test_hardfault</code> 의 출력</th></tr></thead>
+          <tbody>
+            <tr><td>골격 그대로</td><td>case 1 의 첫 <code>assert</code>(line 20)에서 멈춘다 — §3-2-3 걸음 1 이 말한 "정상"</td></tr>
+            <tr><td>T5 만</td><td>case 1 · 2 를 지나 case 3 의 둘째 줄(<code>0xFFFFFFFDu == true</code>, line 34)에서 멈춘다 — 골격의 <code>return false</code> 가 첫째 줄은 우연히 통과시킨다</td></tr>
+            <tr><td>T5 + T4</td><td><code>PASS hardfault 3 cases</code>. <code>-fsanitize=undefined,address</code> 를 더해도 조용하다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — <code>PASS hardfault 3 cases</code>(체크포인트 <code>frame-decode-host-pass</code>). 보드에서는 §3-2-4 ② 의 <code>p/x s_last</code> 에서 <code>frame.pc</code> 가 ①에서 적어 둔 <code>&lt;udf주소&gt;</code> 와 같다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t6"><summary>힌트 T6 — <code>hardfault_capture()</code> · 프레임을 보관하고, 알리고, 머문다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 누가 부르는가: <code>HardFault_Handler</code> 의 어셈블리(T8)가 <code>b</code> 로 건너온다. 인자는 <code>r0</code> = MSP, <code>r1</code> = PSP, <code>r2</code> = <code>EXC_RETURN</code>. 문맥은 핸들러 모드, 설정할 수 있는 어떤 인터럽트도 끼어들지 못한다 — SysTick 이 멈추므로 <code>HAL_Delay()</code> 는 못 쓴다(§2-1 끝).
+        끝났을 때 참이어야 하는 것: <code>s_last</code> 에 프레임 사본 · <code>exc_return</code> · <code>CFSR</code> · <code>HFSR</code> 이 들어 있고 <code>count</code> 가 1 늘었다, LD3 가 켜졌다, (fw-03 을 했으면) 콘솔에 <code>E hardfault:</code> 한 줄. 그리고 <strong>돌아가지 않는다.</strong></p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T6 - User/Src/Tools/hardfault.c */
+#include "Tools/log.h"                     /* 파일 머리의 include 들 곁에 - fw-03 을 마친 경우에만(LOG_ERR) */
+
+void hardfault_capture(const uint32_t *msp, const uint32_t *psp, uint32_t exc_return)
+{
+  const uint32_t *stacked = hardfault_frame_on_psp(exc_return) ? psp : msp;   /* 걸음 1 */
+
+  hardfault_decode(stacked, &amp;s_last.frame);                                    /* 걸음 2 */
+  s_last.exc_return = exc_return;
+  s_last.cfsr  = SCB-&gt;CFSR;
+  s_last.hfsr  = SCB-&gt;HFSR;
+  s_last.count++;
+
+  HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);                      /* 걸음 3 */
+  LOG_ERR("hardfault", "pc=%08lx lr=%08lx cfsr=%08lx hfsr=%08lx",
+          (unsigned long)s_last.frame.pc, (unsigned long)s_last.frame.lr,
+          (unsigned long)s_last.cfsr, (unsigned long)s_last.hfsr);
+
+  for (;;) { }                                                                 /* 걸음 4 - 돌아가지 않는다 */
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>#include "Tools/log.h"</code> — 파일 머리의 <code>#include "main.h"</code> 곁에 둔다. fw-03 을 아직 안 했으면 이 줄과 <code>LOG_ERR</code> 석 줄을 뺀다. V2 빌드에서는 <code>LOG_ERR</code> 이 <code>((void)0)</code> 으로 사라지므로(fw-03) 그대로 둬도 된다.</li>
+          <li><code>const uint32_t *stacked = hardfault_frame_on_psp(exc_return) ? psp : msp;</code> — <code>a ? b : c</code> 는 "a 가 참이면 b, 아니면 c"(삼항 연산자). <code>if / else</code> 로 써도 같다(동일). 판단을 T4 에 맡겨 두었으므로 여기는 고르기만 한다 — 걸음 1.</li>
+          <li><code>hardfault_decode(stacked, &amp;s_last.frame);</code> — <code>&amp;s_last.frame</code> 은 "구조체 <code>s_last</code> 안의 구조체 <code>frame</code> 의 주소"(출력 인자, fw-05 T3 와 같다). <code>s_last</code> 는 포인터가 아니라 변수라서 <code>.</code> 이다.</li>
+          <li><code>SCB-&gt;CFSR</code> · <code>SCB-&gt;HFSR</code> — <code>SCB</code> 는 CMSIS 가 준 <strong>포인터 매크로</strong>(<code>core_cm7.h:1787</code>)라 <code>-&gt;</code> 다. 잡은 순간에 읽어 둔다 — gdb 없이 현장에서 죽었을 때 남는 것은 콘솔 한 줄뿐이고, 그 줄은 이 값을 찍는다.</li>
+          <li><code>s_last.count++;</code> — 이 RAM 이 마지막으로 0 이 된 뒤 몇 번 잡았는가. §3-2-4 ⑤ 에서 "리셋 없이 다시 붙었다"의 증거가 된다(<code>count</code> 가 그대로 1).</li>
+          <li>순서 — <strong>기록(걸음 2) → 알림(걸음 3) → 머묾(걸음 4)</strong>. <code>LOG_ERR</code> 이 <code>s_last</code> 의 값을 찍으므로 기록이 먼저다. LD3 는 송신보다 먼저 켠다 — 송신이 어떤 이유로든 막혀도(증상 표의 <code>HAL_BUSY</code>) LED 는 켜져 있게.</li>
+          <li><code>HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);</code> — <code>LD3_*</code> 는 fw-02 의 User Label 이 <code>main.h</code> 에 만든 매크로다. <code>TogglePin</code> 이 아니라 <code>WritePin … SET</code> 인 이유: 상태와 무관하게 "켜짐"이어야 한다.</li>
+          <li><code>LOG_ERR("hardfault", "pc=%08lx …", (unsigned long)…)</code> — <code>%08lx</code> 는 "소문자 16진수, 8 자리, 앞을 0 으로". <code>(unsigned long)</code> 캐스트는 fw-05 T9 와 같다 — arm-gcc 에서는 <code>uint32_t</code> 가 이미 <code>unsigned long</code> 이라 캐스트 없이도 경고가 없지만(2026-10-04 확인), Mac 의 <code>cc</code> 에서는 다른 형이라 경고가 난다. 두 환경에서 같은 글자가 통하도록 붙인다. "ISR 에서 <code>LOG_*</code> 금지"의 예외인 까닭은 §3-2-3 걸음 4.</li>
+          <li><code>for (;;) { }</code> — 골격에 있던 줄 그대로. 돌아가면 CPU 가 <code>pc</code> 의 명령을 다시 실행해 또 fault 가 난다.
+            <strong>다르게 써도 되는 곳</strong> — 머무는 대신 <code>NVIC_SystemReset()</code> 을 불러 곧바로 다시 부팅하는 꼴도 있다. 빨리 되살아나는 대신 <code>s_last</code> 가 지워지고(<code>.bss</code>), 원인이 부팅 직후에 있으면 리셋이 끝없이 되풀이된다. 이 가이드는 머문다 — 현장이 보존되어 <code>-g</code> 로 나중에 붙을 수 있다(⑤). fw-06 뒤에는 IWDG 가 이 루프를 리셋으로 끝낸다(디버거로 동결해 두지 않는 한). 둘은 설계 선택이다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>void HAL_GPIO_WritePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin, GPIO_PinState PinState);</code>(<code>stm32h7xx_hal_gpio.h:266</code>): 포트 · 핀 · <code>GPIO_PIN_SET</code>/<code>GPIO_PIN_RESET</code>, 반환 없음, 레지스터 한 번 쓰기라 핸들러 안에서도 된다. <code>SCB-&gt;CFSR</code> · <code>SCB-&gt;HFSR</code>(<code>core_cm7.h:470-471</code>): 읽기만 한다. <code>LOG_ERR(tag, fmt, …)</code>(fw-03 의 <code>log.h</code>): TEXT 모드에서 <code>printf</code> → 폴링 송신(블로킹), V2 에서 <code>((void)0)</code>. <strong>못 쓰는 것</strong>: <code>HAL_Delay()</code> · "기다리는" 호출 전부(§2-1 끝).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>SCB.CFSR</code></td><td><code>error: '3758157056' is a pointer; did you mean to use '-&gt;'?</code> — 3758157056 은 <code>0xE000ED00</code>, 매크로가 펼쳐진 주소다</td><td><code>SCB-&gt;CFSR</code></td></tr>
+            <tr><td><code>hardfault_decode(stacked, s_last.frame)</code></td><td><code>error: incompatible type for argument 2 of 'hardfault_decode'</code> + <code>note: expected 'hardfault_frame_t *' but argument is of type 'hardfault_frame_t'</code></td><td><code>&amp;s_last.frame</code></td></tr>
+            <tr><td><code>HAL_Delay()</code> 를 넣었다</td><td>빌드는 된다. 영원히 안 나온다(증상 표 아홉째 줄)</td><td>뺀다</td></tr>
+            <tr><td><code>LOG_ERR</code> 을 기록보다 먼저 썼다</td><td>빌드는 된다. 콘솔 줄의 <code>pc</code> 가 0 이거나 지난번 값이다</td><td>기록 → 알림 순서</td></tr>
+            <tr><td>fw-03 을 안 했는데 <code>LOG_ERR</code> 줄을 남겼다</td><td><code>fatal error: Tools/log.h: No such file or directory</code></td><td><code>#include</code> 와 <code>LOG_ERR</code> 석 줄을 뺀다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-2-4 ②: <code>set var s_trap_request = 1</code> · <code>continue</code> → LD1 이 멈추고 LD3 가 켜진다, <code>p/x s_last</code> 의 <code>frame.pc</code> 가 <code>&lt;udf주소&gt;</code>, <code>count = 0x1</code>, (fw-03) 콘솔의 <code>E hardfault:</code> 줄(체크포인트 <code>hardfault-pc-to-function</code>). ⑤ 에서 <code>-g</code> 로 다시 붙어 <code>count</code> 가 그대로다(<code>attach-without-reset-read</code>). 보드 동작은 거기서 내가 본다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t7"><summary>힌트 T7 — <code>hardfault_poll()</code> · gdb 가 요청하면 일부러 죽는다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — <code>app_loop()</code> 가 바퀴마다 부른다. 입력은 <code>s_trap_request</code>(gdb 가 <code>set var s_trap_request = 1</code> 로 세운다). 끝났을 때 참이어야 하는 것: 요청이 있었으면 그것을 0 으로 지우고 fault 를 낸다(돌아오지 않는다); 없었으면 아무것도 하지 않고 곧바로 돌아온다(주 루프를 막지 않는다).</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T7 - User/Src/Tools/hardfault.c */
+void hardfault_poll(void)
+{
+  if (s_trap_request != 0u) {
+    s_trap_request = 0u;                   /* 요청을 소비한다 - 트랩 뒤에는 이 줄에 올 수 없으므로 먼저 */
+    __builtin_trap();                      /* 컴파일러가 정의되지 않은 명령(udf) 하나를 심는다 -&gt; HardFault */
+  }
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>if (s_trap_request != 0u)</code> — <code>volatile</code> 변수라서 바퀴마다 메모리에서 다시 읽는다(T1 의 <code>s_blink_ms</code> 와 같은 이유). gdb 가 써 넣은 1 이 다음 바퀴에 보인다. <code>if (s_trap_request)</code> 로 써도 같다(동일).</li>
+          <li><code>s_trap_request = 0u;</code> 가 <strong>먼저</strong>인 이유 — 트랩 뒤에는 어떤 줄도 실행되지 않는다. 지우는 줄이 뒤에 있으면 영영 지워지지 않는다. 지우는 까닭: §3-2-4 ⑤ 에서 <code>-g</code> 로 붙어 <code>p s_trap_request</code> 를 치면 0 — "요청은 소비됐고 그 결과가 <code>s_last</code> 다"를 읽을 수 있다.</li>
+          <li><code>__builtin_trap();</code> — 함수가 아니라 GCC <strong>내장</strong>(built-in)이다. 컴파일러가 "정의되지 않은 명령" 한 개를 심는다 — 이 Mac 의 GCC 14.3.1 은 Thumb 에서 <code>udf #255</code>(기계어 <code>0xdeff</code>)를 낸다(<code>-O0</code> · <code>-Os</code> 모두, 역어셈블로 확인). UsageFault 를 따로 켜지 않았으므로 HardFault 로 올려 보내진다(§3-2-4 ② 의 <code>cfsr</code> bit 16 · <code>hfsr</code> bit 30). 왜 "없는 주소에 쓰기"가 아닌가는 §3-2-3 걸음 6.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — 트랩 수단으로 <code>*(volatile uint32_t *)&lt;주소&gt; = 0;</code> 같은 "없는 주소 쓰기"를 쓰는 답도 있다. 그 주소가 이 칩에서 정말 fault 를 내는지(어느 fault 로 오는지)를 먼저 확인해야 한다 — 이 가이드는 그 확인이 필요 없는 <code>__builtin_trap()</code> 하나로 정했다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — HAL 은 없다. <code>__builtin_trap()</code>: GCC 내장, 인자 없음, 돌아오지 않는다(GCC 14.3 매뉴얼 "Other Built-in Functions Provided by GCC").</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>골격 그대로</td><td>빌드는 된다. <code>set var s_trap_request = 1</code> 뒤에도 LD1 이 계속 깜박이고 LD3 는 안 켜진다</td><td>채운다</td></tr>
+            <tr><td>지우는 줄을 트랩 뒤에 뒀다</td><td>빌드는 된다(GCC 는 도달하지 않는 줄에 경고하지 않는다 — 확인). ⑤ 에서 <code>p s_trap_request</code> 가 1 로 남아 있다</td><td>지우기 → 트랩 순서</td></tr>
+            <tr><td><code>if</code> 없이 늘 트랩한다</td><td>빌드는 된다. 부팅 직후 첫 바퀴에 죽는다 — LD1 은 한 번도 안 깜박이고 LD3 가 켜진다</td><td>조건 안으로</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-2-4 ①: <code>objdump --disassemble=hardfault_poll | grep udf</code> 가 <code>deff  udf #255</code> 한 줄을 낸다 → <code>&lt;udf주소&gt;</code>. ②: <code>set var s_trap_request = 1</code> 뒤 LD1 이 멈추고 LD3 가 켜진다(체크포인트 <code>hardfault-pc-to-function</code>). ③: <code>&lt;udf주소&gt;</code> 가 <code>.map</code> 의 <code>.text.hardfault_poll</code> 범위 안이다(<code>map-file-located</code>).</p>
+        </div></details>
+
+      <details class="hint" id="hint-t8"><summary>힌트 T8 — <code>HardFault_Handler()</code> · 어셈블리 네 명령으로 C 에 넘긴다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 누가 부르는가: 아무도 부르지 않는다. CPU 가 fault 를 만나면 벡터 테이블(<code>startup_stm32h723xx.s:135</code>)에 적힌 이 주소로 직접 뛴다(이해 확인 1). 할 일: 프롤로그 없이(<code>naked</code>) 두 스택 포인터와 LR 을 <code>r0</code> · <code>r1</code> · <code>r2</code> 에 싣고 <code>hardfault_capture</code> 로 건너뛴다. 끝났을 때 참이어야 하는 것: 역어셈블의 첫 명령이 <code>mrs r0, MSP</code> 다(§3-2-4 ①).</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T8 - Core/Src/stm32h7xx_it.c 의 USER CODE BEGIN HardFault_IRQn 0 안 */
+  __asm volatile (
+    "mrs r0, msp \n"            /* 인자 1: 주 스택 포인터 - MSP 를 쓰던 중이었으면 여기가 프레임 */
+    "mrs r1, psp \n"            /* 인자 2: 프로세스 스택 포인터 */
+    "mov r2, lr  \n"            /* 인자 3: EXC_RETURN - 핸들러 안의 LR 은 돌아갈 주소가 아니다(§2-1) */
+    "b   hardfault_capture \n"  /* bl 이 아니라 b - 돌아올 일이 없다 */
+  );</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>__asm volatile ( "…" "…" "…" "…" );</code> — GCC 인라인 어셈블리의 basic 꼴. C 는 나란히 놓인 문자열 리터럴을 하나로 이어 붙이므로 네 문자열이 어셈블러에게는 한 덩어리다. 그래서 <strong>문자열 끝마다 <code>\n</code></strong> 이 있어야 어셈블러가 줄을 가른다 — 빠지면 두 명령이 한 줄이 되어 멈춘다(아래 표). <code>volatile</code> 은 "최적화로 빼거나 옮기지 말 것". <code>/* … */</code> 주석은 문자열 밖(C 쪽)에 있어 어셈블러에게 가지 않는다.</li>
+          <li><code>mrs r0, msp</code> · <code>mrs r1, psp</code> — <code>mrs</code> = Move from Special Register. MSP · PSP 는 보통 레지스터가 아니라 <code>mov</code> 로 못 읽고 이 명령으로만 읽는다. <code>sp</code> 라고 쓰면 "지금 활성인 쪽" 하나만 보이고 그것이 어느 쪽인지 알 수 없으므로, 둘 다 읽어 C 에서 고른다(T4 · T6 걸음 1).</li>
+          <li><code>mov r2, lr</code> — LR 은 보통 레지스터라 <code>mov</code>. 핸들러 안의 LR 은 돌아갈 주소가 아니라 <code>EXC_RETURN</code> 이다(§2-1 의 표).</li>
+          <li>왜 <code>r0</code> · <code>r1</code> · <code>r2</code> 인가 — C 호출 규약(AAPCS)은 앞의 네 인자를 <code>r0</code> ~ <code>r3</code> 에 그 순서로 받는다. <code>hardfault_capture(msp, psp, exc_return)</code> 의 인자 순서와 <strong>같아야</strong> 한다 — 바꾸면 컴파일러는 모르고 C 함수가 PSP 를 MSP 로 믿는다.</li>
+          <li><code>b hardfault_capture</code> — <code>b</code> 는 그냥 건너뜀, <code>bl</code> 은 돌아올 주소를 LR 에 적는 호출이다. 돌아올 일이 없으므로 <code>b</code> 로 충분하고, <code>bl</code> 은 LR 의 <code>EXC_RETURN</code> 을 덮어쓴다 — 값은 이미 <code>r2</code> 로 옮겼으니 포획에는 지장이 없지만, gdb 가 <code>bt</code> 에서 예외 경계를 알아볼 단서가 LR 에서 사라진다 [추정 — gdb 의 동작].</li>
+          <li>C 문장이 <strong>없다</strong> — <code>naked</code> 함수에는 스택 프레임이 없어 지역변수를 둘 자리가 없다(§2-1). 생성물의 <code>while (1)</code> 은 USER CODE 밖이라 못 지우고, GCC 가 <code>b.w</code> 뒤의 도달하지 않는 <code>b.n</code> 한 줄로 만든다(§3-2-2 끝의 상자, ①의 역어셈블에서 보인다).</li>
+          <li><strong>다르게 써도 되는 곳</strong> — 스택 고르기를 여기서 하는 꼴(T4 의 "다르게 써도 되는 곳" ②): <code>tst lr, #4</code> · <code>ite eq</code> · <code>mrseq r0, msp</code> · <code>mrsne r0, psp</code> · <code>mov r1, lr</code> · <code>b …</code>. 인자가 둘로 줄고 C 쪽 시그니처도 바뀐다. 이 가이드는 판단을 C 로 옮겨 호스트 시험이 닿게 했다 — 어셈블리가 짧아지는 대신 인자가 셋이다. 둘 다 된다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — HAL 은 없다. 명령은 셋뿐이다: <code>mrs</code>(특수 레지스터 읽기) · <code>mov</code> · <code>b</code>. GCC 속성 <code>naked</code>(14.3 매뉴얼 §6.33.5 ARM Function Attributes)는 <code>USER CODE BEGIN PFP</code> 의 선언에 붙어 있고 생성된 정의에 합쳐진다(§2-1).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>문자열 끝의 <code>\n</code> 을 빠뜨렸다</td><td><code>Assembler messages: … Error: garbage following instruction -- `mrs r0,msp mrs r1,psp'</code>(임시 <code>.s</code> 파일의 줄 번호가 함께 나온다)</td><td>명령마다 <code>\n</code></td></tr>
+            <tr><td><code>mrs r0, sp</code></td><td><code>Error: syntax error -- `mrs r0,sp'</code></td><td><code>msp</code> · <code>psp</code></td></tr>
+            <tr><td><code>bl hardfault_capture</code></td><td>조용히 빌드된다. 포획 값은 같다 — LR 의 <code>EXC_RETURN</code> 만 잃는다</td><td><code>b</code></td></tr>
+            <tr><td><code>PFP</code> 블록의 <code>naked</code> 선언을 빠뜨렸다</td><td>조용히 빌드된다. 역어셈블이 <code>push {r7}</code> · <code>add r7, sp, #0</code> 으로 시작하고(이 Mac 의 arm-gcc 14.3.1 <code>-O0</code>), <code>pc</code> 칸이 한 칸 밀린다 — §3-2-4 ④ 가 일부러 해 보는 것</td><td>§3-2-2 의 선언 한 줄</td></tr>
+            <tr><td>함수 이름 철자가 다르다</td><td>컴파일은 되고 링크에서 <code>undefined reference to `hardfault_captur'</code></td><td><code>hardfault.h</code> 의 이름 그대로</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-2-4 ①: <code>objdump --disassemble=HardFault_Handler</code> 의 첫 명령이 <code>mrs r0, MSP</code>(objdump 는 대문자로 적는다), 넷째가 <code>b.w … &lt;hardfault_capture&gt;</code>. ②: <code>bt</code> 와 <code>p/x s_last</code>. ④: 선언을 막으면 <code>push</code> 로 시작한다(체크포인트 <code>naked-removed-pc-shifted</code>).</p>
+        </div></details>
+      <p class="small">시험 파일은 전량 제공이다 — 벡터가 곧 채점표이기 때문이다.</p>
+      <pre><code class="lang-c">/* host_tests/test_hardfault.c - 예외 스택 프레임의 인덱스 순서.
+ * 프레임 순서: FreeRTOS CM7 포트가 같은 프레임을 손으로 쌓는다. 위에서부터 xPSR, PC, LR, R12, R3..R0
+ *   ($FW_H7/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM7/r0p1/port.c:198-206).
+ * EXC_RETURN 값: $FW_H7/Drivers/CMSIS/Include/core_cm7.h:1863-1868. */
+#include &lt;assert.h&gt;
+#include &lt;stdio.h&gt;
+#include "Tools/hardfault.h"
+
+int main(void)
+{
+  int n = 0;
+  uint32_t w[9];
+  hardfault_frame_t f;
+
+  /* 워드마다 자기 인덱스를 담는다 - 인덱스가 틀리면 값으로 드러난다 */
+  for (uint32_t i = 0; i &lt; 9u; i++) { w[i] = 0xF00D0000u + i; }
+
+  /* case 1: 프레임이 w[0] 에서 시작한다 */
+  hardfault_decode(&amp;w[0], &amp;f);
+  assert(f.r0 == 0xF00D0000u &amp;&amp; f.r1 == 0xF00D0001u &amp;&amp; f.r2 == 0xF00D0002u &amp;&amp; f.r3 == 0xF00D0003u);
+  assert(f.r12 == 0xF00D0004u &amp;&amp; f.lr == 0xF00D0005u &amp;&amp; f.pc == 0xF00D0006u &amp;&amp; f.xpsr == 0xF00D0007u);
+  n++;
+
+  /* case 2: 프롤로그가 한 워드를 밀어 넣으면 SP 가 한 워드 내려간다. 진짜 프레임은 w[1] 에 있다;
+   * w[0] 에서 풀면 한 칸 어긋나서 'pc' 필드에 진짜 프레임의 LR 이 들어간다. */
+  hardfault_decode(&amp;w[1], &amp;f);
+  assert(f.lr == 0xF00D0006u &amp;&amp; f.pc == 0xF00D0007u);
+  hardfault_decode(&amp;w[0], &amp;f);
+  assert(f.pc == 0xF00D0006u);
+  n++;
+
+  /* case 3: 프레임은 어느 스택에 있는가 */
+  assert(hardfault_frame_on_psp(0xFFFFFFF9u) == false);  /* EXC_RETURN_THREAD_MSP     */
+  assert(hardfault_frame_on_psp(0xFFFFFFFDu) == true);   /* EXC_RETURN_THREAD_PSP     */
+  assert(hardfault_frame_on_psp(0xFFFFFFE9u) == false);  /* EXC_RETURN_THREAD_MSP_FPU */
+  assert(hardfault_frame_on_psp(0xFFFFFFEDu) == true);   /* EXC_RETURN_THREAD_PSP_FPU */
+  assert(hardfault_frame_on_psp(0xFFFFFFF1u) == false);  /* EXC_RETURN_HANDLER        */
+  n++;
+
+  printf("PASS hardfault %d cases\n", n);
+  return 0;
+}</code></pre>
+      <pre><code class="lang-bash">cd firmware
+cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_hardfault.c -o /tmp/test_hardfault &amp;&amp; /tmp/test_hardfault</code></pre>
+      <pre><code class="lang-text">PASS hardfault 3 cases</code></pre>
+      <p>case 2 는 "통과해야 하는 버그 재현"이다. 프롤로그가 한 칸을 밀면 <code>pc</code> 칸에 무엇이 들어오는지를 숫자로 못 박아 둔 것이고, §3-2-4 의 끝에서 같은 일을 보드에서 일부러 일으킨다.</p>
+
+      <h4 id="s3-2-4">3-2-4. 굽고 보기</h4>
+      <p><strong>① 굽기 전에 역어셈블로 두 가지를 본다.</strong> <code>naked</code> 가 먹었는가, 그리고 함정이 어느 주소에 심겼는가.</p>
+      <pre><code class="lang-bash">cd firmware &amp;&amp; tools/build.sh &amp;&amp; cd h723zg
+arm-none-eabi-objdump -d build/Debug/h723zg.elf --disassemble=HardFault_Handler
+arm-none-eabi-objdump -d build/Debug/h723zg.elf --disassemble=hardfault_poll | grep udf</code></pre>
+      <pre><code class="lang-text">(기대: HardFault_Handler 의 첫 명령이 mrs r0, MSP 다. push 로 시작하면 naked 선언이 먹지 않은 것이다.
+ b.w hardfault_capture 뒤에 b.n 한 줄(-O0 이면 그 앞에 nop 하나)이 더 보일 수 있다 - 생성물의 while (1) 이 남긴 것이고,
+ b.w 는 돌아오지 않으므로 도달하지 않는 코드다(§3-2-2 끝).
+ 둘째 명령의 출력은 한 줄:   &lt;udf주소&gt;:  deff   udf #255
+ 이 &lt;udf주소&gt; 를 노트에 적어 둔다 - 곧 보드가 알려 줄 pc 와 견준다.)</code></pre>
+      <p><strong>② 굽고, 붙고, 죽인다.</strong> 서버는 §3-1-4 와 같은 명령으로 띄운다. fw-03 을 했으면 콘솔 터미널도 열어 둔다.</p>
+      <pre><code class="lang-text">(gdb) target extended-remote localhost:61234
+(gdb) continue
+      ... LD1 이 깜박인다. Ctrl-C 로 세운다 ...
+(gdb) set var s_trap_request = 1
+(gdb) continue
+      ... LD1 이 멈추고 LD3(빨강)가 켜진다. gdb 가 스스로 멈추지 않으면 Ctrl-C ...
+(gdb) bt
+(gdb) p/x s_last
+$1 = {frame = {r0 = &lt;…&gt;, r1 = &lt;…&gt;, r2 = &lt;…&gt;, r3 = &lt;…&gt;, r12 = &lt;…&gt;, lr = &lt;lr&gt;, pc = &lt;pc&gt;, xpsr = &lt;…&gt;},
+  exc_return = &lt;0xfffffff9 또는 0xffffffe9&gt;, cfsr = &lt;cfsr&gt;, hfsr = &lt;hfsr&gt;, count = 0x1}
+(gdb) info symbol &lt;pc&gt;
+hardfault_poll + &lt;오프셋&gt; in section .text
+(gdb) list *&lt;pc&gt;</code></pre>
+      <pre><code class="lang-text">콘솔(fw-03 을 한 경우, TEXT 모드):
+[&lt;tick_ms&gt;] E hardfault: pc=&lt;pc&gt; lr=&lt;lr&gt; cfsr=&lt;cfsr&gt; hfsr=&lt;hfsr&gt;</code></pre>
+      <p>확인할 것:</p>
+      <ul>
+        <li><code>&lt;pc&gt;</code> 가 ①에서 적어 둔 <code>&lt;udf주소&gt;</code> 와 <strong>같은가.</strong> 정의되지 않은 명령의 경우 스택된 PC 는 그 명령 자신을 가리킨다고 알려져 있다 — 내 보드에서 그대로인지 적는다(다르면 몇 바이트 차이인지도).</li>
+        <li><code>&lt;lr&gt;</code> 를 <code>info symbol</code> 에 넣으면 <code>app_loop</code> 쪽이 나온다 — "누가 불렀는가". 끝자리가 홀수인 것은 Thumb 표시 비트(bit 0)다.</li>
+        <li><code>cfsr</code> 의 bit 16(<code>UNDEFINSTR</code>, <code>core_cm7.h:736-737</code>)과 <code>hfsr</code> 의 bit 30(<code>FORCED</code>, <code>:743-744</code>)이 서 있는가. UsageFault 를 따로 켜지 않았으므로 "정의되지 않은 명령"이 HardFault 로 <strong>올려 보내진</strong> 것이라면 이 조합이 된다 [보드 미확인 — 값을 적어 둔다].</li>
+        <li><code>bt</code> 가 어디까지 보이는가. gdb 가 예외 경계를 알아보면 <code>hardfault_capture</code> 아래로 <code>&lt;signal handler called&gt;</code> 와 <code>hardfault_poll</code> · <code>app_loop</code> · <code>main</code> 이 이어진다 [추정 — gdb 의 동작. 보이는 대로 적는다]. 안 보여도 <code>s_last</code> 가 정본이다.</li>
+      </ul>
+      <p><strong>③ 주소를 이름으로 — 도구 없이, 그리고 도구로.</strong> 이 걸음은 보드가 없어도 된다(<code>&lt;pc&gt;</code> 자리에 <code>&lt;udf주소&gt;</code> 를 넣는다).</p>
+      <pre><code class="lang-bash">ls -l build/Debug/*.map                                                # .map 이 어디 있는가
+arm-none-eabi-nm -n build/Debug/h723zg.elf | grep -i " t " | less       # 주소순 함수 목록 - &lt;pc&gt; 가 끼는 두 줄을 찾는다
+grep -n -A2 "^ \.text\.hardfault_poll" build/Debug/h723zg.map           # 찾은 이름으로 .map 의 "시작 + 크기" 줄을 연다
+arm-none-eabi-addr2line -e build/Debug/h723zg.elf -f -p 0x&lt;pc&gt;          # 같은 답을 도구로</code></pre>
+      <pre><code class="lang-text">(기대: .map 의 세 줄에서 시작주소 &lt;= pc &lt; 시작주소 + 크기 가 성립한다 - 손으로 계산해 노트에 적는다.
+ addr2line 의 출력은   hardfault_poll at &lt;…&gt;/User/Src/Tools/hardfault.c:&lt;줄&gt; 꼴이다.)</code></pre>
+      <p><strong>④ 일부러 틀린다.</strong> <code>stm32h7xx_it.c</code> 의 <code>naked</code> 선언 한 줄을 주석으로 막고 ①~③을 되풀이한다.</p>
+      <pre><code class="lang-text">(기대: ①의 역어셈블이 push {r7} 로 시작한다.
+ s_last.frame.pc 가 가리키는 함수가 hardfault_poll 이 아니다 - 호스트 시험 case 2 가 예고한 대로 한 칸 밀려
+ 원래의 lr(부른 쪽)이 pc 칸에 들어온다. 그럴듯한 코드 주소라서 틀린 줄 모르기 쉽다는 것을 눈으로 본다.)</code></pre>
+      <p>봤으면 선언을 되살리고 다시 굽는다. 밀리는 칸 수는 컴파일러와 최적화 수준에 따라 다를 수 있다 — 한 칸이 아니면 몇 칸인지 역어셈블의 <code>push</code> · <code>sub sp</code> 에서 세어 본다.</p>
+      <p><strong>⑤ 리셋 없이 나중에 붙는다.</strong> 보드는 아직 fault 루프에 있다(LD3 켜짐). gdb 를 <code>quit</code>, 서버를 Ctrl-C 로 끈 뒤, 서버에 <code>-g</code> 하나를 더해 다시 띄운다.</p>
+      <pre><code class="lang-bash">ST-LINK_gdbserver -d -e -g -p 61234 \
+  -cp /opt/ST/STM32CubeCLT_1.21.0/STM32CubeProgrammer/bin -f build/gdbserver.log</code></pre>
+      <pre><code class="lang-text">(gdb) target extended-remote localhost:61234
+(gdb) p/x s_last
+      ... ②에서 본 것과 같은 값, count = 0x1 ...</code></pre>
+      <p><code>count</code> 가 그대로 1 이면 보드가 리셋되지 않은 채 붙은 것이다. 이어서 NRST 를 누르고 다시 읽으면 전부 0 이다 — <code>s_last</code> 는 <code>.bss</code> 에 있어서 부팅 때 지워진다.
+      그래서 <strong>리셋 너머로 남는 흔적은 콘솔에 찍힌 한 줄뿐</strong>이다. fw-06 에서 IWDG 가 생기면 이 무한 루프는 리셋으로 끝나므로(디버거로 동결해 두지 않는 한) 그 한 줄의 값어치가 더 커진다.
+      기록을 리셋 너머로 남기는 방법(초기화하지 않는 RAM 구역, 백업 레지스터)은 이 가이드의 범위에 넣지 않았다.</p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다. 이 쪽에는 합격 수치가 없다 — 전부 "보였는가 / 같은가"로 판정한다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="swv-off-confirmed"><span><strong>경로 통과</strong> — <code>.ioc</code> 의 PA13 · PA14 가 <code>Serial_Wire</code> 이고 PB3 에 <code>Trace_Asynchronous_SW</code> 줄이 없다. 돌고 있는 gdbserver 의 인자에 <code>-z</code> · <code>-a</code> · <code>-b</code> 가 없다
+          <span class="sub">판정 수단: <code>grep</code> 출력(§3-1-1) + <code>ps</code> 출력(§3-1-4). cortex-debug 를 쓰면 <code>launch.json</code> 에 <code>swoConfig</code> 가 없거나 <code>enabled: false</code></span></span></label></li>
+        <li><label><input type="checkbox" data-key="gdb-breakpoint-var-read"><span><strong>경로 통과</strong> — <code>app_loop</code> 의 중단점에서 멈춰 <code>s_loop_count</code> 를 읽었고(<code>continue</code> 마다 1 씩 는다), <code>s_blink_ms</code> 를 바꾸자 LD1 의 점멸 빠르기가 달라졌다
+          <span class="sub">판정 수단: gdb 출력 + LED(눈) · §3-1-4</span></span></label></li>
+        <li><label><input type="checkbox" data-key="halted-tick-frozen-seen"><span><strong>경로 통과</strong> — CPU 를 세운 채 10 초쯤 간격으로 읽은 <code>uwTick</code> 두 값이 같다
+          <span class="sub">판정 수단: gdb 출력 · §3-1-4 · "멈춘 동안 소프트웨어의 시간은 서 있다"(§2-3 표의 첫 줄)</span></span></label></li>
+        <li><label><input type="checkbox" data-key="dbgmcu-baseline-recorded"><span><strong>경로 통과</strong> — <code>DBGMCU</code> 의 <code>CR</code> · <code>APB1LFZ1</code> · <code>APB2FZ1</code> · <code>APB4FZ1</code> 네 값을 gdb 로 읽어 노트에 적었다(<code>CR</code> 의 bit 20 포함)
+          <span class="sub">판정 수단: gdb 출력 · §3-1-4 · fw-06 · fw-08 에서 동결 비트를 세우기 전의 기준선</span></span></label></li>
+        <li><label><input type="checkbox" data-key="frame-decode-host-pass"><span><strong>경로 통과</strong> — <code>test_hardfault</code> 가 <code>PASS hardfault 3 cases</code> 를 찍는다
+          <span class="sub">판정 수단: 호스트 시험 출력 · §3-2-3</span></span></label></li>
+        <li><label><input type="checkbox" data-key="map-file-located"><span><strong>경로 통과</strong> — 내 빌드의 <code>.map</code> 에서 <code>.text.hardfault_poll</code> 의 "시작 주소 + 크기" 줄을 찾았고, <code>&lt;udf주소&gt;</code> 가 그 범위 안에 있음을 손으로 계산했다
+          <span class="sub">판정 수단: <code>grep</code> 출력 + 노트의 계산 · §3-2-4 ③ · 보드 없이 된다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="hardfault-pc-to-function"><span><strong>발동 확인</strong> — <code>s_trap_request = 1</code> 로 HardFault 를 일으켰고, LD3 가 켜졌고, <code>s_last.frame.pc</code> 를 <code>.map</code> 과 <code>addr2line</code> 두 길로 바꾼 결과가 둘 다 <code>hardfault_poll</code> 이다
+          <span class="sub">판정 수단: LED + gdb 출력 + <code>addr2line</code> 출력 · §3-2-4 ② ③ · fw-03 을 했으면 콘솔의 <code>E hardfault:</code> 줄의 <code>pc</code> 도 같은 값</span></span></label></li>
+        <li><label><input type="checkbox" data-key="naked-removed-pc-shifted"><span><strong>발동 확인</strong> — <code>naked</code> 선언을 막자 역어셈블이 <code>push</code> 로 시작했고, <code>pc</code> 칸이 <code>hardfault_poll</code> 이 아닌 함수를 가리켰다. 선언을 되살린 뒤 다시 옳은 함수가 나왔다
+          <span class="sub">판정 수단: <code>objdump</code> 출력 + gdb 출력 · §3-2-4 ④</span></span></label></li>
+        <li><label><input type="checkbox" data-key="attach-without-reset-read"><span><strong>경로 통과</strong> — fault 루프에 있는 보드에 <code>-g</code> 로 다시 붙어 <code>s_last</code> 를 읽었고 <code>count</code> 가 그대로였다. NRST 뒤에는 0 이 되는 것도 봤다
+          <span class="sub">판정 수단: gdb 출력 · §3-2-4 ⑤</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <p>포트가 안 보인다 · 플래시가 안 된다 같은 전 쪽 공통 증상은 <a href="fw-02-toolchain.html#symptoms">fw-02 의 표</a>가 맡는다. 아래는 이 쪽의 실습에서 날 수 있는 것만이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td>gdbserver 가 뜨자마자 끝난다. 또는 서버를 띄워 둔 뒤로 <code>flash.sh</code> 가 실패한다</td><td>ST-LINK 하나를 두 프로그램이 잡으려 한다(UM2576 부록 A 코드 1: 이미 무언가 보드에 붙어 있다). persistent 모드의 서버는 gdb 를 꺼도 남는다</td><td><code>pgrep -fl "ST-LINK_gdbserver|STM32_Programmer"</code></td><td>남은 프로세스를 끈다 · §3-1-3 의 순서</td></tr>
+          <tr><td>서버가 코드 2 · 4 로 끝난다</td><td>ST-LINK 가 안 보인다(2) / ST-LINK 는 보이는데 타깃이 없다(4) — UM2576 부록 A</td><td>케이블이 CN1(ST-LINK 쪽)인가, LD4(COM)가 켜져 있는가</td><td>fw-02 의 공통 증상</td></tr>
+          <tr><td>중단점이 엉뚱한 줄에서 멈춘다. <code>p</code> 가 말이 안 되는 값을 낸다</td><td>ELF 와 보드의 내용이 다른 빌드다(빌드만 하고 굽지 않았다)</td><td>다시 굽고 다시 붙어서 같은 자리를 본다</td><td>§2-2 의 경고 상자</td></tr>
+          <tr><td><code>No symbol "s_loop_count" in current context.</code></td><td>Release 프리셋(<code>-g0</code>)으로 빌드했다 / 같은 이름의 <code>static</code> 이 여러 파일에 있다</td><td>gdb 에서 <code>info line app_loop</code> 가 "No line number information available" 을 내는가 · <code>grep CMAKE_BUILD_TYPE: build/*/CMakeCache.txt</code></td><td>Debug 프리셋 · <code>p 'app.c'::s_loop_count</code></td></tr>
+          <tr><td><code>set var s_blink_ms</code> 를 했는데 점멸이 그대로다</td><td>주기가 아직 리터럴 · 매크로다(바꿀 메모리가 없다) / 변수를 읽는 자리가 루프 밖이다</td><td><code>list app_loop</code> 로 기다리는 줄이 변수를 쓰는지 본다</td><td>§3-1-2</td></tr>
+          <tr><td><code>s_last.frame.pc</code> 가 <code>hardfault_poll</code> 이 아니라 그것을 부른 쪽을 가리킨다</td><td><code>naked</code> 가 먹지 않아 프롤로그가 SP 를 옮겼다</td><td><code>objdump --disassemble=HardFault_Handler</code> 의 첫 명령이 <code>push</code> 인가</td><td>§2-1 · <code>USER CODE BEGIN PFP</code> 의 선언</td></tr>
+          <tr><td><code>pc</code> 칸이 <code>0xfffffff9</code> 같은 값이다</td><td>핸들러 안의 LR(<code>EXC_RETURN</code>)을 돌아갈 주소로 읽었다 — 프레임이 아니라 레지스터를 봤다</td><td><code>s_last.exc_return</code> 과 같은 값인가</td><td>§2-1 의 표</td></tr>
+          <tr><td>LD3 는 켜졌는데 콘솔에 <code>E hardfault:</code> 줄이 없다(<code>s_last</code> 는 찼다)</td><td>V2 빌드라 <code>LOG_*</code> 가 비어 있다 / fault 가 마침 다른 송신 도중에 나서 <code>HAL_UART_Transmit</code> 이 <code>HAL_BUSY</code> 로 돌아왔다(<code>stm32h7xx_hal_uart.c:1126</code> · <code>:1198</code>) / fw-03 을 아직 안 했다</td><td>gdb 로 <code>p/x s_last</code></td><td>결함이 아니다 — 정본은 <code>s_last</code></td></tr>
+          <tr><td>fault 핸들러에 넣은 <code>HAL_Delay</code> 에서 영원히 안 나온다</td><td>HardFault 안에서는 SysTick 이 못 들어와 <code>uwTick</code> 이 늘지 않는다(<code>stm32h7xx_hal.c:405-419</code>)</td><td>gdb 로 세워 <code>bt</code> — <code>HAL_Delay</code> 안이다</td><td>§2-1 끝 — 기다리는 호출을 뺀다</td></tr>
+          <tr><td>(fw-09 이후) 디버그 중에만 FL 엔코더 값이 이상하다</td><td>디버그 구성에 SWV 가 켜져 PB3 가 구동된다 [추정]</td><td>§3-1-4 의 <code>ps</code> · <code>launch.json</code> 의 <code>swoConfig</code></td><td>§2-5</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. (4중 검색 — 변형) <code>HardFault_Handler</code> 를 네 군데에서 찾아 적어 보라 — 벡터 테이블 → 약한 기본 구현 → 실제 정의 → ST 예제</summary>
+        <div class="ans"><p>이 쪽의 대상은 HAL 콜백이 아니라 예외 핸들러다. 그래서 네 걸음의 첫 자리가 헤더가 아니라 <strong>startup 어셈블리</strong>다(경로의 <code>$FW_H7</code> 는 fw-02 에서 정한 것).</p>
+        <pre><code class="lang-bash">cd firmware/h723zg
+grep -n "HardFault_Handler" startup_stm32h723xx.s                 # ① 벡터 테이블의 자리  ② 약한 별명
+grep -n -A3 "^Default_Handler" startup_stm32h723xx.s              # ② 약한 기본 구현의 본문
+grep -n "HardFault_Handler" Core/Src/stm32h7xx_it.c Core/Inc/stm32h7xx_it.h   # ③ 실제 정의(강한 심볼)
+grep -rl "void HardFault_Handler" $FW_H7/Projects/NUCLEO-H723ZG | grep -c "\.c$"                                  # ④ 예제의 수
+grep -rl "void HardFault_Handler" $FW_H7/Projects/NUCLEO-H723ZG | grep "\.c$" | xargs grep -li "mrs\|naked" | wc -l   # ④ 그중 스택을 읽는 것</code></pre>
+        <p>① <code>startup_stm32h723xx.s:135</code> 의 <code>.word HardFault_Handler</code> — 벡터 테이블 <code>g_pfnVectors</code>(<code>:130</code>)의 넷째 칸이다. CPU 는 fault 가 나면 이 칸에 적힌 주소로 뛴다. 함수를 "부르는" 코드는 어디에도 없다.
+        ② <code>:326-327</code> 의 <code>.weak</code> + <code>.thumb_set HardFault_Handler,Default_Handler</code> — 아무도 정의하지 않으면 <code>Default_Handler</code>(<code>:115-117</code>, <code>b Infinite_Loop</code> 한 줄)가 그 이름을 대신한다. HAL 콜백의 <code>__weak</code> 와 같은 장치를 어셈블러로 쓴 것이다.
+        ③ CubeMX 가 <code>Core/Src/stm32h7xx_it.c</code> 에 강한 정의를 만든다(사용자의 H723 생성물에서는 <code>:84</code>, 팩의 Templates 에서는 <code>:56</code>). 본문은 <code>while (1)</code> 뿐이다 — 그래서 같은 이름을 <code>User/</code> 에 또 정의할 수 없고, USER CODE 블록으로 들어가야 했다.
+        ④ FW_H7 V1.13.0 의 NUCLEO-H723ZG 프로젝트에는 이 핸들러를 가진 <code>.c</code> 가 88개 있고, 스택 포인터를 읽는 것은 <strong>0개</strong>다. 본문이 다른 것은 LED 를 켜는 <code>Examples_LL/CORTEX/CORTEX_MPU/Src/stm32h7xx_it.c:60-69</code> 정도다.
+        네 걸음에서 얻는 결론: 이 주제는 ST 예제가 답을 주지 않는다. 답은 CPU 의 예외 모델(§2-1)에 있다. (줄 번호는 2026-09-22 에 직접 grep 한 것이다.)</p></div></details>
+      <details class="quiz"><summary>2. <code>HardFault_Handler</code> 가 평범한 C 함수면 무엇이 어긋나는가? 왜 "그럴듯하게" 틀리는가?</summary>
+        <div class="ans"><p>프레임의 주소는 예외 진입 직후의 SP 다. 평범한 C 함수는 첫머리의 프롤로그에서 레지스터를 스택에 밀어 SP 를 옮긴다(<code>-O0</code> 에서 <code>push {r7}</code> — 한 칸).
+        그 뒤에 읽은 SP 를 프레임의 시작으로 쓰면 모든 칸이 밀려 <code>pc</code> 칸에 원래의 LR 이 들어온다. LR 도 코드 영역의 주소라서 <code>addr2line</code> 은 멀쩡한 함수 이름을 돌려준다 — 죽은 함수가 아니라 그것을 <strong>부른</strong> 함수를.
+        오류 메시지가 없으므로 틀린 줄 모르고 엉뚱한 함수를 뒤지게 된다. 그래서 <code>naked</code> 가 먹었는지를 역어셈블로 확인하는 걸음(§3-2-4 ①)과, 일부러 틀려 보는 걸음(④)을 둔다.</p></div></details>
+      <details class="quiz"><summary>3. 스택된 <code>pc</code> · 스택된 <code>lr</code> · 핸들러 안의 LR 레지스터 — 셋은 각각 무엇을 말해 주는가?</summary>
+        <div class="ans"><p>스택된 <code>pc</code> = 예외가 끝나면 돌아갈 주소, 곧 "어디서 죽었는가". 스택된 <code>lr</code> = 죽은 함수가 자기 일을 마치면 돌아가려던 주소, 곧 "누가 불렀는가"(bit 0 은 Thumb 표시라 홀수로 보인다).
+        핸들러 안의 LR 레지스터 = <code>EXC_RETURN</code>. 주소가 아니라 "프레임이 어느 스택에 있고 어떤 모드로 돌아갈 것인가"를 담은 표식이다(<code>core_cm7.h:1863-1868</code>).
+        셋을 섞으면 증상 표의 두 줄(<code>pc</code> 가 부른 쪽을 가리킨다 / <code>pc</code> 가 <code>0xfffffff9</code> 다)이 된다.</p></div></details>
+      <details class="quiz"><summary>4. Release(<code>-Os -g0</code>) 로 구운 보드가 현장에서 죽었다. 콘솔에 <code>pc=…</code> 한 줄만 남았다. 함수 이름을 알아낼 수 있는가? 조건은?</summary>
+        <div class="ans"><p>알아낼 수 있다. <code>-g0</code> 은 디버그 정보(줄 번호 · 변수 · 매크로)를 빼지만 심볼 테이블과 <code>.map</code> 은 남는다. <code>addr2line -f</code> 는 함수 이름을 주고 파일:줄 자리에 <code>??:?</code> 를 낸다(이 Mac 에서 확인한 출력). <code>.map</code> 의 "시작 + 크기"로도 찾을 수 있다.
+        조건은 하나다 — <strong>그 보드에 구운 바로 그 빌드의</strong> ELF 나 <code>.map</code> 을 갖고 있어야 한다. 주소는 빌드마다 움직인다. 그래서 배너의 <code>build …</code> 줄(fw-03)과 산출물을 짝지어 보관하는 습관이 값을 한다.</p></div></details>
+      <details class="quiz"><summary>5. 중단점에서 CPU 가 섰다. 그동안 계속 도는 것 둘과, 그래서 생기는 일을 말해 보라. 모터 전원이 들어간 뒤에 중단점을 쓰려면 무엇이 먼저 돼 있어야 하는가?</summary>
+        <div class="ans"><p>IWDG 는 자기 클럭으로 계속 센다 — 동결하지 않았으면 생각하는 사이에 보드가 리셋된다(RM0468 §50.3.7, fw-06 에서 동결). TIM1 · TIM8 은 마지막 듀티로 PWM 을 계속 낸다 — 제어 루프 · 보호 · 명령 워치독은 CPU 와 함께 서 있으므로 바퀴를 세울 코드가 없다.
+        그래서 모터 전원 뒤의 중단점은 fw-08 의 "TIM1 · TIM8 동결 + OSSI + idle LOW"가 끝난 뒤에만 쓴다. 동결하면 고급 타이머의 출력은 MOE = 0 인 것처럼 꺼지고(RM0468 §43.3.29), 핀이 어떤 레벨이 되는가는 OSSI 와 idle 설정이 정한다.
+        동결 비트는 시스템 리셋으로 지워지지 않는다(전원 리셋에서만) — "세웠다고 믿는 것"과 "지금 서 있는 것"은 gdb 로 <code>DBGMCU</code> 를 읽어 확인한다.</p></div></details>
+      <details class="quiz"><summary>6. 이 프로젝트에서 SWV 를 켜면 안 되는 이유는? <code>ST-LINK_gdbserver</code> 에서 "SWV 를 끈다"는 것은 구체적으로 무엇인가?</summary>
+        <div class="ans"><p>SWO 는 PB3 한 핀에만 나오고 PB3 는 FL 엔코더의 B 상(TIM2_CH2)이다. PB3 는 리셋 직후 <code>MX_GPIO_Init</code> 전까지 AF0(JTDO/TRACESWO)이라, 그 구간에 SWV 가 켜지면 MCU 가 PB3 를 출력으로 구동해 엔코더 출력과 맞붙는다(구동한다는 부분은 추정 등급 — <code>hardware/pinmap-h723.md</code> §2-B).
+        gdbserver 에는 SWV 를 끄는 스위치가 없다. <code>-z</code>(SWO 포트) · <code>-a</code>(CPU 클럭) · <code>-b</code>(분주) 셋을 <strong>주지 않는 것</strong>이 끈 것이다. <code>-d</code> 는 SWD 로 붙으라는 뜻이라 줘야 한다. cortex-debug 에서는 <code>swoConfig</code> 를 두지 않는다(<code>enabled</code> 의 기본값이 <code>false</code>).</p></div></details>
+      <details class="quiz"><summary>7. V2 빌드로 구운 보드에서 "수신 오류가 몇 번 났는가"를 보고 싶다. 콘솔도 명령 창도 없다. 어떻게 보는가? 그때 모터 전원이 들어가 있다면 무엇을 먼저 확인하는가?</summary>
+        <div class="ans"><p>그 모듈의 <code>static</code> 카운터를 gdb 로 읽는다. <code>static</code> 도 ELF 의 심볼 표에 있으므로 <code>p &lt;이름&gt;</code> 으로 읽히고, 같은 이름이 여러 파일에 있으면 <code>p '&lt;파일&gt;.c'::&lt;이름&gt;</code> 으로 짚는다. 보드를 리셋하지 않으려면 서버를 <code>-g</code> 로 띄워 붙는다.
+        계약에 카운터용 메시지를 더하는 길은 택하지 않는다 — 벤치 관측 때문에 계약 v2 를 넓히지 않는다는 것이 이 가이드의 규칙이다(06a §4-2).
+        gdb 가 메모리를 읽는 동안 CPU 는 서 있다. 제어 루프 · 보호 · 명령 워치독도 같이 선다. 그래서 모터 전원이 들어가 있으면 <strong>먼저 모터를 세운 상태에서</strong>(MOTOR_EN LOW) 붙어 fw-08 의 동결 설정이 살아 있는지를 본다 — <code>p/x DBGMCU-&gt;APB2FZ1</code> 의 bit 0 · 1. 붙는 동작 자체가 CPU 를 세우므로, 이것이 확인되기 전에는 바퀴가 도는 동안 붙지 않는다(§2-3 의 예고 상자).</p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>다음 쪽</strong> → <a href="fw-05-cli.html">fw-05</a> — 명령 창. 필요한 것은 그대로 Nucleo 와 USB 케이블이다.</li>
+          <li><strong>이 쪽을 건너뛰었다면 막히는 곳</strong> → <a href="fw-06-tick-watchdog.html">fw-06</a> 의 실습 C(디버거로 세운 채 IWDG 동결 유무를 비교한다)와 <a href="fw-08-pwm-safe-output.html">fw-08</a> 의 디버그 정지 실습. 둘 다 이 쪽의 gdbserver · gdb 명령을 그대로 쓴다.</li>
+          <li><strong>DMM 이 있고 <a href="fw-01-pinmap.html">fw-01</a> 을 아직 안 닫았다면</strong> → 지금 병행해도 된다. 결선이 시작되는 <a href="fw-08-pwm-safe-output.html">fw-08</a> · <a href="fw-09-encoder.html">fw-09</a> 앞에서만 끝나 있으면 된다.</li>
+          <li>이 쪽은 <code>hardware/INVENTORY.md</code> 에 채우는 칸이 없다. 대신 <strong>내 노트</strong>에 적은 것을 확인한다: 서버의 첫 화면(장치 · 포트 줄), 붙는 순간 보드가 서는지, 하드웨어 중단점이 몇 개까지 걸리는지, <code>DBGMCU</code> 네 값, <code>&lt;pc&gt;</code> 와 <code>&lt;udf주소&gt;</code> 가 같았는지, <code>bt</code> 가 어디까지 보였는지, 콘솔과 디버거를 같이 열 수 있었는지.</li>
+          <li>fw-11 이후에 디버거를 다시 꺼낼 때는 §2-3 의 예고 상자로 돌아온다 — 모터 전원이 들어간 상태의 중단점은 fw-08 의 동결 설정이 살아 있을 때만.</li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

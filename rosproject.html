@@ -32,9 +32,16 @@
       <h2>1. 이 가이드를 쓰는 법</h2>
       <ol class="steps">
         <li><strong>순서대로 갑니다.</strong> 각 단계는 앞 단계의 산출물(장치 인식, 컨테이너, TF 트리, <code>/odom</code>…)을 전제로 합니다.
-          특히 05(TF)를 건너뛰면 07 이후에서 반드시 막힙니다.</li>
+          특히 05(TF)를 건너뛰면 07 이후에서 반드시 막힙니다. 순서는 <strong>차선 안에서</strong> 지킵니다 — 차선이 무엇인지는 아래 두 항목과 §3.</li>
+        <li><strong>벤치 우선 — 값이 비어 있어도 멈추지 않습니다.</strong> 지금 섀시에는 모터만 고정돼 있고 센서·보드는 올라가 있지 않습니다. 그래서 하드웨어 없이 되는 것(<span class="tag sim">SIM</span>)과
+          책상 위 부품만으로 되는 것(<span class="tag bench">벤치</span>)을 먼저 끝냅니다. 조립해야 잴 수 있는 값은 <strong>출처를 적은 임시값</strong> <code>NOMINAL(&lt;출처&gt;)</code> 으로 두고 진행하고,
+          <strong><a href="09a-assembly-gate.html">09a</a></strong>에서 다시 재서 <code>MEASURED</code> 로 확정합니다(<span class="tag asm">조립 후</span>). 임시값으로 얻은 주행 결과는 관문을 지나기 전에는 믿지 않습니다. 값의 세 상태는 §6.</li>
+        <li><strong>두 차선은 서로 기다리지 않습니다.</strong> <strong>Pi 차선</strong>(01 → … → 05 → 06a → 06 가짜 MCU → 07 → 08 → … → 08d)과 <strong>Mac 차선</strong>(<a href="fw-00-map.html">MCU 펌웨어 가이드</a> F0 → F1 → … → F19)은 쓰는 장비가 달라 따로 나아갑니다.
+          둘이 만나는 곳은 <a href="06b-bench-integration.html">06b</a>(실물 MCU 벤치 통합 — 펌웨어가 F19 를 통과해야 열린다) 하나이고, 그 다음이 09a 입니다.
+          한쪽이 부품·전원·빌드 때문에 멈추면 §3-1 <a href="#workboard">오늘의 작업판</a>에서 그동안 할 쪽을 고릅니다.</li>
         <li><strong>편집은 Mac, 실행은 Pi.</strong> 이 저장소는 Mac에 있고 코드 편집·git 만 합니다. <code>ros2</code>·<code>colcon</code>·<code>docker</code> 명령은
-          전부 Pi 에서(대부분 Pi 의 Docker 컨테이너 안에서) 실행합니다. 각 명령 앞에 <span class="tag mac">Mac</span> / <span class="tag pi">Pi 호스트</span> / <span class="tag cli">컨테이너</span> 표시를 두었습니다.</li>
+          전부 Pi 에서(대부분 Pi 의 Docker 컨테이너 안에서) 실행합니다. 각 명령 앞에 <span class="tag mac">Mac</span> / <span class="tag pi">Pi 호스트</span> / <span class="tag cli">컨테이너</span> 표시를 두었습니다.
+          예외는 Mac 차선 하나입니다 — MCU 펌웨어의 빌드·플래시·디버그는 Mac + Nucleo 에서 합니다(ROS 명령은 그때도 Pi 에서만).</li>
         <li><strong>코드는 직접 칩니다.</strong> 가이드의 C++/Python 코드는 <em>보고 베끼는 것</em>이 아니라 <em>손으로 치고, 한 줄씩 왜 있는지 설명할 수 있게 되는 것</em>이 목표입니다.
           저장소의 <code>ros2_ws/src/</code> 에 있는 기존 코드는 "읽고 이해할 참고 구현"입니다.</li>
         <li><strong>체크포인트를 체크합니다.</strong> 각 페이지 끝의 체크박스는 이 브라우저에 저장되고, 아래 §8 과 왼쪽 목차에 진행률로 모입니다.</li>
@@ -51,7 +58,7 @@
       <p>ROS 2 에서는 이 다섯 개가 <strong>노드</strong>가 되고, 노드 사이의 데이터가 <strong>토픽·서비스·액션</strong>이 됩니다.
       아래 그림이 이 가이드를 끝냈을 때 Pi 위에서 실제로 돌아갈 그래프입니다. <strong>상자를 클릭하면 그 노드를 만드는 단계로 갑니다.</strong></p>
       <div class="callout note"><span class="ct">이 프로젝트의 핵심 두 축</span>
-        <p>팔도 없고 조작기도 없다. 라이다·카메라로 <strong>어디로 갈지 계획을 도출하는 것</strong>(③, Pi 쪽: 09·10)과, 그 계획을 땅에 전달하는 <strong>4륜 모터 제어</strong>(④, MCU 쪽: 06a·06)가 이 로봇의 핵심이다.
+        <p>팔도 없고 조작기도 없다. 라이다·카메라로 <strong>어디로 갈지 계획을 도출하는 것</strong>(③, Pi 쪽: 09·10)과, 그 계획을 땅에 전달하는 <strong>4륜 모터 제어</strong>(④, MCU 쪽: <a href="fw-00-map.html">MCU 펌웨어 가이드</a> F0~F20 — 계약은 06a, Pi 쪽 짝은 06·06b)가 이 로봇의 핵심이다.
         나머지 단계(센서 연결, 인지, 시각화)는 이 두 축을 먹여 살리는 지원 계층이다. 우선순위가 갈릴 때는 이 기준으로 정한다.</p>
       </div>
 
@@ -152,10 +159,10 @@
         </g></a>
 
         <!-- MCU firmware (ROS 밖) -->
-        <a href="06a-mcu-protocol.html"><g class="node ext">
+        <a href="fw-00-map.html"><g class="node ext">
           <rect x="40" y="540" width="200" height="52"/>
           <text x="140" y="561" text-anchor="middle" class="n">NUCLEO-H723ZG 펌웨어</text>
-          <text x="140" y="579" text-anchor="middle" class="s">06a · PID · 엔코더 · IMU · 전원 · 안전</text>
+          <text x="140" y="579" text-anchor="middle" class="s">F0~F20 · PID · 엔코더 · IMU · 전원 · 안전</text>
         </g></a>
 
         <!-- TF -->
@@ -211,7 +218,7 @@
           <tr><td>① 라이다로 공간 스캔</td><td><code>lidar_node</code> → <code>slam_toolbox</code></td><td><code>/scan</code> → <code>/map</code>, TF <code>map→odom</code></td><td>07, 09</td></tr>
           <tr><td>② 카메라로 물체 판정 · 추적 · 거리</td><td><code>camera</code> → <code>detector</code> → <code>object_tracker</code> → <code>object_localizer</code> (+ <code>/scan</code>, TF)</td><td><code>/camera/image_raw</code> → <code>/detections</code> → <code>/tracks</code> → <code>/objects</code></td><td>08, 08a, 08b, 08c, 08d</td></tr>
           <tr><td>③ 요청에 대한 계획</td><td>Nav2 <code>planner_server</code> + <code>bt_navigator</code></td><td>액션 <code>/navigate_to_pose</code> → <code>/plan</code></td><td>09</td></tr>
-          <tr><td>④ 이동 (세부 제어는 MCU)</td><td>Nav2 <code>controller_server</code> → <code>mcu_bridge</code> → MCU 펌웨어</td><td><code>/cmd_vel</code> → 시리얼 → PWM / 엔코더·IMU → <code>/odom</code>, <code>/imu/data_raw</code> → EKF</td><td>06a, 06</td></tr>
+          <tr><td>④ 이동 (세부 제어는 MCU)</td><td>Nav2 <code>controller_server</code> → <code>mcu_bridge</code> → MCU 펌웨어</td><td><code>/cmd_vel</code> → 시리얼 → PWM / 엔코더·IMU → <code>/odom</code>, <code>/imu/data_raw</code> → EKF</td><td><a href="fw-00-map.html">MCU 펌웨어 가이드</a>(F0~F20), 06a · Pi 쪽 <code>mcu_bridge</code>: 06, 06b</td></tr>
           <tr><td>⑤ 수행 정도의 지속 판정</td><td>액션 피드백 + <code>mission_supervisor</code> (직접 작성)</td><td><code>distance_remaining</code>, <code>/objects</code>, 취소·재계획</td><td>03(액션), 10</td></tr>
           <tr><td>(모든 것을 공간적으로 묶는 접착제)</td><td><code>robot_state_publisher</code> + URDF</td><td>TF 트리</td><td>05</td></tr>
         </tbody>
@@ -225,20 +232,58 @@
       </div>
 
       <h2>3. 노드 단위 학습 순서 — 왜 이 순서인가</h2>
-      <p>순서는 <strong>데이터가 흐르는 방향</strong>과 <strong>검증 가능성</strong>으로 정했습니다. 각 단계의 출력이 다음 단계의 입력입니다.</p>
-      <pre class="diagram"><code>  환경          기초                 구동·센서              비전                                자율주행
-  01 ─ 02  ──►  03 ─ 04 ─ 05  ──►   06a ─ 06 ─ 07  ──►   08 ─ 08a ─ 08b ─ 08c ─ 08d  ──►   09 ─ 10
-  장치 인식     개념  C++노드 TF      프로토콜 odom  scan     영상  OpenCV YOLO  Hailo  추적·거리     지도·경로  조립·감독
-                          ▲                                                                         │
-                          └────────── TF 가 없으면 07 이후 어느 것도 공간에 놓이지 않는다 ──────────┘</code></pre>
+      <p>순서는 <strong>데이터가 흐르는 방향</strong>과 <strong>검증 가능성</strong>으로 정했습니다. 각 단계의 출력이 다음 단계의 입력입니다.
+      여기에 <strong>지금 손에 있는 장비로 끝낼 수 있는가</strong>를 더해 길을 두 차선으로 나눴습니다 — 섀시에는 모터만 고정돼 있고 센서·보드는 아직 올라가 있지 않기 때문입니다.</p>
+      <pre class="diagram"><code>  Pi 차선 : Pi + 컨테이너. 가짜 MCU 와 책상 위 센서만으로 08d 까지 간다
+  환경       기초            구동·센서        비전
+  01 ─ 02 ─► 03 ─ 04 ─ 05 ─► 06a ─ 06 ─ 07 ─► 08 ─ 08a ─ 08b ─ 08c ─ 08d ────────┐
+  장치 인식  개념 C++  TF    계약  가짜 scan  영상 OpenCV YOLO Hailo 추적·거리   │
+                       ▲           MCU                               (벤치 지그) │
+                       └─ TF 가 없으면 07 이후 어느 것도 공간에 놓이지 않는다    │
+                                                                                 │
+  Mac 차선 : Mac + Nucleo + 책상 위 부품. Pi 차선을 기다리지 않는다              │
+  F0 ─ F1 ─ ... ─ F19 ─► 06b ────────────────────────────────────────────────────┴─► 09a ─► 09 ─ 10
+  MCU 펌웨어 가이드      실물 MCU 벤치 통합 (06 의 브리지 + F19 통과가 선행)          ▲
+                                       F20(조립 후 펌웨어 마무리)은 관문 안에서 연다 ─┘
+
+  F19 = 벤치 수용 시험    09a = 조립·실측 관문    09 = 지도·경로    10 = 노드 조립(소프트웨어)·감독</code></pre>
       <ul>
         <li><strong>03 → 04 → 05 는 도구가 아니라 언어 습득입니다.</strong> 토픽·서비스·액션·파라미터·QoS(03), 그것을 C++ 로 쓰는 법(04), 그리고 좌표계(05).
           이 셋이 있어야 뒤의 모든 노드를 "읽고 쓸" 수 있습니다.</li>
-        <li><strong>06(MCU) 이 07(LiDAR) 보다 먼저인 이유:</strong> SLAM 은 <code>/odom</code> 없이는 돌지 않고, 가짜 MCU(<code>simulate:=true</code>) 로 하드웨어 없이 ROS 쪽을 먼저 검증할 수 있기 때문입니다.</li>
+        <li><strong>06(MCU) 이 07(LiDAR) 보다 먼저인 이유:</strong> SLAM 은 <code>/odom</code> 없이는 돌지 않고, 가짜 MCU(<code>simulate:=true</code>) 로 하드웨어 없이 ROS 쪽을 먼저 검증할 수 있기 때문입니다.
+          그래서 06 은 가짜 MCU 만으로 끝나는 <span class="tag sim">SIM</span> 단계이고, 실물 MCU 를 붙이는 일은 06b 로 떼어 냈습니다.</li>
+        <li><strong>펌웨어가 별도 차선인 이유:</strong> MCU 펌웨어(F0~F19)는 Mac + Nucleo + 책상 위 부품으로 끝나고, Pi 차선은 가짜 MCU 로 끝납니다. 서로의 산출물을 기다릴 이유가 없습니다 —
+          둘을 묶는 것은 06a 에서 정한 <strong>계약 v2</strong> 하나입니다. 두 차선은 <a href="06b-bench-integration.html">06b</a> 에서 처음 만납니다: Pi 차선의 06(브리지)과 Mac 차선의 F19(벤치 수용 시험)가
+          <em>둘 다</em> 끝나 있어야 열립니다. 펌웨어가 아직 F19 전이면 06b 를 건너뛰고 07 로 갑니다(07·08 계열은 06b 를 필요로 하지 않습니다).</li>
         <li><strong>08 → 08a → 08b → 08c 는 같은 인터페이스를 점점 빠르게 만드는 과정입니다.</strong> 영상을 받는다(08) → OpenCV 로 다룬다(08a) → YOLO 로 <code>/detections</code> 를 낸다(08b, CPU 라 느림) → 같은 <code>/detections</code> 를 Hailo 로 낸다(08c, 실시간).
-          인터페이스가 같으니 하위 노드는 아무것도 바꾸지 않습니다. <strong>08d</strong> 는 그 <code>/detections</code> 위에 추적(<code>/tracks</code>)과 라이다 융합 거리(<code>/objects</code>)를 얹습니다 — 검출기는 그대로 두고 소비자만 늘립니다.</li>
-        <li><strong>09 → 10 은 새 기능이 아니라 조립입니다.</strong> 남이 만든 SLAM/Nav2 를 <em>구조를 이해한 채로</em> 붙이고, 마지막에 당신의 감독 노드가 그 위에 올라갑니다.</li>
+          인터페이스가 같으니 하위 노드는 아무것도 바꾸지 않습니다. <strong>08d</strong> 는 그 <code>/detections</code> 위에 추적(<code>/tracks</code>)과 라이다 융합 거리(<code>/objects</code>)를 얹습니다 — 검출기는 그대로 두고 소비자만 늘립니다.
+          08d 는 책상 위 <strong>임시 지그</strong>로 융합까지 확인하고, 센서를 섀시에 올린 뒤 09a 에서 최종값으로 다시 검증합니다.</li>
+        <li><strong>09a(조립·실측 관문)가 09 앞에 있는 이유:</strong> SLAM 과 Nav2 는 바퀴 간 거리·바퀴 반지름·센서 장착 위치를 <em>그대로 계산에 씁니다</em>.
+          임시값으로 09 를 돌리면 "지도가 휜다"의 원인이 코드인지 값인지 가를 수 없습니다. 그래서 물리 조립과 실측을 한곳 — <strong><a href="09a-assembly-gate.html">09a</a></strong> — 에 모으고,
+          거기서 <code>NOMINAL</code> 을 <code>MEASURED</code> 로 바꾼 뒤에 09 로 갑니다. F20(조립 후 펌웨어 마무리)도 관문 안에서 엽니다.</li>
+        <li><strong>09 → 10 은 새 기능이 아니라 노드 조립(소프트웨어)입니다.</strong> 남이 만든 SLAM/Nav2 를 <em>구조를 이해한 채로</em> 붙이고, 마지막에 당신의 감독 노드가 그 위에 올라갑니다.
+          센서·보드를 섀시에 올리는 <em>물리 조립</em>은 09a 의 일이고, 여기서 조립하는 것은 노드와 런치입니다.</li>
       </ul>
+
+      <h3 id="workboard">3-1. 오늘의 작업판 — 막혔을 때 갈 곳</h3>
+      <p>위 그림에서 자기 위치를 <strong>차선마다 하나씩</strong> 짚습니다(Pi 차선의 몇 번, Mac 차선의 F 몇). 오늘 할 일은 둘 중 <em>지금 가진 장비·부품으로 진행할 수 있는 쪽</em>입니다.
+      한 차선이 막혔다고 기다리지 않습니다 — 아래 표에서 그동안 할 쪽을 고릅니다. 다만 차선 <em>안에서는</em> 번호 순서를 지킵니다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>지금 상황</th><th>이래서 막힌다</th><th>그동안 할 수 있는 쪽</th></tr></thead>
+        <tbody>
+          <tr><td><strong>펌웨어가 아직 F19 전</strong></td><td>06b 는 F19(벤치 수용 시험) 통과가 선행이라 열리지 않는다</td>
+            <td>Pi 차선을 그대로 간다: 06(가짜 MCU) → <strong>06b 를 건너뛰고</strong> 07 → 08 → 08a → 08b → 08c → 08d(벤치 지그). 06b 는 F19 를 통과한 날 돌아와서 연다</td></tr>
+          <tr><td><strong>모터 전원 수단 미준비</strong><br><span class="small">배터리 · 사전충전 회로</span></td><td><span class="tag power">모터 전원</span> 구간이 닫히지 않는다 — F11(첫 통전)·F13(속도 PID + 보호)과, 그 뒤에 매인 F17 의 실물 실습·F18·F19, 그리고 06b</td>
+            <td>Pi 차선 전부(모터 전원을 쓰지 않는다). Mac 차선에서는 Nucleo 와 USB 만으로 되는 쪽, 부품이 있으면 엔코더(F9)·I2C(F10)·IMU(F14·F15), F17 의 호스트 시험. 어느 F 쪽이 어떤 부품으로 닫히는지는 <a href="fw-00-map.html">F0</a> 의 "부품 × 쪽" 표를 본다</td></tr>
+          <tr><td><strong>IMU 없음</strong><br><span class="small">WT901 · BNO055 미보유 또는 미배선</span></td><td>F14(WT901)·F15(BNO055) 가 닫히지 않는다. 두 IMU 의 실물 비교(06b)도 기다린다</td>
+            <td>Pi 차선 전부 — 06 의 가짜 MCU 는 가짜 IMU 도 함께 내므로 <code>/imu/data_raw</code> 배선과 EKF 구성은 실물 없이 검증된다. Mac 차선에서는 IMU 를 쓰지 않는 F 쪽</td></tr>
+          <tr><td><strong>빌드 · Colab 대기</strong><br><span class="small">Pi 의 이미지·<code>colcon</code> 빌드, 08d 의 Colab HEF 컴파일</span></td><td>끝날 때까지 Pi 차선이 선다</td>
+            <td>Mac 차선의 다음 F 쪽(Pi 를 쓰지 않는다). 또는 Pi 차선 다음 단계의 "원리" 절을 먼저 읽는다</td></tr>
+          <tr><td><strong>섀시 부품 대기</strong><br><span class="small">센서·보드를 올릴 브래킷 · 스탠드오프 · 배선재</span></td><td>09a(조립·실측 관문)가 열리지 않고, 그 뒤의 09·10 과 F20 도 기다린다</td>
+            <td>두 차선의 벤치 작업 전부 — Pi 차선은 08d(벤치 지그)까지, Mac 차선은 F19 와 06b 까지 관문 없이 끝난다. 모터는 이미 섀시에 고정돼 있으니 바퀴 간 거리·휠베이스는 지금 자로 재서 <code>NOMINAL(ruler)</code> 로 적어 둔다(§6). 09·10 은 "원리" 절만 읽는다</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">펌웨어 쪽 F0 ~ F20 과 관문 09a, 그리고 라이다 가이드 L0 ~ L17 이 <strong>전부 나와 있고 왼쪽 목차에서 바로 갈 수 있습니다</strong>. 이 표의 번호(F9 · 09a · L8 …)가 그대로 목차의 이름입니다.</p>
 
       <h2>4. 언어 정책 — C++ 주, Python 보조</h2>
       <p>"어디에 무엇을 쓸 것인가"를 노드 단위로 정해 두었습니다. 기준은 <strong>그 노드가 요구하는 것</strong>입니다.</p>
@@ -256,30 +301,44 @@
           <tr><td>SLAM, Nav2</td><td>외부 C++ 패키지</td><td>파라미터 YAML 과 런치로 구성. 구조(노드·액션·코스트맵)를 이해하는 것이 목표</td><td>09</td></tr>
           <tr><td><code>mission_supervisor</code></td><td><span class="tag cpp">C++</span></td><td>액션 클라이언트 + 상태기계. "계획 대비 수행 판정"을 코드로 쓰는 곳</td><td>10</td></tr>
           <tr><td>런치파일, 파라미터</td><td><span class="tag py">Python</span> launch, YAML</td><td>ROS 2 관례. 런치는 언어라기보다 선언이다</td><td>04~10</td></tr>
-          <tr><td>캘리브레이션·분석 스크립트, 펌웨어</td><td><span class="tag py">Python</span> / C (STM32 HAL)</td><td>일회성 도구는 빠르게 쓰고 버린다. 펌웨어는 06a 에서 별도 트랙</td><td>06, 07</td></tr>
+          <tr><td>캘리브레이션·분석 스크립트, MCU 펌웨어</td><td><span class="tag py">Python</span> / C (STM32 HAL — CubeMX + CubeCLT)</td><td>일회성 도구는 빠르게 쓰고 버린다. 펌웨어는 Mac 차선의 <a href="fw-00-map.html">MCU 펌웨어 가이드</a>에서 직접 쓴다 — 06a 는 그 계약(계약 v2)만 정한다</td><td>06, 06b, 07 · 펌웨어: F0~F20</td></tr>
         </tbody>
       </table></div>
       <p class="small">C++ 문법 자체(스마트 포인터, 람다, <code>std::bind</code>)는 부록 <a href="ref-rclcpp.html">A · rclcpp 레퍼런스</a> 에 필요한 만큼만 정리했습니다.
       OpenCV 와 YOLO 의 독립적인 사용법은 부록 <a href="ref-opencv.html">B</a>, <a href="ref-yolo.html">C</a> 입니다.</p>
 
       <h2>5. 학습 계획</h2>
-      <p>총 <strong>약 71~116시간</strong>, 주 8시간이면 <strong>9~15주</strong>입니다. 시간의 폭이 큰 것은 하드웨어 문제(전원, 케이블, 버전 불일치)가 개인마다 다르게 나오기 때문입니다.
-      단계는 건너뛰지 않되, <em>같은 Phase 안에서는</em> 막힌 곳을 두고 다음 단계의 "원리" 절만 먼저 읽는 것은 괜찮습니다.</p>
+      <p>아래 표에서 시간이 적힌 단계(01~10)를 더하면 <strong>약 71~115시간</strong>입니다. 다만 이 합은 <strong>개편 전의 추정</strong>이라 전체 기간으로 쓰지 않습니다:
+      06 의 14~22h 는 펌웨어 작성을 포함한 추정이었고(분리 후 다시 기록), 새로 생긴 <strong>06b · 09a · MCU 펌웨어 가이드(F0~F20)</strong>는 근거가 될 기록이 아직 없어 숫자를 적지 않았습니다 —
+      표의 <code>____ (직접 기록)</code> 칸은 하면서 채웁니다. 그래서 "몇 주"라는 총 기간도 지금은 제시하지 않습니다. 시간의 폭이 큰 것은 하드웨어 문제(전원, 케이블, 버전 불일치)가 개인마다 다르게 나오기 때문입니다.
+      단계는 <em>차선 안에서</em> 건너뛰지 않되, 막힌 곳을 두고 다음 단계의 "원리" 절만 먼저 읽거나 다른 차선으로 옮겨 가는 것은 괜찮습니다(§3-1).</p>
 
       <div class="phase"><div class="ph">Phase 1<small>환경 · 3~5h</small></div><div>
         <strong>01 · 02</strong> — Pi 가 장치(카메라·Hailo·시리얼)를 인식하고, 컨테이너 안에서 <code>ros2 topic list</code> 가 돌고, Mac 의 Foxglove 가 붙는다.
         <br><span class="small">산출물: <code>hardware/INVENTORY.md</code> 의 빈칸이 실측값으로 채워진다.</span></div></div>
       <div class="phase"><div class="ph">Phase 2<small>ROS 2 기초 · 11~16h</small></div><div>
-        <strong>03 · 04 · 05</strong> — 통신 4종을 CLI 로 만지고, C++ 로 pub/sub/timer/param 노드를 쓰고 빌드하고, URDF 로 TF 트리를 세운다.
+        <strong>03 · 04 · 05</strong> — 통신 4종을 CLI 로 만지고, C++ 로 pub/sub/timer/param 노드를 쓰고 빌드하고, URDF 로 TF 트리를 세운다(치수는 출처를 적은 임시값 <code>NOMINAL</code> 로 — 확정은 09a).
         <br><span class="small">산출물: <code>rpi5_hello_cpp</code> 패키지, <code>view_frames</code> PDF.</span></div></div>
-      <div class="phase"><div class="ph">Phase 3<small>구동·센서 · 17~28h</small></div><div>
-        <strong>06a · 06 · 07</strong> — 프로토콜을 결정하고, C++ 브리지로 실제 모터를 굴려 <code>/odom</code> 을 얻고 캘리브레이션하고, 두 IMU(WT901·BNO055)를 캘리브레이션해 비교한 뒤 EKF 로 융합하고, <code>/scan</code> 을 Foxglove 에서 본다.
-        <br><span class="small">산출물: <code>rpi5_mcu_bridge_cpp</code>, 캘리브레이션 값, IMU 비교표와 <code>ekf.yaml</code>, 실측 <code>max_distance</code>.</span></div></div>
+      <div class="phase"><div class="ph">Phase 3<small>구동·센서 · 17~28h ※</small></div><div>
+        <strong>06a · 06 · 07</strong> <span class="tag sim">SIM</span> <span class="tag bench">벤치</span> — 프로토콜을 결정하고, C++ 브리지를 직접 써서 <strong>가짜 MCU</strong>(<code>simulate:=true</code>)로 <code>/odom</code>·<code>/imu/data_raw</code> 배선과 EKF 구성을 하드웨어 없이 검증하고, 책상 위의 LiDAR 로 <code>/scan</code> 을 Foxglove 에서 본다.
+        실제 모터를 굴리는 일은 이 Phase 에 없다 — Mac 차선(Phase F)과 06b 의 몫이고, 바닥 주행이 있어야 하는 바퀴 캘리브레이션은 09a(Phase 5)다.
+        <br><span class="small">산출물: <code>rpi5_mcu_bridge_cpp</code>, 가짜 MCU 로 배선을 확인한 <code>ekf.yaml</code>, 실측 <code>max_distance</code>(책상 위에서 확정된다).
+        ※ 17~28h 가운데 06 의 14~22h 는 펌웨어 포함 추정이었다 — 분리 후 다시 기록한다.</span></div></div>
       <div class="phase"><div class="ph">Phase 4<small>비전 · 28~46h</small></div><div>
         <strong>08 · 08a · 08b · 08c · 08d</strong> — 영상을 ROS 토픽으로 받고, OpenCV 로 처리하고, YOLO 로 <code>/detections</code> 를 내고, 같은 것을 Hailo 로 실시간화한 뒤, 추적하고, Colab 에서 컴파일한 YOLO 깊이 지도에 라이다로 척도를 매겨 물체의 위치·물체 사이 거리·벽까지 거리를 낸다.
-        <br><span class="small">산출물: <code>rpi5_vision</code> (C++: 검출기·추적기·로컬라이저), <code>rpi5_hailo_detect</code> (Python), 카메라 피치 캘리브레이션 값.</span></div></div>
-      <div class="phase"><div class="ph">Phase 5<small>자율주행 · 12~20h</small></div><div>
-        <strong>09 · 10</strong> — 지도를 만들고 목표점 주행을 시키고, 감독 노드와 계층화된 런치로 전체를 한 명령에 띄운다.
+        전부 <span class="tag bench">벤치</span> 다 — 카메라와 라이다를 책상 위 <strong>임시 지그</strong>에 세워 융합까지 확인한다.
+        <br><span class="small">산출물: <code>rpi5_vision</code> (C++: 검출기·추적기·로컬라이저), <code>rpi5_hailo_detect</code> (Python), 임시 지그 기준의 카메라 높이·피치(임시값 — 센서를 섀시에 올린 뒤 09a 에서 다시 구한다).</span></div></div>
+      <div class="phase"><div class="ph">Phase F<small>Mac 차선 · 펌웨어 · ____ (직접 기록)</small></div><div>
+        <strong><a href="fw-00-map.html">MCU 펌웨어 가이드</a> F0 ~ F19 → <a href="06b-bench-integration.html">06b</a></strong> <span class="tag bench">벤치</span> — Phase 2~4 와 <em>나란히</em> 간다(서로 기다리지 않는다).
+        Mac + NUCLEO-H723ZG + 책상 위 부품으로 툴체인·콘솔에서 시작해 PWM·엔코더·전원 시퀀스·속도 PID 와 보호·IMU·계약 v2 링크·안전 상태기계를 한 쪽에 하나씩 쌓고, F19(벤치 수용 시험)를 통과한다.
+        그 다음 06b 에서 Pi 차선의 브리지와 처음 만난다 — 가짜 MCU 가 있던 자리에 실물 MCU 를 꽂는다. 입구에서 <code>scripts/check_nominal.sh</code> 로 <code>NOMINAL(fake)</code> 가 남았는지 본다(남은 채로 실물 모터를 구동하지 않는다).
+        <br><span class="small">산출물: <code>firmware/</code> 의 펌웨어 프로젝트, 벤치 수용 시험 기록, 실물 MCU 에서 나오는 <code>/odom</code>·<code>/imu/data_raw</code>.</span></div></div>
+      <div class="phase"><div class="ph">Phase 5<small>조립·실측 · ____ (직접 기록)</small></div><div>
+        <strong><a href="09a-assembly-gate.html">09a</a></strong> <span class="tag asm">조립 후</span> — 두 차선의 벤치 작업이 끝난 뒤 센서·보드를 섀시에 올리고, 임시값으로 지나온 것(바퀴 간 거리·하중을 실은 유효 반지름·센서 장착 위치·카메라 높이와 피치·IMU 장착 방향 …)을
+        다시 재서 <code>MEASURED</code> 로 바꾼다. 바닥 주행이 있어야 하는 캘리브레이션과 F20(조립 후 펌웨어 마무리)도 여기서 한다.
+        <br><span class="small">산출물: <code>scripts/check_nominal.sh --gate</code> 통과(관문 대상 파일에 <code>____</code> 와 <code>NOMINAL</code> 이 남지 않는다), <code>hardware/INVENTORY.md</code> 3·4·6절의 <code>MEASURED</code> 값.</span></div></div>
+      <div class="phase"><div class="ph">Phase 6<small>자율주행 · 12~20h</small></div><div>
+        <strong>09 · 10</strong> — 관문을 지난 차체로 지도를 만들고 목표점 주행을 시키고, 감독 노드와 계층화된 런치로 전체를 한 명령에 띄운다.
         <br><span class="small">산출물: <code>autonomy.launch.py</code>, <code>mission_supervisor</code>, 저장된 지도.</span></div></div>
 
       <div class="tbl"><table class="compact">
@@ -289,15 +348,18 @@
           <tr><td><a href="02-docker-ros2.html">02</a></td><td>Docker + ROS 2 Humble</td><td>컨테이너 안 <code>ros2 topic list</code>, Foxglove 연결</td><td><span class="tag cli">CLI</span></td><td>1~2h</td></tr>
           <tr><td><a href="03-ros2-concepts.html">03</a></td><td>ROS 2 핵심 개념</td><td>노드/토픽/서비스/액션/파라미터/QoS 를 CLI 로 조작하고 언제 무엇을 쓸지 판단</td><td><span class="tag cli">CLI</span></td><td>3~4h</td></tr>
           <tr><td><a href="04-workspace-packages.html">04</a></td><td>워크스페이스와 패키지</td><td>ament_cmake 패키지에서 rclcpp 노드를 작성·빌드·실행, rclpy 와 비교</td><td><span class="tag cpp">C++</span> <span class="tag py">Py</span></td><td>5~7h</td></tr>
-          <tr><td><a href="05-tf2-urdf.html">05</a></td><td>TF2와 URDF</td><td>TF 트리를 세우고 임의 두 프레임 사이 변환을 조회</td><td><span class="tag cli">XML</span></td><td>3~5h</td></tr>
+          <tr><td><a href="05-tf2-urdf.html">05</a></td><td>TF2와 URDF</td><td>TF 트리를 세우고 임의 두 프레임 사이 변환을 조회 (치수는 임시값 — 확정은 09a)</td><td><span class="tag cli">XML</span></td><td>3~5h</td></tr>
           <tr><td><a href="06a-mcu-protocol.html">06a</a></td><td>MCU 프로토콜 선정</td><td>A(micro-ROS)/B(브리지)를 비교해 B 를 고르고, MCU 전권 구조·IMU 배치·계약 v2 를 확정</td><td>—</td><td>1~2h</td></tr>
-          <tr><td><a href="06-mcu-bridge.html">06</a></td><td>MCU 브리지 (C++)</td><td>키보드로 실제 모터를 굴리고 <code>/odom</code>·<code>/imu</code> 를 얻어 캘리브레이션하고 EKF 로 융합</td><td><span class="tag cpp">C++</span></td><td>14~22h</td></tr>
-          <tr><td><a href="07-lidar.html">07</a></td><td>LiDAR</td><td>Foxglove 에서 실시간 <code>/scan</code>, 장착 방향 검증</td><td><span class="tag cli">CLI</span></td><td>2~4h</td></tr>
+          <tr><td><a href="06-mcu-bridge.html">06</a></td><td>MCU 브리지 (C++) <span class="tag sim">SIM</span></td><td>C++ 브리지를 직접 쓰고 가짜 MCU(<code>simulate:=true</code>)로 <code>/odom</code>·<code>/imu/data_raw</code>·<code>/mcu/fault</code> 배선과 EKF 구성을 하드웨어 없이 검증</td><td><span class="tag cpp">C++</span></td><td>14~22h <span class="small">(펌웨어 포함 추정이었음 — 분리 후 다시 기록)</span></td></tr>
+          <tr><td><a href="fw-00-map.html">F0~F20</a></td><td>MCU 펌웨어 가이드 <span class="tag bench">벤치</span><br><span class="small">Mac 차선 — Pi 차선과 병행</span></td><td>NUCLEO-H723ZG 에 4륜 속도 PID·엔코더·IMU·전원 시퀀스·안전 상태기계·계약 v2 링크를 직접 쓰고 F19(벤치 수용 시험)를 통과. F20(조립 후 마무리)만 09a 안에서</td><td>C <span class="tag mx">CubeMX</span></td><td>____ (직접 기록)</td></tr>
+          <tr><td><a href="06b-bench-integration.html">06b</a></td><td>실물 MCU 벤치 통합 <span class="tag bench">벤치</span></td><td>가짜 MCU 자리에 F19 를 통과한 실물 MCU 를 꽂아, 같은 토픽이 실물에서 나오는 것을 책상 위에서 확인. 입구에서 <code>scripts/check_nominal.sh</code> 로 <code>NOMINAL(fake)</code> 검사</td><td><span class="tag hw">HW</span></td><td>____ (직접 기록)</td></tr>
+          <tr><td><a href="07-lidar.html">07</a></td><td>LiDAR</td><td>Foxglove 에서 실시간 <code>/scan</code>, 실측 <code>max_distance</code> 기록 (장착 방향 검증은 09a)</td><td><span class="tag cli">CLI</span></td><td>2~4h</td></tr>
           <tr><td><a href="08-camera.html">08</a></td><td>카메라</td><td><code>/camera/image_raw</code> 가 흐르고 TF 에 붙음</td><td><span class="tag cli">CLI</span></td><td>3~6h</td></tr>
           <tr><td><a href="08a-opencv.html">08a</a></td><td>OpenCV와 cv_bridge</td><td>C++ 노드에서 영상을 <code>cv::Mat</code> 로 받아 처리·재발행</td><td><span class="tag cpp">C++</span></td><td>4~6h</td></tr>
           <tr><td><a href="08b-yolo.html">08b</a></td><td>YOLO 객체 검출</td><td>ONNX 모델로 <code>/detections</code> 발행, 출력 텐서와 NMS 를 직접 처리</td><td><span class="tag cpp">C++</span> <span class="tag py">Py</span></td><td>5~8h</td></tr>
           <tr><td><a href="08c-hailo.html">08c</a></td><td>Hailo-8 가속</td><td>같은 <code>/detections</code> 를 실시간으로, CPU 는 비운 채로</td><td><span class="tag py">Py</span></td><td>4~8h</td></tr>
-          <tr><td><a href="08d-tracking-fusion.html">08d</a></td><td>객체 추적과 거리 추정</td><td><code>/tracks</code>(번호 유지) 와 <code>/objects</code>(라이다 점 · 라이다로 척도를 맞춘 YOLO 깊이 지도 · 물체 사이 거리 · 벽까지 거리), Colab 에서 깊이 HEF 컴파일, Hailo 예산 실측과 프레임 조절</td><td><span class="tag cpp">C++</span> <span class="tag py">Py</span></td><td>12~18h</td></tr>
+          <tr><td><a href="08d-tracking-fusion.html">08d</a></td><td>객체 추적과 거리 추정</td><td><code>/tracks</code>(번호 유지) 와 <code>/objects</code>(라이다 점 · 라이다로 척도를 맞춘 YOLO 깊이 지도 · 물체 사이 거리 · 벽까지 거리), Colab 에서 깊이 HEF 컴파일, Hailo 예산 실측과 프레임 조절. 책상 위 임시 지그에서 융합까지 (최종값 재검증은 09a)</td><td><span class="tag cpp">C++</span> <span class="tag py">Py</span></td><td>12~18h</td></tr>
+          <tr><td><a href="09a-assembly-gate.html">09a</a></td><td>조립·실측 관문 <span class="tag asm">조립 후</span></td><td>센서·보드를 섀시에 올리고, 임시값(<code>NOMINAL</code>)으로 지나온 치수·장착 위치·캘리브레이션을 다시 재서 <code>MEASURED</code> 로 확정. F20 을 이 안에서 연다</td><td><span class="tag hw">HW</span></td><td>____ (직접 기록)</td></tr>
           <tr><td><a href="09-slam-nav2.html">09</a></td><td>SLAM과 Nav2</td><td>방 지도를 만들고 목표점 자율주행</td><td><span class="tag cli">YAML</span></td><td>6~10h</td></tr>
           <tr><td><a href="10-autonomy.html">10</a></td><td>자율주행 노드 구성</td><td>감독 노드 + 계층 런치로 한 명령에 전체 기동·운용</td><td><span class="tag cpp">C++</span></td><td>6~10h</td></tr>
           <tr><td><a href="99-troubleshooting.html">99</a></td><td>트러블슈팅</td><td>막혔을 때 원인을 스스로 좁힘</td><td>—</td><td>수시</td></tr>
@@ -305,26 +367,41 @@
       </table></div>
 
       <h2>6. 시작 전에 확정해야 할 것</h2>
-      <p>아래가 비어 있으면 해당 단계에서 멈춥니다. <code>hardware/INVENTORY.md</code> 에 기록합니다. <strong>추측해서 코드에 박아넣지 않습니다.</strong></p>
-      <div class="tbl"><table>
-        <thead><tr><th>확정 항목</th><th>현재</th><th>막히는 단계</th><th>확인 방법</th></tr></thead>
+      <p>값에는 <strong>세 상태</strong>가 있습니다. 규약의 정본은 <code>hardware/INVENTORY.md</code> 머리말의 "값의 상태 표기"이고, 값은 전부 거기에 기록합니다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>표기</th><th>상태</th><th>뜻</th></tr></thead>
         <tbody>
-          <tr><td>LiDAR 모델</td><td>✅ Slamtec RPLIDAR A1M8</td><td>—</td><td>—</td></tr>
-          <tr><td>MCU 보드</td><td>✅ NUCLEO-H723ZG (펌웨어 새로 작성)</td><td>—</td><td>—</td></tr>
-          <tr><td>모터 드라이버</td><td>✅ BTS7960 "IBT-2" ×4 — IS 로 1차 구현, 정밀 전류 센서는 보류 (2026-09-15)</td><td>06</td><td>INVENTORY 6절 검토표 (VCC 3.3 V, R_IS 1 kΩ + 클램프, PWM 8채널)</td></tr>
-          <tr><td><strong>MCU 통신 프로토콜</strong> (A/B)</td><td><strong>B(커스텀 시리얼 브리지)로 결정</strong> — 계약 v2, 460800</td><td>06</td><td>06a §5 결정 기록에 근거를 적고 <code>protocol.md</code> 로 저장</td></tr>
-          <tr><td><strong>섀시 실측값</strong> (바퀴 반지름·간격, 엔코더 CPR)</td><td>미확정</td><td>05, 06, 09</td><td>자로 직접 측정. CPR = PPR × 4 × 기어비</td></tr>
-          <tr><td><strong>호스트 HailoRT 버전</strong></td><td>✅ 4.23.0 (2026-09-13 실측)</td><td>08c</td><td><code>hailortcli fw-control identify</code></td></tr>
-          <tr><td>IMU</td><td>✅ WT901(UART, 기본) + BNO055(I2C, 캘리브레이션 학습·비교)</td><td>—</td><td>06 에서 둘 다 캘리브레이션해 비교</td></tr>
-          <tr><td>모터 수 · 구동 방식 · 엔코더 수</td><td>✅ 4모터 스키드 스티어, 바퀴마다 32비트 엔코더 (TIM2/TIM5/TIM23/TIM24), 바퀴별 독립 PID + 슬립 억제. 이더넷 미사용</td><td>05, 06</td><td>섀시 수치는 INVENTORY 6절. 운동학은 좌우 쌍 차동구동, 핀 배정은 06a §3</td></tr>
-          <tr><td>LiDAR 실측 최대 거리</td><td>미확정</td><td>09</td><td>07 에서 드라이버 로그의 <code>max_distance</code></td></tr>
-          <tr><td>호스트 libcamera 버전</td><td>✅ 0.7.2+rpt20260817, libpisp v1.7.0 (2026-09-13 실측)</td><td>08</td><td><code>dpkg -l | grep libcamera</code></td></tr>
-          <tr><td>카메라 장착 높이 · 피치, 라이다 평면 높이</td><td>미확정 — INVENTORY 4절 장착 정보 표</td><td>08d</td><td>높이 둘은 자로, 피치는 08d §3-6 벽 캘리브레이션으로. 주 방법(라이다 척도 깊이 지도)은 높이에 무관하지만, 대체 경로인 지면 평면의 정밀도는 높이의 제곱에 비례하므로 <strong>카메라는 가능한 한 높이</strong> 단다</td></tr>
+          <tr><td><code>____</code></td><td>EMPTY</td><td>모른다. 추측해서 채우지 않는다</td></tr>
+          <tr><td><code>NOMINAL(&lt;출처&gt;)</code></td><td>임시값</td><td>출처가 있는 값. 출처 어휘: <code>datasheet</code> · <code>ruler</code>(관문 전에 자로 잰 값) · <code>drawing</code> · <code>gen1-record</code>(1세대 <code>~/ros2</code> 의 기록 — 같은 부품이다) · <code>fake</code>(출처 없는 자리 채움값 — 가짜 MCU·TF 연결 확인에만)</td></tr>
+          <tr><td><code>MEASURED(&lt;날짜&gt;, &lt;방법&gt;)</code></td><td>실측값</td><td>이 프로젝트에서 잰 값</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>빈칸이어도 멈추지 않습니다.</strong> 출처가 있는 임시값을 INVENTORY 에 적고 진행한 뒤, 아래 표의 "확정 시점"에서 <code>MEASURED</code> 로 바꿉니다.
+      "추측해서 코드에 박아넣지 않는다"는 원칙은 그대로입니다 — 임시값은 추측이 아니라 <em>출처가 적힌 값</em>이고, 값을 xacro·yaml 에 옮겨 적는 일은 각 단계의 실습입니다.
+      멈추는 경우는 둘뿐입니다: ① 재는 값이 아니라 <em>읽는 값</em>(모델명·버전)이 비어 있을 때 — 임시값을 세울 출처가 없다. ② <code>NOMINAL(fake)</code> 가 남은 채 실물 모터를 구동하려 할 때 — 06b 입구에서 <code>scripts/check_nominal.sh</code> 로 확인한다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>확정 항목</th><th>지금 상태</th><th>임시값으로 진행 가능?</th><th>확정 시점</th><th>확인 방법</th></tr></thead>
+        <tbody>
+          <tr><td>LiDAR 모델</td><td>✅ Slamtec RPLIDAR A1M8 (실측)</td><td>— <span class="small">읽는 값</span></td><td>확정됨</td><td>—</td></tr>
+          <tr><td>MCU 보드</td><td>✅ NUCLEO-H723ZG (펌웨어 새로 작성)</td><td>—</td><td>확정됨</td><td>—</td></tr>
+          <tr><td>모터 드라이버</td><td>✅ BTS7960 "IBT-2" ×4 확정 (2026-09-15), 모터별 정밀 전류 센서는 보류. <strong>IS 를 실제로 배선할지는 결정 대기</strong> — INVENTORY 2절 "결정 대기 (b)"</td><td>예 — 핀은 어느 쪽이든 이미 확보돼 있다. 답이 없는 동안의 기본 진행은 1세대 실물 그대로(IS 미결선)이고, 이것은 권고가 아니다</td><td>사용자가 정한다 → <a href="fw-12-adc.html">F12</a> 와 INVENTORY 6절에 반영</td><td>INVENTORY 6절 검토표 (모듈 VCC 3.3 V, PWM 8채널). 우리 모듈의 R_IS 는 10 kΩ 이다 — <code>NOMINAL(gen1-record)</code>. <em>배선한다</em> — 얻는 것: 모듈마다 과전류·스톨·드라이버 fault 를 직접 본다. 치르는 것: 모듈마다 R_IS 병렬 저항 + GND 기준 클램프 + 핀 옆 커패시터를 무납땜으로 4세트. <em>배선하지 않는다</em> — 얻는 것: 추가 회로가 없다(1세대 실물 그대로). 치르는 것: 과전류는 총전류(ACS758) 하나로, 스톨은 목표 대비 실제 속도로 판정하게 되어 초저속 지령에서 끼임을 못 잡는 구간이 남고, fault 비트 "모터 드라이버 fault 입력"(06a §4-2 의 bit5)의 출처가 없어진다. 사실의 정본은 INVENTORY 2절 "결정 대기 (b)"</td></tr>
+          <tr><td><strong>MCU 통신 프로토콜</strong> (A/B)</td><td><strong>B(커스텀 시리얼 브리지)로 결정</strong> — 계약 v2, 460800</td><td>—</td><td>확정됨 (06a)</td><td>06a §5 결정 기록에 근거를 적고 <code>protocol.md</code> 로 저장</td></tr>
+          <tr><td><strong>바퀴 간 거리</strong> (wheel separation)</td><td><code>____</code> — 1세대에도 실측 기록이 없다 (INVENTORY 6절)</td><td>예 — 모터가 섀시에 고정돼 있어 <strong>지금 자로 잴 수 있다</strong> → <code>NOMINAL(ruler)</code></td><td><a href="09a-assembly-gate.html">09a</a></td><td>좌우 바퀴의 <em>접지 중심선</em> 사이를 줄자로. 외곽 폭(바깥 엣지)이나 제자리 회전에서 역산한 유효 폭은 이 칸의 값이 아니다 — INVENTORY 6절의 경고</td></tr>
+          <tr><td><strong>앞뒤 축간 거리</strong> (wheelbase) · 바퀴 지름</td><td><code>NOMINAL(gen1-record)</code> — 값과 원본 경로는 INVENTORY 6절. 지름은 부품 공칭값이고 잰 값이 아니다</td><td>예 — 휠베이스는 지금 자로 다시 재면 <code>NOMINAL(ruler)</code></td><td>09a — 하중을 실은 유효 반지름은 굴림 거리로</td><td>INVENTORY 6절의 값을 05 의 실습에서 xacro·yaml 로 직접 옮겨 적는다. 바퀴 간격이 틀리면 09 에서 지도가 휜다(아래 콜아웃)</td></tr>
+          <tr><td><strong>엔코더 counts/rev</strong></td><td><code>NOMINAL(gen1-record)</code> 입력으로 계산한 <em>산술값</em> — INVENTORY 6절</td><td>예</td><td><a href="fw-09-encoder.html">F9</a> — 출력축을 손으로 한 바퀴 돌려 센 count 로 <code>MEASURED</code>. 책상 위에서 닫힌다</td><td>counts/rev = PPR × 4 × 기어비. 기어비는 제조사 시트가 없어 손 회전이 역검증을 겸한다</td></tr>
+          <tr><td><strong>호스트 HailoRT 버전</strong></td><td>✅ 4.23.0 (2026-09-13 실측)</td><td>아니오 — 읽는 값이다. 비어 있으면 08c 에서 멈춘다</td><td>확정됨. 호스트 <code>apt upgrade</code> 뒤에는 다시 확인</td><td><code>hailortcli fw-control identify</code></td></tr>
+          <tr><td>IMU</td><td>✅ 부품: WT901(UART, 기본) + BNO055(I2C, 캘리브레이션 학습·비교). 모듈 형태·배선 상태·축 방향은 <code>____</code> (INVENTORY 2절 IMU 표)</td><td>예 — 06 의 가짜 MCU 가 가짜 IMU 를 함께 낸다</td><td>센서 단독: <a href="fw-14-wt901.html">F14</a>·<a href="fw-15-bno055.html">F15</a> · 두 IMU 비교: 06b · 로봇 기준 장착 방향: 09a</td><td>둘 다 캘리브레이션해 같은 회전에서 비교한다(계약 v2 IMU 프레임의 <code>sensor_id</code>)</td></tr>
+          <tr><td>모터 수 · 구동 방식 · 엔코더 수</td><td>✅ 4모터 스키드 스티어, 바퀴마다 32비트 엔코더 (TIM2/TIM5/TIM23/TIM24), 바퀴별 독립 PID + 슬립 억제. 이더넷 미사용</td><td>—</td><td>확정됨</td><td>섀시 수치는 INVENTORY 6절. 운동학은 좌우 쌍 차동구동. 핀 배정은 <code>hardware/pinmap-h723.md</code>(확정 핀맵)와 INVENTORY 2절</td></tr>
+          <tr><td>LiDAR 실측 최대 거리</td><td><code>____</code> — INVENTORY 3절 기록란</td><td>예 — 09 의 Nav2 파라미터에서 처음 쓰인다</td><td>07 — 책상 위에서 닫힌다</td><td>07 에서 드라이버 기동 로그의 <code>max_distance</code></td></tr>
+          <tr><td>호스트 libcamera 버전</td><td>✅ 0.7.2+rpt20260817, libpisp v1.7.0 (2026-09-13 실측)</td><td>아니오 — 읽는 값이다. 비어 있으면 08 에서 멈춘다</td><td>확정됨. 호스트 업그레이드 뒤에는 다시 확인</td><td><code>dpkg -l | grep libcamera</code></td></tr>
+          <tr><td><strong>센서 장착 위치</strong> — 라이다 x·y·z·yaw, 카메라 장착 높이 · 피치, 라이다 평면 높이</td><td><code>____</code> — INVENTORY 3절·4절 장착 정보 표. 센서가 아직 섀시에 없다</td><td>예 — 05 는 임시값으로 TF 트리를 세우고, 08d 는 책상 위 임시 지그에서 잰 값으로 융합까지 확인한다</td><td>09a — 센서를 섀시에 올린 뒤</td><td>높이 둘은 자로, 피치는 08d §3-8 벽 캘리브레이션으로. 주 방법(라이다 척도 깊이 지도)은 높이에 무관하지만, 대체 경로인 지면 평면의 정밀도는 높이의 제곱에 비례하므로 <strong>카메라는 가능한 한 높이</strong> 단다</td></tr>
         </tbody>
       </table></div>
       <div class="callout warn"><span class="ct">가장 자주 무시되고 가장 뼈아프게 돌아오는 것</span>
         <p>섀시 실측값입니다. 바퀴 간격이 5 mm 만 틀려도 직진 명령에 조금씩 휘고, 09 단계에서 "지도가 휘어요"의 원인 1위가 됩니다.
-        05 단계에서 자를 듭니다.</p>
+        자는 <strong>두 번</strong> 듭니다. 05 에서 한 번 — 모터가 섀시에 고정돼 있으니 지금 잴 수 있는 것(바퀴 간 거리·휠베이스)은 재서 <code>NOMINAL(ruler)</code> 로 적습니다.
+        <a href="09a-assembly-gate.html">09a</a>에서 또 한 번 — 센서까지 올린 차체에서 다시 재서 <code>MEASURED</code> 로 바꿉니다.
+        임시값은 "진행해도 된다"는 뜻이지 "맞다"는 뜻이 아닙니다. 09 로 가기 전에 관문을 건너뛰지 않습니다.</p>
       </div>
 
       <h2>7. 학습 중 지킬 습관</h2>
@@ -356,7 +433,7 @@ ros2 topic info /scan -v
         <a class="card" href="ref-yolo.html"><span class="num">부록 C</span><span class="t">YOLO 사용법</span><span class="d">모델 계열, ultralytics 로 추론·내보내기, ONNX 출력 텐서 해석, NMS, 커스텀 데이터 학습의 개요</span></a>
       </div>
 
-      <p class="footer-note">저장소 구조: <code>guide/</code>(이 가이드) · <code>docs/</code>(초기 마크다운 초안) · <code>ros2_ws/src/</code>(참고 구현과 당신이 만들 패키지) · <code>docker/</code>(Pi 컨테이너 정의) · <code>hardware/</code>(인벤토리, udev) · <code>scripts/</code>(Pi 보조 스크립트).</p>
+      <p class="footer-note">저장소 구조: <code>guide/</code>(이 가이드) · <code>docs/</code>(초기 마크다운 초안) · <code>ros2_ws/src/</code>(참고 구현과 당신이 만들 패키지) · <code>docker/</code>(Pi 컨테이너 정의) · <code>hardware/</code>(인벤토리, 확정 핀맵, udev) · <code>firmware/</code>(MCU 펌웨어 — Mac 에서 빌드·플래시하고 Pi 로는 동기화하지 않는다) · <code>scripts/</code>(Pi 보조 스크립트, <code>check_nominal.sh</code>).</p>
 
       <div class="pager"></div>
     </div>

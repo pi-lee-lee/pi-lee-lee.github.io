@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L11 · 벽을 도형으로 줄이면 무엇이 좋아지는가 — 라이다 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="l-11">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">L11 · 벽을 도형으로 줄이면 무엇이 좋아지는가</p>
+      <h1>벽을 도형으로 줄이면 무엇이 좋아지는가</h1>
+      <p class="lead">l-10 까지 오면 한 바퀴의 점이 <strong>덩어리</strong>로 나뉘어 있다. 덩어리는 여전히 점 수십~수백 개이고, 점 무더기끼리는 <strong>견줄 수가 없다</strong> — "이 벽이 저 벽과 같은 벽인가"를 점으로 물으면 답이 없다.
+      이 쪽이 붙이는 도구는 <code>lines.py</code> — 덩어리를 <strong>선분 몇 개</strong>로 줄이는 <code>fit_lines()</code>, 선분 둘의 교점으로 <strong>귀퉁이 좌표</strong>를 내는 <code>corners()</code>, 그리고 면이 어느 쪽을 보는지 말해 주는 <code>Segment.normal()</code> 이다.
+      점 수백 개가 수 네 개(양 끝점)로 줄어들면 <strong>줄자를 댈 수 있는 수</strong>가 되고, 그때부터 <a href="l-12-clearance.html">l-12</a> 의 "지나갈 수 있나"와 <a href="l-14-alignment.html">l-14</a> 의 "내가 얼마나 움직였나"가 비로소 물어볼 수 있는 질문이 된다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>내 방의 스캔 한 장에서 <strong>선분 몇 개</strong>가 나와 개수·길이가 화면에 찍히고, 그 수를 방의 실제 벽 개수와 나란히 적을 수 있다.
+        선분 둘의 교점으로 낸 <strong>귀퉁이 좌표</strong>가 줄자로 잰 방 치수와 몇 cm 차이인지 내 숫자로 나온다.
+        그리고 문턱을 키우면 <strong>굽은 것이 직선 하나로 먹히는 것</strong>을 내 눈으로 만든다. <code>python3 tests/test_lines.py</code> 의 마지막 줄은 <code>PASS lines 24 cases</code> 다.</p>
+        <p><strong>이 쪽에 필요한 것</strong> — <code>.scan.jsonl</code> 기록 파일 한 장, 줄자, l-10 까지 끝낸 도구(<code>geom.py</code> · <code>cluster.py</code>). <strong>라이다도 컨테이너도 07 도 필요 없다.</strong>
+        <strong>없으면</strong> — 줄자가 없어도 실습 A · C · D 는 전부 된다(선분 개수·길이·문턱은 파일만으로 닫힌다). 줄자가 없으면 닫히지 않는 것은 <strong>실습 B 하나</strong>이고 그 체크 항목만 열어 둔다.
+        기록 파일이 아직 없으면 <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> 로 한 장 뜨거나, <a href="l-00-map.html#s1-3">l-00 §1-3</a> 의 표에서 지금 할 수 있는 쪽을 고른다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag sim">기록 파일</span> <span class="tag py">Python</span> <span class="tag pi">Pi 호스트</span> <span class="tag mac">Mac</span></div>
+        <div><span class="k">선행</span><a href="l-10-clusters.html">l-10</a> (덩어리) — 실제로 쓰는 것: <code>split()</code> 이 낸 <code>Cluster</code> 하나 / <a href="l-08-floor-plan.html">l-08</a> — <code>to_xy()</code> 가 낸 <code>(x, y)</code> / <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> — <code>load_jsonl()</code></div>
+        <div><span class="k">채우는 INVENTORY 칸</span>없음. 이 쪽의 수(선분 개수·잔차·코너 오차)는 전부 <strong>내 노트</strong>다 — 방이 바뀌면 값도 바뀌므로 장비 목록에 들어갈 성질이 아니다</div>
+        <div><span class="k">이 쪽이 요구하는 수학</span><strong>점–직선 수직 거리</strong>와 <strong>두 직선의 교점</strong> — <strong>식은 §2-2 · §2-5 가 전부 준다.</strong> 처음 보는 말이어도 이 쪽 안에서 닫힌다. 그 식을 <strong>어디에 어떤 순서로</strong> 적용하는가(재귀)는 내가 쓴다</div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
+      </div>
+
+      <h2 id="overview">1. 개요 — 점 수백 개를 수 네 개로</h2>
+      <p>l-08 은 점을 방의 좌표로 옮겼고, l-09 는 점이 <strong>없는</strong> 곳을 칠했고, l-10 은 점을 <strong>덩어리</strong>로 묶었다. 셋 다 아직 <strong>점의 집합</strong>이다.
+      이 쪽에서 하는 일은 하나다 — <strong>덩어리 하나를 선분 몇 개로 바꾼다.</strong> 선분 하나는 양 끝점 두 개, 곧 <strong>수 네 개</strong>다. 점 이백 개가 수 네 개가 된다.</p>
+      <p>줄어드는 것이 왜 좋은가가 이 쪽의 전부이고, §2-1 이 그 답을 갖는다. 미리 한 줄로 말하면 — <strong>점은 견줄 수 없고 도형은 견줄 수 있다.</strong>
+      "이 점과 저 점이 같은 벽의 점인가"에는 답이 없지만, "이 선분과 저 선분이 같은 직선인가"에는 <strong>거리와 각도라는 답</strong>이 있다.</p>
+      <pre class="diagram"><code> l-10 이 넘기는 것            이 쪽이 만드는 것                   이 쪽이 남기는 것
+ ──────────────────────      ────────────────────────────      ────────────────────────
+ Cluster 하나          ─►    fit_lines(cluster, tol)      ─►   Segment 몇 개
+ (x, y) 점 수십~수백          가장 먼 점에서 자른다(재귀)        양 끝점 · 점 수 · 법선
+
+                             corners(segs, min_angle)     ─►   (x, y) 코너 좌표
+                             두 직선의 교점                     줄자를 댈 수 있는 수</code></pre>
+      <p>새로 나오는 말을 먼저 한 줄씩 정해 둔다. 이 쪽의 낱말은 뒤의 두 쪽이 그대로 받는다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>말</th><th>이 가이드에서의 뜻</th></tr></thead>
+        <tbody>
+          <tr><td><strong>선분</strong>(<code>Segment</code>)</td><td>양 끝점 두 개로 정해지는 <strong>유한한 선</strong>. 무한한 직선이 아니다 — 벽에는 끝이 있고, 그 끝이 §2-5 의 교점 판정에서 값을 한다</td></tr>
+          <tr><td><strong>잔차</strong></td><td>선분이 대표하는 점들이 그 선에서 <strong>얼마나 떨어져 있는가</strong>. 이 쪽에서 재는 것은 <strong>가장 큰 잔차</strong> 하나다(§2-2). ⚠ l-04 가 잰 각도 간격의 σ 와 <strong>다른 양</strong>이다 — 그쪽은 각도의 산포이고 이쪽은 거리의 산포다</td></tr>
+          <tr><td><strong>문턱</strong>(<code>tol</code>)</td><td>"이보다 더 튀어나오면 한 선으로 안 본다"는 <strong>거리</strong>. 미터다. 값은 내가 정한다 — 정하는 근거는 §2-4</td></tr>
+          <tr><td><strong>법선</strong>(<code>normal</code>)</td><td>선분에 수직인 <strong>방향</strong>. 면이 어느 쪽을 향하는지를 말한다. 이 쪽은 <strong>계산만</strong> 하고, "그래서 어느 쪽으로 돌아야 하는가"라는 뜻은 <a href="l-12-clearance.html">l-12</a> 가 갖는다</td></tr>
+          <tr><td><strong>코너</strong></td><td>선분 두 개를 <strong>직선으로 늘렸을 때의 교점</strong>. 점이 실제로 찍힌 자리가 아닐 수 있다 — 방 귀퉁이는 대개 점이 없는 곳이다(§2-5)</td></tr>
+          <tr><td><strong>분할·병합</strong></td><td>split-and-merge. 이 쪽이 쓰는 방법의 이름이다. "가장 먼 점에서 자른다"를 재귀로 되풀이한다(§2-2)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="why">2. 원리 — 왜 도형이고, 왜 가장 먼 점이고, 왜 문턱이 선언인가</h2>
+
+      <h3 id="s2-1">2-1. 점은 견줄 수 없고 도형은 견줄 수 있다 — 무엇이 쉬워지는가</h3>
+      <p>"점 이백 개를 선분 두 개로 줄인다"를 <strong>압축</strong>이라고 부르면 반만 맞다. 줄어든 것은 개수이지만, 바뀐 것은 <strong>물을 수 있는 질문</strong>이다. 세 자리에서 그 차이가 드러난다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>물음</th><th>점으로 물으면</th><th>도형으로 물으면</th><th>어디서 쓰는가</th></tr></thead>
+        <tbody>
+          <tr><td>벽까지 얼마나 되나</td><td>가장 가까운 점까지의 거리 — <strong>그 점이 벽의 점인지 의자의 점인지 모른다.</strong> 그리고 벽이 기울어 있으면 그 점은 정면이 아니다</td><td>선분까지의 <strong>수직 거리</strong> 하나. 면을 대표하는 수라서 점 하나의 운에 흔들리지 않는다</td><td><a href="l-12-clearance.html">l-12</a></td></tr>
+          <tr><td>어느 쪽으로 돌아야 하나</td><td><strong>답이 없다.</strong> 점 하나에는 방향이 없다</td><td>법선 하나. 면이 보는 쪽이 곧 내가 마주해야 할 방향이다</td><td><a href="l-12-clearance.html">l-12</a> · 10 의 벽 따라가기</td></tr>
+          <tr><td>내가 얼마나 움직였나</td><td>점 이백 개와 점 이백 개를 <strong>짝지어야</strong> 한다 — 어느 점이 어느 점인지 아무도 모른다</td><td>선분 둘과 선분 둘을 겹친다. <strong>코너 하나면 위치가 잠긴다</strong></td><td><a href="l-14-alignment.html">l-14</a></td></tr>
+        </tbody>
+      </table></div>
+      <p>셋째 줄이 이 쪽이 존재하는 가장 큰 이유다. 두 스캔을 맞대는 일(정합)에서 제일 비싼 것은 계산이 아니라 <strong>대응</strong> — 어느 점이 어느 점인지 정하는 일 — 이고, 도형은 그 문제를 통째로 작게 만든다.</p>
+      <div class="callout why"><span class="ct">저장소가 이미 이 자리를 비워 두었다</span>
+        <p><a href="08d-tracking-fusion.html">08d</a> §1-4 는 <em>"벽은 라이다에서 온다"</em> 고 선언하고, 벽을 세 가지 일에 쓴다(깊이 지도의 자 · 카메라 물체의 거리 상한 · 물체마다 "벽까지 몇 m"). 그런데 <strong>그 쪽은 벽을 도형으로 뽑지 않는다</strong> — 라이다 <em>점</em>을 그대로 쓴다.
+        선언과 실물 사이의 그 칸이 이 쪽이다. <strong>08d 를 고치지 않는다</strong> — 08d 가 점으로 하는 일은 점으로 충분한 일이고(투영한 픽셀의 정답 거리), 도형이 필요한 것은 "면까지의 거리와 방향"을 묻는 자리다. 둘은 다른 물음이다.</p>
+      </div>
+
+      <h3 id="s2-2">2-2. 가장 먼 점 하나가 결정한다 — 분할·병합의 전부</h3>
+      <p>덩어리 하나를 선분으로 바꾸는 방법을 <strong>한 문장</strong>으로 적을 수 있다.</p>
+      <div class="callout note"><span class="ct">분할·병합 (split-and-merge)</span>
+        <p><strong>양 끝점을 잇는 직선에서 가장 멀리 떨어진 점을 찾는다. 그 거리가 문턱보다 크면 거기서 둘로 자르고, 각각에 같은 일을 되풀이한다. 문턱보다 작으면 그 조각은 선분 하나다.</strong></p>
+      </div>
+      <p>여기서 <strong>쓰이는 수는 하나뿐</strong>이다 — 점에서 직선까지의 수직 거리. 식은 이것이고, 본문이 준다.</p>
+      <pre class="diagram"><code>  점 p 에서 두 점 a, b 를 지나는 직선까지의 수직 거리
+
+              |(bx - ax)(py - ay) - (by - ay)(px - ax)|
+      d(p) =  ─────────────────────────────────────────
+                   sqrt((bx - ax)^2 + (by - ay)^2)
+
+  위쪽 = 두 벡터 (b-a) 와 (p-a) 의 외적의 크기 = 평행사변형의 넓이
+  아래쪽 = 밑변의 길이                          →  넓이 / 밑변 = 높이</code></pre>
+      <p>분자는 <strong>평행사변형의 넓이</strong>이고 분모는 그 <strong>밑변</strong>이다. 넓이를 밑변으로 나누면 높이가 나온다 — 그 높이가 곧 우리가 찾는 수직 거리다. 외적이라는 말을 몰라도 이 그림이면 충분하고, 외적을 안다면 같은 식이다.</p>
+      <p><strong>a 와 b 가 같은 점이면</strong>(덩어리에 같은 자리의 점만 있을 때) 분모가 0 이 되어 나눌 수 없다. 그때는 직선이 없으므로 <strong>점 a 까지의 그냥 거리</strong>를 돌려주기로 정한다. 이 규약이 없으면 골격이 0으로 나누며 죽고, 시험 벡터 3 이 그것을 채점한다.</p>
+      <h4 id="s2-2-1">2-2-1. 왜 "가장 먼 점"이고, 왜 그 점에서 자르는가</h4>
+      <p>다른 선택도 가능하다 — 가운데서 자를 수도 있고, 잔차의 평균이 크면 자를 수도 있다. 가장 먼 점을 쓰는 이유는 <strong>두 가지 성질</strong>이 동시에 따라 나오기 때문이다.</p>
+      <ol class="steps">
+        <li><strong>합격 조건이 곧 품질 보증이다.</strong> "가장 먼 점이 문턱 안"이라는 말은 <strong>모든 점이 문턱 안</strong>이라는 말과 같다. 평균으로 판정하면 한두 점이 크게 튀어도 통과하고, 그 튄 점이 벽이 아니라 <strong>의자 다리</strong>일 수 있다.</li>
+        <li><strong>자르는 자리가 스스로 정해진다.</strong> 가장 먼 점은 "선에서 가장 벗어난 곳"이고, 벽 둘이 만나는 <strong>모서리</strong>가 있다면 정확히 거기다. ㄱ자로 꺾인 점열에 이 규칙을 적용하면 <strong>꺾인 점에서</strong> 잘린다 — 시험 벡터 9 가 그것이다.</li>
+      </ol>
+      <p>그리고 <strong>끝나는 것이 보장된다.</strong> 자르는 자리는 양 끝점을 뺀 <strong>안쪽</strong>이므로, 자를 때마다 양쪽 조각은 반드시 원래보다 짧아지고 점 두 개짜리 조각에서 멈춘다.
+      <span class="small">(끝점까지 후보에 넣어도 실은 달라지지 않는다 — 끝점은 자기가 정의한 직선 위에 있어 거리가 언제나 0 이고, 0 이 문턱을 넘을 수는 없기 때문이다. <strong>집필자가 그 변형을 실제로 만들어 돌려 보고 확인했다</strong>(2026-09-23): 벡터 스물넷이 그대로 통과한다. 안쪽만 보는 것은 <strong>헛일을 줄이는 것</strong>이지 안전장치가 아니다.)</span></p>
+      <p>정말로 안 끝나는 경우는 따로 있다 — <strong>자르는 자리를 조각 안의 상대 위치로 구해 놓고 조각의 시작 위치를 더하지 않는 것</strong>이다. 그러면 한쪽 조각이 줄지 않고 자기 자신을 다시 부른다.
+      집필자가 그 실수를 실제로 만들어 돌려 보았고, 파이썬이 <code>RecursionError: maximum recursion depth exceeded</code> 를 낸다(2026-09-23). 증상표의 마지막 행이 그것이다.</p>
+      <h4 id="s2-2-2">2-2-2. "병합"은 어디 갔는가</h4>
+      <p>이름은 분할·<strong>병합</strong>인데 위 문장에는 분할밖에 없다. 원래 방법은 자르고 난 뒤 <strong>이웃한 두 조각이 사실 한 직선이면 도로 붙이는</strong> 걸음을 갖는다. 이 쪽은 <strong>붙이지 않는다</strong> — 이유는 둘이다.</p>
+      <ul>
+        <li>라이다 점은 <strong>각도 순서가 이미 있다.</strong> 덩어리 안의 점은 한 방향으로 훑은 차례대로 들어 있으므로, 잘못 잘릴 자리가 애초에 적다.</li>
+        <li>붙이는 판정에는 <strong>새 문턱이 하나 더</strong> 필요하다(각도 차? 잔차? 길이?). 문턱을 하나 더 두면 학습자가 정해야 할 값이 하나 더 늘고, 이 쪽의 관찰(§3-3)이 어느 문턱 탓인지 흐려진다.</li>
+      </ul>
+      <p>붙이는 걸음을 넣고 싶다면 넣어도 된다 — 다만 <strong>넣기 전과 후의 선분 개수를 둘 다 적어 두라.</strong> 그 차이가 내 방에서 병합이 실제로 하는 일이다.</p>
+
+      <h3 id="s2-3">2-3. RANSAC 은 다른 전제에서 온다 — 골라 쓰는 축</h3>
+      <p>직선을 찾는 방법으로 가장 자주 이름이 나오는 것은 RANSAC 이다. 이 쪽이 분할·병합을 펼치는 이유는 <strong>우월해서가 아니다</strong> — 두 방법은 <strong>서로 다른 것을 전제</strong>하고, 라이다 한 바퀴에는 그 전제 중 하나가 이미 갖춰져 있다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>축</th><th>분할·병합</th><th>RANSAC</th></tr></thead>
+        <tbody>
+          <tr><td>전제하는 것</td><td>점에 <strong>순서가 있다</strong>(이웃이 누구인지 안다)</td><td>점이 <strong>흩어져 있다</strong>. 어느 점이 어느 선의 것인지 모르고, <strong>아무 선에도 안 속하는 점(이상치)이 많다</strong></td></tr>
+          <tr><td>무엇을 되풀이하나</td><td>자르기. <strong>같은 입력에 같은 답</strong>이 나온다</td><td>무작위로 두 점을 뽑아 직선을 세우고 표를 센다. <strong>돌릴 때마다 답이 조금씩 다를 수 있다</strong></td></tr>
+          <tr><td>정해야 할 값</td><td>문턱 하나(<code>tol</code>)</td><td>문턱 + <strong>반복 횟수</strong> + 직선으로 인정할 <strong>최소 표 수</strong></td></tr>
+          <tr><td>유리한 조건</td><td>한 바퀴의 점열처럼 <strong>순서가 살아 있는 입력</strong></td><td>여러 바퀴를 포갠 점구름, 순서가 깨진 입력, <strong>이상치 비율이 높은 입력</strong>(반사·유령점이 섞인 경우)</td></tr>
+          <tr><td>차이가 없는 축</td><td colspan="2">둘 다 <strong>문턱을 학습자가 정해야 한다</strong>는 것 — <strong>동일</strong>. 그리고 둘 다 "직선이 몇 개인지"를 미리 알려 주지 않는다 — <strong>동일</strong></td></tr>
+        </tbody>
+      </table></div>
+      <p>라이다 한 바퀴에는 <strong>순서가 공짜로 있다.</strong> l-04 의 <code>split_turns()</code> 가 각도 오름차순으로 정렬해 두었고(<a href="l-04-one-turn.html#s3-1-2">l-04 §3-1-2</a> 불변식 4), l-10 의 덩어리는 그 순서를 그대로 물려받는다.
+      그래서 이 쪽은 <strong>이미 가진 것을 버리지 않는 방법</strong>을 쓴다. 순서가 없는 입력(예: 여러 스캔을 겹쳐 놓은 점구름)에서 같은 일을 하려면 RANSAC 쪽이 자연스럽다.</p>
+      <p class="small">한 줄 확인 과제: 내 방의 덩어리 하나를 골라 점 순서를 <strong>무작위로 섞은 뒤</strong> <code>fit_lines</code> 에 넣어 보라. 선분이 몇 개가 되는가. 그 결과가 위 표의 첫 줄이 말하는 전제의 값이다.</p>
+
+      <h3 id="s2-4">2-4. 문턱은 재는 값이 아니라 <strong>선언</strong>이다 — 위아래가 어디서 오는가</h3>
+      <p><code>tol</code> 은 "얼마나 굽은 것까지 벽 하나로 볼 것인가"를 내가 <strong>선언</strong>하는 수다. 센서가 정해 주지 않고, 이 가이드도 정하지 않는다. 다만 <strong>위아래가 어디서 오는지</strong>는 도출된다.</p>
+      <h4 id="s2-4-1">2-4-1. 아래쪽 — 센서가 못 내는 정밀도 밑으로 내려가면 잡음을 자른다</h4>
+      <p>문턱을 센서의 거리 정밀도보다 작게 잡으면, 벽은 평평한데도 <strong>측정 산포만으로</strong> 문턱을 넘어 조각이 난다. 그 하한이 데이터시트에 있다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>항목</th><th>값</th><th>출처 · 등급</th><th>내 장치에서 보는 법</th></tr></thead>
+        <tbody>
+          <tr><td>Distance Resolution (근거리)</td><td><code>&lt;0.5 mm</code> — 조건 <code>&lt;1.5 meters</code></td><td>데이터시트 <strong>rev.2.2 p.8 Fig 2-1</strong> — <strong>확정</strong>. ⚠ <strong>v3.0 p.8 Fig 2-1 도 글자까지 같다</strong>(두 판이 갈리는 것은 Distance Range 한 줄뿐이다)</td><td>평평한 벽 하나에서 §3-1-4 의 <strong>최대 잔차</strong>를 읽는다</td></tr>
+          <tr><td>Distance Resolution (전 구간)</td><td><code>&lt;1% of the distance</code> — 조건 <code>All distance range*</code></td><td>같은 표의 <strong>둘째 줄</strong> — <strong>확정</strong>. 한 항목에 줄이 둘이고 <strong>조건이 다르다</strong></td><td>2 m 떨어진 벽이면 <code>0.01 × 2 = 0.02 m</code> — <strong>산술</strong>(식을 같이 적는다)</td></tr>
+          <tr><td>내 벽의 최대 잔차</td><td><code>____</code></td><td><strong>확인 과제</strong> — 사양은 조건부 값이고 내 방의 벽은 평평하지 않을 수 있다</td><td>§3-1-4 에서 잰다. <strong>이것이 내 문턱의 하한</strong>이다</td></tr>
+        </tbody>
+      </table></div>
+      <p>표의 둘째 줄이 말하는 것이 중요하다 — <strong>정밀도가 거리에 비례한다.</strong> 2 m 벽에서 2 cm, 5 m 벽에서 5 cm 다. 그러므로 <strong>상수 문턱 하나로 방 전체를 처리하면 먼 벽에서 반드시 조각이 난다.</strong>
+      l-10 이 덩어리 문턱에서 겪은 것과 <strong>같은 모양의 문제</strong>이고(거기서는 각 간격이 거리에 비례해 벌어졌다), 여기서는 원인이 각도가 아니라 <strong>측정 산포</strong>라는 것만 다르다. 문턱을 거리의 함수로 둘 것인가는 <strong>내가 정한다.</strong></p>
+      <h4 id="s2-4-2">2-4-2. 위쪽 — 얼마를 넘기면 굽은 것이 직선으로 먹히는가</h4>
+      <p>반대쪽 한계는 기하로 계산된다. 반지름 <code>R</code> 인 원통(쓰레기통·기둥·사람 몸통)을 <strong>현 길이 <code>L</code></strong> 만큼 보고 있다면, 그 호가 현에서 가장 멀리 떨어지는 거리(<strong>사지타</strong>)는</p>
+      <pre class="diagram"><code>      s = R - sqrt(R^2 - (L/2)^2)
+
+      예) 지름 0.30 m 인 쓰레기통(R = 0.15)을 현 0.20 m 만큼 볼 때
+          s = 0.15 - sqrt(0.15^2 - 0.10^2) = 0.15 - 0.111803 = 0.038197 m
+
+      →  tol 이 0.0382 m 보다 크면  이 쓰레기통은 직선 하나가 된다
+      →  tol 이 0.0382 m 보다 작으면 조각이 난다</code></pre>
+      <p class="small">위 숫자는 집필자가 <code>python3</code> 로 직접 계산했다(2026-09-23): <code>0.15 - math.sqrt(0.15**2 - 0.10**2)</code> = <code>0.038196601125010526</code>. <strong>내 방의 <code>R</code> 과 <code>L</code> 은 줄자로 재서 내가 넣는다.</strong></p>
+      <p>그래서 문턱을 정하는 일은 <strong>두 수 사이에서 고르는 일</strong>이다 — 아래는 "센서 산포에 흔들리지 않을 만큼 크게", 위는 "내가 벽이 아니라고 부르고 싶은 것이 먹히지 않을 만큼 작게".
+      <strong>그 사이가 비어 있을 수도 있다.</strong> 5 m 떨어진 벽의 산포(약 5 cm)가 1 m 앞 쓰레기통의 사지타(약 3.8 cm)보다 크면, <strong>상수 문턱 하나로는 둘을 동시에 만족시킬 수 없다.</strong> 그것이 §3-3 이 실제로 만들어 보는 관찰이고, 상수가 아닌 문턱을 생각하게 되는 지점이다.</p>
+
+      <h3 id="s2-5">2-5. 코너는 점이 없는 곳에 있다 — 두 직선의 교점과, 방 밖에 찍히는 이유</h3>
+      <p>방 귀퉁이를 라이다로 재려고 하면 곤란한 일이 있다. <strong>귀퉁이에는 점이 없는 일이 흔하다</strong> — 두 벽이 만나는 자리는 대개 몰딩이나 가구에 가려 있고, 있어도 그 점 하나가 정확하다는 보장이 없다.
+      그런데 <strong>두 벽은 양쪽에 많은 점을 준다.</strong> 그 많은 점으로 직선 둘을 세우고 <strong>늘려서 만나게 하면</strong>, 점이 없는 자리의 좌표가 나온다. 이것이 도형으로 바꾼 것의 가장 직접적인 이득이고, 줄자로 검산할 수 있는 수다.</p>
+      <p>두 선분을 직선으로 늘려 만나는 자리는 이렇게 낸다. 선분 1이 <code>a</code> 에서 <code>b</code> 로, 선분 2가 <code>c</code> 에서 <code>d</code> 로 간다고 하고, 방향을 <code>u = b - a</code> · <code>v = d - c</code> 라 하면</p>
+      <pre class="diagram"><code>      den = ux*vy - uy*vx            (두 방향의 외적 — 0 이면 평행이다)
+
+            (cx - ax)*vy - (cy - ay)*vx
+      t  =  ───────────────────────────
+                       den
+
+      교점 = (ax + t*ux,  ay + t*uy)</code></pre>
+      <p><code>den</code> 은 두 방향이 <strong>얼마나 다른가</strong>를 재는 수다. 완전히 평행하면 0 이고, 나누는 순간 죽는다. 그래서 코드에는 <code>den == 0</code> 을 걸러 내는 줄이 반드시 들어간다.</p>
+      <h4 id="s2-5-1">2-5-1. <code>den</code> 을 거르는 것으로는 모자란다 — 각도 조건이 왜 필요한가</h4>
+      <p>진짜 문제는 <strong>정확히 평행</strong>이 아니라 <strong>거의 평행</strong>이다. 실제로 계산해 보면 이렇다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>두 선분</th><th>사이각</th><th>교점</th><th>말이 되는가</th></tr></thead>
+        <tbody>
+          <tr><td><code>(0,0)-(1,0)</code> 와 <code>(1,0)-(1,1)</code></td><td><code>90.0°</code></td><td><code>(1.0, 0.0)</code></td><td>그렇다 — 두 선분이 실제로 만나는 자리다</td></tr>
+          <tr><td><code>(0,0)-(1,0)</code> 와 <code>(1.05,0.02)-(2.05,0.03)</code></td><td><code>0.5729°</code></td><td><code>(-0.95, 0.0)</code></td><td><strong>아니다</strong> — 두 선분 어디에도 없고, 센서 <strong>뒤쪽</strong>이다</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">두 줄 다 집필자가 <code>python3</code> 로 실제 계산했다(2026-09-23). 아래 벡터 14·15·16 이 같은 수를 채점한다.</p>
+      <p>둘째 줄이 <strong>한 벽이 잡음 때문에 두 조각으로 잘렸을 때</strong> 늘 일어나는 일이다. 거의 같은 직선인 두 조각을 늘리면 교점은 <strong>아주 멀리</strong> 찍힌다 — 사이각이 0 에 가까울수록 멀리 간다. 방 안에서 계산했는데 좌표가 방 밖으로 나가는 것이 그 증상이다.</p>
+      <p>그래서 <code>corners()</code> 는 <strong>사이각이 충분히 큰 짝만</strong> 본다. 얼마부터가 "충분히"인가는 <strong>내가 정한다</strong> — 그래서 이 함수의 둘째 인자에는 <strong>기본값이 없다.</strong> 빼먹을 수 없게 해 두었다(같은 이유로 <a href="l-04-one-turn.html#s3-4-2">l-04 §3-4-2</a> 의 <code>save_jsonl</code> 도 <code>meta</code> 에 기본값이 없다).</p>
+      <div class="callout note"><span class="ct">결정 대기 — 사이각 문턱을 얼마로 둘 것인가</span>
+        <p>(가) <strong>크게</strong>(예: 60° 이상) — 직각 코너만 잡는다. 방 귀퉁이는 거의 다 잡히고, <strong>비스듬히 꺾인 벽·기둥 모서리는 놓친다</strong>. (나) <strong>작게</strong>(예: 10° 이상) — 꺾인 자리를 다 잡지만, 한 벽이 잡음으로 쪼개졌을 때 <strong>방 밖의 유령 코너</strong>가 늘어난다. (다) <strong>교점이 두 선분의 끝에서 얼마 이내일 때만</strong> 받는다 — 각도 대신 거리로 거르는 다른 축이다.
+        차이가 없는 축: 계산량(셋 다 선분 개수에 비례한다 — <strong>동일</strong>).</p>
+        <p>이 쪽은 값을 고르지 않는다. <strong>§3-2 에서 세 값 이상을 넣어 보고 내 방에서 어떻게 달라지는지 적은 뒤</strong> 내가 정한다.</p>
+      </div>
+      <h4 id="s2-5-2">2-5-2. 법선의 부호 — 이 쪽은 규약만 정하고 뜻은 l-12 가 갖는다</h4>
+      <p>선분에 수직인 방향은 <strong>둘</strong>이다(앞과 뒤). 어느 쪽을 <code>normal()</code> 이 돌려줄지는 정해 두지 않으면 매번 달라지므로, 이 쪽은 <strong>하나로 못박는다</strong>:</p>
+      <div class="callout note"><span class="ct">부호 규약 (이 가이드 안에서 고정)</span>
+        <p><strong><code>p0</code> 에서 <code>p1</code> 로 가는 방향을 반시계로 90° 돌린 것</strong> — 곧 <code>(dx, dy)</code> 에 대해 <code>(-dy, dx)</code> 를 길이로 나눈 단위 벡터다. 가로 선분 <code>(0,0)-(1,0)</code> 의 법선은 <code>(0, 1)</code> 이다.</p>
+        <p>⚠ <strong>이것은 "벽이 나를 향하는 쪽"이라는 뜻이 아니다.</strong> 점의 순서가 뒤집히면 법선도 뒤집힌다. 그 방향에 <em>의미</em>를 주는 일 — "센서를 향한 쪽이 어느 쪽인가", "그래서 어느 쪽으로 돌아야 하는가" — 는 <strong><a href="l-12-clearance.html">l-12</a> 의 몫</strong>이다. 여기서는 <strong>같은 입력에 늘 같은 답</strong>이 나오게 하는 것까지만 한다.</p>
+      </div>
+      <p>왜 그것까지만 하는가. 방향의 뜻은 <strong>센서가 어디 있는지</strong>를 알아야 정해지는데, 그 원점 규약은 l-08 이 세운 좌표계의 일이고 "로봇이 어느 쪽으로 가야 하는가"는 통로·여유와 함께 봐야 하는 판정이다. 여기서 미리 정해 버리면 l-12 가 그 판정을 <strong>이미 내려진 것</strong>으로 물려받는다.</p>
+
+      <h2 id="lab">3. 실습</h2>
+      <p>실습 넷이다. <strong>A</strong> 덩어리에서 선분을 뽑는다 · <strong>B</strong> 코너를 내어 줄자와 견준다 · <strong>C</strong> 문턱을 키워 굽은 것을 직선으로 먹인다(코드 없음) · <strong>D</strong> 자기시험 벡터 스물네 개로 채점한다.
+      <strong>시험 파일은 §3-4-2 에 전량으로 있다.</strong> A 를 시작하자마자 그 파일을 먼저 자리에 놓고 돌리는 것이 요령이다 — 실패 순서가 곧 채울 순서가 된다.</p>
+      <p>돌리는 꼴은 하나다 — 저장소 뿌리(<code>~/ros2_rpi5</code>)에서 <code>pi$ python3 scripts/lidar_lab/lines.py &lt;파일&gt;</code>.
+      이 쪽은 <strong>ROS 를 <code>import</code> 하지 않는 순수 파이썬</strong>이라 Pi 가 없는 날 <strong>Mac 에서 그대로 돌아간다</strong>(그때는 <code>mac$</code>). 라이다도 컨테이너도 열지 않는다.</p>
+
+      <h3 id="s3-1">3-1. 실습 A — 덩어리 하나에서 선분을 뽑는다 <span class="tag sim">기록 파일</span></h3>
+
+      <h4 id="s3-1-1">3-1-1. 확인 — 입력이 손에 있는가, 그리고 같은 낱말을 네 갈래가 뭐라 하는가</h4>
+      <p><strong>실행 확인:</strong> 미확인 — 집필자는 Pi 에 접속하지 못했고 라이다를 돌리지 못했다. 아래는 출력의 <em>모양</em>이고 값 자리는 <code>&lt;n&gt;</code> 이다. (예외: <strong>파이썬 코드는 Mac 에서 <code>python3 -m py_compile</code> 로, 시험 벡터의 기댓값은 <code>python3</code> 독립 구현으로 실제 계산해 확인했다</strong> — 2026-09-23.)</p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><code>pi$ ls scripts/lidar_lab/</code></td><td><code>cluster.py  geom.py  link.py  point.py  turn.py  …</code> — <code>cluster.py</code> 와 <code>geom.py</code> 가 보인다</td><td><code>geom.py</code> 가 없으면 l-08 로, <code>cluster.py</code> 가 없으면 l-10 으로 돌아간다. 이 쪽은 그 둘 위에 선다</td></tr>
+          <tr><td>2</td><td><code>pi$ ls -l scripts/lidar_lab/scans/</code></td><td><code>-rw-r--r-- … &lt;이름&gt;.scan.jsonl</code> 한 장 이상</td><td>기록 파일이 없다 → <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> 로 한 장 뜬다. <strong>이 쪽은 라이다가 아니라 파일을 먹는다</strong></td></tr>
+          <tr><td>3</td><td><code>pi$ python3 scripts/lidar_lab/cluster.py scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl 0.__</code> — 둘째 인자는 <a href="l-10-clusters.html#s3-2-3">l-10 §3-2-3</a> 에서 <strong>내가 고른 분할 문턱</strong>이다</td><td>바퀴마다 덩어리 표 한 벌 — <code>scan 0   clusters=&lt;n&gt;   (points &lt;n&gt;)</code> 아래로 덩어리마다 <code>#0  n=&lt;n&gt;  width=&lt;n&gt;.&lt;n&gt;&lt;n&gt; m  centroid=(&lt;n&gt;.&lt;n&gt;&lt;n&gt;, &lt;n&gt;.&lt;n&gt;&lt;n&gt;)  idx &lt;n&gt;..&lt;n&gt;</code> 한 줄</td><td>문턱을 빼고 부르면 덩어리가 아니라 <strong>이웃 거리의 분포</strong>가 나온다 — <a href="l-10-clusters.html#s3-1-4">l-10 §3-1-4</a>, 그 도구는 <strong>인자 개수가 곧 실습 번호</strong>다. l-10 이 아직이면 이 쪽의 입력이 없다. <strong>덩어리 없이 <code>fit_lines</code> 를 부를 수는 있다</strong> — 한 바퀴 전체를 한 덩어리로 넘기면 된다. 다만 벽과 의자가 한 조각으로 섞여 선분 개수가 방과 안 맞는다</td></tr>
+          <tr><td>4</td><td><code>pi$ python3 -c 'import sys; sys.path.insert(0,"scripts/lidar_lab"); import turn; print(len(turn.load_jsonl("scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl")))'</code></td><td>바퀴 수 하나 — <code>&lt;n&gt;</code></td><td>로더가 <code>ValueError</code> 를 내면 <strong>줄 번호와 이유가 같이 나온다</strong>. 그 파일은 기준 형식이 아니다 → <a href="l-04-one-turn.html#s3-4-2">l-04 §3-4-2</a></td></tr>
+        </tbody>
+      </table></div>
+      <p>이제 <strong>같은 낱말을 네 갈래가 뭐라고 하는지</strong> 본다. 이 쪽의 낱말은 <code>resolution</code> 이다 — <strong>한 낱말에 세 가지 뜻이 걸려 있고 단위도 다르다.</strong> 실습 전에 빈칸을 보고, §3-1-4 뒤에 ④를 채운다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>갈래</th><th>어디</th><th>무엇이라 하는가</th><th>내 값</th></tr></thead>
+        <tbody>
+          <tr><td>① 정의</td><td><strong>없다</strong> — <code>LaserScan</code> 에는 <code>resolution</code> 이라는 필드가 없다</td><td>메시지 규약은 이 낱말을 쓰지 않는다. 가장 가까운 것은 <code>angle_increment</code>(각도)이고 <strong>거리의 정밀도와는 다른 양</strong>이다</td><td>—</td></tr>
+          <tr><td>② 사양</td><td>데이터시트 <strong>rev.2.2 p.8 Fig 2-1</strong> 의 <code>Distance Resolution</code> — <strong>두 줄</strong></td><td><code>&lt;0.5 mm</code>(조건 <code>&lt;1.5 m</code>) 와 <code>&lt;1% of the distance</code>(조건 <code>All distance range*</code>). <strong>센서가 거리를 얼마나 곱게 재는가</strong>다. v3.0 p.8 도 같다</td><td>—</td></tr>
+          <tr><td>③ 구현</td><td><a href="09-slam-nav2.html">09</a> §3-2 의 <code>slam_params.yaml</code></td><td><code>resolution: 0.05</code> — <strong>지도 격자 한 칸의 크기</strong>(m/px)다. 센서 정밀도가 아니라 <strong>지도를 얼마나 잘게 저장할 것인가</strong>의 선언이고, 같은 절이 <em>"너무 작게 하지 마십시오"</em> 라고 적는다</td><td><code>____</code></td></tr>
+          <tr><td>④ 실물</td><td>내 벽의 <strong>최대 잔차</strong>(§3-1-4)</td><td>—</td><td><code>____</code> m</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">넷이 다르면 <strong>④가 내 기기의 사실</strong>이고 나머지는 "무엇을 가정했는가"를 말해 준다. 어느 것이 틀렸다고 쓰지 말고 <strong>조건이 무엇이었는지</strong>를 적는다. ②는 조건 두 개짜리 사양이고, ③은 <strong>다른 양에 같은 이름을 붙인 것</strong>이며, ④만 내 방에서 잰 수다. 그리고 ④가 ②보다 크게 나오는 것은 <strong>정상일 수 있다</strong> — 내 벽이 완전한 평면이 아니고, 벽지·몰딩·기울기가 전부 들어 있기 때문이다.</p>
+
+      <h4 id="s3-1-2">3-1-2. 골격</h4>
+      <p>파일은 <code>scripts/lidar_lab/lines.py</code> 하나다. 이 쪽이 끝나면 여기에 공개 이름이 넷 생긴다 — <code>point_line_distance()</code> · <code>Segment</code>(<code>.length()</code> · <code>.normal()</code>) · <code>fit_lines()</code> · <code>corners()</code>.
+      <strong>넷 다 순수하다</strong> — 포트도 시계도 파일도 ROS 도 건드리지 않는다. 그래서 라이다 없이 채점되고, <a href="l-16-node.html">l-16</a> 이 C++ 로 옮길 수 있는 것도 이 넷이다.</p>
+      <p>주석의 불변식을 <strong>먼저 읽는다.</strong> 전부 §2-2 · §2-5 에서 도출된 것이고, 전부 시험 벡터로 채점된다. 특히 <code>fit_lines</code> 의 불변식 1·2 는 <strong>틀려도 에러가 안 나고 조각 수만 달라지는</strong> 종류다.</p>
+      <pre><code class="lang-python"># scripts/lidar_lab/lines.py -- reduce a cluster of points to a few line segments.
+# Everything in this file is PURE: no port, no ROS, no file. tests/test_lines.py
+# grades it with the lidar unplugged, and that is also why it runs on a Mac.
+# Units: x, y and tol are METERS. Angles in this file are DEGREES.
+
+import math
+
+
+def point_line_distance(p, a, b):
+    """Perpendicular distance from point p to the line through a and b. -&gt; float, meters.
+
+    p, a, b are (x, y) tuples in meters.
+    The formula is in 2-2: |cross(b-a, p-a)| / |b-a|, i.e. parallelogram area / base.
+    Invariants -- each is graded by a vector in tests/test_lines.py:
+      1. a point lying ON the line gives exactly 0.0 (vector 4).
+      2. a == b means there is NO line. Return the plain distance from p to a
+         instead of dividing by zero (vector 3). fit_lines() reaches this case
+         whenever a cluster holds repeated identical points.
+      3. the result is never negative -- which side p is on is NOT asked here.
+         Sign lives in Segment.normal() and its meaning lives in l-12.
+    """
+    # TODO(you): write the two-line version of the formula above. Compute the
+    #   base length FIRST so you can take invariant 2 before you divide.
+    return 0.0
+
+
+class Segment:
+    """A finite piece of a wall: two endpoints, plus how many points voted for it.
+
+    p0, p1 : (x, y) in meters, in the order the points were scanned.
+    n      : how many input points this segment stands for (2 or more).
+    A zero-length segment is never produced (see fit_lines invariant 5), so
+    normal() can always divide by the length.
+    """
+
+    __slots__ = ("p0", "p1", "n")
+
+    def __init__(self, p0, p1, n=2):
+        self.p0, self.p1, self.n = p0, p1, n
+
+    def length(self):
+        return math.hypot(self.p1[0] - self.p0[0], self.p1[1] - self.p0[1])
+
+    def normal(self):
+        """Unit vector perpendicular to p0 -&gt; p1, turned +90 degrees (2-5-2). -&gt; (nx, ny).
+
+        Fixed convention: for direction (dx, dy) the normal is (-dy, dx) / length.
+        A horizontal segment (0,0)-(1,0) therefore gives (0.0, 1.0).
+        This says WHICH WAY, not which side is the room -- that is l-12's question.
+        """
+        # TODO(you): one line. Divide by length() so the result is a unit vector.
+        return (0.0, 0.0)
+</code></pre>
+      <p>여기까지가 <strong>수 하나를 내는 부분</strong>이다. 아래가 그 수를 <strong>되풀이해 쓰는 부분</strong>이고, 이 쪽의 실제 어려움은 전부 여기에 있다.</p>
+      <p>⚠ <strong>첫 번째 <code>TODO(you)</code> 가 이웃 쪽과 맞닿는 자리다.</strong> <code>fit_lines</code> 는 <code>(x, y)</code> 의 순서 있는 목록 하나만 있으면 되지만, l-10 의 <code>Cluster</code> 가 그 목록을 어떤 이름으로 들고 있는지는 <strong>l-10 이 정한다.</strong> 그래서 꺼내는 한 줄은 골격이 비워 두었다 — 내 <code>Cluster</code> 를 열어 보고 한 줄을 채운다. <strong>시험 벡터는 <code>Cluster</code> 를 쓰지 않고 그냥 목록을 넘긴다</strong>(§3-4-2), 그래서 이 한 줄이 아직 비어 있어도 벡터 5~13 은 돌릴 수 있다. l-10 은 그 이름을 <code>pts</code> 로 정했다(<a href="l-10-clusters.html#s3-1-2">l-10 §3-1-2</a> 의 <code>__slots__</code>) — 그래도 <strong>그 한 줄은 내 <code>Cluster</code> 를 열어 보고 내가 쓴다.</strong> 내가 다른 이름으로 지었으면 그 한 줄만 달라진다.</p>
+      <pre><code class="lang-python">def fit_lines(cluster, tol):
+    """Split-and-merge: one cluster -&gt; [Segment]. Pure. tol is in METERS.
+
+    `cluster` is l-10's Cluster, or any ordered sequence of (x, y). This function
+    only ever needs THE LIST OF POINTS IN SCAN ORDER -- l-10 owns the attribute
+    name it keeps them under, so the one line that pulls them out is yours.
+    Invariants -- each is graded by a vector in tests/test_lines.py:
+      1. the farthest point is searched among the INNER points only (not the two
+         endpoints). An endpoint is on its own line, distance 0, so it can never
+         win -- and if it could, the recursion would split off a piece that is
+         not smaller and never end (see the last row of the symptom table).
+      2. the cut is kept only when the worst distance is STRICTLY GREATER than
+         tol. Exactly tol is still one segment (vector 6 pins this down).
+      3. the point you cut at belongs to BOTH halves, so the segments share an
+         endpoint and corners() can intersect neighbours (vector 7).
+      4. fewer than two points is not a segment: return nothing for that piece
+         (vectors 11, 13).
+      5. a zero-length segment is never emitted (vector 12). Identical points
+         give length 0, and normal() would divide by it.
+      6. the order of the returned segments follows the order of the points, so
+         segments[i] and segments[i+1] are neighbours along the wall.
+    Verify with: python3 tests/test_lines.py
+    """
+    # TODO(you): pull the (x, y) list out of `cluster` -- ONE line, and it depends
+    #   on what l-10 named it.
+    pts = []
+    # TODO(you): write the recursion. Take a piece as two indices (first, last).
+    #   Decide what happens when the piece is too short BEFORE you look for the
+    #   farthest point, and collect finished segments in one list.
+    return []</code></pre>
+      <pre><code class="lang-python">def corners(segments, min_angle_deg):
+    """Intersections of NEIGHBOURING segments -&gt; [(x, y)]. Pure.
+
+    min_angle_deg has NO DEFAULT on purpose: it is a value you decide (2-5-1),
+    and a wrong-but-silent default would put ghost corners behind the sensor.
+    Invariants -- each is graded by a vector in tests/test_lines.py:
+      1. only neighbouring pairs (i, i+1) are considered. Two far-apart walls do
+         not make a corner just because their lines cross somewhere.
+      2. a pair whose angle between directions is SMALLER than min_angle_deg is
+         skipped. The angle is taken in [0, 90]: a segment and its reverse are
+         the same wall, so 179 degrees means 1 degree (vector 17).
+      3. exactly parallel directions are skipped before dividing. den == 0 is
+         the exact case; vectors 15..17 are the near-parallel ones.
+      4. the intersection is of the INFINITE lines, so it may lie outside both
+         segments -- that is the point of 2-5, and it is how a room corner with
+         no points on it gets a coordinate (vector 14).
+    """
+    # TODO(you): for each neighbouring pair, take the angle first and skip early.
+    #   The intersection formula is in 2-5; guard den == 0 before you divide.
+    return []
+
+
+def main(argv):
+    """Read a .scan.jsonl, cluster it, fit lines, print one line per segment."""
+    # TODO(you): load the file (turn.load_jsonl), take ONE revolution, hand it to
+    #   geom.to_xy and cluster.split, then FOR EACH CLUSTER print for every
+    #   segment: index, its two endpoints, length(), n, and the WORST residual of
+    #   its own points. That worst residual is the number 3-1-4 asks you to read.
+    #   Then call corners() ON THAT CLUSTER'S segment list -- one cluster at a
+    #   time, never on the concatenation of all of them (3-2-1 says why) -- and
+    #   print the coordinates. tol and min_angle_deg are yours to pass in.
+    return 0
+</code></pre>
+
+      <h4 id="s3-1-3">3-1-3. 직접 채우기 — 그리고 벡터로 채점한다</h4>
+      <p>순서는 이렇다. <strong>2번을 먼저 하는 것이 요령이다</strong> — 실패 메시지가 곧 할 일 목록이 된다.</p>
+      <ol class="steps">
+        <li><strong>골격을 그대로 한 번 돌린다.</strong> <code>fit_lines</code> 는 빈 목록을 돌려주므로 선분이 <strong>0 개</strong>로 조용히 끝난다. 죽지 않는 것이 정상이다 — 이것이 골격이 "그대로 돌아간다"는 뜻이다.</li>
+        <li><strong>시험 파일을 먼저 놓고 돌린다.</strong> §3-4-2 의 블록을 <code>scripts/lidar_lab/tests/test_lines.py</code> 로 그대로 둔다. 지금 돌리면 <strong>벡터 1에서 멈춘다.</strong> 하나를 통과시킬 때마다 다음 실패로 넘어가고, <strong>그 순서가 곧 채울 순서</strong>다.</li>
+        <li><strong><code>point_line_distance</code> 를 채운다</strong>(벡터 1~4). 밑변 길이를 <strong>먼저</strong> 구해 놓고 0 인 경우를 처리한 다음에 나눈다. 순서를 거꾸로 하면 벡터 3 에서 <code>ZeroDivisionError</code> 가 난다.</li>
+        <li><strong><code>Segment.normal</code> 을 채운다</strong>(벡터 18·19). §2-5-2 의 규약 한 줄이다. <strong>부호를 반대로 써도 벡터가 잡는다</strong> — 그래서 규약을 쪽이 못박았다.</li>
+        <li><strong><code>fit_lines</code> 를 채운다</strong>(벡터 5~13). 네 걸음으로 쪼개서 생각한다 — ① 조각이 점 두 개 미만이면 무엇을 하는가 ② 안쪽 점 중 가장 먼 것을 어떻게 찾는가 ③ 자를 것인가 말 것인가를 무엇으로 판정하는가 ④ 자르기로 했으면 <strong>두 조각의 경계 인덱스</strong>를 어떻게 넘기는가.
+          <br>힌트 하나: <strong>가장 먼 점은 양쪽 조각에 모두 들어간다.</strong> 한쪽에서 빼면 선분 둘이 이어지지 않고, 벡터 7 이 그것을 잡는다.
+          <br>힌트 둘: <strong><code>&gt;</code> 인가 <code>&gt;=</code> 인가</strong>를 의식하고 쓴다. 벡터 6 은 가장 먼 거리가 <strong>정확히 문턱과 같은</strong> 경우이고, 오직 이 한 글자만 채점한다.
+          <br>힌트 셋: 길이 0 인 선분을 내보내지 않는 줄은 <strong>내보내기 직전</strong>에 둔다(벡터 12). 재귀 안쪽에 두면 조각이 사라지면서 이웃이 어긋난다.</li>
+        <li><strong><code>corners</code> 를 채운다</strong>(벡터 14~17). 각도를 <strong>먼저</strong> 보고 거르면, 나누기 전에 거의 평행한 짝이 사라져 있다. 각도를 <code>[0, 90]</code> 으로 접는 줄을 빼먹으면 같은 벽의 두 조각이 <strong>서로 반대 방향으로 적혀 있을 때 사이각이 179°</strong> 로 나와 문턱을 그냥 통과한다 — 그러면 §2-5-1 의 유령 코너가 그대로 살아난다. 벡터 17 이 그것을 잡는다.</li>
+        <li><strong>스물네 개가 다 통과할 때까지 실물 파일로 가지 않는다.</strong> 여기까지는 기록 파일도 필요 없다.</li>
+      </ol>
+      <p class="small">막히는 자리는 대개 <strong>재귀를 어떻게 적느냐</strong>지 <strong>식이 아니다.</strong> 식은 §2-2 에 다 있다. 재귀가 어려우면 <strong>목록 하나에 "아직 안 본 조각"을 쌓아 두고 꺼내 처리하는 반복문</strong>으로 써도 결과는 같다 — 벡터는 방법을 묻지 않는다. 다만 그때는 <strong>불변식 6(선분 순서)</strong> 를 스스로 지켜야 한다. 재귀로 쓰면 그것이 공짜로 따라온다.</p>
+
+      <h4 id="s3-1-4">3-1-4. 돌리고 보기</h4>
+      <pre><code class="lang-bash">pi$ python3 scripts/lidar_lab/lines.py scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl</code></pre>
+      <p>출력의 모양은 이렇다(값은 <code>&lt;n&gt;</code>). 한 줄이 선분 하나다.</p>
+      <pre><code class="lang-text">cluster 0: &lt;n&gt; points
+  seg 0  (&lt;x&gt;, &lt;y&gt;) - (&lt;x&gt;, &lt;y&gt;)  len &lt;n&gt; m  n=&lt;n&gt;  worst &lt;n&gt; m
+  seg 1  (&lt;x&gt;, &lt;y&gt;) - (&lt;x&gt;, &lt;y&gt;)  len &lt;n&gt; m  n=&lt;n&gt;  worst &lt;n&gt; m
+cluster 1: &lt;n&gt; points
+  seg 0  ...
+total: &lt;n&gt; segments from &lt;n&gt; points</code></pre>
+      <p>읽을 것은 넷이다. <strong>노트에 표로 적는다.</strong></p>
+      <ol class="steps">
+        <li><strong>선분 개수</strong>와 <strong>방의 실제 벽 개수.</strong> 방을 둘러보고 라이다 높이에서 보이는 <strong>평평한 면</strong>을 센다 — 벽 넷이어도 가구가 가리면 면은 여섯일 수 있고, 문이 열려 있으면 하나가 통째로 없을 수 있다. <strong>두 수가 다른 것이 정상이다.</strong> 다른 이유를 한 줄로 적는 것이 이 실습의 결과다.</li>
+        <li><strong>선분 길이</strong>를 큰 것부터 셋. 가장 긴 것이 내 방에서 가장 긴 벽과 비슷한가.</li>
+        <li><strong>가장 큰 잔차</strong>(<code>worst</code>) — 벽이라고 확신하는 선분 하나를 골라 그 수를 적는다. <strong>이것이 §3-1-1 대조 표의 ④</strong> 이고, §2-4-1 이 말한 <strong>내 문턱의 하한</strong>이다.</li>
+        <li><strong><code>n</code> 의 합과 입력 점 수.</strong> 선분들이 대표하는 점 수를 다 더하면 원래 점 수보다 <strong>조금 많아야 한다</strong> — 자른 자리의 점이 양쪽에 한 번씩 들어가기 때문이다(불변식 3). 오히려 <strong>적으면</strong> 어딘가에서 점을 흘리고 있다.</li>
+      </ol>
+      <p>그리고 <code>tol</code> 을 <strong>두 배와 절반</strong>으로 바꿔 각각 한 번씩 더 돌린다. 선분 개수가 어떻게 움직이는지 세 줄로 적는다. 아직 "좋은 값"을 고르지 않는다 — 고르는 것은 §3-3 뒤다.</p>
+      <div class="callout why"><span class="ct">예상과 다르게 나오는 것이 흔하다 — 그것도 닫힌다</span>
+        <p>선분이 <strong>하나도 안 나올</strong> 수 있다(덩어리가 점 두 개 미만으로 잘게 쪼개졌다 — l-10 의 문턱으로 돌아간다). 벽 하나가 <strong>선분 일곱 개</strong>로 나올 수도 있다(문턱이 내 센서의 산포보다 작다 — §2-4-1).
+        <strong>둘 다 유효한 관찰이고 체크 항목을 닫는다.</strong> 이 쪽의 항목은 "예상한 것을 봤는가"가 아니라 <strong>"무엇이 일어났는지 적었는가"</strong> 다.</p>
+      </div>
+
+      <h3 id="s3-2">3-2. 실습 B — 코너를 내어 줄자와 견준다 <span class="tag sim">기록 파일</span></h3>
+
+      <h4 id="s3-2-1">3-2-1. 확인 — 줄자로 잴 수 있는 것과 없는 것을 먼저 가른다</h4>
+      <p>코너 좌표는 <code>(x, y)</code> 이고 그 원점은 <strong>센서</strong>다(l-08 이 세운 좌표계). 그런데 줄자를 들고 방에 서면 <strong>센서가 정확히 어디에 있었는지</strong>가 곧바로 문제가 된다 — 몇 cm 어긋난 자리에서 재면 그만큼 통째로 틀린 값이 나오고, 그것은 <strong>내 선분이 나쁜 것이 아니다.</strong></p>
+      <p>그래서 이 실습은 <strong>좌표를 견주지 않고 코너 사이의 거리를 견준다.</strong></p>
+      <div class="callout why"><span class="ct">왜 거리인가 — 원점을 몰라도 되는 양이기 때문이다</span>
+        <p>코너 두 개 사이의 거리는 <strong>벽 하나의 길이</strong>이고, 좌표계를 통째로 옮기거나 돌려도 <strong>변하지 않는다.</strong> 줄자는 벽을 따라 대기만 하면 된다 — 센서가 어디 있었는지 몰라도 된다.
+        반대로 좌표 하나하나를 견주려면 <strong>센서의 위치와 0° 방향</strong>을 둘 다 알아야 하고, 그 둘은 이 쪽의 관심사가 아니다(07 §3-9-1 이 0° 방향을 소유하고, 장착 실측은 <strong><a href="09a-assembly-gate.html">09a</a></strong> 의 몫이다).</p>
+        <p>덤으로 이것이 <a href="l-14-alignment.html">l-14</a> 의 예고편이다 — <strong>좌표계를 모르고도 견줄 수 있는 양</strong>이 있다는 것이 두 스캔을 맞대는 일의 출발점이다.</p>
+      </div>
+      <div class="callout warn"><span class="ct">코너를 <strong>어느 선분 목록</strong>에서 내는가 — 먼저 정하고 시작한다</span>
+        <p><code>corners()</code> 는 <strong>이웃한 짝 <code>(i, i+1)</code> 만</strong> 본다(§3-1-2 불변식 1). 그래서 <strong>무엇을 한 목록으로 넘기느냐</strong>가 나오는 코너를 통째로 바꾼다.</p>
+        <p><strong>이 실습은 덩어리 하나씩 따로 넘긴다.</strong> 그러면 코너는 <strong>두 벽이 같은 덩어리 안에 들어온 자리에서만</strong> 나온다 — 문이 열려 있거나 두 벽 사이에 의자가 있으면 l-10 이 거기서 덩어리를 끊었으므로 <strong>그 귀퉁이는 안 나온다.</strong> 방 귀퉁이 넷 중 하나만 나올 수도 있고 하나도 안 나올 수도 있다. <strong>그것이 정상이고, 몇 개가 나왔는지를 적는 것이 이 실습의 결과다</strong>(A·B·C·D 는 <em>나온 만큼</em> 이름 붙인다).</p>
+        <p>⚠ <strong>덩어리를 전부 이어 붙여 한 목록으로 넘기면</strong> 코너가 더 나오는 것처럼 보이지만, 그때는 <strong>덩어리 A 의 마지막 선분과 덩어리 B 의 첫 선분이 "이웃"이 된다</strong> — 방의 서로 다른 자리에 있는 두 벽이 짝지어져 §2-5-1 의 유령 코너가 <strong>이음매마다</strong> 생긴다. 해 봐도 되지만 <strong>해 봤다면 그 개수를 따로 적는다.</strong> 불변식 1 이 막으려던 것이 바로 그것이다.</p>
+      </div>
+      <p>준비는 둘이다. ① 기록 파일을 뜬 그 방에서 <strong>줄자를 댈 벽 두세 개</strong>를 고른다(코너가 양쪽에 다 잡혀야 길이가 나온다). ② §2-5-1 의 사이각 문턱을 <strong>세 값</strong> 정한다 — 작은 것 하나, 중간 하나, 큰 것 하나. 값은 내가 고르고, 고른 이유를 한 줄 적는다.</p>
+
+      <h4 id="s3-2-2">3-2-2. 채울 표</h4>
+      <p>표 둘이다. 첫째는 사이각 문턱을 바꿔 가며 코너가 몇 개 나오는지, 둘째는 그중 한 값으로 낸 코너를 줄자와 견주는 표다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th><code>min_angle_deg</code></th><th>코너 개수</th><th>그중 방 밖·센서 뒤에 찍힌 것</th><th>놓친 것(내가 아는 실제 귀퉁이인데 안 나온 것)</th></tr></thead>
+        <tbody>
+          <tr><td><code>____</code>(작게)</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td><code>____</code>(중간)</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td><code>____</code>(크게)</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+        </tbody>
+      </table></div>
+      <div class="tbl"><table>
+        <thead><tr><th>코너 쌍</th><th>도구가 낸 거리 [m]</th><th>줄자 [m]</th><th>차 [m]</th><th>차 ÷ 줄자 [%]</th></tr></thead>
+        <tbody>
+          <tr><td>A–B</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td>B–C</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td>C–D</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+        </tbody>
+      </table></div>
+      <p>그리고 <strong>합격선 한 줄</strong>: 나는 차가 <code>____</code> 이내면 맞다고 보겠다. 그렇게 정한 이유는 <code>____</code>.
+      <span class="small">이 가이드는 이 수를 정해 주지 않는다. §2-4-1 의 사양 두 줄(<code>&lt;1% of the distance</code>)과 §3-1-4 에서 잰 내 잔차가 근거로 쓸 수 있는 전부이고, <strong>줄자를 대는 내 손의 오차도 그 안에 들어 있다.</strong></span></p>
+
+      <h4 id="s3-2-3">3-2-3. 채우기</h4>
+      <ol class="steps">
+        <li><strong>사이각 문턱 세 값으로 세 번 돌린다.</strong> 코너 좌표를 전부 화면에 찍고, <strong>방 밖이나 센서 뒤(원점 반대쪽)에 찍힌 것</strong>을 세어 첫 표에 적는다. §2-5-1 의 둘째 줄이 그것이다.</li>
+        <li><strong>한 값을 골라</strong> 그것으로 낸 코너에 A·B·C·D 이름을 붙인다. 그림으로 그려 두면 다음 걸음이 쉽다 — 종이에 대충 방을 그리고 코너를 찍는다.</li>
+        <li><strong>코너 사이 거리를 계산한다.</strong> 두 좌표의 차로 피타고라스를 쓴다. 손으로 해도 되고 <code>python3</code> 한 줄이어도 된다.</li>
+        <li><strong>줄자를 댄다.</strong> 벽을 따라 <strong>라이다가 본 높이에서</strong> 잰다 — 바닥의 걸레받이는 벽보다 몇 cm 앞으로 나와 있고, 라이다가 그 높이를 봤다면 값이 그만큼 다르다. <strong>어느 높이에서 쟀는지 적어 둔다.</strong></li>
+        <li><strong>차와 백분율을 채운다.</strong> 그리고 합격선 한 줄을 <strong>표를 다 채운 뒤에</strong> 적는다 — 먼저 적으면 그 수에 맞춰 재게 된다.</li>
+      </ol>
+
+      <h4 id="s3-2-4">3-2-4. 보고 판정하기</h4>
+      <p>표 둘을 놓고 세 가지를 묻는다.</p>
+      <ol class="steps">
+        <li><strong>사이각 문턱을 키우면 무엇이 사라졌는가.</strong> 방 밖의 유령 코너만 사라졌는가, 아니면 <strong>진짜 귀퉁이도 같이</strong> 사라졌는가. 둘 다 사라졌다면 그 두 값 사이 어딘가가 내 방의 답이다.</li>
+        <li><strong>차가 큰 벽과 작은 벽이 갈리는가.</strong> 갈린다면 <strong>먼 벽 쪽이 더 큰지</strong> 본다 — 그렇다면 §2-4-1 의 "정밀도가 거리에 비례한다"가 내 방에서 보인 것이다.</li>
+        <li><strong>차의 부호가 한쪽으로 쏠리는가.</strong> 도구가 낸 값이 <strong>늘 크거나 늘 작으면</strong> 그것은 산포가 아니라 <strong>계통 오차</strong>다 — 원인이 센서의 거리 눈금일 수 있고, 그 눈금을 줄자 여러 점으로 재는 것은 <a href="l-17-acceptance.html">l-17</a> 의 일이다. 여기서는 <strong>쏠렸다는 사실만 적어 둔다.</strong></li>
+      </ol>
+      <p>줄자가 없으면 이 실습은 닫히지 않는다 — <strong>그대로 두고 넘어간다.</strong> 코너 개수 표(첫 표)만 채워도 §3-3 과 §3-4 는 전부 돈다.</p>
+
+      <h3 id="s3-3">3-3. 실습 C — 문턱을 키워 굽은 것을 직선으로 먹인다 (코드 없음) <span class="tag sim">기록 파일</span></h3>
+      <p>여기서 일부러 <strong>틀린 답</strong>을 만든다. 내 도구가 <strong>원통을 벽이라고 말하게</strong> 하는 것이 이 실습의 목표다. 예측 → 실행 → 대조 순서로 한다 — <strong>예측을 먼저 적지 않으면 관찰이 아니라 사후 설명이 된다.</strong></p>
+
+      <h4 id="s3-3-1">3-3-1. 확인 — 굽은 것 하나를 고르고 재 둔다</h4>
+      <p>기록 파일에 <strong>굽은 물체</strong>가 들어 있어야 한다. 원통 쓰레기통 · 기둥 · 의자 등받이 · 사람 몸통 중 하나면 된다. 없으면 지금 하나를 라이다 앞에 두고 파일을 한 장 더 뜬다(<a href="l-04-one-turn.html#s3-4">l-04 §3-4</a>).</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>재 둘 것</th><th>어떻게</th><th>내 값</th></tr></thead>
+        <tbody>
+          <tr><td>반지름 <code>R</code></td><td>줄자로 지름을 재고 반으로 나눈다</td><td><code>____</code> m</td></tr>
+          <tr><td>라이다가 본 현 길이 <code>L</code></td><td>그 물체의 덩어리에서 <strong>양 끝점 사이 거리</strong>(§3-1-4 의 출력에 있다)</td><td><code>____</code> m</td></tr>
+          <tr><td>예상 사지타 <code>s</code></td><td><code>s = R - sqrt(R^2 - (L/2)^2)</code> (§2-4-2)</td><td><code>____</code> m</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-3-2">3-3-2. 채울 표</h4>
+      <p>가로줄은 내가 정한다. <strong><code>s</code> 를 가운데 두고</strong> 그 아래 둘·위 둘을 고르면 갈리는 지점이 표 안에 들어온다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th><code>tol</code> [m]</th><th>예측: 이 물체가 선분 몇 개?</th><th>실제 선분 개수</th><th>같은 파일의 <strong>벽</strong>은 선분 몇 개?</th><th>맞았나 · 틀렸으면 무엇이 달랐나</th></tr></thead>
+        <tbody>
+          <tr><td><code>____</code> (s 의 1/4쯤)</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td><code>____</code> (s 의 1/2쯤)</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td><code>____</code> (s 바로 아래)</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td><code>____</code> (s 바로 위)</td><td><strong>1 개</strong> — 먹힌다</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+          <tr><td><code>____</code> (s 의 2배쯤)</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-3-3">3-3-3. 채우기</h4>
+      <ol class="steps">
+        <li><strong>예측 열을 먼저 다 채운다.</strong> §2-4-2 의 식이 근거다. <strong>실행하기 전에</strong> 채운다.</li>
+        <li><strong><code>tol</code> 을 바꿔 가며 다섯 번 돌린다.</strong> 매번 굽은 물체의 덩어리와 <strong>벽 하나</strong>를 같이 본다 — 벽 열을 두는 이유는 §3-3-4 에 있다.</li>
+        <li><strong>먹힌 순간의 그림을 남긴다.</strong> 선분의 양 끝점을 종이에 찍고 물체의 실제 모양을 그 위에 겹쳐 그린다. <strong>가장 크게 틀린 자리가 얼마나 벗어나 있는지</strong>를 눈으로 본다 — 그 거리가 곧 <code>s</code> 다.</li>
+        <li><strong>끝나면 <code>tol</code> 을 원래 값으로 돌려놓는다.</strong> 일부러 틀리게 해 둔 설정을 그대로 두면 다음 쪽에서 나는 이상한 결과의 원인을 라이다에서 찾게 된다.</li>
+      </ol>
+
+      <h4 id="s3-3-4">3-3-4. 보고 판정하기</h4>
+      <p>이 실습이 실제로 묻는 것은 "몇에서 먹히는가"가 아니다. <strong>벽과 굽은 것을 한 문턱으로 동시에 만족시킬 수 있는가</strong>다.</p>
+      <ol class="steps">
+        <li><strong>벽이 한 조각으로 유지되는 가장 작은 <code>tol</code></strong> 을 표에서 읽는다 — 이것이 <strong>아래 한계</strong>다(그보다 작으면 평평한 벽이 조각난다).</li>
+        <li><strong>굽은 것이 아직 먹히지 않는 가장 큰 <code>tol</code></strong> 을 읽는다 — 이것이 <strong>위 한계</strong>다.</li>
+        <li><strong>아래 한계가 위 한계보다 크면</strong> — 내 방에서는 <strong>상수 문턱 하나로 둘을 동시에 만족시킬 수 없다.</strong> 그때 고를 수 있는 것은 셋이다. (가) 굽은 것이 먹히는 것을 받아들인다(벽만 필요한 용도면 손해가 없다). (나) 문턱을 <strong>거리의 함수</strong>로 둔다(§2-4-1 의 사양 둘째 줄이 근거를 준다). (다) 먼 곳을 아예 버린다(최대 거리를 잘라 낸다). <strong>차이가 없는 축</strong>: 셋 다 계산량은 그대로다 — <strong>동일</strong>.</li>
+        <li>내가 고른 것과 그 이유를 <strong>한 줄</strong> 적는다. 그리고 그 결정이 뒤에서 무엇을 뜻하는지도 한 줄 — <strong>먹히기로 한 순간, 도구는 그 자리에 벽이 있다고 말한다.</strong> <a href="l-12-clearance.html">l-12</a> 가 그 말을 받아 "지나갈 수 있다"를 판정한다.</li>
+      </ol>
+      <p class="small">이 쪽의 실습에는 살아 있는 센서가 없다(기록 파일만 읽는다). 라이다를 다시 켜서 파일을 새로 뜨는 경우에는 <a href="l-01-link.html">l-01</a> 이 소유한 규칙 — 보이지 않는 785 nm 광원과 도는 머리 — 이 그대로 적용된다.</p>
+
+      <h3 id="s3-4">3-4. 실습 D — 벡터 스물넷으로 채점한다 <span class="tag sim">기록 파일</span></h3>
+      <p>이 실습은 <strong>A 를 시작할 때 이미 시작된다</strong>(§3-1-3 2번). 여기 모아 둔 이유는 벡터가 <strong>네 함수를 한꺼번에</strong> 채점하기 때문이고, 순서대로 읽으면 이 쪽이 요구하는 것이 무엇인지가 한눈에 보이기 때문이다.</p>
+
+      <h4 id="s3-4-1">3-4-1. 확인 — 자리와 이름</h4>
+      <p><strong>실행 확인:</strong> 2026-09-23 집필자의 Mac 에서 — 아래 시험 파일을 <strong>독립 구현과 함께 실제로 돌려</strong> <code>PASS lines 24 cases</code> 를 확인했다. 기댓값은 전부 그 실행이 낸 것이고 눈대중이 아니다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><code>pi$ ls scripts/lidar_lab/tests/</code></td><td><code>test_point.py  test_turn.py  …</code> — 앞 쪽들이 만든 시험이 이미 있다</td><td><code>tests/</code> 가 없으면 만든다. 앞 쪽의 시험이 없어도 이 쪽은 혼자 돈다</td></tr>
+          <tr><td>2</td><td><code>pi$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_lines.py</code></td><td>골격 그대로면 <code>FAIL 1 1 distance to a horizontal line: got 0.0, want 1.0</code></td><td><code>ModuleNotFoundError: No module named 'lines'</code> 면 파일 이름이나 자리가 다르다. 시험 파일은 <code>tests/</code> 안, <code>lines.py</code> 는 그 <strong>부모</strong>에 있어야 한다</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">⚠ <strong>자기시험만 예외적으로 <code>cd</code> 한다.</strong> 다른 도구는 전부 저장소 뿌리에서 <code>python3 scripts/lidar_lab/lines.py</code> 로 돌린다 — 앞 쪽들이 정한 꼴이고 이유는 <a href="l-01-link.html">l-01</a> 이 적었다(<code>python3 -m</code> 꼴을 쓰면 형제 <code>cmd.py</code> 대신 표준 라이브러리가 잡힌다).</p>
+
+      <h4 id="s3-4-2">3-4-2. 시험 파일 — 전량</h4>
+      <p class="small">이 블록은 전량 제공이다 — 이유: <strong>벡터가 곧 채점표</strong>이고 내 답을 내가 채점할 수는 없다. 벡터가 조금이라도 다르면 무엇이 통과했는지가 달라져 §2-2 · §2-5 에서 도출한 규칙이 <strong>채점되지 않은 채로</strong> 남는다. 기댓값의 출처는 <strong>파일 머리에 한 줄씩</strong> 적혀 있고, 숫자는 전부 집필자의 독립 구현이 낸 것이다.</p>
+      <p>먼저 <strong>이 파일이 <code>Cluster</code> 를 쓰지 않는다</strong>는 것을 봐 둔다. 전부 그냥 <code>(x, y)</code> 목록이다 — 이웃 쪽의 클래스에 기대면 그 쪽이 바뀔 때 내 채점표가 같이 흔들린다.</p>
+      <pre><code class="lang-python"># scripts/lidar_lab/tests/test_lines.py -- grading vectors for lines.py.
+# Standard library only. No lidar, no file, no ROS: every function under test is pure.
+#   pi$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_lines.py
+# The vectors pass PLAIN LISTS of (x, y), never l-10's Cluster -- this file must not
+# depend on a sibling page's class.
+# Sources of the expected numbers:
+#   1,4        : exact by construction (distance 1 from a horizontal line / point on it)
+#   2          : 1/sqrt(2) -- python3: abs(1*0-1*1)/math.hypot(1,1) = 0.7071067811865475
+#   3          : degenerate a==b -&gt; math.hypot(3-1, 4-1) = 3.605551275463989
+#   5..13      : segment COUNTS produced by an independent split-and-merge run (2026-09-23)
+#   6 vs 7     : the worst distance of (0.5,0.05) from (0,0)-(1,0) is EXACTLY 0.05,
+#                so tol=0.05 must not cut and tol=0.02 must -- this pins &gt; against &gt;=
+#   8          : one bump makes FOUR segments, not two: after the first cut each half
+#                still has an inner point 0.0248... off its own chord (&gt; 0.02)
+#   14,16      : intersections computed with python3 (2026-09-23): (1.0, 0.0) and (-0.95, 0.0)
+#   15         : the angle between (0,0)-(1,0) and (1.05,0.02)-(2.05,0.03) is
+#                0.5729386976826285 deg, so a 30 deg floor rejects the pair
+#   17         : the SAME pair with the second segment reversed: the raw angle is
+#                179.42706130231738 deg, so a floor applied without folding into
+#                [0, 90] lets it through and puts a ghost corner at (-0.95, 0.0)
+#   18,19      : the fixed convention of 2-5-2, (-dy, dx)/length
+import math
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from lines import point_line_distance, fit_lines, corners, Segment   # noqa: E402
+
+N = 0
+
+
+def check(name, got, want):
+    global N
+    N += 1
+    if isinstance(want, float):
+        ok = isinstance(got, (int, float)) and abs(got - want) &lt;= 1e-9
+    elif isinstance(want, tuple):
+        ok = (isinstance(got, (tuple, list)) and len(got) == len(want)
+              and all(abs(g - w) &lt;= 1e-9 for g, w in zip(got, want)))
+    else:
+        ok = got == want
+    if not ok:
+        print("FAIL %d %s: got %r, want %r" % (N, name, got, want))
+        sys.exit(1)
+
+
+def ends(seg):
+    return (seg.p0[0], seg.p0[1], seg.p1[0], seg.p1[1])
+
+
+LINE5 = [(0.0, 0.0), (0.25, 0.0), (0.5, 0.0), (0.75, 0.0), (1.0, 0.0)]
+BUMP3 = [(0.0, 0.0), (0.5, 0.05), (1.0, 0.0)]
+BUMP5 = [(0.0, 0.0), (0.25, 0.0), (0.5, 0.05), (0.75, 0.0), (1.0, 0.0)]
+ELL = [(0.0, 0.0), (0.5, 0.0), (1.0, 0.0), (1.0, 0.5), (1.0, 1.0)]
+</code></pre>
+      <p>아래가 벡터 본문이다. <strong>위에서 아래로가 곧 채울 순서</strong>이고, 실패 메시지의 첫 숫자가 몇 번째 검사인지, 둘째가 벡터 번호다.</p>
+      <pre><code class="lang-python">check("1 distance to a horizontal line", point_line_distance((0.0, 1.0), (0.0, 0.0), (1.0, 0.0)), 1.0)
+check("2 distance to a 45 deg line", point_line_distance((1.0, 0.0), (0.0, 0.0), (1.0, 1.0)), 0.7071067811865475)
+check("3 degenerate a == b", point_line_distance((3.0, 4.0), (1.0, 1.0), (1.0, 1.0)), 3.605551275463989)
+check("4 point lies on the line", point_line_distance((0.5, 0.0), (0.0, 0.0), (1.0, 0.0)), 0.0)
+
+s = fit_lines(LINE5, 0.01)
+check("5a straight line -&gt; one segment", len(s), 1)
+check("5b it spans the whole cluster", ends(s[0]), (0.0, 0.0, 1.0, 0.0))
+check("5c it stands for all five points", s[0].n, 5)
+check("6 worst == tol is NOT a cut", len(fit_lines(BUMP3, 0.05)), 1)
+s = fit_lines(BUMP3, 0.02)
+check("7a worst &gt; tol cuts once", len(s), 2)
+check("7b the two halves share the cut point", (s[0].p1[0], s[0].p1[1], s[1].p0[0], s[1].p0[1]), (0.5, 0.05, 0.5, 0.05))
+check("8 one bump, four segments", len(fit_lines(BUMP5, 0.02)), 4)
+s = fit_lines(ELL, 0.02)
+check("9a right angle -&gt; two segments", len(s), 2)
+check("9b cut at the corner point", ends(s[0]), (0.0, 0.0, 1.0, 0.0))
+check("10 two points are already a segment", len(fit_lines([(0.0, 0.0), (1.0, 0.0)], 0.02)), 1)
+check("11 one point is not a segment", len(fit_lines([(0.0, 0.0)], 0.02)), 0)
+check("12 identical points emit nothing", len(fit_lines([(2.0, 2.0)] * 3, 0.02)), 0)
+check("13 empty cluster", len(fit_lines([], 0.02)), 0)
+
+c = corners(s, 30.0)
+check("14a right angle gives one corner", len(c), 1)
+check("14b at the meeting point", tuple(c[0]), (1.0, 0.0))
+NEAR = [Segment((0.0, 0.0), (1.0, 0.0)), Segment((1.05, 0.02), (2.05, 0.03))]
+check("15 near parallel is rejected at 30 deg", corners(NEAR, 30.0), [])
+c = corners(NEAR, 0.1)
+check("16 and this is why: the ghost lands behind the sensor", tuple(c[0]), (-0.95, 0.0))
+REV = [Segment((0.0, 0.0), (1.0, 0.0)), Segment((2.05, 0.03), (1.05, 0.02))]
+check("17 the same pair traversed backwards is still near parallel", corners(REV, 30.0), [])
+check("18 normal of a horizontal segment", Segment((0.0, 0.0), (1.0, 0.0)).normal(), (0.0, 1.0))
+check("19 normal of a vertical segment", Segment((0.0, 0.0), (0.0, 1.0)).normal(), (-1.0, 0.0))
+
+print("PASS lines %d cases" % N)
+</code></pre>
+
+      <h4 id="s3-4-3">3-4-3. 돌린다</h4>
+      <pre><code class="lang-bash">pi$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_lines.py
+PASS lines 24 cases</code></pre>
+      <p>통과하지 못한 벡터가 있었다면 <strong>몇 번이 무엇을 냈는지</strong>도 노트에 적는다. 그것이 내 구현이 어느 규칙을 안 지키고 있었는지의 기록이고, <a href="l-16-node.html">l-16</a> 이 같은 벡터를 C++ 에 먹일 때 다시 쓰인다.</p>
+
+      <h4 id="s3-4-4">3-4-4. 벡터가 무엇을 잡는지 확인한다</h4>
+      <p>통과한 뒤에 <strong>한 걸음 더</strong> 간다 — 내 코드를 일부러 한 글자씩 틀리게 해 보고 <strong>어느 벡터가 그것을 잡는지</strong> 확인한다. 아래 넷은 집필자가 실제로 만들어 돌려 본 것이고, 괄호 안이 그때 나온 줄이다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>한 글자를 이렇게 바꾸면</th><th>무엇이 조용히 틀리는가</th><th>잡는 벡터 (실제 출력)</th></tr></thead>
+        <tbody>
+          <tr><td><code>worst &gt; tol</code> → <code>worst &gt;= tol</code></td><td>문턱과 <strong>정확히 같은</strong> 잔차에서 한 번 더 자른다. 벽 하나가 조각나는 자리가 미묘하게 달라진다</td><td><code>FAIL 8 6 worst == tol is NOT a cut: got 2, want 1</code></td></tr>
+          <tr><td>법선의 부호를 반대로</td><td>면이 보는 방향이 통째로 뒤집힌다. <strong>l-12 에서 벽을 향해 도는 판정</strong>이 된다</td><td><code>FAIL 23 18 normal of a horizontal segment: got (0.0, -1.0), want (0.0, 1.0)</code></td></tr>
+          <tr><td>길이 0 선분을 걸러 내는 줄을 뺀다</td><td>같은 자리의 점만 있는 덩어리가 <strong>선분 하나</strong>가 되고, <code>normal()</code> 이 0 으로 나눈다</td><td><code>FAIL 16 12 identical points emit nothing: got 1, want 0</code></td></tr>
+          <tr><td>사이각을 <code>[0, 90]</code> 으로 접지 않는다</td><td>같은 벽의 두 조각이 <strong>반대 방향</strong>으로 적혀 있으면 179° 가 되어 문턱을 그냥 통과한다 — §2-5-1 의 유령 코너가 살아난다</td><td><code>FAIL 22 17 the same pair traversed backwards is still near parallel: got [(-0.95, 0.0)], want []</code></td></tr>
+        </tbody>
+      </table></div>
+      <p>⚠ 반대로 <strong>벡터가 못 잡는 것</strong>도 하나 확인해 두었다. 가장 먼 점을 찾는 범위를 <strong>끝점까지 넓혀도</strong> 스물네 개가 그대로 통과한다(집필자가 돌려 봤다, 2026-09-23). §2-2-1 이 적은 대로 <strong>그것은 헛일일 뿐 틀린 것이 아니기 때문</strong>이다. <strong>시험을 통과했다는 것은 "틀린 데가 없다"가 아니라 "이 스물네 가지에 대해 옳다"는 뜻이다.</strong> 끝나면 고쳐 놓은 것을 <strong>되돌린다.</strong></p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.
+      ⚠ 이 쪽의 항목은 "<strong>예상한 것을 봤는가</strong>"가 아니라 "<strong>무엇이 일어났는지 적었는가</strong>"로 쓰여 있다 — 선분이 하나도 안 나온 것도, 벽 하나가 일곱 조각이 난 것도 그 항목을 닫는다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="lines-selftest-pass"><span><strong>경로 통과</strong> — <code>python3 tests/test_lines.py</code> 의 마지막 줄이 <code>PASS lines 24 cases</code> 다. 도중에 실패한 벡터가 있었다면 <strong>몇 번이 무엇을 냈는지</strong>도 적었다. 그리고 §3-4-4 의 네 가지 중 <strong>적어도 하나</strong>를 직접 틀리게 만들어 어느 벡터가 잡는지 보고 <strong>되돌려 놓았다</strong>
+          <span class="sub">판정 수단: 자기시험 출력 · §3-4-3 · §3-4-4 · 라이다도 기록 파일도 없이 닫힌다 · 이 스물넷은 식이 아니라 <strong>경계와 부호와 순서</strong>를 채점한다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="wall-lines-extracted"><span><strong>경로 통과</strong> — 내 기록 파일에서 나온 <strong>선분 개수와 길이</strong>를 적었고, 그것을 <strong>방에서 라이다 높이에 보이는 평평한 면의 수</strong>와 나란히 놓고 <strong>다르면 왜 다른지</strong>를 한 줄 적었다. 벽이라고 확신하는 선분 하나의 <strong>가장 큰 잔차</strong>도 적었다(그것이 §3-1-1 대조 표의 ④다)
+          <span class="sub">판정 수단: 내 도구의 출력 · §3-1-4 · <strong>합격선 없음</strong> — 선분 수가 벽 수와 같아야 한다는 규칙은 없다. <code>tol</code> 두 배·절반의 세 줄도 함께 적었는가</span></span></label></li>
+        <li><label><input type="checkbox" data-key="corners-match-tape"><span><strong>경로 통과</strong> — 사이각 문턱 <strong>세 값</strong>으로 코너 개수와 <strong>방 밖·센서 뒤에 찍힌 개수</strong>를 적었고, 그중 한 값으로 낸 <strong>코너 사이 거리</strong>를 줄자 값과 견주어 차와 백분율을 적었다. <strong>합격선은 표를 다 채운 뒤에 내가 정해 적었다</strong>. 코너가 <strong>둘 미만</strong>만 나왔으면 거리 대조는 열어 두고 <strong>몇 개가 왜 안 나왔는지</strong>를 적는 것으로 대신했다
+          <span class="sub">판정 수단: 줄자 · §3-2-2 의 표 둘 · §3-2-4 · <strong>합격선 없음</strong>(내가 정한다) · 줄자가 없으면 <strong>첫 표만 채우고 열어 둔다</strong> — 그래도 다음 쪽으로 간다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="line-fit-eats-curve"><span><strong>발동 확인</strong> — <code>tol</code> 을 키워 <strong>굽은 것이 직선 하나가 되는 것</strong>을 실제로 만들었고, §2-4-2 의 식으로 미리 적은 <strong>예측과 실제가 맞았는지</strong>를 표에 적었다. 그리고 같은 파일의 <strong>벽</strong>이 그 문턱에서 어떻게 되는지도 같이 적어, <strong>아래 한계와 위 한계가 겹치는지 아닌지</strong>를 판정하고 <code>tol</code> 을 되돌려 놓았다
+          <span class="sub">판정 수단: 내 도구의 출력 다섯 벌 · §3-3-2 의 표 · 종이에 겹쳐 그린 그림 · §3-3-4 · <strong>예측이 틀린 것도 이 항목을 닫는다</strong> — 무엇이 달랐는지를 적으면 된다</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td>선분이 <strong>0 개</strong>다</td><td>골격의 <code>return []</code> 가 그대로다 / 또는 <code>cluster</code> 에서 점 목록을 꺼내는 한 줄이 아직 비어 있다</td><td>벡터 5 가 걸리면 앞의 경우다. 벡터는 다 통과하는데 실물에서만 0 이면 <strong>꺼내는 한 줄</strong>이다</td><td>§3-1-2 의 첫 <code>TODO(you)</code></td></tr>
+          <tr><td>선분이 <strong>전혀 안 나오는데 벡터는 통과</strong>한다</td><td>덩어리가 점 두 개 미만으로 잘게 쪼개졌다. <strong>이 쪽이 아니라 앞 쪽의 문턱 문제</strong>다</td><td>§3-1-1 의 3번 — 덩어리마다 점이 몇 개인가</td><td>l-10 의 분할 문턱</td></tr>
+          <tr><td>벽 하나가 <strong>선분 여러 개</strong>로 나온다</td><td><code>tol</code> 이 내 센서의 거리 산포보다 작다. <strong>오류가 아니라 선언의 결과</strong>다</td><td>§3-1-4 의 <code>worst</code> 와 <code>tol</code> 을 견준다. 사양은 <code>&lt;1% of the distance</code>(rev.2.2 p.8 Fig 2-1)</td><td>§2-4-1 — 문턱을 올리거나 거리의 함수로 둔다</td></tr>
+          <tr><td>선분 <code>n</code> 의 합이 입력 점 수보다 <strong>적다</strong></td><td>자른 자리의 점을 한쪽에만 넣었다. 선분들이 <strong>이어지지 않는다</strong></td><td>벡터 <strong>7b</strong> 가 잡는다 — 두 조각의 끝점이 같은 점인가</td><td>§3-1-2 불변식 3</td></tr>
+          <tr><td>코너가 <strong>방 밖이나 센서 뒤</strong>에 찍힌다</td><td>거의 평행한 두 조각의 교점이다. <strong>den ≠ 0 이라 걸러지지 않는다</strong></td><td>§2-5-1 의 표 둘째 줄과 같은 모양인지. 벡터 <strong>15 · 16 · 17</strong> 이 채점한다</td><td>§2-5-1 의 사이각 문턱 — <strong>값은 내가 정한다</strong></td></tr>
+          <tr><td>코너가 <strong>하나도 안 나온다</strong></td><td>사이각 문턱이 너무 크다 / 그 덩어리의 선분이 하나뿐이다 / <strong>두 벽이 서로 다른 덩어리에 들어갔다</strong>(코너는 <strong>같은 목록 안의 이웃한 짝</strong>에서만 나온다)</td><td>덩어리마다 선분이 몇 개인가를 먼저 본다. 하나면 그 덩어리의 코너는 원리상 0 이다</td><td>§3-2-1 의 상자 · §3-2-3 1번 — 문턱 세 값으로 돌려 본다</td></tr>
+          <tr><td>줄자와 <strong>한쪽으로 쏠려</strong> 다르다(늘 크거나 늘 작다)</td><td>산포가 아니라 <strong>계통 오차</strong>다. 센서의 거리 눈금일 수도, 줄자를 댄 높이가 다른 것일 수도 있다</td><td>§3-2-4 3번 — 부호가 쏠리는가. 걸레받이 높이에서 쟀는지 다시 본다</td><td>여기서는 <strong>적어 두기만</strong> 한다 — 눈금을 재는 것은 <a href="l-17-acceptance.html">l-17</a></td></tr>
+          <tr><td>굽은 물체가 <strong>문턱을 낮춰도 안 쪼개진다</strong></td><td>그 물체의 점이 애초에 몇 개 없다(멀거나 좁게 보인다). 점 두 개면 언제나 선분 하나다</td><td>§3-1-4 의 <code>n</code> — 그 덩어리의 점 수</td><td>물체를 가까이 놓고 파일을 다시 뜬다 — <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a></td></tr>
+          <tr><td><code>RecursionError: maximum recursion depth exceeded</code></td><td>자르는 자리를 <strong>조각 안의 상대 위치</strong>로 구해 놓고 조각의 시작 위치를 더하지 않았다 — 조각이 줄지 않는다</td><td>§2-2-1 의 마지막 문단. 벡터 <strong>7·8</strong> 에서 난다</td><td>§3-1-3 5번 ④</td></tr>
+          <tr><td>파일이 안 열린다 · 로더가 <code>ValueError</code> 를 낸다</td><td>기준 형식이 아닌 파일이다</td><td>로더가 내는 <strong>줄 번호와 이유</strong> 그대로</td><td><a href="l-04-one-turn.html#s3-4-2">l-04 §3-4-2</a> 가 소유한다. 저장소 전체 공통 증상은 <a href="99-troubleshooting.html">99</a></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. (네 갈래 검색) 이 쪽에서 쓴 <code>resolution</code> 이라는 낱말을 네 군데에서 찾아 적어 보라 — 정의 → 사양 → 구현 → 내 장치. <strong>넷 중 하나는 "없다"가 답이다.</strong></summary>
+        <div class="ans"><p><strong>① 정의 — 없다, 그리고 그것이 답이다.</strong> <code>sensor_msgs/msg/LaserScan</code> 에는 <code>resolution</code> 이라는 필드가 없다. 가장 가까운 것은 <code>angle_increment</code> 인데 그것은 <strong>각도</strong>이고 여기서 말하는 것은 <strong>거리</strong>다. 갈래가 넷 다 열리지 않는 것도 유효한 답이고, "메시지 규약은 이 말을 아예 쓰지 않는다"를 <strong>컨테이너에서 <code>ros2 interface show sensor_msgs/msg/LaserScan</code> 으로 직접 확인</strong>하면 ①이 닫힌다.</p>
+        <p><strong>② 사양 — 조건이 붙은 두 줄이다.</strong> 데이터시트 rev.2.2 p.8 Fig 2-1 의 <code>Distance Resolution</code> 항목은 한 줄이 아니라 두 줄이다: <code>&lt;0.5 mm</code>(조건 <code>&lt;1.5 meters</code>)와 <code>&lt;1% of the distance</code>(조건 <code>All distance range*</code>). <strong>단위도 다르고</strong>(mm ↔ 비율) 조건도 다르다. v3.0 p.8 도 글자까지 같다 — 두 판이 갈리는 곳은 Distance Range 한 줄뿐이다.</p>
+        <p><strong>③ 구현 — 같은 이름, 완전히 다른 양.</strong> 09 §3-2 의 <code>slam_params.yaml</code> 에 <code>resolution: 0.05</code> 가 있다. 이것은 센서의 정밀도가 아니라 <strong>지도 격자 한 칸의 크기</strong>(m/px)이고, <strong>내가 고르는 값</strong>이다. 같은 절이 "너무 작게 하지 마십시오"라고 적는 것이 그 증거다 — 센서 사양이라면 고를 일이 없다.</p>
+        <p><strong>④ 내 장치 — 잔차.</strong> §3-1-4 에서 읽은 벽 선분의 가장 큰 잔차가 "내 장치에서 거리가 얼마나 흔들리는가"의 유일한 실측이다. 이것이 ②보다 클 수 있고 그것이 정상이다 — 내 벽은 완전한 평면이 아니고, 벽지·몰딩·기울기·센서가 놓인 자리가 전부 이 수 안에 들어 있다. <strong>네 갈래를 돌고 나면 얻는 것은 값이 아니라 "이 낱말은 혼자서는 뜻이 없다"는 것</strong>이고, 그래서 §2-4 가 문턱을 "재는 값"이 아니라 <strong>"선언"</strong>이라고 부른다.</p></div></details>
+      <details class="quiz"><summary>2. 점 이백 개를 선분 두 개로 줄이면 <strong>정보가 줄어든다</strong>. 그런데도 줄이는 이유는 무엇인가 — 특히 l-14 의 "내가 얼마나 움직였나"에서</summary>
+        <div class="ans"><p>줄어든 것은 정보의 양이고, 늘어난 것은 <strong>물을 수 있는 질문</strong>이다. 두 스캔을 맞대어 "내가 얼마나 움직였나"를 물으려면 먼저 <strong>어느 점이 어느 점인가</strong>를 정해야 하는데, 점 이백 개와 점 이백 개 사이에는 그 답이 없다 — 같은 벽을 두 번 봐도 <strong>점이 찍히는 자리는 매번 다르다</strong>(회전이 딱 맞아떨어지지 않는다).</p>
+        <p>선분은 다르다. 벽 하나는 어디서 보든 <strong>같은 직선</strong>이고, 두 직선이 같은지는 <strong>거리와 각도</strong>로 물을 수 있다. 대응이라는 어려운 문제가 "선분 둘을 선분 둘에 맞춘다"는 작은 문제가 된다. 코너는 더 세다 — <strong>코너 하나면 위치가 잠긴다.</strong></p>
+        <p>그리고 §3-2 가 그 성질을 미리 한 번 쓴다. 코너 <em>좌표</em>는 센서가 어디 있었는지를 알아야 뜻이 있지만, 코너 <em>사이 거리</em>는 좌표계를 옮기거나 돌려도 변하지 않으므로 <strong>줄자만으로 검산된다.</strong> 좌표계를 몰라도 견줄 수 있는 양이 있다는 것 — 그것이 정합의 출발점이다.</p></div></details>
+      <details class="quiz"><summary>3. 왜 "가장 먼 점"인가. 대신 <strong>잔차의 평균</strong>으로 자를지 말지를 정하면 무엇이 달라지는가</summary>
+        <div class="ans"><p><strong>"가장 먼 점이 문턱 안"은 "모든 점이 문턱 안"과 같은 말</strong>이다. 그래서 통과한 선분에는 <strong>보증</strong>이 붙는다 — 이 선분이 대표하는 점 중 문턱보다 멀리 벗어난 것은 하나도 없다. 평균으로 판정하면 그 보증이 사라진다. 점 이백 개가 거의 다 선 위에 있고 <strong>두 개만 20 cm 튀어나와</strong> 있으면 평균은 거의 0 이라 통과하는데, 그 두 점이 <strong>의자 다리</strong>일 수 있다. 벽이라고 부른 것 안에 벽이 아닌 것이 들어간다.</p>
+        <p>덤으로 <strong>자를 자리가 스스로 정해진다.</strong> 가장 먼 점은 "선에서 가장 벗어난 곳"이고, 벽 둘이 만나는 모서리가 있다면 정확히 거기다 — ㄱ자 점열을 넣으면 꺾인 점에서 잘린다(벡터 9). 평균은 "자를지 말지"만 말하고 <strong>어디서 자를지는 말해 주지 않는다.</strong></p>
+        <p>대신 값을 치른다. 가장 먼 점 하나가 <strong>측정 잡음</strong>일 때도 그 한 점 때문에 잘린다. 그것을 줄이는 것이 문턱이고, 문턱의 아래 한계가 §2-4-1 에서 나온다.</p></div></details>
+      <details class="quiz"><summary>4. 이 쪽은 RANSAC 대신 분할·병합을 쓴다. 그 선택을 <strong>뒤집어야 하는 입력</strong>은 어떤 것인가</summary>
+        <div class="ans"><p>축은 <strong>"점에 순서가 있는가"</strong> 하나다. 분할·병합은 "이웃이 누구인지 안다"를 전제하고, 라이다 한 바퀴에는 그것이 공짜로 있다 — l-04 의 <code>split_turns()</code> 가 각도 오름차순으로 정렬해 두었고 l-10 의 덩어리가 그 순서를 물려받는다. 이미 가진 것을 버리지 않는 쪽을 고른 것이지 <strong>우월해서가 아니다.</strong></p>
+        <p>뒤집어야 하는 입력은 <strong>순서가 없거나 이상치가 많은 것</strong>이다. 여러 바퀴를 한 좌표계에 포개 놓은 점구름에는 "이웃"이 없다 — 시간이 다른 점들이 섞여 있어 이웃한 두 점이 같은 벽의 이웃한 자리라는 보장이 사라진다. 유리·거울에서 오는 유령점이 많이 섞인 입력도 마찬가지다: 분할·병합은 이상치 하나마다 충실히 잘라 조각을 늘리지만, RANSAC 은 <strong>표를 적게 받은 직선을 통째로 버리는</strong> 방식이라 이상치에 덜 흔들린다.</p>
+        <p>차이가 없는 축도 분명히 있다. <strong>둘 다 문턱을 내가 정해야 하고</strong>, 둘 다 "직선이 몇 개인지"를 알려 주지 않는다 — <strong>동일</strong>하다. 바꾸면 사라지는 값이 아니라 <strong>정해야 할 값이 늘어난다</strong>(RANSAC 은 반복 횟수와 최소 표 수가 더 붙는다).</p></div></details>
+      <details class="quiz"><summary>5. 코너는 "두 직선을 늘린 교점"이다. 두 <strong>선분</strong>이 실제로 만나는 자리가 아닌데도 그것을 코너라고 부르는 이유는 무엇이고, 그 대가로 무엇이 생기는가</summary>
+        <div class="ans"><p>방 귀퉁이에는 <strong>점이 없는 일이 흔하다</strong> — 몰딩·가구·그림자에 가려 있고, 있어도 그 점 하나가 정확하다는 보장이 없다. 그런데 <strong>양쪽 벽은 점을 많이 준다.</strong> 많은 점으로 세운 직선 둘을 늘려 만나게 하면, <strong>점이 없는 자리의 좌표</strong>가 많은 점의 도움을 받아 나온다. 점 하나를 믿는 것보다 훨씬 낫고, 이것이 도형으로 바꾼 것의 가장 직접적인 이득이다.</p>
+        <p>대가는 <strong>거의 평행한 두 조각</strong>이다. 한 벽이 잡음으로 두 조각이 나면 두 조각은 거의 같은 직선이고, 늘리면 교점이 <strong>아주 멀리</strong> 찍힌다 — 사이각이 0 에 가까울수록 멀다. §2-5-1 의 실제 계산이 그것이다: 사이각 <code>0.5729°</code> 인 두 조각의 교점은 <code>(-0.95, 0.0)</code>, 곧 <strong>센서 뒤쪽</strong>이다. <code>den == 0</code> 만 걸러서는 안 잡힌다 — <strong>0 이 아니라 작을 뿐</strong>이기 때문이다.</p>
+        <p>그래서 사이각 문턱이 필요하고, 그 값은 이 가이드가 정하지 않는다. 크게 두면 직각 코너만 잡고 비스듬한 모서리를 놓치며, 작게 두면 유령 코너가 늘어난다. <strong>§3-2 에서 세 값을 넣어 보고 내 방에서 정한다.</strong></p></div></details>
+      <details class="quiz"><summary>6. (일부러 틀리면) <code>tol</code> 을 키워 원통 쓰레기통을 직선 하나로 먹였다. 그 도구가 <strong>뒤에서 무엇을 잘못 말하게</strong> 되는가</summary>
+        <div class="ans"><p>도구는 그 자리에 <strong>평평한 벽이 있다</strong>고 말한다. 원통의 가장 튀어나온 부분은 선분보다 최대 <code>s</code> 만큼 앞에 있는데(§2-4-2 의 예에서 약 <code>0.038 m</code>), 도구는 그 <code>s</code> 를 <strong>없는 것으로 보고한다.</strong> 그러니까 오차가 아니라 <strong>내가 그렇게 선언한 것</strong>이다.</p>
+        <p>그 말을 받는 곳이 정해져 있다. <a href="l-12-clearance.html">l-12</a> 는 선분까지의 수직 거리와 법선으로 "지나갈 수 있나"를 판정하므로, 먹힌 만큼 <strong>통로가 실제보다 넓게</strong> 계산된다 — 여유가 <code>s</code> 보다 작으면 판정은 통과인데 실물은 부딪힌다. <a href="l-14-alignment.html">l-14</a> 는 선분을 맞대어 이동량을 추정하므로, 먹힌 선분은 <strong>원통이 어디 있었는지를 기억하지 못한다.</strong></p>
+        <p>그래서 §3-3-4 의 판정이 "몇에서 먹히는가"가 아니라 <strong>"벽과 굽은 것을 한 문턱으로 동시에 만족시킬 수 있는가"</strong>인 것이다. 겹치지 않으면 상수 문턱 하나로는 안 되고, 그때 고르는 것(받아들인다 / 거리의 함수로 둔다 / 먼 곳을 버린다)이 내 선언이다. <strong>끝나면 <code>tol</code> 을 되돌려 놓는다</strong> — 일부러 틀리게 해 둔 설정을 남겨 두면 다음 쪽에서 나는 이상한 결과의 원인을 라이다에서 찾게 된다.</p></div></details>
+
+      <h2 id="compare">비교본</h2>
+      <p>체크포인트를 <strong>통과한 뒤에</strong> 내 코드와 견주어 보는 용도다. 먼저 열면 이 쪽에서 얻을 것이 줄어든다.</p>
+      <details class="quiz"><summary>비교본 — <code>fit_lines()</code> 한 함수</summary>
+        <div class="ans">
+          <pre><code class="lang-python">def fit_lines(cluster, tol):
+    """Split-and-merge: one cluster -&gt; [Segment]. Pure."""
+    pts = list(getattr(cluster, "pts", cluster))        # &lt;- the one line l-10 decides
+    out = []
+
+    def rec(i, j):                                      # inclusive indices into pts
+        if j - i + 1 &lt; 2:                               # invariant 4
+            return
+        a, b = pts[i], pts[j]
+        worst, wi = -1.0, -1
+        for k in range(i + 1, j):                       # invariant 1: inner points only
+            d = point_line_distance(pts[k], a, b)
+            if d &gt; worst:
+                worst, wi = d, k
+        if wi &gt;= 0 and worst &gt; tol:                     # invariant 2: strictly greater
+            rec(i, wi)                                  # invariant 3: wi is in BOTH
+            rec(wi, j)
+        elif math.hypot(b[0] - a[0], b[1] - a[1]) &gt; 0.0:  # invariant 5
+            out.append(Segment(a, b, j - i + 1))
+
+    if pts:
+        rec(0, len(pts) - 1)
+    return out                                          # invariant 6 comes for free
+</code></pre>
+          <p><strong>내 것과 다를 수 있는 곳</strong> — 어느 쪽이 맞고 틀린 문제가 아니다.</p>
+          <ul>
+            <li><strong>재귀인가 반복인가.</strong> 여기는 안쪽 함수로 재귀한다. "아직 안 본 조각"을 목록에 쌓아 두고 꺼내 처리하는 반복문으로 써도 결과는 같고 벡터도 똑같이 통과한다. 다만 그때는 <strong>불변식 6(선분이 벽을 따라간 순서로 나온다)</strong> 을 스스로 지켜야 한다 — 꺼내는 순서가 곧 출력 순서가 되기 때문이다. 재귀로 쓰면 그것이 공짜로 따라온다.</li>
+            <li><strong>인덱스인가 잘라 낸 목록인가.</strong> 여기는 <code>pts</code> 를 한 번만 만들고 <strong>인덱스 두 개</strong>를 넘긴다. <code>pts[i:j+1]</code> 처럼 조각을 잘라 넘기면 읽기는 쉽지만 <strong>매번 복사가 생기고</strong>, 무엇보다 §2-2-1 이 말한 <strong>인덱스 기준 섞임</strong>이 여기서 난다 — 잘라 낸 목록 안의 위치를 원래 위치로 되돌리는 것을 빠뜨리면 재귀가 안 끝난다.</li>
+            <li><strong>점 목록을 어디서 꺼내는가.</strong> 셋째 줄의 <code>getattr(cluster, "pts", cluster)</code> 는 "<code>Cluster</code> 면 그 속성을, 그냥 목록이면 그대로"라는 뜻이다. <strong>l-10 이 그 이름을 <code>pts</code> 로 정했으므로</strong> 여기도 <code>pts</code> 다 — 내가 다른 이름으로 지었으면 <strong>그 한 줄만</strong> 고친다. ⚠ 뒤에 붙은 <code>cluster</code> 는 <strong>인자가 그냥 목록일 때만</strong> 살아나는 대비책이지 이름이 틀렸을 때의 안전장치가 아니다 — l-10 의 <code>Cluster</code> 에는 <code>__iter__</code> 가 없어서, 속성 이름이 어긋나면 <code>list()</code> 가 <code>TypeError: 'Cluster' object is not iterable</code> 로 <strong>그 자리에서 죽는다</strong>(집필자가 두 쪽의 코드를 붙여 실제로 돌려 확인했다, 2026-09-23). <code>Cluster</code> 를 반복 가능하게 만들어 <code>list(cluster)</code> 한 줄로 끝내는 설계도 있고 그쪽이 깔끔하다 — 다만 <strong>그것은 l-10 의 결정</strong>이고, l-10 은 그렇게 하지 않았다.</li>
+            <li><strong>잔차를 같이 돌려주는가.</strong> 이 비교본의 <code>Segment</code> 는 점 수(<code>n</code>)만 들고 있다. 그 조각의 <strong>가장 큰 잔차</strong>를 함께 담아 두면 §3-1-4 에서 따로 계산하지 않아도 되고 <a href="l-17-acceptance.html">l-17</a> 에서 산포를 볼 때 쓰인다. 담으면 <code>Segment</code> 의 <code>__slots__</code> 가 하나 늘고, <strong>l-16 이 C++ 로 옮길 때 구조체가 같이 커진다.</strong></li>
+          </ul>
+        </div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>번호순 다음은</strong> → <a href="l-12-clearance.html">l-12</a> — 여기를 지나갈 수 있나. 이 쪽이 낸 <strong>선분과 법선</strong>을 그대로 받아 "벽까지 얼마, 벽이 몇 도 기울었나"를 내고 통로 폭을 판정한다. §2-5-2 가 정해 둔 <strong>부호 규약</strong>에 뜻을 붙이는 것이 거기서 첫 일이다.</li>
+          <li><strong>이 쪽에서 나온 것을 받는 다른 쪽</strong> — <a href="l-14-alignment.html">l-14</a> 는 선분과 코너로 두 스캔을 맞댄다(§2-1 셋째 줄). <a href="l-16-node.html">l-16</a> 은 이 넷 중 <strong>순수한 조각</strong>을 C++ 로 옮겨 같은 벡터를 먹인다 — 그때 스물네 개가 그대로 채점표가 된다.</li>
+          <li><strong>줄자가 없어서 실습 B 를 못 닫았으면</strong> — 그대로 두고 간다. l-12 가 요구하는 것은 <code>Segment</code> 와 <code>normal()</code> 이지 줄자 대조가 아니다. 다만 <strong>내 코너가 얼마나 맞는지를 모르는 채로</strong> 통로 폭을 판정하게 되므로, 줄자가 생기면 돌아와 닫는다.</li>
+          <li><strong>이 쪽을 못 닫았어도</strong> — ① <code>PASS lines 24 cases</code> 까지 갔으면 <strong>실물 파일에서 선분이 이상하게 나와도 l-12 로 갈 수 있다.</strong> 이상하게 나온 모양(벽 하나가 일곱 조각, 코너가 방 밖)은 <strong>전부 문턱 두 개의 결과</strong>이고 l-12 에서 같은 문턱을 다시 만난다. ② 반대로 <strong>자기시험이 통과하지 못했으면 여기서 멈춘다</strong> — 선분이 틀린 채로 l-12 의 거리·법선을 계산하면 거기서 나는 이상한 결과의 원인을 라이다에서 찾게 된다. ③ 선분 수가 방의 벽 수와 안 맞는 것은 <strong>닫힌 관찰</strong>이지 실패가 아니다.</li>
+          <li><strong>되돌려 놓았는가</strong> — §3-3 의 <code>tol</code> 과 §3-4-4 에서 일부러 틀리게 한 줄. 일부러 만든 오판을 남겨 두면 다음 쪽이 통째로 흔들린다.</li>
+          <li><strong>이 쪽에서 잰 값은 내 노트에 적었는가</strong> — 선분 개수와 길이 셋, 벽 하나의 <strong>가장 큰 잔차</strong>, <code>tol</code> 두 배·절반의 세 줄, 사이각 문턱 세 값의 코너 표, 코너 사이 거리와 줄자 값과 내가 정한 합격선, §3-3 의 다섯 줄과 내가 고른 문턱과 그 이유. <code>hardware/INVENTORY.md</code> 에 <strong>이 쪽이 채우는 칸은 없다</strong> — 방이 바뀌면 값도 바뀌므로 장비 목록의 성질이 아니다.</li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

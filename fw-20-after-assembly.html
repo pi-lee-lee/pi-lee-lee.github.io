@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F20 · 조립 후 마무리 — MCU 펌웨어 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="fw-20">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">F20 · 조립 후 마무리</p>
+      <h1>책상에서 맞춘 값이 바닥에서도 맞는지 본다</h1>
+      <p class="lead">펌웨어 스물한 쪽 가운데 <strong>벤치에서 끝나지 않는 유일한 쪽</strong>이다. 필요한 것은 Nucleo 가 아니라 <strong>조립된 차체 · 배터리 · 바닥</strong>이고,
+      이 쪽은 혼자 열리지 않는다 — 조립·실측 관문 <a href="09a-assembly-gate.html">09a</a> 의 세팅 안에서 다섯 번 열린다(실습 A 는 받침대에서, 실습 B~E 는 바닥에서).
+      여기서 닫는 것은 <a href="fw-19-bench-acceptance.html">fw-19</a> 가 "벤치가 검증하지 못한다"고 적어 둔 넷이다: <strong>부하</strong> · <strong>유효 트랙 폭</strong> · <strong>실측 임계값</strong> · <strong>조립 뒤에도 펌웨어를 고칠 수 있는 동선</strong>.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>바닥에서 <code>step</code> 을 찍은 CSV 가 벤치의 것과 <strong>다른 모양</strong>이고, 그 차이를 보고 내가 다시 맞춘 게인이 <code>save show</code> 에 들어 있다.
+        <code>trac on</code> 뒤 제자리 회전에서 <code>trac stat</code> 의 네 계수가 <strong>1.000 에서 내려갔다 돌아오고</strong>, 같은 회전을 <code>trac off</code> 로 한 것과 견줄 기록이 있다.
+        보호 문턱과 안전 임계 열다섯 개가 전부 <code>MEASURED(</code> 이고, <code>hardware/INVENTORY.md</code> 에 <strong>어느 바닥에서 잰 값인지</strong>가 함께 적혀 있다.</p>
+        <p><strong>이 쪽에 필요한 것</strong> — <strong>조립된 차체</strong>(센서 · 보드 · 배선이 올라간 상태) · <strong>배터리</strong> · <strong>평평한 바닥 2 m 이상</strong> · 받침대 · Mac · DMM ·
+        <a href="fw-19-bench-acceptance.html">fw-19</a> 를 통과한 펌웨어. 그리고 <strong>09a 가 이미 잰 두 값</strong>(하중 상태의 바퀴 반지름 · 유효 트랙 폭)이 있어야 실습 C 부터 갈 수 있다.
+        <strong>없으면</strong> — 조립 전에는 이 쪽을 <strong>읽을 수는 있지만 닫을 수 없다.</strong> 살 부품은 없다. 다만 실습 C 의 앞부분(<code>traction.c</code> 호스트 시험)은 Mac 만으로 돌아가므로
+        <strong>차체가 없는 날 먼저 해 두면</strong> 바닥에서 보내는 시간이 줄어든다 — 그것이 이 쪽이 호스트 시험을 먼저 두는 이유다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag asm">조립 후</span> <span class="tag power">모터 전원</span> <span class="tag mac">Mac</span></div>
+        <div><span class="k">선행</span><a href="fw-19-bench-acceptance.html">fw-19</a>(DoD-Bench 전 행) — 실제로 쓰는 것: <code>pid</code> · <code>step</code> · <code>save</code> · <code>fault</code> 명령과 <code>robot_params.h</code>.
+          그리고 09a 의 세팅 A · D — 실제로 쓰는 것: <strong>유효 트랙 폭</strong>과 <strong>하중 상태의 바퀴 반지름</strong>(둘 다 09a 의 주행 캘리브레이션이 잰다)</div>
+        <div><span class="k">채우는 INVENTORY 칸</span><code>hardware/INVENTORY.md</code> 6절 — PID 게인 · 보호 문턱 · 슬립 파라미터의 확정값과 <strong>그 값을 잰 바닥</strong> · 7절 — 조립 후 Nucleo 급전 방식과 JP2 위치 <span class="small">(두 칸 모두 아직 표에 없다 — 없으면 행을 만들어 적는다)</span></div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
+      </div>
+
+      <h2 id="overview">1. 개요 — 벤치가 끝나는 자리에서 시작한다</h2>
+      <p>fw-02 부터 열여덟 쪽은 전부 책상 위에서 끝났다. 그렇게 걸을 수 있었던 것은 <strong>바퀴를 공중에 띄웠기 때문</strong>이고, 공중에 뜬 바퀴에는
+      땅이 없다 — 부하도, 마찰도, 미끄러짐도 없다. 그래서 벤치에서 맞춘 값 가운데 <strong>땅이 있어야 뜻이 생기는 것</strong>들이 지금까지 빈칸(<code>____</code>)으로 남아 있다.
+      이 쪽은 그 빈칸을 닫는다. 새로 켜는 주변장치는 없고 CubeMX 도 열지 않는다. 새로 쓰는 코드는 <code>traction.c</code> 하나뿐이다.</p>
+      <p>이 쪽이 다른 쪽과 다른 점이 하나 더 있다. <strong>혼자 돌아가지 않는다.</strong> 로봇을 받침대에 올리고, 내려놓고, 달리게 하는 것은 <a href="09a-assembly-gate.html">09a</a> 의 일이고,
+      이 쪽의 다섯 실습은 그 세팅 <em>안에서</em> 열린다. 09a 를 읽다가 "여기서 fw-20 실습 B 를 연다"는 줄을 만나면 이 쪽으로 와서 그 실습만 하고 돌아간다.</p>
+      <pre class="diagram"><code> 09a 의 세팅             이 쪽의 실습                        왜 그 순서인가
+
+ 세팅 A  받침대    --&gt;  A  재플래시 동선을 정하고 리허설     D-i(동선) + D-j(급전)을 여기서 적는다
+                            |
+                            |   A 가 없으면 D 를 닫을 수 없다 - 문턱은 재플래시로만 바뀐다
+ 세팅 D  바닥      --&gt;  B  부하 step - 게인 재튜닝           게인만은 pid set + save 로 바뀐다
+                            |
+   09a 제자리 5회전 --&gt;  TRACK_WIDTH_MM 이 MEASURED( 가 된다
+                            |                               &lt;-- 이 줄이 없으면 C 를 켜지 않는다
+                            v
+                        C  traction.c 호스트 시험 - trac on - 제자리 회전 관찰
+                            |
+                        D  임계값 확정 - robot_params.h 를 고쳐 다시 굽는다 (동선 A)
+                            |
+                        E  조건을 건 STALL 발동 (저속 - 짧은 시간 - 듀티 상한)
+
+ 새로 켜는 주변장치: 없음.  CubeMX: 열지 않는다.  새 파일: traction.c 하나.</code></pre>
+      <p>말 다섯 개를 먼저 정해 둔다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>말</th><th>이 가이드에서의 뜻</th></tr></thead>
+        <tbody>
+          <tr><td>부하 (load)</td><td>바퀴가 <strong>땅을 밀고 차체를 움직이는</strong> 상태. 공중에서 도는 바퀴는 자기 관성만 이긴다 — 그때의 게인은 부하에서의 게인과 다른 양이다</td></tr>
+          <tr><td>유효 트랙 폭 (effective track width)</td><td>좌우 바퀴의 <strong>기하학적</strong> 간격이 아니라, "제자리 회전 <em>N</em> 바퀴를 돌 때 엔코더가 실제로 센 거리"에서 거꾸로 구한 폭. 스키드 스티어는 돌 때 바퀴가 옆으로 미끄러지므로 이 값이 기하 폭보다 크다</td></tr>
+          <tr><td>슬립 비율 (slip ratio)</td><td>"땅을 잡고 있다면 이 바퀴는 <em>이만큼</em> 돌아야 한다"와 실제로 돈 양의 차이를, 그 기대값으로 나눈 것. 단위가 없다</td></tr>
+          <tr><td>슬립 억제 (traction control)</td><td>헛도는 바퀴의 <strong>출력(듀티)</strong>을 낮춰 다시 땅을 잡게 하는 것. 목표 속도를 낮추는 것이 아니다(§2-2)</td></tr>
+          <tr><td>동선 (route)</td><td>조립된 로봇에서 <strong>값 하나를 바꿔 다시 돌려 보기까지</strong> 내가 실제로 밟는 걸음의 순서. 케이블을 어디에 꽂는가까지 포함한다</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout note"><span class="ct">이 쪽이 09a 와 나눠 가진 것 — 되풀이하지 않는다</span>
+        <p>바닥에서 하는 확인 가운데 <strong>넷은 09a 의 항목</strong>이고 여기에 같은 체크를 만들지 않는다:
+        <strong>로봇 기준 회전 부호</strong>(teleop 반시계 → 차체 · <code>/imu</code> · <code>/odom</code> 셋이 같은 부호) · <strong>바닥에서의 명령 워치독 정지</strong>(브리지를 죽이고 정지 거리를 기록) ·
+        <strong>전원 상실 시 EN LOW</strong> · <strong>5 V/5 A 경로의 최종 부하 시험</strong>. 이 쪽은 그 넷을 <em>쓰기만</em> 한다 — 특히 회전 부호는 §2-7 에서 <strong>왜 필요한지</strong>만 설명하고,
+        확인 자체는 09a 에서 한 것을 가져온다. 두 쪽이 같은 사실을 두 번 체크하면 한쪽을 고쳤을 때 다른 쪽이 조용히 낡는다.</p>
+      </div>
+
+      <h2 id="why">2. 원리 — 왜 이것들이 바닥에서만 닫히는가</h2>
+
+      <h3 id="s2-1">2-1. 무부하 게인이 부하에서 달라지는 것은 튜닝이 서툴러서가 아니다</h3>
+      <p>속도 PID 가 조절하는 대상은 "듀티를 넣으면 바퀴가 얼마나 빨리 도는가"라는 <strong>관계</strong>다. 그 관계를 한 숫자로 줄이면
+      <em>정상 상태 이득</em> = (도달한 속도 [mm/s]) ÷ (넣은 듀티 [‰]) 이고, <a href="fw-13-pid-protection.html#s2-2">fw-13 §2-2</a> 에서 맞춘 <code>PID_KP_MILLI</code> 는
+      <strong>그 이득의 역수 쪽</strong>에 붙어 있다. 바퀴를 바닥에 내려놓으면 이 이득이 두 가지 이유로 바뀐다.</p>
+      <ul class="steps">
+        <li><strong>같은 듀티에서 속도가 낮아진다.</strong> 공중의 바퀴가 이기는 것은 자기 관성과 기어 마찰뿐이다. 바닥에 내려놓으면 차체 질량과 구름 저항이 더해진다 —
+          09a 가 체중계로 재는 <strong>총중량</strong>이 바로 그 항의 크기다. 이득이 내려가면 <strong>같은 Kp 가 더 약한 제어기</strong>가 된다(느려지고 정상 오차가 는다).</li>
+        <li><strong>정지 마찰(stiction)이 생긴다.</strong> 아주 낮은 듀티에서는 바퀴가 <strong>아예 돌지 않는다.</strong> 공중에서는 없던 "출력을 넣었는데 속도가 0" 구간이 생기고,
+          그 구간에서 적분기는 계속 쌓인다 — <a href="fw-13-pid-protection.html#s2-3">fw-13 §2-3</a> 의 와인드업이 바닥에서 처음으로 진짜 문제가 되는 자리다.</li>
+      </ul>
+      <p>그래서 이 쪽의 실습 B 는 "게인을 다시 맞춘다"가 아니라 <strong>같은 <code>step</code> 을 다시 찍어 두 CSV 를 나란히 놓는 일</strong>이다. 무엇을 보고 무엇을 고칠지는
+      그 두 장의 차이가 알려 준다. 벤치의 기록이 없으면 이 실습은 성립하지 않는다 — fw-13 에서 CSV 를 노트에 붙여 두라고 한 이유가 여기 있다.</p>
+      <div class="callout note"><span class="ct">1세대 기록 — 합격선이 아니라 "여기까지 갔다"의 표시</span>
+        <p>1세대는 1 kHz 속도 PID 를 <strong>무부하</strong>에서 Kp 0.60 / Ki 1.50 / Kd 0 (백캘큘레이션 Kt 2.0, 듀티 풀스케일 500 tick) 으로 맞췄다 —
+        1세대 무부하 튜닝값(기록, 2026-07-19, <code>FW/control/include/motor_ctrl.h:91,149-206</code>). <strong>이 숫자를 옮겨 쓰지 않는다.</strong> 단위부터 다르고(듀티 500 tick · count/s),
+        무엇보다 <strong>1세대는 부하 시험을 끝내 하지 못했다.</strong> 가져올 것은 숫자가 아니라 사실 하나다 — <em>이 프로젝트에서 부하 게인을 실제로 재는 것은 지금이 처음이다.</em></p>
+      </div>
+
+      <h3 id="s2-2">2-2. 슬립 억제는 트랙 폭에 직접 의존한다 — 이 쪽의 순서 조건</h3>
+      <p>제자리 회전에서 <strong>어느 바퀴가 미끄러지는지</strong>를 엔코더 넷만으로는 알 수 없다. 넷이 같이 미끄러지면 넷 다 "정상"으로 보이기 때문이다.
+      가를 수 있는 것은 <strong>땅과 무관하게 회전을 재는 장치</strong> — IMU 의 요 각속도 &omega; 하나뿐이다. &omega; 를 알면 "이 바퀴가 <em>땅을 잡고 있다면</em> 내야 할 속도"를 계산할 수 있다.</p>
+      <pre class="diagram"><code> 차체가 v_b 로 나아가며 각속도 w 로 돈다면, 좌우 바퀴가 내야 할 속도는
+
+     왼쪽  v_exp = v_b - w * W/2            오른쪽  v_exp = v_b + w * W/2
+                        ^^^^^                                  ^^^^^
+                        W = 유효 트랙 폭 [mm]. 09a 가 제자리 회전에서 잰다.
+
+     v_b   = 바퀴 네 개 측정 속도의 중앙값 (평균이 아니다 - 헛도는 하나에 끌려가지 않게)
+     s_i   = (v_i - v_exp_i) / max(|v_exp_i|, v_min)        슬립 비율, 단위 없음
+     헛돌면  trac_i &lt;- max(trac_min, trac_i - k_down * (|s_i| - s_th))
+     잡히면  trac_i &lt;- min(1,        trac_i + k_up * dt)
+     출력    u_i = PID_i(target - v_i) * trac_i</code></pre>
+      <p>여기서 <strong>W 가 식 한가운데에 있다.</strong> W 를 모르는 채(= 0 인 채) 이 식을 켜면 <code>w * W/2</code> 항이 통째로 사라져
+      <em>"제자리 회전 중에도 네 바퀴가 모두 차체 속도로 돌아야 한다"</em>는 뜻이 된다. 실제로는 좌우가 반대로 도는 중이므로 <strong>네 바퀴 전부가 슬립으로 판정된다.</strong>
+      정상 선회가 통째로 고장으로 보이고, 억제가 걸려 로봇은 돌다 말게 된다.</p>
+      <p>그래서 이 쪽에는 <strong>절차상의 순서 조건</strong>이 하나 있다.</p>
+      <div class="callout warn"><span class="ct">순서 조건 — <code>TRACK_WIDTH_MM</code> 이 <code>MEASURED(</code> 가 되기 전에는 <code>trac on</code> 을 치지 않는다</span>
+        <p>09a 의 제자리 회전 캘리브레이션이 유효 트랙 폭을 내고, 그 값을 <code>robot_params.h</code> 의 <code>TRACK_WIDTH_MM</code> 에
+        <code>MEASURED(&lt;날짜&gt;, &lt;방법&gt;)</code> 로 옮겨 적은 <strong>뒤에만</strong> 실습 C 로 간다. 확인은 눈이 아니라 <code>grep</code> 한 줄이 한다(§3-3-3).
+        <strong>기하학적으로 잰 좌우 바퀴 간격을 대신 넣지 않는다</strong> — 스키드 스티어에서 그 둘은 같은 값이 아니다(§1 의 말 표).</p>
+      </div>
+      <p>이 순서가 필요한 이유는 "정확도"가 아니라 <strong>판정의 방향</strong>이다. W 가 조금 틀리면 억제가 조금 과하거나 모자라지만,
+      W 가 <strong>없으면</strong> 판정 자체가 뒤집힌다 — 잘 돌고 있는 바퀴를 헛돈다고 부른다. 보호 장치가 틀리는 두 방향
+      (<a href="fw-13-pid-protection.html#s2-7">fw-13 §2-7</a>)에서 여기 걸리는 것은 <strong>"잘못 잡는다"</strong> 쪽이다.</p>
+
+      <h3 id="s2-3">2-3. 조립하면 ST-LINK 케이블은 Pi 에 꽂힌다 — 값을 바꾸는 여섯 길</h3>
+      <p>Nucleo 의 USB 한 가닥이 <strong>SWD(플래시 · 디버그)와 VCP(명령 창)를 겸한다.</strong> 벤치에서는 그 가닥이 Mac 에 꽂혀 있었다.
+      조립하면 같은 가닥이 <strong>Pi 에 꽂힌다</strong> — 계약 v2 의 링크가 그 선이기 때문이다. 그런데 CubeCLT(빌드 · 플래시 도구)는 Mac 에 있다.
+      이 쪽은 값을 <strong>반복해서</strong> 바꾸는 쪽이므로(게인 → 다시 달린다 → 다시 게인), 한 번 바꾸는 데 드는 걸음 수가 이 쪽의 실제 소요 시간을 정한다.</p>
+      <p>먼저 <strong>무엇이 재플래시 없이 바뀌는지</strong>를 가른다. 이것을 가르지 않으면 여섯 길을 비교할 수 없다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>값</th><th>코드에서의 정체</th><th>바꾸는 수단</th><th>다시 부팅해도 남는가</th></tr></thead>
+        <tbody>
+          <tr><td><code>PID_KP_MILLI</code> · <code>KI</code> · <code>KD</code></td><td><code>robot_params.h</code> 의 <code>#define</code> 이지만, <strong>초기값으로만</strong> 쓰인다 — 실제 게인은 <code>speed_pid_t</code> 안의 RAM 값이다</td><td><code>pid set kp &lt;milli&gt;</code> (RAM) → <code>save</code> (플래시)</td><td><strong>남는다</strong> — <code>nv_data_t</code> 에 게인 칸 셋이 있다(<a href="fw-16-flash-store.html#s3-3">fw-16 §3-3</a>)</td></tr>
+          <tr><td>보호 3종 문턱 열 개 · 안전 임계 다섯 개 · <code>TRAC_*</code> 다섯 개 · <code>TRACK_WIDTH_MM</code></td><td><code>robot_params.h</code> 의 <code>#define</code>. <strong>컴파일 때 숫자로 박힌다</strong></td><td><strong>편집 + 재빌드 + 재플래시.</strong> 다른 길이 없다</td><td>—</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">이것이 이 쪽의 순서 조건 둘째다: <strong>실습 A(동선)가 실습 D(임계값)보다 앞에 온다.</strong> 물리적으로 받침대가 바닥보다 앞이라서가 아니라,
+      <strong>실습 D 를 닫는 수단이 실습 A 에서 고른 동선 그 자체이기 때문</strong>이다.</p>
+      <div class="callout note"><span class="ct">결정 대기 — 조립 후 값을 바꾸는 동선(여섯 길)</span>
+        <p>어느 것도 <strong>기본 진행으로 정해져 있지 않다.</strong> 아래는 사실만이고, 고르는 것은 나다. 여러 개를 같이 써도 된다(예: 게인은 3번, 문턱은 2번).</p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>#</th><th>길</th><th>무엇을 바꿀 수 있는가</th><th>케이블</th><th>붙어 있는 사실</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>Mac 을 로봇 옆에 두고 테더</td><td>전부(재플래시)</td><td>Mac 에 꽂는다 — 로봇이 움직이는 동안은 뺀다</td><td>Mac 은 노트북이라 물리적으로 가능하다. 주행 중에는 케이블이 매달릴 수 없으므로 <strong>"세우고 → 꽂고 → 굽고 → 빼고 → 달린다"</strong>가 한 바퀴다</td></tr>
+            <tr><td>2</td><td>케이블을 Pi ↔ Mac 으로 옮겨 꽂기</td><td>전부(재플래시)</td><td>매번 옮긴다</td><td>옮기는 동안 Pi 쪽 브리지는 링크를 잃는다. 커넥터 삽발 횟수가 이 쪽에서 가장 많다</td></tr>
+            <tr><td>3</td><td>런타임 명령 <code>pid set</code> + <code>save</code></td><td><strong>게인 셋만</strong>(위 표)</td><td>옮기지 않는다</td><td>TEXT 빌드에서만 명령 창이 있다(§2-4 의 4번과 짝이다). 저장은 <code>MOTOR_EN</code> LOW 에서만 받는다(<a href="fw-16-flash-store.html#s2-3">fw-16 §2-3</a>)</td></tr>
+            <tr><td>4</td><td>TEXT 빌드를 굽고 <strong>Pi 의 ssh 에서</strong> 명령 창을 연다</td><td>게인 셋(3번과 같은 범위)</td><td>Pi 에 꽂힌 채</td><td>TEXT 빌드인 동안 <strong>계약 v2 가 없다</strong> → 브리지가 선다. 그래서 주행(= 브리지가 필요한 일)과 튜닝을 <strong>같은 빌드에서 할 수 없다</strong>. TEXT ↔ V2 를 바꾸는 것 자체가 재플래시다(<code>LINK_MODE</code>, <a href="fw-17-link-v2.html">fw-17</a>)</td></tr>
+            <tr><td>5</td><td>계약에 설정 프레임(0x02)을 구현한다</td><td>계약에 넣은 것만</td><td>옮기지 않는다 · 주행 중에도 가능</td><td>06a §4-2 는 0x02 를 <strong>"처음에는 구현하지 않는다"</strong>로 두었다. 구현하려면 <strong>06a 의 표 · Pi 쪽 브리지 · 펌웨어 셋을 같이</strong> 고쳐야 한다(계약을 늘리는 일이다)</td></tr>
+            <tr><td>6</td><td>Pi 에서 직접 플래시한다</td><td>전부(재플래시)</td><td>옮기지 않는다</td><td><strong>확인하지 못했다</strong> — CubeCLT(<code>STM32_Programmer_CLI</code>)의 arm64 리눅스 지원 여부를 이 가이드는 확인하지 않았다. 고르려면 <strong>먼저 그것부터 확인</strong>하는 것이 실습 A 의 첫 걸음이 된다</td></tr>
+          </tbody>
+        </table></div>
+        <p>차이가 없는 축 하나를 밝혀 둔다: <strong>펌웨어 소스는 어느 길에서도 Mac 에 있다</strong>(6번을 고르면 소스를 Pi 로 옮기는 일이 하나 는다). 빌드 결과물의 내용도 동일하다.</p>
+      </div>
+
+      <h3 id="s2-4">2-4. Nucleo 를 무엇으로 먹이는가 — 여기서는 재플래시와 맞물리는 부분만 본다</h3>
+      <p>동선을 고르면 곧바로 두 번째 질문이 따라온다. <strong>조립 후 Nucleo 의 전기는 어디서 오는가.</strong>
+      벤치에서는 답이 하나였다 — ST-LINK USB 다(JP2 = [1-2] 5V_USB_STLK, UM2407 의 기본 상태). 조립하면 Pi USB · E5V · VIN 셋이 후보가 된다.</p>
+      <p class="small"><strong>급전 방식을 고르는 본문은 09a 에 있다</strong>(배선을 하기 전에 정해야 하는 항목이라 관문의 세팅 0 에 들어 있다). 이 절은
+      <strong>재플래시 동선과 맞물리는 부분</strong>만 본다 — 그리고 이 쪽은 고른 결과를 <strong>기록</strong>한다(실습 A).</p>
+      <div class="callout note"><span class="ct">결정 대기 — 조립 후 Nucleo 급전 (기본 진행 없음)</span>
+        <p>사실 셋만 옮긴다. 셋 다 동선과 직접 얽힌다.</p>
+        <ul class="steps">
+          <li><strong>3V3 레일의 합계가 300 mA 를 넘으면 USB 급전으로는 안 된다.</strong> UM2407 §7.4.1 은 보드와 실드의 3V3 합계가 300 mA 를 넘으면
+            E5V · VIN · 3V3 외부 전원이 <strong>필수</strong>라고 적었다(그 위의 차단선은 500 mA). 우리 구성은 IBT-2 VCC 4장 · 엔코더 4개 · IMU 둘 · INA226 · ACS758 을
+            전부 Nucleo 3V3 에서 딴다(안전 규칙 S2) — <strong>합계는 아직 잰 적이 없다.</strong> 09a 의 세팅 A 가 DMM 전류 모드로 잰다.</li>
+          <li><strong>VIN 급전을 고르면 핀 하나를 옮겨야 한다.</strong> <code>RELAY_EN</code> 은 PG3 = CN8-16 인데 그 짝 핀 CN8-15 가 VIN 이다.
+            지금은 VIN 이 무전압이라 무해하지만, VIN 급전을 쓰면 거기에 7~12 V 가 선다 — 점퍼선이 한 칸 미끄러지면 한도 6 V 인 PG3 가 죽는다.
+            <code>hardware/pinmap-h723.md</code> §5-5 의 처방은 <strong>"VIN 급전을 쓰지 않는다, 쓰게 되면 <code>RELAY_EN</code> 을 Morpho CN11-44 로"</strong> 다.
+            핀을 옮기면 CubeMX 의 User Label 도 옮겨야 하고, 그것은 <strong>재플래시가 한 번 더 필요하다는 뜻</strong>이다.</li>
+          <li><strong>"USB 를 뽑으면 무슨 일이 일어나는가"의 답이 급전 방식마다 다르다.</strong> USB 급전이면 뽑는 순간 MCU 가 <strong>꺼진다</strong> —
+            <code>MOTOR_EN</code> 이 풀다운으로 LOW 가 되고 RAM 의 게인은 사라진다(안전 규칙 S5 가 말하는 "전원 상실 시험"이 이것이다).
+            E5V · VIN 급전이면 <strong>MCU 는 살아 있고 SWD 만 끊긴다</strong> — 즉 <strong>모터가 도는 채로 케이블을 뽑을 수 있다.</strong>
+            동선 2번(케이블을 옮겨 꽂기)을 고를 사람은 이 차이를 먼저 알아야 한다.</li>
+        </ul>
+        <p>차이가 없는 축: <strong>SWD · VCP 의 동작은 세 방식에서 동일하다</strong>(전기를 어디서 받든 데이터 선은 같은 가닥이다).</p>
+      </div>
+      <div class="callout warn"><span class="ct">이 쪽이 세우는 규칙 — 재플래시 전에 모터 전원을 내린다</span>
+        <p>플래시 쓰기·지우기를 <code>MOTOR_EN</code> LOW 에서만 하는 이유(<a href="fw-16-flash-store.html#s2-3">fw-16 §2-3</a>, 안전 규칙 S13)는
+        <strong>ST-LINK 로 굽는 경우에 더 강하게</strong> 적용된다. 외부에서 굽는 동안에는 코어가 멈추고 리셋되며, 그동안 1 kHz 루프도 명령 워치독도 없다.
+        그래서 이 쪽의 모든 재플래시는 <strong>① 목표 0 → ② 모터 전원 차단(<code>MOTOR_EN</code> LOW 먼저, 그다음 <code>RELAY_EN</code> LOW) → ③ 굽는다 → ④ 09a 의 통전 시퀀스로 다시 올린다</strong> 순서로 한다.
+        ②의 두 걸음은 <strong>순서가 정해져 있다</strong> — H-브리지를 끈 뒤에 접점을 연다(<a href="fw-11-power-sequence.html#s2-5">fw-11 §2-5</a>). 뒤집어도 <strong>눈에 보이는 증상이 없어서</strong> 더 위험하다.
+        이 네 걸음이 한 바퀴의 실제 길이이고, 실습 A 에서 <strong>시간을 재 보는 것</strong>이 그래서 뜻이 있다.</p>
+      </div>
+
+      <h3 id="s2-5">2-5. <code>save</code> 가 담는 것과 담지 못하는 것</h3>
+      <p><a href="fw-16-flash-store.html">fw-16</a> 의 <code>nv_data_t</code> 는 지금 <strong>PID 게인 셋과 BNO055 오프셋</strong>만 들고 있다.
+      이 쪽에서 확정하는 값 가운데 <code>save</code> 가 받아 주는 것은 <strong>게인 셋뿐</strong>이고, 문턱 · 임계 · <code>TRAC_*</code> 는 전부 <code>#define</code> 이라
+      <strong>편집하고 다시 구워야</strong> 바뀐다(§2-3 의 첫 표). 이 사실이 이 쪽의 일 순서를 정한다 — 그래서 실습 D 는 "<code>save</code> 를 친다"가 아니라
+      <strong>"고치고 굽고, 그 값이 실제로 들어갔는지 확인한다"</strong>이다.</p>
+      <div class="callout note"><span class="ct">선택 — 문턱도 플래시에 담을 것인가 (고르지 않아도 이 쪽은 닫힌다)</span>
+        <p><strong>(가) 담지 않는다</strong>(지금의 구조): 문턱은 소스에 남고, 값과 그 값을 고른 근거가 <strong>같은 파일의 같은 줄</strong>에 붙어 다닌다
+        (<code>/* MEASURED(&lt;날짜&gt;, &lt;방법&gt;) */</code>). 바꾸려면 재플래시 한 바퀴.<br>
+        <strong>(나) <code>nv_data_t</code> 에 칸을 더한다</strong>: fw-16 은 이 구조체가 <strong>늘 것을 전제로</strong> 만들어졌다 — 늘릴 때 <code>NVSTORE_VER</code> 을 올리면
+        옛 레코드는 <code>NV_SLOT_BAD</code> 로 무시된다(<a href="fw-16-flash-store.html#s3-2">fw-16 §3-2</a>). 그러면 문턱이 <strong>주행 중에도</strong> 바뀌고,
+        대신 "지금 보드에서 도는 문턱"과 "소스에 적힌 문턱"이 <strong>서로 다를 수 있는 상태</strong>가 생긴다 — 그 둘을 맞추는 일(<code>save show</code> 와 소스 대조)이 새로 는다.</p>
+        <p>차이가 없는 축: <strong>어느 쪽이든 값을 고르는 근거는 같은 측정에서 온다</strong>(실습 D). 담는 자리만 다르다.</p>
+      </div>
+
+      <h3 id="s2-6">2-6. 임계값 스물한 개 — "몇 이어야 하는가"가 아니라 "무엇을 보고 긋는가"</h3>
+      <p>이 쪽이 닫는 빈칸(<code>____</code>)은 <code>robot_params.h</code> 의 스물한 줄이다(게인 셋은 실습 B 가 따로 닫는다). <a href="fw-13-pid-protection.html">fw-13</a> 이 낸 <strong>보호 3종 문턱 열</strong>,
+      <a href="fw-18-safety-fsm.html">fw-18</a> 이 낸 <strong>안전 임계 다섯</strong>, 이 쪽이 내는 <strong><code>TRAC_*</code> 다섯</strong>과 <strong><code>TRACK_WIDTH_MM</code></strong> 이다.
+      fw-13 · fw-18 에서 이미 한 번 값을 넣어 본 사람도 있을 것이다 — 그것은 <strong>공중에 뜬 바퀴로 그은 선</strong>이고, 여기서 다시 긋는다.</p>
+      <p>각 값에 "정답"을 주지 않는 이유는 규칙이 아니라 사실 때문이다. 이 값들은 전부 <strong>내 배터리 · 내 바닥 · 내 하중</strong>의 함수다.
+      같은 로봇도 장판과 카펫에서 다른 값을 갖는다. 그래서 이 쪽이 주는 것은 <strong>무엇을 재서 그 선을 긋는가</strong>뿐이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>값</th><th>무엇을 재서 긋는가</th><th>선이 만족해야 하는 관계</th></tr></thead>
+        <tbody>
+          <tr><td><code>BATT_MIN_MV</code></td><td>바닥 주행 · 가속 순간의 <strong>버스 전압 최저점</strong>을 <code>ina</code>(INA226 #1)로 기록</td><td>그 최저점 <strong>아래</strong>(정상 가속에 트립하지 않게) 이면서 <strong>19.8 V 위</strong> — 배터리는 6S 이고 XH-M609 하드컷이 19.8 V 다. 하드컷이 먼저 걸리면 로봇은 예고 없이 전원을 잃는다. MCU 의 저전압 판정이 그 <strong>위</strong>에 있어야 "스스로 서서 알린다"가 된다</td></tr>
+          <tr><td><code>CURR_MAX_MA</code></td><td>바닥 주행 · 선회 · (있으면) 경사에서 ACS758 총전류의 <strong>최댓값</strong></td><td>그 최댓값 위, 그리고 주전력 퓨즈 F1(40 A)과 배선 한계보다 <strong>아래</strong>. 참고: 1세대의 4모터 동시 가속 피크 1.97 A 는 <strong>바퀴 공중</strong>의 값이고 부하 전류는 1세대에도 기록이 없다(1세대 기록, 2026-07-19)</td></tr>
+          <tr><td><code>TILT_MAX_DDEG</code></td><td><strong>축</strong>은 09a 가 이미 정했다(받침대에서 앞을 들어 축·부호를 맞춘 항목). <strong>각도</strong>는 여기서: 수평계로 기울기를 아는 판에 로봇을 올린다. ⚠ <strong>기울기 값 자체를 찍어 주는 명령이 없다</strong> — <code>fault stat</code> 은 <code>tilt=&lt;0|1&gt;</code> 이라는 <strong>비트</strong>만 준다(§3-4-3 의 3번에 두 길)</td><td>로봇이 실제로 넘어가는 각보다 충분히 아래. 실제 전복각을 재는 시험은 하지 않는다 — 대신 <strong>넘어뜨리지 않고 확인할 수 있는 각</strong>에서 판정이 도는 것을 보고, 그보다 더 눕히지 않는다</td></tr>
+          <tr><td><code>IMU_TIMEOUT_MS</code></td><td>주행 중 <code>wt stat</code> 의 카운터. ⚠ <strong>"가장 크게 벌어진 간격"을 직접 찍어 주는 칸은 없다</strong> — <code>frames_ok</code> 의 초당 증가와 <code>uart_err</code> · <code>idle_events</code> 로 <strong>간접</strong>으로 본다(<a href="fw-14-wt901.html#s2-10">fw-14 §2-10</a> 이 그 읽는 법이다)</td><td>센서의 공칭 주기(200 Hz = 5 ms)가 아니라 <strong>모터가 도는 동안</strong> 본 값의 위. 간접 관찰로 못 좁히겠으면 관측 수단을 하나 만든다(§3-4-3 의 4번)</td></tr>
+          <tr><td><code>RELEASE_HOLD_MS</code></td><td>재는 값이 아니라 <strong>고르는 정책</strong>이다 — 고장이 사라진 뒤 몇 ms 를 더 기다렸다 풀 것인가</td><td><code>0</code> 도 <strong>진짜 값</strong>이다("첫 깨끗한 틱에 바로 해제"). 그래서 이 키에는 <code>_Static_assert</code> 가 없다(fw-18) — 빌드는 나를 세워 주지 않는다</td></tr>
+          <tr><td>보호 3종 문턱 열 개</td><td>실습 B 의 <strong>부하 계단 응답 CSV</strong>. 정상 주행에서 (목표 · 속도 · 듀티) 셋이 실제로 어느 범위에 있는지를 먼저 본다</td><td>1세대가 비싸게 배운 두 방향을 같이 본다(<a href="fw-13-pid-protection.html#s2-7">fw-13 §2-7</a>): 선이 너무 느슨하면 <strong>진짜 고장을 놓치고</strong>(blind band), 너무 빡빡하면 <strong>정상 가속을 고장이라 부른다</strong>. <code>STALL_TARGET_MIN_MM_S &gt; STALL_SPEED_MAX_MM_S</code> 는 빌드가 검사한다</td></tr>
+          <tr><td><code>TRAC_*</code> 다섯</td><td>실습 C 에서 <code>trac off</code> 로 제자리 회전을 한 번 돌고, <code>trac stat</code> 의 <code>smax_*_milli</code>(회전 동안의 슬립 비율 최댓값)를 읽는다</td><td><code>TRAC_S_TH_MILLI</code> 는 <strong>그 정상 회전에서 본 최댓값보다 위</strong>여야 한다 — 아니면 켜자마자 정상 회전이 억제된다. <code>TRAC_MIN_PERMILLE</code> 은 <strong>0 이 아니어야 한다</strong>(0 이면 그 바퀴는 영원히 서 있고, 서 있는 바퀴는 슬립이 0 이라 "잡혔다"로 보여 되돌아오지 못한다)</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><span class="ct">06 초안의 예시 숫자를 옮기지 않는다</span>
+        <p>06 §3-6 에는 <code>BATT_MIN_MV 9600 /* 3S */</code> · <code>CURR_MAX_MA 6000</code> · <code>TILT_MAX_DEG 30</code> 같은 줄이 있었다.
+        <strong>배터리는 6S 다</strong>(19.8~25.2 V) — 3S 기준의 9600 mV 는 우리 로봇에서 <em>절대 트립하지 않는</em> 값이다. 나머지 둘도 출처가 없다.
+        슬립 억제의 <code>S_TH 0.20</code> · <code>K_DOWN 0.05</code> 같은 숫자도 마찬가지다. 이 가이드가 그 줄들을 빈칸으로 되돌린 이유가 이것이다 —
+        <strong>출처 없는 숫자는 "임시값"이 아니라 "모르는 값"이다.</strong></p>
+      </div>
+
+      <h3 id="s2-7">2-7. 회전 부호를 <em>로봇 기준</em>으로 다시 보는 이유</h3>
+      <p>&omega; 가 식 <code>v_exp = v_b &plusmn; &omega;&middot;W/2</code> 에 들어가는 순간, 그 부호는 <strong>어느 좌표계의 z 축인가</strong>라는 질문을 달고 온다.
+      벤치에서 IMU 를 손에 들고 돌려 보며 확인한 <code>gz</code> 의 부호는 <strong>모듈 자신의 축</strong> 기준이다(<a href="fw-14-wt901.html">fw-14</a> · <a href="fw-15-bno055.html">fw-15</a>).
+      모듈을 차체에 <strong>어떻게 놓았느냐</strong>에 따라 그 축은 로봇의 z 축(위)과 같을 수도, 뒤집혀 있을 수도, 옆으로 누워 있을 수도 있다.</p>
+      <p>이 식이 전제하는 것은 REP-103 의 약속이다 — <strong>z 는 위, 반시계 회전이 +</strong>. 부호가 뒤집힌 채 슬립 억제를 켜면 무슨 일이 생기는지는 예상이 아니라
+      실제로 돌려 볼 수 있다: 왼쪽/오른쪽의 <code>&plusmn;</code> 를 맞바꾼 구현을 만들어 §3-3-3 의 호스트 시험에 걸면,
+      <strong>정상 제자리 회전의 벡터(C)에서 네 바퀴가 모두 억제된다</strong>(기댓값 1.000 자리에 0.910 이 나온다). <strong>트랙 폭이 0 일 때와 같은 종류의 고장</strong>이고 방향만 다르다.</p>
+      <div class="callout note"><span class="ct">확인 자체는 09a 의 항목이다</span>
+        <p>"바닥에서 반시계로 돌렸을 때 차체 · <code>/imu</code> · <code>/odom</code> 셋의 부호가 같다"는 확인은 <strong>09a 가 한다</strong>(이 쪽에는 그 체크가 없다 — §1 의 상자).
+        이 쪽은 그 결과를 <strong>전제로 쓴다.</strong> 그래서 실습 C 의 입구 조건은 둘이다: <code>TRACK_WIDTH_MM</code> 이 <code>MEASURED(</code> 이고,
+        <strong>09a 의 회전 부호 항목이 닫혀 있다.</strong> 둘 중 하나라도 열려 있으면 <code>trac on</code> 을 치지 않는다.</p>
+      </div>
+
+      <h3 id="s2-8">2-8. <code>imu-&gt;gz</code> 는 없는 필드다 — 06 초안의 코드가 컴파일되지 않는 이유</h3>
+      <p>이 프로젝트의 초안(06 §3-6-9)에는 슬립 억제 코드가 이미 한 벌 적혀 있었다. 그것을 그대로 옮기지 않는 이유를 <strong>세 가지</strong> 짚어 둔다.
+      셋 중 <strong>컴파일러가 잡아 주는 것은 첫 번째 하나뿐</strong>이고, 나머지 둘이 더 비싸다.</p>
+      <pre><code class="lang-c">/* 06 초안 (옮기지 않는다) */
+void traction_step(const float meas[4], const volatile imu_payload_t *imu, float trac[4])
+{
+  const float w = imu-&gt;gz * 0.1f * 3.1415926f / 180.f;   /* &lt;-- (1) (2) (3) 이 전부 이 두 줄에 있다 */
+  ...
+}</code></pre>
+      <ol class="steps">
+        <li><strong><code>gz</code> 라는 필드가 없다.</strong> 와이어 형식의 필드 이름은 <code>gz_ddps</code> 다(단위를 이름 끝에 붙인다는 규약 그대로 — 0.1 &deg;/s).
+          Mac 에서 그 두 줄만 떼어 <code>cc -std=c11 -Wall -Wextra -fsyntax-only</code> 로 돌리면 이렇게 나온다:
+          <pre><code class="lang-text">r5.c:8:15: error: no member named 'gz' in 'imu_payload_t'
+    8 |   return imu-&gt;gz * 0.1f * 3.1415926f / 180.f; }
+      |          ~~~  ^
+1 error generated.</code></pre></li>
+        <li><strong>제어 루프 안에서 <em>와이어 형식</em>을 쓰고 있다.</strong> <code>imu_payload_t</code> 는 <code>frames.h</code>(<a href="fw-17-link-v2.html">fw-17</a>)의 것이고,
+          그 헤더는 <strong>통신 모듈의 소유물</strong>이다. 제어 쪽 파일이 그것을 포함하면 <a href="fw-19-bench-acceptance.html#s3-1">fw-19 §3-1</a> 의 경계 <code>grep</code> 이 역방향으로 걸린다.
+          MCU 안에서 쓰는 형은 <code>imu_sample_t</code>(<code>imu_sample.h</code>)이고, 둘 사이의 변환은 <code>comm_frame.c</code> 한 곳에서만 한다.</li>
+        <li><strong><code>volatile</code> 전역을 가리키는 포인터를 받는다.</strong> 06 초안은 <code>imu_latest</code> 라는 전역을 센서 모듈과 제어 모듈이 같이 봤다.
+          이 가이드는 전역 공유를 접근 함수로 바꿨다 — <code>control_get_imu(&amp;s, sensor_id)</code> 가 <strong>한 샘플을 통째로 복사해</strong> 준다
+          (<a href="fw-13-pid-protection.html#s2-14">fw-13 §2-14</a>). 그래서 1 kHz 루프는 <em>읽는 도중에 값이 바뀌는</em> 상황을 겪지 않는다.</li>
+      </ol>
+      <p>고친 꼴은 이렇게 된다 — 그리고 <strong>단위 변환이 한 자리에 모인다</strong>는 것이 덤이다.</p>
+      <pre><code class="lang-c">/* control.c 안, 1 kHz. traction.c 는 rad/s 만 받는다(순수하게 유지하려고) */
+imu_sample_t s;
+control_get_imu(&amp;s, 0u);   /* 0 = WT901. safety.c 의 SAFETY_IMU_PRIMARY 와 같은 값이어야 한다 */
+const float omega_rad_s = s.gz_ddps * 0.1f * 3.14159265f / 180.0f;   /* 0.1 deg/s -&gt; deg/s -&gt; rad/s */</code></pre>
+      <div class="callout warn"><span class="ct">라디안과 도를 섞으면 57 배 틀린다</span>
+        <p><code>gz_ddps</code> 는 <strong>0.1 &deg;/s 단위의 정수</strong>다. 두 번 나눠 생각한다: 먼저 <code>&times; 0.1</code> 로 &deg;/s 가 되고, 그 다음 <code>&times; &pi;/180</code> 로 rad/s 가 된다.
+        확인용 값 하나: <strong>raw 573 → 57.3 &deg;/s → 1.000074 rad/s</strong>(1 rad/s 근처). <code>&times; &pi;/180</code> 을 빠뜨리면 같은 입력이 57.3 rad/s 가 되고,
+        <code>&omega;&middot;W/2</code> 항이 57 배 커져 <strong>정상 회전이 통째로 슬립으로 판정된다</strong> — 이 잘못도 §3-3-3 의 벡터 C 가 잡는다(기댓값 1.000 자리에 0.961).</p>
+      </div>
+
+      <h3 id="s2-9">2-9. STALL 을 바닥에서 일으키는 법 — 조건이 시험의 일부다</h3>
+      <p>보호 3종 가운데 STALL 만은 벤치에서 <strong>경로 통과까지</strong>였다. 발동을 못 본 이유는 하나다 —
+      벤치에서 STALL 을 일으키려면 <strong>바퀴를 손으로 붙잡아야</strong> 하는데, 감속비 1:47 의 기어드 모터라 출력축 토크가 사람 손이 감당할 것이 아니다(안전 규칙 S8).</p>
+      <p>바닥에서는 손을 쓰지 않고도 같은 상태를 만들 수 있다. <strong>밀리지 않는 장애물에 로봇을 아주 천천히 밀어붙이면</strong>
+      바퀴는 돌려 하는데 차체가 못 간다 — 목표는 있고, 속도는 0 이고, 듀티는 올라간다. 그것이 STALL 판정식이 찾는 바로 그 상태다(<a href="fw-13-pid-protection.html#s2-7">fw-13 §2-7</a>).</p>
+      <p>다만 <strong>그 상태는 모터가 스톨 전류를 먹는 상태이기도 하다.</strong> 모터 하나의 스톨 전류가 22 A 이고 넷이면 88 A 가 설계 상한이다.
+      그래서 이 시험에는 <strong>조건 셋이 시험의 일부로 붙는다.</strong> 조건 없이 하는 "밀어붙이기"는 시험이 아니라 사고다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>조건</th><th>무엇을 막는가</th><th>내가 정하는 값</th></tr></thead>
+        <tbody>
+          <tr><td><strong>저속</strong> — 목표 속도를 낮게</td><td>충돌 에너지. 그리고 <code>STALL_TARGET_MIN_MM_S</code> 보다는 <strong>위</strong>여야 판정이 돈다(그 아래는 blind band 다)</td><td>목표 <code>____</code> mm/s <span class="small">(<code>STALL_TARGET_MIN_MM_S</code> 보다 위 · 근거를 노트에)</span></td></tr>
+          <tr><td><strong>짧은 시간</strong> — 미리 정한 상한에서 끊는다</td><td>스톨 전류가 흐르는 시간. 발동에 필요한 시간은 <code>STALL_HOLD_MS</code> 이므로 그보다 조금만 길면 된다</td><td>최장 <code>____</code> s <span class="small">(<code>STALL_HOLD_MS</code> 의 몇 배로 할지 · 넘으면 내가 손으로 끊는다)</span></td></tr>
+          <tr><td><strong>듀티 상한</strong> — 잠시 낮춘다</td><td>전류의 크기 자체. 단 <code>STALL_DUTY_MIN_PERMILLE</code> 보다는 <strong>위</strong>여야 판정이 돈다</td><td><code>____</code> ‰ <span class="small">(<code>DUTY_LIMIT_BENCH_PERMILLE</code> 를 이 시험 동안만 낮춘 값)</span></td></tr>
+        </tbody>
+      </table></div>
+      <p>세 조건이 서로를 묶는다는 것을 보라 — <strong>목표는 A 위, 듀티는 C 위</strong>여야 판정이 돌고, 그러면서도 <strong>둘 다 낮아야</strong> 안전하다.
+      그 사이에 값이 없으면 문턱이 잘못 그어진 것이고, 그때 할 일은 시험을 세게 하는 것이 아니라 <strong>문턱을 고쳐 다시 굽는 것</strong>이다(§2-3 의 동선).</p>
+      <div class="callout note"><span class="ct">발동을 못 봐도 그것이 결과다</span>
+        <p>조건을 지켰는데 STALL 이 뜨지 않으면 <strong>내 문턱이 blind band 안에 있다</strong>는 뜻이다 — 1세대가 정확히 그 자리에서 폭주를 놓쳤다
+        (목표 5000 인데 게이트가 "목표 &ge; 6000" 이었다, 1세대 기록 2026-07-18). 그것도 기록이다. 값을 고치고 한 바퀴 더 돈다.</p>
+      </div>
+
+      <h2 id="lab">3. 실습</h2>
+      <p>다섯 실습은 <strong>09a 의 세팅 안에서</strong> 열린다. 실습 A 는 받침대(09a 세팅 A)에서, 실습 B~E 는 바닥(09a 세팅 D)에서 한다.
+      09a 를 따라가다 "여기서 fw-20 실습 &lt;글자&gt; 를 연다"는 줄을 만나면 이리로 와서 <strong>그 실습만</strong> 하고 돌아간다.</p>
+      <div class="callout tip"><span class="ct">채울 자리마다 힌트 카드가 있다 — 읽는 순서</span>
+        <p>골격의 채울 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 붙어 있고(이 쪽은 T1 · T2 — 둘 다 실습 C 의 <code>traction.c</code> 에 있다), 그 주석 안에 <strong>번호 걸음</strong>이 있다. 먼저 걸음을 보고 직접 써 본다.
+        막히면 "직접 채우기" 절(§3-3-3)에서 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인.</p>
+        <p>완결 코드는 Mac 의 호스트 시험(<code>PASS traction 19 cases</code> — <code>-fsanitize=undefined,address</code> 를 붙여도 조용)과 <code>arm-none-eabi-gcc</code> 컴파일(<code>-c -Wall -Wextra</code>, 경고 0)을 통과한 코드다(2026-10-03). 두 자리 모두 <strong>순수 파일</strong>이라 보드 없이 Mac 에서 끝까지 채점된다 —
+        이 쪽의 다른 실습(A · B · D · E)은 코드가 아니라 표를 채우는 실습이라 카드가 없다. 바닥에서의 동작 — <code>trac on</code> 뒤 <code>t_*_permille</code> 넷의 움직임 — 은 "굽고 보기"에서 내가 확인한다.
+        붙여 넣는 것으로 끝내지 않는다 — 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
+      </div>
+
+      <h3 id="s3-1">3-1. 실습 A — 재플래시 동선을 정하고 한 바퀴 돌려 본다 <span class="tag asm">조립 후</span></h3>
+      <p>09a 의 세팅 A(로봇이 받침대 위에 있고 바퀴가 공중에 있다)에서 연다. 여기서 하는 일은 <strong>코드를 고치는 것이 아니라 동선을 정하는 것</strong>이고,
+      정한 동선을 <strong>한 번 실제로 밟아 시간을 재는 것</strong>이다. 이 한 바퀴의 길이가 실습 B~E 의 실제 소요 시간을 정한다.</p>
+      <div class="callout warn"><span class="ct">STOP — 굽기 전에 (하나라도 "아니오"면 굽지 않는다)</span>
+        <ol>
+          <li>바퀴가 <strong>공중에</strong> 떠 있다(받침대). 손 · 선 · 공구가 바퀴에서 떨어져 있다.</li>
+          <li><strong>모터 전원을 내렸다</strong> — 목표 0 → <code>MOTOR_EN</code> LOW → <code>RELAY_EN</code> LOW. <strong>이 방향이다</strong>: H-브리지를 끈 뒤에 접점을 연다(<a href="fw-11-power-sequence.html#s2-5">fw-11 §2-5</a>). 굽는 동안 코어가 멈추므로 1 kHz 루프도 명령 워치독도 없다(§2-4).</li>
+          <li>DMM 으로 <code>MOTOR_EN</code> 네트 = 0 V 를 확인했다 — <strong>"0 V 라서"가 아니라 풀다운이 실재해서임을</strong> 판정법으로 갈랐다(<a href="fw-08-pwm-safe-output.html#s3-2-4">fw-08 §3-2-4</a>). Hi-Z 핀은 DMM 으로 재도 0 V 로 보인다.</li>
+          <li>C_BULK 에 남은 전하를 확인했다 — 배선을 만지기 전에 버스 전압을 DMM 으로 본다(블리더가 없다).</li>
+          <li>지금 보드에 있는 빌드가 무엇인지 안다(<code>ver</code> 의 <code>build</code> 줄을 적어 두었다). 굽고 나서 견줄 기준이다.</li>
+          <li>전원을 끊는 수단(S21A · E-STOP)에 <strong>손이 닿는다.</strong></li>
+        </ol>
+      </div>
+
+      <h4 id="s3-1-2">3-1-2. 빈 표 — 동선 판정표</h4>
+      <p>§2-3 의 여섯 길을 내 상황에 대고 채운다. <strong>하나만 고를 필요는 없다</strong> — 게인용 길과 문턱용 길이 달라도 된다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>#</th><th>길</th><th>쓸 것인가</th><th>무엇에 쓰는가</th><th>한 바퀴의 걸음</th><th>잰 시간</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>Mac 테더</td><td>____</td><td>____</td><td>____</td><td>____ 분</td></tr>
+          <tr><td>2</td><td>케이블 옮겨 꽂기</td><td>____</td><td>____</td><td>____</td><td>____ 분</td></tr>
+          <tr><td>3</td><td><code>pid set</code> + <code>save</code></td><td>____</td><td>게인만</td><td>____</td><td>____ 분</td></tr>
+          <tr><td>4</td><td>Pi 의 ssh 에서 TEXT CLI</td><td>____</td><td>게인만</td><td>____</td><td>____ 분</td></tr>
+          <tr><td>5</td><td>계약 0x02 설정 프레임</td><td>____</td><td>____</td><td>구현부터 — 06a · 브리지 · 펌웨어 셋</td><td>—</td></tr>
+          <tr><td>6</td><td>Pi 에서 플래시</td><td>____</td><td>____</td><td>먼저 확인: 아래 1번</td><td>____ 분</td></tr>
+        </tbody>
+      </table></div>
+      <p>그리고 급전 기록 두 줄. <strong>이 두 줄이 이 실습의 산출물</strong>이고 <code>hardware/INVENTORY.md</code> 7절로 간다(행이 없으면 만든다).</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>기록</th><th>값</th><th>확인한 방법</th></tr></thead>
+        <tbody>
+          <tr><td>조립 후 Nucleo 급전 방식</td><td>____ <span class="small">(Pi USB · E5V · VIN 중)</span></td><td>____</td></tr>
+          <tr><td>JP2 점퍼 위치</td><td>____ <span class="small">(기본은 [1-2] 5V_USB_STLK)</span></td><td>눈으로 · 날짜 ____</td></tr>
+          <tr><td>3V3 레일 합계 전류</td><td>____ mA <span class="small">(09a 세팅 A 가 잰 값을 옮겨 적는다)</span></td><td>DMM 전류 모드</td></tr>
+          <tr><td>VIN 급전을 골랐다면: <code>RELAY_EN</code> 을 옮겼는가</td><td>____ <span class="small">(CN8-16 → Morpho CN11-44)</span></td><td>____</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-1-3">3-1-3. 채우기 — 고르기 전에 확인할 것 둘</h4>
+      <ol class="steps">
+        <li><strong>6번(Pi 에서 플래시)을 후보에 두려면 먼저 확인한다.</strong> 이 가이드는 확인하지 못했다 — <strong>확인 과제</strong>다.
+          Pi 에 CubeCLT 의 arm64 리눅스 빌드를 설치할 수 있는가, 설치했다면 보드를 인식하는가. 확인은 두 줄이면 끝난다.
+          <pre><code class="lang-bash">ssh &lt;pi&gt; uname -m                      # aarch64 인가
+ssh &lt;pi&gt; 'STM32_Programmer_CLI -l'     # 연결된 ST-LINK 가 목록에 나오는가</code></pre>
+          <pre><code class="lang-text">(둘째 줄이 "command not found" 면 설치가 안 된 것이고, 설치 자체가 안 되면 6번은 지운다.
+ 결과를 노트에 적는다 — 되는 것을 확인했으면 이 가이드의 "미확인" 을 내 기록으로 덮는 것이다.)</code></pre></li>
+        <li><strong>4번(Pi 의 ssh 에서 TEXT CLI)을 후보에 두려면</strong> Pi 에서 VCP 가 어느 이름으로 보이는지 확인한다.
+          udev 규칙을 이미 넣었으면 <code>/dev/mcu</code> 로 고정돼 있다(<code>hardware/udev/99-ros2-devices.rules</code>).
+          <pre><code class="lang-bash">ssh &lt;pi&gt; 'ls -l /dev/serial/by-id/ /dev/mcu'</code></pre>
+          <pre><code class="lang-text">(기대: by-id 에 ST-LINK VCP 항목이 하나 보이고, /dev/mcu 가 그것을 가리키는 심볼릭 링크다.
+ 없으면 udev 규칙부터. 열 때의 설정은 벤치와 같다 - 460800 8N1.)</code></pre>
+          <strong>이 길을 쓰는 동안에는 계약 v2 가 없다</strong>는 것을 기억한다(§2-3 의 4번). 브리지를 세워 두고 튜닝하고, 끝나면 V2 빌드로 되돌린다 — 그 되돌림도 재플래시다.</li>
+        <li>급전 방식(§2-4)과 JP2 위치를 <strong>눈으로 확인해</strong> 위 표에 적는다. 이것이 체크 항목 <code>nucleo-supply-recorded</code> 다.</li>
+        <li>동선 판정표의 "쓸 것인가" 열을 채운다. 고르지 않은 길에도 <strong>왜 안 고르는지</strong>를 한 줄 적어 둔다 — 나중에 되돌아올 때 그 줄이 시간을 아낀다.</li>
+      </ol>
+
+      <h4 id="s3-1-4">3-1-4. 리허설 — 아무것도 바꾸지 않고 한 바퀴를 돈다</h4>
+      <p>값을 바꾸지 않고도 <strong>동선이 실제로 도는지</strong>는 확인할 수 있다. 소스를 건드리지 않은 채 <strong>다시 빌드되게만</strong> 만들어 굽고,
+      보드가 정말 새 빌드로 갈아탔는지를 배너로 본다.</p>
+      <pre><code class="lang-bash">&gt; ver                                                   # 굽기 전의 build 줄을 적어 둔다
+touch firmware/h723zg/User/Inc/Config/robot_params.h    # 값은 그대로, 다시 컴파일되게만 한다
+firmware/tools/build.sh
+firmware/tools/flash.sh
+&gt; ver                                                   # build 줄이 바뀌었는가</code></pre>
+      <pre><code class="lang-text">(배너의 첫 줄은  build &lt;date&gt; &lt;time&gt;  꼴이다. __DATE__ __TIME__ 이므로 다시 컴파일되면 시각이 바뀐다.
+ 바뀌지 않았다면 굽기는 했는데 "다시 컴파일" 이 안 된 것이다 - 증상 표를 본다.)</code></pre>
+      <p>그리고 <strong>네 걸음의 시간을 잰다</strong>(§2-4 의 규칙): ① 목표 0 → ② 모터 전원 차단 → ③ 굽기 → ④ 09a 의 통전 시퀀스로 복귀.
+      이 넷을 합친 것이 "값 하나를 바꾸는 데 드는 시간"이고, 표의 "잰 시간" 칸에 들어간다.</p>
+      <div class="callout note"><span class="ct">여기서 얻은 숫자가 다음 실습을 설계한다</span>
+        <p>한 바퀴가 2분이면 실습 D 에서 문턱을 여러 번 고쳐 볼 수 있다. 15분이면 <strong>고칠 값을 한꺼번에 모아</strong> 한 번에 굽는 편이 낫다 —
+        그때는 실습 D 의 순서가 "재고 → 전부 적고 → 한 번 굽고 → 전부 확인" 이 된다. <strong>어느 쪽이 맞는지는 내가 잰 숫자가 정한다.</strong></p>
+      </div>
+
+      <h3 id="s3-2">3-2. 실습 B — 부하 계단 응답과 게인 재튜닝 <span class="tag asm">조립 후</span> <span class="tag power">모터 전원</span></h3>
+      <p>09a 의 세팅 D(로봇이 바닥에 있고 달릴 수 있다)에서 연다. 09a 의 안전 점검 · 회전 부호 · 워치독 정지가 <strong>먼저 닫힌 뒤</strong>, 주행 캘리브레이션보다 <strong>앞</strong>이다.
+      게인은 오도메트리 값 자체를 바꾸지는 않지만 <strong>직진이 좌우로 치우치는 정도</strong>를 바꾸고, 캘리브레이션은 곧게 가는 직진을 전제하기 때문이다.</p>
+      <div class="callout warn"><span class="ct">STOP — 바닥에서 로봇을 움직이기 전에 (하나라도 "아니오"면 시작하지 않는다)</span>
+        <ol>
+          <li>바닥이 평평하고 <strong>2 m 이상</strong> 비어 있다. 주행 경로 안에 사람 · 케이블 · 공구 · 반려동물이 없다.</li>
+          <li><strong>로봇의 앞이나 뒤에 서지 않는다</strong> — 옆에서 본다. 좌/우 그룹 배정이 틀려 있으면 첫 명령에 로봇이 제자리에서 돈다(1세대가 실제로 겪었다).</li>
+          <li>정지 수단 <strong>세 단이 모두 손에 닿는다</strong>: ① 목표 0(명령) ② 브리지를 죽여 MCU 명령 워치독으로 세우기 ③ 물리 차단(S21A · E-STOP).</li>
+          <li>속도 상한이 <strong>06b 에서 내가 정한 벤치 상한 그대로</strong>다. 이 실습에서 올리지 않는다.</li>
+          <li><code>DUTY_LIMIT_BENCH_PERMILLE</code> 이 내가 정한 값으로 들어가 있고, 이 실습에서 <strong>올리지 않는다.</strong></li>
+          <li><code>ENC_SIGN_FL … _RR</code> 과 <code>MOTOR_SIGN_FL … _RR</code> <strong>여덟이 모두 실측 &plusmn;1</strong> 이고, <strong>09a 의 회전 부호 항목이 닫혀 있다.</strong> 공중에서는 부호가 틀리면 바퀴만 반대로 돌지만, 바닥에서는 <strong>로봇이 반대로 달린다.</strong></li>
+          <li><strong>디버그 동결이 들어간 빌드다</strong> — TIM1 · TIM8 의 <code>__HAL_DBGMCU_FREEZE_*</code> + OSSI + idle LOW(<a href="fw-08-pwm-safe-output.html#s2-7">fw-08 §2-7</a>, 안전 규칙 S10). 바닥에서 중단점에 걸리면 동결이 없는 한 <strong>마지막 듀티로 계속 달린다.</strong></li>
+          <li>배터리 전압이 하드컷(19.8 V)보다 충분히 위다 — <code>ina</code> 로 지금 값을 보고 적었다.</li>
+          <li>배터리와 IBT-2 사이에 <strong>사전충전 회로</strong>가 있고(직결 아님), TVS 밴드 방향을 눈으로 확인했다(IBT-2 쪽은 밴드가 B+).</li>
+          <li>시작 전 상태가 <strong>목표 0 · <code>en 0</code></strong> 이다. 통전 시퀀스는 09a 의 것을 그대로 따른다.</li>
+          <li><strong>바퀴를 손으로 붙잡지 않는다</strong>(안전 규칙 S8). 감속비 1:47 의 기어드 모터다 — 세우고 싶으면 3번의 세 단을 쓴다.</li>
+        </ol>
+      </div>
+
+      <h4 id="s3-2-2">3-2-2. 빈 표 — 두 장의 CSV 를 나란히</h4>
+      <p>벤치에서 찍은 계단 응답(<a href="fw-13-pid-protection.html#s3-2">fw-13 §3-2</a>)과 <strong>같은 명령</strong>을 바닥에서 찍는다. 견주는 것은 값이 아니라 <strong>모양</strong>이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>보는 것</th><th>벤치(공중) — fw-13 의 내 기록</th><th>바닥(지금)</th><th>이 차이가 뜻하는 것</th></tr></thead>
+        <tbody>
+          <tr><td>목표의 90 % 에 닿는 데 걸린 시간</td><td>____ ms</td><td>____ ms</td><td>느려졌으면 정상 상태 이득이 내려간 것(§2-1)</td></tr>
+          <tr><td>정상 상태에서 남는 오차</td><td>____ mm/s</td><td>____ mm/s</td><td>커졌으면 I 항이 모자란다</td></tr>
+          <tr><td>오버슈트 · 진동</td><td>____ %</td><td>____ %</td><td>바닥에서 새로 생긴 진동은 P 가 세거나 바닥이 미끄럽다</td></tr>
+          <tr><td>바퀴가 <strong>돌기 시작한</strong> 듀티</td><td>____ ‰</td><td>____ ‰</td><td>올라갔으면 그만큼이 정지 마찰이다 — 저속 목표의 하한이 여기서 정해진다</td></tr>
+          <tr><td>네 바퀴의 <code>meas</code> 가 서로 벌어지는 정도</td><td>____ mm/s</td><td>____ mm/s</td><td>바닥에서 벌어지면 직진이 휜다 → 09a 의 2 m 직진에 그대로 나타난다</td></tr>
+          <tr><td><code>prot</code> 열에 뜬 비트</td><td>____</td><td>____</td><td>정상 가속에 보호가 뜨면 <strong>문턱이 빡빡한 것</strong>이다(§2-6) — 실습 D 의 입력</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-2-3">3-2-3. 채우기 — 바닥에서 <code>step</code> 을 쓸 때 먼저 알아야 할 것</h4>
+      <div class="callout warn"><span class="ct">바닥의 <code>step</code> 은 로봇을 <em>돌린다</em></span>
+        <p><code>step &lt;바퀴&gt; …</code> 의 목표는 <strong>그 바퀴가 속한 쪽(좌 또는 우)</strong>에 들어간다(<a href="fw-13-pid-protection.html#s3-2">fw-13 §3-2</a>) —
+        계약의 목표가 쪽 단위이기 때문이다. 바퀴가 공중에 있을 때는 "같은 쪽 두 바퀴가 같이 돈다"로 끝났지만,
+        <strong>바닥에서는 한쪽만 구동하는 것이 곧 선회 명령</strong>이다. 시작하기 전에 세 가지를 정한다.</p>
+        <ol>
+          <li><strong>회전할 공간</strong> — 로봇의 외곽(09a 가 잰 값)보다 넉넉히. 직진용 2 m 직선과는 다른 공간이다.</li>
+          <li><strong>돌아가는 각을 미리 계산</strong>한다. 한쪽 바퀴가 <em>s</em> mm 를 가고 반대쪽이 0 이면 차체는 대략 <em>&theta; &asymp; s / W</em> [rad] 만큼 돈다
+            (<em>W</em> = 유효 트랙 폭). <em>s</em> = 목표[mm/s] &times; 시간[s] 이므로 <strong>목표와 시간을 곱해 보면 몇 도를 도는지 나온다</strong> — 그 값이 내가 확보한 공간 안인지 본다.</li>
+          <li><strong>선회 중의 슬립이 계단 응답에 섞인다</strong>는 것을 안다. 그래서 이 CSV 로 읽는 것은 "정확한 부하 응답"이 아니라 <strong>벤치와의 차이의 방향</strong>이다(표의 마지막 열).</li>
+        </ol>
+        <p><strong>선택 — 양쪽을 같이 구동하는 계단</strong>: <code>&lt;바퀴&gt;</code> 자리에 "양쪽"을 뜻하는 값을 하나 더하면(<code>pwm</code> 의 <code>all</code> 과 같은 꼴)
+        직진 계단을 찍을 수 있다. 명령 이름은 그대로라 명령 표와 어긋나지 않지만, <strong>고치는 곳은 fw-13 의 <code>cmd_step()</code></strong> 이다 —
+        포획은 여전히 바퀴 하나만 한다는 점(포획 바퀴와 구동 쪽이 달라진다)을 그 함수 안에서 어떻게 다룰지 내가 정한다. 안 고쳐도 이 실습은 닫힌다.</p>
+      </div>
+      <ol class="steps">
+        <li><strong>게인을 그대로 두고 먼저 한 번 찍는다.</strong> 벤치와 <strong>같은 목표 · 같은 시간</strong>으로. 바꾸기 전의 한 장이 없으면 견줄 것이 없다.
+          <pre><code class="lang-bash">&gt; pid                    # 지금 게인 세 줄을 적어 둔다
+&gt; step fl &lt;목표 mm/s&gt; &lt;ms&gt;
+# csv step cols=t_ms,target_mm_s,meas_mm_s,duty_permille,prot n=&lt;n&gt;
+...
+# end
+step n=&lt;n&gt; prot=&lt;n&gt; trips=&lt;n&gt;</code></pre>
+          <p class="small">CSV 는 화면에서 읽지 말고 <strong>파일로 받는다</strong> — 터미널을 로그 파일로 돌려 두고 <code>firmware/records/</code> 에 날짜를 붙여 저장한다. 벤치의 것과 같은 자리에.</p></li>
+        <li><strong>표의 여섯 줄을 채운다.</strong> 두 CSV 를 같은 그래프에 겹쳐 그리면 가장 빠르다(<code>python3</code> + matplotlib, 또는 표계산). 숫자를 눈대중으로 읽지 않는다.</li>
+        <li><strong>P → I → D 순서로 다시 잡는다</strong>(<a href="fw-13-pid-protection.html#s2-4">fw-13 §2-4</a> 의 순서 그대로). 한 번에 한 항만 바꾸고, 바꿀 때마다 같은 <code>step</code> 을 다시 찍는다.
+          <pre><code class="lang-bash">&gt; pid set kp &lt;milli&gt;
+OK pid
+&gt; step fl &lt;목표 mm/s&gt; &lt;ms&gt;      # 같은 명령을 다시</code></pre></li>
+        <li><strong>정지 마찰 구간을 따로 본다.</strong> 낮은 목표(바퀴가 겨우 도는 값)로 <code>step</code> 을 한 번 더 찍고, <strong>듀티가 올라가는 동안 속도가 0 인 구간</strong>이 CSV 에 몇 ms 나 있는지 센다.
+          그 구간이 길면 적분기가 그동안 쌓인다 — <strong>여기가 바닥에서 와인드업이 처음 문제가 되는 자리</strong>다. 이 숫자가 실습 D 의 <code>STALL_SPEED_MAX_MM_S</code> · <code>FBLOST_*</code> 를 고르는 입력이 된다.</li>
+        <li><strong>마음에 드는 게인이 나오면 <code>save</code> 한다.</strong> <code>MOTOR_EN</code> 이 HIGH 면 거부당한다 — 먼저 내린다.
+          <pre><code class="lang-bash">&gt; en 0
+&gt; save
+save slot=&lt;n&gt; free=&lt;n&gt; len=&lt;n&gt; seq=&lt;n&gt; erased=&lt;0|1&gt; erase_us=&lt;n&gt; erase_tick_ms=&lt;n&gt;
+&gt; save show
+save valid=1 slot=&lt;n&gt; free=&lt;n&gt; nslots=&lt;n&gt; seq=&lt;n&gt; ver=&lt;n&gt; len=&lt;n&gt; dirty=0
+save kp_milli=&lt;n&gt; ki_milli=&lt;n&gt; kd_milli=&lt;n&gt; bno=&lt;0|1&gt;</code></pre></li>
+        <li><strong>소스에도 적는다.</strong> <code>save</code> 는 플래시에 넣을 뿐 <code>robot_params.h</code> 를 고치지 않는다. 다음에 지우거나 새 보드에 구울 때를 위해
+          <code>PID_KP_MILLI</code> 셋을 같은 값으로 고치고 상태 낱말을 <code>MEASURED(&lt;날짜&gt;, 바닥 계단 응답 — &lt;바닥 종류&gt;)</code> 로 바꾼다.
+          <strong>바닥 종류를 낱말에 넣는 이유</strong>는 카펫에서 잰 게인과 장판에서 잰 게인이 다른 값이기 때문이다.</li>
+      </ol>
+
+      <h4 id="s3-2-4">3-2-4. 보고 판정하기</h4>
+      <p>판정은 "좋아졌다"가 아니라 <strong>표가 다 찼는가</strong>다. 여섯 줄이 모두 차 있고, 벤치와 바닥의 차이마다 <strong>내가 쓴 한 문장</strong>이 붙어 있으면 이 실습은 닫힌다.
+      게인을 아예 안 바꾸기로 했더라도 — 두 CSV 가 거의 같았다면 — 그것도 결과다. <strong>"바꿀 필요가 없었다"와 "확인하지 않았다"는 다르다.</strong></p>
+      <p>그리고 <code>save show</code> 의 게인 셋과 <code>pid</code> 가 찍는 게인 셋이 <strong>같은지</strong> 한 번 본다. 다르면 <code>save</code> 이후에 <code>pid set</code> 을 한 것이고,
+      다음 부팅에서 값이 되돌아간다(<a href="fw-16-flash-store.html#s3-3">fw-16 §3-3</a>).</p>
+
+      <h3 id="s3-3">3-3. 실습 C — <code>traction.c</code>: Mac 에서 먼저, 그 다음에 바닥에서 <span class="tag asm">조립 후</span> <span class="tag power">모터 전원</span></h3>
+      <p>이 실습만 두 곳에서 한다. <strong><code>traction.h</code> · <code>traction.c</code> · <code>test_traction.c</code> 세 파일은 차체가 없어도 Mac 에서 끝난다</strong> — 차체를 기다리는 날 미리 해 두면 좋다.
+      다만 <strong><code>robot_params.h</code> 의 여섯 줄과 <code>control.c</code> 의 가드 · 배선은 09a 가 트랙 폭을 낸 뒤에 넣는다</strong> — 먼저 넣으면 가드가 빌드를 세워
+      실습 A · B 에 필요한 펌웨어를 굽지 못한다(§3-3-2). 마지막 걸음(<code>trac on</code> 뒤 제자리 회전)은 09a 세팅 D 에서 연다.</p>
+      <div class="callout warn"><span class="ct">STOP — 실습 C 의 입구 조건 (§3-2 의 목록에 더한다)</span>
+        <ol>
+          <li><strong><code>TRACK_WIDTH_MM</code> 이 <code>MEASURED(</code> 다.</strong> 09a 의 제자리 회전 캘리브레이션이 낸 값이다. 눈이 아니라 <code>grep</code> 으로 확인한다(§3-3-3 의 4번).</li>
+          <li><strong>09a 의 회전 부호 항목이 닫혀 있다</strong> — 바닥에서 반시계로 돌렸을 때 차체 · IMU · 오도메트리 셋의 부호가 같다(§2-7).</li>
+          <li>제자리 회전을 할 <strong>원형 공간</strong>이 있다 — 로봇 외곽(09a 가 잰 값)의 대각선보다 넉넉히. 벽 · 가구에서 떨어져 있다.</li>
+          <li>회전은 <strong>낮은 각속도</strong>로 한다. 06b 에서 정한 <code>max_angular_vel</code> 이하이고, 이 실습에서 올리지 않는다.</li>
+          <li>§3-2 의 STOP 열한 항목이 <strong>그대로 참</strong>이다(로봇을 옮겼으면 다시 훑는다).</li>
+        </ol>
+      </div>
+
+      <h4 id="s3-3-2">3-3-2. 골격</h4>
+      <p>먼저 <code>robot_params.h</code> 에 여섯 줄을 더한다. 전부 EMPTY 로 태어난다 — 값은 이 실습과 실습 D 에서 내가 정한다.</p>
+      <pre><code class="lang-c">/* robot_params.h - 이 여섯 줄을 더한다. 바퀴 enum 과 다른 키는 모두 그대로 둔다. */
+#define TRACK_WIDTH_MM      0   /* ____ 유효 트랙 폭, 관문에서 잰다 [mm] */
+#define TRAC_S_TH_MILLI     0   /* ____ 슬립 비율 문턱 [0.001 x] */
+#define TRAC_K_DOWN_MILLI   0   /* ____ 문턱을 넘은 슬립 1 당, 스텝마다 깎는 양 [0.001 x] */
+#define TRAC_K_UP_MILLI     0   /* ____ 회복 속도 [초당 0.001 x] */
+#define TRAC_MIN_PERMILLE   0   /* ____ 하한 클램프, 0 은 금지 [1/1000] */
+#define TRAC_V_MIN_MM_S     0   /* ____ 분모 하한, 저속에서 s 가 발산하지 않게 한다 [mm/s] */</code></pre>
+      <p>그리고 <strong><code>control.c</code></strong> 에 가드 여섯 줄. 빈칸인 채로는 이 쪽 이후의 펌웨어가 <strong>빌드되지 않는다</strong> — 그것이 순서 조건을 지키게 하는 장치다.</p>
+      <pre><code class="lang-c">/* control.c, 다른 가드들과 함께 맨 위에 (fw-13 이 열 개, fw-18 이 네 개를 더 뒀다).
+   이것들이 traction.c 가 아니라 "여기"에 있는 이유는 protect.c · safety.c 와 같다:
+   traction.c 는 순수 파일이고 문턱을 traction_cfg_t 로 받는다. 그래서 키를 실제로
+   "쓰는" 파일은 control.c 다 - cfg 를 채우는 쪽이 여기다. */
+_Static_assert((TRACK_WIDTH_MM)    != 0, "robot_params.h: TRACK_WIDTH_MM is still EMPTY");
+_Static_assert((TRAC_S_TH_MILLI)   != 0, "robot_params.h: TRAC_S_TH_MILLI is still EMPTY");
+_Static_assert((TRAC_K_DOWN_MILLI) != 0, "robot_params.h: TRAC_K_DOWN_MILLI is still EMPTY");
+_Static_assert((TRAC_K_UP_MILLI)   != 0, "robot_params.h: TRAC_K_UP_MILLI is still EMPTY");
+_Static_assert((TRAC_V_MIN_MM_S)   != 0, "robot_params.h: TRAC_V_MIN_MM_S is still EMPTY");
+_Static_assert((TRAC_MIN_PERMILLE) &gt; 0 &amp;&amp; (TRAC_MIN_PERMILLE) &lt;= 1000,
+               "robot_params.h: TRAC_MIN_PERMILLE is still EMPTY or out of range");</code></pre>
+      <pre><code class="lang-text">(TRACK_WIDTH_MM 이 0 인 채로 빌드하면 이렇게 선다 - Mac 의 cc 로 확인한 실제 메시지다:
+ error: static assertion failed due to requirement '(0) != 0': robot_params.h: TRACK_WIDTH_MM is still EMPTY)</code></pre>
+      <p class="small"><strong>가드가 <code>traction.c</code> 가 아니라 <code>control.c</code> 에 있는 이유</strong>: <code>traction.c</code> 는 순수 파일이라
+      <code>robot_params.h</code> 의 값을 직접 읽지 않고 <code>traction_cfg_t</code> 로 <strong>받는다</strong>. 그래서 키를 실제로 "쓰는" 파일은 cfg 를 채우는 <code>control.c</code> 다 —
+      <a href="fw-13-pid-protection.html">fw-13</a> 의 보호 문턱 열, <a href="fw-18-safety-fsm.html">fw-18</a> 의 안전 임계 넷과 같은 자리다.
+      덤으로, 가드가 <code>traction.c</code> 에 있으면 <strong>호스트 시험까지 같이 막힌다</strong> — 그런데 그 시험은 트랙 폭을 재기 <em>전에</em> 돌리라고 있는 것이다.</p>
+      <p><strong><code>User/Inc/Control/traction.h</code></strong>:</p>
+      <pre><code class="lang-c">/* User/Inc/Control/traction.h - 바퀴별 슬립 억제. 순수: HAL 헤더 없음.
+   단위: 속도 [mm/s], omega [rad/s], 트랙 폭 [mm], dt [s]. trac[] 는 0..1, 단위 없음. */
+#ifndef TRACTION_H
+#define TRACTION_H
+
+#include "Config/robot_params.h" /* FL FR RL RR NW, TRAC_* */
+
+typedef struct {
+  float s_th;            /* 슬립 비율 문턱 [-] */
+  float k_down;          /* 문턱을 넘은 슬립 1 당, 스텝마다 trac 을 깎는 양 [-] */
+  float k_up;            /* trac 회복 속도 [1/s] */
+  float trac_min;        /* 하한 클램프 [-] - 바퀴를 완전히 끊지 않는다 */
+  float v_min_mm_s;      /* 분모 하한 [mm/s] */
+  float track_width_mm;  /* 유효 트랙 폭 W [mm] - 관문에서 잰 MEASURED 값 */
+} traction_cfg_t;
+
+void  traction_reset(float trac[NW]);
+float traction_median4(const float v[NW]);
+void  traction_step(const traction_cfg_t *cfg, const float meas_mm_s[NW],
+                    float omega_rad_s, float dt_s, float trac[NW]);
+#endif</code></pre>
+      <p><strong><code>User/Src/Control/traction.c</code></strong> — 빈 본문은 "억제하지 않는다"(<code>trac</code> 를 건드리지 않는다)로 안전하게 동작한다:</p>
+      <pre><code class="lang-c">/* User/Src/Control/traction.c - 슬립 억제, 바퀴마다 계수 하나. 순수: HAL 헤더 없음.
+ * control_step_1khz() 에서 PID "다음", motor_set() "앞"에 부른다: u_i = pid_out_i * trac[i].
+ * 단위: 속도 [mm/s], omega [rad/s] (로봇 좌표계, +z 위, 반시계(CCW)가 양), W [mm], dt [s].
+ * 불변식:
+ *   - trac[i] 는 [cfg-&gt;trac_min, 1.0f] 밖으로 나가지 않는다
+ *   - 분모는 cfg-&gt;v_min_mm_s  (&gt; 0) 아래로 내려가지 않는다. 그래서 0 으로 나누는 일이 없다
+ *   - cfg-&gt;track_width_mm == 0 이면 이 함수는 회전 중에 "틀린다" - 그 전에 빌드가
+ *     멈춰 세운다 (control.c 의 _Static_assert 를 본다) */
+#include "Control/traction.h"
+
+void traction_reset(float trac[NW])
+{
+  for (int i = 0; i &lt; NW; ++i) trac[i] = 1.0f;
+}
+
+/* 넷의 중앙값: 정렬한 뒤 가운데 두 값의 평균.
+ * 왜 그냥 평균이 아닌가: 모든 기대 속도는 v_b 로 만들어지는데, 헛도는
+ * 바퀴 하나가 평균을 끌고 간다. test_traction.c 의 벡터로 직접 확인한다. */
+float traction_median4(const float v[NW])
+{
+  /* TODO(you) [T1]: 넷의 중앙값 - 정렬한 뒤 가운데 둘의 평균 - 힌트 카드 T1
+       1) float a[NW] 를 선언하고 v[0..3] 을 복사한다 (v 는 const 라 제자리에서 못 바꾼다)
+       2) a[] 를 오름차순으로 정렬한다 - 네 개뿐이라 삽입 정렬이면 충분하다
+       3) 0.5f * (a[1] + a[2]) 를 반환한다
+     채우기 시작하면 아래 두 줄(빌드용 자리표시)은 지운다. */
+  (void)v;
+  return 0.0f;
+}
+
+void traction_step(const traction_cfg_t *cfg, const float meas_mm_s[NW],
+                   float omega_rad_s, float dt_s, float trac[NW])
+{
+  /* TODO(you) [T2]: 바퀴마다 슬립 비율을 재고 계수를 깎거나 회복한다 - 힌트 카드 T2
+       1) v_b  = traction_median4(meas_mm_s)                      - 차체 속도 [mm/s]
+       2) half = omega_rad_s * cfg-&gt;track_width_mm * 0.5f         - w * W / 2 [mm/s], 루프 밖에서 한 번
+       for 로 i = 0 .. NW-1 하나마다:
+       3) v_exp = 왼쪽 바퀴(짝수 인덱스)는 v_b - half, 오른쪽 바퀴는 v_b + half
+       4) den   = max(|v_exp|, cfg-&gt;v_min_mm_s)                   - 분모 하한, 0 으로 나누지 않게
+       5) s     = (meas_mm_s[i] - v_exp) / den                    - 슬립 비율 [-]
+       6) |s| &gt; cfg-&gt;s_th 면  trac[i] -= cfg-&gt;k_down * (|s| - cfg-&gt;s_th), 그리고 cfg-&gt;trac_min 아래로 못 가게
+          그 밖에는           trac[i] += cfg-&gt;k_up * dt_s,                 그리고 1.0f 위로 못 가게
+     절댓값은 math.h 없이 한 줄짜리 static 함수를 이 함수 위에 둔다 (순수 파일 - 표준 라이브러리에 기대지 않는다)
+     비워 두면 "억제 없음"이다 - 지금 로봇이 하는 그대로다.
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  (void)cfg; (void)meas_mm_s; (void)omega_rad_s; (void)dt_s; (void)trac;
+}</code></pre>
+
+      <h4 id="s3-3-3">3-3-3. 직접 채우기 — 정답 대신 벡터</h4>
+      <p>본문을 채우기 전에 시험을 먼저 본다. 아래 파일은 <strong>전량 제공</strong>이다 — 이유: <strong>벡터가 곧 채점표</strong>이고, 이 여섯 묶음이 이 쪽의 순서 조건을 증명하는 물건이기 때문이다.</p>
+      <pre><code class="lang-c">/* firmware/host_tests/test_traction.c - Mac 에서 돈다, MCU 없음, HAL 없음.
+   기댓값은 손이 아니라 독립된 python3 모델로 계산했다:
+     def med4(v): a=sorted(v); return 0.5*(a[1]+a[2])
+     ve = med4(meas) + (-1 if i%2==0 else 1) * omega*W/2 ; den = max(abs(ve), v_min)
+     s  = (meas[i]-ve)/den ; trac -= k_down*(|s|-s_th) if |s|&gt;s_th else trac += k_up*dt   */
+#include &lt;assert.h&gt;
+#include &lt;stdio.h&gt;
+#include "Control/traction.h"
+
+static int n_cases = 0;
+static void near(float got, float want)
+{
+  float d = got - want; if (d &lt; 0) d = -d;
+  if (!(d &lt;= 1e-4f)) { printf("FAIL got %.6f want %.6f\n", got, want); assert(0); }
+  ++n_cases;
+}
+static const traction_cfg_t CFG = { 0.20f, 0.05f, 0.5f, 0.30f, 30.0f, 400.0f };
+
+int main(void)
+{
+  float t[NW];
+  /* A. median4 는 폭주하는 바퀴 하나를 무시한다. 평균이면 여기서 300 이 나온다 */
+  { const float a[NW] = { 100, 100, 100, 900 }; near(traction_median4(a), 100.0f); }
+  /*    이 둘째 것: 평균 == 중앙값 == 0 이라, 평균이 아니라 부호 대칭을 검사한다 */
+  { const float a[NW] = { -200, 200, -200, 200 }; near(traction_median4(a), 0.0f); }
+  /* B. 직진, 넷이 일치 -&gt; 아무도 깎이지 않고, trac 은 1 쪽으로 회복한다 */
+  { const float m[NW] = { 500, 500, 500, 500 };
+    traction_reset(t); traction_step(&amp;CFG, m, 0.0f, 0.001f, t);
+    for (int i = 0; i &lt; NW; ++i) near(t[i], 1.0f); }
+  /* C. W = 400 mm 로 +1.0 rad/s "제자리 회전": omega*W/2 = 200 mm/s.
+        모든 바퀴가 회전이 요구하는 속도로 정확히 돈다 -&gt; 슬립 0.
+        TRACK_WIDTH_MM 이 아직 0 이면 실패하는 벡터가 이것이다.  */
+  { const float m[NW] = { -200, 200, -200, 200 };
+    traction_reset(t); traction_step(&amp;CFG, m, 1.0f, 0.001f, t);
+    for (int i = 0; i &lt; NW; ++i) near(t[i], 1.0f); }
+  /* D. 바퀴 하나가 헛돎: s_RR = (1500-500)/500 = 2.0 -&gt; 1 - 0.05*(2.0-0.2) */
+  { const float m[NW] = { 500, 500, 500, 1500 };
+    traction_reset(t); traction_step(&amp;CFG, m, 0.0f, 0.001f, t);
+    near(t[FL], 1.0f); near(t[FR], 1.0f); near(t[RL], 1.0f); near(t[RR], 0.91f); }
+  /* E. 깎기는 trac_min 으로 클램프되고, 0 에 닿지 않는다 */
+  { const float m[NW] = { 500, 500, 500, 1500 };
+    t[FL] = t[FR] = t[RL] = 1.0f; t[RR] = 0.31f;
+    traction_step(&amp;CFG, m, 0.0f, 0.001f, t); near(t[RR], 0.30f); }
+  /* F. 회복은 초 단위다: 0.30 + 0.5 * 0.001 */
+  { const float m[NW] = { 500, 500, 500, 500 };
+    for (int i = 0; i &lt; NW; ++i) t[i] = 0.30f;
+    traction_step(&amp;CFG, m, 0.0f, 0.001f, t);
+    for (int i = 0; i &lt; NW; ++i) near(t[i], 0.3005f); }
+  printf("PASS traction %d cases\n", n_cases);
+  return 0;
+}</code></pre>
+      <p>돌리는 명령은 두 줄이다. 둘째 줄이 조용해야 통과다.</p>
+      <pre><code class="lang-bash"># 값 채점
+cd firmware
+cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_traction.c h723zg/User/Src/Control/traction.c -o /tmp/test_traction &amp;&amp; /tmp/test_traction
+# 진단 - 값이 맞아도 정의되지 않은 동작(UB)이 있으면 여기서 runtime error 가 뜬다
+cc -std=c11 -Wall -Wextra -fsanitize=undefined -Ih723zg/User/Inc host_tests/test_traction.c h723zg/User/Src/Control/traction.c -o /tmp/test_traction_ub &amp;&amp; /tmp/test_traction_ub</code></pre>
+      <pre><code class="lang-text">(다 채우면 두 줄 모두  PASS traction 19 cases  로 끝난다.
+ 골격 그대로 돌리면 첫 벡터에서  FAIL got 0.000000 want 100.000000  으로 선다.)</code></pre>
+      <div class="callout note"><span class="ct">이 벡터들이 <em>무엇을</em> 잡는지는 실제로 틀려 보고 확인했다</span>
+        <p>"이 시험이 이 잘못을 잡는다"는 말은 믿을 것이 못 된다 — 틀린 구현을 만들어 돌려 봐야 안다.
+        아래 넷은 이 가이드가 <strong>실제로 만들어 돌려 본</strong> 결과다(Mac, <code>cc -std=c11 -Wall -Wextra</code>).</p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>일부러 틀린 구현</th><th>걸리는 벡터</th><th>실제로 나온 줄</th></tr></thead>
+          <tbody>
+            <tr><td>중앙값 대신 <strong>평균</strong></td><td>A</td><td><code>FAIL got 300.000000 want 100.000000</code></td></tr>
+            <tr><td><code>&omega;&middot;W/2</code> 항을 <strong>빠뜨림</strong>(= 트랙 폭 0 과 같다)</td><td>C</td><td><code>FAIL got 0.676667 want 1.000000</code></td></tr>
+            <tr><td>좌/우 <strong>부호를 맞바꿈</strong></td><td>C</td><td><code>FAIL got 0.910000 want 1.000000</code></td></tr>
+            <tr><td>도를 <strong>라디안으로 바꾸지 않음</strong>(57.3배)</td><td>C</td><td><code>FAIL got 0.960873 want 1.000000</code></td></tr>
+          </tbody>
+        </table></div>
+        <p>넷 중 <strong>셋이 벡터 C</strong>(정상 제자리 회전)에 걸린다는 것이 이 쪽의 요점이다 — <strong>&omega; 와 W 가 식에 제대로 들어갔는가</strong>를 묻는 벡터가 그것 하나뿐이기 때문이다.
+        그래서 C 가 통과하지 않으면 <code>trac on</code> 을 치지 않는다.</p>
+      </div>
+      <ol class="steps">
+        <li><strong><code>traction_median4()</code> 부터</strong> 채운다. 벡터 A 두 줄만 통과시키면 된다 — 네 값을 복사해 정렬하고 가운데 둘의 평균을 돌려준다.</li>
+        <li><strong><code>traction_step()</code></strong> 을 골격의 주석 순서대로 채운다. 짝수 인덱스가 왼쪽이다(<code>enum { FL = 0, FR, RL, RR, NW }</code> — 짝수 왼쪽 · 홀수 오른쪽).</li>
+        <li><strong><code>control.c</code> 에 연결한다</strong>: <code>traction_cfg_t</code> 를 <code>robot_params.h</code> 의 여섯 키에서 채우고(정수 → 실수 환산은 키 이름의 단위를 그대로 따른다),
+          1 kHz 안에서 <strong>PID 뒤 · <code>motor_set()</code> 앞</strong>에 <code>traction_step()</code> 을 부른 뒤 <code>u_i &times; trac[i]</code> 를 내보낸다.
+          &omega; 는 §2-8 의 두 줄로 만든다. 그리고 <code>trac</code> 명령을 등록한다 — <strong>명령 이름은 <code>trac</code> 하나</strong>이고 하위 동작은 둘째 인자다.</li>
+        <li><strong>순서 조건을 <code>grep</code> 으로 확인한다.</strong> 눈으로 보지 않는 이유는, 옆줄의 다른 키에도 <code>MEASURED(</code> 가 붙어 있어서 그냥 훑으면 착각하기 쉽기 때문이다.
+          아래 한 줄은 <strong>그 키의 줄에만</strong> 걸린다(줄머리의 <code>#define</code> 과 키 이름을 같이 묶었다).
+          <pre><code class="lang-bash">grep -n '^#define[[:space:]]*TRACK_WIDTH_MM[[:space:]].*MEASURED(' \
+     firmware/h723zg/User/Inc/Config/robot_params.h</code></pre>
+          <pre><code class="lang-text">아직 안 쟀을 때 : (아무 줄도 안 나오고 exit 1)
+쟀을 때        : 2:#define TRACK_WIDTH_MM    &lt;n&gt;   /* MEASURED(&lt;날짜&gt;, 제자리 &lt;N&gt;회전) [mm] */</code></pre>
+          <p class="small">이 두 출력은 같은 파일의 두 판본(빈칸판 · 실측판)에 실제로 돌려 확인한 것이다. 줄 번호는 내 파일마다 다르다.
+          <strong>이 <code>grep</code> 이 한 줄을 내놓기 전에는 다음 걸음으로 가지 않는다</strong> — 체크 항목 <code>track-width-measured-before-traction</code> 이 그것이다.</p></li>
+      </ol>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 1 = T1 · 걸음 2 = T2. 걸음 3(<code>control.c</code> 배선)과 4(<code>grep</code>)는 골격 블록이 없는 걸음이라 카드가 없다 — 3 은 §2-8 의 두 줄과 §3-3-4 의 출력 꼴이 안내다. 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>traction_median4()</code> · 넷의 중앙값을 낸다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 입력은 바퀴 네 개의 측정 속도 <code>v[FL .. RR]</code> [mm/s], 읽기 전용(<code>const</code>). 출력은 넷을 크기 순으로 세웠을 때 <strong>가운데 두 값의 평균</strong> [mm/s]. 끝났을 때 참이어야 하는 것: 입력 배열은 그대로이고, 헛도는 바퀴 하나(벡터 A 의 900)가 결과를 끌고 가지 않는다. 부르는 곳은 <code>traction_step()</code>(1 kHz 마다 한 번)과 호스트 시험 A(직접 부른다).</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T1 - User/Src/Control/traction.c */
+float traction_median4(const float v[NW])
+{
+  float a[NW];
+  for (int i = 0; i &lt; NW; ++i) a[i] = v[i];     /* 사본 - v 는 const 라 제자리에서 정렬할 수 없다 */
+
+  for (int i = 1; i &lt; NW; ++i) {                /* 삽입 정렬, 오름차순. 네 개면 이것으로 충분하다 */
+    const float x = a[i];
+    int j = i - 1;
+    while (j &gt;= 0 &amp;&amp; a[j] &gt; x) { a[j + 1] = a[j]; --j; }   /* x 보다 큰 것을 한 칸씩 뒤로 민다 */
+    a[j + 1] = x;
+  }
+  return 0.5f * (a[1] + a[2]);                  /* 가운데 둘의 평균 */
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>const float v[NW]</code> — 매개변수 자리의 <code>[NW]</code> 는 <strong>설명일 뿐</strong>이다. C 는 배열 매개변수를 포인터(<code>const float *</code>)로 받는다 — 그래서 <code>sizeof v</code> 는 배열 크기가 아니라 포인터 크기가 나오고(흔한 실수 표의 셋째 줄), 길이는 언제나 <code>NW</code> 로 센다. <code>const</code> 는 "이 함수는 v 를 읽기만 한다"는 약속이다 — 그래서 다음 줄의 사본이 필요하다.</li>
+          <li><code>float a[NW]; for (…) a[i] = v[i];</code> — 사본. 정렬은 자리를 바꾸는 일인데 <code>v</code> 는 <code>const</code> 라 바꿀 수 없다(바꾸려 하면 컴파일러가 막는다 — 흔한 실수 첫 줄). 약속이 없었더라도 부른 쪽의 <code>meas_mm_s</code> 를 뒤섞어 놓으면 <code>traction_step()</code> 이 바로 다음 줄에서 <strong>엉뚱한 바퀴의 속도</strong>를 읽게 된다.</li>
+          <li>삽입 정렬 묶음 — 바깥 <code>for</code> 는 둘째 칸부터 하나씩 집는다(<code>x = a[i]</code>). 안쪽 <code>while</code> 은 x 보다 큰 앞 칸들을 한 칸씩 뒤로 밀고(<code>a[j + 1] = a[j]</code>), 더 밀 것이 없을 때 — <code>j</code> 가 -1 이 됐거나 <code>a[j] &lt;= x</code> — 그 자리(<code>a[j + 1]</code>)에 x 를 놓는다. 끝나면 <code>a[0] &lt;= a[1] &lt;= a[2] &lt;= a[3]</code>.</li>
+          <li><code>j &gt;= 0 &amp;&amp; a[j] &gt; x</code> — <strong>순서가 중요하다.</strong> <code>&amp;&amp;</code> 는 왼쪽이 거짓이면 오른쪽을 아예 평가하지 않는다(단락 평가). 그래서 <code>j</code> 가 -1 일 때 <code>a[-1]</code> 을 읽는 일이 없다. 둘을 맞바꿔 <code>a[j] &gt; x &amp;&amp; j &gt;= 0</code> 으로 쓰면 <code>j</code> 가 -1 로 내려간 순간 <code>a[-1]</code> 을 먼저 읽는다. 실제로 돌려 보니 <strong>이 쪽의 벡터로는 값 채점도 진단 줄도 조용하다</strong> — 첫 칸이 가장 큰 벡터가 하나도 없어 <code>j</code> 가 -1 에 닿지 않기 때문이다. <code>{ 900, 100, 100, 100 }</code> 을 넣으면 값은 100 으로 맞게 나오면서 진단 줄(<code>-fsanitize=undefined</code>)이 <code>runtime error: index -1 out of bounds for type 'float[4]'</code> 로 잡는다. 벡터가 조용하다고 옳은 것은 아니라는 예다 — 순서를 지킨다.</li>
+          <li><code>--j</code> — j 를 1 줄인다. 값을 쓰지 않는 자리라 <code>j--</code> 와 같다.</li>
+          <li><code>return 0.5f * (a[1] + a[2]);</code> — 정렬된 넷의 가운데는 <code>a[1]</code> 과 <code>a[2]</code> 다. <code>0.5f</code> 의 <code>f</code> 는 "float 상수"라는 표시다 — <code>0.5</code> 라고 쓰면 double 이라 식이 double 로 올라갔다가 반환할 때 float 로 내려온다. 값은 같지만 이 파일은 형을 float 하나로 통일한다(계약의 값이 전부 float 이다).</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① 정렬 없이 <code>(a0 + a1 + a2 + a3 - 최솟값 - 최댓값) * 0.5f</code> 로도 같은 값이다(넷의 중앙값은 양 끝을 뺀 둘의 평균이므로) — 동일 ② <code>&lt;stdlib.h&gt;</code> 의 <code>qsort()</code> 에 비교 함수를 넘겨도 된다 — 함수 하나와 헤더 하나가 더 생긴다 ③ 버블 정렬이나 비교-교환 다섯 번(정렬 네트워크)도 결과는 같다. 네 개를 1 kHz 에 한 번 정렬하는 비용은 어느 쪽이든 문제가 되지 않는다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 파일). 표준 라이브러리도 부르지 않는다.</p>
+        <p><strong>흔한 실수</strong> — 메시지는 틀린 코드를 실제로 컴파일해 나온 글자다(Mac = <code>cc -std=c11 -Wall -Wextra</code>, 펌웨어 = <code>arm-none-eabi-gcc 14.3 -Wall -Wextra</code>).</p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>사본 없이 <code>v[j + 1] = v[j]</code> 로 v 를 제자리에서 정렬</td><td>Mac: <code>error: read-only variable is not assignable</code> · arm-gcc: <code>error: assignment of read-only location '*(v + ((sizetype)j + 1) * 4)'</code></td><td><code>float a[NW]</code> 에 복사하고 <code>a</code> 를 정렬한다</td></tr>
+            <tr><td>중앙값 대신 평균 <code>0.25f * (a[0] + a[1] + a[2] + a[3])</code></td><td>컴파일은 된다. 벡터 A: <code>FAIL got 300.000000 want 100.000000</code></td><td>가운데 둘만 더한다</td></tr>
+            <tr><td>길이를 <code>sizeof v / sizeof v[0]</code> 로 셈</td><td>Mac: <code>warning: sizeof on array function parameter will return size of 'const float *' instead of 'const float[4]' [-Wsizeof-array-argument]</code>(+ <code>[-Wsizeof-pointer-div]</code> 하나 더) · arm-gcc: <code>warning: 'sizeof' on array function parameter 'v' will return size of 'const float *' [-Wsizeof-array-argument]</code>. 2 가 나와 두 칸만 복사되고 나머지 둘은 쓰레기다 — 이 가이드의 실행에서는 <code>FAIL got 50.000000 want 100.000000</code></td><td>길이는 <code>NW</code></td></tr>
+            <tr><td>복사 루프를 <code>i &lt;= NW</code> 로 씀(한 칸 넘침)</td><td>컴파일러는 조용하다. 값 채점 줄은 <strong>아무 말 없이 죽는다</strong>(exit 134). 진단 줄: <code>runtime error: index 4 out of bounds for type 'float[4]'</code> — §3-3-3 의 둘째 명령이 있는 이유다</td><td><code>i &lt; NW</code></td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-3-3 의 첫 명령으로 벡터 A 두 줄이 통과한다. 이 자리만 채우고 T2 를 비워 두면 시험은 <strong>벡터 D</strong> 에서 선다: <code>FAIL got 1.000000 want 0.910000</code> — <code>trac</code> 이 1.0 그대로라서다(B · C 는 "건드리지 않음"이 정답과 같아 그냥 지나간다). 체크포인트 <code>traction-host-pass</code> 의 앞 절반.</p>
+        </div></details>
+      <details class="hint" id="hint-t2"><summary>힌트 T2 — <code>traction_step()</code> · 바퀴마다 슬립 비율을 재고 계수를 깎거나 회복한다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 입력은 넷: <code>cfg</code>(문턱 여섯 — <code>control.c</code> 가 <code>robot_params.h</code> 의 정수 키를 실수로 환산해 채운 것), <code>meas_mm_s[NW]</code>(엔코더 속도), <code>omega_rad_s</code>(IMU 요 각속도, 로봇 기준 · 반시계 양, §2-7 · §2-8), <code>dt_s</code>(1 kHz 면 0.001). 입출력은 <code>trac[NW]</code> — 들어올 때의 값에서 <strong>깎거나 올린다</strong>(상태는 부른 쪽이 들고 있다). 끝났을 때 참이어야 하는 것은 골격 머리의 불변식 셋: <code>trac[i]</code> 는 <code>[trac_min, 1.0]</code> 안, 분모는 <code>v_min_mm_s</code> 아래로 안 내려감, <code>W == 0</code> 은 여기 오기 전에 빌드가 막는다. 부르는 곳은 <code>control_step_1khz()</code> 의 PID 다음 · <code>motor_set()</code> 앞 — 꺼져 있어도 부른다(계산은 하고 곱하지 않는 것은 부른 쪽의 일이다, §3-3-4).</p>
+        <p><strong>완결 코드</strong> — 첫 줄의 도우미는 이 함수 <em>위</em>에 둔다(C 는 쓰기 전에 선언돼 있어야 한다).</p>
+        <pre><code class="lang-c">/* 완결 코드 T2 - User/Src/Control/traction.c */
+static float fabs_f(float x) { return x &lt; 0.0f ? -x : x; }   /* 절댓값. &lt;math.h&gt; 없이 - 표준 라이브러리에 기대지 않는다 */
+
+void traction_step(const traction_cfg_t *cfg, const float meas_mm_s[NW],
+                   float omega_rad_s, float dt_s, float trac[NW])
+{
+  const float v_b  = traction_median4(meas_mm_s);                      /* 차체 속도 [mm/s] */
+  const float half = omega_rad_s * cfg-&gt;track_width_mm * 0.5f;         /* w * W / 2 [mm/s] */
+  for (int i = 0; i &lt; NW; ++i) {
+    const float v_exp = v_b + ((i % 2 == 0) ? -1.0f : 1.0f) * half;    /* 짝수 = 왼쪽 = 빼기 */
+    const float den   = fabs_f(v_exp) &gt; cfg-&gt;v_min_mm_s ? fabs_f(v_exp) : cfg-&gt;v_min_mm_s;
+    const float s     = (meas_mm_s[i] - v_exp) / den;                  /* 슬립 비율 [-] */
+    if (fabs_f(s) &gt; cfg-&gt;s_th) {
+      trac[i] -= cfg-&gt;k_down * (fabs_f(s) - cfg-&gt;s_th);                /* 헛돈다: 깎는다 */
+      if (trac[i] &lt; cfg-&gt;trac_min) trac[i] = cfg-&gt;trac_min;
+    } else {
+      trac[i] += cfg-&gt;k_up * dt_s;                                     /* 잡혔다: 초 단위로 회복 */
+      if (trac[i] &gt; 1.0f) trac[i] = 1.0f;
+    }
+  }
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>static float fabs_f(float x)</code> — 절댓값. 함수 <em>밖</em>의 <code>static</code> 은 "이 파일 안에서만 보이는 이름"이다(fw-05 의 카드에서 본 함수 <em>안</em>의 <code>static</code> 과 다르다 — 그쪽은 수명, 이쪽은 가시성). <code>&lt;math.h&gt;</code> 의 <code>fabsf</code> 를 안 쓴 것은 이 파일이 <strong>순수 파일</strong>이라서다 — 표준 라이브러리에 기대지 않는 쪽을 골랐다(①에서 보듯 기대도 된다). 이름을 <code>fabs_f</code> 로 한 것은 <code>fabsf</code> 와 부딪히지 않게 하려는 것이다.</li>
+          <li><code>v_b = traction_median4(meas_mm_s)</code> — T1 이 낸 차체 속도. 배열 이름을 넘기면 첫 칸의 주소가 넘어간다(T1 의 첫 설명과 같은 이야기).</li>
+          <li><code>half = omega_rad_s * cfg-&gt;track_width_mm * 0.5f</code> — §2-2 의 <code>w·W/2</code>. 단위를 따라가면 [rad/s]·[mm] = [mm/s] 다(라디안은 단위가 없다). 네 바퀴에 같은 값이라 <strong>루프 밖에서 한 번</strong> 계산한다. <code>cfg-&gt;</code> 의 화살표는 포인터로 받은 구조체의 필드를 고르는 것(fw-05 · fw-06 의 카드와 같다). <code>W</code> 가 0 이면 이 줄이 0 이 되어 §2-2 의 고장이 그대로 일어난다 — 그래서 <code>control.c</code> 의 가드가 먼저 선다.</li>
+          <li><code>v_exp = v_b + ((i % 2 == 0) ? -1.0f : 1.0f) * half</code> — 짝수 인덱스(FL = 0, RL = 2)가 왼쪽이고 왼쪽은 <strong>빼기</strong>(§2-2 그림). <code>%</code> 는 나머지, <code>?:</code> 는 "조건 ? 참일 때 : 거짓일 때"의 한 줄 분기다. <code>==</code> 가 <code>%</code> 보다 나중에 묶이므로 안쪽 괄호 없이도 같은 뜻이지만, 괄호를 두는 편이 읽기 쉽다. 부호를 맞바꾸면 벡터 C 가 잡는다(§2-7 — 정상 회전이 통째로 슬립이 된다).</li>
+          <li><code>den = fabs_f(v_exp) &gt; cfg-&gt;v_min_mm_s ? fabs_f(v_exp) : cfg-&gt;v_min_mm_s</code> — <code>max(|v_exp|, v_min)</code> 을 손으로 쓴 것. <code>v_exp</code> 가 0 근처면 다음 줄의 나눗셈이 발산한다 — 불변식 둘째 줄이 이 한 줄이다.</li>
+          <li><code>s = (meas_mm_s[i] - v_exp) / den</code> — 슬립 비율. 부호가 있다: 양이면 바퀴가 기대보다 빠르다(헛돈다), 음이면 느리다(끌린다). 둘 다 "땅을 못 잡는 것"이라 다음 줄에서 절댓값을 본다.</li>
+          <li><code>if (fabs_f(s) &gt; cfg-&gt;s_th)</code> — 문턱을 넘으면 깎는다. 깎는 양은 <strong>초과분에 비례</strong>(<code>k_down * (|s| - s_th)</code>) — 문턱에 걸친 바퀴는 거의 안 깎이고 크게 헛도는 바퀴가 크게 깎인다(벡터 D: 1 − 0.05 × (2.0 − 0.2) = 0.91). 그다음 <code>trac_min</code> 으로 바닥을 친다 — 바퀴를 완전히 끊지 않는다는 뜻이다. 0 까지 내려가면 그 바퀴는 서고, 선 바퀴의 <code>s</code> 는 −1 근처에 머물러 <strong>영영 회복 가지로 못 간다</strong>(식에서 따라 나온다).</li>
+          <li><code>else { trac[i] += cfg-&gt;k_up * dt_s; … }</code> — 문턱 안이면 회복한다. <code>k_up</code> 의 단위가 [1/s] 라 <code>dt_s</code> 를 곱해야 한 스텝의 양이 된다(벡터 F: 0.5 × 0.001 = 0.0005). 1.0 위로는 못 간다 — "억제하지 않음"이 최대다. 깎기는 <code>dt</code> 를 안 곱하는데 회복은 곱하는 이유는 <code>robot_params.h</code> 의 키 주석 그대로다: <code>TRAC_K_DOWN_MILLI</code> 는 "스텝마다", <code>TRAC_K_UP_MILLI</code> 는 "초당"으로 정의돼 있다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① <code>&lt;math.h&gt;</code> 의 <code>fabsf</code> 를 써도 된다. 실제로 확인한 것: Mac 의 <code>cc</code> 는 <code>-lm</code> 없이 링크된다(macOS 는 수학 함수가 표준 C 라이브러리 안에 있다 — <a href="fw-18-safety-fsm.html#s3-1-3">fw-18 §3-1-3</a> 이 같은 말을 한다). <code>arm-none-eabi-gcc</code> 는 <code>-O0</code> 에서도 <code>fabsf</code> 를 <code>vabs.f32</code> 명령으로 인라인해 목적 파일에 <code>U fabsf</code> 가 남지 않는다(<code>arm-none-eabi-nm</code> 으로 봤다) — fw-18 의 <code>atan2f</code> · <code>sqrtf</code> 와 달리 링크에 <code>m</code> 을 더할 일이 없다. <strong>둘 다 옳다</strong> ② 왼쪽 판정을 <code>i % 2 == 0</code> 대신 부호 배열(<code>{-1, +1, -1, +1}</code>)로 둘 수 있다 — 바퀴 enum 이 짝수 왼쪽인 한 결과는 동일 ③ 클램프 두 줄을 <code>fminf</code> / <code>fmaxf</code> 로 쓸 수 있다 — 그러면 <code>&lt;math.h&gt;</code> 가 딸려 온다 ④ <code>k_down</code> 도 [1/s] 로 정의해 <code>dt_s</code> 를 곱해도 된다 — 그러면 키의 주석과 벡터 D · E 의 기댓값을 같이 바꿔야 한다 ⑤ <code>trac</code> 이 꺼져 있을 때도 이 함수를 <strong>부를지 말지</strong>는 내 결정이다. 이 가이드는 "꺼져도 계산은 한다"(그래야 <code>trac off</code> 가 측정 모드가 된다)를 쓰지만, 계산을 건너뛰고 <code>smax</code> 를 포기해도 된다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 파일). <code>traction_median4()</code> 는 T1 에서 내가 쓴 함수다.</p>
+        <p><strong>흔한 실수</strong> — 컴파일러가 <strong>멈춰 세우는</strong> 것(error)은 첫 줄 하나뿐이다. 셋째 · 넷째 줄은 경고만 내고 빌드는 된다. 나머지는 벡터가 잡거나(§3-3-3 머리의 표에 셋이 더 있다) 아무도 못 잡는다. 메시지는 틀린 코드를 실제로 컴파일해 나온 글자다(Mac = <code>cc -std=c11 -Wall -Wextra</code>, 펌웨어 = <code>arm-none-eabi-gcc 14.3 -Wall -Wextra</code>).</p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>fabsf</code> 를 <code>&lt;math.h&gt;</code> 없이 씀</td><td>Mac: <code>error: call to undeclared library function 'fabsf' with type 'float (float)'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]</code> · arm-gcc: <code>error: implicit declaration of function 'fabsf' [-Wimplicit-function-declaration]</code></td><td>한 줄 <code>static</code> 도우미를 두거나 <code>&lt;math.h&gt;</code> 를 포함한다</td></tr>
+            <tr><td><code>* 0.5f</code> 를 빠뜨림(W 전체를 곱함)</td><td>벡터 C: <code>FAIL got 0.985000 want 1.000000</code></td><td><code>half</code> 는 <code>W/2</code></td></tr>
+            <tr><td>회복에 <code>dt_s</code> 를 안 곱함</td><td>Mac · arm-gcc 같은 글자: <code>warning: unused parameter 'dt_s' [-Wunused-parameter]</code>, 그리고 벡터 F: <code>FAIL got 0.800000 want 0.300500</code></td><td><code>k_up</code> 은 [1/s] — <code>dt_s</code> 를 곱한다</td></tr>
+            <tr><td><code>else</code> 가지를 통째로 빠뜨림(깎기만)</td><td>같은 <code>unused parameter 'dt_s'</code> 경고, 그리고 벡터 F: <code>FAIL got 0.300000 want 0.300500</code></td><td>문턱 안이면 회복한다</td></tr>
+            <tr><td><code>1.0f</code> 클램프 빠짐</td><td>벡터 B: <code>FAIL got 1.000500 want 1.000000</code> — 1.0 에서 한 스텝 더 올라갔다</td><td>회복 뒤 <code>&gt; 1.0f</code> 면 1.0f</td></tr>
+            <tr><td><code>trac_min</code> 클램프 빠짐</td><td>벡터 E: <code>FAIL got 0.220000 want 0.300000</code></td><td>깎은 뒤 <code>&lt; trac_min</code> 이면 trac_min</td></tr>
+            <tr><td>분모 하한 빠짐(<code>den = |v_exp|</code>)</td><td><strong>아무도 못 잡는다</strong> — 19 벡터가 전부 통과한다(<code>v_exp</code> 가 0 근처인 벡터가 없다). 식대로라면 정지 · 저속 근처에서 <code>s</code> 가 커져 멀쩡한 바퀴를 깎는다</td><td>불변식 둘째 줄을 코드로 — <code>max(|v_exp|, v_min_mm_s)</code>. 그래서 골격 머리에 불변식을 적어 둔 것이다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 걸음대로 채워 가며 실제로 돌린 결과다. 멈추는 벡터가 바뀌는 것으로 어디까지 됐는지 안다.</p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>여기까지 채웠다</th><th><code>/tmp/test_traction</code> 이 멈추는 곳</th></tr></thead>
+          <tbody>
+            <tr><td>골격 그대로</td><td>A: <code>FAIL got 0.000000 want 100.000000</code></td></tr>
+            <tr><td>T1 만</td><td>D: <code>FAIL got 1.000000 want 0.910000</code></td></tr>
+            <tr><td>T2 의 1) ~ 5) 와 깎기 가지(6 의 앞 절반)까지</td><td>F: <code>FAIL got 0.300000 want 0.300500</code></td></tr>
+            <tr><td>회복 가지까지, <code>1.0f</code> 클램프 없이</td><td>B: <code>FAIL got 1.000500 want 1.000000</code></td></tr>
+            <tr><td>전부</td><td><code>PASS traction 19 cases</code> — 둘째(진단) 명령도 같은 줄로 끝나고 조용하다</td></tr>
+          </tbody>
+        </table></div>
+        <p class="small">통과하면 체크포인트 <code>traction-host-pass</code> 다. 그다음이 걸음 3(<code>control.c</code> 배선)과 4(<code>grep</code>) — 바닥에서 보이는 것(<code>trac on</code> 뒤 <code>t_*_permille</code> 넷의 움직임)은 §3-3-4 에서 내가 확인한다.</p>
+        </div></details>
+
+      <h4 id="s3-3-4">3-3-4. 굽고 보기 — 먼저 끄고 재고, 그 다음에 켠다</h4>
+      <p><code>trac</code> 명령의 답은 세 줄이다 — 설정 줄, 지금 값 줄, 그리고 <strong><code>trac on</code> 이후의 최댓값</strong> 줄. 마지막 줄이 이 실습의 계측기다.</p>
+      <pre><code class="lang-text">&gt; trac stat
+trac on=&lt;0|1&gt; w_mm=&lt;n&gt; s_th_milli=&lt;n&gt; k_down_milli=&lt;n&gt; k_up_milli=&lt;n&gt; trac_min_permille=&lt;n&gt; v_min_mm_s=&lt;n&gt;
+trac t_fl_permille=&lt;n&gt; t_fr_permille=&lt;n&gt; t_rl_permille=&lt;n&gt; t_rr_permille=&lt;n&gt;
+trac smax_fl_milli=&lt;n&gt; smax_fr_milli=&lt;n&gt; smax_rl_milli=&lt;n&gt; smax_rr_milli=&lt;n&gt;
+&gt; trac on
+OK trac</code></pre>
+      <p class="small"><strong>꺼져 있어도 슬립 비율은 계산한다</strong> — 출력에 곱하지 않을 뿐이다. 그래서 <code>trac off</code> 가 곧 <strong>측정 모드</strong>가 된다.
+      <strong><code>trac on</code> 과 <code>trac off</code> 둘 다</strong> 네 계수를 1.000 으로 되돌리고 <code>smax_*</code> 를 지운다 — <strong>모드를 바꾸는 것이 곧 새 관측 창을 여는 것</strong>이다.
+      <code>smax_*</code> 를 "언제부터의 최댓값"인지 모른 채 읽으면 그 숫자로 문턱을 정할 수 없다(§3-3-4 의 3번이 그 숫자를 쓴다).</p>
+      <ol class="steps">
+        <li><strong><code>TRAC_V_MIN_MM_S</code> 를 먼저 정한다.</strong> 이 값 아래에서는 슬립 비율을 계산하지 않는다(분모가 0 에 가까워져 잡음이 증폭된다).
+          고르는 근거는 실습 B 에서 본 <strong>"바퀴가 돌기 시작한" 속도</strong>다 — 그보다 아래는 어차피 의미가 없다.</li>
+        <li><strong>나머지 다섯에 0 이 아닌 값을 넣어 한 번 굽는다.</strong> 가드가 0 을 막기 때문이다(§3-3-2). <strong>주석의 <code>____</code> 는 그대로 둔다</strong> —
+          숫자를 넣었다고 값이 확정된 것이 아니고, <code>check_nominal.sh</code> 는 <em>주석의 낱말</em>을 센다. 이 단계에서 그 다섯은 출력에 영향이 없다(아직 끄고 돌 것이다).</li>
+        <li><strong><code>trac off</code> 를 쳐서 관측 창을 열고</strong>(이 명령이 <code>smax_*</code> 를 지운다) 제자리 회전을 한 번 한다(09a 의 제자리 회전과 같은 각속도로). 멈춘 뒤 <code>trac stat</code> 의 <code>smax_*_milli</code> 넷을 적는다.
+          <strong>이 넷이 "정상 회전에서 나오는 슬립 비율"</strong>이다.</li>
+        <li><code>TRAC_S_TH_MILLI</code> 를 <strong>그 넷의 최댓값보다 위</strong>로 정한다. 같거나 아래로 잡으면 켜자마자 정상 회전이 억제된다.
+          <code>TRAC_K_DOWN_MILLI</code> · <code>TRAC_K_UP_MILLI</code> · <code>TRAC_MIN_PERMILLE</code> 도 정해 <strong>주석을 <code>MEASURED(&lt;날짜&gt;, 제자리 회전 관찰 — &lt;바닥 종류&gt;)</code> 로</strong> 바꾸고 다시 굽는다.</li>
+        <li><strong><code>trac on</code> 뒤 같은 회전을 한 번 더.</strong> 보는 것은 하나다 — <strong><code>t_*_permille</code> 넷이 1000 에서 내려갔다가 돌아오는가.</strong>
+          <ul>
+            <li>넷 다 1000 에서 꿈쩍 않으면 억제가 한 번도 걸리지 않은 것이다 → 문턱이 높거나, 이 바닥에서는 실제로 안 미끄러진다.</li>
+            <li>넷 다 <code>trac_min</code> 에 붙어 있으면 <strong>정상 회전을 슬립으로 보고 있다</strong> → &omega; 의 부호(§2-7) · 단위(§2-8) · <code>w_mm</code> 값을 차례로 의심한다. 세 후보 모두 §3-3-3 의 벡터 C 가 가리키는 것이다.</li>
+            <li>한둘만 내려갔다 돌아오면 <strong>그것이 이 쪽이 보려던 그림</strong>이다. 어느 바퀴였는지 적는다 — 바닥과 하중의 성질이다.</li>
+          </ul></li>
+        <li><strong>끄고 한 번, 켜고 한 번</strong> 같은 회전을 돌아 둘을 견준다. 견줄 값은 09a 의 제자리 회전이 이미 쓰는 것들이다(휠 오도메트리 yaw · IMU 적분 yaw · 실제 회전수).
+          <strong>슬립 억제가 그 셋의 벌어진 정도를 줄였는가</strong>가 이 실습의 마지막 기록이다. 줄지 않았으면 그것도 기록이다 — 값을 지어내지 않는다.</li>
+      </ol>
+      <div class="callout note"><span class="ct">여기서 정한 값은 이 바닥의 값이다</span>
+        <p><code>TRAC_*</code> 다섯은 <strong>바닥마다 다르다</strong>(장판 · 타일 · 카펫). 그래서 상태 낱말의 "방법" 칸에 <strong>바닥 종류를 적는다</strong> —
+        <code>MEASURED(2026-__-__, 제자리 회전 관찰 — 장판)</code> 꼴. 다른 바닥에서 쓸 일이 생기면 그 줄이 "이 값은 저기서 잰 것"이라고 말해 준다.</p>
+      </div>
+
+      <h3 id="s3-4">3-4. 실습 D — 임계값 열다섯을 실측으로 확정하고 굽는다 <span class="tag asm">조립 후</span> <span class="tag power">모터 전원</span></h3>
+      <p>09a 세팅 D 에서, 실습 B(게인 재튜닝) 뒤에 연다. 게인이 바뀌면 같은 목표에 들어가는 듀티가 바뀌고, <strong>보호 3종의 문턱은 전부 듀티와 속도의 관계 위에 그어지기 때문</strong>이다.</p>
+      <div class="callout warn"><span class="ct">STOP — 실습 D 의 입구 조건 (§3-2 의 목록에 더한다)</span>
+        <ol>
+          <li>실습 B 가 닫혀 있다 — 지금 보드에 <strong>재튜닝된 게인</strong>이 들어 있다(<code>pid</code> 와 <code>save show</code> 가 같은 값을 찍는다).</li>
+          <li>이 실습은 <strong>고치고 굽기를 되풀이한다.</strong> 매번 §2-4 의 네 걸음(목표 0 → 전원 차단 → 굽기 → 통전 복귀)을 지킨다. 굽는 동안 로봇은 <strong>받침대 위나 정지 상태</strong>다.</li>
+          <li>전압 · 전류를 읽는 경로가 살아 있다(<code>ina</code> · <code>adc</code> 가 값을 낸다). 안 살아 있으면 <code>BATT_MIN_MV</code> · <code>CURR_MAX_MA</code> 는 <strong>잴 수 없는 값</strong>이고, 그 사실을 적고 넘어간다.</li>
+          <li>§3-2 의 STOP 열한 항목이 그대로 참이다.</li>
+        </ol>
+      </div>
+
+      <h4 id="s3-4-2">3-4-2. 빈 표 — 열다섯 줄</h4>
+      <p>각 줄에 <strong>잰 값</strong>과 <strong>정한 값</strong>을 따로 적는다. 둘이 같으면 안 된다 — 잰 값은 관찰이고 정한 값은 <strong>거기서 얼마나 떨어뜨릴지의 판단</strong>이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>키</th><th>잰 값 (관찰)</th><th>정한 값</th><th>왜 그만큼 떨어뜨렸나</th></tr></thead>
+        <tbody>
+          <tr><td><code>BATT_MIN_MV</code></td><td>주행 중 최저 ____ mV</td><td>____</td><td>____ <span class="small">(19.8 V 하드컷보다 위인가)</span></td></tr>
+          <tr><td><code>CURR_MAX_MA</code></td><td>주행 중 최대 ____ mA</td><td>____</td><td>____ <span class="small">(F1 40 A 보다 아래인가)</span></td></tr>
+          <tr><td><code>TILT_MAX_DDEG</code></td><td>기울인 판 ____ 도에서 <code>tilt=</code> 가 섰다 / (관측 수단을 만들었으면) 읽힌 값 ____</td><td>____</td><td>____</td></tr>
+          <tr><td><code>IMU_TIMEOUT_MS</code></td><td>모터 구동 중 <code>frames_ok</code> 초당 증가 ____ (공칭 200) · <code>uart_err</code> ____ · <code>idle_events</code> ____</td><td>____</td><td>____</td></tr>
+          <tr><td><code>RELEASE_HOLD_MS</code></td><td>— <span class="small">(재는 값이 아니다)</span></td><td>____</td><td>____ <span class="small">(0 도 진짜 값이다)</span></td></tr>
+          <tr><td><code>STALL_TARGET_MIN_MM_S</code> (A)</td><td>정상 주행의 목표 범위 ____ ~ ____</td><td>____</td><td>____</td></tr>
+          <tr><td><code>STALL_SPEED_MAX_MM_S</code> (B)</td><td>정지 마찰 구간의 속도 ____ mm/s</td><td>____</td><td>____ <span class="small">(A &gt; B 는 빌드가 검사한다)</span></td></tr>
+          <tr><td><code>STALL_DUTY_MIN_PERMILLE</code> (C)</td><td>정상 주행의 듀티 범위 ____ ~ ____ ‰</td><td>____</td><td>____</td></tr>
+          <tr><td><code>STALL_HOLD_MS</code> (T)</td><td>— <span class="small">(고르는 값)</span></td><td>____</td><td>____ <span class="small">(길수록 오검출은 줄고 대응이 늦다)</span></td></tr>
+          <tr><td><code>FBLOST_TARGET_MIN_MM_S</code></td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td><code>FBLOST_DUTY_MIN_PERMILLE</code></td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td><code>FBLOST_SPEED_PER_PERMILLE_MILLI</code></td><td>정상 주행의 (속도 ÷ 듀티) ____</td><td>____</td><td>____ <span class="small">(1세대는 이 기울기를 목표가 아니라 <strong>듀티</strong>에 비례시켜 급가속 오검출을 고쳤다)</span></td></tr>
+          <tr><td><code>FBLOST_HOLD_MS</code></td><td>— </td><td>____</td><td>____</td></tr>
+          <tr><td><code>FBSIGN_SPEED_MIN_MM_S</code></td><td>제동 중 부호가 엇갈리는 구간의 속도 ____</td><td>____</td><td>____</td></tr>
+          <tr><td><code>FBSIGN_HOLD_MS</code></td><td>제동 중 그 구간이 지속된 시간 ____ ms</td><td>____</td><td>____ <span class="small">(1세대는 고속 감속에서 200 ms 를 넘겨 오트립했다)</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-4-3">3-4-3. 채우기 — 재는 순서</h4>
+      <ol class="steps">
+        <li><strong>정상 주행을 한 번 길게 기록한다.</strong> 직진 · 선회 · 정지를 섞어서, 실습 B 의 <code>step</code> CSV 와 주행 중의 <code>stat</code> · <code>ina</code> · <code>adc</code> · <code>wt stat</code> 을 같이 남긴다.
+          <strong>먼저 정상이 어느 범위인지 알아야</strong> 고장의 선을 그을 수 있다 — 이것이 1세대가 두 번 틀린 자리다.</li>
+        <li><strong>전기 둘을 먼저.</strong> 주행 중 버스 전압의 <em>최저점</em>과 총전류의 <em>최댓값</em>을 읽는다. 가속 순간에 나온다.
+          <code>BATT_MIN_MV</code> 는 그 최저점 아래 &amp; 19.8 V 위, <code>CURR_MAX_MA</code> 는 그 최댓값 위 &amp; 퓨즈 아래(§2-6).</li>
+        <li><strong>기울기 — 먼저 관측 수단을 정해야 한다.</strong> 수평계로 각을 아는 판(책 몇 권으로 만든 경사도 된다 — <strong>각을 재서 적는다</strong>)에 로봇을 올린다.
+          그런데 <code>fault stat</code> 이 주는 것은 <code>tilt=&lt;0|1&gt;</code> 이라는 <strong>비트 하나</strong>뿐이고, <code>safety_tilt_ddeg()</code> 가 계산한 <strong>각도 값을 밖으로 내는 명령은 없다.</strong> 두 길 중 하나를 고른다.
+          <ul>
+            <li><strong>(가) 비트로 좁힌다</strong> — 판을 조금씩 세우며 <code>tilt=</code> 가 0 → 1 로 바뀌는 각을 찾는다. 임계를 바꾸려면 재플래시 한 바퀴가 든다(부품은 0).</li>
+            <li><strong>(나) 관측 수단을 하나 만든다</strong>: <code>____</code> — 임시 출력 한 줄(<code>fault stat</code> 에 <code>tilt_ddeg=&lt;n&gt;</code> 를 더한다)이든 gdb 로 변수를 읽든, <strong>내가 정한다.</strong>
+              더한 출력은 이 실습이 끝나면 남길지 지울지도 내가 정한다.</li>
+          </ul>
+          어느 쪽이든 <strong>실제로 넘어가는 각을 찾는 시험은 하지 않는다.</strong> 판정이 도는 것만 확인하고, 임계는 그보다 낮게 둔다.</li>
+        <li><strong>IMU 간격 — 여기도 직접 보는 칸이 없다.</strong> <code>wt901_stats_t</code> 에는 <code>frames_ok</code> · <code>check_fail</code> · <code>uart_err</code> · <code>idle_events</code> 는 있어도
+          <strong>"가장 크게 벌어진 간격"은 없다.</strong> 간접으로 본다: 모터가 도는 동안 <code>wt stat</code> 을 일정 간격으로 쳐서 <code>frames_ok</code> 의 <strong>초당 증가</strong>가 공칭(200 Hz = 초당 200개)에서 얼마나 떨어지는지,
+          <code>uart_err</code> · <code>idle_events</code> 가 그때 어떻게 움직이는지를 본다(<a href="fw-14-wt901.html#s2-10">fw-14 §2-10</a>). 그래도 못 좁히겠으면 위의 (나)와 같은 선택이다 — 관측 수단을 하나 만든다: <code>____</code>.
+          <strong>모터가 멈춘 상태의 값으로 정하지 않는다.</strong></li>
+        <li><strong>보호 3종 열 개.</strong> 1번에서 남긴 기록의 (목표 · 속도 · 듀티) 분포를 보고 긋는다. 각 줄에 <strong>"이 선이 놓치는 것"과 "이 선이 잘못 잡을 수 있는 것"</strong>을 한 줄씩 적는다 —
+          그 두 줄을 못 적겠으면 아직 근거가 모자란 것이다.</li>
+        <li><strong>열다섯 줄을 한꺼번에 고쳐 한 번에 굽는다</strong>(실습 A 에서 잰 한 바퀴가 길면 특히). 상태 낱말은 전부
+          <code>MEASURED(&lt;날짜&gt;, &lt;방법&gt; — &lt;바닥 종류&gt;)</code> 로 바꾼다.<br>
+          <strong>그리고 소스에만 두지 않는다.</strong> 확정한 세 값 — 저전압(<code>BATT_MIN_MV</code>) · 과전류(<code>CURR_MAX_MA</code>) · 과경사(<code>TILT_MAX_DDEG</code>) — 은
+          <a href="06a-mcu-protocol.html">06a</a> 5절 결정 기록의 "<strong>돌아와서</strong>" 칸(전원 감시 행 · 과경사 정지 각도 행)과
+          <code>hardware/INVENTORY.md</code> 7절 투입·차단 시퀀스 표의 "<strong>저전압 1단</strong>" 행에도 적는다.
+          그 자리들은 <strong>이 쪽을 이름으로 부르며 비워 둔 칸</strong>이다 — 여기서 적지 않으면 아무도 적지 않는다.</li>
+      </ol>
+
+      <h4 id="s3-4-4">3-4-4. 보고 판정하기</h4>
+      <ol class="steps">
+        <li>굽고 나서 <strong><code>ver</code> 의 <code>build</code> 줄이 바뀌었는지</strong> 확인한다(실습 A 의 리허설과 같은 판정).</li>
+        <li><strong>값이 실제로 들어갔는지</strong>를 본다. <code>#define</code> 은 컴파일 때 사라지므로 보드에서 직접 읽을 수 없다 —
+          확인 수단은 <strong>소스의 <code>grep</code></strong> 과 <strong>동작</strong> 둘이다. 소스 쪽:
+          <pre><code class="lang-bash">grep -n 'MEASURED(' firmware/h723zg/User/Inc/Config/robot_params.h | wc -l
+grep -n '____'      firmware/h723zg/User/Inc/Config/robot_params.h</code></pre>
+          <pre><code class="lang-text">(둘째 줄이 아무것도 내놓지 않아야 이 쪽의 빈칸이 닫힌 것이다. 첫 줄의 수는 내 파일의 키 수와 같아야 한다.)</code></pre></li>
+        <li><strong>게인은 <code>save</code> 로, 문턱은 소스로</strong> — 이 둘이 서로 다른 자리에 산다는 것을 마지막으로 한 번 확인한다(§2-5).
+          굽는다고 플래시의 레코드가 지워지지는 않는다 — 내가 고른 복원 경로(<a href="fw-16-flash-store.html#s3-6-2">fw-16 §3-6-2</a>의 (가) 또는 (나))가 살아 있으면
+          <strong>부팅 때 게인이 플래시 값으로 덮인다.</strong> 그래서 <code>PID_KP_MILLI</code> 를 소스에서 고쳐 다시 구워도 <strong>돌고 있는 게인은 안 바뀐다</strong> —
+          소스의 값은 "저장된 레코드가 없을 때의 값"이다. 둘을 맞추려면 <code>pid set</code> + <code>save</code> 를 같이 한다. <code>pid</code> 와 <code>save show</code> 가 같은 값이면 정상이다.</li>
+        <li><strong>정상 주행을 한 번 더 돌려</strong> 새 문턱에 <strong>오검출이 없는지</strong> 본다. <code>fault stat</code> 이 깨끗하고 <code>step</code> 의 <code>prot</code> 열이 0 이면 통과다.
+          뜨면 선이 빡빡한 것이다 — 값을 고쳐 다시 굽는다(그래서 실습 A 가 먼저였다).</li>
+      </ol>
+
+      <h3 id="s3-5">3-5. 실습 E — 조건을 건 STALL 발동 <span class="tag asm">조립 후</span> <span class="tag power">모터 전원</span></h3>
+      <p>09a 세팅 D 에서, 실습 D 뒤에 연다. 여기서 처음으로 STALL 이 <strong>실제로 트립하는 것</strong>을 본다 —
+      벤치에서는 경로만 확인했고(<a href="fw-19-bench-acceptance.html#s3-4">fw-19 §3-4</a> 의 B13), 발동은 이 쪽으로 미뤄져 있었다.</p>
+      <div class="callout warn"><span class="ct">STOP — 실습 E 의 입구 조건 (§3-2 의 목록에 더한다)</span>
+        <ol>
+          <li><strong>바퀴를 손으로 붙잡지 않는다</strong>(안전 규칙 S8). 이 실습이 존재하는 이유가 그것이다 — 손 대신 <strong>밀리지 않는 장애물</strong>을 쓴다.</li>
+          <li>장애물은 <strong>로봇이 밀어도 움직이지 않는</strong> 것이다(벽 · 고정된 무거운 물건). 넘어질 수 있는 것은 쓰지 않는다.</li>
+          <li>로봇과 장애물 사이에 <strong>손 · 발 · 케이블이 없다.</strong> 닿는 면에 완충재를 댄다.</li>
+          <li>로봇의 <strong>앞이나 뒤에 서지 않는다</strong> — 한쪽 바퀴가 먼저 잡히면 로봇이 옆으로 돈다.</li>
+          <li>세 조건(§2-9)의 값을 <strong>미리 적었다</strong>: 목표 ____ mm/s · 최장 ____ s · 듀티 상한 ____ ‰. 시험 중에 올리지 않는다.</li>
+          <li><strong>시간을 재는 사람이 있다</strong>(또는 스톱워치가 손에 있다). 상한을 넘으면 내가 끊는다 — 트립을 기다리지 않는다.</li>
+          <li>전류를 볼 수 있으면 <code>adc</code> 를 같이 본다. 예상보다 크면 그 자리에서 끊는다.</li>
+          <li>§3-2 의 STOP 열한 항목이 그대로 참이다.</li>
+        </ol>
+      </div>
+
+      <h4 id="s3-5-2">3-5-2. 빈 표 — 조건과 관찰</h4>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>회차</th><th>목표 [mm/s]</th><th>듀티 상한 [‰]</th><th>끊은 시각 [s]</th><th>STALL 이 떴는가</th><th>트립까지 [ms]</th><th>그때 전류 [mA]</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td>2</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td>3</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">"트립까지"는 스톱워치가 아니라 <strong>MCU 의 tick</strong> 으로 읽는다 — <code>fault stat</code> 이 꺼내 주는 이벤트의 <code>tick_ms</code> 와 목표를 넣은 시각의 차다
+      (<a href="fw-18-safety-fsm.html">fw-18</a> 의 이벤트 큐). 사람의 시계로 재면 재려는 것보다 사람의 반응 시간이 크다.</p>
+
+      <h4 id="s3-5-3">3-5-3. 채우기 — 세 조건을 먼저 고정한다</h4>
+      <ol class="steps">
+        <li><strong>듀티 상한을 잠시 낮춘다.</strong> <code>DUTY_LIMIT_BENCH_PERMILLE</code> 을 이 시험용 값으로 바꿔 굽는다.
+          <code>STALL_DUTY_MIN_PERMILLE</code>(실습 D 에서 정한 C) <strong>보다는 위</strong>여야 판정이 돈다 — 아래면 아무리 밀어도 STALL 은 뜨지 않는다.
+          <strong>시험이 끝나면 되돌린다</strong>(되돌리는 것도 한 바퀴다 — 실습 A 의 동선을 쓴다).</li>
+        <li><strong>목표를 정한다.</strong> <code>STALL_TARGET_MIN_MM_S</code>(A) 위, 그리고 충돌이 가벼울 만큼 낮게. A 위가 아니면 blind band 라 판정이 아예 돌지 않는다.</li>
+        <li><strong>최장 시간을 정한다.</strong> <code>STALL_HOLD_MS</code>(T) 의 몇 배로 할지. 이 시간이 지나면 <strong>트립을 기다리지 않고 내가 끊는다.</strong></li>
+        <li><strong>한 회차를 돈다</strong>: 로봇을 장애물 가까이 두고, 목표를 넣고, 바퀴가 멈춘 채 듀티가 오르는 것을 <code>adc</code>(전류)로 보면서, 트립하거나 상한에 닿으면 끝낸다.</li>
+        <li>끝나면 <code>fault stat</code> 으로 <strong>fault 비트와 이벤트</strong>를 꺼내 적는다. 해제는 내가 고른 정책대로다(<code>RELEASE_HOLD_MS</code> · 래치면 <code>fault clear</code>).</li>
+        <li><strong>회차 사이에 모터를 식힌다.</strong> 스톨은 열이다 — BTS7960 의 과열 래치는 접합 온도가 내려가야 풀린다.</li>
+      </ol>
+
+      <h4 id="s3-5-4">3-5-4. 보고 판정하기</h4>
+      <p>통과의 조건은 <strong>"떴다"가 아니라 "조건을 지킨 채 관찰을 적었다"</strong>다. 세 갈래 모두 결과다.</p>
+      <ul class="steps">
+        <li><strong>떴다</strong> → 트립까지 걸린 시간이 <code>STALL_HOLD_MS</code> 와 얼추 맞는지 본다. 훨씬 길면 듀티가 C 를 넘는 데 시간이 걸린 것이다.</li>
+        <li><strong>안 떴다</strong> → 세 조건 중 어느 게이트에 걸렸는지 찾는다(목표 &lt; A · 듀티 &lt; C · 지속 &lt; T). 문턱을 고쳐 다시 굽는다 — <strong>시험을 세게 하지 않는다.</strong></li>
+        <li><strong>다른 것이 먼저 떴다</strong>(과전류 · FEEDBACK_LOST) → 그것도 기록이다. 어느 보호가 먼저 걸리는지는 <strong>설계의 결과</strong>이고, 그 순서가 내가 원한 순서인지 적는다.</li>
+      </ul>
+      <p>마지막으로 <code>DUTY_LIMIT_BENCH_PERMILLE</code> 을 <strong>원래 값으로 되돌려 굽고</strong>, <code>grep</code> 으로 그 줄을 확인한다. 낮춘 채로 두면 다음 주행이 조용히 느려진다.</p>
+
+      <h3 id="s3-6">3-6. 닫기 — 펌웨어 헤더에 남은 임시값을 센다</h3>
+      <p>09a 의 출구에서 <code>./scripts/check_nominal.sh --gate</code> 를 돌린다. 그 <code>--gate</code> 가 보는 것은 <strong>ROS 쪽 파일과 INVENTORY</strong> 이고,
+      <code>firmware/</code> 아래의 <code>*.h</code> 는 <strong>표에는 나오지만 <code>--gate</code> 판정에는 들어가지 않는다</strong>(스크립트 머리 주석에 그렇게 적혀 있다).
+      그래서 펌웨어 쪽은 <strong>내가 따로 본다</strong> — 그것이 이 쪽의 마지막 체크다.</p>
+      <pre><code class="lang-bash">./scripts/check_nominal.sh --summary     # 전체 표. firmware 행을 본다
+grep -rn '____\|NOMINAL(' firmware/h723zg/User/Inc/      # 두 번째 눈</code></pre>
+      <pre><code class="lang-text">파일                                                    | EMPTY | NOMINAL | MEASURED | 관문 남음
+...
+firmware/h723zg/User/Inc/Config/robot_params.h          |  &lt;n&gt;  |   &lt;n&gt;   |   &lt;n&gt;    |     0
+
+(EMPTY 와 NOMINAL 두 칸이 0 이고 MEASURED 가 내 키 수와 같아야 한다 - 이 쪽은 그 두 칸으로 판정한다.
+ "관문 남음" 칸은 여기서 0 으로 찍힌다. 값이 다 닫혔다는 뜻이 아니라 firmware/*.h 가
+ --gate 대상이 아니어서 세지 않는다는 뜻이다 - 그래서 이 칸은 판정에 쓰지 않는다.
+ "-" 는 --summary 를 뺀 줄 단위 상세 표의 "관문" 열에서 나오는 표시다. 다만 그 표에는
+ 아직 안 닫힌 줄만 실리므로, 다 닫고 나면 firmware 행 자체가 사라진다 - 그것도 통과 신호다.)</code></pre>
+      <p>두 도구가 <strong>서로 다른 곳을 본다</strong>는 것을 기억한다: 스크립트는 <strong>값과 같은 줄</strong>의 상태 낱말만 세고(주석만 있는 줄은 안 센다),
+      <code>grep</code> 은 주석이든 코드든 다 센다. 둘의 개수가 다르면 <strong>상태 낱말을 값과 다른 줄에 적은 것</strong>이다 — 그러면 스크립트가 영영 못 본다.</p>
+      <p class="small"><code>TODO(you)</code> 가 남아 있으면 그것은 <a href="fw-19-bench-acceptance.html#s3-5">fw-19 §3-5</a> 가 이미 0 으로 닫은 항목이다. 이 쪽에서 새로 생긴 것(<code>traction.c</code>)만 다시 센다:
+      <code>grep -rn "TODO(you)" firmware/h723zg/User | wc -l</code></p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="reflash-route-rehearsed"><span><strong>경로 통과</strong> — 동선 판정표의 여섯 줄에 "쓸 것인가"가 채워져 있고, 고른 길로 <strong>한 바퀴를 실제로 돌아</strong> <code>ver</code> 의 <code>build</code> 줄이 바뀌는 것을 봤다. 네 걸음(목표 0 → 전원 차단 → 굽기 → 통전 복귀)에 걸린 시간을 적었다
+          <span class="sub">판정 수단: 부팅 배너의 <code>build</code> 줄 · §3-1-4 · 6번 길을 후보에 뒀다면 Pi 의 <code>STM32_Programmer_CLI</code> 확인 결과도 함께 적는다(이 가이드는 확인하지 못했다)</span></span></label></li>
+        <li><label><input type="checkbox" data-key="nucleo-supply-recorded"><span><strong>경로 통과</strong> — 조립 후 Nucleo 의 급전 방식과 <strong>JP2 점퍼 위치</strong>를 눈으로 확인해 <code>hardware/INVENTORY.md</code> 7절에 적었다. VIN 을 골랐다면 <code>RELAY_EN</code> 을 옮겼는지도 같은 줄에 적었다
+          <span class="sub">판정 수단: 눈 + INVENTORY 의 그 줄 · §3-1-2 · 3V3 합계 전류(09a 가 잰 값)도 같이 옮겨 적는다 — 300 mA 가 UM2407 의 권고 상한이다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="pid-load-retuned-recorded"><span><strong>경로 통과</strong> — <strong>같은 명령</strong>으로 찍은 벤치 CSV 와 바닥 CSV 두 장이 있고, 비교표 여섯 줄이 모두 차 있다. 정한 게인이 <code>save show</code> 와 <code>robot_params.h</code> <strong>양쪽</strong>에 들어 있고, 소스 쪽 주석에 <strong>바닥 종류</strong>가 적혀 있다
+          <span class="sub">판정 수단: 두 CSV 파일 + <code>save show</code> · <code>pid</code> 출력 대조 · §3-2-4 · 게인을 안 바꾸기로 했다면 <strong>왜</strong>를 적는다(안 바꾼 것과 안 본 것은 다르다)</span></span></label></li>
+        <li><label><input type="checkbox" data-key="track-width-measured-before-traction"><span><strong>경로 통과</strong> — <code>trac on</code> 을 치기 <strong>전에</strong>, <code>robot_params.h</code> 의 <code>TRACK_WIDTH_MM</code> 줄이 <code>MEASURED(</code> 인 것을 <code>grep</code> 으로 확인했다. 09a 의 <strong>회전 부호 항목</strong>도 닫혀 있다
+          <span class="sub">판정 수단: <code>grep -n '^#define[[:space:]]*TRACK_WIDTH_MM[[:space:]].*MEASURED('</code> 이 <strong>한 줄</strong>을 내놓는다 · §3-3-3 의 4번 · 안 나오면 exit 1 이고 그때는 켜지 않는다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="traction-host-pass"><span><strong>경로 통과</strong> — <code>test_traction.c</code> 의 여섯 묶음이 Mac 에서 통과한다(<code>PASS traction 19 cases</code>). <strong>진단 빌드</strong>(<code>-fsanitize=undefined</code>)도 조용하다
+          <span class="sub">판정 수단: 호스트 시험 출력 두 줄 · §3-3-3 · 특히 <strong>벡터 C</strong>(정상 제자리 회전에서 억제가 0)가 통과해야 한다 — 이 쪽이 실제로 틀려 본 네 구현 중 셋이 여기 걸렸다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="traction-on-spin-observed"><span><strong>경로 통과</strong> — <code>trac off</code> 로 한 번, <code>trac on</code> 으로 한 번 <strong>같은 제자리 회전</strong>을 돌고 <code>trac stat</code> 의 <code>t_*_permille</code> 넷이 어떻게 움직였는지 적었다. 두 회전의 요 값(휠 · IMU · 실제)도 나란히 적었다
+          <span class="sub">판정 수단: <code>trac stat</code> 출력 · §3-3-4 · 넷이 1000 에서 꿈쩍 않아도, 전부 <code>trac_min</code> 에 붙어도 <strong>기록</strong>이다 — 뒤의 경우는 §2-7 · §2-8 로 돌아간다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="thresholds-measured-saved"><span><strong>경로 통과</strong> — 열다섯 줄 표가 <strong>"잰 값"과 "정한 값"을 따로</strong> 채운 채 완성됐고, 고친 <code>robot_params.h</code> 로 다시 구운 뒤 정상 주행에서 <strong>오검출이 0</strong> 이다
+          <span class="sub">판정 수단: 표 + <code>grep '____' robot_params.h</code> 가 빈 출력 + <code>fault stat</code> 이 깨끗하다 · §3-4-4 · <strong><code>save</code> 는 이 값들을 담지 않는다</strong>(게인만 담는다, §2-5) — "저장"은 소스에 적고 다시 굽는 것이다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="stall-trips-under-conditions"><span><strong>발동 확인</strong> — <strong>조건 셋(저속 · 짧은 시간 · 듀티 상한)을 미리 적고</strong> 밀리지 않는 장애물로 STALL 을 시험했고, 회차 표가 채워져 있다. 끝나고 <code>DUTY_LIMIT_BENCH_PERMILLE</code> 을 되돌려 다시 구웠다
+          <span class="sub">판정 수단: <code>fault stat</code> 의 비트와 이벤트 <code>tick_ms</code> · §3-5-4 · <strong>바퀴를 손으로 붙잡지 않았다</strong>(안전 규칙 S8) · 안 떴으면 어느 게이트에 걸렸는지를 적은 것이 통과다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="nominal-gate-zero"><span><strong>경로 통과</strong> — <code>firmware/h723zg/User/Inc/</code> 아래(묶음 폴더까지)의 헤더에 <code>____</code> 도 <code>NOMINAL(</code> 도 남아 있지 않고, 모든 <code>MEASURED(</code> 에 <strong>날짜와 방법</strong>이 들어 있다
+          <span class="sub">판정 수단: <code>./scripts/check_nominal.sh --summary</code> 의 firmware 행 + <code>grep</code> · §3-6 · <code>--gate</code> 는 펌웨어 헤더를 판정하지 않는다(09a 의 같은 이름 항목은 ROS 파일 쪽이다)</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td>빌드가 <code>static assertion failed … TRACK_WIDTH_MM is still EMPTY</code> 로 선다</td><td>정상이다 — 관문의 트랙 폭이 아직 <code>robot_params.h</code> 에 안 들어갔다. 가드가 순서 조건을 지키는 중</td><td><code>grep -n '^#define[[:space:]]*TRACK_WIDTH_MM'</code></td><td>§3-3-2 / 09a 의 제자리 회전</td></tr>
+          <tr><td><code>flash.sh</code> 는 성공했는데 <code>ver</code> 의 <code>build</code> 줄이 그대로다</td><td>소스가 바뀌지 않아 <strong>다시 컴파일되지 않았다</strong>. 구운 것은 같은 바이너리다</td><td><code>build &lt;date&gt; &lt;time&gt;</code> 을 굽기 전후로 비교</td><td>§3-1-4 (<code>touch</code> 로 강제 후 다시)</td></tr>
+          <tr><td><code>trac on</code> 뒤 네 계수가 전부 <code>trac_min</code> 에 붙는다</td><td>&omega; 가 식에 잘못 들어갔다 — 부호가 모듈 기준이거나(§2-7), 도를 라디안으로 안 바꿨거나(§2-8), <code>w_mm</code> 이 실제 폭과 크게 다르다</td><td>호스트 시험의 <strong>벡터 C</strong> + <code>trac stat</code> 첫 줄의 <code>w_mm</code></td><td>§2-7 · §2-8 · §3-3-3</td></tr>
+          <tr><td><code>trac stat</code> 의 <code>smax_*</code> 가 회전을 해도 늘 0 이다</td><td><code>traction_step()</code> 이 1 kHz 에서 안 불리거나, <code>meas_mm_s</code> 가 0 으로 들어간다</td><td><code>enc</code> 로 바퀴별 증분이 실제로 있는지 · <code>traction_step()</code> 호출이 PID 뒤에 있는지 <code>grep</code></td><td>§3-3-3 의 3번</td></tr>
+          <tr><td>정상 주행인데 <code>step</code> 의 <code>prot</code> 열에 비트가 뜬다</td><td>문턱이 빡빡하다 — 공중에서 그은 선을 부하에 그대로 쓰고 있다. 1세대는 이 자리에서 <strong>정상 급가속</strong>을 FEEDBACK_LOST 로 오판했다</td><td>CSV 의 (목표 · 속도 · 듀티)가 문턱과 얼마나 붙어 있는지</td><td>§3-4-3 의 5번</td></tr>
+          <tr><td><code>PID_KP_MILLI</code> 를 소스에서 고쳐 다시 구웠는데 <code>pid</code> 가 옛 값을 찍는다</td><td>플래시에 저장된 레코드가 부팅 때 <strong>소스 값을 덮는다</strong>. 소스의 값은 "레코드가 없을 때의 값"이다</td><td><code>save show</code> 의 게인 셋과 소스를 비교</td><td>§3-2-4 (<code>pid set</code> + <code>save</code> 로 맞춘다) / <a href="fw-16-flash-store.html#s3-6-2">fw-16 §3-6-2</a></td></tr>
+          <tr><td>리셋하면 게인이 옛 값으로 돌아간다</td><td><code>save</code> 를 안 했거나, <code>save</code> 뒤에 <code>pid set</code> 을 했다</td><td><code>pid</code> 와 <code>save show</code> 를 나란히 — 다르면 그것이 원인이다</td><td>§3-2-4 / <a href="fw-16-flash-store.html#s3-3">fw-16 §3-3</a></td></tr>
+          <tr><td><code>save</code> 가 <code>ERR save motor-en-high</code> 로 거부한다</td><td>정상이다 — 저장은 <code>MOTOR_EN</code> LOW 에서만(안전 규칙 S13). 지우는 동안 1 kHz 루프가 선다</td><td><code>en 0</code> 뒤 다시</td><td><a href="fw-16-flash-store.html#s2-3">fw-16 §2-3</a></td></tr>
+          <tr><td>바닥에서 <code>step</code> 을 쳤더니 로봇이 돈다</td><td>정상이다 — <code>step</code> 의 목표는 <strong>그 바퀴가 속한 쪽</strong>에 들어간다(계약의 목표가 쪽 단위다)</td><td>반대쪽 바퀴의 <code>enc</code> 증분이 0 인지</td><td>§3-2-3 (공간을 확보하거나 양쪽 구동을 더한다)</td></tr>
+          <tr><td>장애물에 밀어붙였는데 STALL 이 안 뜬다</td><td>세 게이트 중 하나에 걸렸다: 목표 &lt; A · 듀티 &lt; C · 지속 &lt; T. 1세대가 폭주를 놓친 것도 이 자리다</td><td>그 순간의 목표 · 듀티를 <code>step</code> CSV 로 확인</td><td>§3-5-4 (시험이 아니라 <strong>문턱</strong>을 고친다)</td></tr>
+          <tr><td>주행 중 <code>bad_crc</code> · <code>dropped</code> 가 는다</td><td>모터가 도는 동안의 링크 품질 문제다 — 이 쪽의 범위가 아니라 <strong>09a 의 항목</strong>이다(급전 방식에 따라 GND 도메인이 갈린다)</td><td>브리지 로그의 두 카운터</td><td><a href="09a-assembly-gate.html">09a</a></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. (4중 검색 — 변형) 이 쪽에서 더한 상수 <code>TRACK_WIDTH_MM</code> 하나가 <strong>어디까지 닿는지</strong> 네 군데를 찾아 적어 보라 — 선언 → 가드 → cfg 를 채우는 곳 → 식에서 쓰이는 곳</summary>
+        <div class="ans"><p>HAL 콜백 대신 <strong>내가 만든 상수</strong>로 같은 네 걸음을 한다. 상수 하나가 어느 함수들에 닿는지를 눈이 아니라 <code>grep</code> 으로 아는 연습이다.</p>
+        <pre><code class="lang-bash">cd firmware/h723zg
+grep -rn "TRACK_WIDTH_MM" User/Inc/Config/robot_params.h  # (1) 선언 - 값과 상태 낱말이 같은 줄에
+grep -rn "TRACK_WIDTH_MM" User/Src/Control/control.c      # (2) 가드 + (3) cfg 를 채우는 줄
+grep -rn "track_width_mm" User/                           # (4) cfg 를 통해 식에 들어가는 곳 (traction.c)
+grep -rn "w_mm" User/Src/Control/control.c                # (5) CLI 가 밖으로 보여 주는 곳</code></pre>
+        <p>(답: (1)에서는 <strong>값과 그 값의 출처</strong>를 본다. (2)에서는 <strong>빈칸이면 빌드가 선다</strong>는 것과, 가드가 왜 <code>traction.c</code> 가 아니라 여기 있는지를 본다.
+        (3)→(4)에서 이름이 <code>TRACK_WIDTH_MM</code> → <code>cfg.track_width_mm</code> 으로 <strong>바뀌는 경계</strong>가 보인다 — 그 경계가 <code>traction.c</code> 를 순수하게 유지하는 장치다.
+        (5)는 <strong>보드에서 실제로 무엇이 돌고 있는지</strong> 확인할 수 있는 유일한 창이다. 줄 번호는 내 파일마다 다르다.)</p></div></details>
+      <details class="quiz"><summary>2. <code>save</code> 로 게인은 바꿀 수 있는데 보호 문턱은 못 바꾸는 이유는?</summary>
+        <div class="ans"><p>게인은 <code>#define</code> 을 <strong>초기값으로만</strong> 쓰고 실제 값은 RAM 의 <code>speed_pid_t</code> 안에 있다. 그래서 <code>pid set</code> 이 RAM 을 고치고 <code>save</code> 가 그것을 <code>nv_data_t</code> 로 넣는다.
+        문턱은 <code>#define</code> 그대로 <strong>컴파일 때 숫자로 박힌다</strong> — 바꾸려면 편집 + 재빌드 + 재플래시다. <code>nv_data_t</code> 에 칸을 더해 담을 수도 있지만(fw-16 은 그것을 전제로 만들어졌다),
+        그러면 "보드에서 도는 문턱"과 "소스의 문턱"이 달라질 수 있는 상태가 새로 생긴다(§2-5). 이 차이가 <strong>실습 A 가 실습 D 보다 앞에 오는 이유</strong>다.</p></div></details>
+      <details class="quiz"><summary>3. <code>TRACK_WIDTH_MM</code> 이 0 인 채로 슬립 억제를 켜면 로봇은 어떻게 행동하는가? 왜 그런가?</summary>
+        <div class="ans"><p><code>v_exp = v_b &plusmn; &omega;&middot;W/2</code> 에서 <code>&omega;&middot;W/2</code> 항이 사라지므로 식이 <em>"돌고 있을 때도 네 바퀴가 모두 차체 속도로 돌아야 한다"</em>가 된다.
+        제자리 회전에서는 좌우가 반대로 도는 중이라 <strong>네 바퀴 모두 큰 슬립으로 판정</strong>되고, 네 계수가 <code>trac_min</code> 까지 내려가 로봇이 돌다 만다.
+        호스트 시험의 벡터 C 가 이것을 잡는다 — 기댓값 1.000 자리에 0.677 이 나온다(이 가이드가 실제로 그 구현을 만들어 돌려 본 값이다). 그리고 <strong>빌드가 먼저 선다</strong>(가드).</p></div></details>
+      <details class="quiz"><summary>4. 바퀴를 바닥에 내려놓았을 때 PID 게인이 달라지는 이유를 두 가지로 나누어 설명하라.</summary>
+        <div class="ans"><p>① <strong>정상 상태 이득이 내려간다</strong> — 같은 듀티로 도달하는 속도가 낮아진다(차체 질량 + 구름 저항). 이득이 내려가면 같은 Kp 가 <strong>더 약한 제어기</strong>가 되어 느려지고 정상 오차가 는다.
+        ② <strong>정지 마찰이 생긴다</strong> — 낮은 듀티 구간에서 바퀴가 아예 돌지 않는다. "출력은 있는데 속도가 0" 인 구간이 새로 생기고, 그동안 적분기가 쌓인다(와인드업).
+        ②는 게인만의 문제가 아니라 <strong>저속 목표의 하한</strong>과 <code>STALL_SPEED_MAX_MM_S</code> 를 고르는 근거이기도 하다.</p></div></details>
+      <details class="quiz"><summary>5. (일부러 틀리기) <code>gz_ddps</code> 를 &deg;/s 까지만 바꾸고 rad/s 로 바꾸지 않으면 무슨 일이 일어나는가?</summary>
+        <div class="ans"><p>&omega; 가 <strong>57.3배</strong> 커진다(1 rad = 57.2958&deg;). <code>&omega;&middot;W/2</code> 항이 같은 배수로 커지므로 <code>v_exp</code> 가 실제와 동떨어지고,
+        <strong>정상 회전이 통째로 슬립으로 판정</strong>된다. 확인용 값 하나를 외워 두면 편하다 — <strong>raw 573 → 57.3 &deg;/s → 1.000074 rad/s</strong>.
+        호스트 시험에서는 벡터 C 가 기댓값 1.000 자리에 0.961 을 낸다. 단위가 이름에 붙어 있는 이유(<code>_ddps</code> = 0.1 &deg;/s)가 이것이다.</p></div></details>
+      <details class="quiz"><summary>6. (안전) STALL 발동 시험에 조건 셋을 다는 이유와, 조건을 지켰는데도 STALL 이 안 뜰 때 해야 할 일은?</summary>
+        <div class="ans"><p>시험 중의 상태가 곧 <strong>모터가 스톨 전류를 먹는 상태</strong>다(모터 하나 22 A, 넷이면 88 A 가 설계 상한). 저속 · 짧은 시간 · 듀티 상한 셋이 그 크기와 지속을 묶는다.
+        그리고 <strong>바퀴를 손으로 붙잡지 않는다</strong> — 감속비 1:47 의 기어드 모터라 출력축 토크가 사람 손이 감당할 것이 아니다(안전 규칙 S8). 손 대신 밀리지 않는 장애물을 쓴다.
+        안 뜨면 세 게이트(목표 &lt; A · 듀티 &lt; C · 지속 &lt; T) 중 어디에 걸렸는지 찾아 <strong>문턱을 고치고 다시 굽는다.</strong> 시험을 세게 하는 것이 아니다 — 세게 하면 그건 시험이 아니라 사고다.</p></div></details>
+      <details class="quiz"><summary>7. "USB 를 뽑았다"는 같은 동작이 급전 방식에 따라 다른 뜻을 갖는 이유는?</summary>
+        <div class="ans"><p>ST-LINK USB 한 가닥이 <strong>전기와 데이터를 같이</strong> 나르기 때문이다. JP2 가 기본(5V_USB_STLK)이면 뽑는 순간 MCU 가 <strong>꺼진다</strong> —
+        그때 시험되는 것은 "전원 상실 시 <code>MOTOR_EN</code> 이 LOW 로 떨어지는가"이지 200 ms 명령 워치독이 아니다(안전 규칙 S5).
+        E5V · VIN 으로 먹이면 MCU 는 <strong>살아 있고 SWD 만 끊긴다</strong> — 즉 <strong>모터가 도는 채로 케이블을 뽑을 수 있다.</strong>
+        명령 워치독을 재려면 <strong>송신만 멈추고</strong> MCU 의 tick 으로 판정해야 한다. 그 확인은 09a 의 항목이다.</p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>아홉 항목이 모두 닫혔으면</strong> → <a href="09a-assembly-gate.html">09a</a> 의 <strong>출구</strong>로 돌아간다. 거기서 <code>check_nominal.sh --gate</code> 가 ROS 쪽 파일을 판정하고, 이 쪽의 <code>nominal-gate-zero</code> 가 펌웨어 헤더를 판정한다 — <strong>둘 다 통과해야</strong> <a href="09-slam-nav2.html">09</a>(SLAM · Nav2)로 간다.</li>
+          <li><strong>실습 C 가 열리지 않으면</strong>(<code>TRACK_WIDTH_MM</code> 이 아직 <code>MEASURED(</code> 가 아니면) → 09a 의 주행 캘리브레이션으로 돌아간다. 억지로 값을 넣지 않는다 — 그 값이 바로 이 쪽이 기다리는 것이다.</li>
+          <li><strong>바닥을 바꾸게 되면</strong>(장판 → 카펫 등) → 게인과 <code>TRAC_*</code> 는 <strong>그 바닥의 값</strong>이다. 상태 낱말에 적어 둔 바닥 종류를 보고, 실습 B 와 C 만 다시 돈다. 실습 D 의 전기 임계는 대개 그대로다.</li>
+          <li><strong>펌웨어를 더 손보고 싶으면</strong> → 이 쪽이 펌웨어 장의 마지막이다. 다음에 펌웨어를 여는 것은 <strong>계약을 넓히고 싶을 때</strong>(예: 설정 프레임 0x02, §2-3 의 5번)이고, 그때는 <a href="06a-mcu-protocol.html">06a</a> 의 표부터 고친다.</li>
+          <li>이 쪽에서 얻은 값을 <code>hardware/INVENTORY.md</code> 에 적었는가 — <strong>6절</strong>(게인 · 문턱 · <code>TRAC_*</code> 의 확정값과 <strong>바닥 종류</strong>)과 <strong>7절</strong>(조립 후 Nucleo 급전 방식 · JP2). 두 칸 모두 아직 표에 없다면 행을 만들어 적는다.</li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

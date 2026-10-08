@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F3 · 클럭 520 MHz 와 VCP 콘솔 — MCU 펌웨어 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="fw-03">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">F3 · 클럭 520 MHz 와 VCP 콘솔</p>
+      <h1>클럭 트리를 규격 안에 세우고, 보드가 제 상태를 글자로 말하게 한다</h1>
+      <p class="lead"><a href="fw-02-toolchain.html">fw-02</a> 에서 만든 빈 프로젝트는 LED 하나를 깜박일 뿐 자기가 몇 MHz 로 도는지, 왜 리셋됐는지 말하지 못한다.
+      이 쪽은 두 가지를 세운다 — 부스트 없이 H723 이 낼 수 있는 상한 <strong>520 MHz 클럭 트리</strong>와, USB 케이블 하나로 Mac 에 글자를 보내는 <strong>VCP 콘솔</strong>.
+      여기서 나오는 타이머 클럭 260 MHz · APB 130 MHz 는 뒤의 모든 쪽이 분주값을 계산하는 출발점이고, 부팅 배너 3줄은 fw-05 의 <code>ver</code> 명령과 fw-06 의 워치독 확인이 그대로 다시 쓴다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>보드를 리셋할 때마다 Mac 터미널에 배너 3줄이 찍힌다 — <code>build …</code> / <code>SYSCLK 520000000 PCLK1 130000000</code> / <code>reset &lt;원인&gt;</code>.
+        그 전에, 옵션 바이트를 <strong>읽기만</strong> 해서 이 보드의 <code>CPU_FREQ_BOOST</code> 가 0 — 곧 ITCM · DTCM 의 ECC 가 켜져 있음 — 을 파일로 남긴다.</p>
+        <p><strong>이 쪽에 필요한 것</strong> — NUCLEO-H723ZG, USB 케이블(ST-LINK 쪽 CN1), fw-02 까지 끝낸 프로젝트, Mac 의 시리얼 터미널 하나
+        (<code>python3 -m serial.tools.miniterm</code> 또는 <code>screen</code> — 둘의 차이는 설치 여부뿐이다: <code>screen</code> 은 macOS 에 들어 있고 miniterm 은 pyserial 을 깔아야 있다. 보이는 글자는 동일).
+        <strong>없으면</strong> — 보드가 없으면 §3-2-1 의 CubeMX 설정과 생성물 grep, §3-2-3 의 호스트 시험까지 할 수 있다. 옵션 바이트 읽기(§3-1)와 배너 관찰은 보드가 있어야 한다. 새로 살 부품은 없다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag mx">CubeMX</span> <span class="tag mac">Mac</span></div>
+        <div><span class="k">선행</span><a href="fw-02-toolchain.html">fw-02</a> (툴체인과 빈 프로젝트) — 실제로 쓰는 것: <code>firmware/tools/build.sh</code> · <code>firmware/tools/flash.sh</code>, <code>User/Src/app.c</code> 의 <code>app_init()</code>, 환경 변수 <code>$HAL</code> · <code>$FW_H7</code></div>
+        <div><span class="k">채우는 INVENTORY 칸</span><code>hardware/INVENTORY.md</code> 2절 "클럭" 행의 "내 보드" 두 칸 — <strong>부스트 비트 현재값</strong>(<code>CPU_FREQ_BOOST</code> — 0 이면 TCM ECC 동작, 읽은 날짜와 함께)과 <code>-ob displ</code> 출력의 <strong>토큰 철자</strong>. 1 로 읽혀 되돌렸다면 현재값 칸에 "1 → 0" 과 되돌린 날짜를 같이 적는다</div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 정적 HTML 이라 입력을 저장하지 못한다 — 시간은 학습 노트에 적는다)</span></div>
+      </div>
+
+      <h2 id="overview">1. 개요 — 클럭 트리 한 장과 글자 창 하나</h2>
+      <p>이 쪽에서 세우는 것은 아래 그림이 전부다. 위쪽은 <strong>클럭 트리</strong>(8 MHz 하나가 520 · 260 · 130 MHz 로 갈라지는 길), 맨 아래 줄은 그 끝에 매달린 <strong>콘솔</strong>이다.</p>
+      <pre class="diagram"><code>ST-LINK 의 MCO 8 MHz --&gt; PH0 (SB45 ON)       HSE = BYPASS — 보드에 수정(X3)이 없다
+                          |
+            DIVM1  ÷ 1    |     8 MHz     PLL1 입력
+            DIVN1  × 65   |   520 MHz     VCO            이 프로젝트의 .ioc 값 (ST 템플릿은 ÷ 4 · × 260 — 결과 동일, §2-8)
+            DIVP1  ÷ 1    |   520 MHz     SYSCLK
+                          |
+   D1CPRE ÷ 1  -----------+--&gt; CPU       520   MHz    상한 520   (VOS0, CPU_FREQ_BOOST = 0)
+   HPRE   ÷ 2  -----------+--&gt; HCLK      260   MHz    상한 275   (AXI · AHB)
+                          |      +--&gt; 타이머 커널 클럭 260 MHz   (뒤 쪽의 TIM6 · TIM1/8 분주)
+   APB1~4 ÷ 2  -----------+--&gt; PCLK1~4   130   MHz    상한 137.5
+                                 +--&gt; USART3 460800 8N1 --&gt; PD8/PD9 --&gt; ST-LINK VCP --&gt; Mac</code></pre>
+      <p>처음 나오는 말을 한 줄씩 풀어 둔다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>말</th><th>뜻</th></tr></thead>
+        <tbody>
+          <tr><td><strong>VOS</strong> (voltage scaling)</td><td>코어 전압 단계. VOS3(리셋 직후, 가장 낮음) ~ VOS0(가장 높음). 주파수 상한이 단계마다 다르다 — 올릴 때는 <strong>전압 먼저, 주파수 나중</strong></td></tr>
+          <tr><td><strong>옵션 바이트</strong></td><td>플래시 안의 비휘발 설정 비트들. 펌웨어를 새로 구워도 남는다. <code>CPU_FREQ_BOOST</code> 가 그중 하나다(이 쪽은 읽기만 한다). 읽기 보호(RDP)처럼 되돌릴 수 없는 비트가 같은 구역에 있다(§2-9)</td></tr>
+          <tr><td><strong>HSE BYPASS</strong></td><td>바깥에서 만든 클럭을 그대로 받는 모드(수정 발진기를 MCU 가 직접 구동하지 않는다). 이 보드는 ST-LINK 칩이 8 MHz 를 내준다</td></tr>
+          <tr><td><strong>VCP</strong> (virtual COM port)</td><td>ST-LINK 이 USB 위에 만들어 주는 가상 시리얼 포트. MCU 쪽 끝은 USART3(PD8 = TX, PD9 = RX), Mac 쪽 끝은 <code>/dev/cu.usbmodem…</code></td></tr>
+          <tr><td><strong>BRR</strong></td><td>USART 의 보드레이트 분주 레지스터. 정수라서 원하는 속도를 정확히 못 맞추는 만큼 오차가 남는다(§2-7)</td></tr>
+          <tr><td><strong>reset cause</strong></td><td>직전 리셋의 원인. <code>RCC_RSR</code> 레지스터의 플래그로 남는다(§2-10)</td></tr>
+        </tbody>
+      </table></div>
+      <p>실습은 둘이다. <strong>A</strong> 옵션 바이트를 <em>읽기만</em> 해서 파일로 남기고 <code>CPU_FREQ_BOOST</code> = 0(TCM ECC 동작)을 확인한다 → <strong>B</strong> 클럭 트리 · 콘솔 · 배너를 만들고, 배너가 <code>SYSCLK 520000000</code> 을 찍는 것을 본다.
+      클럭 숫자를 굽기 전(<code>.ioc</code>)과 구운 뒤(배너) 두 번 되읽는 까닭은 CubeMX 가 550 을 안내하고 아무도 그것을 막지 않기 때문이다(§2-3).</p>
+      <div class="callout warn"><span class="ct">결선 금지 — PD8 · PD9 에는 아무것도 꽂지 않는다</span>
+        <p>USART3 의 두 핀은 솔더 브리지 SB19 · SB12(기본 ON)로 ST-LINK 의 VCP 에 <strong>이미 이어져 있다</strong>(UM2407 §7.6.5, <code>hardware/pinmap-h723.md</code> §2-C).
+        다른 보드에서 흔히 하는 "TX–RX 루프백 점퍼" 시험을 여기서 하면 MCU 의 TX 출력과 ST-LINK 의 TX 출력이 한 선에서 맞붙는다.
+        Morpho 의 <strong>CN12-10(PD8) · CN11-69(PD9)</strong> 에도 같은 신호가 나와 있을 수 있으므로(UM 의 표 10 과 표 14 가 SB81 · SB82 의 기본 상태를 다르게 적었다 — 미결) 그 두 핀에 선을 꽂지 않는다.
+        이 쪽의 에코 확인은 점퍼가 아니라 Mac 터미널로 한다.</p>
+      </div>
+
+      <h2 id="why">2. 원리 — 왜 520 인가, 그리고 왜 보드가 스스로 말해야 하는가</h2>
+
+      <h3 id="s2-1">2-1. 550 MHz 의 조건은 하나가 아니라 둘이다</h3>
+      <p>"H723 은 550 MHz" 라는 말은 데이터시트의 한 행만 읽은 것이다. DS13313 Rev 5 표 12(General operating conditions)의 <code>fCPU</code> 는 다섯 행이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>조건</th><th>fCPU 상한</th><th>fACLK · fHCLK 상한</th><th>fPCLK 상한</th><th>등급</th></tr></thead>
+        <tbody>
+          <tr><td>VOS3 (리셋 직후)</td><td>170 MHz</td><td>85 MHz</td><td>42.5 MHz</td><td>확정 (DS 표 12)</td></tr>
+          <tr><td>VOS2</td><td>300 MHz</td><td>150 MHz</td><td>75 MHz</td><td>확정</td></tr>
+          <tr><td>VOS1</td><td>400 MHz</td><td>200 MHz</td><td>100 MHz</td><td>확정</td></tr>
+          <tr><td>VOS0</td><td><strong>520 MHz</strong></td><td>275 MHz</td><td>137.5 MHz</td><td>확정</td></tr>
+          <tr><td>VOS0 <strong>and</strong> CPU_FREQ_BOOST</td><td><strong>550 MHz</strong></td><td>(행 없음 — 275 그대로)</td><td>(137.5 그대로)</td><td>확정</td></tr>
+        </tbody>
+      </table></div>
+      <p>그래서 이 가이드에서 "550 MHz" 는 언제나 <strong>"VOS0 그리고 옵션 바이트 <code>CPU_FREQ_BOOST</code> = 1 일 때만"</strong> 이라는 꼬리표와 함께 쓴다. 둘 중 하나만 있으면 상한은 520 이다.
+      이 프로젝트는 부스트를 쓰지 않는다 — 그래서 상한은 <strong>520</strong> 이고, 클럭도 그 520 으로 세운다(§2-2 의 결정). 이 쪽은 그 조건(부스트 0)을 실물에서 읽어 기록하고(실습 A), 520 이 실제로 걸렸음을 배너로 보인다(실습 B).</p>
+      <ul>
+        <li><strong>VOS0</strong> 은 펌웨어가 부팅 때마다 건다(전압 먼저 → <code>VOSRDY</code> 대기 → 주파수). 전원을 끄면 사라진다. 520 도 VOS0 에서만 된다(VOS1 상한 400).</li>
+        <li><strong>CPU_FREQ_BOOST</strong> 는 옵션 바이트다. 도구로 <strong>한 번</strong> 쓰면 남는다. 공장 기본값은 0 이다(RM0468 Rev 3 표 18). 이 프로젝트는 쓰지 않고 읽기만 한다.</li>
+        <li>이름이 문서마다 다르다 — 데이터시트 · <code>SYSCFG_UR18</code> · STM32CubeProgrammer 는 <code>CPU_FREQ_BOOST</code>, 플래시 레지스터와 HAL 은 <code>CPUFREQ_BOOST</code>. 같은 비트다. 이 쪽은 도구 명령에서는 앞의 것, C 코드에서는 뒤의 것을 쓴다.</li>
+        <li>VOS0 에서는 접합 온도 상한이 105 °C 로 내려간다(VOS1~3 은 125 °C — DS 표 13). 책상 위 실온에서는 멀지만, 조립 뒤 밀폐된 곳에 넣을 때 다시 볼 숫자다.</li>
+      </ul>
+
+      <h3 id="s2-2">2-2. 부스트의 대가 — TCM 의 ECC 가 꺼진다</h3>
+      <p>RM0468 은 같은 문장을 세 군데서 되풀이한다 — §2.4(140쪽) "The ECC is always active except when the CPU frequency boost feature is used. In that case the ECC is no more active on TCM RAMs",
+      §4.9.24(<code>FLASH_OPTSR2_CUR</code> bit 2), §12.4.26(<code>SYSCFG_UR18</code> bit 0 — "no more ECC on I/DTCM"). STM32CubeProgrammer 의 옵션 바이트 설명문도 같은 말이다.</p>
+      <p>이것이 남의 일이 아닌 까닭: CubeMX 가 만들어 주는 기본 링커 스크립트(<code>STM32H723XG_FLASH.ld</code>)는 <code>.data</code> · <code>.bss</code> · 힙 · <strong>스택을 전부 DTCMRAM</strong>(0x2000 0000, 128 K)에 둔다.
+      즉 부스트를 켜면 <strong>내 변수와 스택이 사는 바로 그 메모리</strong>에서 한 비트 오류를 고쳐 주던 장치가 빠진다. AXI-SRAM · SRAM1/2/4 의 ECC 는 영향이 없다고 읽히지만(문장이 TCM 만 지목한다) 그렇게 명시한 문장은 없다 — 추정.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th></th><th>520 MHz (부스트 0)</th><th>550 MHz (부스트 1)</th></tr></thead>
+        <tbody>
+          <tr><td>CPU</td><td>520 MHz</td><td>550 MHz (+5.8 %)</td></tr>
+          <tr><td>HCLK / 타이머 / APB</td><td>260 / 260 / 130 MHz — 상한까지 15 / 15 / 7.5 MHz 여유(§2-5)</td><td>275 / 275 / 137.5 MHz — 상한과 <strong>같은 값</strong></td></tr>
+          <tr><td>20 kHz 센터 정렬 PWM 의 ARR</td><td>260 000 000 ÷ (2 × 20 000) = 6500</td><td>275 000 000 ÷ (2 × 20 000) = 6875 (듀티 단계 +5.8 %)</td></tr>
+          <tr><td>ITCM · DTCM 의 ECC</td><td>동작</td><td><strong>꺼짐</strong></td></tr>
+          <tr><td>옵션 바이트 쓰기</td><td>필요 없음</td><td>한 번 필요(§2-9) — 이웃에 되돌릴 수 없는 비트가 있다</td></tr>
+          <tr><td>ST 의 참조 코드</td><td>있음(§2-8)</td><td>없음</td></tr>
+          <tr><td>Flash 대기 · VOS · PLL 뼈대</td><td colspan="2">동일 (3 WS · VOS0 · M = 4 · wide VCO · P = 1)</td></tr>
+        </tbody>
+      </table></div>
+      <p>어느 쪽으로 갈지는 정해졌다 — 이 프로젝트는 <strong>520 으로 운용하고 부스트 비트는 공장 기본값 0 으로 둔다</strong>(결정 9 개정, 2026-09-29. 2026-09-22 에는 550 이었다). 사용자가 적은 이유는 "얻는 이득이 없다" — 얻는 것은 CPU · 타이머 +5.8 % 이고, 이 MCU 의 부하(4륜 PID 1 kHz · 엔코더 · ADC · UART)에서 그 차이가 필요하지 않다는 판단이다. 측정으로 확인한 것은 아니다.
+      위 표는 그 결정을 다시 여는 것이 아니라 <strong>무엇을 내주고 무엇을 지켰는지</strong>를 적어 둔 것이다 — 520 은 CPU 5.8 % 를 내주고 TCM ECC 와 버스 여유를 지킨다. 550 이 틀린 선택인 것은 아니다. 조건(부스트)과 대가(ECC)를 받아들이면 규격 안이다.</p>
+
+      <h3 id="s2-3">2-3. HAL · LL · CubeMX 어느 것도 부스트 비트를 검사하지 않는다 → 실수로 550 을 넣으면 아무도 막지 않는다</h3>
+      <p>이 프로젝트가 520 을 택했어도 550 은 여러 길로 <strong>저절로 들어올 수 있다.</strong> 부스트 비트가 0 인 칩에 550 이 걸리면 누가 막아 주는가. 확인한 범위에서는 <strong>아무도 없다.</strong></p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>층</th><th>하는 일</th><th>근거</th></tr></thead>
+        <tbody>
+          <tr><td><strong>CubeMX Clock Configuration 화면</strong></td><td>MCU Selector 로 시작하면 초기값은 64 MHz(HSI)다. 그러나 화면이 CPU 상한을 <strong>550 MHz</strong> 로 안내하고 부스트 비트는 언급하지 않는다 → 안내대로 올리면 550 이 들어간다. <strong>이 쪽이 경고하는 중심 경로다</strong></td><td>사용자 실측 2026-09-29 — <code>~/stm32/stm32H723/h723nu/h723nu.ioc</code> · <code>firmware/h723zg/h723zg.ioc</code> 를 만들 때 둘 다 이 경로로 550 이 들어갔다(그 뒤 HSI 분수 PLL 520 으로 고쳤고, 지금의 <code>h723zg.ioc</code> 는 HSE BYPASS · <code>DIVM1</code> 1 · <code>DIVN1</code> 65 로 520 이다 — 파일 확인 2026-09-29 15:43)</td></tr>
+          <tr><td>CubeMX 보드 프리셋</td><td>Board Selector 에서 <em>Initialize all peripherals with their default Mode?</em> 에 Yes 로 만들면 쓰이는 프리셋 파일이 <strong>처음부터</strong> <code>RCC.DIVN1=275</code> · <code>RCC.SYSCLKFreq_VALUE=550000000</code> 을 담고 있다(No 로 만들면 쓰이는 <code>…_Board.ioc</code> 는 192 MHz). 옵션 바이트에 관한 키는 없다</td><td>CubeMX 6.18.1 의 <code>db/plugins/boardmanager/boards/G75_Nucleo_NUCLEO-H723ZG_STM32H723ZGT_Board_AllConfig.ioc</code> L211-215 · L257 (Yes ↔ AllConfig 의 대응은 파일 이름에서 한 추정 — 화면 미확인)</td></tr>
+          <tr><td>HAL</td><td>주석으로만 경고한다 — "requires to enable the CPU_FREQ_BOOST flash option byte, 520MHZ otherwise". 코드 검사는 없다</td><td><code>stm32h7xx_hal_rcc.h:7529</code></td></tr>
+          <tr><td>LL</td><td><code>IS_LL_UTILS_PLL_FREQUENCY</code> 는 "VOS0 이면 ≤ 550 000 000" 만 본다. 부스트 비트는 보지 않는다</td><td><code>stm32h7xx_ll_utils.c:53</code> · <code>:233</code></td></tr>
+          <tr><td>하드웨어</td><td>"비트가 0 이면 550 을 거부한다"는 서술을 DS · RM 에서 찾지 못했다 → 조용히 규격 밖으로 돈다고 본다</td><td>추정 (없다는 것의 확인은 전문 검색까지)</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><span class="ct">그래서 fw-02 는 클럭을 520 으로 두게 했고, 이 쪽은 그 숫자를 두 번 되읽는다</span>
+        <p><a href="fw-02-toolchain.html">fw-02</a> 는 보드 프리셋 경로((가))라면 <code>DIVN1</code> 을 275 → 260 으로 내려 두게 했고, MCU Selector 경로((나))라면 SYSCLK 를 520 이하로 두게 했다. 이 쪽이 클럭에서 더 하는 일은 (나) 경로의 <strong>소스</strong>를 HSI → HSE 로 옮기는 것뿐이다(§3-2-1 의 (나)).
+        최종값을 정하는 것은 <code>DIVM1</code> · <code>DIVN1</code> 의 특정 조합이 아니라 <strong>세 가지</strong>다 — SYSCLK 520 MHz · 소스 HSE · 정수 모드(<code>PLLFRACN</code> 0). 이 프로젝트는 (나)로 출발했고, 지금 <code>.ioc</code> 는 HSE · <code>DIVM1</code> 1 · <code>DIVN1</code> 65 로 셋을 다 만족한다(ST 템플릿의 4 · 260 과 무엇이 같고 다른지는 §2-8).
+        실수로 들어간 550 은 오류를 내지 않으므로 코드가 아니라 <strong>숫자로</strong> 잡는다: 굽기 전에 <code>.ioc</code> 의 <code>RCC.SYSCLKFreq_VALUE=520000000</code>(§3-2-1 ③), 구운 뒤에 배너의 <code>SYSCLK 520000000</code>(§3-2-4). 둘 중 하나라도 550000000 이면 고칠 곳은 증상 ↔ 원인 표에 있다.</p>
+      </div>
+      <p>펌웨어가 부스트 비트를 읽을 이유는 없다 — 비트를 보고 갈라질 코드가 없기 때문이다. 비트의 확인은 실습 A 의 <code>-ob displ</code> 기록이 맡는다. 그래서 배너에도 비트 값을 싣지 않는다.
+      550 이 실수로 걸리면 CPU 만이 아니라 타이머 클럭이 275 MHz 가 되어 뒤 쪽의 분주값(1 kHz(주기 1 ms) 박자, 20 kHz PWM)이 전부 +5.8 % 빨라진다(§2-6). 보드레이트만은 멀쩡하다 — HAL 이 BRR 을 그때의 PCLK1 에서 계산하기 때문이다(§2-7). 그래서 글자가 읽힌다는 것은 아무것도 증명하지 않는다.</p>
+
+      <h3 id="s2-4">2-4. 왜 HSE BYPASS 인가 — HSI 의 오차는 보드레이트와 dt 에 그대로 들어간다</h3>
+      <p>PLL 의 입력으로 쓸 수 있는 것은 둘이다: 칩 안의 <strong>HSI 64 MHz</strong>(RC 발진기)와, 이 보드에서는 ST-LINK 칩이 PH0 로 내주는 <strong>8 MHz MCO</strong>(UM2407 Rev 6 §7.5.1 — 기본 구성, SB45 ON. 25 MHz 수정 X3 은 실장돼 있지 않다 "not provided").
+      클럭 소스의 오차 ε 는 거기서 파생되는 <strong>모든 시간</strong>에 같은 비율로 들어간다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>HSI 64 MHz 의 오차 (DS13313 표 36)</th><th>값</th></tr></thead>
+        <tbody>
+          <tr><td>공장 교정, VDD 3.3 V · TJ 30 °C</td><td>63.7 ~ 64.3 MHz = ±0.47 %</td></tr>
+          <tr><td>온도 드리프트, TJ −20 ~ 105 °C</td><td>±1 %</td></tr>
+          <tr><td>VDD 드리프트, 1.62 ~ 3.6 V</td><td>−0.12 / +0.03 %</td></tr>
+          <tr><td>단순 합(최악 합산, 통계적 합이 아니다)</td><td>−1.59 % ~ +1.50 %</td></tr>
+        </tbody>
+      </table></div>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>ε = ±1.5 % 가 들어가는 곳</th><th>HSI 일 때</th><th>계산</th></tr></thead>
+        <tbody>
+          <tr><td>USART3 460800 bps 의 실제 속도</td><td>약 453 900 ~ 467 700 bps. BRR 양자화(+0.042 %, §2-7)를 더하면 최대 +1.54 %</td><td>460 800 × (1 ± 0.015)</td></tr>
+          <tr><td>수신 허용 한계(§2-7)에서 남는 몫</td><td>3.33 − 1.54 = 1.79 % 를 상대편과 선로가 나눠 쓴다</td><td>RM0468 표 421</td></tr>
+          <tr><td>1 kHz 루프의 실제 dt</td><td>0.985 ~ 1.016 ms (코드는 1.000 ms 로 계산한다)</td><td>1 ms ÷ (1 ± 0.015)</td></tr>
+          <tr><td>속도 추정 v = Δ카운트 ÷ dt</td><td>±1.5 % 배율 오차 — 온도를 따라 움직인다</td><td>dt 와 같은 비율</td></tr>
+          <tr><td>엔코더 누적 거리</td><td>영향 없음 — 카운트는 시간과 무관하다</td><td>—</td></tr>
+          <tr><td>MCU 시각(<code>tick_ms</code>)의 드리프트</td><td>최대 15 ms/s = 0.9 s/분</td><td>1 s × 0.015</td></tr>
+        </tbody>
+      </table></div>
+      <p>HSI 로도 UART 는 규격 안에 든다. 다만 허용폭의 절반을 MCU 혼자 쓰고, 속도 · 시각에 %급 배율 오차가 실린다. HSE(MCO)는 이것을 없애는 대신 <strong>ST-LINK 부와 SB45 에 기댄다</strong> — ST-LINK 칩이 전원을 받아 돌아야 H723 의 HSE 가 선다(추정: UM 은 공급 경로만 적었다).
+      MCO 8 MHz 자체의 정확도(ppm)는 UM 에 수치가 없다 — 확인불가. "ST-LINK 펌웨어 업그레이드 중에 주파수가 바뀔 수 있다"는 문장은 UM §7.5.1 에 있다.</p>
+      <p>CubeMX 에서 고를 값이 <strong>BYPASS</strong> 인 이유는 보드에 수정이 없기 때문이다. Crystal 쪽을 고르면 MCU 가 있지도 않은 수정을 구동하려 들고, HSE 준비 플래그를 기다리다 타임아웃으로 <code>Error_Handler()</code> 에 갇힌다(증상 ↔ 원인 표).
+      HAL 상수는 <code>RCC_HSE_BYPASS</code> 다(<code>RCC_HSE_BYPASS_DIGITAL</code> 은 H723 에 해당 레지스터 비트가 없다).</p>
+
+      <h3 id="s2-5">2-5. 상한 안에서 가장 빠른 분주 조합은 하나뿐 — 여유 0 은 CPU 한 줄이다</h3>
+      <p>§2-1 의 표를 다시 보면 VOS0(부스트 0)의 상한은 CPU <strong>520</strong> / AXI · AHB <strong>275</strong> / APB <strong>137.5</strong> MHz 다. 520 에서 출발해 이 셋을 넘지 않으면서 버스를 <strong>가장 빠르게</strong> 쓰는 분주는 하나밖에 없다(÷4 처럼 더 나누는 것도 규격 안이지만 버스가 그만큼 느려질 뿐이다).</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>클럭</th><th>분주</th><th>주파수</th><th>VOS0 상한 (부스트 0)</th><th>여유</th></tr></thead>
+        <tbody>
+          <tr><td>CPU</td><td>D1CPRE ÷1</td><td>520 MHz</td><td>520</td><td>0</td></tr>
+          <tr><td>HCLK = AXI · AHB</td><td>HPRE ÷2</td><td>260 MHz</td><td>275</td><td>15 MHz</td></tr>
+          <tr><td>APB1 · APB2 · APB3 · APB4</td><td>각 ÷2</td><td>130 MHz</td><td>137.5</td><td>7.5 MHz</td></tr>
+          <tr><td>타이머 커널 클럭 (§2-6)</td><td>APB ÷2 · <code>TIMPRE</code> 0 → 2 × PCLK</td><td>260 MHz</td><td>275 (DS13313 표 4)</td><td>15 MHz</td></tr>
+        </tbody>
+      </table></div>
+      <p>HPRE 를 ÷1 로 두면 AHB 가 520 이 되어 규격 밖이고, APB 를 ÷1 로 두면 260 이 되어 역시 밖이다. 여유가 0 인 것은 CPU 한 줄뿐이다(550 구성에서는 세 줄 모두 0 이었다).
+      "여유 0" 은 위험하다는 뜻이 아니라 <strong>숫자 하나를 잘못 넣으면 곧바로 규격 밖</strong>이라는 뜻이다 — CPU 에서 그 "숫자 하나"가 바로 화면이 안내하는 550 이다(§2-3). 그래서 §3-2-1 은 넣은 값을 <code>.ioc</code> 와 생성 코드 양쪽에서 <code>grep</code> 으로 되읽는다.</p>
+      <p>Flash 대기 상태도 여기서 정해진다. 기준은 CPU 클럭이 아니라 <strong>AXI 인터페이스 클럭</strong>(= HCLK)이다: VOS0 에서 210 ~ 275 MHz 구간이 3 WS(RM0468 표 16) — HCLK 260 MHz 는 3 WS, <code>WRHIGHFREQ</code> = 11 이다. 520 이든 550 이든(HCLK 260 / 275) 3 WS 로 같다.
+      하드웨어는 대기 상태가 맞는지 검사하지 않는다 — 올릴 때는 <code>FLASH_ACR</code> 을 먼저 쓰고 되읽은 뒤 분주를 바꾼다(같은 절의 "Adjusting system frequency"). 이 순서는 <code>HAL_RCC_ClockConfig()</code> 이 둘째 인자(<code>FLatency</code>)로 받아 처리한다 — 주파수를 올릴 때는 대기 상태를 <strong>먼저</strong> 늘리고(<code>stm32h7xx_hal_rcc.c:942-946</code>), 내릴 때는 <strong>나중에</strong> 줄인다(<code>:1131-1135</code>).</p>
+
+      <h3 id="s2-6">2-6. 여기서 나온 260 MHz 가 뒤 쪽의 숫자를 정한다</h3>
+      <p>타이머는 버스 클럭을 그대로 받지 않는다. RM0468 표 53(Ratio between clock timer and pclk): APB 분주가 ÷2(<code>D2PPREx</code> = 100)이고 <code>TIMPRE</code> = 0 이면 타이머 커널 클럭은 <code>rcc_hclk1</code> — 즉 <strong>버스(130)의 두 배인 260 MHz</strong>다(상한 275 — DS13313 표 4).
+      이 프로젝트가 쓰는 타이머(TIM1 · TIM8, TIM2 · TIM5 · TIM23 · TIM24, TIM6)가 전부 이 값을 받는다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>뒤에서 쓰는 곳</th><th>260 MHz 에서 나오는 값</th><th>식</th></tr></thead>
+        <tbody>
+          <tr><td><a href="fw-06-tick-watchdog.html">fw-06</a> — TIM6 의 1 kHz(주기 1 ms) 박자</td><td>(PSC + 1) × (ARR + 1) = 260 000 = 2⁵ × 5⁴ × 13 — 16비트를 넘으므로 PSC 가 필요하다. 예: PSC 259 → 틱 1 µs, ARR 999. 둘 다 16비트에 드는 쌍은 56개이고, 다른 예로 51 / 4999, 25 / 9999, 12 / 19999 — 주기는 전부 같고 차이는 틱 해상도뿐이다</td><td>260 000 000 ÷ 1000</td></tr>
+          <tr><td><a href="fw-08-pwm-safe-output.html">fw-08</a> — TIM1 · TIM8 의 20 kHz 센터 정렬 PWM</td><td>PSC 0, ARR 6500 → 듀티 6501 단계(≈ 12.67 비트)</td><td>260 000 000 ÷ (2 × 20 000)</td></tr>
+          <tr><td><a href="fw-09-encoder.html">fw-09</a> — 엔코더 타이머</td><td>카운트 자체는 바깥 에지로 센다. 커널 클럭은 입력 필터의 샘플링에만 쓰인다</td><td>—</td></tr>
+          <tr><td><a href="fw-10-i2c-ina226.html">fw-10</a> — I2C1 의 TIMINGR</td><td><strong>숫자를 적지 않는다</strong> — CubeMX 가 PCLK1 130 MHz 에서 계산한다. 클럭을 바꾸면 다시 생성해야 맞는다</td><td>CubeMX 계산값</td></tr>
+        </tbody>
+      </table></div>
+      <p>그러니 이 쪽에서 클럭 트리를 <code>.ioc</code> 에 <strong>520 / 260 / 130 으로 확정</strong>해 두는 것이 뒤 쪽 전부의 전제다. CubeMX 가 계산해 주는 값(TIMINGR)도, 내가 손으로 넣는 값(PSC · ARR)도 이 트리에서 나온다.
+      뒤 쪽들은 이것을 "fw-03 의 클럭 트리(타이머 260 MHz · APB 130 MHz)"라고만 부른다.
+      실수로 550 이 들어가면 타이머 클럭이 275 MHz 가 되어 이 값들이 전부 +5.8 % 빨라진다 — 오류는 없다. 배너의 숫자로만 드러난다.</p>
+
+      <h3 id="s2-7">2-7. BRR 양자화 오차 — 460800 은 정확히 460800 이 아니다</h3>
+      <p>16배 오버샘플링에서 <code>BRR = f_CK ÷ baud</code> 이고 BRR 은 정수다(RM0468 §53.5.7). HAL 은 반올림한다 — <code>UART_DIV_SAMPLING16(pclk, baud, presc) = ((pclk / presc) + baud / 2) / baud</code>
+      (<code>stm32h7xx_hal_uart.h:1277-1278</code>), 그 <code>pclk</code> 는 <code>UART_SetConfig()</code> 이 <strong>실행 시점에</strong> <code>HAL_RCC_GetPCLK1Freq()</code> 로 읽는다(<code>stm32h7xx_hal_uart.c:3160-3161</code> · <code>:3255</code>).</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>f_CK (USART3 = APB1)</th><th>f ÷ 460 800</th><th>BRR</th><th>실제 속도</th><th>오차</th></tr></thead>
+        <tbody>
+          <tr><td>130 000 000 (이 쪽의 520 구성)</td><td>282.118</td><td>282 = 0x11A</td><td>460 993 bps</td><td><strong>+0.042 %</strong></td></tr>
+          <tr><td>137 500 000 (실수로 550 이 들어갔을 때)</td><td>298.394</td><td>298 = 0x12A</td><td>461 409 bps</td><td>+0.132 %</td></tr>
+          <tr><td>64 000 000 (HSI 그대로 — PLL 을 걸지 않았을 때)</td><td>138.889</td><td>139 = 0x8B</td><td>460 432 bps</td><td>−0.080 %</td></tr>
+        </tbody>
+      </table></div>
+      <p>값은 HAL 이 계산하므로 손으로 넣을 일은 없다. 목적은 <strong>오차의 크기를 아는 것</strong>이다. 수신기가 견디는 편차는 8N1 · 16배 오버샘플링 · <code>ONEBIT</code> = 0 · <code>BRR[3:0]</code> ≠ 0 일 때 <strong>3.33 %</strong>(RM0468 §53.5.8 표 421) —
+      내 오차 + 상대편 오차 + 선로의 <strong>합</strong>이 이 안에 들어야 한다. 양자화 0.042 % 는 그 앞에서 작다. 지배항은 §2-4 의 <strong>클럭 소스 오차</strong>다.
+      같은 계산으로 뒤의 USART6(230 400 bps, <a href="fw-14-wt901.html">fw-14</a>)은 BRR 564, +0.042 % 가 나온다(130 000 000 ÷ 230 400 = 564.24).</p>
+      <p>이 표에서 하나 더 읽을 것: 세 클럭 어디서든 글자가 <strong>멀쩡히 읽힌다.</strong> 그래서 "터미널에 글자가 나온다"는 "클럭이 520 이다"의 증거가 <strong>아니다</strong> — 몇 MHz 인지는 배너의 숫자가 말한다.
+      거꾸로 글자가 <strong>깨져</strong> 나오면 HAL 이 믿는 PCLK1 과 실제 PCLK1 이 다르다는 뜻이고, 이 보드에서 그 흔한 원인은 <code>HSE_VALUE</code> 가 8 000 000 이 아닌 것이다(HAL 템플릿의 기본은 25 000 000 — §3-2-1).</p>
+
+      <h3 id="s2-8">2-8. 이 쪽의 구성은 ST 의 예제와 같다 — 550 에는 베낄 참조 코드가 없다</h3>
+      <p>HAL 패키지(STM32Cube FW_H7 V1.13.0)의 <code>Projects/NUCLEO-H723ZG/</code> 아래 <code>main.c</code> 88개를 세면 <strong>83개가 520 MHz</strong>(HAL 판 <code>PLLN = 260</code> 51개 + LL 판 32개), <strong>550 MHz 는 0개</strong>, 옵션 바이트의 부스트 비트를 다루는 예제도 0개다.
+      <code>Examples/RCC/RCC_ClockConfig/Src/main.c</code> 는 주석에서 520 을 "max system frequency" 라고 부른다.</p>
+      <p>대표 구성 <code>$FW_H7/Projects/NUCLEO-H723ZG/Templates/Src/main.c</code> L94-166 과 이 프로젝트의 520 구성(<code>firmware/h723zg</code> 의 생성 <code>main.c</code>, 2026-09-29 15:43)을 나란히 놓으면 이렇다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>항목</th><th>ST 템플릿 (520)</th><th>이 프로젝트 (520)</th></tr></thead>
+        <tbody>
+          <tr><td>VOS · HSE · PLLP · VCO 범위 · 분주 · Flash 대기</td><td colspan="2">동일 — <code>PWR_REGULATOR_VOLTAGE_SCALE0</code> · <code>RCC_HSE_BYPASS</code> · 1 · <code>RCC_PLL1VCOWIDE</code> · ÷1 ÷2 ÷2 · <code>FLASH_LATENCY_3</code></td></tr>
+          <tr><td>PLLM · PLLN → PLL 입력 · 입력 범위</td><td>4 · 260 → 2 MHz · <code>RCC_PLL1VCIRANGE_1</code>(2 ~ 4 MHz)</td><td>1 · 65 → 8 MHz · <code>RCC_PLL1VCIRANGE_3</code>(8 ~ 16 MHz)</td></tr>
+          <tr><td><code>HAL_PWREx_ConfigSupply()</code></td><td>없음</td><td><code>PWR_LDO_SUPPLY</code> — CubeMX 6.18.1 이 넣었다</td></tr>
+          <tr><td>옵션 바이트</td><td colspan="2">동일 — 다루지 않는다(부스트 0, 공장 기본값)</td></tr>
+          <tr><td>PLLQ · PLLR</td><td>4 · 2 (켜 둠)</td><td>2 · 2 (켜 둠). 이 프로젝트의 핀맵에는 PLL1Q · PLL1R 을 쓰는 주변장치가 없다. 끄든 켜 두든 이 쪽의 관찰에는 차이가 없다(동일) — RM0468 §8.5.5 는 안 쓰는 출력을 끄라고 적었다</td></tr>
+        </tbody>
+      </table></div>
+      <p>값이 어떻게 맞물리는가: P 출력으로 520 을 내려면 VCO = 520 × P 인데 P = 2 면 1040 MHz 로 wide VCO 범위(192 ~ 836 MHz) 밖이다 → <strong>P = 1, VCO = 520 은 하나로 정해진다.</strong>
+        M 은 하나로 정해지지 않는다. wide VCO 의 PLL 입력 허용은 2 ~ 16 MHz(DS13313 표 39)라서 8 MHz 입력에는 M = 1 ~ 4 가 들어가고, 넷 다 N 이 정수로 떨어진다: M 1 · 2 · 3 · 4 → 입력 8 · 4 · 2.67 · 2 MHz → <strong>N 65 · 130 · 195 · 260, 분수부 0</strong>(정수 모드). ST 템플릿은 M 4 를, 이 프로젝트의 <code>.ioc</code> 는 M 1 을 쓴다.
+      데이터시트의 지터 수치는 정수 모드에만 주어져 있다(DS 표 39 각주) — §3-2-1 의 (나) 경로(HSI + <code>PLLFRACN</code>)가 분수 모드인 것과 다른 점이다. M 을 무엇으로 두든 정수 모드다.<br>
+        지터로 M 을 가를 수 있는가: 표 39 의 사이클 간 · 주기 지터는 <strong>VCO 주파수</strong>만 조건으로 적혀 있어(192 · 400 · 560 · 800 MHz) VCO 가 같은 두 구성에는 같은 행이 해당한다 — 동일. 장기 지터는 정수 모드 수치가 <strong>입력 2 MHz 조건으로만</strong> 있다(0.14 ~ 0.16 %) — 8 MHz 입력의 수치는 문서에 없다. 그러니 M 4 의 근거는 규격이 아니라 <strong>ST 예제 83개의 실사용</strong>이고, M 1 도 규격 안이다.
+      (M = 4 의 기준 2 MHz 는 wide VCO 입력 범위의 <strong>경계값</strong>이다 — 추정. RM 의 문장은 2 MHz 를 양쪽 범위에 다 걸쳐 적었고, ST 예제 83개가 2 MHz + wide 를 쓴다.)</p>
+      <p>정리하면 SYSCLK · 버스 · 타이머 · Flash 대기는 <strong>ST 가 83번 시연한 구성</strong>과 같고, 다른 것은 PLL 입력을 몇 MHz 로 두는가(M)뿐이다. 이 쪽의 관찰(배너의 숫자, 뒤 쪽의 분주값)에는 차이가 없다 — 동일. 550 구성에는 ST 의 참조 코드가 없다.</p>
+
+      <h3 id="s2-9">2-9. 옵션 바이트 — 이 쪽은 읽기만 한다. 같은 구역에 되돌릴 수 없는 비트가 산다</h3>
+      <p>이 프로젝트는 부스트를 쓰지 않으므로 옵션 바이트를 <strong>쓸 일이 없다</strong>. 쓰는 경우는 하나 — 실습 A 에서 <code>CPU_FREQ_BOOST</code> 가 1 로 읽혀 0 으로 되돌릴 때뿐이다(§3-1-4 의 상자).
+      <code>CPU_FREQ_BOOST</code> 자체는 순한 비트다(TCM ECC 가 꺼지는 것 말고 부작용 서술이 없고, 같은 절차로 0 으로 되돌릴 수 있다 — RM0468 §4.9.25).
+      조심할 것은 그 <strong>이웃</strong>이다. 옵션 바이트는 <code>_PRG</code> 레지스터들에 새 값을 쓰고 <code>OPTSTART</code> 를 세우면 플래시가 현재값(<code>_CUR</code>)과 견주어 <strong>다른 것을 한꺼번에</strong> 기록하는 구조다(RM0468 §4.4.3) — <code>_PRG</code> 에 실수로 들어간 이웃 값도 같이 기록된다. 그 이웃에 이런 비트가 있다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>잘못 쓴 것</th><th>결과</th><th>되돌리기</th><th>근거</th></tr></thead>
+        <tbody>
+          <tr><td><code>RDP</code> = 0xCC (Level 2)</td><td>디버그 포트 영구 차단, 옵션 바이트 변경 불가</td><td><strong>불가</strong> — "irreversible"</td><td>RM0468 §4.5.3</td></tr>
+          <tr><td><code>RDP</code> = 0xAA · 0xCC 가 아닌 값 (Level 1)</td><td>디버거로 플래시를 읽지 못한다</td><td>Level 0 으로 돌아갈 수 있으나 그때 <strong>사용자 플래시가 전부 지워진다</strong></td><td>RM0468 §4.5.3</td></tr>
+          <tr><td><code>IWDG1_SW</code> = 0</td><td>전원을 넣자마자 하드웨어 워치독이 돈다 → 갱신하는 코드가 없으면 리셋 반복</td><td>1 로 다시 쓴다</td><td>RM0468 §4.4.5</td></tr>
+          <tr><td><code>BOOT_CM7_ADD0/1</code></td><td>엉뚱한 주소에서 부팅</td><td>RDP 0 이면 SWD 는 살아 있으므로 다시 쓴다(복구 가능성은 추정)</td><td>RM0468 표 18</td></tr>
+          <tr><td><code>IO_HSLV</code> = 1 (+ SYSCFG 의 HSLV 세트)</td><td>VDD 2.5 V 초과에서 "might be destructive" — Nucleo 는 3.3 V</td><td>비트는 되돌려도 <strong>I/O 손상은 복구 불가</strong></td><td>RM0468 §12.4.7</td></tr>
+          <tr><td><code>CPU_FREQ_BOOST</code></td><td>TCM ECC 꺼짐</td><td>같은 절차로 0</td><td>RM0468 §4.9.25</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><span class="ct">옵션 바이트를 쓸 때의 뼈대 절차 — <a href="fw-00-map.html#s2-3">fw-00 §2-3</a> 의 안전 규칙 S7 과 같은 것이다</span>
+        <ol>
+          <li>쓰기 <strong>전에</strong> <code>-ob displ</code> 의 전문을 <strong>파일로 저장</strong>한다. 이것이 복구의 기준점이다.</li>
+          <li><strong>한 번에 한 비트만</strong> 쓴다. 명령 줄에 옵션 바이트 이름을 둘 이상 적지 않는다.</li>
+          <li>쓴 뒤 다시 <code>displ</code> 을 저장하고 두 파일을 <code>diff</code> 한다 — <strong>그 비트만</strong> 바뀌었는가.</li>
+          <li><strong>RDP 를 건드리지 않는다.</strong> Level 2 는 되돌릴 수 없고, Level 1 → 0 은 플래시 전체 삭제다.</li>
+          <li><strong>펌웨어에서 옵션 바이트를 쓰지 않는다.</strong> 매 부팅마다 도는 코드에 옵션 바이트 쓰기를 두면 그 코드의 버그가 곧 보드를 잃는 길이 된다.</li>
+        </ol>
+      </div>
+      <p>5번을 조금 더 풀면 — HAL 로도 쓸 수는 있다(<code>HAL_FLASHEx_OBProgram()</code> + <code>OPTIONBYTE_FREQ_BOOST</code>). 그런데 흔히 하는 "<code>HAL_FLASHEx_OBGetConfig()</code> 로 현재값을 읽어 한 필드만 고쳐 다시 쓴다"가 이 HAL 에서는 함정이다:
+      <code>OBGetConfig</code> 은 구조체의 <code>OptionType</code> 을 <code>OPTIONBYTE_USER | OPTIONBYTE_RDP | OPTIONBYTE_BOR</code> 로 채우고 뒤이어 다른 항목들을 더한다(<code>stm32h7xx_hal_flash_ex.c:579-582</code> · <code>:636</code>) — 그대로 넘기면 <strong>RDP 까지 다시 쓰는 경로</strong>가 열린다.
+      도구로 한 번 쓰면 끝나는 일을 그런 위험과 바꿀 이유가 없다. 그래서 워치독 예산표(<a href="fw-06-tick-watchdog.html">fw-06</a>)에도 "옵션 바이트 쓰기" 행은 <strong>없다</strong> — 펌웨어가 하지 않는 일이기 때문이다.</p>
+      <div class="callout note"><span class="ct">등급 — 확인불가 셋 (내가 관찰해 노트 · INVENTORY 에 적는다. ① ② 는 되돌릴 때만 해당한다)</span>
+        <p>① STM32_Programmer_CLI 가 받는 옵션 바이트 <strong>토큰의 철자</strong>. 도구의 장치 DB(<code>STM32CubeProgrammer/Data_Base/STM32_Prog_DB_0x483.xml</code> L669 · L698)에는 <code>CPU_FREQ_BOOST</code> 로 있고 <code>--help</code> 는 <code>-ob [OptByte=&lt;value&gt;]</code> 꼴만 알려 준다. "DB 의 이름이 곧 명령 줄의 토큰"이라는 연결은 추정이다 → 쓰기 전에 <code>displ</code> 출력에 찍힌 이름을 본다.
+        ② 쓴 비트가 <strong>언제</strong> 하드웨어에 적용되는가. RM 은 옵션 바이트가 끝나면 <code>_CUR</code> 레지스터로 자동 재적재된다는 것까지만 말한다 → 쓴 뒤(NRST 로 리셋)와 전원을 뺐다 넣은 뒤 두 번 읽어 기록한다.
+        ③ <code>STM32_Programmer_CLI</code> 가 끝난 뒤 코어가 <strong>다시 도는가, 멈춘 채인가</strong>. 도움말은 연결이 리셋을 건다는 것(<code>NORMAL</code> · <code>SWrst</code>)과 <code>-rst</code> · <code>-run</code> · <code>-halt</code> 가 따로 있다는 것까지만 말한다 → §3-1-4 에서 LD1 을 보고 적는다. 멈춘 채면 NRST 로 되살린다.
+        옵션 바이트 구역의 쓰기 수명도 DS · RM 에서 찾지 못했다 — 그래서 더더욱 "한 번"이다.</p>
+      </div>
+
+      <h3 id="s2-10">2-10. reset cause — 플래그는 여럿이 같이 서고, 지우지 않으면 남는다</h3>
+      <p>배너 셋째 줄의 <code>reset &lt;원인&gt;</code> 은 지금은 구경거리지만 <a href="fw-06-tick-watchdog.html">fw-06</a> 에서 "워치독이 정말 리셋시켰는가"의 <strong>유일한 증거</strong>가 된다. 원천은 <code>RCC_RSR</code> 레지스터다(RM0468 §8.7.38). 함정이 둘 있다.</p>
+      <p><strong>하나 — 플래그는 하나만 서지 않는다.</strong> RM0468 표 52(Reset source identification)에서 이 쪽에 필요한 행만 옮기면:</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>표 52 의 행</th><th>상황</th><th>서는 플래그</th><th>배너의 낱말</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>전원 인가 (power-on)</td><td>PORRSTF · <strong>PINRSTF</strong> · BORRSTF · D2RSTF · D1RSTF · CPURSTF</td><td><code>POR</code></td></tr>
+          <tr><td>2</td><td>NRST 핀 (검정 버튼 B2)</td><td><strong>PINRSTF</strong> · CPURSTF</td><td><code>PIN</code></td></tr>
+          <tr><td>3</td><td>브라운아웃</td><td><strong>PINRSTF</strong> · BORRSTF · CPURSTF</td><td><code>BOR</code></td></tr>
+          <tr><td>4</td><td>소프트웨어 리셋 (SYSRESETREQ)</td><td>SFTRSTF · <strong>PINRSTF</strong> · CPURSTF</td><td><code>SFT</code></td></tr>
+          <tr><td>8</td><td>IWDG1 타임아웃</td><td>IWDG1RSTF · <strong>PINRSTF</strong> · CPURSTF</td><td><code>IWDG</code></td></tr>
+        </tbody>
+      </table></div>
+      <p><code>PINRSTF</code> 는 거의 모든 리셋에 같이 선다(리셋 회로가 NRST 선을 함께 당기기 때문이다 — RM 이 표 위에서 IWDG 를 예로 든다). 그래서 "PINRSTF 가 서 있으면 버튼 리셋"이라고 읽으면 전부 버튼 리셋이 된다.
+      판독은 <strong>가장 구체적인 플래그부터</strong> 보고 PIN · CPU 를 맨 나중에 본다.</p>
+      <p><strong>둘 — 플래그는 끈적하다.</strong> 전원 인가가 아닌 리셋은 <code>RCC_RSR</code> 을 지우지 않는다. USB 를 꽂아 켠 뒤(POR) 버튼을 누르면 POR 플래그가 <strong>그대로 남은 채</strong> PIN 이 덧선다 → 위의 순서로 읽으면 또 <code>POR</code> 이다.
+      그래서 부팅 때 <strong>한 번 읽어 변수에 잡아 두고 곧바로 지운다</strong>(<code>RMVF</code> 비트 — HAL 매크로 <code>__HAL_RCC_CLEAR_RESET_FLAGS()</code>, <code>stm32h7xx_hal_rcc.h:7854</code>). 읽고 지우는 곳은 펌웨어 전체에서 <strong>한 곳</strong>(<code>console_init()</code>)이어야 한다 — 두 곳이면 나중에 읽는 쪽은 늘 빈 레지스터를 본다.</p>
+      <p>이 판독 표는 §3-2-2 에서 <strong>전량으로</strong> 준다. 레지스터 비트 표이기 때문이다 — 여기가 틀리면 이후 모든 쪽의 "리셋 원인" 판정이 거짓이 된다. 대신 표의 행을 그대로 옮긴 호스트 시험이 같이 있어, 맞는지는 Mac 에서 스스로 확인한다.</p>
+
+      <h2 id="lab">3. 실습</h2>
+      <p>실습은 둘이다: <strong>A 옵션 바이트 읽기만</strong> → <strong>B 클럭 트리 · 콘솔 · 배너</strong>. 끝자리 번호의 뜻은 전 쪽 공통이다(1 = CubeMX, 2 = 골격, 3 = 채우기, 4 = 굽고 보기) — 해당 없는 걸음은 번호째 건너뛴다.
+      명령의 경로는 <code>~/ros2_rpi5/</code> 부터 적었다 — 어느 디렉터리에서 쳐도 같은 곳을 가리킨다. 이 쪽의 명령은 전부 Mac 에서 돈다.</p>
+      <div class="callout tip"><span class="ct">채울 자리마다 힌트 카드가 있다 — 읽는 순서</span>
+        <p>골격의 채울 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 붙어 있고(이 쪽은 T1 ~ T5), 그 주석 안에 <strong>번호 걸음</strong>이 있다. 먼저 걸음을 보고 직접 써 본다.
+        막히면 "직접 채우기" 절(§3-2-3)에서 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인.</p>
+        <p>완결 코드는 이 프로젝트의 펌웨어 빌드(링크까지, <code>User/</code> 경고 0 — fw-05 ~ fw-07 의 완결 코드와 함께, 2026-10-04)를 통과한 코드다. 로그 매크로(T3)의 출력 꼴은 Mac 에서 <code>LOG_NOW_MS()</code> 만 가짜 값으로 바꿔 찍어 확인했고(<code>[1234] I app: init done</code>), "흔한 실수" 표의 컴파일러 메시지는 틀린 코드를 같은 툴체인(arm-none-eabi-gcc 14.3.1, <code>-Wall</code>)으로 실제로 컴파일해 받은 글자다. 보드에서 도는 것 — 배너 석 줄 · <code>PIN</code> / <code>POR</code> · LD3 — 은 "굽고 보기"에서 내가 확인한다.
+        T5 의 <code>____</code> 는 카드에도 비어 있다 — 내가 적기 전에는 빌드가 멈춘다(의도된 것).
+        붙여 넣는 것으로 끝내지 않는다 — 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
+      </div>
+
+      <h3 id="s3-1">3-1. 실습 A — 옵션 바이트를 읽기만 한다</h3>
+      <p>CubeMX 도 코드도 없다. 지금 보드의 옵션 바이트가 어떤 상태인지 <strong>한 글자도 바꾸지 않고</strong> 파일로 남긴다. 확인할 것은 하나다 — <code>CPU_FREQ_BOOST</code> 가 0 인가, 곧 <strong>ITCM · DTCM 의 ECC 가 켜져 있는가</strong>(§2-2). 이 파일은 옵션 바이트를 만질 일이 생길 때의 기준점도 된다(§2-9).</p>
+
+      <h4 id="s3-1-4">3-1-4. 굽고 보기 — 이번에는 굽지 않는다</h4>
+      <pre><code class="lang-bash">mkdir -p ~/ros2_rpi5/firmware/records        # STM32_Programmer_CLI 는 fw-02 에서 PATH 에 올린 그 실행 파일이다
+STM32_Programmer_CLI -c port=SWD -ob displ | tee ~/ros2_rpi5/firmware/records/ob-displ-$(date +%Y%m%d)-before.txt
+grep -n -i "BOOST\|RDP" ~/ros2_rpi5/firmware/records/ob-displ-*-before.txt</code></pre>
+      <pre><code class="lang-text">(기대: 연결 로그 뒤에 옵션 바이트가 이름 : 값 꼴로 나열된다. 그중 BOOST 가 든 줄과 RDP 가 든 줄이 grep 에 걸린다.
+ 이 저장소의 보드에서 실제로 받은 파일에서는 이렇게 생겼다:
+     RDP          : 0xAA (Level 0, no protection)
+     CPU_FREQ_BOOST: 0x1 (CPU can operate at a boosted Fmax frequency (no more ECC on I/DTCM))   ← -before.txt (2026-09-29 13:47)
+     CPU_FREQ_BOOST: 0x0 (Feature disabled)                                                      ← -after.txt  (15:10, 되돌린 뒤)
+ 이 보드는 처음 읽었을 때 1 이었다 — 아래 상자의 경우다.)</code></pre>
+      <p class="small">경로를 <code>~/ros2_rpi5/</code> 부터 적은 까닭: <code>firmware/records/…</code> 처럼 상대 경로로 치면 <strong>지금 있는 디렉터리 아래에</strong> 같은 이름의 디렉터리가 또 생긴다 — 이 저장소에서 실제로 <code>firmware/records/firmware/records/</code> 가 생겼다.
+        그리고 <code>tee</code> 로 받은 파일에는 도구가 넣은 색 제어 문자(<code>ESC[39;49m</code> 같은 것)가 섞여 있다. <code>grep</code> 은 그래도 줄을 찾는다. 사람이 읽을 때는 <code>less -R</code> 로 연다.</p>
+      <ul>
+        <li><code>-ob displ</code> 은 도구의 도움말에 "display the whole set of Option Bytes" 로 나오는 읽기 전용 동작이다. 다만 <strong>연결 자체가 보드를 리셋한다</strong> — 도움말의 기본값이 연결 모드 <code>NORMAL</code>, 리셋 <code>SWrst</code> 다. 그래서 LD1 이 잠깐 멈추는 것은 정상이다.
+        도구가 끝난 뒤 코어가 <strong>다시 도는지 멈춘 채 남는지</strong>는 도움말에 없다 — <strong>확인불가</strong>(§2-9 의 등급 상자 ③. 이 가이드를 쓰는 동안 보드에 접속하지 않았다). LD1 이 다시 깜빡이지 않으면 <strong>B2(NRST)를 누른다</strong> — <code>Error_Handler()</code> 가 아니다(증상 표 2행). 어느 쪽이었는지 노트에 적는다.
+        도구에 리셋을 맡기는 선택지도 있다: 명령 끝에 <code>-rst</code>("Reset system")를 붙인다 — fw-02 의 <code>flash.sh</code> 가 <code>-w</code> 뒤에 늘 <code>-rst</code> 를 붙이는 것과 같은 이유다(명령을 잇는 꼴은 같다. 실행은 확인하지 않았다).
+        지금 보드에는 fw-02 의 LED 펌웨어가 돌고 있어 배너가 없다 — 두 길 모두 볼 것은 <strong>LD1 이 다시 깜빡이는가</strong> 하나다. 옵션 바이트 값에는 차이가 없다(동일).
+        두 길의 차이(배너 셋째 줄의 낱말 — NRST 는 <code>PIN</code>, <code>-rst</code> 는 <code>SFT</code> 로 추정)는 배너가 생기는 실습 B 의 §3-2-4 관찰 ② 에서 본다.</li>
+        <li>파일 자리 <code>firmware/records/</code> 는 이 가이드의 예시다 <strong>[제안]</strong> — <code>firmware/README.md</code> 의 예정 트리에는 아직 없는 이름이다(트리에 자리가 정해지면 경로만 바꿔 읽는다). 어디든 좋지만 <strong>저장소 안에</strong> 두고 커밋한다 — 복구 기준점은 이 Mac 이 아니라 보드에 딸린 기록이다.</li>
+        <li>grep 에 걸린 줄에서 세 가지를 적는다: ① BOOST 줄의 <strong>이름 철자</strong>(되돌릴 일이 생기면 그대로 친다 — 아래 상자) ② 그 <strong>값</strong>(공장 기본이면 0 = TCM ECC 동작) ③ RDP 의 값(Level 0 을 뜻하는 0xAA 인가).
+        ② 는 <code>hardware/INVENTORY.md</code> 2절 "클럭" 행의 "부스트 비트 현재값" 칸에 날짜와 함께, ① 은 같은 행의 "토큰 철자" 칸에 옮긴다.</li>
+        <li>연결이 안 되면(포트를 못 찾는다 · 타깃이 없다) 이 쪽의 문제가 아니다 → <a href="fw-02-toolchain.html">fw-02</a> 의 증상 ↔ 원인 표.</li>
+      </ul>
+      <div class="callout note"><span class="ct">BOOST 값이 1 로 읽히면 — TCM ECC 가 꺼진 보드다</span>
+        <p>누군가(나 자신 포함) 전에 써 둔 보드다 — <strong>이 저장소의 보드가 그랬다</strong>(2026-09-29 13:47 에 1). 520 MHz 펌웨어는 부스트가 1 이어도 규격 안에서 돈다(DS13313 표 12) — 잃고 있는 것은 ITCM · DTCM 의 ECC 다(§2-2).
+        결정 9(개정)는 공장 기본값 0 을 유지하는 것이므로 되돌린다: <code>STM32_Programmer_CLI -c port=SWD -ob CPU_FREQ_BOOST=0</code>(토큰은 ① 에서 본 철자 그대로). 절차는 <a href="fw-00-map.html#s2-3">fw-00 §2-3</a> 의 안전 규칙 S7 이다 — 한 번에 한 비트, 쓰기 전 · 후의 <code>displ</code> 전문을 파일로 저장해 <code>diff</code> 하면 <strong>옵션 바이트 줄 가운데서는</strong> 그 비트 한 줄만 달라야 한다. 이웃 비트가 왜 위험한지는 §2-9.<br>
+        이 보드에서 한 결과(2026-09-29, <code>…-before2.txt</code> ↔ <code>…-after.txt</code>): 옵션 바이트 줄은 <code>CPU_FREQ_BOOST</code> 한 줄만 바뀌었고, 그 밖에 머리의 <code>Voltage</code> 줄(3.26 V → 3.27 V)이 달랐다. 그 줄은 연결할 때마다 재는 타깃 전압이라 옵션 바이트가 아니다 — 판정은 옵션 바이트 줄만 본다.
+        INVENTORY 2절 "클럭" 행의 현재값 칸에는 "1 → 0" 과 되돌린 날짜를, 토큰 칸에는 도구가 받아들인 철자를 적는다.</p>
+      </div>
+
+      <h3 id="s3-2">3-2. 실습 B — 클럭 트리 · 콘솔 · 배너</h3>
+
+      <h4 id="s3-2-1">3-2-1. CubeMX 설정 <span class="tag mx">CubeMX</span></h4>
+      <p><strong>값을 넣기 전에 지금 값을 먼저 읽는다.</strong> 보드 선택으로 프로젝트를 만들었다면(fw-02 의 (가) 경로) 아래 값의 대부분은 프리셋이 이미 넣어 두었고, <code>DIVN1</code> 은 fw-02 에서 260 으로 내려 둔 상태일 것이다 — 그대로 둔다. 그러면 이 쪽에서 실제로 바꾸는 것은 <strong>USART3 의 Baud Rate</strong> 하나다 — 나머지 행은 "이미 그 값인가"를 확인하는 행이 된다.
+      첫 grep 이 <code>RCC.DIVN1=275</code> 를 내면 fw-02 의 그 걸음을 빠뜨린 것이다 — 그 경우 fw-02 의 LED 점멸은 부스트 0 + 550 MHz, 곧 규격 밖으로 돌았을 수 있다. 여기서 260 으로 내린다(§2-3).</p>
+      <pre><code class="lang-bash">cd ~/ros2_rpi5/firmware/h723zg
+grep -n "^RCC\.\(HSE_VALUE\|PLLSourceVirtual\|DIVM1\|DIVN1\|DIVP1\|PLLFRACN\|SYSCLKSource\|HPRE\|D1PPRE\|D2PPRE1\|D2PPRE2\|D3PPRE\)=" h723zg.ioc
+grep -n "^PH0\|^USART3\.\|^PD[89]\.\(Signal\|Mode\)" h723zg.ioc</code></pre>
+      <p class="small"><code>.ioc</code> 는 <strong>기본값에서 바꾼 항목만</strong> 적는다. 줄이 없으면 "설정 안 됨"이 아니라 "CubeMX 기본값"이다(예: PLL 소스를 한 번도 안 바꾼 <code>.ioc</code> 에는 <code>PLLSourceVirtual</code> 줄이 없고, 그때의 소스는 HSI 다).</p>
+
+      <div class="callout note"><span class="ct">fw-02 의 (나) — HSI 분수 PLL 에서 출발했다면 — 소스를 HSE 로 옮기고, 모든 행을 실제로 넣는다</span>
+        <p>MCU Selector 로 시작해 Clock Configuration 에서 손으로 올린 <code>.ioc</code> 는 클럭 소스가 다르다: <strong>HSI 64 MHz + 분수 PLL</strong>(<code>PLLSourceVirtual</code> 줄 없음 = HSI). HSI 64 ÷ <code>DIVM1</code> 4 = 16 MHz 가 PLL1 입력이고, N 의 소수부를 <code>PLLFRACN</code>(÷ 8192)이 맡는다.</p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>파일 (파일 확인 2026-09-29 오전)</th><th><code>DIVN1</code> · <code>PLLFRACN</code></th><th>SYSCLK</th></tr></thead>
+          <tbody>
+            <tr><td><code>~/stm32/stm32H723/h723nu/h723nu.ioc</code></td><td>34 · 3072</td><td>16 × (34 + 3072 ÷ 8192) = <strong>550 MHz</strong></td></tr>
+            <tr><td><code>firmware/h723zg/h723zg.ioc</code> — 이 쪽을 하기 전 (생성 <code>main.c</code> 도 <code>PLLN 32</code> · <code>FRACN 4096</code> · <code>RGE_3</code>)</td><td>32 · 4096</td><td>16 × (32 + 4096 ÷ 8192) = 520 MHz</td></tr>
+          </tbody>
+        </table></div>
+        <p>이 경로에서는 <code>DIVN1</code> 만 바꿔서는 원하는 값이 나오지 않는다 — <code>PLLFRACN</code> 이 소수부를 계속 더한다. 그리고 <code>board=custom</code> 이면 PH0 · PD8 · PD9 의 선설정이 없다.
+        HSI 의 오차가 어디에 들어가는지는 §2-4 의 표다. 이 가이드는 HSE 로 옮기는 것을 전제로 쓴다 — 아래 값 표의 <strong>모든</strong> 행(HSE BYPASS · 입력 8 MHz · PLL 소스 · <code>DIVM1</code> · <code>DIVN1</code>(8 ÷ M × N = 520 인 정수 조합, §2-8) / <strong><code>PLLFRACN</code> 0</strong> / <code>DIVP1</code> 1 · USART3 과 그 두 핀)을 직접 넣는다. 분주 다섯 줄(÷2)은 이미 들어 있을 수 있다 — 그 행은 확인만 한다.</p>
+        <p><strong>이 프로젝트는 이 상자의 일을 이미 했다</strong> — 지금(2026-09-29 15:43 파일 확인)의 <code>h723zg.ioc</code> 는 <code>PLLSourceVirtual=RCC_PLLSOURCE_HSE</code> · <code>PH0-OSC_IN.Mode=HSE-External-Clock-Source</code> · <code>DIVM1</code> 1 · <code>DIVN1</code> 65 · <code>PLLFRACN</code> 0 · <code>SYSCLKFreq_VALUE=520000000</code> · USART3 460800 이다. 아래 값 표는 넣는 표가 아니라 되읽는 표가 된다.</p>
+      </div>
+      <p><strong>① 값 표</strong> — 무엇을 어떤 값으로. 이미 같은 값이면 그 행은 건너뛴다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>항목</th><th>값</th><th>왜</th><th><code>.ioc</code> 키 (생성 후 grep)</th></tr></thead>
+        <tbody>
+          <tr><td>RCC — High Speed Clock (HSE)</td><td>BYPASS Clock Source</td><td>보드에 수정이 없다. ST-LINK 의 MCO 8 MHz 를 그대로 받는다(§2-4, UM2407 §7.5.1)</td><td><code>PH0-OSC_IN.Mode=HSE-External-Clock-Source</code> — 철자는 CubeMX 의 보드 프리셋 파일에서 확인. 이 문자열이 화면의 "BYPASS" 라는 것은 추정 → ③ 의 <code>RCC_HSE_BYPASS</code> 로 확정한다</td></tr>
+          <tr><td>HSE 입력 주파수</td><td>8 MHz</td><td>HAL 은 이 상수로 모든 주파수를 <strong>계산</strong>한다. 틀리면 BRR 이 틀려 글자가 깨진다(§2-7)</td><td><code>RCC.HSE_VALUE=8000000</code></td></tr>
+          <tr><td>PLL Source Mux</td><td>HSE</td><td>§2-4</td><td><code>RCC.PLLSourceVirtual=RCC_PLLSOURCE_HSE</code></td></tr>
+          <tr><td>DIVM1 / DIVN1 / FRACN / DIVP1</td><td>1 / 65 / 0 / 1 (이 프로젝트)<br>또는 4 / 260 / 0 / 1 (ST 템플릿 · (가) 경로)</td><td>8 ÷ M × N ÷ 1 = 520 MHz 인 정수 조합이면 된다 — M 1 ~ 4 가 전부 성립하고 관찰은 같다(§2-8). 지킬 것은 FRACN 0(정수 모드)과 P 1</td><td><code>RCC.DIVM1=1</code> · <code>RCC.DIVN1=65</code>(또는 4 · 260) · <code>RCC.PLLFRACN=0</code> · <code>RCC.DIVP1=1</code></td></tr>
+          <tr><td>System Clock Mux</td><td>PLLCLK</td><td>SYSCLK = PLL1 의 P 출력</td><td><code>RCC.SYSCLKSource=RCC_SYSCLKSOURCE_PLLCLK</code></td></tr>
+          <tr><td>D1CPRE / HPRE</td><td>÷1 / ÷2</td><td>CPU 520(상한과 같은 값), HCLK 260(상한 275 아래 15 MHz) — §2-5</td><td><code>RCC.HPRE=RCC_HCLK_DIV2</code> (D1CPRE ÷1 은 기본값이라 줄이 없을 수 있다)</td></tr>
+          <tr><td>D1PPRE · D2PPRE1 · D2PPRE2 · D3PPRE</td><td>전부 ÷2</td><td>APB 130(상한 137.5 아래 7.5 MHz). 타이머 클럭 260 이 여기서 나온다(§2-6)</td><td><code>RCC.D1PPRE=RCC_APB3_DIV2</code> · <code>RCC.D2PPRE1=RCC_APB1_DIV2</code> · <code>RCC.D2PPRE2=RCC_APB2_DIV2</code> · <code>RCC.D3PPRE=RCC_APB4_DIV2</code></td></tr>
+          <tr><td>USART3 Mode</td><td>Asynchronous (PD8 = TX, PD9 = RX)</td><td>ST-LINK VCP 에 묶인 포트(<code>hardware/pinmap-h723.md</code> §2-C)</td><td><code>USART3.VirtualMode-Asynchronous=VM_ASYNC</code> · <code>PD8.Signal=USART3_TX</code> · <code>PD9.Signal=USART3_RX</code></td></tr>
+          <tr><td>USART3 Baud Rate</td><td>460800</td><td>계약 v2 의 값(<a href="06a-mcu-protocol.html">06a</a>, INVENTORY 2절 "보드레이트" 행). 8N1 은 CubeMX 기본값이라 바꾸지 않는다</td><td><code>USART3.BaudRate</code> <em>(키 철자: 생성 후 확인)</em></td></tr>
+        </tbody>
+      </table></div>
+      <p>넣고 나면 CubeMX 가 계산한 결과도 <code>.ioc</code> 에 남는다: <code>RCC.SYSCLKFreq_VALUE=520000000</code> · <code>RCC.APB1Freq_Value=130000000</code> · <code>RCC.Tim1OutputFreq_Value=260000000</code>. 이 셋이 §1 의 그림과 같아야 한다.
+      Flash 대기(3 WS)와 VOS0 는 값 표에 없다 — 화면에서 고르는 항목이 아니라 CubeMX 가 주파수를 보고 생성 코드에 넣는다. 이 프로젝트의 생성물에서 그렇게 들어간 것을 확인했다(③ 의 표).</p>
+      <p class="small">프리셋의 핀 라벨은 <code>PD8 = STLK_VCP_RX</code>, <code>PD9 = STLK_VCP_TX</code> 다. 거꾸로 적힌 것이 아니라 <strong>ST-LINK 쪽에서 본 이름</strong>이다 — MCU 의 TX(PD8)가 ST-LINK 의 RX 다.</p>
+
+      <p><strong>② 위치 표</strong> — 어디를 눌러서.</p>
+      <p class="small"><strong>화면 확인: 미확인 (CubeMX 6.18.1)</strong> — 아래 경로는 CubeMX 의 DB 파일과 ST 문서에서 추정한 것이다.
+      화면이 다르면 <strong>화면이 맞다.</strong> 다른 곳을 발견하면 값 표(위)의 항목 이름으로 검색하고, 달랐던 경로를 노트에 적어 둔다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>#</th><th>위치 (화면 경로)</th><th>설정</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>왼쪽 <strong>System Core → RCC</strong></td><td>High Speed Clock (HSE) = <strong>BYPASS Clock Source</strong></td></tr>
+          <tr><td>2</td><td>위쪽 탭 <strong>Clock Configuration</strong> — 왼쪽 끝의 HSE 입력 칸</td><td>Input frequency = <strong>8</strong> (MHz)</td></tr>
+          <tr><td>3</td><td>〃 — <strong>PLL Source Mux</strong></td><td><strong>HSE</strong></td></tr>
+          <tr><td>4</td><td>〃 — PLL1 의 <strong>DIVM1</strong> · <strong>DIVN1</strong> · <strong>fracn1</strong> · <strong>DIVP1</strong></td><td>/1 · X 65 · 0 · /1 (이 프로젝트) — /4 · X 260 · 0 · /1 도 같다</td></tr>
+          <tr><td>5</td><td>〃 — <strong>System Clock Mux</strong></td><td><strong>PLLCLK</strong></td></tr>
+          <tr><td>6</td><td>〃 — <strong>D1CPRE</strong> · <strong>HPRE</strong> · <strong>D1PPRE</strong> · <strong>D2PPRE1</strong> · <strong>D2PPRE2</strong> · <strong>D3PPRE</strong></td><td>/1 · /2 · /2 · /2 · /2 · /2</td></tr>
+          <tr><td>7</td><td>왼쪽 <strong>Connectivity → USART3</strong></td><td>Mode = <strong>Asynchronous</strong> (보드 프리셋이면 이미 켜져 있다)</td></tr>
+          <tr><td>8</td><td>USART3 → <strong>Parameter Settings</strong></td><td>Baud Rate = <strong>460800</strong></td></tr>
+        </tbody>
+      </table></div>
+      <p>이 화면은 CPU 상한을 <strong>550 MHz</strong> 로 안내하고 부스트 비트는 말하지 않는다(사용자 실측 2026-09-29, §2-3). 그 안내를 따라 올리지 않는다 — 이 프로젝트의 값은 520 이다. 그 밖에 경고나 빨간 표시가 뜨는지는 확인하지 못했다. 본 것을 노트에 적는다 — 그것이 이 표의 "화면 확인"을 채우는 재료다.
+      코드 생성(Generate Code)의 자리와 재생성 규칙은 <a href="fw-02-toolchain.html">fw-02</a> 의 것 그대로다: 생성물은 <code>USER CODE BEGIN/END</code> 사이만 고치고, <code>cmake/stm32cubemx/</code> 는 재생성되며, 내 소스는 <code>User/</code> 에 두고 최상위 <code>CMakeLists.txt</code> 의 <code># Add user sources here</code> 에 등록한다.</p>
+
+      <div class="callout warn"><span class="ct"><code>.ioc</code> 에 IWDG1 이 이미 켜져 있으면 — 이 쪽에서는 끈다</span>
+        <p>이 프로젝트의 <code>.ioc</code> 가 그렇다(2026-09-29 15:43 파일 확인: <code>Mcu.IP</code> 에 IWDG1, 생성 <code>main.c</code> 에 <code>MX_IWDG1_Init()</code> · Prescaler 4 · Reload 4095). <code>HAL_IWDG_Init()</code> 은 부르는 순간 워치독을 <strong>시작</strong>하고(<a href="fw-06-tick-watchdog.html#s2-7">fw-06 §2-7</a>), 이 쪽에는 갱신하는 코드가 없다.
+        그래서 보드가 4096 × 4 ÷ LSI 32 kHz ≈ <strong>0.5 s</strong> 마다 리셋된다(LSI 는 29.76 ~ 33.6 kHz 라 0.49 ~ 0.55 s — DS13313 표 38). 배너가 0.5 s 마다 다시 찍히고 셋째 줄이 늘 <code>IWDG</code> 라서, 관찰 ② 의 PIN · POR 구분도 할 수 없다.</p>
+        <p>CubeMX 의 IWDG1 을 끄고(Activated 해제) 다시 생성한다. 켜는 자리와 시작 순서는 <a href="fw-06-tick-watchdog.html">fw-06</a> 이 정한다 — 그때 다시 켠다. 이 쪽의 <code>FW_ASSERT</code> 가 "멈춘 채로 있다"(§3-2-2)는 것도 IWDG 가 꺼져 있다는 전제다.</p>
+        <pre><code class="lang-bash">grep -n "MX_IWDG1_Init" ~/ros2_rpi5/firmware/h723zg/Core/Src/main.c     # (기대: 끈 뒤에는 아무것도 안 나온다)</code></pre>
+      </div>
+
+      <p><strong>③ 생성물 확인</strong> — 값 표의 모든 행을 <code>.ioc</code> 와 생성 코드에서 되읽는다.</p>
+      <pre><code class="lang-bash">cd ~/ros2_rpi5/firmware/h723zg
+grep -n "^RCC\.\(HSE_VALUE\|PLLSourceVirtual\|DIVM1\|DIVN1\|DIVP1\|PLLFRACN\|SYSCLKSource\|HPRE\|D.PPRE.\?\)=" h723zg.ioc
+grep -n "^RCC\.\(SYSCLKFreq_VALUE\|APB1Freq_Value\|Tim1OutputFreq_Value\)=\|^USART3\.\|^PH0" h723zg.ioc
+grep -n "HSE_VALUE" Core/Inc/stm32h7xx_hal_conf.h                       # HAL 이 믿는 입력 주파수
+grep -n "ConfigSupply\|VOLTAGESCALING\|HSEState\|PLLSource\|PLLM\|PLLN\|PLLP\|PLLFRACN\|PLLVCOSEL\|PLLRGE\|CLKDivider\|FLASH_LATENCY" Core/Src/main.c
+grep -n "BaudRate\|WordLength\|StopBits\|Parity \|OverSampling" Core/Src/main.c
+grep -n "USART3\|GPIO_AF7_USART3" Core/Src/stm32h7xx_hal_msp.c            # 핀 · AF · 클럭 켜기 — 이해 확인 1번의 재료</code></pre>
+      <pre><code class="lang-text">(기대: .ioc 의 줄들이 값 표와 같다. 계산값 세 줄은 520000000 / 130000000 / 260000000 — 550000000 이면 굽지 않는다.
+ hal_conf.h 의 HSE_VALUE 는 8000000 — 25000000 이면 Clock Configuration 의 입력 주파수 칸을 안 고친 것이다.
+ main.c 에는 HSEState = RCC_HSE_BYPASS, PLLM · PLLN 은 .ioc 의 조합 그대로(이 프로젝트 1 · 65), PLLFRACN = 0, PLLP = 1, AHB 와 APB 넷의 DIV2 가 보인다.
+ USART3 은 BaudRate = 460800, WordLength 8B, StopBits 1, Parity NONE, OverSampling 16.
+ 줄 번호는 사람마다 다르다.)</code></pre>
+      <p>그리고 <strong>CubeMX 가 알아서 넣어 준 것</strong>을 내가 적는다. 참고로 CubeMX 6.17.0 이 H723 의 <em>기본 클럭(HSI 64 MHz)</em> 에서 생성한 코드(<code>~/stm32/learn/STM32H723/Code</code> — 이 Mac 에 있는 유일한 6.17.0 생성물이다)는 <code>HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY)</code> · <code>PWR_REGULATOR_VOLTAGE_SCALE3</code> · <code>FLASH_LATENCY_1</code> 이었다(<code>~/stm32/learn/STM32H723/Code/Core/Src/main.c</code> L117 · L121 · L150 — 주파수에 맞춰 넣어 주는 것으로 보인다). 520 에서는? 셋째 칸은 이 프로젝트의 6.18.1 생성물(<code>firmware/h723zg/Core/Src/main.c</code>, 2026-09-29 15:43)에서 읽은 값이다 — 내 생성물과 견준다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>생성 코드의 줄</th><th>있어야 하는 값 (근거)</th><th>이 프로젝트의 생성물 (6.18.1)</th></tr></thead>
+        <tbody>
+          <tr><td><code>__HAL_PWR_VOLTAGESCALING_CONFIG(…)</code></td><td><code>PWR_REGULATOR_VOLTAGE_SCALE0</code> (DS13313 표 12 — 170 MHz 를 넘는 순간 VOS3 은 규격 밖)</td><td><code>PWR_REGULATOR_VOLTAGE_SCALE0</code>, 바로 뒤에 <code>VOSRDY</code> 대기 루프</td></tr>
+          <tr><td><code>HAL_RCC_ClockConfig(…, FLASH_LATENCY_?)</code></td><td><code>FLASH_LATENCY_3</code> (RM0468 표 16 — HCLK 210 ~ 275 MHz)</td><td><code>FLASH_LATENCY_3</code></td></tr>
+          <tr><td><code>PLL.PLLVCOSEL</code> · <code>PLL.PLLRGE</code></td><td><code>RCC_PLL1VCOWIDE</code> · 입력 주파수에 맞는 범위 — M 1(8 MHz)이면 <code>RCC_PLL1VCIRANGE_3</code>(8 ~ 16 MHz), M 4(2 MHz)면 <code>_1</code>(2 ~ 4 MHz) (RM0468 §8.7.11)</td><td><code>RCC_PLL1VCOWIDE</code> · <code>RCC_PLL1VCIRANGE_3</code></td></tr>
+          <tr><td><code>HAL_PWREx_ConfigSupply(…)</code></td><td>H723 에는 SMPS 가 없다 → LDO (DS13313 표 1). ST 예제 88개에는 이 호출이 없다 — 있든 없든 기록만 한다</td><td><code>HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY)</code> — 있다</td></tr>
+        </tbody>
+      </table></div>
+      <p>"있어야 하는 값"과 다르면 <strong>굽지 않는다.</strong> CubeMX 의 클럭 화면으로 돌아가 빨간 표시가 없는지 보고, 그래도 다르면 그 줄을 노트에 적어 둔다(이 가이드를 고칠 재료다).</p>
+
+      <h4 id="s3-2-2">3-2-2. 골격</h4>
+      <p>만드는 파일은 일곱이고, 생성물(<code>Core/</code>)에는 손대지 않는다. 전부 <code>firmware/h723zg/</code> 아래이고, 새 <code>.c</code> 둘(<code>console.c</code> · <code>reset_cause.c</code>)은 fw-02 의 방법대로 최상위 <code>CMakeLists.txt</code> 의 <code># Add user sources here</code> 에 <strong>묶음 폴더까지</strong> 적어 등록한다(<code>User/Src/Tools/console.c</code>).<br><strong>묶음 폴더 둘이 이 쪽에서 처음 생긴다</strong> — 빌드 스위치 <code>fw_config.h</code> 는 <code>Config/</code>, 나머지(글자 창 · 로그 · 리셋 원인)는 <code>Tools/</code> 다(판정 기준은 <a href="fw-02-toolchain.html#s2-2-1">fw-02 §2-2-1</a>). <code>Config/</code> 는 헤더만 있어 <code>Inc</code> 쪽만 만든다: <code>mkdir -p ~/ros2_rpi5/firmware/h723zg/User/Inc/Config ~/ros2_rpi5/firmware/h723zg/User/{Inc,Src}/Tools</code>. 포함은 <code>#include "Tools/console.h"</code> 처럼 묶음째 쓴다(<a href="fw-02-toolchain.html#s2-2-2">fw-02 §2-2-2</a>).</p>
+      <p>등록은 최상위 <code>CMakeLists.txt</code> 의 첫 자리에 두 줄이다. <strong>파일을 만들자마자 먼저 등록한다</strong> — 아래 상자의 이유다.</p>
+      <pre><code class="lang-cmake">target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    # Add user sources here
+    User/Src/app.c
+    User/Src/Tools/console.c
+    User/Src/Tools/reset_cause.c
+)</code></pre>
+      <div class="callout note"><span class="ct">등록하기 전에는 에디터가 <code>main.h</code> 도 <code>RCC_RSR_*</code> 도 못 찾는다 — 컴파일러는 찾는다</span>
+        <p>에디터(VS Code 의 C/C++ 확장 · clangd)는 파일마다의 포함 경로와 매크로를 <code>build/Debug/compile_commands.json</code> 에서 얻는다(<a href="fw-02-toolchain.html#s2-5">fw-02 §2-5</a>). 그 파일에는 <strong>CMake 에 등록된 파일만</strong> 들어간다.
+        그래서 <code>console.c</code> 를 만들어 놓고 등록하지 않으면 에디터는 이 파일을 포함 경로 없이 읽고, <code>main.h</code> 를 통해 들어오는 <code>RCC_RSR_*</code> · <code>RCC-&gt;RSR</code> · <code>UART_HandleTypeDef</code> 에 전부 빨간 줄을 긋는다.
+        이 프로젝트에서 실제로 그랬다(2026-09-29 — <code>compile_commands.json</code> 에 <code>User/Src/app.c</code> 하나뿐이었다). 같은 파일을 <code>app.c</code> 와 같은 플래그로 컴파일하면 <code>RCC_RSR_*</code> 는 전부 찾아진다.</p>
+        <p>두 줄을 등록하고 <code>build.sh</code> 를 한 번 돌리면(configure 가 <code>compile_commands.json</code> 을 다시 쓴다) 빨간 줄이 걷힌다. 그 뒤에도 남는 줄이 진짜 오류다 — 예: 철자 하나가 틀린 <code>RCC_RSR_rCPURSTF</code> 는 컴파일러가 <code>undeclared … did you mean 'RCC_RSR_CPURSTF'?</code> 로 짚는다(같은 날 <code>arm-none-eabi-gcc</code> 14.3.1 로 확인).</p>
+      </div>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>파일</th><th>제공 수준</th><th>내용</th></tr></thead>
+        <tbody>
+          <tr><td><code>User/Inc/Tools/reset_cause.h</code> · <code>User/Src/Tools/reset_cause.c</code></td><td><strong>전량</strong></td><td><code>RCC_RSR</code> 값 → 낱말. HAL 헤더를 포함하지 않는 순수 로직이라 Mac 의 <code>cc</code> 로 시험한다</td></tr>
+          <tr><td><code>firmware/host_tests/test_reset_cause.c</code></td><td>전량 (시험 = 채점표)</td><td>RM0468 표 52 의 행을 그대로 옮긴 벡터 11개</td></tr>
+          <tr><td><code>User/Inc/Tools/console.h</code> · <code>User/Src/Tools/console.c</code></td><td>앞 절반 전량 · 뒤 절반 <strong>골격</strong></td><td>전량: <code>RSR</code> 을 한 번 읽고 지우기 / 골격: <code>_write()</code> · 배너</td></tr>
+          <tr><td><code>User/Inc/Tools/log.h</code> · <code>User/Inc/Config/fw_config.h</code></td><td>빈 틀</td><td><code>LOG_*</code> · <code>FW_ASSERT</code> 의 자리, 빌드 스위치의 자리(<a href="fw-17-link-v2.html">fw-17</a>이 <code>LINK_MODE</code> 를 넣는다)</td></tr>
+        </tbody>
+      </table></div>
+
+      <p class="small">이 블록은 전량 제공이다 — 이유: 레지스터 비트 표다. 비트 하나가 어긋나면 이후 모든 쪽의 "리셋 원인" 판정이 조용히 거짓이 된다. 왜 이 순서로 읽는지는 §2-10 에 있다.</p>
+      <pre><code class="lang-c">/* User/Inc/Tools/reset_cause.h - RCC_RSR 을 낱말 하나로 푼다.
+ * 순수 로직: HAL 헤더가 없어서 host_tests/ 가 Mac 의 cc 로 빌드할 수 있다. */
+#ifndef RESET_CAUSE_H
+#define RESET_CAUSE_H
+
+#include &lt;stdint.h&gt;
+
+/* RCC_RSR 플래그 마스크. 비트 위치: RM0468 Rev 3, 8.7.38. 어느 원인이 어느 플래그를
+ * 세우는가: 표 52. console.c 가 컴파일 때 CMSIS 이름과 같음을 증명한다. */
+#define RESET_RSR_CPURSTF    (1UL &lt;&lt; 17)
+#define RESET_RSR_D1RSTF     (1UL &lt;&lt; 19)
+#define RESET_RSR_D2RSTF     (1UL &lt;&lt; 20)
+#define RESET_RSR_BORRSTF    (1UL &lt;&lt; 21)
+#define RESET_RSR_PINRSTF    (1UL &lt;&lt; 22)
+#define RESET_RSR_PORRSTF    (1UL &lt;&lt; 23)
+#define RESET_RSR_SFTRSTF    (1UL &lt;&lt; 24)
+#define RESET_RSR_IWDG1RSTF  (1UL &lt;&lt; 26)
+#define RESET_RSR_WWDG1RSTF  (1UL &lt;&lt; 28)
+#define RESET_RSR_LPWRRSTF   (1UL &lt;&lt; 30)
+
+/* rsr   : 부팅 때 플래그를 지우기 전에 한 번 잡아 둔 RCC-&gt;RSR 원값
+ * 반환  : 정적 문자열 - POR BOR IWDG WWDG LPWR SFT PIN CPU OTHER NONE */
+const char *reset_cause_name(uint32_t rsr);
+
+#endif /* RESET_CAUSE_H */
+
+/* User/Src/Tools/reset_cause.c - 순수 로직(HAL 헤더 없음). */
+#include "Tools/reset_cause.h"
+
+const char *reset_cause_name(uint32_t rsr)
+{
+  /* 순서가 중요하다: PINRSTF 는 거의 모든 원인에, CPURSTF 는 모든 원인에 같이 선다
+   * (표 52). 그래서 가장 구체적인 플래그부터 보고 PIN / CPU 는 맨 나중에 본다. */
+  if (rsr &amp; RESET_RSR_PORRSTF)   { return "POR";  }
+  if (rsr &amp; RESET_RSR_BORRSTF)   { return "BOR";  }
+  if (rsr &amp; RESET_RSR_IWDG1RSTF) { return "IWDG"; }
+  if (rsr &amp; RESET_RSR_WWDG1RSTF) { return "WWDG"; }
+  if (rsr &amp; RESET_RSR_LPWRRSTF)  { return "LPWR"; }
+  if (rsr &amp; RESET_RSR_SFTRSTF)   { return "SFT";  }
+  if (rsr &amp; RESET_RSR_PINRSTF)   { return "PIN";  }
+  if (rsr &amp; RESET_RSR_CPURSTF)   { return "CPU";  }
+  if (rsr != 0UL)                { return "OTHER"; }
+  return "NONE";
+}</code></pre>
+      <p class="small">이 블록은 전량 제공이다 — 이유: 시험 파일은 채점표다. 벡터의 출처(RM0468 표 52)와 계산에 쓴 한 줄이 주석에 있다.</p>
+      <pre><code class="lang-c">/* host_tests/test_reset_cause.c - 벡터는 RM0468 Rev 3 표 52
+ * "Reset source identification (RCC_RSR)" 의 행이다. 비트 위치는 8.7.38.
+ * 값은 python3 로 계산했다. 예: 1행:
+ *   python3 -c "print(hex(sum(1&lt;&lt;b for b in (23,22,21,20,19,17))))"   -&gt; 0xfa0000 */
+#include &lt;assert.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include "Tools/reset_cause.h"
+
+static int n_cases;
+
+static void expect(uint32_t rsr, const char *want)
+{
+  const char *got = reset_cause_name(rsr);
+  if (strcmp(got, want) != 0) {
+    printf("FAIL rsr=0x%08lx want=%s got=%s\n", (unsigned long)rsr, want, got);
+    assert(0);
+  }
+  n_cases++;
+}
+
+int main(void)
+{
+  expect(0x00FA0000UL, "POR");   /* 1행  전원 인가   : POR PIN BOR D2 D1 CPU */
+  expect(0x00420000UL, "PIN");   /* 2행  NRST 핀     : PIN CPU               */
+  expect(0x00620000UL, "BOR");   /* 3행  브라운아웃  : PIN BOR CPU           */
+  expect(0x01420000UL, "SFT");   /* 4행  SYSRESETREQ : SFT PIN CPU           */
+  expect(0x00020000UL, "CPU");   /* 5행  CPURST      : CPU 만                */
+  expect(0x10420000UL, "WWDG");  /* 6행  WWDG1       : WWDG1 PIN CPU         */
+  expect(0x04420000UL, "IWDG");  /* 8행  IWDG1       : IWDG1 PIN CPU         */
+  expect(0x40420000UL, "LPWR");  /* 12행 저전력 가드 : LPWR PIN CPU          */
+  expect(0x00080000UL, "OTHER"); /* 10행 D1 의 DStandby 탈출 : D1 만         */
+  expect(0x00000000UL, "NONE");  /* 플래그를 지웠고 새로 일어난 일은 없다    */
+  /* 끈적한 플래그: 전원 인가 뒤 NRST, 그 사이 아무도 RMVF 로 지우지 않았다.
+   * 0x00FA0000 | 0x00420000 == 0x00FA0000 -&gt; 여전히 POR 로 읽힌다. */
+  expect(0x00FA0000UL | 0x00420000UL, "POR");
+  printf("PASS reset_cause %d cases\n", n_cases);
+  return 0;
+}</code></pre>
+      <p><code>console.h</code> 는 공개 함수 셋이다. 뒤 쪽에서 fw-05 의 <code>ver</code> 가 <code>console_print_banner()</code> 를, <a href="fw-06-tick-watchdog.html">fw-06</a> 의 워치독 확인은 배너의 <code>reset</code> 줄로 판정한다(같은 함수 <code>console_reset_cause()</code> 의 출력이다 — 다시 부르지 않는다). <code>RCC_RSR</code> 을 직접 읽는 곳은 <code>console_init()</code> 하나로 남긴다.</p>
+      <pre><code class="lang-c">/* User/Inc/Tools/console.h - VCP 텍스트 콘솔(USART3 -&gt; ST-LINK VCP)과 부팅 배너. */
+#ifndef CONSOLE_H
+#define CONSOLE_H
+
+#include &lt;stdint.h&gt;
+
+void        console_init(void);          /* app_init() 에서 한 번, MX_USART3_UART_Init() 뒤에 부른다 */
+void        console_print_banner(void);  /* 세 줄: 빌드 / 클럭 / 리셋 원인                           */
+const char *console_reset_cause(void);   /* 부팅 때 잡아 둔 낱말: POR PIN SFT IWDG ...               */
+
+#endif /* CONSOLE_H */</code></pre>
+      <p class="small">이 블록은 전량 제공이다 — 이유: 위와 같다(레지스터 비트 읽기). <code>_Static_assert</code> 여덟 줄은 순수 파일이 따로 들고 있는 마스크가 CMSIS 의 이름(<code>stm32h723xx.h</code> 의 <code>RCC_RSR_*</code>)과 같은 비트인지 컴파일러에게 확인시킨다.</p>
+      <pre><code class="lang-c">/* User/Src/Tools/console.c (1/2) - 전량 제공: 레지스터 비트 */
+#include &lt;stdio.h&gt;
+#include "main.h"            /* HAL + CMSIS 레지스터 이름 */
+#include "Tools/console.h"
+#include "Tools/reset_cause.h"
+
+extern UART_HandleTypeDef huart3;    /* CubeMX 가 Core/Src/main.c 에 정의한다 */
+
+/* reset_cause.c 는 CMSIS 를 포함할 수 없어서 마스크를 따로 들고 있다.
+ * 여기서 컴파일러가 두 철자가 같은 비트임을 증명한다. */
+_Static_assert(RESET_RSR_CPURSTF   == RCC_RSR_CPURSTF,   "RSR mask mismatch: CPURSTF");
+_Static_assert(RESET_RSR_BORRSTF   == RCC_RSR_BORRSTF,   "RSR mask mismatch: BORRSTF");
+_Static_assert(RESET_RSR_PINRSTF   == RCC_RSR_PINRSTF,   "RSR mask mismatch: PINRSTF");
+_Static_assert(RESET_RSR_PORRSTF   == RCC_RSR_PORRSTF,   "RSR mask mismatch: PORRSTF");
+_Static_assert(RESET_RSR_SFTRSTF   == RCC_RSR_SFTRSTF,   "RSR mask mismatch: SFTRSTF");
+_Static_assert(RESET_RSR_IWDG1RSTF == RCC_RSR_IWDG1RSTF, "RSR mask mismatch: IWDG1RSTF");
+_Static_assert(RESET_RSR_WWDG1RSTF == RCC_RSR_WWDG1RSTF, "RSR mask mismatch: WWDG1RSTF");
+_Static_assert(RESET_RSR_LPWRRSTF  == RCC_RSR_LPWRRSTF,  "RSR mask mismatch: LPWRRSTF");
+
+static uint32_t s_rsr_at_boot;       /* console_init() 만 쓴다 */
+
+void console_init(void)
+{
+  s_rsr_at_boot = RCC-&gt;RSR;          /* 1) 한 번 잡아 둔다: 이 플래그는 전원 인가 리셋만 지운다 */
+  __HAL_RCC_CLEAR_RESET_FLAGS();     /* 2) 지운다(RMVF): 다음 부팅은 자기 원인만 보인다         */
+}
+
+const char *console_reset_cause(void)
+{
+  return reset_cause_name(s_rsr_at_boot);
+}</code></pre>
+      <p>여기부터가 내 몫이다. 골격은 <strong>그대로 빌드된다</strong> — 빈 <code>_write()</code> 는 글자를 버리고, 빈 배너는 아무것도 찍지 않는다.</p>
+      <pre><code class="lang-c">/* User/Src/Tools/console.c (2/2) - 골격: 내 몫 */
+
+/* newlib 가 printf() 를 위해 부른다. Core/Src/syscalls.c 의 weak _write() 를 덮어쓴다.
+ *   file  : 무시(stdout 과 stderr 모두 VCP 로 간다)
+ *   ptr   : len 바이트, 끝에 0 이 없다(NOT zero-terminated)
+ *   반환  : 받아들인 바이트 수(len), 또는 C 라이브러리에 오류를 알리는 -1.
+ * 문맥: 주 루프 전용(블로킹). 1바이트 = 10비트 = 460800 8N1 에서 약 21.7 us. */
+int _write(int file, char *ptr, int len)
+{
+  /* TODO(you) [T1]: 블로킹 HAL 송신으로 len 바이트를 huart3 에 보낸다 - 힌트 카드 T1
+       1) len &lt;= 0 이면 보낼 것이 없다: 0 을 돌려준다
+       2) HAL_UART_Transmit(&amp;huart3, (const uint8_t *)ptr, (uint16_t)len, 타임아웃) 을 부른다
+          타임아웃 [ms] 은 내가 정한다 - 이름은 CONSOLE_TX_TIMEOUT_MS, 값은 2-7 의 식으로 계산해 넉넉히
+       3) HAL 호출이 실패했을 때 돌려줄 값을 정한다: len(글자를 버린다) 또는 -1(C 라이브러리에 오류를 알린다)
+     채우기 시작하면 아래 줄의 (void)ptr; 은 지운다 - (void)file; 과 return len; 은 완결 코드에도 남는다. */
+  (void)file; (void)ptr;
+  return len;
+}
+
+/* 정확히 세 줄, 줄마다 \r\n 으로 끝나고 정수만 쓴다(newlib-nano: 기본으로 %f 없음):
+ *   build &lt;date&gt; &lt;time&gt;
+ *   SYSCLK &lt;hz&gt; PCLK1 &lt;hz&gt;
+ *   reset &lt;cause&gt;
+ * 두 클럭 숫자는 상수가 아니라 실행 중에 HAL 의 읽기 함수에서 가져온다. */
+void console_print_banner(void)
+{
+  /* TODO(you) [T2]: printf() 세 번으로 배너 석 줄을 찍는다 - 힌트 카드 T2
+       1) "build " 뒤에 __DATE__ 와 __TIME__ - 둘 다 문자열 리터럴이라 %s, 사이에 공백 하나
+       2) "SYSCLK " HAL_RCC_GetSysClockFreq() " PCLK1 " HAL_RCC_GetPCLK1Freq() - 둘 다 uint32_t
+          이 컴파일러에서 uint32_t 는 "unsigned long" 이다 -&gt; (unsigned long) 으로 바꿔 %lu
+       3) "reset " console_reset_cause() - 같은 파일 위쪽의 함수, %s
+     줄마다 \r\n 으로 끝낸다. 지울 자리표시는 없다(빈 본문이었다). */
+}</code></pre>
+      <pre><code class="lang-c">/* User/Inc/Tools/log.h - LOG_* 매크로. 줄 꼴: [&lt;tick_ms&gt;] E &lt;tag&gt;: &lt;text&gt;\r\n
+ * 문맥: 주 루프 전용. ISR 에서 LOG_* 를 부르지 않는다 - ISR 은 카운터를 올리고
+ * 주 루프가 그것을 찍는다. */
+#ifndef LOG_H
+#define LOG_H
+
+#include &lt;stdio.h&gt;
+#include "main.h"            /* HAL_GetTick() */
+#include "Config/fw_config.h"
+
+/* 로그 줄의 유일한 시간 원천 [ms]. fw-06 이 이 한 줄을 바꾼다. */
+#define LOG_NOW_MS()   ((unsigned long)HAL_GetTick())
+
+/* TODO(you) [T3]: 네 매크로가 위의 줄 꼴을 printf() 로 찍게 만든다 - 힌트 카드 T3
+     1) 서식 문자열을 조각으로 잇는다: "[%lu] E " tag ": " fmt "\r\n" - 나란히 놓인 리터럴은 하나로 붙는다
+     2) 인자는 LOG_NOW_MS() 다음에 ##__VA_ARGS__ - GNU C: 가변 인자가 없으면 앞의 쉼표를 지운다
+     3) 등급 글자는 E W I D 한 글자씩 다르다. tag 는 "console" 같은 문자열 리터럴이다
+   채우기 시작하면 오른쪽의 ((void)0) (빌드용 자리표시)을 지우고 그 자리에 쓴다. */
+#define LOG_ERR(tag, fmt, ...)   ((void)0)
+#define LOG_WRN(tag, fmt, ...)   ((void)0)
+#define LOG_INF(tag, fmt, ...)   ((void)0)
+#define LOG_DBG(tag, fmt, ...)   ((void)0)
+
+/* TODO(you) [T4]: cond 가 거짓이면 - file:line 을 한 번 찍고, LD3 을 켜고, 끝없이 돈다 - 힌트 카드 T4
+     1) do { ... } while (0) 로 감싼다 - if 와 else 사이에서도 한 문장으로 쓰이게
+     2) if (!(cond)) 안에서: printf 로 __FILE__ (%s) 와 __LINE__ (%d) 을 찍는다 - cond 는 꼭 괄호로 감싼다
+     3) HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET) - 두 이름은 main.h 가 준다
+     4) for (;;) { } - 아직 IWDG 가 없다: 보드는 NRST 전까지 멈춰 있다
+   채우기 시작하면 오른쪽의 ((void)(cond)) (빌드용 자리표시)을 지우고 그 자리에 쓴다. */
+#define FW_ASSERT(cond)          ((void)(cond))
+
+#endif /* LOG_H */
+
+/* User/Inc/Config/fw_config.h - 빌드 스위치. 펌웨어의 모든 #if 를 이 한곳에 둔다. */
+#ifndef FW_CONFIG_H
+#define FW_CONFIG_H
+
+/* fw-17 이 여기에 LINK_MODE (TEXT / V2) 를 더한다. 그때까지는 텍스트 콘솔뿐이라
+ * 이 파일은 일부러 빈 틀이다. */
+
+#endif /* FW_CONFIG_H */</code></pre>
+      <p>이 쪽은 <strong>인터럽트를 하나도 켜지 않는다</strong>(송신은 폴링이다) — 그래서 NVIC 우선순위 표에 더하는 행이 없다. USART3 의 인터럽트는 fw-05 에서, DMA 는 <a href="fw-07-memory-dma.html">fw-07</a>에서 켠다.</p>
+      <p><code>log.h</code> 의 시각은 지금은 <code>HAL_GetTick()</code>(SysTick 1 ms)에서 온다. <code>FW_ASSERT</code> 는 이 구간에서 <strong>멈춘 채로 있다</strong> — 하드웨어 워치독(IWDG)이 아직 없으므로 NRST 버튼으로 되살린다.
+      <code>LOG_*</code> 를 ISR 안에서 부르지 않는다는 규칙은 지금부터 지킨다(블로킹 송신이 ISR 을 밀리초 단위로 붙잡는다).</p>
+      <p>마지막으로 <code>app.c</code> 에 세 줄을 더한다. 배너를 주기적으로 다시 찍는 것은 <strong>임시 장치</strong>다 — USB 를 뽑았다 꽂으면 Mac 이 포트를 다시 잡기 전에 첫 배너가 지나가 버린다(추정: ST-LINK 가 열리지 않은 포트로 온 글자를 버린다 — 직접 본다). fw-05 에서 <code>ver</code> 명령이 생기면 지운다.</p>
+      <pre><code class="lang-c">/* User/Src/app.c - 이 쪽이 더하는 줄 */
+#include "Tools/console.h"
+
+void app_init(void)
+{
+  console_init();            /* 맨 먼저: 누가 보기 전에 RCC_RSR 을 잡아 둔다 */
+  console_print_banner();
+}
+
+void app_loop(void)
+{
+  /* ... fw-02 의 LD1 점멸은 그대로 둔다 ... */
+  /* TODO(you) [T5]: ____ s 마다 배너를 다시 찍는다(HAL_GetTick() 차, HAL_Delay 없이) - 힌트 카드 T5
+       1) 주기를 이름으로 둔다: BANNER_PERIOD_MS - ____ 에 내가 정한 초를 적는다(비우면 빌드가 멈춘다, 의도된 것)
+       2) 마지막으로 찍은 시각을 static uint32_t 에 기억한다 [ms] - 부팅 때 0
+       3) (uint32_t)(HAL_GetTick() - 마지막) &gt;= BANNER_PERIOD_MS 이면: 시각을 갱신하고 console_print_banner()
+     fw-02 의 LD1 점멸(now_ms · last_ms)과 같은 꼴이다. 임시: fw-05 가 이것을 "ver" 명령으로 바꾼다. */
+}</code></pre>
+
+      <h4 id="s3-2-3">3-2-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><strong>호스트 시험을 먼저 돌린다</strong> — 보드가 없어도 된다.
+          <pre><code class="lang-bash">cd ~/ros2_rpi5/firmware
+cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_reset_cause.c h723zg/User/Src/Tools/reset_cause.c -o /tmp/test_reset_cause &amp;&amp; /tmp/test_reset_cause</code></pre>
+          <code>PASS reset_cause 11 cases</code> 가 나와야 한다. 그 뒤에 일부러 <code>reset_cause.c</code> 의 <code>PIN</code> 줄을 맨 위로 올려 다시 돌려 본다 — 첫 벡터에서 <code>want=POR got=PIN</code> 으로 멈춘다. 이것이 §2-10 의 "하나"다. 되돌려 놓는다.</li>
+        <li><strong><code>_write()</code></strong> — 막히면: HAL 의 블로킹 송신은 <code>HAL_UART_Transmit()</code> 이고 넷째 인자가 타임아웃 [ms] 다. 정할 것 둘 — ① 타임아웃(배너 한 줄 80 B 남짓이 460800 8N1 에서 걸리는 시간을 §2-7 의 식으로 계산해 그보다 넉넉히) ② 실패했을 때 돌려줄 값 — <code>len</code> 을 돌려주면 "보냈다"고 거짓으로 답하는 것이고(글자를 버린다), −1 을 돌려주면 C 라이브러리가 stdout 에 오류 표시를 남긴다. 콘솔이 죽었을 때 <strong>나머지 펌웨어가 멈추지 않는 쪽</strong>이 어느 것인지로 정한다.</li>
+        <li><strong>배너</strong> — <code>printf()</code> 세 번. 클럭 숫자는 상수가 아니라 HAL 의 읽기 함수에서 가져온다. <code>HAL_RCC_GetSysClockFreq()</code> 는 PLL 레지스터를 되읽어 <code>HSE_VALUE</code> 와 곱한다(<code>stm32h7xx_hal_rcc.c:1388</code> 부터) — 즉 배너의 숫자는 "레지스터에 실제로 들어간 분주값 × 내가 HAL 에 알려 준 입력 주파수"다. 주파수를 <strong>재는</strong> 것은 아니다(이해 확인 7번).</li>
+        <li><strong>stdout 버퍼링</strong> — 생성물의 <code>_isatty()</code> 가 1 을 돌려주므로 newlib 은 stdout 을 줄 단위로 모았다 내보낸다(추정 — 확인법: 줄바꿈 없는 <code>printf("abc")</code> 가 곧바로 보이는가). fw-05 의 프롬프트 <code>&gt; </code> 처럼 줄바꿈 없는 글자를 바로 내보내려면 <code>setvbuf()</code> 로 버퍼링을 끈다. 어디서 부를지는 내가 정한다.</li>
+        <li><strong><code>LOG_*</code> 네 매크로와 <code>FW_ASSERT</code></strong> — 다 채운 뒤 <code>app_init()</code> 끝에 <code>LOG_INF("app", "init done");</code> 한 줄을 넣어 모양(<code>[&lt;tick_ms&gt;] I app: init done</code>)을 눈으로 본다.</li>
+        <li><strong><code>app.c</code> 의 주기 배너</strong> — <code>BANNER_PERIOD_MS</code> 의 <code>____</code> 에 초를 정해 적고, <code>app_loop()</code> 에 시각 차 비교 블록을 넣는다(<code>HAL_Delay</code> 없이 — LD1 점멸이 멈추면 안 된다). 임시 장치다 — fw-05 가 <code>ver</code> 명령으로 바꾸면 지운다.</li>
+        <li><strong>굽기 전에 한 번 더</strong> — §3-2-1 ③ 의 <code>RCC.SYSCLKFreq_VALUE</code> 가 <code>520000000</code> 인가. 그다음 굽는다(§3-2-4).</li>
+      </ol>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 2 = T1 · 걸음 3 = T2 · 걸음 5 = T3 · T4 · 걸음 6 = T5 (걸음 1 · 4 · 7 에는 카드가 없다 — 전량 제공 · 내가 정하는 자리 · 되읽기). 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>_write()</code> · 블로킹 HAL 송신으로 len 바이트를 보낸다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 부르는 쪽은 내 코드가 아니라 C 라이브러리(newlib)다: <code>printf()</code> 가 모은 글자를 내보낼 때(줄 끝 <code>\n</code> 에서, 또는 <code>fflush()</code> 때) 이 함수를 부른다. 입력: 바이트 묶음의 주소 <code>ptr</code> 와 길이 <code>len</code>(끝에 0 이 없다 — 문자열이 아니라 바이트열이다). 출력: 받아들인 바이트 수. 끝났을 때 참이어야 하는 것: <code>len</code> 바이트가 USART3 으로 나갔거나, 타임아웃 안에 못 나갔으면 버려졌고 — 어느 쪽이든 <strong>주 루프는 계속 돈다.</strong></p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T1 - User/Src/Tools/console.c */
+#define CONSOLE_TX_TIMEOUT_MS  100U   /* [ms] 1 kB 를 한꺼번에 보내도 460800 8N1 에서 약 22 ms. 값은 내가 정한다 */
+
+int _write(int file, char *ptr, int len)
+{
+  (void)file;                        /* stdout 과 stderr 를 가르지 않는다: 둘 다 VCP 로 간다 */
+  if (len &lt;= 0) {
+    return 0;                        /* 보낼 것이 없다 - HAL 을 부르지 않는다 */
+  }
+  /* 타임아웃이 있는 블로킹 송신. 실패하면 글자를 일부러 버리고 그래도 len 을
+   * 돌려준다: 죽은 콘솔이 나머지 펌웨어를 세우면 안 된다. */
+  (void)HAL_UART_Transmit(&amp;huart3, (const uint8_t *)ptr, (uint16_t)len, CONSOLE_TX_TIMEOUT_MS);
+  return len;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>#define CONSOLE_TX_TIMEOUT_MS  100U</code> — 함수 위에 이름 붙인 상수로 둔다. 100 은 예시 값이다(아래 "다르게 써도 되는 곳"). <code>U</code> 접미는 "부호 없는 정수" — 넷째 인자의 형 <code>uint32_t</code> 와 맞춘다. 이 이름은 fw-07 의 <code>mem</code> 명령이 그대로 가져다 쓴다.</li>
+          <li><code>(void)file;</code> — "이 인자는 일부러 안 쓴다"고 컴파일러에게 말하는 관용구(<code>-Wextra</code> 의 <code>unused parameter</code> 경고를 막는다). stdout(1)과 stderr(2)를 가르지 않고 둘 다 같은 VCP 로 보낸다.</li>
+          <li><code>if (len &lt;= 0) { return 0; }</code> — 보낼 것이 없으면 HAL 을 부르지 않는다. <code>HAL_UART_Transmit()</code> 은 <code>Size</code> 가 0 이면 <code>HAL_ERROR</code> 를 돌려준다(<code>stm32h7xx_hal_uart.c:1128</code> 의 검사) — 그 길을 미리 막는다.</li>
+          <li><code>(const uint8_t *)ptr</code> — newlib 은 <code>char *</code> 를 주고 HAL 은 <code>const uint8_t *</code> 를 받는다. 같은 바이트지만 형이 달라서 캐스트 없이 넘기면 경고가 난다(아래 표). <code>(uint16_t)len</code> 도 같은 이유(<code>int</code> → <code>uint16_t</code>). 캐스트 = "이 값을 이 형으로 보라".</li>
+          <li><code>(void)HAL_UART_Transmit(…)</code> — 반환값(<code>HAL_StatusTypeDef</code>)을 <strong>일부러 버린다.</strong> 실패해도 <code>len</code> 을 돌려주는 것이 이 코드의 결정이다: 터미널이 안 열려 있어도, USART 가 멈춰도, <code>printf()</code> 를 부른 코드는 모른 채 계속 간다 — 죽은 콘솔이 나머지 펌웨어를 세우면 안 된다.</li>
+          <li><code>return len;</code> — "다 받아들였다". 골격의 <code>(void)ptr;</code> 는 지웠다(이제 <code>ptr</code> 를 쓴다).</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① 타임아웃 값: 1024 B × 10 비트 ÷ 460 800 ≈ 22 ms 에서 출발한 예시일 뿐이다(배너 한 줄 80 B 남짓은 2 ms). ② 실패 때 돌려줄 값: <code>HAL_OK</code> 가 아닐 때 <code>-1</code> 을 돌려주는 답도 맞다 — C 라이브러리가 stdout 에 오류 표시를 남긴다. 그때는 <code>if (HAL_UART_Transmit(…) != HAL_OK) { return -1; }</code> 처럼 <code>if</code> 하나가 생기고 <code>(void)</code> 는 없어진다. 두 분기가 같은 값을 돌려주는 <code>if</code> 는 죽은 코드다. ③ ST 예제처럼 <code>__io_putchar()</code> 로 한 글자씩 보내도 결과 글자는 같다(동일) — 차이는 HAL 호출 횟수(글자 수만큼)다. 어느 쪽이든 <strong>블로킹</strong>이다 — 글자를 보내는 동안 주 루프가 선다. 이 한계는 <a href="fw-07-memory-dma.html">fw-07</a>이 DMA 송신으로 받는다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>stm32h7xx_hal_uart.h:1634</code>(FW_H7 V1.13.0).</p>
+        <pre><code class="lang-c">HAL_StatusTypeDef HAL_UART_Transmit(UART_HandleTypeDef *huart, const uint8_t *pData, uint16_t Size, uint32_t Timeout);</code></pre>
+        <p><code>huart</code>: 핸들의 주소 — <code>&amp;huart3</code>(CubeMX 가 <code>main.c</code> 에 정의, <code>console.c</code> 위쪽의 <code>extern</code> 으로 들여왔다). <code>pData</code>: 보낼 바이트의 주소. <code>Size</code>: 바이트 수. <code>Timeout</code>: [ms] — 이 시간 안에 못 보내면 <code>HAL_TIMEOUT</code>.
+        반환(<code>stm32h7xx_hal_uart.c:1119</code> 부터): <code>HAL_OK</code>(<code>:1194</code>) / <code>HAL_BUSY</code>(<code>:1198</code> — 다른 송신이 진행 중) / <code>HAL_ERROR</code>(<code>:1128</code> 의 검사 — <code>pData</code> 가 NULL 이거나 <code>Size</code> 0) / <code>HAL_TIMEOUT</code>(<code>:1161</code> · <code>:1188</code>). 문맥: 주 루프 — 돌아올 때까지 막는다(블로킹). ISR 에서 부르지 않는다 — 그래서 <code>LOG_*</code> 도 ISR 금지다.
+        덮어쓰는 것: <code>Core/Src/syscalls.c:80</code> 의 <code>__attribute__((weak)) int _write(…)</code>(이 프로젝트의 생성물) — 생성물의 것은 <code>__io_putchar()</code> 를 글자마다 부르는데 그 함수는 어디에도 정의돼 있지 않다. 내가 같은 이름을 보통(강한) 정의로 두면 링커가 내 것을 고른다 — 이해 확인 1 의 <code>__weak</code> 과 같은 원리.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>캐스트 없이 <code>ptr, len</code> 을 넘겼다</td><td><code>warning: pointer targets in passing argument 2 of 'HAL_UART_Transmit' differ in signedness [-Wpointer-sign]</code> 와 <code>note: expected 'const uint8_t *' {aka 'const unsigned char *'} but argument is of type 'char *'</code></td><td><code>(const uint8_t *)ptr, (uint16_t)len</code></td></tr>
+            <tr><td>타임아웃에 <code>HAL_MAX_DELAY</code> 를 넣었다</td><td>아무 말 없다. 송신이 끝나지 않는 상황이면 <code>printf()</code> 가 영원히 돌아오지 않는다 — 콘솔 하나가 펌웨어 전체를 세운다</td><td>유한한 [ms]</td></tr>
+            <tr><td>빈 골격 그대로</td><td>빌드는 된다. 터미널에 아무것도 안 나오고 LD1 은 깜박인다</td><td>채운다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 이 자리만으로는 보이는 것이 없다(아직 아무도 <code>printf()</code> 를 안 부른다). T2 까지 채우면 §3-2-4 관찰 ① 의 석 줄이 보인다 — 체크포인트 <code>banner-three-lines</code> 의 전제가 이 함수다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t2"><summary>힌트 T2 — <code>console_print_banner()</code> · printf() 세 번으로 배너 석 줄을 찍는다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — <code>app_init()</code> 이 <code>console_init()</code> 다음에 한 번 부른다(그 뒤 T5 가 주기적으로, fw-05 부터는 <code>ver</code> 명령이 부른다). 출력: <strong>정확히 석 줄</strong>, 줄마다 <code>\r\n</code>, 정수만. 숫자는 상수가 아니라 HAL 의 읽기 함수에서. 끝났을 때 참이어야 하는 것: 둘째 줄이 <code>SYSCLK 520000000 PCLK1 130000000</code>, 셋째 줄이 <code>console_reset_cause()</code> 의 낱말.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T2 - User/Src/Tools/console.c */
+void console_print_banner(void)
+{
+  printf("build %s %s\r\n", __DATE__, __TIME__);
+  printf("SYSCLK %lu PCLK1 %lu\r\n",
+         (unsigned long)HAL_RCC_GetSysClockFreq(), (unsigned long)HAL_RCC_GetPCLK1Freq());
+  printf("reset %s\r\n", console_reset_cause());
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>printf("build %s %s\r\n", __DATE__, __TIME__);</code> — <code>__DATE__</code> · <code>__TIME__</code> 은 컴파일러가 컴파일하는 순간의 날짜 · 시각을 <strong>문자열 리터럴</strong>로 바꿔 넣는 미리 정의된 매크로다(<code>"Oct  4 2026"</code> · <code>"12:34:56"</code> 꼴). 문자열이라 <code>%s</code>. 둘 사이에 공백 하나를 서식에 넣었다 — <code>__DATE__ __TIME__</code> 처럼 붙여 쓰면 C 가 두 리터럴을 하나로 이어 <code>Oct  4 202612:34:56</code> 이 된다(아래 표. 2026-10-04 이 저장소의 <code>User/Src/Tools/console.c</code> 가 실제로 그렇게 쓰여 있었다 — 컴파일러는 조용하다).</li>
+          <li><code>printf("SYSCLK %lu PCLK1 %lu\r\n", (unsigned long)…, (unsigned long)…);</code> — 두 함수는 <code>uint32_t</code> 를 돌려준다. <code>%lu</code> 는 <code>unsigned long</code> 자리. 이 컴파일러(arm-none-eabi-gcc)에서 <code>uint32_t</code> 가 곧 <code>long unsigned int</code> 라 캐스트 없이도 경고가 없다(실제로 확인) — 그래도 <code>(unsigned long)</code> 을 붙이는 것이 fw-05 부터의 버릇이다: Mac 의 <code>cc</code> 에서는 <code>uint32_t</code> 가 <code>unsigned int</code> 라 호스트 시험으로 가는 코드에서 경고가 난다. 둘째 줄을 두 줄로 나눠 쓴 것은 길이 때문이다 — C 는 괄호 안에서 줄을 바꿔도 된다.</li>
+          <li><code>printf("reset %s\r\n", console_reset_cause());</code> — 같은 파일 위쪽(전량 제공)의 함수가 돌려주는 정적 문자열. <code>RCC-&gt;RSR</code> 을 다시 읽지 않는다 — <code>console_init()</code> 이 지워 버렸으므로 다시 읽으면 0, 곧 <code>NONE</code> 이다.</li>
+          <li>줄 끝 <code>\r\n</code> — fw-05 §2-4 의 출력 규약. <code>\n</code> 만 보내면 터미널에 따라 계단처럼 밀린다. 정수만 — newlib-nano 의 <code>printf</code> 는 <code>%f</code> 를 기본으로 찍지 않는다(증상 표).</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① <code>HAL_RCC_GetHCLKFreq()</code>(260 MHz)를 더 찍고 싶어도 줄 수는 지킨다 — fw-05 의 <code>ver</code> 와 fw-06 의 워치독 판정이 이 석 줄을 그대로 쓴다. 더 보고 싶은 값은 <code>SYSCLK</code> 줄에 <code>키 값</code> 을 덧붙이는 쪽이 규약 안이다. ② 걸음 4 의 <code>setvbuf(stdout, NULL, _IONBF, 0)</code> 는 이 함수의 일이 아니다 — 부르는 자리는 <code>app_init()</code> 의 <code>console_init();</code> 다음 줄이든 <code>console_init()</code> 안이든 결과는 같다(동일). 한 번만 부르면 된다. 끄지 않으면 줄바꿈 없는 글자(fw-05 의 프롬프트 <code>&gt; </code>)가 <code>fflush()</code> 전까지 안 보인다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>stm32h7xx_hal_rcc.h:7984</code> · <code>:7986</code>.</p>
+        <pre><code class="lang-c">uint32_t HAL_RCC_GetSysClockFreq(void);   /* stm32h7xx_hal_rcc.c:1388 - PLL 레지스터를 되읽어 HSE_VALUE 와 곱한다 */
+uint32_t HAL_RCC_GetPCLK1Freq(void);      /* stm32h7xx_hal_rcc.c:1517 - HCLK 에 D2PPRE1 분주를 적용한다 */</code></pre>
+        <p>인자 없음, 반환 [Hz](주파수 — 주기로는 1 ÷ f). 주파수를 <strong>재는</strong> 것이 아니라 "레지스터에 든 분주값 × 내가 HAL 에 알려 준 <code>HSE_VALUE</code>" 를 <strong>계산</strong>한다(이해 확인 7). 레지스터 읽기뿐이라 어디서든 부를 수 있다.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>%u</code>(또는 <code>%d</code>)로 찍었다</td><td><code>warning: format '%u' expects argument of type 'unsigned int', but argument 2 has type 'uint32_t' {aka 'long unsigned int'} [-Wformat=]</code> — gcc 가 <code>%lu</code> 를 제안까지 한다</td><td><code>(unsigned long)</code> + <code>%lu</code></td></tr>
+            <tr><td><code>__DATE__ __TIME__</code> 을 <code>%s</code> 하나에 넣었다</td><td>아무 말 없다. 보드: <code>build Oct  4 202612:34:56</code> — 날짜와 시각이 붙는다</td><td><code>%s %s</code> 와 인자 둘</td></tr>
+            <tr><td><code>\n</code> 만 보냈다</td><td>아무 말 없다. 터미널에서 줄이 계단처럼 밀린다</td><td><code>\r\n</code></td></tr>
+            <tr><td><code>%f</code> 로 MHz 를 찍었다</td><td>아무 말 없다. 그 자리가 비어 나온다(증상 표)</td><td>정수 Hz</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-2-4 관찰 ①: 리셋할 때마다 석 줄(체크포인트 <code>banner-three-lines</code>), 둘째 줄이 <code>SYSCLK 520000000 PCLK1 130000000</code>(<code>sysclk-520-pclk-130</code>). <code>550000000</code> 이나 <code>64000000</code> 이면 이 코드가 아니라 CubeMX 쪽이다(증상 표). 걸음 5 의 <code>LOG_INF</code> 줄도 이 함수 뒤에 나온다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t3"><summary>힌트 T3 — <code>LOG_ERR()</code> · <code>LOG_WRN()</code> · <code>LOG_INF()</code> · <code>LOG_DBG()</code> · 네 매크로가 줄 꼴을 printf() 로 찍게 한다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 함수가 아니라 <strong>매크로</strong>다: 컴파일 전에 글자가 바뀌어 들어간다. <code>LOG_INF("app", "init done")</code> 이 <code>printf("[%lu] I app: init done\r\n", LOG_NOW_MS())</code> 로 펼쳐지면 된다. 입력: <code>tag</code>(문자열 리터럴), <code>fmt</code>(서식 문자열 리터럴), 그 뒤 0개 이상의 인자. 출력: 줄 하나 <code>[&lt;tick_ms&gt;] &lt;등급 글자&gt; &lt;tag&gt;: &lt;글&gt;\r\n</code>. 문맥: 주 루프만 — 안에 블로킹 <code>printf()</code> 가 있다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T3 - User/Inc/Tools/log.h */
+#define LOG_ERR(tag, fmt, ...)   printf("[%lu] E " tag ": " fmt "\r\n", LOG_NOW_MS(), ##__VA_ARGS__)
+#define LOG_WRN(tag, fmt, ...)   printf("[%lu] W " tag ": " fmt "\r\n", LOG_NOW_MS(), ##__VA_ARGS__)
+#define LOG_INF(tag, fmt, ...)   printf("[%lu] I " tag ": " fmt "\r\n", LOG_NOW_MS(), ##__VA_ARGS__)
+#define LOG_DBG(tag, fmt, ...)   printf("[%lu] D " tag ": " fmt "\r\n", LOG_NOW_MS(), ##__VA_ARGS__)</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>#define LOG_ERR(tag, fmt, ...)</code> — 인자 목록 끝의 <code>...</code> 가 "그 뒤 인자는 몇 개든"(가변 인자 매크로). 매크로 몸에서 그 인자들은 <code>__VA_ARGS__</code> 라는 이름으로 나온다.</li>
+          <li><code>"[%lu] E " tag ": " fmt "\r\n"</code> — 문자열 리터럴 <strong>다섯 조각</strong>을 나란히 놓았다. C 는 나란히 놓인 문자열 리터럴을 컴파일 때 하나로 잇는다(<code>"ab" "cd"</code> 는 <code>"abcd"</code>). <code>tag</code> 와 <code>fmt</code> 자리에 호출자의 리터럴이 글자 그대로 들어오므로 <code>LOG_INF("app", "n=%lu", x)</code> 는 <code>"[%lu] I " "app" ": " "n=%lu" "\r\n"</code> → <code>"[%lu] I app: n=%lu\r\n"</code> 이 된다 — <code>printf</code> 는 서식 문자열 하나를 받는다. 그래서 <code>tag</code> 는 <strong>반드시 문자열 리터럴</strong>이어야 한다(변수를 넣으면 아래 표의 오류).</li>
+          <li><code>LOG_NOW_MS()</code> — 첫 <code>%lu</code> 에 들어가는 시각. <code>log.h</code> 위쪽에서 이미 <code>(unsigned long)</code> 으로 바꿔 두었다. 이 이름을 거치기 때문에 fw-06 이 시각 원천을 바꿀 때 한 줄만 고친다.</li>
+          <li><code>, ##__VA_ARGS__</code> — 핵심 한 줄. 가변 인자가 <strong>하나도 없으면</strong> 앞의 쉼표를 지우라는 GNU C 확장이다(gcc · clang 둘 다 받는다. 이 프로젝트는 <code>-std=gnu11</code>). 이것이 없으면 <code>LOG_INF("app", "init done")</code> 이 <code>printf("…", LOG_NOW_MS(), )</code> 로 펼쳐져 쉼표 뒤가 비어 오류다(표). 표준만 쓰는 빌드(<code>-std=c11 -pedantic</code>)는 <code>token pasting of ',' and __VA_ARGS__ is a GNU extension</code> 경고를 낸다 — Mac 의 <code>cc</code> 에서 확인. 이 헤더는 <code>main.h</code> 를 포함하므로 호스트 시험으로는 가지 않는다.</li>
+          <li>네 줄은 등급 글자(<code>E</code> <code>W</code> <code>I</code> <code>D</code>) 한 글자만 다르다. 골격의 <code>((void)0)</code> 자리표시는 지웠다 — 그것은 "아무 일도 안 하는 식"이었다(네 매크로를 쓴 코드가 빌드되게 하려고).</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① <code>tag</code> 를 리터럴 잇기 대신 <code>%s</code> 인자로 넘겨도 된다: <code>printf("[%lu] E %s: " fmt "\r\n", LOG_NOW_MS(), tag, ##__VA_ARGS__)</code> — 그러면 <code>tag</code> 가 변수여도 되고 출력은 같다(동일). ② 넷을 공통 매크로 하나로 묶어 등급 글자만 넘기는 꼴도 같다 — 여기서는 네 줄을 눈으로 견주기 쉽게 그대로 네 줄로 썼다. ③ 끝에 <code>fflush(stdout)</code> 을 더할지 — 줄 끝이 <code>\n</code> 이라 줄 버퍼링이면 바로 나가고, 걸음 4 에서 버퍼링을 껐다면 더 그렇다. ④ <code>LOG_DBG</code> 를 빌드 스위치로 끄는 것은 <a href="fw-17-link-v2.html">fw-17</a>이 <code>fw_config.h</code> 에 <code>LINK_MODE</code> 를 둘 때 함께 한다 — 지금은 넷 다 찍는다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — HAL 호출은 없다(<code>printf</code> 와 <code>LOG_NOW_MS()</code> 뿐). <code>LOG_NOW_MS()</code> 안의 <code>HAL_GetTick()</code> 은 <code>stm32h7xx_hal.h:1081</code>(<code>__weak</code> 정의 <code>stm32h7xx_hal.c:338</code>) — SysTick 이 1 ms 마다 올리는 카운터 [ms]를 돌려준다.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>##</code> 없이 <code>, __VA_ARGS__)</code> 로 쓰고 <code>LOG_INF("app", "init done")</code> 처럼 인자 없이 불렀다</td><td><code>error: expected expression before ')' token</code> 과 <code>note: in expansion of macro 'LOG_INF'</code></td><td><code>##__VA_ARGS__</code></td></tr>
+            <tr><td><code>tag</code> 를 따옴표 없이 썼다 — <code>LOG_INF(app, "…")</code></td><td><code>error: expected ')' before 'app'</code></td><td><code>"app"</code></td></tr>
+            <tr><td>자리표시 <code>((void)0)</code> 을 그대로 뒀다</td><td>아무 말 없다. 로그 줄이 하나도 안 나온다</td><td>채운다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 걸음 5: <code>app_init()</code> 끝의 <code>LOG_INF("app", "init done");</code> 이 <code>[&lt;tick_ms&gt;] I app: init done</code> 으로 나온다. Mac 에서 <code>LOG_NOW_MS()</code> 를 1234 로 가짜로 두고 돌린 출력(줄 끝 <code>\r\n</code> 포함): <code>[1234] I app: init done</code> · <code>[1234] W console: uart_err=3 last_err=8</code>(인자 둘) · <code>[1234] E x: no args</code>. fw-05 의 감시 줄 <code>LOG_WRN("console", "uart_err=%lu …")</code> 이 이 매크로의 첫 실전이다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t4"><summary>힌트 T4 — <code>FW_ASSERT()</code> · 거짓이면 file:line 을 찍고 LD3 을 켜고 멈춘다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 프로그래밍 오류("있을 수 없는 상태")를 만나면 <strong>조용히 지나가지 않고 멈춰 세우는</strong> 매크로. 입력: 참이어야 하는 조건식. 거짓일 때 ① <code>파일:줄</code> 을 한 번 찍고 ② LD3(빨강 — LED 역할표의 "fault 래치 / ASSERT")을 켜고 ③ 끝없이 돈다. 참일 때 아무 일도 없다. 이 쪽에서는 IWDG 가 없으므로 NRST 전까지 멈춘다 — <a href="fw-06-tick-watchdog.html">fw-06</a> 부터는 IWDG 가 리셋하고 배너 셋째 줄이 <code>IWDG</code> 가 된다. 안에 블로킹 <code>printf()</code> 가 있으므로 ISR 에서는 부르지 않는다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T4 - User/Inc/Tools/log.h */
+/* 아직 IWDG 가 없다: 마지막 for (;;) 에서 NRST 전까지 멈춰 있다. */
+#define FW_ASSERT(cond)                                                          \
+  do {                                                                           \
+    if (!(cond)) {                                                               \
+      printf("[%lu] E assert: %s:%d\r\n", LOG_NOW_MS(), __FILE__, __LINE__);    \
+      HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);                   \
+      for (;;) { }                                                               \
+    }                                                                            \
+  } while (0)</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>do { … } while (0)</code> — 여러 문장을 <strong>한 문장</strong>으로 묶는 매크로의 관용구. <code>FW_ASSERT(x);</code> 라고 세미콜론을 붙여 부르면 <code>do { … } while (0);</code> 가 되어 <code>if (a) FW_ASSERT(x); else …</code> 안에서도 깨지지 않는다. <code>if (!(cond)) { … }</code> 만 쓰면 뒤의 <code>;</code> 가 <code>if</code> 문을 닫아 버려 <code>else</code> 가 갈 곳을 잃는다(표). 루프 몸은 정확히 한 번 돈다.</li>
+          <li>줄 끝의 <code>\</code> — 매크로는 한 줄이어야 해서, 줄을 바꿀 때마다 <code>\</code> 로 "다음 줄도 이어진다"고 적는다. <code>\</code> 뒤에 공백이 있으면 안 된다(표 — 편집기가 끝 공백을 보여 주게 해 둔다). 마지막 줄에는 <code>\</code> 가 없다.</li>
+          <li><code>if (!(cond))</code> — <code>cond</code> 를 <strong>괄호로 감싼다.</strong> 매크로 인자는 글자 그대로 들어오므로 <code>FW_ASSERT(a == b)</code> 가 <code>!a == b</code> 로 펼쳐지지 않게 한다 — <code>!</code> 가 <code>==</code> 보다 먼저 묶인다(표).</li>
+          <li><code>printf("[%lu] E assert: %s:%d\r\n", LOG_NOW_MS(), __FILE__, __LINE__);</code> — 로그 줄 꼴을 따랐다(등급 <code>E</code>, tag <code>assert</code>). <code>__FILE__</code> 은 이 매크로가 <strong>펼쳐진 자리</strong>의 파일 이름 문자열, <code>__LINE__</code> 은 그 줄 번호(<code>int</code> → <code>%d</code>). 그래서 매크로여야 한다 — 함수였다면 늘 <code>log.h</code> 의 줄이 찍힌다. 이 프로젝트의 CMake 는 소스를 절대 경로로 넘기므로 <code>__FILE__</code> 은 <code>/Users/…/User/Src/app.c</code> 처럼 길다 — 멈춰 서서 읽는 줄이라 그대로 둔다.</li>
+          <li><code>HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);</code> — <code>LD3_*</code> 두 이름은 CubeMX 의 User Label 에서 <code>main.h</code> 에 생성된다(이 프로젝트의 생성물: <code>LD3_Pin GPIO_PIN_14</code> · <code>LD3_GPIO_Port GPIOB</code>). <code>log.h</code> 가 <code>main.h</code> 를 포함하므로 보인다.</li>
+          <li><code>for (;;) { }</code> — 조건이 없는 <code>for</code> 는 끝없는 루프. <code>while (1) { }</code> 과 같다(동일). IWDG 가 없는 지금은 여기서 NRST 를 기다린다. 골격의 <code>((void)(cond))</code> 자리표시는 지웠다 — 그것은 "<code>cond</code> 를 평가만 하고 버린다"였다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① 찍는 꼴: <code>파일:줄</code> 만 있으면 된다. 조건식 글자까지 보고 싶으면 <code>#cond</code>(인자를 문자열로 바꾸는 <code>#</code> 연산자)를 <code>%s</code> 로 더한다. 긴 경로가 싫으면 <code>__FILE_NAME__</code>(경로를 뗀 이름만 주는 GCC 12 이상의 매크로 — 이 툴체인 14.3.1 에서 컴파일되는 것을 확인했다. 출력은 보드에서 본다). ② 순서: LED 를 먼저 켜고 찍어도 된다 — 콘솔이 죽어 <code>printf()</code> 가 타임아웃까지 걸리는 날은 그쪽이 LED 가 빨리 켜진다. ③ 멈추지 않고 돌아오는 ASSERT 는 이 가이드의 뜻이 아니다 — "조건을 <strong>한 번</strong> 평가하고 늘 켜져 있다"는 성질에 뒤 쪽이 기댄다(fw-15 는 등록 호출 그 자체를 인자로 넣는다).</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>stm32h7xx_hal_gpio.h:266</code>.</p>
+        <pre><code class="lang-c">void HAL_GPIO_WritePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin, GPIO_PinState PinState);</code></pre>
+        <p><code>GPIOx</code>: 포트(<code>GPIOB</code>). <code>GPIO_Pin</code>: 핀 비트(<code>GPIO_PIN_14</code>). <code>PinState</code>: <code>GPIO_PIN_SET</code>(1) 또는 <code>GPIO_PIN_RESET</code>(0) — <code>stm32h7xx_hal_gpio.h:69-70</code>. 반환 없음. 레지스터 쓰기 하나라 어디서든 부를 수 있다.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>do { } while (0)</code> 없이 <code>if (!(cond)) { … }</code> 만 썼다</td><td><code>if (…) FW_ASSERT(x); else …</code> 에서 <code>error: 'else' without a previous 'if'</code></td><td><code>do { … } while (0)</code></td></tr>
+            <tr><td><code>if (!cond)</code> — 괄호를 뺐다</td><td><code>FW_ASSERT(a == 5u)</code> 에서 <code>warning: logical not is only applied to the left hand side of comparison [-Wlogical-not-parentheses]</code>(같은 줄에 <code>warning: comparison of constant '5' with boolean expression is always false [-Wbool-compare]</code> 도 같이 난다). <code>FW_ASSERT(a == 0u)</code> · <code>FW_ASSERT(a &amp;&amp; b)</code> 는 <strong>아무 말 없이</strong> 뜻이 바뀐다(실제로 확인)</td><td><code>(cond)</code></td></tr>
+            <tr><td><code>\</code> 뒤에 공백이 있다</td><td><code>warning: backslash and newline separated by space</code> — gcc 는 이어 주지만 경고다</td><td>끝 공백을 지운다</td></tr>
+            <tr><td>자리표시 <code>((void)(cond))</code> 을 그대로 뒀다</td><td>아무 말 없다. 거짓이어도 아무 일도 안 일어난다 — 뒤 쪽의 <code>FW_ASSERT(ok)</code> 가 전부 통과한다</td><td>채운다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 걸음 5. 일부러 <code>FW_ASSERT(0);</code> 을 <code>app_init()</code> 끝에 한 줄 넣어 굽는다: <code>[&lt;ms&gt;] E assert: …/User/Src/app.c:&lt;줄&gt;</code> 한 줄, LD3 켜짐, LD1 멈춤(주 루프가 안 돈다). NRST 로 되살리고 그 줄을 지운다. 이 가이드는 보드에서 돌려 보지 못했다 — 빌드(링크)까지 확인했다.</p>
+        </div></details>
+
+      <details class="hint" id="hint-t5"><summary>힌트 T5 — <code>app_loop()</code> · ____ s 마다 배너를 다시 찍는다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — USB 를 다시 꽂으면 첫 배너가 지나가 버리는 문제(§3-2-2 끝)의 임시 처방. 주 루프가 돌 때마다 "마지막으로 찍은 뒤 <code>____</code> s 가 지났는가"를 보고, 지났으면 <code>console_print_banner()</code>. 불변식: 빨리 돌아온다(<code>HAL_Delay()</code> 없음) — LD1 점멸이 멈추지 않는다. fw-05 가 <code>ver</code> 명령을 만들면 이 블록 전체를 지운다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T5 - User/Src/app.c 의 app_loop() 안 */
+#define BANNER_PERIOD_MS   (____ * 1000u)   /* [ms] ____ 에 내가 정한 초를 적는다. 임시 - fw-05 가 지운다 */
+
+void app_loop(void)
+{
+  /* ... fw-02 의 LD1 점멸은 그대로 둔다 ... */
+  static uint32_t banner_last_ms;                        /* 마지막으로 배너를 찍은 시각 [ms], 부팅 때 0 */
+  uint32_t banner_now_ms = HAL_GetTick();
+
+  if ((uint32_t)(banner_now_ms - banner_last_ms) &gt;= BANNER_PERIOD_MS) {   /* 부호 없는 차: 한 바퀴 돌아도 맞다 */
+    banner_last_ms = banner_now_ms;
+    console_print_banner();
+  }
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>#define BANNER_PERIOD_MS   (____ * 1000u)</code> — 주기를 <strong>이름</strong>으로 둔다. <code>____</code> 에 내가 정한 초를 적는다 — 비워 두면 <code>error: '____' undeclared</code> 로 빌드가 멈춘다. 의도된 것이다: 숫자는 가이드가 아니라 내가 정한다(눈으로 배너를 셀 수 있고 터미널을 다시 열 시간이 되면 된다 — 배너 석 줄 100 B 남짓은 460800 에서 2 ms 라 주 루프를 거의 세우지 않는다). 함수 밖, 파일 위쪽의 <code>#include</code> 들 다음에 둔다. <code>1000u</code> 의 <code>u</code> 는 부호 없는 곱셈 — <code>uint32_t</code> 와의 비교에 맞춘다.</li>
+          <li><code>static uint32_t banner_last_ms;</code> — 함수 안의 <code>static</code> 변수는 함수가 끝나도 <strong>값을 기억한다</strong>(보통의 지역 변수는 돌아올 때 사라진다). 처음 값은 0. fw-02 의 <code>last_ms</code> 와 같은 꼴.</li>
+          <li><code>uint32_t banner_now_ms = HAL_GetTick();</code> — 지금 시각 [ms]. fw-02 의 점멸 코드에 이미 <code>now_ms</code> 가 있으면 그것을 그대로 써도 된다(동일) — 같은 이름을 한 함수에서 두 번 선언하면 오류라(표) 다른 이름으로 썼다.</li>
+          <li><code>(uint32_t)(banner_now_ms - banner_last_ms) &gt;= BANNER_PERIOD_MS</code> — 부호 없는 뺄셈: 49.7 일에 한 번 카운터가 한 바퀴 돌아도 차는 맞다(fw-02 와 같은 설명). <code>&gt;=</code> 라 정확히 주기에 걸리지 않아도 다음 바퀴에 찍는다.</li>
+          <li><code>banner_last_ms = banner_now_ms;</code> 다음 <code>console_print_banner();</code> — 둘의 순서는 어느 쪽이든 된다(배너가 수 ms 라). 갱신 방식은 fw-02 의 완결 코드와 같은 선택이다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① <code>banner_last_ms += BANNER_PERIOD_MS</code> 로 갱신하면 평균 주기를 지키는 대신, 오래 멈췄다 돌아오면 밀린 만큼 연달아 찍는다(fw-02 의 같은 갈림 — 여기서는 어느 쪽이든 된다). ② 부팅 직후에는 찍지 않는다(<code>app_init()</code> 이 이미 찍었다) — 첫 주기까지 기다리는 것이 이 코드의 동작이다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>HAL_GetTick()</code>: <code>stm32h7xx_hal.h:1081</code>, <code>__weak uint32_t HAL_GetTick(void)</code> 는 <code>stm32h7xx_hal.c:338</code>. 인자 없음, 반환 [ms] — SysTick 인터럽트가 1 ms 마다 1 올리는 카운터. 어디서든 읽을 수 있다. (<code>HAL_Delay()</code> 는 이 값을 기다리며 <strong>도는</strong> 함수라 주 루프의 불변식을 깬다.)</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>____</code> 를 그대로 뒀다</td><td><code>error: '____' undeclared (first use in this function)</code> 과 <code>note: in expansion of macro 'BANNER_PERIOD_MS'</code></td><td>초를 적는다 — 의도된 멈춤</td></tr>
+            <tr><td><code>static</code> 을 뺐다</td><td><strong>아무 말 없다</strong> — 이 프로젝트의 플래그(<code>-Wall -O0</code>)로도, <code>-Os</code> · <code>-O2</code> 로도 경고가 나지 않는 것을 실제로 확인했다(변수가 같은 함수 안에서 뒤에 대입되기 때문에 gcc 가 "쓰기 전에 읽는다"를 짚지 못한다). 값이 정해지지 않은 변수를 읽으므로 동작도 정해지지 않는다 — 보드에서는 배너가 쉴 새 없이 찍히는 꼴일 가능성이 크다(추정)</td><td><code>static</code> — 호스트 시험이 없는 자리라 눈으로 본다: 배너가 <code>____</code> s 주기로만 찍히는가</td></tr>
+            <tr><td>fw-02 의 <code>now_ms</code> 가 있는데 같은 이름을 또 선언했다</td><td><code>error: redefinition of 'now_ms'</code> 꼴(이름은 내 것) 과 <code>note: previous definition of … with type 'uint32_t' {aka 'long unsigned int'}</code></td><td>있는 것을 쓰거나 다른 이름</td></tr>
+            <tr><td><code>HAL_Delay(…)</code> 로 기다렸다</td><td>아무 말 없다. 그 시간 동안 LD1 점멸이 멈춘다 — 주 루프 전체가 선다</td><td>시각 차 비교</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-2-4: 터미널을 열어 두면 <code>____</code> s 마다 석 줄이 다시 찍히고 LD1 은 계속 깜박인다. USB 를 뽑았다 꽂은 뒤 터미널을 다시 열면 다음 주기에 배너가 온다(증상 표 "USB 를 다시 꽂으면 첫 배너가 안 보인다"). 셋째 줄은 처음 것과 같은 낱말이다 — <code>RCC-&gt;RSR</code> 은 부팅 때 한 번만 읽었다.</p>
+        </div></details>
+      <p>손계산 하나: 아래 한 줄의 <code>f</code> 를 137 500 000(실수로 550 이 들어갔을 때)과 64 000 000(HSI)으로 바꿔 돌려 §2-7 의 표를 내 손으로 다시 만든다.</p>
+      <pre><code class="lang-bash">python3 -c "f=130_000_000; b=460_800; brr=(f+b//2)//b; print(brr, hex(brr), round(f/brr), f'{(f/brr/b-1)*100:+.3f} %')"
+# 282 0x11a 460993 +0.042 %</code></pre>
+
+      <h4 id="s3-2-4">3-2-4. 굽고 보기</h4>
+      <p>터미널을 먼저 연다(둘 중 하나. 장치 이름의 뒷부분은 보드마다 다르다).</p>
+      <pre><code class="lang-bash">ls /dev/cu.usbmodem*
+python3 -m serial.tools.miniterm /dev/cu.usbmodem&lt;…&gt; 460800     # 끝내기: Ctrl+]
+screen /dev/cu.usbmodem&lt;…&gt; 460800                               # 끝내기: Ctrl+A 다음 K</code></pre>
+      <pre><code class="lang-bash">~/ros2_rpi5/firmware/tools/flash.sh          # 안에서 build.sh 를 먼저 부른다(fw-02) — 앞에 build.sh 를 따로 세우면 빌드가 두 번 돈다</code></pre>
+      <p><strong>관찰 ① — 배너의 클럭 줄.</strong> 이것이 체크포인트 <code>sysclk-520-pclk-130</code> 이다.</p>
+      <pre><code class="lang-text">build &lt;date&gt; &lt;time&gt;
+SYSCLK 520000000 PCLK1 130000000
+reset &lt;cause&gt;</code></pre>
+      <p>둘째 줄이 <code>SYSCLK 550000000 PCLK1 137500000</code> 이면 누군가 550 을 넣은 것이다 — 글자는 멀쩡히 읽혀도(§2-7) 부스트 0 인 칩에서는 규격 밖이다. 곧바로 증상 ↔ 원인 표의 그 행으로 간다. <code>SYSCLK 64000000</code> 이면 PLL 이 걸리지 않았다(같은 표).</p>
+      <p><strong>관찰 ② — 리셋 원인.</strong> 세 가지를 일으켜 셋째 줄의 낱말을 표에 적는다. 터미널은 열어 둔 채로 한다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>일으키는 법</th><th>기대 (RM0468 표 52)</th><th>내가 본 낱말</th></tr></thead>
+        <tbody>
+          <tr><td>보드의 검정 버튼 B2(NRST)를 누른다</td><td><code>PIN</code></td><td>____</td></tr>
+          <tr><td>USB 케이블을 뽑았다 꽂는다 → 터미널을 다시 열고 배너가 다시 찍히기를 기다린다</td><td><code>POR</code></td><td>____</td></tr>
+          <tr><td><code>firmware/tools/flash.sh</code> 로 굽는다</td><td>____ — <code>flash.sh</code> 가 끝에 주는 <code>-rst</code> 는 도움말에 "Reset system" 으로 나온다(하드웨어 리셋은 따로 <code>-hardRst</code>) → <code>SFT</code> 로 추정한다. 확인하지 못했다</td><td>____</td></tr>
+        </tbody>
+      </table></div>
+      <p>셋 다 <code>POR</code> 로 나오면 <code>console_init()</code> 의 지우기 줄이 빠진 것이다(§2-10 의 "둘"). 셋 다 <code>PIN</code> 이면 판독 순서가 뒤집힌 것이다.</p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="ob-displ-saved"><span><strong>경로 통과</strong> — <code>-ob displ</code> 전문이 저장소 안의 파일로 있고, 그 안에서 BOOST 줄과 RDP 줄을 찾아 값을 적었다(BOOST 0 = TCM ECC 동작)
+          <span class="sub">판정 수단: 파일 + <code>grep</code> 출력 · §3-1-4</span></span></label></li>
+        <li><label><input type="checkbox" data-key="clock-ioc-grep-matches"><span><strong>경로 통과</strong> — <code>.ioc</code> 의 <code>RCC.PLLSourceVirtual=RCC_PLLSOURCE_HSE</code> · <code>RCC.DIVM1</code> 과 <code>RCC.DIVN1</code>(8 ÷ M × N = 520 인 조합) · <code>RCC.PLLFRACN=0</code>(또는 줄 없음) · <code>RCC.HSE_VALUE=8000000</code> · <code>RCC.SYSCLKFreq_VALUE=520000000</code> · 분주 다섯 줄과, 생성 코드의 <code>RCC_HSE_BYPASS</code> · VOS · Flash 대기 줄을 grep 으로 되읽어 표의 빈칸을 채웠다
+          <span class="sub">판정 수단: <code>grep</code> 출력 · §3-2-1 ③</span></span></label></li>
+        <li><label><input type="checkbox" data-key="reset-cause-host-pass"><span><strong>경로 통과</strong> — Mac 에서 <code>PASS reset_cause 11 cases</code> 가 나오고, 판독 순서를 일부러 뒤집었을 때 시험이 깨지는 것도 봤다
+          <span class="sub">판정 수단: 호스트 시험 출력 · §3-2-3</span></span></label></li>
+        <li><label><input type="checkbox" data-key="banner-three-lines"><span><strong>경로 통과</strong> — 리셋할 때마다 터미널에 <code>build</code> / <code>SYSCLK … PCLK1 …</code> / <code>reset …</code> 석 줄이 찍힌다
+          <span class="sub">판정 수단: 부팅 배너 · §3-2-4</span></span></label></li>
+        <li><label><input type="checkbox" data-key="reset-cause-pin-vs-por"><span><strong>발동 확인</strong> — NRST 버튼 뒤에는 <code>PIN</code>, USB 재연결 뒤에는 <code>POR</code> 이 찍힌다(둘이 다르다)
+          <span class="sub">판정 수단: 부팅 배너 셋째 줄 · §3-2-4 관찰 ②</span></span></label></li>
+        <li><label><input type="checkbox" data-key="sysclk-520-pclk-130"><span><strong>경로 통과</strong> — 배너 둘째 줄이 <code>SYSCLK 520000000 PCLK1 130000000</code> 이고, 실습 A 에서 읽은 <code>CPU_FREQ_BOOST</code> 현재값(날짜 · <code>displ</code> 로 확인)을 INVENTORY 2절 "클럭" 행에 적었다
+          <span class="sub">판정 수단: 부팅 배너 + INVENTORY 의 기록 · §3-2-4 관찰 ① · §3-1-4</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td>터미널에 깨진 글자만 나온다</td><td>터미널 속도가 460800 이 아니다 / HAL 이 믿는 입력 주파수가 실제(8 MHz)와 다르다 — <code>HSE_VALUE</code> 25000000</td><td><code>grep -n HSE_VALUE Core/Inc/stm32h7xx_hal_conf.h</code> · <code>grep -n "^RCC.HSE_VALUE" h723zg.ioc</code></td><td>§3-2-1 값 표 2행</td></tr>
+          <tr><td>아무것도 안 나오고 LD1 도 멈춰 있다</td><td><strong>옵션 바이트 명령(§3-1-4) 직후라면</strong> 도구가 코어를 멈춘 채 끝냈을 수 있다 → 먼저 B2(NRST). 그래도 멈춰 있으면 <code>Error_Handler()</code> 에 갇혔다: HSE 를 Crystal 로 골라 준비 플래그를 기다리다 타임아웃</td><td>NRST 뒤 LD1 이 도는가 · <code>grep -n HSEState Core/Src/main.c</code> 가 <code>RCC_HSE_BYPASS</code> 인가</td><td>§3-1-4 · §3-2-1</td></tr>
+          <tr><td>배너가 <code>SYSCLK 64000000</code> 이다</td><td>PLL 이 시스템 클럭이 아니다 — MCU Selector 의 출발값(HSI 64 MHz) 그대로 System Clock Mux 를 바꾸지 않았다</td><td><code>grep -n "^RCC.SYSCLKSource" h723zg.ioc</code> — 줄이 없으면 기본값 HSI</td><td>§3-2-1 값 표 "System Clock Mux" 행</td></tr>
+          <tr><td>에디터에서 <code>console.c</code> 의 <code>main.h</code> · <code>RCC_RSR_*</code> · <code>RCC-&gt;RSR</code> 에 빨간 줄이 뜬다</td><td><code>console.c</code> 가 <code>target_sources</code> 에 없어 <code>compile_commands.json</code> 에 이 파일이 없다 — 에디터가 포함 경로를 모른다(컴파일러의 문제가 아니다)</td><td><code>grep -c "Tools/console.c" build/Debug/compile_commands.json</code> 가 0 이면 이것</td><td>§3-2-2 의 등록 두 줄 → <code>build.sh</code> 한 번. 그 뒤에도 남는 빨간 줄은 진짜 오류(철자)다</td></tr>
+          <tr><td>배너가 0.5 s 쯤마다 다시 찍히고 셋째 줄이 늘 <code>reset IWDG</code> 다</td><td><code>.ioc</code> 에 IWDG1 이 켜져 있다 — <code>MX_IWDG1_Init()</code> 이 워치독을 시작하는데 이 쪽에는 갱신하는 코드가 없다</td><td><code>grep -n "MX_IWDG1_Init" Core/Src/main.c</code></td><td>§3-2-1 의 IWDG 상자 — CubeMX 에서 끄고 다시 생성. 켜는 것은 fw-06</td></tr>
+          <tr><td>배너가 <code>SYSCLK 550000000</code> 이다</td><td>누군가 CubeMX 의 안내대로 550 을 넣었다 — Clock Configuration 화면이 상한을 550 으로 안내하거나(사용자 실측), 보드 프리셋(<code>…_Board_AllConfig.ioc</code>)의 550 을 fw-02 에서 내리지 않았다. 부스트 0 인 칩이면 <strong>오류 없이 규격 밖으로 돌고 있다</strong>(§2-3)</td><td><code>grep -n "^RCC\.\(DIVN1\|PLLFRACN\|PLLSourceVirtual\|SYSCLKFreq_VALUE\)=" h723zg.ioc</code></td><td>HSE 경로: 8 ÷ <code>DIVM1</code> × <code>DIVN1</code> 이 520 이 되게 — M 4 면 N 275 → 260, M 1 이면 N 65(§2-8). HSI 분수 PLL 경로(§3-2-1 의 (나)): <code>RCC.DIVN1</code> 과 <code>RCC.PLLFRACN</code> 을 <strong>함께</strong> — DIVN1 만 바꾸고 FRACN 을 두면 520 이 되지 않는다. 고친 뒤 재생성 · 다시 굽기</td></tr>
+          <tr><td>원인이 언제나 <code>POR</code> (또는 언제나 <code>PIN</code>)</td><td><code>RMVF</code> 로 지우는 줄이 없다 (또는 판독 순서가 뒤집혔다)</td><td>호스트 시험의 마지막 벡터 · <code>grep -n CLEAR_RESET_FLAGS User/Src/Tools/console.c</code></td><td>§2-10 · §3-2-2</td></tr>
+          <tr><td>USB 를 다시 꽂으면 첫 배너가 안 보인다</td><td>Mac 이 포트를 다시 잡기 전에 배너가 지나갔다(추정)</td><td>주기 재출력이 도는가</td><td>§3-2-2 의 <code>app.c</code></td></tr>
+          <tr><td><code>%f</code> 자리가 비어 나온다</td><td>링크 옵션이 <code>--specs=nano.specs</code> 다(생성물 <code>cmake/gcc-arm-none-eabi.cmake</code>) — newlib-nano 의 <code>printf</code> 는 기본으로 부동소수를 찍지 않는다</td><td><code>grep -n nano cmake/gcc-arm-none-eabi.cmake</code></td><td>정수로 찍는다(전 쪽 공통 출력 규약)</td></tr>
+          <tr><td><code>/dev/cu.usbmodem*</code> 가 없다 · <code>-c port=SWD</code> 가 실패한다</td><td>전 쪽 공통 증상</td><td>—</td><td><a href="fw-02-toolchain.html">fw-02</a> 의 증상 ↔ 원인 표</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. (4중 검색) PD8 · PD9 를 USART3 에 묶고 USART3 의 클럭을 켜는 코드는 누가 언제 부르는가 — <code>HAL_UART_MspInit</code> 을 네 군데에서 찾아 적어 보라: 헤더 → <code>__weak</code> → 호출 시점 → 생성물 · 예제</summary>
+        <div class="ans"><p>찾는 명령(<code>$HAL</code> · <code>$FW_H7</code> 는 fw-02 에서 정한 것):</p>
+        <pre><code class="lang-bash">grep -n "HAL_UART_MspInit" $HAL/Inc/stm32h7xx_hal_uart.h                 # ① 헤더: 시그니처
+grep -n "__weak.*HAL_UART_MspInit" $HAL/Src/stm32h7xx_hal_uart.c          # ② 약한 기본 구현
+grep -n "HAL_UART_MspInit(huart)" $HAL/Src/stm32h7xx_hal_uart.c           # ③ 누가 언제 부르는가
+grep -n -A12 "void HAL_UART_MspInit" firmware/h723zg/Core/Src/stm32h7xx_hal_msp.c     # ④ 내 생성물
+grep -rln "HAL_UART_MspInit" $FW_H7/Projects/NUCLEO-H723ZG | head                     # ④′ ST 예제</code></pre>
+        <p>FW_H7 V1.13.0 에서 확인한 자리: ① <code>stm32h7xx_hal_uart.h:1612</code> ② <code>stm32h7xx_hal_uart.c:677</code> — 몸이 빈 <code>__weak</code> 함수다. 내가 같은 이름을 정의하면 링커가 내 것을 고른다.
+        ③ <code>:343</code> — <code>HAL_UART_Init()</code>(<code>:307</code> 에서 시작) 안, <code>if (huart-&gt;gState == HAL_UART_STATE_RESET)</code>(<code>:326</code>) 아래다. 즉 <strong>핸들이 처음 초기화될 때 한 번만</strong>, 레지스터 설정(<code>UART_SetConfig</code>)보다 <strong>먼저</strong> 불린다 — 클럭이 꺼진 주변장치의 레지스터에는 쓸 수 없기 때문이다.
+        같은 호출이 <code>:410</code> · <code>:498</code> · <code>:584</code> 에도 있는데 각각 HalfDuplex · LIN · MultiProcessor 초기화 안이라 이 쪽과 무관하다.
+        ④ CubeMX 는 이 함수를 <code>Core/Src/stm32h7xx_hal_msp.c</code> 에 <strong>강한 정의</strong>로 생성한다 — 거기서 PD8 · PD9 의 AF7 과 USART3 클럭 켜기를 찾는다.
+        ④′ ST 예제는 <code>Examples/UART/UART_TwoBoards_ComPolling/Src/stm32h7xx_hal_msp.c:49</code>, 그리고 이 보드의 VCP(USART3)로 <code>printf</code> 를 내보내는 예제가 <code>Applications/USB_Host/HID_Standalone/Core/Src/</code> 에 있다(<code>stm32h7xx_hal_msp.c:85</code>, <code>main.c:269-276</code> 은 글자 하나씩 보내는 <code>__io_putchar</code> 방식이다 — 이 쪽의 <code>_write()</code> 와 견주어 본다).</p></div></details>
+      <details class="quiz"><summary>2. "H723 은 550 MHz 다"라는 문장에 빠진 것은 무엇이고, 그것을 얻는 대가는 무엇인가?</summary>
+        <div class="ans">조건이 둘이다 — 전압 스케일 VOS0 <strong>그리고</strong> 옵션 바이트 <code>CPU_FREQ_BOOST</code> = 1. VOS0 만으로는 520 MHz 가 상한이다(DS13313 표 12). VOS0 은 펌웨어가 부팅마다 걸고, 부스트 비트는 도구로 한 번 써 두는 비휘발 설정이다(공장 기본 0).
+        대가는 ITCM · DTCM 의 ECC 가 꺼지는 것이고, 기본 링커 스크립트에서는 그 DTCM 이 내 변수와 스택이 사는 곳이다. 얻는 것은 CPU 와 타이머 분해능 각 +5.8 %.
+        이 프로젝트는 그 교환을 하지 않는다 — 부스트 0(공장 기본값)을 유지하고 520 MHz 로 돈다(결정 9 개정, 2026-09-29). 판단의 이유로 적힌 것은 "얻는 이득이 없다"이다 — +5.8 % 가 이 MCU 의 부하에서 필요하지 않다는 판단이고, 측정으로 확인한 것이 아니라 결정의 이유다.</div></details>
+      <details class="quiz"><summary>3. Clock Configuration 화면의 안내대로 CPU 를 550 MHz 로 올려 생성한 코드를 부스트 0 인 칩에 구우면 누가 막아 주는가? 이 쪽은 그 실수를 어디서 잡는가?</summary>
+        <div class="ans">확인한 범위에서는 아무도 막지 않는다. 화면은 상한을 550 으로 안내하고 부스트 비트는 말하지 않으며(사용자 실측), HAL 은 헤더 주석으로만 경고하고(<code>stm32h7xx_hal_rcc.h:7529</code>), LL 의 검사는 "VOS0 이면 550 이하"까지만 본다. 보드 프리셋(<code>…_Board_AllConfig.ioc</code>)은 처음부터 550 을 담고 있다. 하드웨어가 거부한다는 서술도 찾지 못했다 — 오류 없이 규격 밖으로 돈다.
+        그래서 이 쪽은 숫자를 <strong>두 번 되읽는다</strong>: 굽기 전에 <code>.ioc</code> 의 <code>RCC.SYSCLKFreq_VALUE=520000000</code>(§3-2-1 ③), 구운 뒤에 배너의 <code>SYSCLK 520000000</code>(§3-2-4). 550000000 이 보이면 굽지 않거나 곧바로 고친다 — 고칠 곳은 증상 ↔ 원인 표.</div></details>
+      <details class="quiz"><summary>4. HSI 로도 460800 통신은 되는데 왜 굳이 HSE(BYPASS)인가? BRR 양자화 오차 +0.042 % 는 걱정할 크기인가?</summary>
+        <div class="ans">HSI 의 최악 오차(약 ±1.5 %, DS13313 표 36 의 단순 합)는 보드레이트뿐 아니라 거기서 파생되는 모든 시간에 들어간다 — 1 kHz 루프의 dt, 속도 추정(±1.5 % 배율), MCU 시각(최대 0.9 s/분).
+        수신 허용 한계 3.33 %(RM0468 표 421)는 내 오차 + 상대편 오차 + 선로의 합에 대한 것이라 HSI 면 절반을 나 혼자 쓴다. 양자화 0.042 % 는 그 앞에서 작다 — 지배항은 클럭 소스다.
+        BYPASS 인 이유는 보드에 수정이 실장돼 있지 않고 ST-LINK 의 MCO 8 MHz 가 PH0 로 들어오기 때문이다. 대가는 ST-LINK 부와 SB45 에 기댄다는 것.</div></details>
+      <details class="quiz"><summary>5. 520 에서 HPRE 를 ÷1 로, 또는 APB 를 ÷1 로 두면 각각 무엇이 규격을 넘는가? 그리고 APB 가 130 MHz 인데 타이머는 왜 260 MHz 인가?</summary>
+        <div class="ans">HPRE ÷1 이면 AXI · AHB 가 520 MHz(상한 275), APB ÷1 이면 APB 가 260 MHz(상한 137.5)다. 상한 안에서 가장 빠른 조합은 ÷1 · ÷2 · ÷2 하나뿐이다(더 나누면 규격 안이지만 느려질 뿐이다). 여유가 0 인 것은 CPU 한 줄(520 / 520)이고, 버스 · APB · 타이머는 상한 아래(15 · 7.5 · 15 MHz)다.
+        타이머는 APB 분주가 ÷2 이상이면 버스 클럭의 두 배를 받는다(RM0468 표 53) → 130 × 2 = 260 MHz. fw-06 의 TIM6 분주(PSC 259 · ARR 999)와 fw-08 의 ARR 6500 이 이 값에서 나온다. 누가 실수로 550 을 넣으면 타이머가 275 MHz 가 되어 그 분주값들이 전부 +5.8 % 빨라진다 — 배너의 숫자를 되읽는 이유 하나다.</div></details>
+      <details class="quiz"><summary>6. (실습 A 에서 1 이 나와 되돌려야 할 때) 옵션 바이트를 쓰기 전에 <code>displ</code> 을 파일로 남기고, 한 번에 한 비트만 쓰고, 다시 <code>diff</code> 하는 이유는? 같은 일을 펌웨어가 부팅 때 하게 하면 왜 안 되는가?</summary>
+        <div class="ans">같은 구역에 되돌릴 수 없는 비트가 있기 때문이다 — RDP Level 2 는 비가역이고 Level 1 → 0 은 플래시 전체를 지운다. 기록은 <code>_PRG</code> 와 <code>_CUR</code> 가 다른 것을 한꺼번에 쓰는 구조라, 실수로 들어간 이웃 값도 같이 기록된다. 파일은 복구의 기준점이고 <code>diff</code> 는 "그 비트만 바뀌었다"의 증거다.
+        펌웨어에 넣으면 그 코드의 버그가 매 부팅마다 옵션 바이트를 건드리는 길이 된다. 게다가 이 HAL 의 <code>HAL_FLASHEx_OBGetConfig()</code> 는 <code>OptionType</code> 에 RDP 를 포함해 채우므로(<code>stm32h7xx_hal_flash_ex.c:579-582</code>) 읽은 구조체를 그대로 되쓰면 RDP 까지 다시 쓴다.</div></details>
+      <details class="quiz"><summary>7. (일부러 틀리면) ① <code>console_init()</code> 에서 플래그를 지우는 줄을 빼면 ② <code>HSE_VALUE</code> 를 25000000 으로 두면 — 각각 무엇이 보이는가? 배너의 <code>SYSCLK 520000000</code> 은 주파수를 "잰" 값인가?</summary>
+        <div class="ans">① 전원을 넣은 뒤로는 어떤 리셋을 해도 <code>POR</code> 이 찍힌다. 전원 인가가 아닌 리셋은 <code>RCC_RSR</code> 을 지우지 않아 POR 플래그가 남고, 판독은 구체적인 플래그부터 보기 때문이다(호스트 시험의 마지막 벡터가 이 상황이다).
+        ② HAL 은 PCLK1 을 25 ÷ 8 배로 크게 믿고 BRR 을 계산한다 → 실제 보드레이트가 그만큼 느려져 터미널에 깨진 글자가 나온다. 배너가 읽힌다면 숫자도 그 배율로 부풀어 있을 것이다.
+        배너의 숫자는 잰 값이 <strong>아니다</strong> — PLL 레지스터를 되읽어 <code>HSE_VALUE</code> 와 곱한 계산값이다. 그래도 쓸모가 있는 까닭: 분주값이 의도대로 들어갔는지를 보여 주고, 글자가 460800 에서 멀쩡히 읽힌다는 사실이 "HAL 이 믿는 PCLK1 과 실제가 수 % 안에서 같다"는 독립된 증거가 된다. 시간축의 ppm 급 확인은 Pi 의 시계와 견주는 뒤 쪽의 일이다.</div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>다음은</strong> → <a href="fw-04-debugger.html">fw-04</a> (디버거) 또는 <a href="fw-05-cli.html">fw-05</a> (명령 창). fw-05 는 이 쪽의 콘솔과 <code>console_print_banner()</code> 를 쓰고, fw-04 는 콘솔이 있으면 fault 의 PC 를 글자로도 본다. 번호 순서대로 가는 것이 기본이다.</li>
+          <li><strong>보드가 아직 없으면</strong> → 이 쪽은 §3-2-1 의 grep 과 호스트 시험까지만 닫힌다. 기다리는 동안 <a href="fw-01-pinmap.html">fw-01</a> 의 서류 점검(핀맵)을 끝내 둔다.</li>
+          <li>fw-05 에서 <code>ver</code> 명령이 생기면 <code>app_loop()</code> 의 <strong>주기 배너 재출력을 지운다</strong> — 임시 장치였다.</li>
+          <li>이 쪽에서 채운 값은 <code>hardware/INVENTORY.md</code> 2절 "클럭" 행에 적었는가 — <code>CPU_FREQ_BOOST</code> 의 현재값(날짜 · 확인 수단. 0 = TCM ECC 동작)과 <code>displ</code> 의 토큰 철자. 실습 A 에서 1 이 나와 되돌렸다면 현재값 칸에 "1 → 0" 과 되돌린 날짜도.</li>
+          <li><code>firmware/records/</code> 의 <code>displ</code> 파일(되돌렸다면 전 · 후 파일까지)을 커밋했는가. 다음에 옵션 바이트를 만질 일이 생기면(없는 것이 정상이다) 이 파일이 기준점이다.</li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

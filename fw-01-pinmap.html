@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F1 · 핀맵과 내 보드 확인 — MCU 펌웨어 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="fw-01">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">F1 · 핀맵과 내 보드 확인</p>
+      <h1>핀 하나를 네 문서에서 다시 찾고, 내 보드를 DMM 으로 확인한다</h1>
+      <p class="lead"><a href="fw-00-map.html">fw-00</a> 에서 자리를 확인한 PDF 3종(DS13313 · RM0468 · UM2407)을 여기서 처음 펼친다.
+      이 프로젝트의 핀 배정은 이미 <code>hardware/pinmap-h723.md</code>(핀맵 정본)에 확정돼 있다 — 이 쪽이 하는 일은 그 표를 <strong>믿지 않고 몇 행을 직접 다시 확인하는 것</strong>,
+      그리고 문서의 "기본 상태"가 <strong>내 보드의 실제 상태</strong>와 같은지 DMM 으로 재는 것이다.
+      이 기록은 결선이 시작되는 <a href="fw-08-pwm-safe-output.html">fw-08</a> · <a href="fw-09-encoder.html">fw-09</a> 앞에서 쓰인다 — fw-09 는 입구에서 "SB57 을 뗐는가"를 묻는다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>내 노트에 기록 네 가지가 있다 — ① 핀맵 정본의 3~4행을 데이터시트 표에서 <strong>직접 다시 찾은 표</strong>(쪽 번호와 함께)
+        ② 솔더 브리지 기본 상태의 <strong>DMM 점검표</strong>(+ 버튼 B1 의 극성, 보드 스티커) ③ <strong>SB57 을 제거</strong>했고 끊겼음을 DMM 으로 확인한 기록
+        ④ 점퍼선을 꽂기 전에 볼 <strong>결선 금지 목록</strong> 한 장.</p>
+        <p><strong>이 쪽에 필요한 것</strong> — NUCLEO-H723ZG, USB 케이블, DMM(도통 모드 · DC 전압), PDF 3종, SB57 을 떼어 낼 도구(무엇이 맞는지는 이 가이드가 확인하지 못했다 — §3-3).
+        <strong>없으면</strong> — DMM 이 없으면 서류 재확인(§3-1)과 결선 금지 목록(§3-4)까지만 된다. 보드 점검(§3-2)과 SB57 확인(§3-3)은 닫지 못하고, 그러면 <a href="fw-09-encoder.html">fw-09</a>가 막힌다.
+        그동안 <a href="fw-02-toolchain.html">fw-02</a> 부터 <a href="fw-07-memory-dma.html">fw-07</a>까지는 Nucleo 와 USB 케이블만으로 나아갈 수 있다. 구매가 필요하면 품목은 DMM 하나다.</p>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag mac">Mac</span></div>
+        <div><span class="k">선행</span><a href="fw-00-map.html">fw-00</a> (지도와 준비) — 실제로 쓰는 것: PDF 3종의 자리</div>
+        <div><span class="k">채우는 INVENTORY 칸</span><code>hardware/INVENTORY.md</code> 2절 "솔더 브리지" 아래의 "내 보드" 줄 — 스티커 <code>MB1364-H723ZG-____</code> · SB57 제거 날짜 · 제거 후 불통 확인</div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h</div>
+      </div>
+      <p class="small">이 쪽의 빈칸(<code>____</code>)과 표는 화면에서 저장되지 않는다(정적 HTML). 적는 곳은 <strong>내 노트</strong>이고, 위의 INVENTORY 칸만 저장소 파일에 옮긴다. 체크박스만 브라우저에 기억된다.</p>
+
+      <h2 id="overview">1. 개요 — 표를 믿기 전에, 선을 꽂기 전에</h2>
+      <p>펌웨어 가이드의 나머지 쪽은 전부 "PA15 는 FL 엔코더 A 다", "PG12 가 MOTOR_EN 이다" 같은 문장 위에 서 있다. 그 문장들의 출처는 하나의 파일,
+      <code>hardware/pinmap-h723.md</code> 다. 그 파일은 데이터시트 · 보드 매뉴얼 · CubeMX 의 DB 를 대조해 만들었고 외부 배선이 닿는 핀은 29개다(같은 파일 5-1절).
+      29행을 전부 다시 볼 필요는 없다. <strong>3~4행을 직접 찾아 보면</strong> 나머지 행을 읽는 법과, 나중에 증상이 났을 때 어느 문서를 펼칠지를 알게 된다.</p>
+      <pre class="diagram"><code>  pin (ex. PA15)
+    │
+    ├─ DS13313  Table 7   p.57~71    핀 번호 · 핀 구조(FT / TT) · 그 핀에 있는 신호 이름
+    ├─ DS13313  Table 8   p.72~85    그 신호가 몇 번 AF 인가 (AF0 ~ AF15 열)
+    ├─ UM2407   Table 18~22          보드의 어느 커넥터 · 몇 번 핀으로 나오는가
+    ├─ UM2407   Table 14             그 길 위에 솔더 브리지(SB)가 있는가 · 기본 상태는 무엇인가
+    └─ CubeMX DB (xml)               CubeMX 가 같은 AF 번호를 쓰는가 — 교차 확인 (선택)
+    ▼
+  hardware/pinmap-h723.md 의 한 행  ─►  DMM: "내 보드"가 그 행과 같은가  ─►  결선 (fw-08 · fw-09)</code></pre>
+      <p>문서는 <strong>칩</strong>(DS · RM)과 <strong>보드</strong>(UM)로 나뉜다. 칩 문서는 "이 핀이 무엇을 할 수 있는가"를, 보드 문서는 "그 핀이 이 보드에서 어디로 나오고 이미 무엇에 물려 있는가"를 말한다.
+      이 프로젝트에서 핀이 바뀐 자리(같은 파일 1-1절의 C1~C4)는 <strong>두 문서를 같이 봐야만</strong> 보이는 것이었다.</p>
+
+      <p>이 쪽에서 처음 나오는 말:</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>말</th><th>뜻 (한 줄)</th><th>어디에 적혀 있나</th></tr></thead>
+        <tbody>
+          <tr><td>핀 구조 <code>FT</code> · <code>TT</code></td><td>입력이 견디는 전압의 등급. FT = "5 V tolerant", TT = "3.3 V tolerant". 뒤의 <code>_a</code> · <code>_h</code> · <code>_f</code> · <code>_u</code> 는 옵션(아날로그 · 고속 · I2C FM+ · USB). <strong>FT 에는 조건이 붙는다</strong>(§2-1)</td><td>DS13313 Rev 5 표 6 (p.56)</td></tr>
+          <tr><td>AF (alternate function)</td><td>핀 하나에 겹쳐 있는 주변장치 신호들 가운데 하나를 AF0~AF15 의 번호로 골라 핀에 잇는다</td><td>DS13313 표 8 (p.72~85)</td></tr>
+          <tr><td>additional function</td><td>AF 번호 없이 주변장치 레지스터로 켜는 기능. ADC 입력(<code>ADC3_INP9</code> 등)이 여기다 — 표 8 이 아니라 <strong>표 7 의 마지막 열</strong>에 있다</td><td>DS13313 표 6 · 표 7</td></tr>
+          <tr><td>솔더 브리지 SB</td><td>보드 위의 작은 이음 자리. "SBx ON" = 0 Ω 저항으로 닫혀 있다, "SBx OFF" = 열려 있다. <code>SBxx</code> 는 윗면, <code>SB1xx</code> 는 아랫면에 있다</td><td>UM2407 Rev 6 표 3 · 7.7절</td></tr>
+          <tr><td>Zio · Morpho</td><td>두 가지 확장 커넥터. Zio(CN7~CN10)는 윗면이 <strong>암</strong> 소켓(수 점퍼선), Morpho(CN11 · CN12)는 <strong>수</strong> 핀헤더(암 점퍼선). 자리는 <code>CN10-2</code> 처럼 "커넥터-핀"으로 적는다</td><td>UM2407 9.1절 · 9.2절</td></tr>
+          <tr><td>도통 모드</td><td>DMM 이 두 점 사이가 이어져 있으면 소리를 내는 모드. <strong>반드시 전원을 끈 보드에서만</strong> 쓴다(DMM 이 스스로 전류를 흘려 재기 때문이다)</td><td>내 DMM 의 설명서</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout note"><span class="ct">등급 표시를 읽는 법</span>
+        <p><strong>[확정]</strong> = 원본에서 직접 확인 · <strong>[추정]</strong> = 간접 근거에서 끌어냄 · <strong>[확인불가]</strong> = 가진 문서로는 알 수 없음 ·
+        <strong>[제안]</strong> = 근거는 확정 사실이지만 고른 것 자체는 제안(MOTOR_EN = PG12, RELAY_EN = PG3, ESTOP_SENSE = PE15).
+        [추정]과 [확인불가]가 붙은 자리가 곧 <strong>이 쪽에서 DMM 으로 닫는 자리</strong>다.</p>
+      </div>
+
+      <h2 id="why">2. 원리 — 왜 표 한 줄에 문서 넷이 필요한가</h2>
+
+      <h3 id="s2-1">2-1. FT 는 "언제나 5 V 허용"이 아니다 — 한도는 VDD + 4.0 V 다</h3>
+      <p>DS13313 표 6 은 FT 를 "5 V tolerant I/O" 라고만 적는다. 숫자는 표 9(절대 최대 정격, p.88)에 있다. FT 핀의 입력 전압 상한은 고정값이 아니라 <strong>식</strong>이다:</p>
+      <pre><code class="lang-text">Input voltage on FT_xxx pins   Max = Min( Min(VDD, VDDA, VDD33USB, VBAT) + 4.0 , 6 V )   (3)(4)(5)
+Input voltage on TT_xx pins    Max = 4.0 V
+  (4) To sustain a voltage higher than 4 V the internal pull-up/pull-down resistors
+      must be disabled.
+  (5) When an FT_a pin is used by an analog peripheral such as ADC, the maximum VIN is 4 V.
+                                                        — DS13313 Rev 5, Table 9, p.88 (각주 (4)(5) 는 p.89)</code></pre>
+      <p>식에 값을 넣어 보면 이 프로젝트의 규칙 하나가 그대로 나온다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>상태</th><th>식에 넣으면</th><th>뜻</th><th>등급</th></tr></thead>
+        <tbody>
+          <tr><td>Nucleo 가 켜져 있다 (VDD = 3.3 V)</td><td>Min(3.3 + 4.0, 6) = <strong>6 V</strong>. 동작 조건은 더 좁다: Min(VDD, VDDA, VDD33USB) + 3.6 V, 그리고 5.5 V 미만(표 12, p.90)</td><td>5 V 신호가 들어와도 정격 안이다</td><td>확정 (DS 표 9 · 표 12)</td></tr>
+          <tr><td><strong>Nucleo 가 꺼져 있다 (VDD = 0 V)</strong></td><td>Min(0 + 4.0, 6) = <strong>4.0 V</strong></td><td>다른 전원으로 살아 있는 5 V 센서의 출력이 꺼진 MCU 의 핀에 걸리면 <strong>절대 최대 위반</strong></td><td>확정 (산술)</td></tr>
+          <tr><td>그 핀의 내부 풀업 · 풀다운이 켜져 있다</td><td>각주 4 — 4 V 를 넘기려면 꺼져 있어야 한다</td><td><strong>PA15 는 리셋 구간에 JTDI 풀업이 켜져 있고</strong>(RM0468 Rev 3 11.3.1절, p.511) 그 구간은 펌웨어가 끌 수 없다 → PA15 에는 4 V 초과가 언제나 금지</td><td>확정 (DS 각주 4 + RM)</td></tr>
+          <tr><td>FT_a 핀을 ADC 가 쓰고 있다</td><td>각주 5 — <strong>4 V</strong></td><td>"FT 니까 5 V 도 된다"는 ADC 입력 6핀에는 성립하지 않는다. 24 V 계에서 오는 신호는 Nucleo 가 꺼져도 살아 있어 아래 규칙으로도 못 막는다 → GND 기준 클램프(<a href="fw-12-adc.html">fw-12</a>)</td><td>확정 (DS 각주 5)</td></tr>
+        </tbody>
+      </table></div>
+      <p>둘째 행은 실제로 생기는 상태다. Nucleo 는 USB 로 급전되고(UM2407 7.4.1절의 기본 설정, JP2 [1-2]) 모터 쪽은 배터리로 급전된다 — <strong>두 전원이 따로 오르내린다.</strong> USB 를 뽑은 순간에도 다른 레일에 물린 센서는 살아 있을 수 있다.</p>
+      <div class="callout warn"><span class="ct">안전 규칙 — 센서 전원은 Nucleo 3V3 에서만 딴다</span>
+        <ul>
+          <li>엔코더 ×4 · IBT-2 모듈의 VCC · INA226(VS 와 I2C 풀업) · ACS758 · WT901 · BNO055 의 전원은 <strong>전부 Nucleo 의 3V3 핀에서만</strong> 딴다. 별도의 5 V · 3.3 V 레일에서 따지 않는다.
+          같은 3V3 에서 따면 센서가 MCU 와 <strong>같이 꺼지므로</strong> 위 표의 둘째 행이 생기지 않는다(<code>hardware/INVENTORY.md</code> 2절 "배선 전 필수 조건" ①).</li>
+          <li>3V3 · 5 V · GND 선은 <strong>전원(USB)을 뽑은 채</strong> 꽂는다. 꽂고 나서 전원을 넣으면 <strong>가장 먼저 3V3 핀과 GND 사이 전압을 DMM 으로 잰다</strong> — 3V3 핀의 바로 아래가 5 V 핀이기 때문이다(§2-6). 이 재는 법은 §3-2 에서 부품을 달기 전에 한 번 연습한다.</li>
+          <li>3V3 레일에는 전류 상한이 있다: 보드와 거기 물린 것의 합이 <strong>300 mA 를 넘으면 외부 전원이 필수</strong>(UM2407 7.4.1절 Warning), <strong>500 mA 를 넘으면 차단</strong>되고 빨간 LD6 이 켜진다(같은 절 · 7.6.1절).
+          부품을 하나 달 때마다 §3-5 의 절차로 되돌아와 잰다.</li>
+        </ul>
+      </div>
+
+      <h3 id="s2-2">2-2. 왜 TIM2_CH1 은 PA5 가 아니라 PA15 인가</h3>
+      <p>핀맵 검증 이전에는 FL 엔코더 A 의 자리가 "PA5 또는 PA15" 로 열려 있었다. 지금의 확정 핀맵(과 본편 <a href="06a-mcu-protocol.html">06a</a> §3-3-B 의 표)은 <strong>PA15</strong> 다. 고르는 과정을 따라가 본다.</p>
+      <p><strong>① 후보는 몇 개인가.</strong> 엔코더 모드는 타이머의 CH1 · CH2 만 쓴다. 32비트 타이머 넷의 CH1/CH2 가 LQFP144 에서 나올 수 있는 핀을 CubeMX DB 에서 전부 뽑으면(§3-1-3 의 명령):</p>
+      <pre><code class="lang-text">TIM2_CH1 : PA0(34)  PA5(41)  PA15(JTDI)(110)      TIM2_CH2 : PA1(35)  PB3(JTDO/TRACESWO)(133)
+TIM5_CH1 : PA0(34)                                TIM5_CH2 : PA1(35)
+TIM23_CH1: PF0(10)  PF6(18)  PG12(127)            TIM24_CH1: PF11(49)    TIM24_CH2: PF12(50)
+      (STM32H723ZGTx.xml, CubeMX 6.18.1 — 2026-09-22 에 §3-1-3 의 명령으로 직접 뽑은 출력)</code></pre>
+      <p>TIM5 는 PA0/PA1 <strong>말고는 갈 곳이 없다.</strong> 그러면 TIM2 에 남는 것은 CH1 = PA5 또는 PA15, CH2 = PB3 뿐이다.</p>
+      <p><strong>② 두 후보를 표 7 · 표 10 · UM 에서 견준다.</strong></p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>축</th><th>PA5 (LQFP144 핀 41)</th><th>PA15 (핀 110)</th><th>출처</th></tr></thead>
+        <tbody>
+          <tr><td>핀 구조</td><td><code>TT_ha</code> — 3.3 V 까지. 입력 절대 최대 4.0 V</td><td><code>FT</code> — §2-1 의 식</td><td>DS 표 7 p.60 · p.67, 표 9</td></tr>
+          <tr><td>주입 전류 절대 최대</td><td><strong>−0 / 0 mA</strong> — 표 10 에 "PA4, PA5" 만 따로 적힌 행</td><td>−5 / +0 mA (그 밖의 핀 전부)</td><td>DS 표 10 p.89</td></tr>
+          <tr><td>보드에서 이미 물린 것</td><td>SB47 을 이으면 LD1 이 PA5 에 붙는 대체 경로(기본은 SB39 ON / SB47 OFF 라 떨어져 있다). Zio D13</td><td>리셋 구간에 JTDI + <strong>내부 풀업 ON</strong>. CubeMX 의 Debug 를 Serial Wire 로 둬야 GPIO 로 풀린다(<a href="fw-02-toolchain.html">fw-02</a> 에서 설정)</td><td>UM 표 14 · 7.6.1절 / RM 11.3.1절</td></tr>
+          <tr><td>나오는 자리</td><td>Zio D13 = CN7-10 · Morpho CN12-11</td><td>Zio D20 = <strong>CN7-9</strong> · Morpho CN11-17(짝 핀이 5 V — 쓰지 않는다, §2-6)</td><td>UM 표 18 · 표 22</td></tr>
+          <tr><td>나머지 엔코더 7핀과의 관계</td><td>혼자만 TT</td><td>8핀 전부 FT 계열이 된다(PB3 = FT_h, 나머지 6핀 = FT_ha) → 전기 조건이 한 가지</td><td>DS 표 7</td></tr>
+        </tbody>
+      </table></div>
+      <p>엔코더 선은 보드 밖에서 들어오는 <strong>입력</strong>이고, 밖에서 오는 선에는 언더슈트와 오결선이 있다. 음의 주입을 0 mA 도 허용하지 않는 핀에 그런 선을 받는 것과 −5 mA 까지 정격인 핀에 받는 것의 차이가 PA15 쪽으로 기운 근거다.
+      PA15 에도 조건이 없는 것은 아니다 — 리셋 풀업 때문에 <strong>엔코더를 5 V 로 급전하는 길이 닫히고</strong>(§2-1 셋째 행), Debug 설정과 Morpho 자리의 이웃 핀을 챙겨야 한다. 두 핀 모두 AF 번호는 AF1 로 같다(동일).</p>
+      <div class="callout note"><span class="ct">본편의 옛 표기를 만나면</span>
+        <p>본편 어딘가에 "TIM2 PA5(또는 PA15)" 나 "A0~A5 = ADC3 6채널" 이 남아 있으면 핀맵 검증 이전의 서술이다. 어긋나면 <strong>핀맵 정본이 맞다</strong> — 바뀐 이유는 <code>hardware/pinmap-h723.md</code> §1-1 의 C1~C4.</p>
+      </div>
+
+      <h3 id="s2-3">2-3. 왜 ADC 6핀은 Arduino A0~A5 가 아닌가</h3>
+      <p>"아날로그 입력 여섯 개 = 보드에 A0~A5 라고 적힌 핀"이라는 짐작은 UM 만 보면 자연스럽다. 칩 문서를 같이 펴면 무너진다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>Zio 이름</th><th>UM2407 표 20 이 적은 것</th><th>DS13313 표 7 (LQFP144)</th><th>ADC3 로 읽을 수 있는가</th></tr></thead>
+        <tbody>
+          <tr><td>A0</td><td>PA3 · <code>ADC12_INP15</code></td><td>핀 37, FT_ha, <code>ADC12_INP15</code></td><td><strong>없다</strong> — 이름의 <code>ADC12</code> 는 "ADC1 과 ADC2 공용"이라는 뜻이다</td></tr>
+          <tr><td>A1</td><td>PC0 · <code>ADC123_INP10</code></td><td>핀 26, FT_ha, <code>ADC123_INP10</code></td><td>된다 (세 인스턴스 공용)</td></tr>
+          <tr><td>A2</td><td>PC3 · <code>ADC12_INP13</code></td><td>LQFP144 에는 <code>PC3</code> 이 없고 <strong><code>PC3_C</code></strong>(핀 29, <code>TT_a</code>, <code>ADC3_INP1</code>)만 있다</td><td>직접 채널로는 되지만 TT_a · 주입 민감도 0 mA 군(표 50, p.125) — 예비로 돌렸다</td></tr>
+          <tr><td>A3</td><td>PB1 · <code>ADC12_INP5</code></td><td>핀 47, FT_ha, <code>ADC12_INP5</code></td><td><strong>없다</strong></td></tr>
+          <tr><td>A4</td><td>PC2 · <code>ADC123_INP12</code></td><td><strong><code>PC2_C</code></strong>(핀 28, <code>TT_a</code>)만 있다</td><td>A2 와 같은 사정 — 예비</td></tr>
+          <tr><td>A5</td><td>PF10 · <code>ADC3_INP6</code></td><td>핀 22, FT_ha</td><td>된다</td></tr>
+        </tbody>
+      </table></div>
+      <p>여섯 채널을 <strong>한 ADC 인스턴스</strong>에 모으려는 이유는 트리거 하나 · DMA 하나로 한 번에 읽기 위해서다(<a href="fw-12-adc.html">fw-12</a>). 그 조건에서 ADC3 에 남는 핀을 세면
+      PC0 · PF3 · PF4 · PF5 · PF8 · PF9 · PF10 일곱이고(PF6 · PF7 은 TIM23 이, PF11 · PF12 는 TIM24 가 가져갔다), 확정 핀맵은 그중 여섯을 골랐다:
+      <strong>PC0(A1) · PF10(A5) · PF4(A6) · PF5(A7) · PF3(D8) · PF9(D63)</strong>. ADC3 는 12비트다(ADC1 · ADC2 는 16비트).
+      UM 표 20 과 DS 표 7 이 A2 · A4 에서 서로 다른 핀 이름을 적는 것은 원본끼리의 모순이다 — UM 은 Nucleo-144 공통 서술이고 패키지별 사실은 DS 가 맞다(<code>hardware/pinmap-h723.md</code> §7-3 의 M4).</p>
+      <div class="callout note"><span class="ct">결정 대기 — 이 여섯 핀을 실제로 다 쓰는가</span>
+        <p>핀은 <strong>어느 쪽이든 확보돼 있다</strong>(동일). 열려 있는 것: (a) 버스 전압을 INA226 #1(I2C)로 읽을지 분압 → PC0 로 읽을지, (b) BTS7960 의 IS 네 선을 배선할지.
+        <strong>기본 진행</strong>은 "INA226 + IS 미결선"이다 — 1세대 실물이 그렇기 때문이고 권고가 아니다. 다른 선택은 <a href="fw-12-adc.html">fw-12</a>의 선택 절(<code>hardware/INVENTORY.md</code> 2절 "결정 대기").</p>
+      </div>
+
+      <h3 id="s2-4">2-4. SB57 — PA1 에는 이미 50 MHz 를 내는 출력이 물려 있다</h3>
+      <p>§2-2 에서 봤듯 TIM5 의 CH2 는 PA1 <strong>뿐</strong>이다. 그런데 UM2407 은 PA1 이 이 보드에서 비어 있지 않다고 말한다.</p>
+      <pre><code class="lang-text">7.6.7 Ethernet   "... The PHY RMII_REF_CLK generates the 50 MHz clock for the STM32H7
+                  series microcontroller."
+Table 13         PA1 = RMII reference clock.   using Ethernet: SB57 ON
+                                               using ST Zio or ST morpho connector: SB57 OFF
+Table 14         SB57 (PA1) … ON: "These pins are used as RMII signals and connected to
+                  Ethernet PHY. SB7 must be OFF. These pins must not be used on the
+                  ST morpho or the ST Zio connectors."
+                                                        — UM2407 Rev 6, p.30 · p.33</code></pre>
+      <p>기본 상태(SB57 ON)에서 PA1 에는 이더넷 PHY(U15)가 <strong>구동하는</strong> 50 MHz 클록이 걸려 있다. 여기에 엔코더 B 출력을 그대로 이으면 <strong>출력과 출력이 맞붙고</strong>, TIM5 는 50 MHz 의 에지를 세어 카운터가 폭주한다.
+      핀을 옮길 수 없으므로 길은 "PHY 쪽을 PA1 에서 떼어 내는 것" 하나이고, 그 자리가 SB57 이다. 잃는 것은 <strong>이더넷</strong>이다(이 프로젝트는 쓰지 않는다 — <code>hardware/INVENTORY.md</code> 2절 "이더넷" 행).</p>
+      <p>다른 길은 둘을 검토했고 채택하지 않았다: TIM5 를 다른 핀으로 옮기는 길은 없고(CH1/CH2 = PA0/PA1 뿐 [확정: CubeMX DB]), UM 7.6.7절 Note 2 의 "PHY 파워다운"은 <strong>리셋부터 그 설정이 끝날 때까지 클록이 나온다</strong>는 문제가 남는다(이해 확인 4번에서 따져 본다).</p>
+      <div class="callout warn"><span class="ct">안전 규칙 — SB57 제거는 되돌리기 어렵다</span>
+        <p><strong>떼는 것은 납땜이 아니지만 다시 잇는 것은 납땜이다.</strong> 이 프로젝트의 장비 조건(납땜 장비 없음)에서는 되돌릴 수 없는 작업으로 다룬다. 잃는 것 = 이더넷.
+        그래서 제거 <strong>전</strong>에 기준값을 재 두고, 제거 <strong>후</strong>에 확인을 3단으로 밟는다: ① 전원을 끈 채 도통(끊겼는가) → ② 전원을 넣고 CN11-30 의 DC 전압 → ③ PA1 을 GPIO 출력으로 HIGH/LOW 해 보는 기능 시험.
+        ①②는 이 쪽(§3-3)에서 하고, ③은 코드가 필요해 <a href="fw-09-encoder.html">fw-09</a>의 입구로 넘긴다.</p>
+      </div>
+      <p>②의 "50 MHz 를 DMM 으로 잰다"는 이런 뜻이다. DMM 의 DC 전압 모드는 빠른 파형을 따라가지 못하고 <strong>평균</strong>을 보여 준다 — 0 V 와 3.3 V 를 반반 오가는 구형파라면 약 1.6 V 다.
+      단 "듀티 50 %" 와 "내 DMM 이 50 MHz 에서 평균을 제대로 낸다"는 두 가정 위의 <strong>[추정]</strong>이다. 그래서 판정은 ①(도통)에 두고, ②는 "전과 후가 달라졌는가"를 보는 보조 증거로 쓴다.</p>
+
+      <h3 id="s2-5">2-5. Zio 는 SB 를 거치고 Morpho 는 직결이다 — 패드를 건드리지 않고 SB 를 재는 법</h3>
+      <p>UM2407 표 14 의 기본 상태(굵은 글씨 — 표의 각주 1 "The default SBx state is shown in bold")는 <strong>출하 때 그래야 하는 상태</strong>이지 내 보드의 상태가 아니다. 게다가 몇 행(SB37/SB38 · SB48/SB49 · SB50/SB54 · SB65)은
+      굵은 글씨 없이 "SB37 must be OFF" 같은 요구 문장만 있다. 확인할 방법은 DMM 뿐인데, SB 패드는 작아서 탐침이 미끄러진다.</p>
+      <p>표 14 의 문장을 다시 읽으면 길이 보인다 — "SB75 ON: PA0 is connected to the ST Zio connector (pin 29 of CN10)", "SB38 …: ADC_IN is connected to A6 (pin 7) on the ST Zio connector (CN10)".
+      SB 는 <strong>MCU 핀과 Zio 핀 사이</strong>에 있다. 한편 9.2절은 Morpho 를 "All signals and power pins of the STM32H7 are available on the ST morpho connector" 라고 적는다.</p>
+      <pre class="diagram"><code>  PF4  ──┬──────────────────────────── Morpho CN12-38     direct   [추정]
+         └──[SB38 ON ]──┬───────────── Zio A6 = CN10-7    via SB   [확정: UM Table 14]
+  PF12 ──┬──[SB37 OFF]──┘
+         └──────────────────────────── Morpho CN12-59     direct   [추정]
+
+  CN12-38 ↔ CN10-7  beep     =  SB38 ON
+  CN12-59 ↔ CN10-7  no beep  =  SB37 OFF   (이어져 있으면 PF12 = RR 엔코더 B 가 A6 에 붙는다)</code></pre>
+      <p>같은 핀이 나오는 <strong>Morpho 핀 ↔ Zio 핀</strong> 사이를 도통 모드로 재면, 그 사이에 있는 SB 의 상태를 패드를 건드리지 않고 알 수 있다.</p>
+      <ul>
+        <li>"Morpho 는 직결"은 표 14 서술의 귀결로 끌어낸 <strong>[추정]</strong>이다. 그리고 <strong>예외가 있다</strong> — Morpho 쪽에 SB 가 있는 핀도 표 14 에 적혀 있다: PD8/PD9(SB82 · SB81), PC8/PC9(SB14 · SB15), PH0/PH1(SB46 · SB44), PC14/PC15(SB40 · SB41).</li>
+        <li>헤더 둘 다로 나오지 않는 SB 는 이 방법으로 못 잰다: SB32(PB3 ↔ ST-LINK 의 SWO 입력), SB45(ST-LINK 의 MCO ↔ PH0), SB12 · SB19(VCP). 이것들은 패드를 직접 재거나 <strong>기능으로</strong> 확인한다 —
+        예를 들어 <a href="fw-03-clock-console.html">fw-03</a> 에서 HSE(BYPASS)로 클럭이 서고 VCP 로 글자가 나오면 SB45 · SB12 · SB19 가 이어져 있다는 뜻이다.</li>
+        <li>도통이 기대와 다르면 <strong>그 사실이 기록할 값</strong>이다 — Morpho 쪽으로 우회할 근거가 된다(예: A6 · A7 이 Zio 에서 안 잡히면 CN12-38 · CN12-36).</li>
+      </ul>
+
+      <h3 id="s2-6">2-6. 커넥터의 이웃 — 점퍼선이 한 칸 미끄러지면 어디에 닿는가</h3>
+      <p>핀맵의 "핀 중복 0건"은 <strong>같은 핀을 두 신호가 쓰지 않는다</strong>는 뜻일 뿐이다. Zio 와 Morpho 는 2열 2.54 mm 헤더라서, 같은 줄의 짝 핀(홀수 ↔ 짝수)과 위아래 핀은 점퍼선이 한 칸 미끄러졌을 때의 단락 후보다.
+      전원 핀의 자리는 UM2407 표 19 · 표 21 · 표 22 에서 확인된다 [확정]. 위험한 이웃만 추리면:</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>쓰는 핀 (자리)</th><th>위험한 이웃</th><th>닿으면</th><th>처방</th></tr></thead>
+        <tbody>
+          <tr><td><strong>3V3 인출</strong> CN8-7 · CN11-16</td><td><strong>CN8-9 = 5 V</strong>(바로 아래) · <strong>CN11-18 = 5 V</strong>(바로 아래). CN8-5 = NRST</td><td>3V3 레일에 5 V — MCU 의 VDD 절대 최대 4.0 V(DS 표 9) 초과 = 보드 손상</td><td>전원을 끈 채 꽂고, 켠 뒤 3V3–GND 전압부터 잰다(§2-1)</td></tr>
+          <tr><td>ENC_FL_A PA15 의 Morpho 자리 CN11-17</td><td><strong>CN11-18 = 5 V</strong>(짝 핀)</td><td>리셋 풀업이 켜진 핀에 5 V(DS 표 9 각주 4) + 엔코더 출력단에 5 V</td><td><strong>Zio D20(CN7-9)만 쓴다</strong></td></tr>
+          <tr><td>MOTOR_EN PG12 [제안] CN10-2</td><td><strong>CN10-1 = AVDD(3.3 V)</strong>(짝 핀)</td><td>EN 이 MCU 와 무관하게 HIGH → 사전충전 중에 버스가 약 5 V 에서 멈춘다 — 1세대가 2026-07-17 에 겪은 것과 <strong>같은 증상</strong>(<code>hardware/INVENTORY.md</code> 6절 "EN ↔ 사전충전 충돌")</td><td>결선 뒤 "PG12 = LOW 일 때 EN 네트 = 0 V" 를 DMM 으로(<a href="fw-08-pwm-safe-output.html">fw-08</a>). 다른 자리 = Morpho CN11-65</td></tr>
+          <tr><td>RELAY_EN PG3 [제안] CN8-16</td><td><strong>CN8-15 = VIN</strong>(짝 핀, 7~12 V 입력)</td><td>지금 구성(USB 급전)에서는 VIN 에 전압이 없어 무해. VIN 급전을 쓰는 날 위험해진다</td><td>VIN 급전을 쓰지 않는다. 쓰게 되면 RELAY_EN 을 Morpho CN11-44 로(조립 후 급전 방식은 결정 대기 — 관문 <a href="09a-assembly-gate.html">09a</a>)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">전원 핀이 아니어도 <strong>서로 짝 핀에 놓인 두 신호</strong>는 미끄러지면 맞붙는다: PA0(CN10-29) ↔ PE15(CN10-30), PF6(CN10-11) ↔ PG14(CN10-12) — 한쪽을 Morpho 자리로 뺀다. 전체 표(8행)는 <code>hardware/pinmap-h723.md</code> §5-5. 위 네 행의 자리는 UM2407 표 19 · 21 · 22 에서 다시 확인했다(2026-09-22).</p>
+      <div class="callout warn"><span class="ct">안전 규칙 — 꽂지 않는 자리 셋</span>
+        <ul>
+          <li><strong>PD8 · PD9 에 루프백 점퍼를 걸지 않는다.</strong> Morpho 의 <strong>CN12-10(PD8) · CN11-69(PD9)에도 아무것도 꽂지 않는다.</strong> 이 두 핀은 SB12 · SB19(기본 ON)로 ST-LINK 의 VCP 에 이어져 있다 —
+          UM 표 14: "Thus, PD8 and PD9 on the ST morpho connectors cannot be used". ST-LINK 의 TX 출력이 PD9 에 걸려 있으므로 PD8 ↔ PD9 를 이으면 <strong>출력과 출력이 맞붙는다.</strong> UART 루프백이 하고 싶어지는 쪽(fw-03 · fw-05 · <a href="fw-07-memory-dma.html">fw-07</a>)에서 이 규칙을 다시 만난다.
+          CN12-10 의 바로 옆 CN12-8 은 <code>5V_USB_STLK</code> 다(UM 표 22).</li>
+          <li><strong>CN13(사용자 USB, Micro-AB)에 케이블을 꽂지 않는다.</strong> UM 7.6.6절 Warning: CN13 은 보드를 급전하지 못하고, 보드가 꺼진 채 CN13 에 케이블이 꽂혀 있으면 "risk of current injection on STM32H7 I/Os".
+          USB 7핀(PA8~PA12 · PD10 · PG7)은 핀맵에서 전부 비워 뒀다.</li>
+          <li><strong>배터리가 이어진 상태에서 BOOT0 점퍼를 꽂지 않는다.</strong> BOOT0 은 CN11-7 이고 점퍼 자리는 CN11 [5-7](UM 표 22 각주 1)이다. BOOT0 = 1 로 뜨는 시스템 부트로더가 어느 핀을 구동하는지는 이 가이드가 가진 문서로는 알 수 없다 [확인불가] —
+          모터 드라이버가 물린 핀이 움직일 수 있다는 뜻이므로 절차로 막는다.</li>
+        </ul>
+      </div>
+      <div class="callout note"><span class="ct">원본끼리의 모순 — SB81 · SB82</span>
+        <p>UM2407 표 10 은 VCP 기본 구성에서 "SB82 · SB81 OFF" 라 적고, 표 14 는 SB81 · SB82 의 ON 을 굵게(기본) 표시한다. 어느 쪽이 맞든 PD8/PD9 는 ST-LINK 에 이어져 있고, ON 이면 CN12-10 · CN11-69 에도 VCP 신호가 나온다.
+        그래서 결론은 같다 — <strong>그 두 핀을 비워 둔다.</strong> 이 모순은 풀지 않고 둔다(<code>hardware/pinmap-h723.md</code> §7-3 의 M1).</p>
+      </div>
+
+      <h2 id="lab">3. 실습</h2>
+      <p><strong>이 쪽은 CubeMX 를 열지 않고 아무것도 굽지 않는다.</strong> 다른 쪽의 실습은 "CubeMX 설정 → 골격 → 직접 채우기 → 굽고 보기"의 네 걸음이고 소절 번호의 끝자리(1~4)가 그 걸음을 가리킨다.
+      여기서는 첫 걸음이 없고 나머지 셋이 이렇게 바뀐다 — <strong>끝자리 2 = 빈 표(골격)</strong>, <strong>3 = 직접 채우기</strong>, <strong>4 = 보고 판정하기</strong>(굽는 대신 서류와 DMM 을 본다). 그래서 소절 번호가 2 부터 시작한다.</p>
+      <p>순서: A(서류) → B(보드 점검) → C(SB57 제거 — <strong>되돌리기 어렵다</strong>) → D(금지 목록). A 와 D 는 DMM 없이 된다.</p>
+
+      <h3 id="s3-1">3-1. 실습 A — 핀맵의 네 행을 데이터시트에서 다시 찾는다 <span class="tag mac">Mac</span></h3>
+
+      <h4 id="s3-1-2">3-1-2. 빈 표</h4>
+      <p>아래 표를 노트에 옮겨 그린다. 첫 행은 <strong>보기</strong>다 — 핀맵에서 탈락한 후보 PA5 를 네 문서에서 찾은 결과를 채워 두었다(2026-09-22 에 직접 확인). 나머지 네 행이 내 몫이다.</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>신호</th><th>핀</th><th>① DS 표 7 — LQFP144 핀 번호 · 구조 · 그 행에 신호 이름이 있는가 (쪽)</th><th>② DS 표 8 — AF 번호 (쪽)</th><th>③ UM 표 18~22 — 커넥터 자리</th><th>④ UM 표 14 — 걸린 SB 와 기본 상태</th><th>⑤ CubeMX DB (선택)</th><th>핀맵 정본과 같은가</th></tr></thead>
+        <tbody>
+          <tr><td>(보기) TIM2_CH1 의 탈락 후보</td><td>PA5</td><td>핀 41 · <code>TT_ha</code> · <code>TIM2_CH1/TIM2_ETR</code> 있음 (p.60)</td><td>AF1 (p.72)</td><td>Zio D13 = CN7-10 · Morpho CN12-11</td><td>SB47 — LD1 의 대체 경로. 기본은 SB39 ON / SB47 OFF</td><td><code>GPIO_AF1_TIM2</code></td><td>같다(1-1절 C1 의 서술)</td></tr>
+          <tr><td>ENC_FL_A (TIM2_CH1)</td><td>PA15</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td>ENC_FR_B (TIM5_CH2)</td><td>PA1</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td>IS_FL (ADC3_INP9)</td><td>PF4</td><td>____ <span class="small">(ADC 채널은 표 7 의 마지막 열)</span></td><td>____ <span class="small">(AF 가 아니다 — 무엇이라 적을까)</span></td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td>MOTOR_EN [제안] (GPIO)</td><td>PG12</td><td>____</td><td>____ <span class="small">(GPIO 로 쓴다 — 이 핀의 AF11 · AF13 에는 무엇이 있는가)</span></td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">네 행은 성격이 다르다: 조건이 붙은 입력(PA15), SB 작업이 걸린 핀(PA1), AF 가 아닌 아날로그 기능(PF4), GPIO(PG12). 궁금한 행을 하나 더해도 된다.</p>
+
+      <h4 id="s3-1-3">3-1-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><strong>PDF 를 연다.</strong> fw-00 에서 확인한 자리(이 Mac 에서는 <code>~/stm32/learn/STM32H723/Docs/</code>)의 <code>DS13313_stm32h723.pdf</code> 와 <code>UM2407_nucleo_h723zg.pdf</code>. PDF 의 쪽 번호와 인쇄된 쪽 번호가 같다. 이 쪽의 쪽 번호는 DS13313 Rev 5 · UM2407 Rev 6 기준이다 — 판이 다르면 표 제목으로 찾는다.</li>
+        <li><strong>① 표 7 (p.57~71).</strong> 행은 <strong>핀 번호 순</strong>이다. 패키지 열 넷 가운데 <strong>LQFP144 열</strong>을 읽는다(이 열이 <code>-</code> 이면 그 핀은 내 칩에 없다).
+        "I/O structure" 열에서 구조를, "Alternate functions" 열에서 신호 이름을, "Additional functions" 열에서 ADC 채널을 찾는다. 핀 이름 옆 괄호(<code>PA15(JTDI)</code>)는 <strong>리셋 직후의 기능</strong>이다.</li>
+        <li><strong>② 표 8 (p.72~85).</strong> 행은 <strong>포트 순</strong>(PA → PB → …)이고 열이 AF0~AF15 다. 가로로 누운 표라 PDF 보기에서 돌려 본다. ①에서 찾은 신호 이름이 <strong>몇 번째 열</strong>에 있는지 읽는다.</li>
+        <li><strong>③ UM 표 18~21(Zio CN7~CN10, p.40~42) · 표 22(Morpho, p.43~44).</strong> 핀 이름으로 찾아 "커넥터-핀 번호"를 적는다. Zio 에 없고 Morpho 에만 나오는 핀이 있다 — 어느 행이 그런가.</li>
+        <li><strong>④ UM 표 14 (p.31~34).</strong> 그 핀 이름이 나오는 SB 행을 찾아 굵은 글씨(기본 상태)를 적는다. 굵은 글씨는 글자 검색으로는 안 보인다 — 눈으로 본다.</li>
+        <li><strong>⑤ (선택) CubeMX 의 DB.</strong> CubeMX 가 핀 화면을 그릴 때 읽는 xml 이다. 화면을 열지 않고 터미널에서 읽는다:
+          <pre><code class="lang-bash">CMX="/Applications/STMicroelectronics/STM32CubeMX.app/Contents/Resources/db/mcu"
+SIG=TIM2_CH1                                  # 찾을 신호 이름 (DS 표 7 의 철자 그대로)
+
+# (가) 이 패키지(LQFP144)에서 그 신호를 낼 수 있는 핀 전부 — 핀 이름(핀 번호)
+awk -v s="$SIG" '/&lt;Pin Name=/{split($0,a,"\""); pin=a[2]; pos=a[4]}
+  index($0,"Signal Name=\"" s "\""){printf "%s(%s)  ", pin, pos}
+  END{print ""}' "$CMX/STM32H723ZGTx.xml"
+
+# (나) 그 신호의 AF 매크로 — H72x 계열 공통 파일이라 이 패키지에 없는 핀(PA0_C …)도 나온다
+awk -v s="$SIG" '/&lt;GPIO_Pin /{pin=$3} index($0,"PinSignal Name=\"" s "\""){f=1}
+  f &amp;&amp; /PossibleValue/{gsub(/^ +/,""); print pin, $0; f=0}' \
+  "$CMX/IP/GPIO-STM32H72_gpio_v1_0_Modes.xml"</code></pre>
+          <pre><code class="lang-text">PA0(34)  PA5(41)  PA15(JTDI)(110)
+Name="PA0"&gt; &lt;PossibleValue&gt;GPIO_AF1_TIM2&lt;/PossibleValue&gt;
+Name="PA0_C"&gt; &lt;PossibleValue&gt;GPIO_AF1_TIM2&lt;/PossibleValue&gt;
+   … (PA15(JTDI) · PA5 도 같은 꼴로 나온다)
+   (2026-09-22, CubeMX 6.18.1 의 실제 출력. 파일 이름이 다르면 ls "$CMX/IP" | grep -i gpio)</code></pre>
+          ADC 채널처럼 AF 가 아닌 신호는 (가)에만 나오고 (나)에는 나오지 않는다 — 그것도 확인거리다.</li>
+      </ol>
+      <p class="small"><code>pdftotext -layout -f 57 -l 71 DS13313_stm32h723.pdf /tmp/ds_t7.txt</code> 로 표 7 을 글자로 뽑아 <code>grep</code> 할 수도 있다(깔려 있으면). 표 8 은 이렇게 뽑으면 <strong>열이 무너진다</strong> — 눈으로 읽는다.</p>
+
+      <h4 id="s3-1-4">3-1-4. 보고 판정하기</h4>
+      <ul>
+        <li>네 행의 ①~④가 <code>hardware/pinmap-h723.md</code> 2절의 같은 행(핀 · AF · 구조 · 커넥터 · SB 열)과 <strong>글자 그대로</strong> 같은가. 다르면 어느 쪽이 틀렸는지 원본 쪽 번호와 함께 적는다 — 핀맵이 틀렸을 수도 있다.</li>
+        <li>PA15 행에서 "괄호 안의 JTDI" 와 RM0468 11.3.1절(p.511)의 "PA15: JTDI in pull-up" 을 이었는가. §2-1 의 셋째 행이 여기서 나온다.</li>
+        <li>PG12 행에서 AF11 의 <code>ETH_MII_TXD1/ETH_RMII_TXD1</code> 을 봤다면 — 이 보드의 RMII TXD1 은 어느 핀에 결선돼 있는가(UM 표 13). 칩이 <strong>할 수 있는 것</strong>과 보드가 <strong>해 둔 것</strong>은 다르다.</li>
+      </ul>
+
+      <h3 id="s3-2">3-2. 실습 B — 내 보드의 SB 기본 상태를 DMM 으로 잰다 <span class="tag bench">벤치</span></h3>
+      <p>보드에는 아직 <strong>아무것도 꽂혀 있지 않다</strong>(USB 케이블 하나뿐). 앞 절반은 USB 를 <strong>뽑고</strong> 도통 모드로, 뒤 절반은 USB 를 꽂고 DC 전압 모드로 잰다.</p>
+
+      <h4 id="s3-2-2">3-2-2. 빈 표</h4>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>#</th><th>확인하는 SB (UM 표 14)</th><th>두 점 (Morpho ↔ Zio)</th><th>기대</th><th>내 보드</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td>— (핀 세는 법의 검증)</td><td>CN8-11 ↔ CN8-13 · CN10-5 ↔ CN10-17 · CN11-19 ↔ CN12-9 (전부 GND)</td><td>셋 다 도통</td><td>____</td></tr>
+          <tr><td>1</td><td>SB75 ON</td><td>CN11-28 (PA0) ↔ CN10-29 (D32)</td><td>도통</td><td>____</td></tr>
+          <tr><td>2</td><td>SB58 OFF</td><td>CN11-28 (PA0) ↔ CN11-23 (PC13) — B1 을 누른 채로도</td><td>불통</td><td>____</td></tr>
+          <tr><td>3</td><td>SB28 ON / SB70 OFF</td><td>CN12-52 (PE9) ↔ CN10-4 (D6) / ↔ CN9-15 (D71)</td><td>도통 / 불통</td><td>____ / ____</td></tr>
+          <tr><td>4</td><td>SB38 ON / SB37 OFF <em>(굵은 글씨 없음)</em></td><td>CN12-38 (PF4) ↔ CN10-7 (A6) / CN12-59 (PF12) ↔ CN10-7</td><td>도통 / 불통</td><td>____ / ____</td></tr>
+          <tr><td>5</td><td>SB48 ON / SB49 OFF <em>(굵은 글씨 없음)</em></td><td>CN12-36 (PF5) ↔ CN10-9 (A7) / CN12-57 (PF13) ↔ CN10-9</td><td>도통 / 불통</td><td>____ / ____</td></tr>
+          <tr><td>6</td><td>SB54 ON / SB50 OFF <em>(굵은 글씨 없음)</em></td><td>CN11-9 (PF6) ↔ CN10-11 (A8) / CN12-50 (PF14) ↔ CN10-11</td><td>도통 / 불통</td><td>____ / ____</td></tr>
+          <tr><td>7</td><td>SB60 ON / SB62 OFF</td><td>CN12-42 (PF10) ↔ CN9-11 (A5) / CN12-3 (PB8) ↔ CN9-11</td><td>도통 / 불통</td><td>____ / ____</td></tr>
+          <tr><td>8</td><td><strong>SB65 OFF</strong> <em>(굵은 글씨 없음 · 반대편이 A4 인지 A5 인지 UM 에 없다 → 둘 다 잰다)</em></td><td>CN12-62 (PF11) ↔ CN9-11 (A5) / ↔ CN9-9 (A4)</td><td>둘 다 불통</td><td>____ / ____</td></tr>
+          <tr><td>9</td><td>SB53 ON / SB55 OFF</td><td>CN11-35 (UM 표기 PC2 = LQFP144 의 PC2_C) ↔ CN9-9 (A4) / CN12-5 (PB9) ↔ CN9-9</td><td>도통 / 불통</td><td>____ / ____</td></tr>
+          <tr><td>10</td><td>(선택 · 패드 직접) SB32 · SB45</td><td>브리지의 두 패드 사이</td><td>둘 다 도통(기본 ON)</td><td>____ · ____</td></tr>
+        </tbody>
+      </table></div>
+      <p>전원을 넣고 재는 것:</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>#</th><th>무엇</th><th>두 점</th><th>기대</th><th>내 보드</th></tr></thead>
+        <tbody>
+          <tr><td>11</td><td>3V3 핀을 <strong>찾았는가</strong></td><td>CN8-7 ↔ CN8-11 (GND)</td><td>3.3 V 근처 (값은 내가 적는다)</td><td>____ V</td></tr>
+          <tr><td>12</td><td>그 <strong>바로 아래</strong>가 5 V 인가</td><td>CN8-9 ↔ CN8-11 (GND)</td><td>5 V 근처 — "+5 V power is available on CN8 pin 9 and CN11 pin 18"(UM 7.6.1절)</td><td>____ V</td></tr>
+          <tr><td>13</td><td>버튼 B1 의 극성</td><td>CN11-23 (PC13) ↔ GND — 뗀 채 / 누른 채</td><td>뗌 = LOW, <strong>눌림 = HIGH</strong> [추정]</td><td>____ V / ____ V</td></tr>
+          <tr><td>14</td><td>보드 스티커</td><td>윗면 또는 아랫면의 <code>MBxxxx-Variant-yzz</code> 줄</td><td><code>MB1364-H723ZG-E01</code> 계열(UM 표 24)</td><td><code>MB1364-H723ZG-____</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-2-3">3-2-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><strong>USB 케이블을 뽑는다.</strong> 도통 모드는 DMM 이 전류를 흘려 재는 방식이라 전원이 들어간 보드에서 쓰지 않는다.</li>
+        <li><strong>핀 세는 법부터 검증한다(0번).</strong> Morpho 는 한 줄이 홀수 핀, 다른 줄이 짝수 핀이다(UM 표 22 의 머리글). 1번 핀의 자리는 보드 실크를 따른다 — 이 가이드는 실크를 확인하지 못했다.
+        그래서 <strong>답을 아는 핀</strong>으로 먼저 센다: GND 끼리는 반드시 도통이다. 0번이 하나라도 불통이면 내 핀 세기가 틀린 것이니 1번으로 넘어가지 않는다.</li>
+        <li><strong>1~9번을 잰다.</strong> Zio 는 암 소켓이라 탐침이 구멍에 안 들어갈 수 있다 — 수 점퍼선을 하나 꽂고 그 반대쪽 끝에 탐침을 댄다. Morpho 쪽은 <strong>한 번에 핀 하나만</strong> 닿게 댄다.
+        "불통"은 탐침이 안 닿아도 나온다 — 같은 자세로 <strong>"도통" 줄을 먼저</strong> 재서 닿음을 확인하고 옮긴다.</li>
+        <li>(선택) 10번은 패드를 직접 잰다. 탐침이 미끄러지면 건너뛴다 — SB45 는 fw-03 에서 기능으로 확인된다(§2-5).</li>
+        <li><strong>USB 를 꽂는다.</strong> 초록 LD5(전원)가 켜지는지 보고(UM 7.4.1절), DMM 을 <strong>DC 전압</strong> 모드로 바꾼다.</li>
+        <li><strong>11 · 12번.</strong> 검은 탐침을 GND(CN8-11 또는 CN8-13)에 두고 빨간 탐침으로 CN8-7, 이어서 CN8-9 를 잰다. §2-1 의 "켠 뒤 3V3–GND 부터 잰다"의 연습이다 — 부품을 단 뒤 같은 자리를 다시 잰다.</li>
+        <li><strong>13번.</strong> CN11-23 을 B1(파란 버튼)을 뗀 채, 누른 채로 잰다. 값이 어중간하면 그 값을 그대로 적는다.</li>
+        <li><strong>14번.</strong> 스티커의 <code>MB1364-…</code> 줄을 적는다. 끝의 세 글자는 PCB 리비전(한 글자) + 조립 리비전(두 자리)이다(UM 10.1절). 같은 값을 <code>hardware/INVENTORY.md</code> 2절 "솔더 브리지"의 "내 보드" 줄에 옮긴다.</li>
+      </ol>
+
+      <h4 id="s3-2-4">3-2-4. 보고 판정하기</h4>
+      <ul>
+        <li>1~9번이 전부 기대와 같으면 <strong>SB57 말고는 손댈 SB 가 없다</strong>(<code>hardware/pinmap-h723.md</code> §4-2).</li>
+        <li>다른 줄이 있으면 고치려 들지 말고 <strong>적는다.</strong> 8번(SB65)이 도통이면 RR 엔코더 A(PF11)가 A4/A5 의 아날로그 망에 이어져 있다는 뜻이다 — 결선 전에 핀맵을 다시 본다.</li>
+        <li>13번의 기대값은 ST 의 BSP 코드에서 끌어낸 것이다: <code>stm32h7xx_nucleo.c</code> 의 <code>BSP_PB_Init</code> 이 버튼 핀을 <code>GPIO_PULLDOWN</code>(L319) · <code>GPIO_MODE_IT_RISING</code>(L331)으로 잡는다(FW_H7 V1.13.0). UM 본문에는 극성이 없다 — 내 측정이 추정을 확정으로 바꾼다.</li>
+        <li>14번이 <code>E01</code> 이 아니면 UM 표 24 를 읽는다(E01 에서 Morpho 실크가 고쳐졌다).</li>
+      </ul>
+
+      <h3 id="s3-3">3-3. 실습 C — SB57 을 제거하고 끊겼음을 확인한다 <span class="tag bench">벤치</span></h3>
+      <div class="callout warn"><span class="ct">먼저 읽는다 — 이 작업은 되돌리기 어렵다</span>
+        <p><strong>SB57 을 떼는 것은 납땜이 아니지만, 다시 잇는 것은 납땜이다.</strong> 떼고 나면 이 보드의 이더넷은 쓸 수 없다. 왜 떼야 하는지(§2-4)를 납득하지 못했으면 아직 떼지 않는다.
+        떼기 <strong>전에만</strong> 잴 수 있는 기준값이 있으므로(1 · 2단계) 순서를 바꾸지 않는다. 실크의 번호는 두 번 읽는다 — 다른 SB 를 떼면 그것도 되돌리기 어렵다.</p>
+      </div>
+
+      <h4 id="s3-3-2">3-3-2. 빈 표</h4>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>단계</th><th>전원</th><th>무엇을 재는가</th><th>기대</th><th>내 보드</th></tr></thead>
+        <tbody>
+          <tr><td>1 (제거 전)</td><td>OFF</td><td>SB57 의 두 패드 각각 ↔ CN11-30 (PA1)</td><td><strong>두 패드 모두</strong> 도통(0 Ω 으로 이어져 있으므로)</td><td>____ / ____</td></tr>
+          <tr><td>2 (제거 전)</td><td>ON</td><td>CN11-30 ↔ GND 의 DC 전압</td><td>약 1.6 V [추정] — §2-4</td><td>____ V</td></tr>
+          <tr><td>3 (제거)</td><td><strong>OFF</strong></td><td>— 쓴 도구 · 방법 · 날짜</td><td>—</td><td>____ · ____ · ____</td></tr>
+          <tr><td>4 (확인 ①)</td><td>OFF</td><td>SB57 의 두 패드 각각 ↔ CN11-30, 그리고 두 패드 사이</td><td><strong>한 패드만</strong> 도통(그쪽이 MCU 쪽) · 다른 패드(PHY 쪽)는 불통 · 두 패드 사이 불통</td><td>____ / ____ / ____</td></tr>
+          <tr><td>5 (확인 ②)</td><td>ON</td><td>CN11-30 ↔ GND 의 DC 전압</td><td>약 0 V [추정] — 2단계의 값과 <strong>달라졌는가</strong>가 핵심</td><td>____ V</td></tr>
+          <tr><td>6 (확인 ③)</td><td>—</td><td>PA1 을 GPIO 출력으로 HIGH/LOW → CN11-30 에서 3.3 V / 0 V</td><td><a href="fw-09-encoder.html">fw-09</a>의 입구에서 한다</td><td>(거기서)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-3-3">3-3-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><strong>SB57 을 찾는다.</strong> 번호가 두 자리이므로 <strong>윗면</strong>에 있다(UM 7.7절: "SBxx can be found on the top layer and SB1xx … on the bottom layer"). 실크 <code>SB57</code> 을 찾아 자리를 노트에 적는다(어느 부품 옆인가: ____).
+        "ON" 인 SB 의 실물은 <strong>0 Ω 저항으로 닫힌 이음</strong>이다(UM 표 3).</li>
+        <li><strong>1단계(전원 OFF).</strong> 두 패드를 각각 CN11-30 과 재 본다. 둘 다 도통이면 지금 SB57 이 이어져 있다는 뜻이다. 하나라도 불통이면 멈춘다 — 이미 떼어진 보드이거나 다른 SB 를 보고 있다.</li>
+        <li><strong>2단계(전원 ON).</strong> USB 를 꽂고 CN11-30 의 DC 전압을 적는다. 검은 탐침은 Zio 의 GND(CN8-11)에 — 암 소켓이라 미끄러지지 않는다. 빨간 탐침은 CN11-30 <strong>한 핀에만</strong> 닿게 한다(같은 줄의 다음 핀 CN11-32 는 주입 전류를 0 mA 도 허용하지 않는 PA4 다 — DS 표 10).
+        1.6 V 가 아니어도 된다 — <strong>적는 것</strong>이 목적이다.</li>
+        <li><strong>3단계(제거).</strong> <strong>USB 를 뽑는다.</strong>
+          <div class="callout note"><span class="ct">확인하지 못했다 — 제거 방법</span>
+            <p>SB57 에 놓인 부품의 크기, 맞는 도구, 떼는 절차는 <strong>이 가이드가 가진 문서 어디에도 없다.</strong> UM2407 은 "0 Ω 저항으로 닫혀 있다"(표 3)까지만 말하고, <code>hardware/INVENTORY.md</code> 2절은 "제거는 납땜이 아니지만 다시 잇는 것은 납땜이다"까지만 적는다.
+            그래서 방법은 쓰지 않는다. 도구: ____ · 방법: ____ · 걸린 시간: ____ 을 내가 적는다(다음에 같은 보드를 만질 사람을 위해).</p>
+            <p>문서에서 끌어낼 수 있는 주의는 셋이다 — ① 전원을 뽑은 채로 한다 ② 떼어 낸 조각을 <strong>반드시 회수한다</strong>(0 Ω 도체 조각이 보드 위에 남으면 그것이 새 단락이다)
+            ③ 도구의 힘이 <strong>SB57 의 두 패드 사이에만</strong> 가게 한다 — 바로 옆에 어느 SB · 부품이 있는지는 UM2407 의 배치 그림(그림 4 · 그림 5)에 표시가 없어 1번에서 실크로 적은 자리가 유일한 단서다.
+            끝난 뒤 전원을 넣기 전에 §3-2-2 의 SB 점검표 1~9번을 <strong>한 번 더</strong> 돌려 제거 전 기록과 같은지 본다(옆 SB 가 함께 떨어졌으면 여기서 드러난다 — 그것도 되돌리기 어렵다).</p>
+          </div></li>
+        <li><strong>4단계(확인 ①, 전원 OFF).</strong> 1단계와 똑같이 잰다. 이번에는 <strong>한 패드만</strong> CN11-30 과 도통이어야 한다 — 도통인 쪽이 MCU(PA1) 쪽, 불통인 쪽이 PHY 쪽이다.
+        이렇게 하면 회로도 없이도 어느 패드가 PHY 쪽인지 알게 된다. 두 패드 사이도 불통인지 본다.</li>
+        <li><strong>5단계(확인 ②, 전원 ON).</strong> USB 를 꽂고 2단계와 같은 자리에서 DC 전압을 잰다.</li>
+        <li><code>hardware/INVENTORY.md</code> 2절 "솔더 브리지"의 "내 보드" 줄에 <strong>SB57 제거 날짜</strong>와 <strong>제거 후 불통 확인</strong>을 적는다. 이 두 칸이 fw-09 의 입구 조건이다.</li>
+      </ol>
+
+      <h4 id="s3-3-4">3-3-4. 보고 판정하기</h4>
+      <ul>
+        <li><strong>판정은 4단계다.</strong> "제거 전 두 패드 모두 도통 → 제거 후 한 패드만 도통"이 나왔으면 PHY 의 클록 출력은 PA1 에서 떨어졌다. 이것은 일부러 끊은 것이 <strong>실제로 끊겼는지</strong>를 확인하는 항목이다.</li>
+        <li>5단계는 보조 증거다. 2단계와 <strong>값이 달라졌으면</strong> 같은 결론을 가리킨다. 두 값이 같다면(예: 둘 다 0 V 근처) PHY 가 그 시점에 클록을 내지 않고 있었을 수 있다 — 4단계가 통과했다면 실패가 아니다. 두 값을 그대로 적어 둔다.</li>
+        <li>5단계의 PA1 은 아무도 구동하지 않는 입력이라 DMM 값이 흔들릴 수 있다. "구동원이 없다"의 확실한 증거는 6단계(내가 구동한 값이 그대로 나오는가)이고, 그것이 UM 표 14 같은 행의 정의 없는 문구 "SB7 must be OFF" 까지 기능으로 닫는다.</li>
+      </ul>
+
+      <h3 id="s3-4">3-4. 실습 D — 결선 금지 목록을 내 손으로 쓴다 <span class="tag mac">Mac</span></h3>
+      <p>핀맵 정본은 "어디에 꽂는가"의 표다. 책상 위에서 사고를 막는 것은 그 반대편, <strong>"어디에 꽂지 않는가"</strong>의 표다. 정본에는 그것이 여러 절에 흩어져 있다 — 한 장으로 모은다.
+      남이 모아 준 목록은 읽고 잊는다. 그래서 아래에는 <strong>틀</strong>만 있다.</p>
+
+      <h4 id="s3-4-2">3-4-2. 빈 표</h4>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>갈래</th><th>핀 · 자리 (커넥터-핀까지)</th><th>하지 않는 것</th><th>왜 (한 줄)</th><th>출처 (파일 · 절 / 문서 · 표)</th></tr></thead>
+        <tbody>
+          <tr><td>가. 이미 다른 것이 물려 있는 핀</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td>나. 전원 핀의 이웃</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td>다. 서로 짝 핀에 놓인 두 신호</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td>라. 꽂지 않는 커넥터 · 점퍼</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+          <tr><td>마. 전원을 따는 곳</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-4-3">3-4-3. 직접 채우기</h4>
+      <ol class="steps">
+        <li><strong>재료를 편다</strong>: <code>hardware/pinmap-h723.md</code> 의 2-C절(통신) · 2-E절(온보드 · 예약 · 금지) · 5-2절(온보드 기능과의 충돌) · 5-4절(전기 조건) · 5-5절(커넥터 이웃), 그리고 이 쪽의 §2-1 · §2-6.</li>
+        <li><strong>갈래 "가"</strong>: ST-LINK VCP 의 두 핀, 이더넷 RMII 의 8핀, USB 의 7핀, SWD 의 두 핀, LD1 의 Zio 자리(D33), HSE 입력. 핀 이름만 적지 말고 <strong>헤더의 어느 자리인지</strong>까지 적는다 — 점퍼선은 핀 이름이 아니라 자리에 꽂힌다.</li>
+        <li><strong>갈래 "나" · "다"</strong>: §2-6 의 표에서 출발해 정본 5-5절의 나머지 행을 더한다.</li>
+        <li><strong>갈래 "라" · "마"</strong>: §2-1 과 §2-6 의 상자 둘(안전 규칙)이 그대로 들어간다.</li>
+        <li>다 쓰면 <strong>종이로 뽑거나 옮겨 적어</strong> 보드를 올려 둔 자리 옆에 둔다. 결선은 <a href="fw-08-pwm-safe-output.html">fw-08</a>부터 시작되고, 그때 이 종이를 먼저 본다.</li>
+      </ol>
+
+      <h4 id="s3-4-4">3-4-4. 보고 판정하기</h4>
+      <p>내 목록에 아래 일곱 가지가 <strong>전부</strong> 들어 있는지 스스로 대조한다. 하나라도 빠졌으면 어느 재료를 건너뛰었는지 찾아 채운다.</p>
+      <ul>
+        <li>PD8 · PD9 에 루프백 점퍼 금지, CN12-10 · CN11-69 에 아무것도 꽂지 않음</li>
+        <li>CN13(사용자 USB)에 케이블 금지</li>
+        <li>배터리가 이어진 상태에서 BOOT0 점퍼(CN11 [5-7]) 금지</li>
+        <li>센서 · 엔코더 · 모듈 VCC 의 전원은 Nucleo 3V3 에서만 — 별도 레일 금지. 전원 선은 USB 를 뽑은 채 꽂고, 켠 뒤 3V3–GND 부터 잰다</li>
+        <li>3V3 핀(CN8-7 · CN11-16)의 바로 아래가 5 V(CN8-9 · CN11-18)</li>
+        <li>PA15 는 Zio D20(CN7-9)으로만 — Morpho CN11-17 은 짝 핀이 5 V</li>
+        <li>MOTOR_EN(CN10-2)의 짝 핀이 AVDD, RELAY_EN(CN8-16)의 짝 핀이 VIN</li>
+      </ul>
+
+      <h3 id="s3-5">3-5. 되돌아오는 절차 — 부품을 달 때마다 3V3 예산을 잰다 <span class="tag bench">벤치</span></h3>
+      <p>지금은 3V3 에 아무것도 달려 있지 않으므로 <strong>이 절은 읽어만 둔다.</strong> <a href="fw-08-pwm-safe-output.html">fw-08</a> 이후 부품을 하나 달 때마다 여기로 돌아온다. 확정 핀맵은 IBT-2 VCC ×4 · 엔코더 ×4 · WT901 · BNO055 · ACS758 · INA226 을 전부 Nucleo 3V3 하나에 건다(§2-1) — 그 합은 <strong>재 본 적이 없다</strong>(<code>hardware/INVENTORY.md</code> 2절 필수 조건 ①: 소비 전류 <code>____</code>).</p>
+      <ol class="steps">
+        <li>바깥으로 나가는 3V3 는 <strong>한 가닥</strong>으로 뺀다: CN8-7 → 점퍼선 한 줄 → 브레드보드의 전원 레일. 모든 부품은 그 레일에서 딴다. 그래야 "분기 전류"가 한 곳에서 재진다.</li>
+        <li><strong>USB 를 뽑고</strong>, DMM 의 빨간 리드를 전류(mA) 단자로 옮겨 그 한 가닥의 <strong>중간에 직렬로</strong> 넣는다(CN8-7 → DMM → 레일).
+        전류 모드의 DMM 은 두 탐침 사이가 <strong>거의 단락</strong>이다 — 그 탐침을 3V3 와 GND 사이에 대면 레일이 단락된다. 재고 나면 리드를 <strong>곧바로 전압 단자로 되돌린다.</strong></li>
+        <li>USB 를 꽂고 값을 적는다: 부품 ____ 까지 달았을 때 ____ mA. 이어서 전압 모드로 <strong>브레드보드 레일의 3V3</strong> 도 잰다(DMM 을 직렬로 넣으면 그만큼 전압이 떨어진다): ____ V.</li>
+        <li>기준선은 둘이다(UM2407 7.4.1절): 보드 + 물린 것의 합이 <strong>300 mA 를 넘으면 외부 전원 필수</strong>, <strong>500 mA 를 넘으면 차단</strong>(빨간 LD6). 내가 잰 것은 <strong>바깥 분기만</strong>이다 — 보드 자신(MCU · 늘 켜져 있는 PHY · ST-LINK)의 몫은 안 보인다: ____ mA(이 가이드에 값이 없다).
+        그러니 분기 전류가 300 mA 에 못 미쳐도 여유를 단정하지 않는다. LD6 이 켜지거나 LD5 가 꺼지면 즉시 USB 를 뽑는다.</li>
+      </ol>
+      <p class="small">예산이 모자라 외부 3.3 V 레일로 넘어가면 §2-1 의 전제("센서가 MCU 와 같이 꺼진다")를 다시 따져야 한다(<code>hardware/pinmap-h723.md</code> §7-2 의 U3). 그 결정은 값이 나온 뒤의 일이다.</p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 찾고 직접 재서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다. 이 쪽에는 합격 "수치"가 없다 — 전압은 잰 값을 그대로 적는 것이 통과다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="ds-rows-rechecked"><span><strong>경로 통과</strong> — 핀맵의 네 행(PA15 · PA1 · PF4 · PG12)을 DS13313 표 7 · 표 8 과 UM2407 표 14 · 표 18~22 에서 다시 찾아 <strong>쪽 번호와 함께</strong> 적었고, 정본과 대조한 결과(같다 / 다르다)를 적었다
+          <span class="sub">판정 수단: 내 표(§3-1-2 의 양식) · §3-1-4</span></span></label></li>
+        <li><label><input type="checkbox" data-key="sb-default-dmm"><span><strong>경로 통과</strong> — USB 를 뽑은 보드에서 GND 검증(0번)이 통과했고, SB 점검표 1~9번의 "내 보드" 칸이 전부 찼다(기대와 다른 줄은 다른 대로)
+          <span class="sub">판정 수단: DMM 도통 모드 · §3-2-4</span></span></label></li>
+        <li><label><input type="checkbox" data-key="rails-3v3-5v-measured"><span><strong>경로 통과</strong> — 부품을 달기 전의 보드에서 CN8-7(3V3)과 그 바로 아래 CN8-9(5 V)를 GND 기준으로 재서 두 값을 적었다
+          <span class="sub">판정 수단: DMM DC 전압 · §3-2-3 의 6번 · 적은 값: ____ V / ____ V</span></span></label></li>
+        <li><label><input type="checkbox" data-key="b1-polarity"><span><strong>경로 통과</strong> — B1 을 뗀 채 / 누른 채의 CN11-23(PC13) 전압을 적었고, "눌림 = HIGH" 추정이 내 보드에서 맞는지 적었다
+          <span class="sub">판정 수단: DMM DC 전압 · §3-2-4</span></span></label></li>
+        <li><label><input type="checkbox" data-key="board-sticker-recorded"><span><strong>경로 통과</strong> — 보드 스티커의 <code>MB1364-H723ZG-</code> 뒤 세 글자를 <code>hardware/INVENTORY.md</code> 2절 "솔더 브리지"의 "내 보드" 줄에 적었다
+          <span class="sub">판정 수단: <code>grep -n "MB1364-H723ZG" hardware/INVENTORY.md</code> 의 출력에서 <code>MB1364-H723ZG-</code> 뒤가 빈칸이 아니다 · §3-2-3 의 8번</span></span></label></li>
+        <li><label><input type="checkbox" data-key="sb57-removed-open"><span><strong>발동 확인</strong> — 일부러 끊은 것이 실제로 끊겼다: 제거 전에는 SB57 의 두 패드가 모두 CN11-30 과 도통이었고, 제거 후에는 <strong>한 패드만</strong> 도통이며 두 패드 사이는 불통이다
+          <span class="sub">판정 수단: DMM 도통 모드(전원 OFF) · §3-3-4 · 제거 날짜를 INVENTORY 2절에 적었다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="sb57-dc-voltage"><span><strong>경로 통과</strong> — 전원을 넣은 채 CN11-30 의 DC 전압을 제거 <strong>전</strong>과 <strong>후</strong>에 각각 재서 두 값을 적었다(값이 추정과 달라도 적었으면 통과다)
+          <span class="sub">판정 수단: DMM DC 전압 · §3-3-4 · 적은 값: 전 ____ V → 후 ____ V</span></span></label></li>
+        <li><label><input type="checkbox" data-key="no-wire-list-written"><span><strong>경로 통과</strong> — 결선 금지 목록 한 장을 썼고 §3-4-4 의 일곱 가지가 전부 들어 있다. 목록은 보드를 올려 둔 자리 옆에 있다
+          <span class="sub">판정 수단: 내 목록과 §3-4-4 의 대조</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+      <p class="small">이 쪽의 체크가 다 차도 SB57 의 확인은 3단 중 2단까지다 — 셋째 단(PA1 을 GPIO 로 구동해 CN11-30 에서 본다)은 <a href="fw-09-encoder.html">fw-09</a>의 입구에 있다.</p>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td>표 7 에서 PC2 · PC3 행을 찾았는데 LQFP144 열이 <code>-</code> 다</td><td>LQFP144 에는 <code>PC2_C</code> · <code>PC3_C</code> 만 있다. UM 표 20 · 표 22 의 "PC2", "PC3" 표기는 Nucleo-144 공통 서술이다</td><td>표 7 에서 핀 번호 28 · 29 의 행을 본다</td><td>§2-3</td></tr>
+          <tr><td>표 8 에서 <code>ADC3_INP9</code> 를 아무리 찾아도 없다</td><td>ADC 입력은 AF 가 아니라 additional function 이다 — 표 7 의 마지막 열에 있다</td><td>표 7 의 PF4 행 "Additional functions" 열</td><td>§1 의 용어 표 · §3-1-3 의 2번</td></tr>
+          <tr><td>GND 끼리(0번)인데 불통이다</td><td>핀을 잘못 셌다(홀수 줄 ↔ 짝수 줄을 바꿨거나 1번 핀의 방향이 반대다). 또는 탐침이 Zio 소켓 안의 접점에 닿지 않았다</td><td>Zio 에 수 점퍼선을 꽂고 그 끝에서 다시 잰다. CN8-11 ↔ CN8-13 처럼 가까운 쌍부터</td><td>§3-2-3 의 2 · 3번</td></tr>
+          <tr><td>"도통"을 기대한 Morpho ↔ Zio 줄이 불통이다(예: CN12-38 ↔ CN10-7)</td><td>그 SB 가 내 보드에서 열려 있다 — 굵은 글씨(기본값 표시)가 없는 행들이다. 또는 핀을 잘못 셌다</td><td>0번을 다시 통과시킨 뒤 그 줄만 다시. 그래도 불통이면 사실로 기록한다</td><td>§2-5 (Morpho 쪽으로 우회) · §3-2-4</td></tr>
+          <tr><td>3V3 를 쟀는데 5 V 가 나온다</td><td>CN8-7 이 아니라 그 <strong>바로 아래 CN8-9</strong> 를 짚었다</td><td>CN8-3(IOREF) · CN8-5(NRST) · CN8-7(3V3) · CN8-9(5 V) 순으로 다시 센다</td><td>§2-6 — 이 실수를 부품을 달기 전에 해 보는 것이 11 · 12번의 목적이다</td></tr>
+          <tr><td>SB57 제거 뒤에도 두 패드가 모두 CN11-30 과 도통이다</td><td>덜 떼어졌다(조각이 남아 패드를 잇고 있다) 또는 다른 SB 를 뗐다</td><td>실크 번호를 다시 읽는다. 떼어 낸 조각을 회수했는지 본다</td><td>§3-3-3 의 1 · 4번</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. (4중 검색) 실습에서 다루지 않은 핀 하나 — WT901 의 TX 를 받는 <code>USART6_RX</code> = PG9 — 를 네 군데에서 찾아 적어 보라: DS 표 7 → DS 표 8 → UM 표 14 · 표 18~22 → CubeMX DB</summary>
+        <div class="ans"><p>이 쪽은 HAL 콜백을 쓰지 않으므로, 다른 쪽의 "헤더 → <code>__weak</code> → 호출 시점 → 예제" 네 걸음을 <strong>핀</strong>에 맞춘 것이다. 찾는 순서와 각 걸음에서 알게 되는 것:</p>
+        <pre><code class="lang-text">① DS13313 표 7 (핀 번호 순)   PG9 = LQFP144 핀 124 · FT_h · USART6_RX 가 그 행에 있다     p.68
+② DS13313 표 8 (포트 순)      PG9 행에서 USART6_RX 가 놓인 열 = AF7                       p.84
+③ UM2407 표 22                PG9 = CN11-63. 표 18~21(Zio)에는 PG9 가 없다 → Morpho 전용
+   UM2407 표 14                "PG9" 를 검색하면 SB12 · SB19 행이 걸린다 — 그러나 그것은
+                               ST-LINK 칩(STM32F723)의 PG9 다. 타깃 H723 의 PG9 에 걸린 SB 는 없다
+④ CubeMX DB (§3-1-3 의 명령, SIG=USART6_RX)
+      (가)  PC7(97)  PG9(124)
+      (나)  Name="PC7"&gt; …GPIO_AF7_USART6…      Name="PG9"&gt; …GPIO_AF7_USART6…</code></pre>
+        <p>(위 값은 2026-09-22 에 DS13313 Rev 5 · UM2407 Rev 6 · CubeMX 6.18.1 에서 직접 확인한 것이다.) ①은 "그 핀이 그 신호를 <strong>낼 수 있는가</strong>와 전기 조건", ②는 "생성 코드의 <code>GPIO_AFx_…</code> 의 x", ③은 "보드에서 어디로 나오고 누구와 나눠 쓰는가", ④는 "후보가 몇인가"를 알려 준다.
+        후보가 PC7 과 PG9 둘뿐이고 PC7 은 TIM8_CH2(LPWM_FR)가 쓰므로 PG9 밖에 없다. ③의 함정 — 검색에 걸린 "PG9" 가 <strong>다른 칩의 PG9</strong> — 은 문장을 읽지 않으면 놓친다.</p></div></details>
+      <details class="quiz"><summary>2. 엔코더를 별도의 5 V 레일로 급전했다. Nucleo 의 USB 를 뽑는 순간 PA15 와 PA0 에서 각각 어떤 정격이 깨지는가?</summary>
+        <div class="ans"><p>USB 를 뽑으면 VDD = 0 V 이므로 FT 핀의 입력 절대 최대는 Min(0 + 4.0, 6) = <strong>4.0 V</strong> 가 된다(DS 표 9). 엔코더는 5 V 레일로 살아 있으니 A/B 출력의 HIGH 가 그 한도를 넘을 수 있다 — PA0 · PA15 둘 다 해당한다.
+        PA15 는 하나가 더 있다: 리셋 구간에 JTDI 풀업이 켜져 있어(RM 11.3.1절) Nucleo 가 <strong>켜져 있을 때조차</strong> 각주 4("4 V 를 넘기려면 내부 풀업 · 풀다운이 꺼져 있어야 한다")를 어긴다.
+        그래서 "전부 FT 니까 5 V 급전도 된다"는 성립하지 않는다. 같은 3V3 레일에서 따면 센서가 MCU 와 같이 꺼진다.</p></div></details>
+      <details class="quiz"><summary>3. "아날로그 입력 6개는 Arduino A0~A5 에 꽂는다"가 이 보드에서 왜 성립하지 않는가? UM 만 봐서는 왜 알 수 없었는가?</summary>
+        <div class="ans"><p>여섯 채널을 한 인스턴스(ADC3)에 모으려는데 A0(PA3) · A3(PB1)은 <code>ADC12_…</code> 즉 ADC1/ADC2 전용이라 ADC3 에 없다. A2 · A4 는 UM 이 PC3 · PC2 라 적었지만 LQFP144 에는 <code>PC3_C</code> · <code>PC2_C</code>(TT_a, 주입 민감도 0 mA 군)만 있어 클램프를 달 신호의 자리로 맞지 않는다.
+        UM 표 20 은 핀 이름과 채널 이름만 적고, 패키지별 핀 이름 · 핀 구조는 DS 표 7 에만 있다 — <strong>보드 문서와 칩 문서를 같이 펴야</strong> 보인다.
+        PA5 → PA15 도 같은 꼴이다: TT_ha 와 주입 전류 −0/0 mA 는 DS 표 7 · 표 10 에만 있다.</p></div></details>
+      <details class="quiz"><summary>4. SB57 을 떼지 않고 "부팅하자마자 PHY 를 파워다운시키는 코드"로 해결하면 무엇이 남는가?</summary>
+        <div class="ans"><p>UM 7.6.7절 Note 2 가 그 방법을 적고 있다(PHY 레지스터 0x00 의 bit 11). 남는 것은 셋이다. ① MDIO 로 레지스터를 쓰려면 PA2 · PC1 과 ETH MAC 을 살려야 한다.
+        ② <strong>리셋부터 그 코드가 돌 때까지는 50 MHz 가 PA1 에 나온다</strong> — 엔코더 출력과 맞붙는 구간이 매 부팅마다 생기고, 그 코드에 닿기 전에 펌웨어가 멈춰도 그렇다.
+        ③ 파워다운 중 그 핀이 Hi-Z 인지는 PHY 데이터시트가 없어 알 수 없다 [확인불가]. SB57 을 떼면 셋 다 없어지는 대신 이더넷을 잃고 되돌리기 어렵다 — 이 프로젝트는 이더넷을 쓰지 않는다.</p></div></details>
+      <details class="quiz"><summary>5. Morpho ↔ Zio 도통으로 SB 를 재는 방법은 어떤 전제 위에 서 있는가? 이 방법으로 <strong>잴 수 없는</strong> SB 를 둘 들어 보라</summary>
+        <div class="ans"><p>전제는 "Zio 핀은 SB 를 거쳐 MCU 에 닿고 Morpho 핀은 MCU 에 직결이다"다. 앞쪽은 UM 표 14 의 문장에서 확정이고, 뒤쪽은 그 귀결인 <strong>추정</strong>이다 — PD8/PD9 · PC8/PC9 · PH0/PH1 · PC14/PC15 처럼 Morpho 쪽에 SB 가 있는 예외도 표 14 에 있다.
+        잴 수 없는 것: 두 끝이 모두 헤더로 나오지 않는 SB — SB32(PB3 ↔ ST-LINK 의 SWO 입력), SB45(ST-LINK 의 MCO ↔ PH0), SB12 · SB19(VCP). 패드를 직접 재거나 <strong>기능</strong>(클럭이 서는가 · 글자가 나오는가)으로 확인한다.
+        전제가 추정인 방법은 답을 아는 자리에서 먼저 시험한다 — §3-2 의 0번(GND)이 그것이다.</p></div></details>
+      <details class="quiz"><summary>6. (일부러 틀리면) MOTOR_EN 점퍼선이 CN10-2 가 아니라 한 칸 옆 CN10-1 에 꽂혔다. 어느 쪽에서, 어떤 모습으로 드러나는가?</summary>
+        <div class="ans"><p>CN10-1 은 AVDD(3.3 V)다. EN 네트가 MCU 와 무관하게 늘 HIGH 가 된다. 결선 직후의 DMM 확인을 건너뛰었다면 아무 증상이 없다가, 전원 시퀀스를 처음 돌리는 <a href="fw-11-power-sequence.html">fw-11</a>에서
+        <strong>사전충전이 끝나지 않고 버스 전압이 약 5 V 에서 멈추는</strong> 모습으로 나타난다 — EN 이 HIGH 면 BTS7960 여덟 칩이 사전충전 저항이 줄 수 있는 전류를 다 먹는다(<code>hardware/INVENTORY.md</code> 6절 "EN ↔ 사전충전 충돌", 1세대 2026-07-17 기록의 5.1 V).
+        증상이 난 곳(전원부)과 원인(헤더의 한 칸)이 멀다. 막는 법은 결선 직후에 "PG12 = LOW 일 때 EN 네트 = 0 V" 를 DMM 으로 보는 것이다.</p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>체크가 다 찼으면</strong> → <a href="fw-02-toolchain.html">fw-02</a> (툴체인과 빈 프로젝트). 거기서 CubeMX 의 Debug 를 Serial Wire 로 두고 PB3 의 핀 잠금을 푸는 설정이 §2-2 의 "PA15 에 붙은 조건"을 닫는다.</li>
+          <li><strong>DMM 이 아직 없으면</strong> → §3-1 과 §3-4 만 닫고 fw-02 로 간다. fw-02 ~ <a href="fw-07-memory-dma.html">fw-07</a>은 Nucleo 와 USB 케이블만으로 된다. 단 <strong>점퍼선을 하나라도 꽂기 전</strong>(<a href="fw-08-pwm-safe-output.html">fw-08</a>)에는 이 쪽으로 돌아와 §3-2 · §3-3 을 닫는다.</li>
+          <li><strong>SB57 을 아직 떼지 않기로 했으면</strong> → <a href="fw-09-encoder.html">fw-09</a>만 막힌다. FR 바퀴의 엔코더를 PA1 에 잇지 않는 한 다른 쪽은 영향을 받지 않는다.</li>
+          <li>이 쪽에서 채운 값 — 스티커 세 글자 · SB57 제거 날짜 · 제거 후 불통 확인 — 을 <code>hardware/INVENTORY.md</code> 2절 "솔더 브리지"의 "내 보드" 줄에 적었는가. SB 점검표에서 기대와 달랐던 줄이 있으면 같은 자리에 한 줄로 남긴다.</li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>
