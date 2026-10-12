@@ -54,7 +54,7 @@
     { id: 'fw-19', file: 'fw-19-bench-acceptance.html', num: 'F19', title: '모듈 정리와 벤치 수용 시험', group: 'fw' },
     { id: 'fw-20', file: 'fw-20-after-assembly.html', num: 'F20', title: '조립 후 마무리', group: 'fw' },
     { id: 'l-00', file: 'l-00-map.html', num: 'L0', title: '지도와 준비', group: 'lidar' },
-    { id: 'l-01', file: 'l-01-link.html', num: 'L1', title: '살아 있는가', group: 'lidar' },
+    { id: 'l-01', file: 'l-01-link.html', num: 'L1', title: '응답하는가', group: 'lidar' },
     { id: 'l-02', file: 'l-02-device-id.html', num: 'L2', title: '기기에게 묻는다', group: 'lidar' },
     { id: 'l-03', file: 'l-03-one-point.html', num: 'L3', title: '5바이트를 손으로 판다', group: 'lidar' },
     { id: 'l-04', file: 'l-04-one-turn.html', num: 'L4', title: '한 바퀴와 기록 파일', group: 'lidar' },

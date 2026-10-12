@@ -15,30 +15,40 @@
 
       <p class="kicker">06 · MCU 브리지</p>
       <h1>MCU 브리지를 C++ 로 쓴다 — <code>/cmd_vel</code>, <code>/odom</code>, <code>/imu/data_raw</code></h1>
-      <p class="lead">ROS 와 물리 세계가 처음 만나는 곳이다. 이 프로젝트에서 가장 긴 단계이고, 04 단계에서 익힌 C++ 노드 패턴이 처음으로 <em>진짜 일</em>을 한다.
+      <p class="lead">ROS 와 물리 세계가 처음 연결되는 곳이다. 이 프로젝트에서 가장 긴 단계이고, 04 단계에서 익힌 C++ 노드 패턴을 처음으로 <em>예제가 아닌 실제 기능</em>(시리얼 통신 · 오도메트리 · IMU 변환)에 쓴다.
       저장소의 Python 판 <code>rpi5_mcu_bridge</code> 는 <strong>구조를 보여 주는 참고 구현</strong>이고, 이 단계의 산출물은 당신이 쓰는 <code>rpi5_mcu_bridge_cpp</code> 다.
-      MCU 는 전원·모터·엔코더·IMU 를 쥐고 제어와 안전의 전권을 가진 장치이며, 브리지는 그 장치의 언어를 ROS 의 언어로 번역하는 얇은 층이다.
-      이 쪽은 그 만남의 <strong>ROS 쪽 절반</strong>을 가짜 MCU 로 끝까지 만든다. 실물 MCU 와 만나는 것은 06b 다.</p>
+      MCU 는 전원·모터·엔코더·IMU 를 직접 다루고 제어와 안전의 전권을 가진 장치다. 브리지는 MCU 의 프레임 · 정수 단위와 ROS 의 메시지 · SI 단위 사이를 변환하는 얇은 층이다.
+      이 쪽은 MCU 와 ROS 의 연결 중 <strong>ROS 쪽 절반</strong>을 가짜 MCU 로 끝까지 만든다. 실물 MCU 와 연결하는 것은 06b 다.</p>
 
       <div class="goal">
-        <span class="label">이 단계가 끝나면</span>
-        <p>하드웨어를 하나도 꽂지 않은 Pi 에서, 당신이 C++ 로 직접 쓴 브리지가 <strong>가짜 MCU</strong>(<code>simulate:=true</code>)를 상대로 돈다.
-        <code>/cmd_vel</code> 을 주면 그만큼 <code>/odom</code> 과 TF(<code>odom → base_footprint</code>)가 갱신되고, 가짜 IMU 의 값이 <code>/imu/data_raw</code> 로 흐르고, 명령이 끊기면 0.5 s 뒤 브리지 워치독이 세운다.
-        <code>robot_localization</code> 의 EKF 가 구성돼 있어 <code>odom → base_footprint</code> 를 쏘는 노드는 EKF 하나뿐이다. <code>robot_params.yaml</code> 의 제원 세 값에는 출처가 적혀 있다(<code>NOMINAL(…)</code>).
-        그리고 <strong>가짜 MCU 가 검증하지 못하는 것</strong>을 목록으로 말할 수 있다 — 그 목록이 06b 의 목차다.</p>
-        <p class="small">이 쪽의 완료 조건이 <em>아닌</em> 것: 실물 모터·두 IMU 비교·fault 주입 → 06b(실물 MCU 벤치 통합) / 직진 2 m·제자리 회전 캘리브레이션과 EKF 의 효과 확인 → <a href="09a-assembly-gate.html">09a</a> / MCU 펌웨어 → MCU 펌웨어 가이드(Mac 차선).
-        이 쪽의 체크포인트는 <strong>하드웨어 0개로 100 %</strong> 가 된다.</p>
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>하드웨어를 하나도 꽂지 않은 Pi 에서, 당신이 C++ 로 직접 쓴 브리지가 <strong>가짜 MCU</strong>(<code>simulate:=true</code>)를 상대로 실행된다. 이 쪽이 끝나면 다음 여섯 가지를 확인할 수 있다.</p>
+        <ul>
+          <li><code>/cmd_vel</code> 을 발행하면 그 명령만큼 <code>/odom</code> 과 TF(<code>odom → base_footprint</code>)가 갱신된다.</li>
+          <li>가짜 IMU 의 값이 <code>/imu/data_raw</code> 로 발행된다.</li>
+          <li>명령이 끊기면 0.5 s 뒤 브리지 워치독이 속도 명령을 0 으로 바꿔 로봇을 멈춘다.</li>
+          <li><code>robot_localization</code> 의 EKF 가 구성돼 있어 <code>odom → base_footprint</code> 를 발행하는 노드는 EKF 하나뿐이다.</li>
+          <li><code>robot_params.yaml</code> 의 제원 세 값에는 출처가 적혀 있다(<code>NOMINAL(…)</code>).</li>
+          <li><strong>가짜 MCU 가 검증하지 못하는 것</strong>을 목록으로 말할 수 있다. 그 목록이 06b 의 목차다.</li>
+        </ul>
+        <p class="small">이 쪽의 완료 조건이 <em>아닌</em> 것은 다음 셋이고, 각각 다른 쪽에서 한다.</p>
+        <ul class="small">
+          <li>실물 모터 · 두 IMU 비교 · fault 주입 → 06b(실물 MCU 벤치 통합)</li>
+          <li>직진 2 m · 제자리 회전 캘리브레이션과 EKF 의 효과 확인 → <a href="09a-assembly-gate.html">09a</a></li>
+          <li>MCU 펌웨어 → MCU 펌웨어 가이드(Mac 차선)</li>
+        </ul>
+        <p class="small">이 쪽의 체크포인트는 <strong>하드웨어 0개로 100 %</strong> 가 된다.</p>
       </div>
 
       <div class="meta">
-        <div><span class="k">그래프에서의 위치</span><code>mcu_bridge</code> 상자(제어 계층) — ROS 와 물리 세계가 만나는 경계. IMU 는 이 상자를 거쳐 들어온다</div>
+        <div><span class="k">그래프에서의 위치</span><code>mcu_bridge</code> 상자(제어 계층) — ROS 와 물리 세계가 연결되는 경계. IMU 는 이 상자를 거쳐 들어온다</div>
         <div><span class="k">전제</span>04 (C++ 노드), 05 (TF 트리), 06a (프로토콜 결정과 계약 v2)</div>
         <div><span class="k">수행 환경</span><span class="tag sim">SIM</span> Pi + 컨테이너, 가짜 MCU — 필요한 하드웨어 0개. <span class="tag bench">벤치</span> §3-7·§3-8 은 06b 로 옮겼고, <span class="tag asm">조립 후</span> 가 붙은 곳은 읽기만 한다</div>
         <div><span class="k">예상 소요</span>ROS 트랙(§3-1~3-5) 4~5시간 + EKF 구성(§3-10). 펌웨어·실물 통합·캘리브레이션의 시간은 이 쪽에 들어 있지 않다 (펌웨어 가이드 · 06b · <a href="09a-assembly-gate.html">09a</a>)</div>
         <div><span class="k">언어</span><span class="tag cpp">C++</span> 브리지 · <span class="tag py">Python</span> 참고 구현 (C/HAL 펌웨어는 MCU 펌웨어 가이드로 이전 중 — §3-6)</div>
       </div>
 
-      <p>이 쪽이 전체 흐름에서 서 있는 자리다. 차선이 둘이고, 만나는 곳은 06b 하나다. 그림의 쪽은 <strong>전부 왼쪽 목차에 있다</strong> — 펌웨어 차선은 F0 ~ F20, 합류 뒤의 관문은 <a href="09a-assembly-gate.html">09a</a> 다.</p>
+      <p>이 쪽이 전체 흐름에서 차지하는 자리다. 차선이 둘이고, 두 차선이 합류하는 곳은 06b 하나다. 그림의 쪽은 <strong>전부 왼쪽 목차에 있다</strong> — 펌웨어 차선은 F0 ~ F20, 합류 뒤의 관문은 <a href="09a-assembly-gate.html">09a</a> 다.</p>
       <pre class="diagram"><code>   Pi 차선 (Pi + 컨테이너)                             Mac 차선 (Mac + Nucleo + 책상 위 부품)
 
    05 → 06a → 06 가짜 MCU  ◄── 이 쪽                   F0 → F1 → … → F19 벤치 수용 시험
@@ -55,13 +65,13 @@
                             (F20 조립 후 펌웨어 마무리는 관문 안에서 연다)</code></pre>
       <div class="callout warn"><span class="ct">두 차선은 서로 기다리지 않는다 — 다만 연결하기 전에 각자 검증한다</span>
         <p>이 쪽(06)은 <strong>Pi 차선</strong>에 있고 가짜 MCU 로 끝난다(§3-1~3-5 와 §3-10 의 EKF 구성, <code>simulate:=true</code>). MCU 펌웨어는 <strong>Mac 차선</strong>의 <a href="fw-00-map.html">MCU 펌웨어 가이드</a>(F0 부터, Pi 없이)에서 따로 만든다.
-        두 차선이 공유하는 것은 계약 v2(06a §4) 하나뿐이라 서로를 기다릴 이유가 없다 — 이 쪽을 끝냈으면 펌웨어가 어디까지 왔든 07 로 가고, 펌웨어는 그 옆에서 병행한다.</p>
-        <p>둘이 만나는 곳은 <a href="06b-bench-integration.html">06b · 실물 MCU 벤치 통합</a>이고, 여는 조건은 <strong>이 쪽의 체크포인트 100 % 와 펌웨어의 F19(벤치 수용 시험) 통과 둘 다</strong>다.
+        두 차선이 공유하는 것은 계약 v2(06a §4) 하나뿐이라 한 차선이 다른 차선의 완료를 기다릴 이유가 없다. 이 쪽을 끝냈으면 펌웨어의 진행 정도와 관계없이 07 로 가고, 펌웨어 작업은 07 이후의 쪽과 병행한다.</p>
+        <p>두 차선이 합류하는 곳은 <a href="06b-bench-integration.html">06b · 실물 MCU 벤치 통합</a>이고, 시작 조건은 <strong>이 쪽의 체크포인트 100 % 와 펌웨어의 F19(벤치 수용 시험) 통과 둘 다</strong>다.
         한쪽이라도 미완성인 채 연결하면 문제가 났을 때 원인이 ROS 인지, 펌웨어인지, 배선인지 구분할 수 없다.
         각 차선을 따로 "확실히 맞다"로 만들어 두면 06b 의 의심 범위는 <em>연결</em>로 좁혀진다. 근거는 <a href="06a-mcu-protocol.html">06a 의 두 트랙 절</a>.</p>
       </div>
 
-      <h2>1. 개요 — 이 노드가 서 있는 자리</h2>
+      <h2>1. 개요 — 이 노드의 자리</h2>
       <pre class="diagram"><code>   상위 스택 (teleop, Nav2)                                        하드웨어 (전권은 MCU)
    ───────────────────────                                        ──────────────────
          "0.3 m/s 로 전진"
@@ -82,12 +92,12 @@
       TF odom→base_footprint 는 EKF 가 발행 (§3-10) — EKF 를 안 쓸 때만 브리지가 발행
       "출발점 기준 (1.2, 0.3), 15° 돌아 있음"</code></pre>
 
-      <p><strong>설계 원칙: 단위 번역은 한 군데서만.</strong> ROS 세계는 m/s, rad/s, m/s² 만 안다. 하드웨어는 PWM 과 틱과 정수 mg 만 안다.
-      이 번역이 여러 곳에 흩어지면(예: 펌웨어에서 한 번 부호를 뒤집고 브리지에서 또 뒤집고) 시스템을 이해할 수 없게 된다.</p>
-      <p><strong>두 번째 원칙: 제어와 안전의 전권은 MCU 에 있다.</strong> 저전압·과전류·과경사·워치독은 MCU 가 스스로 출력을 끊고 <em>결과만</em> Pi 에 알린다. Pi 는 그 보고를 받아 목표를 취소할 뿐, 안전을 Pi 에 의존하지 않는다.</p>
+      <p><strong>설계 원칙: 단위 번역은 한 군데서만.</strong> ROS 쪽은 m/s, rad/s, m/s² 만 쓴다. 하드웨어 쪽은 PWM 과 틱과 정수 mg 만 쓴다.
+      단위 번역이 여러 곳에 흩어지면(예: 펌웨어에서 한 번 부호를 뒤집고 브리지에서 또 뒤집고) 시스템을 이해할 수 없게 된다.</p>
+      <p><strong>두 번째 원칙: 제어와 안전의 전권은 MCU 에 있다.</strong> 저전압·과전류·과경사·워치독은 MCU 가 Pi 의 명령 없이 직접 출력을 끊고 <em>결과만</em> Pi 에 알린다. Pi 는 그 보고를 받아 목표를 취소할 뿐이고, 안전 동작은 Pi 에 의존하지 않는다.</p>
 
       <h3>1-1. 06a 에서 결정한 계약 v2</h3>
-      <p>이 문서는 <strong>B(커스텀 시리얼)</strong> 를 기준으로 쓰여 있다. A(micro-ROS)를 골랐다면 §2 의 운동학·오도메트리·캘리브레이션과 §3-6 의 펌웨어 제어 모듈은 그대로 유효하고, §3-2~3-4 의 통신 계층만 달라진다. 06a 의 계약 v2 절과 같은 내용이다.</p>
+      <p>이 문서는 <strong>B(커스텀 시리얼)</strong> 를 기준으로 쓰여 있다. A(micro-ROS)를 골랐다면 §2 의 운동학·오도메트리·캘리브레이션과 §3-6 의 펌웨어 제어 모듈은 그대로 유효하고, §3-2~3-4 의 통신 계층만 달라진다. 아래 프레임 그림과 표는 06a 의 계약 v2 절과 같은 내용이다.</p>
       <pre class="diagram"><code>  공통 프레임 (모든 타입 동일)
   ┌──────┬──────┬──────┬──────┬─────────────────┬──────┐
   │ 0xAA │ 0x55 │ TYPE │ LEN  │ PAYLOAD (LEN B) │ CRC8 │      CRC 범위 = TYPE 부터 PAYLOAD 끝까지
@@ -96,7 +106,7 @@
         <thead><tr><th>TYPE</th><th>방향·주기</th><th>PAYLOAD (LEN)</th><th>단위</th></tr></thead>
         <tbody>
           <tr><td><code>0x01</code> 속도 명령</td><td>Pi → MCU, 50 Hz (20 ms)</td><td><code>v_left i16, v_right i16</code> (4)</td><td>mm/s</td></tr>
-          <tr><td><code>0x81</code> 상태</td><td>MCU → Pi, 50 Hz (20 ms)</td><td><code>l_tick i32, r_tick i32, batt_mv u16, current_ma u16, fault u8, tick_ms u32</code> (17)</td><td>틱 누적(쪽당 앞뒤 평균 — 바퀴별 카운트는 MCU 안의 바퀴별 PID 가 쓴다), mV, mA(미구현이면 0), 비트(아래 표), ms</td></tr>
+          <tr><td><code>0x81</code> 상태</td><td>MCU → Pi, 50 Hz (20 ms)</td><td><code>l_tick i32, r_tick i32, batt_mv u16, current_ma u16, fault u8, tick_ms u32</code> (17)</td><td>틱 누적(좌 · 우 각각 앞뒤 평균 — 바퀴별 카운트는 MCU 안의 바퀴별 PID 가 쓴다), mV, mA(미구현이면 0), 비트(아래 표), ms</td></tr>
           <tr><td><code>0x82</code> IMU</td><td>MCU → Pi, 100~200 Hz (10~5 ms)</td><td><code>sensor_id u8, ax ay az i16, gx gy gz i16, tick_ms u32</code> (17)</td><td>id 0=WT901 1=BNO055, mg, <strong>0.1 °/s</strong>, ms</td></tr>
           <tr><td><code>0x83</code> 이벤트</td><td>MCU → Pi, 상태가 <em>바뀔 때</em> 1회 (유지는 상태 프레임의 fault 비트)</td><td><code>code u8, detail u16, tick_ms u32</code> (7)</td><td>코드는 아래 표</td></tr>
           <tr><td><code>0x02</code> 설정 / <code>0x84</code> 응답 (선택)</td><td>Pi → MCU / MCU → Pi</td><td><code>key u8, value i32</code> (5)</td><td>PID 게인·워치독 시간 등. 처음에는 구현하지 않는다</td></tr>
@@ -117,10 +127,10 @@
       <div class="tbl"><table class="compact">
         <thead><tr><th>항목</th><th>값</th><th>근거</th></tr></thead>
         <tbody>
-          <tr><td>물리 연결</td><td>ST-LINK/V3E 가상 COM 포트 → <code>/dev/ttyACM0</code> (실측 <code>0483:374e</code>, USB 포트 1-1.1) → udev 로 <code>/dev/mcu</code></td><td>USB 케이블 하나로 플래싱과 통신을 같이 한다. 대안은 Pi 5 GPIO 14/15 직결(<code>dtoverlay=uart0-pi5</code> → <code>/dev/ttyAMA0</code>, 3.3 V, USART3 대신 남는 USART) — printf 디버그 채널이 필요하거나 460800 에서 CRC 오류가 측정될 때만. 제어 루프가 MCU 에 있어 링크 지연은 결정 요인이 아니다</td></tr>
-          <tr><td>보드레이트</td><td><strong>460800</strong>, 8N1, 흐름제어 없음</td><td>명령 9 B × 50 Hz = 0.45 kB/s, 상태 22 B × 50 Hz = 1.1 kB/s, IMU 22 B × 200 Hz × 2 센서 = 8.8 kB/s → 합계 ≈ 10 kB/s. 115200 bps(≈11.5 kB/s)면 90 % 로 빠듯해 지터가 생기고, 460800 bps(≈46 kB/s)면 22 %. 병목이면 921600. VCP 라 값은 자유 (06a §4-3)</td></tr>
+          <tr><td>물리 연결</td><td>ST-LINK/V3E 가상 COM 포트 → <code>/dev/ttyACM0</code> (실측 <code>0483:374e</code>, USB 포트 1-1.1) → udev 로 <code>/dev/mcu</code></td><td>USB 케이블 하나로 플래싱과 통신을 같이 한다. 대안은 Pi 5 GPIO 14/15 직결이다(<code>dtoverlay=uart0-pi5</code> → <code>/dev/ttyAMA0</code>, 3.3 V, USART3 대신 남는 USART). 이 대안은 printf 디버그 채널이 필요하거나 460800 에서 CRC 오류가 측정될 때만 쓴다. 제어 루프가 MCU 에 있어 링크 지연은 결정 요인이 아니다</td></tr>
+          <tr><td>보드레이트</td><td><strong>460800</strong>, 8N1, 흐름제어 없음</td><td>명령 9 B × 50 Hz = 0.45 kB/s, 상태 22 B × 50 Hz = 1.1 kB/s, IMU 22 B × 200 Hz × 2 센서 = 8.8 kB/s → 합계 ≈ 10 kB/s. 115200 bps(≈11.5 kB/s)면 90 % 로 빠듯해 지터가 생기고, 460800 bps(≈46 kB/s)면 22 %. 병목이면 921600. VCP 라서 보드레이트를 제약 없이 고를 수 있다 (06a §4-3)</td></tr>
           <tr><td>단위</td><td>속도 <code>i16</code> mm/s · 엔코더 <code>i32</code> 누적 · 가속도 <code>i16</code> mg · 각속도 <code>i16</code> 0.1 °/s (±32 g / ±3276 °/s)</td><td>float 를 보내지 않는다. 센서 범위(±16 g, ±2000 °/s)가 잘리지 않는다. 브리지가 SI 로 변환: m/s² = mg × 9.80665 / 1000, rad/s = 0.1 °/s × π / 1800</td></tr>
-          <tr><td>무결성</td><td>CRC-8, 다항식 0x07, 초기값 0x00, 반사 없음, TYPE 부터 PAYLOAD 끝까지</td><td>모터 노이즈로 깨진 바이트가 속도 명령이 되면 로봇이 튀어나간다</td></tr>
+          <tr><td>무결성</td><td>CRC-8, 다항식 0x07, 초기값 0x00, 반사 없음, TYPE 부터 PAYLOAD 끝까지</td><td>모터 노이즈로 깨진 바이트가 속도 명령으로 해석되면 로봇이 명령하지 않은 속도로 움직인다</td></tr>
           <tr><td>시각</td><td>모든 MCU→Pi 프레임에 <code>tick_ms</code>(MCU 기동 후 ms)</td><td>엔코더 샘플과 IMU 샘플을 같은 시간축에 놓는다. Pi 가 ROS 시각으로 환산한다</td></tr>
           <tr><td>워치독</td><td>MCU: 200 ms 무명령 → 정지. 브리지: <code>cmd_timeout_s</code>=0.5 s → 0 발행</td><td>서로 독립적인 2단 방어</td></tr>
         </tbody>
@@ -132,9 +142,9 @@
         <tbody>
           <tr><td>좌/우 목표 속도 수신</td><td>✅</td><td>로봇이 못 움직임</td></tr>
           <tr><td><strong>엔코더 카운트 송신</strong></td><td>✅</td><td><strong><code>/odom</code> 불가 → SLAM/Nav2 불가</strong></td></tr>
-          <tr><td><strong>워치독 (N ms 무명령 → 정지)</strong></td><td>✅</td><td><strong>Pi 가 죽거나 USB 가 빠지면 로봇이 계속 달림</strong></td></tr>
+          <tr><td><strong>워치독 (N ms 무명령 → 정지)</strong></td><td>✅</td><td><strong>Pi 가 멈추거나 USB 가 빠지면 로봇이 계속 달림</strong></td></tr>
           <tr><td>속도 PID (폐루프)</td><td>사실상 필수</td><td>직진인데 조금씩 휨 (§3-12)</td></tr>
-          <tr><td>IMU 수신·송신 (WT901 UART, BNO055 I2C)</td><td>✅ (이 프로젝트)</td><td>회전 추정이 휠 슬립에 흔들림. 4WD 에서 특히</td></tr>
+          <tr><td>IMU 수신·송신 (WT901 UART, BNO055 I2C)</td><td>✅ (이 프로젝트)</td><td>회전 추정에 휠 슬립 오차가 섞임. 4WD 에서 특히 큼</td></tr>
           <tr><td>배터리 전압·전류 송신</td><td>✅</td><td>방전·과전류 급정지를 MCU 가 판단할 근거가 없음</td></tr>
           <tr><td>안전 상태기계 + fault 비트 + 이벤트</td><td>✅</td><td>Pi 가 로봇이 멈춘 이유를 모름</td></tr>
         </tbody>
@@ -150,14 +160,14 @@
 
      v_left  = v − ω·L/2
      v_right = v + ω·L/2</code></pre>
-      <p><strong>손으로 검산해 보십시오.</strong></p>
+      <p><strong>손으로 검산해 본다.</strong></p>
       <ul>
         <li>직진 (v=0.3, ω=0) → v_left = v_right = 0.3. 두 바퀴가 같다. ✓</li>
         <li>제자리 회전 (v=0, ω=1.0, L=0.145) → v_left = −0.0725, v_right = +0.0725. 크기 같고 방향 반대. ✓</li>
         <li>좌회전 (ω &gt; 0, 반시계가 +) → 오른쪽 바퀴가 더 빠르다. 로봇 좌표계는 y 가 왼쪽이므로 반시계 회전이 +yaw 다 (REP-103, 05 단계).</li>
       </ul>
       <p>이 프로젝트는 4륜 스키드 스티어다. <code>v_left</code> 는 왼쪽 두 바퀴의, <code>v_right</code> 는 오른쪽 두 바퀴의 <em>목표</em>이고 식은 바뀌지 않는다. 다만 바퀴 네 개는 각자 32비트 엔코더와 독립 PID 를 갖고, "보조 바퀴"는 없다.
-      회전할 때 바퀴가 옆으로 미끄러지므로(스키드 스티어) 회전량의 오도메트리는 믿을 것이 못 되고 그 자리를 IMU 가 메우며(§3-7, §3-10), 미끄러지는 바퀴 자체는 §3-6-9 의 슬립 억제가 실시간으로 출력을 줄인다.</p>
+      회전할 때 바퀴가 옆으로 미끄러지므로(스키드 스티어) 엔코더 오도메트리의 회전량은 정확하지 않다. 회전량은 IMU 로 보완하고(§3-7, §3-10), 미끄러지는 바퀴의 출력은 §3-6-9 의 슬립 억제가 실시간으로 줄인다.</p>
 
       <h3>2-2. 정운동학과 오도메트리 적분 (엔코더 → 위치)</h3>
       <pre class="diagram"><code>   Δs = (Δd_right + Δd_left) / 2          ← 이동 거리
@@ -181,19 +191,19 @@
       <div class="tbl"><table>
         <thead><tr><th>이유</th><th>이 노드에서 구체적으로</th></tr></thead>
         <tbody>
-          <tr><td><strong>고정 주기의 결정성</strong></td><td>인터프리터·GC 가 없어 <code>create_wall_timer</code> 의 지터가 작다. dt 는 실측(<code>now() − prev</code>)으로 보정하지만, <em>명령 전송 간격</em>이 흔들리면 MCU 의 워치독·제어 주기와 박자가 어긋난다</td></tr>
-          <tr><td><strong>바이트 스트림 파싱</strong></td><td>헤더 동기·길이·CRC·리틀엔디안 해석은 바이트 배열 위에서 하는 일이다. C++ 은 그 일을 숨기지 않고 보여 준다 — 그것이 배울 내용이다. IMU 200 Hz 가 더해지면 초당 프레임이 250 개가 되어 파서의 효율도 의미가 생긴다</td></tr>
-          <tr><td><strong>Lock 이 필요 없다</strong></td><td>기본 실행기(<code>SingleThreadedExecutor</code>)는 콜백을 <strong>한 번에 하나씩 순서대로</strong> 돌린다. <code>on_cmd_vel</code> 과 두 타이머 콜백이 동시에 실행될 수 없으므로 Python 판의 <code>threading.Lock</code> 에 해당하는 것이 없다. (08b 이후 <code>MultiThreadedExecutor</code> 로 옮기면 그때 <code>std::mutex</code> 나 콜백 그룹이 필요해진다 — <a href="ref-rclcpp.html">부록 A · rclcpp 레퍼런스</a> §10)</td></tr>
+          <tr><td><strong>고정 주기의 결정성</strong></td><td>인터프리터·GC 가 없어 <code>create_wall_timer</code> 의 지터가 작다. dt 는 실측(<code>now() − prev</code>)으로 보정하지만, <em>명령 전송 간격</em>이 불규칙하면 MCU 의 워치독·제어 주기와 박자가 어긋난다</td></tr>
+          <tr><td><strong>바이트 스트림 파싱</strong></td><td>헤더 동기·길이·CRC·리틀엔디안 해석은 바이트 배열 위에서 하는 일이다. Python 의 <code>struct</code> 가 감추는 이 바이트 처리를 C++ 에서는 직접 코드로 쓴다. 이 바이트 처리가 이 쪽에서 배울 내용이다. IMU 200 Hz 가 더해지면 초당 프레임이 250 개가 되어 파서의 효율도 중요해진다</td></tr>
+          <tr><td><strong>Lock 이 필요 없다</strong></td><td>기본 실행기(<code>SingleThreadedExecutor</code>)는 콜백을 <strong>한 번에 하나씩 순서대로</strong> 실행한다. <code>on_cmd_vel</code> 과 두 타이머 콜백이 동시에 실행될 수 없으므로 Python 판의 <code>threading.Lock</code> 에 해당하는 것이 없다. (08b 이후 <code>MultiThreadedExecutor</code> 로 옮기면 그때 <code>std::mutex</code> 나 콜백 그룹이 필요해진다 — <a href="ref-rclcpp.html">부록 A · rclcpp 레퍼런스</a> §10)</td></tr>
           <tr><td><strong>Nav2·드라이버와 같은 언어</strong></td><td>09 단계에서 Nav2 의 소스를 읽어야 할 때, 이 노드가 그 첫 연습이다</td></tr>
         </tbody>
       </table></div>
-      <p>Python 판과 C++ 판의 대응을 미리 그려 두면 §3 의 코드가 낯설지 않다. Python 판은 구 프레임(고정 길이)을 쓰므로 바이트는 다르지만 구조는 같다.</p>
+      <p>Python 판과 C++ 판의 대응을 아래 표로 미리 보아 두면 §3 의 코드가 낯설지 않다. Python 판은 구 프레임(고정 길이)을 쓰므로 바이트는 다르지만 구조는 같다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>Python 판 (<code>mcu_bridge_node.py</code>)</th><th>C++ 판 (<code>rpi5_mcu_bridge_cpp</code>)</th></tr></thead>
         <tbody>
           <tr><td><code>struct.pack('&lt;Bhh', …)</code></td><td>바이트를 직접 조립 (<code>write_le16</code>)</td></tr>
           <tr><td><code>serial.Serial(port, baud, timeout)</code></td><td>POSIX <code>termios</code> (<code>serial_port.hpp</code>), 논블로킹 폴링</td></tr>
-          <tr><td><code>_read_state()</code> 의 헤더 찾기</td><td><code>FrameParser</code> 상태기계 — 바이트를 하나씩 먹여 완성된 프레임을 낸다</td></tr>
+          <tr><td><code>_read_state()</code> 의 헤더 찾기</td><td><code>FrameParser</code> 상태기계 — 바이트를 하나씩 넣어 완성된 프레임을 낸다</td></tr>
           <tr><td><code>threading.Lock()</code></td><td>없음 — 단일 스레드 실행기</td></tr>
           <tr><td><code>self.declare_parameter('port', '/dev/mcu')</code></td><td><code>declare_parameter&lt;std::string&gt;("port", "/dev/mcu")</code></td></tr>
           <tr><td><code>get_logger().warn(msg, throttle_duration_sec=2.0)</code></td><td><code>RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, …)</code></td></tr>
@@ -205,47 +215,48 @@
 
       <h3>2-5. 통신 설계에서 이해해야 할 여섯 가지</h3>
       <div class="callout why"><span class="ct">① 시리얼은 스트림이다 — 프레임 경계가 없다</span>
-        <p>TCP 처럼 시리얼에도 "메시지"라는 단위가 없다. 바이트가 그냥 흐른다. 노드가 중간부터 읽기 시작하면 어디가 프레임의 시작인지 모른다.
-        그래서 <strong>헤더 바이트(0xAA 0x55)를 만날 때까지 한 바이트씩 버리며 동기를 맞추고</strong>, TYPE 과 LEN 을 읽어 그만큼 더 받은 뒤 <strong>CRC 로 "이게 정말 프레임이었는지"</strong> 확인한다.
-        페이로드 안에 우연히 AA 55 가 나올 수 있다 — 그때 LEN 과 CRC 가 걸러 준다 (이해 확인 6번). 타입마다 길이가 다르므로 LEN 필드가 v1 보다 하나 더 있다.</p>
+        <p>TCP 처럼 시리얼에도 "메시지"라는 단위가 없다. 바이트가 경계 없이 이어서 도착한다. 노드가 중간부터 읽기 시작하면 어디가 프레임의 시작인지 알 수 없다.
+        그래서 <strong>헤더 바이트(0xAA 0x55)가 나올 때까지 한 바이트씩 버리며 동기를 맞추고</strong>, TYPE 과 LEN 을 읽어 그만큼 더 받은 뒤 <strong>CRC 로 "이게 정말 프레임이었는지"</strong> 확인한다.
+        페이로드 안에 우연히 AA 55 가 나올 수 있다. 그런 가짜 헤더는 LEN 과 CRC 검사에서 걸러진다 (이해 확인 6번). 타입마다 길이가 다르므로 LEN 필드가 v1 보다 하나 더 있다.</p>
       </div>
       <div class="callout why"><span class="ct">② <code>/odom</code> 은 RELIABLE, <code>/imu/data_raw</code> 는 BEST_EFFORT</span>
         <p>Nav2 의 <code>odom_smoother</code> 는 <code>SystemDefaultsQoS</code>(= RELIABLE)로 <code>/odom</code> 을 구독한다. 발행자가 BEST_EFFORT 면 <strong>연결 자체가 성립하지 않는다.</strong>
-        06 단계에서는 멀쩡해 보이다가 09 단계에서 조용히 실패한다. 반대로 IMU 는 초당 100~200 개가 오는 센서 스트림이라 놓친 샘플을 재전송받아 봐야 늦은 값이다 — <code>SensorDataQoS</code>(BEST_EFFORT)로 낸다.
-        <code>robot_localization</code> 은 odom·IMU 구독을 모두 <code>SensorDataQoS</code> 로 만들므로(<code>ros_filter.cpp</code> 의 <code>custom_qos</code>) 어느 쪽 발행자와도 연결된다 — RELIABLE 발행자 + BEST_EFFORT 구독자는 호환이다. 연결 뒤 <code>ros2 topic info -v</code> 로 양쪽 프로파일을 직접 본다.</p>
+        06 단계에서는 문제가 보이지 않다가 09 단계에서 오류 표시 없이 실패한다.</p>
+        <p>반대로 IMU 는 초당 100~200 개가 오는 센서 스트림이라 놓친 샘플을 재전송받아도 이미 늦은 값이다. 그래서 <code>SensorDataQoS</code>(BEST_EFFORT)로 발행한다.
+        <code>robot_localization</code> 은 odom·IMU 구독을 모두 <code>SensorDataQoS</code> 로 만들므로(<code>ros_filter.cpp</code> 의 <code>custom_qos</code>) 두 발행자와 모두 연결된다. RELIABLE 발행자와 BEST_EFFORT 구독자는 호환이다. 연결 뒤 <code>ros2 topic info -v</code> 로 양쪽 프로파일을 직접 본다.</p>
       </div>
       <div class="callout why"><span class="ct">③ 워치독은 양쪽에 있어야 한다</span>
-        <p>브리지의 워치독(<code>cmd_timeout_s</code>)은 "상위 노드가 명령을 안 보낼 때"를 막는다. 그런데 Pi 가 죽거나 USB 가 빠지면 <strong>브리지 노드 자체가 사라져서</strong> 아무 명령도 못 보낸다.
-        그때 MCU 가 마지막 속도를 유지하면 로봇은 계속 달린다. MCU 쪽 워치독이 최후의 보루다. 그리고 그 둘과 별개로 IWDG(하드웨어 워치독)가 펌웨어 자체가 멈춘 경우를 막는다.</p>
+        <p>브리지의 워치독(<code>cmd_timeout_s</code>)은 "상위 노드가 명령을 안 보낼 때"를 막는다. 그런데 Pi 가 멈추거나 USB 가 빠지면 <strong>브리지 노드 자체가 사라져서</strong> 아무 명령도 못 보낸다.
+        그때 MCU 가 마지막 속도를 유지하면 로봇은 계속 달린다. 이 경우를 막는 마지막 안전장치는 MCU 의 명령 워치독이다. 그리고 두 명령 워치독과 별개로 IWDG(하드웨어 워치독)가 펌웨어 자체가 멈춘 경우를 막는다.</p>
       </div>
       <div class="callout why"><span class="ct">④ 하나의 좌표계에는 부모가 하나뿐 — <code>publish_tf</code></span>
-        <p>05 단계의 철칙이다. §3-10 에서 <code>robot_localization</code> 의 EKF 가 <code>odom → base_footprint</code> 를 발행하게 되면 브리지는 같은 TF 를 쏘면 안 된다. 그때 <code>publish_tf:=false</code> 로 둔다.
+        <p>05 단계의 철칙이다. §3-10 에서 <code>robot_localization</code> 의 EKF 가 <code>odom → base_footprint</code> 를 발행하게 되면 브리지는 같은 TF 를 발행하면 안 된다. 그때 <code>publish_tf:=false</code> 로 둔다.
         <strong>그리고 URDF 의 루트가 <code>base_footprint</code> 이므로 <code>odom</code> 의 자식도 <code>base_footprint</code> 여야 한다.</strong> <code>base_link</code> 를 자식으로 두면 <code>base_link</code> 의 부모가 둘(URDF 의 <code>base_footprint</code>, 브리지의 <code>odom</code>)이 된다.</p>
       </div>
       <div class="callout why"><span class="ct">⑤ 공분산을 0 으로 두면 안 된다</span>
-        <p>휠 오도메트리는 회전 누적오차가 크다. 공분산을 0 으로 두면 EKF 가 이 값을 "완벽하다"고 믿어 IMU 를 무시한다. 정확한 값은 캘리브레이션 뒤에 사각형 주행 오차로 대략 추정하되, 처음에는 x·y 0.001, yaw 0.01 정도의 <em>겸손한</em> 값으로 시작한다. IMU 쪽도 마찬가지다 — 정지 바이어스 실험(§3-7)에서 잰 분산을 넣는다.</p>
+        <p>휠 오도메트리는 회전 누적오차가 크다. 공분산을 0 으로 두면 EKF 가 이 값을 오차 없는 값으로 간주해 IMU 를 무시한다. 정확한 값은 캘리브레이션 뒤에 사각형 주행 오차로 대략 추정하되, 처음에는 x·y 0.001, yaw 0.01 정도의 <em>0 이 아닌 보수적인</em> 값으로 시작한다. IMU 쪽도 마찬가지로 정지 바이어스 실험(§3-7)에서 잰 분산을 넣는다.</p>
       </div>
       <div class="callout why"><span class="ct">⑥ MCU 의 시각(<code>tick_ms</code>)을 ROS 시각으로 옮긴다</span>
         <p>엔코더 샘플과 IMU 샘플은 MCU 안에서 같은 타이머로 시각이 찍힌다. Pi 가 "받은 시각"을 stamp 로 쓰면 시리얼 지연과 지터가 그대로 타임스탬프에 들어가고, EKF 는 두 센서를 잘못된 순서로 융합한다.
-        그래서 브리지는 첫 프레임에서 <code>offset = now − tick_ms</code> 를 잡고 이후 <code>stamp = tick_ms + offset</code> 으로 환산한다. MCU 수정 진동자의 드리프트(수십 ppm, 하루에 수 초)는 천천히 따라가는 보정이 필요하다 — 코드의 TODO.</p>
+        그래서 브리지는 첫 프레임에서 <code>offset = now − tick_ms</code> 를 계산해 두고 이후 <code>stamp = tick_ms + offset</code> 으로 환산한다. MCU 수정 진동자의 드리프트(수십 ppm, 하루에 수 초)는 offset 을 천천히 갱신하는 보정이 필요하다. 이 보정은 코드에 TODO 로 남아 있다.</p>
       </div>
 
-      <h3>2-6. IMU 는 왜 MCU 에 붙이고, 어떻게 읽는가</h3>
-      <p>전복·과경사 감지 후 즉시 정지, 경사에서의 출력 보정, 요 각속도로 직진 보정은 전부 제어 루프 안에서 엔코더와 같은 박자로 써야 하는 값이다. Pi 를 거치면 시리얼과 DDS 의 왕복 지연이 제어 루프에 들어간다. 그래서 IMU 는 MCU 에 붙이고, MCU 가 자기 제어에 쓰면서 <em>동시에</em> 샘플을 Pi 로 흘려보낸다. Pi 쪽에서 IMU 가 필요한 곳은 EKF 하나뿐이고, 100 Hz 면 충분하다.</p>
+      <h3>2-6. IMU 는 왜 MCU 에 연결하고, 어떻게 읽는가</h3>
+      <p>전복·과경사 감지 후 즉시 정지, 경사에서의 출력 보정, 요 각속도로 직진 보정은 전부 제어 루프 안에서 엔코더와 같은 박자로 써야 하는 값이다. Pi 를 거치면 시리얼과 DDS 의 왕복 지연이 제어 루프에 들어간다. 그래서 IMU 는 MCU 에 연결하고, MCU 는 IMU 값을 자기 제어에 쓰면서 <em>동시에</em> 샘플을 Pi 로 보낸다. Pi 쪽에서 IMU 가 필요한 곳은 EKF 하나뿐이고, 100 Hz 면 충분하다.</p>
       <p>그런데 "읽는다"의 실체가 페리페럴마다 다르다. 이 차이가 배선과 펌웨어 구조를 정한다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>페리페럴</th><th>누가 시간을 정하는가</th><th>CPU 비용</th><th>이 프로젝트에서</th></tr></thead>
         <tbody>
-          <tr><td>엔코더 — TIM 엔코더 모드</td><td>엔코더의 엣지. 하드웨어 <strong>카운터</strong>가 스스로 센다. 마스터/슬레이브 개념 없음</td><td>0. 루프는 CNT 레지스터를 읽을 뿐</td><td>TIM2/TIM5/TIM23/TIM24 — 바퀴마다 하나, 넷 다 32비트</td></tr>
-          <tr><td>BNO055 — I2C</td><td><strong>MCU 가 마스터.</strong> MCU 가 주소를 부르고 클록을 내며 바이트를 끌어온다. 센서는 시키지 않으면 아무것도 안 보낸다</td><td>한 번 읽기(약 20 B, 400 kHz) ≈ 0.5 ms. DMA 로 CPU 는 비우지만 버스는 점유</td><td>100 Hz(10 ms) 타이머에서 DMA 읽기. 1 ms 루프에는 못 넣는다</td></tr>
-          <tr><td>WT901 — UART</td><td>대등한 전이중. 센서가 설정된 속도로 <strong>스스로 스트림</strong>을 보내고 MCU 는 수신자</td><td>DMA + IDLE 인터럽트라 사실상 0</td><td>USART6 230400, 200 Hz(5 ms). Pi 링크와 같은 수신 패턴</td></tr>
+          <tr><td>엔코더 — TIM 엔코더 모드</td><td>엔코더의 엣지. 하드웨어 <strong>카운터</strong>가 CPU 개입 없이 센다. 마스터/슬레이브 개념 없음</td><td>0. 루프는 CNT 레지스터를 읽을 뿐</td><td>TIM2/TIM5/TIM23/TIM24 — 바퀴마다 하나, 넷 다 32비트</td></tr>
+          <tr><td>BNO055 — I2C</td><td><strong>MCU 가 마스터.</strong> MCU 가 주소를 보내고 클록을 생성하며 바이트를 읽어 온다. 센서는 MCU 가 읽기를 요청하지 않으면 값을 보내지 않는다</td><td>한 번 읽기(약 20 B, 400 kHz) ≈ 0.5 ms. DMA 로 CPU 부담은 없애지만 버스는 점유</td><td>100 Hz(10 ms) 타이머에서 DMA 읽기. 1 ms 루프에는 못 넣는다</td></tr>
+          <tr><td>WT901 — UART</td><td>대등한 전이중. 센서가 설정된 속도로 <strong>요청 없이 스트림</strong>을 보내고 MCU 는 수신만 한다</td><td>DMA + IDLE 인터럽트라 사실상 0</td><td>USART6 230400, 200 Hz(5 ms). Pi 링크와 같은 수신 패턴</td></tr>
         </tbody>
       </table></div>
       <div class="callout note"><span class="ct">"1 kHz 루프에서 IMU 를 쓴다"의 정확한 뜻</span>
-        <p>두 센서 모두 내부 융합 프로세서가 새 값을 만드는 속도는 100~200 Hz 다. 1 kHz(1 ms 주기) 루프가 하는 일은 <strong>매 바퀴 최신 IMU 값이 담긴 변수를 읽어 그 바퀴의 판단(기울기 검사, 요 보정)에 쓰는 것</strong>이고, 그 변수는 새 샘플이 도착할 때만 갱신된다.
+        <p>두 센서 모두 내부 융합 프로세서가 새 값을 만드는 속도는 100~200 Hz 다. 1 kHz(1 ms 주기) 루프가 하는 일은 <strong>매 주기 최신 IMU 값이 담긴 변수를 읽어 그 주기의 판단(기울기 검사, 요 보정)에 쓰는 것</strong>이고, 그 변수는 새 샘플이 도착할 때만 갱신된다.
         1 kHz 는 엔코더 PID 와 비상정지 반응을 위한 주기이지 IMU 의 샘플링 주기가 아니다. 전복 판정이 10 ms 늦는 것은 문제가 되지 않는다.</p>
       </div>
-      <p>실내에서 자력계로 얻는 절대 방위는 모터와 철골 때문에 수십 도씩 틀어진다. 이 프로젝트는 <strong>각속도와 가속도만</strong> 쓰고, 회전은 자이로 z 축 적분이 맡는다. 두 센서의 융합 출력(오일러·쿼터니언)은 참고로 보되 EKF 에는 넣지 않는다.</p>
+      <p>실내에서 자력계로 얻는 절대 방위는 모터와 철골 때문에 수십 도씩 틀어진다. 이 프로젝트는 <strong>각속도와 가속도만</strong> 쓰고, 회전은 자이로 z 축 적분으로 구한다. 두 센서의 융합 출력(오일러·쿼터니언)은 참고로 보되 EKF 에는 넣지 않는다.</p>
 
       <h2>3. 실습</h2>
       <p>ROS 트랙은 컨테이너 안에서 한다. <span class="tag pi">Pi 호스트</span> → <span class="tag cli">컨테이너</span></p>
@@ -310,7 +321,7 @@ install(TARGETS mcu_bridge_node protocol_check
 
 ament_package()</code></pre>
       <p><code>package.xml</code> 에 <code>&lt;depend&gt;</code> 8개(rclcpp, geometry_msgs, nav_msgs, sensor_msgs, std_msgs, tf2, tf2_ros, tf2_geometry_msgs)가 들어갔는지, <code>&lt;build_type&gt;ament_cmake&lt;/build_type&gt;</code> 인지 확인한다.
-      <code>find_package(tf2_geometry_msgs)</code> 가 실패하면 컨테이너에 <code>ros-humble-tf2-geometry-msgs</code> 가 없는 것이다 — 02 단계 §2-2 의 방식으로 추가한다 (A: <code>docker/Dockerfile</code> 의 ROS 패키지 목록에 넣고 재빌드, B: 컨테이너에서 설치).</p>
+      <code>find_package(tf2_geometry_msgs)</code> 가 실패하면 컨테이너에 <code>ros-humble-tf2-geometry-msgs</code> 가 없는 것이다. 02 단계 §2-2 의 방식으로 추가한다 (A: <code>docker/Dockerfile</code> 의 ROS 패키지 목록에 넣고 재빌드, B: 컨테이너에서 설치).</p>
 
       <h3>3-2. <code>protocol.hpp</code> — 계약 v2 프레임, CRC8, 스트림 파서, 가짜 MCU <span class="tag sim">SIM</span></h3>
       <p>06a 의 계약 v2 표가 사양서다. 열어 놓고 옆에서 비교하며 친다. <strong>CRC8 은 펌웨어와 비트 단위로 같아야 한다</strong> — 다항식 0x07, 초기값 0x00, 반사 없음, 최종 XOR 없음. 저장소의 Python 참고 구현(<code>protocol.py</code>)은 v1 고정 길이 프레임이라 바이트 비교 대상이 아니다. 구조만 참고한다.</p>
@@ -502,7 +513,7 @@ inline bool decode_event(const Frame &amp; f, McuEvent &amp; e, std::string &amp
   return true;
 }
 
-// ── 스트림 파서 — 시리얼은 프레임 경계가 없다. 바이트를 하나씩 먹여 상태기계로 잘라 낸다 ──
+// ── 스트림 파서 — 시리얼은 프레임 경계가 없다. 바이트를 하나씩 넣어 상태기계로 잘라 낸다 ──
 class FrameParser
 {
 public:
@@ -612,7 +623,7 @@ private:
 
 }  // namespace rpi5_mcu</code></pre>
 
-      <p>확인 프로그램 <code>test/protocol_check.cpp</code> — 인코드한 바이트를 파서에 한 바이트씩 먹여 되돌아오는지(왕복) 검사한다. 앞에 쓰레기 바이트를 붙여 동기 복구도 본다.</p>
+      <p>확인 프로그램 <code>test/protocol_check.cpp</code> 는 인코드한 바이트를 파서에 한 바이트씩 넣어 원래 값으로 복원되는지(왕복) 검사한다. 앞에 쓰레기 바이트를 붙여 동기 복구도 본다.</p>
       <pre><code class="lang-cpp">#include &lt;cstdio&gt;
 #include &lt;vector&gt;
 #include "rpi5_mcu_bridge_cpp/protocol.hpp"
@@ -626,7 +637,7 @@ static void dump(const char * label, const uint8_t * p, size_t n)
   std::printf("\n");
 }
 
-// 바이트열을 파서에 먹여 완성된 프레임 수를 돌려준다
+// 바이트열을 파서에 넣어 완성된 프레임 수를 돌려준다
 static int feed(FrameParser &amp; parser, const std::vector&lt;uint8_t&gt; &amp; bytes, std::vector&lt;Frame&gt; &amp; out)
 {
   int n = 0;
@@ -697,14 +708,14 @@ event frame:           aa 55 83 07 02 24 2c 9c 13 00 00 b3
 frames=2 (expect 2: state, imu — event is CRC-broken)  dropped_bytes=2 bad_crc=1
 state: L=1234 R=-1234 batt=12000 mV cur=1500 mA fault=0 tick=5000
 imu: id=0 az=9.807 m/s2 gz=0.08727 rad/s tick=5010</code></pre>
-      <p><code>-0.1 m/s</code> 가 <code>9c ff</code> 로 나오는 것을 눈으로 확인하십시오. −100 = 0xFF9C 의 2의 보수를 <em>하위 바이트 먼저</em> 쓴 것이다. 이것이 리틀엔디안이고, STM32 도 리틀엔디안이라 펌웨어는 <code>memcpy</code> 한 번으로 읽을 수 있다.
-      <code>dropped_bytes=2</code> 는 헤더를 찾느라 버린 바이트 수다. 앞에 붙인 쓰레기는 3바이트(<code>00 AA 13</code>)인데 왜 2 인지 파서 코드에서 찾아보십시오 — <code>AA</code> 는 헤더 후보로 받아들여졌다가 다음 바이트가 <code>55</code> 가 아니어서 버려지는데, 그 순간 세는 것은 <code>13</code> 하나다. 실제 연결에서 이 숫자가 계속 늘면 보드레이트나 배선을 의심한다.</p>
+      <p>출력에서 <code>-0.1 m/s</code> 가 <code>9c ff</code> 로 나오는 것을 확인한다. −100 = 0xFF9C 의 2의 보수를 <em>하위 바이트 먼저</em> 쓴 것이다. 이 바이트 순서가 리틀엔디안이고, STM32 도 리틀엔디안이라 펌웨어는 <code>memcpy</code> 한 번으로 읽을 수 있다.</p>
+      <p><code>dropped_bytes=2</code> 는 헤더를 찾느라 버린 바이트 수다. 앞에 붙인 쓰레기는 3바이트(<code>00 AA 13</code>)인데 왜 2 인지 파서 코드에서 찾아본다. <code>AA</code> 는 헤더 후보로 받아들여졌다가 다음 바이트가 <code>55</code> 가 아니어서 버려지는데, 그 순간 세는 것은 <code>13</code> 하나다. 실제 연결에서 이 숫자가 계속 늘면 보드레이트나 배선을 의심한다.</p>
 
       <h3>3-3. <code>serial_port.hpp</code> — termios 로 시리얼 열기, 논블로킹 폴링 <span class="tag sim">SIM</span></h3>
-      <p>Boost.Asio 나 외부 <code>serial</code> 라이브러리를 쓰지 않는다. 의존성이 0 이고, 무엇보다 <strong>OS 가 시리얼을 어떻게 다루는지</strong>(보드레이트·프레이밍·타임아웃이 전부 커널의 termios 구조체 하나에 있다)를 눈으로 보는 것이 이 단계의 학습 내용이기 때문이다.
-      v1 과 달리 MCU 가 상태·IMU·이벤트를 <em>제각기 다른 주기로</em> 보내므로, 읽기는 "한 프레임을 기다리는" 방식이 아니라 <strong>짧은 주기로 도착한 바이트를 전부 가져와 파서에 먹이는</strong> 논블로킹 폴링이다(<code>VMIN=0, VTIME=0</code>).
-      경로는 udev 가 만든 <code>/dev/mcu</code> 를 쓴다. ttyACM 장치는 ModemManager 가 건드리므로 udev 규칙의 <code>ID_MM_DEVICE_IGNORE</code> 가 적용되어 있어야 한다 — §3-8(06b 로 옮겼다).</p>
-      <p><strong>이 파일은 이 쪽에서 쓰고 컴파일만 된다.</strong> <code>simulate:=true</code> 는 포트를 열지 않으므로 아래 코드는 한 줄도 <em>실행</em>되지 않는다. 처음 실행되는 곳은 실물 Nucleo 를 꽂는 06b 다 — 그래서 지금은 "왜 이렇게 쓰는가"를 이해하는 데 시간을 쓰고, 동작 확인은 §3-5 의 "검증하지 못한 것" 표에 올려 둔다.</p>
+      <p>Boost.Asio 나 외부 <code>serial</code> 라이브러리를 쓰지 않는다. 의존성이 0 이고, 무엇보다 <strong>OS 가 시리얼을 어떻게 다루는지</strong>(보드레이트·프레이밍·타임아웃이 전부 커널의 termios 구조체 하나에 있다)를 직접 확인하는 것이 이 단계의 학습 내용이기 때문이다.</p>
+      <p>v1 과 달리 MCU 는 상태·IMU·이벤트를 <em>제각기 다른 주기로</em> 보낸다. 그래서 읽기는 "한 프레임을 기다리는" 방식이 아니라 <strong>짧은 주기로 도착한 바이트를 전부 가져와 파서에 넣는</strong> 논블로킹 폴링이다(<code>VMIN=0, VTIME=0</code>).</p>
+      <p>경로는 udev 가 만든 <code>/dev/mcu</code> 를 쓴다. ttyACM 장치에는 ModemManager 가 접근하므로 udev 규칙의 <code>ID_MM_DEVICE_IGNORE</code> 가 적용되어 있어야 한다 — §3-8(06b 로 옮겼다).</p>
+      <p><strong>이 파일은 이 쪽에서 쓰고 컴파일만 된다.</strong> <code>simulate:=true</code> 는 포트를 열지 않으므로 아래 코드는 한 줄도 <em>실행</em>되지 않는다. 이 코드가 처음 실행되는 곳은 실물 Nucleo 를 꽂는 06b 다. 그래서 지금은 "왜 이렇게 쓰는가"를 이해하는 데 시간을 쓰고, 동작 확인은 §3-5 의 "검증하지 못한 것" 표에 올려 둔다.</p>
       <pre><code class="lang-cpp">// include/rpi5_mcu_bridge_cpp/serial_port.hpp
 #pragma once
 #include &lt;fcntl.h&gt;
@@ -809,12 +820,12 @@ private:
 };</code></pre>
       <div class="callout note"><span class="ct">VCP 의 보드레이트는 "설정값"이지 "케이블 속도"가 아니다</span>
         <p>USB 자체에는 보드레이트가 없다. 호스트가 보낸 460800 을 ST-LINK 가 받아 <em>자기 쪽 UART</em>(MCU 의 USART3 과 결선된 선)를 그 속도로 설정한다.
-        그러므로 이 값은 <strong>펌웨어의 USART3 설정과 같아야</strong> 한다. 다르면 바이트가 깨져 CRC 오류로 나타난다. 460800 은 두 IMU 를 200 Hz 로 올릴 때의 약 10 kB/s 가 115200(≈11.5 kB/s)을 90 % 채우기 때문에 고른 값이다 — 460800(≈46 kB/s)이면 22 % (06a §4-3 대역폭 계산).</p>
+        그러므로 이 값은 <strong>펌웨어의 USART3 설정과 같아야</strong> 한다. 다르면 바이트가 깨져 CRC 오류로 나타난다. 460800 을 고른 이유는 두 IMU 를 200 Hz 로 올릴 때의 약 10 kB/s 가 115200(≈11.5 kB/s)의 90 % 를 차지하기 때문이다. 460800(≈46 kB/s)이면 22 % 다(06a §4-3 대역폭 계산).</p>
       </div>
 
       <h3>3-4. <code>mcu_bridge_node.cpp</code> — 노드 <span class="tag sim">SIM</span></h3>
-      <p>Python 판의 구조를 옮기되 타이머가 둘이다. <strong>명령 타이머(50 Hz, 20 ms)</strong>는 속도 프레임을 보내고, <strong>수신 타이머(500 Hz, 2 ms)</strong>는 도착한 바이트를 전부 파서에 먹여 완성된 프레임을 타입별로 처리한다.
-      파라미터 이름은 Python 판과 같게 두었으므로 <code>robot_params.yaml</code> 의 <code>mcu_bridge:</code> 블록이 그대로 들어간다(IMU 관련 두 개만 추가). <code>// TODO(you)</code> 다섯 곳은 빌드는 되지만 당신이 채워야 완성이다.</p>
+      <p>Python 판의 구조를 옮기되 타이머가 둘이다. <strong>명령 타이머(50 Hz, 20 ms)</strong>는 속도 프레임을 보내고, <strong>수신 타이머(500 Hz, 2 ms)</strong>는 도착한 바이트를 전부 파서에 넣어 완성된 프레임을 타입별로 처리한다.
+      파라미터 이름은 Python 판과 같게 두었으므로 <code>robot_params.yaml</code> 의 <code>mcu_bridge:</code> 블록이 그대로 적용된다(IMU 관련 두 개만 추가). <code>// TODO(you)</code> 다섯 곳은 비워 둔 채로도 빌드되지만, 당신이 채워야 노드가 완성된다.</p>
       <pre><code class="lang-cpp">// src/mcu_bridge_node.cpp
 #include &lt;algorithm&gt;
 #include &lt;array&gt;
@@ -929,7 +940,7 @@ public:
     // 타이머 ① 명령 송신 50 Hz (20 ms). simulate 면 여기서 가짜 상태 프레임도 만든다.
     cmd_timer_ = create_wall_timer(
       std::chrono::duration&lt;double&gt;(period_), std::bind(&amp;McuBridge::on_cmd_timer, this));
-    // 타이머 ② 수신 폴링 500 Hz (2 ms). 도착한 바이트를 파서에 전부 먹인다. 읽을 것이 없으면 수 μs 에 끝난다.
+    // 타이머 ② 수신 폴링 500 Hz (2 ms). 도착한 바이트를 파서에 전부 넣는다. 읽을 것이 없으면 수 μs 에 끝난다.
     rx_timer_ = create_wall_timer(2ms, std::bind(&amp;McuBridge::on_rx_timer, this));
 
     RCLCPP_INFO(get_logger(), "mcu_bridge(C++) 시작 | port=%s sim=%d r=%.4f L=%.4f cpr=%d imu_primary=%d",
@@ -1238,46 +1249,50 @@ int main(int argc, char ** argv)
 }</code></pre>
       <div class="callout note"><span class="ct">코드를 치면서 스스로 답해 볼 것</span>
         <ul>
-          <li>수신 타이머를 2 ms 로 두면 콜백이 초당 500 번 돈다. 읽을 것이 없을 때 이 콜백의 비용은 얼마인가? (<code>read()</code> 시스템 콜 한 번, 수 μs. 반대로 20 ms 로 늘리면 200 Hz IMU 프레임 4개가 한 번에 도착해 타임스탬프는 tick 으로 맞지만 지연이 최대 20 ms 늘어난다)</li>
-          <li><code>FrameParser</code> 를 타이머 콜백 사이에 멤버로 유지하는 이유는? (프레임 하나가 두 번의 <code>read_some</code> 에 걸쳐 도착할 수 있다. 상태기계가 중간 상태를 기억해야 이어 붙일 수 있다)</li>
+          <li>수신 타이머를 2 ms 로 두면 콜백이 초당 500 번 실행된다. 읽을 것이 없을 때 이 콜백의 비용은 얼마인가? (<code>read()</code> 시스템 콜 한 번, 수 μs. 반대로 20 ms 로 늘리면 200 Hz IMU 프레임 4개가 한 번에 도착해 타임스탬프는 tick 으로 맞지만 지연이 최대 20 ms 늘어난다)</li>
+          <li><code>FrameParser</code> 를 타이머 콜백 사이에 멤버로 유지하는 이유는? (프레임 하나가 두 번의 <code>read_some</code> 에 걸쳐 도착할 수 있다. 상태기계가 중간 상태를 멤버 변수에 보관해야 이어 붙일 수 있다)</li>
           <li><code>prev_</code> 가 <code>std::optional</code> 인 이유는? (첫 샘플에는 "이전"이 없다. 0 으로 초기화하면 첫 프레임에서 누적 카운트 전체가 한 번에 이동한 것으로 계산된다)</li>
           <li>왜 <code>/imu/data_raw</code> 와 센서별 토픽을 따로 내는가? (EKF 는 하나만 구독하고, §3-7 비교 실험은 둘 다 본다. 파라미터 하나로 어느 것을 EKF 에 줄지 고른다 — 코드 수정 없이)</li>
-          <li>fault 가 걸린 동안 브리지가 0 을 보내는 것은 안전을 위해서가 아니다. 차단은 MCU 가 이미 했다. 그럼 왜 보내는가? (해제 직후 로봇이 튀어나가지 않게, 그리고 Nav2 가 "명령을 냈는데 안 움직인다"는 상황을 감독 노드가 <code>/mcu/fault</code> 로 알 수 있게 — 10 단계)</li>
+          <li>fault 상태인 동안 브리지가 0 을 보내는 것은 안전을 위해서가 아니다. 차단은 MCU 가 이미 했다. 그럼 왜 보내는가? (해제 직후 로봇이 이전의 큰 명령으로 갑자기 움직이지 않게, 그리고 Nav2 가 "명령을 냈는데 안 움직인다"는 상황을 감독 노드가 <code>/mcu/fault</code> 로 알 수 있게 — 10 단계)</li>
         </ul>
       </div>
 
       <h3>3-5. 빌드, 시뮬레이션, Python 판과 비교 <span class="tag sim">SIM</span></h3>
 
       <h4>먼저 — 제원 세 값을 yaml 로 옮겨 적는다 (NOMINAL 이면 된다)</h4>
-      <p>저장소의 <code>rpi5_bringup/config/robot_params.yaml</code> 은 <code>wheel_radius: 0.0</code>, <code>wheel_separation: 0.0</code>, <code>encoder_cpr: 0</code> 으로 와 있다. 값이 아니라 <code>____</code>(EMPTY)의 자리표시다.
-      yaml 의 값은 §3-4 의 코드 기본값을 덮어쓰므로, 이대로 띄우면 §3-4 의 ERROR 가 찍히고 가짜 MCU 의 바퀴 둘레가 0 이 되어 틱이 쌓이지 않는다 — <strong>아래의 기대 결과(x 가 초당 0.2 씩 증가, gz ≈ 0.5)가 하나도 나오지 않는다.</strong></p>
+      <p>저장소의 <code>rpi5_bringup/config/robot_params.yaml</code> 은 <code>wheel_radius: 0.0</code>, <code>wheel_separation: 0.0</code>, <code>encoder_cpr: 0</code> 으로 들어 있다. 값이 아니라 <code>____</code>(EMPTY)의 자리표시다.
+      yaml 의 값은 §3-4 의 코드 기본값을 덮어쓴다. 그래서 이대로 띄우면 §3-4 의 ERROR 가 출력되고, 가짜 MCU 의 바퀴 둘레가 0 이 되어 틱이 쌓이지 않는다. <strong>아래의 기대 결과(x 가 초당 0.2 씩 증가, gz ≈ 0.5)가 하나도 나오지 않는다.</strong></p>
       <div class="callout why"><span class="ct">왜 "실측할 때까지 비워 둔다"가 아닌가 — 값의 세 상태</span>
-        <p>이 프로젝트의 값은 세 상태 중 하나다(<code>hardware/INVENTORY.md</code> 머리말, <code>robot_params.yaml</code> 머리 주석).
-        <code>____</code> = EMPTY, 모른다 · <code>NOMINAL(&lt;출처&gt;)</code> = 출처를 적은 임시값(출처 낱말은 <code>datasheet</code> · <code>ruler</code> · <code>drawing</code> · <code>gen1-record</code> · <code>fake</code>) · <code>MEASURED(&lt;날짜&gt;, &lt;방법&gt;)</code> = 이 프로젝트에서 잰 값.
-        금지되는 것은 임시값이 아니라 <strong>출처 없는 숫자</strong>다. 출처가 적혀 있으면 나중에 오도메트리가 틀어졌을 때 어느 값부터 의심할지 알 수 있다.</p>
-        <p>가짜 MCU 는 운동학의 <em>배선</em>을 검증하지 제원의 <em>정확도</em>를 검증하지 않는다(이 절 끝의 표). 그래서 이 쪽은 NOMINAL 로 충분하다. MEASURED 가 되는 곳은 값마다 다르다.
-        <code>wheel_radius</code> · <code>wheel_separation</code> 은 <strong>이 쪽</strong> §3-9 의 캘리브레이션 절차를 <a href="09a-assembly-gate.html">09a</a>에서 수행할 때 — 하중을 싣고 바닥을 굴러야 나오는 값이다.
-        <code>encoder_cpr</code> 은 <a href="fw-09-encoder.html">fw-09</a>에서 출력축을 손으로 돌려 센 count 로 — 이것은 책상 위에서 닫힌다.</p>
+        <p>이 프로젝트의 값은 다음 세 상태 중 하나다(<code>hardware/INVENTORY.md</code> 머리말, <code>robot_params.yaml</code> 머리 주석).</p>
+        <ul>
+          <li><code>____</code> = EMPTY, 모른다</li>
+          <li><code>NOMINAL(&lt;출처&gt;)</code> = 출처를 적은 임시값(출처 낱말은 <code>datasheet</code> · <code>ruler</code> · <code>drawing</code> · <code>gen1-record</code> · <code>fake</code>)</li>
+          <li><code>MEASURED(&lt;날짜&gt;, &lt;방법&gt;)</code> = 이 프로젝트에서 잰 값</li>
+        </ul>
+        <p>금지되는 것은 임시값이 아니라 <strong>출처 없는 숫자</strong>다. 출처가 적혀 있으면 나중에 오도메트리가 틀어졌을 때 어느 값부터 의심할지 알 수 있다.</p>
+        <p>가짜 MCU 는 운동학 계산이 <em>올바르게 연결됐는지</em>를 검증할 뿐, 제원의 <em>정확도</em>는 검증하지 않는다(이 절 끝의 표). 그래서 이 쪽은 NOMINAL 로 충분하다. MEASURED 가 되는 곳은 값마다 다르다.
+        <code>wheel_radius</code> · <code>wheel_separation</code> 은 하중을 싣고 바닥을 굴러야 나오는 값이라, <strong>이 쪽</strong> §3-9 의 캘리브레이션 절차를 <a href="09a-assembly-gate.html">09a</a>에서 수행할 때 MEASURED 가 된다.
+        <code>encoder_cpr</code> 은 <a href="fw-09-encoder.html">fw-09</a>에서 출력축을 손으로 돌려 센 count 로 MEASURED 가 되고, 이 측정은 책상 위에서 끝난다.</p>
       </div>
-      <p>옮겨 적는 것은 당신의 일이다. 어느 값을 어디서 가져오는지만 적는다 — 숫자는 <code>hardware/INVENTORY.md</code> 6절(구동계)의 표에 출처·기록일과 함께 들어 있다.</p>
+      <p>옮겨 적는 것은 당신이 한다. 아래 표는 어느 값을 어디서 가져오는지만 적는다. 숫자는 <code>hardware/INVENTORY.md</code> 6절(구동계)의 표에 출처·기록일과 함께 들어 있다.</p>
       <div class="tbl"><table>
         <thead><tr><th>yaml 키</th><th>INVENTORY 6절의 어느 행에서</th><th>옮겨 적을 때</th></tr></thead>
         <tbody>
-          <tr><td><code>wheel_radius</code> [m]</td><td>"바퀴 지름" 행의 <strong>공칭</strong> 지름 — <code>NOMINAL(gen1-record, …)</code>. 같은 행의 "실측 지름·폭"은 05 §3-1 에서 자로 재 <code>NOMINAL(ruler)</code> 로 적어 두었을 것이다(공칭이든 실측이든 ÷ 2 한 값의 출처 낱말을 옮긴 값에 맞춘다). "유효 반지름" 칸은 <code>____</code> 다(09a 에서 굴림 거리로)</td><td>÷ 2 는 당신이 한다. 상태 주석에 출처 낱말·기록일·"공칭 ÷ 2"를 적는다</td></tr>
+          <tr><td><code>wheel_radius</code> [m]</td><td>"바퀴 지름" 행의 <strong>공칭</strong> 지름 — <code>NOMINAL(gen1-record, …)</code>. 같은 행의 "실측 지름·폭"은 05 §3-1 에서 자로 재 <code>NOMINAL(ruler)</code> 로 적어 두었을 것이다(공칭이든 실측이든, ÷ 2 한 값의 출처 낱말은 옮겨 온 지름의 출처 낱말과 같게 적는다). "유효 반지름" 칸은 <code>____</code> 다(09a 에서 굴린 거리로 정한다)</td><td>÷ 2 는 당신이 한다. 상태 주석에 출처 낱말·기록일·"공칭 ÷ 2"를 적는다</td></tr>
           <tr><td><code>encoder_cpr</code> [counts/rev]</td><td>"엔코더 분해능" 행 — 출력축 기준. 그 행이 밝히듯 잰 값이 아니라 PPR × 4체배 × 기어비의 <strong>산술값</strong>이고 입력(PPR·기어비)이 <code>gen1-record</code> 다</td><td>§2-3 의 식으로 직접 한 번 계산해 같은 수가 나오는지 본 뒤 옮긴다</td></tr>
-          <tr><td><code>wheel_separation</code> [m]</td><td>"바퀴 간 거리" 행 — 저장소에는 <code>____</code> 로 와 있다(1세대에 실측 기록이 없다). <strong>05 §3-1 에서 이미 자로 재서 <code>NOMINAL(ruler, …)</code> 로 적었다면 그 줄을 그대로 옮긴다 — 다시 재지 않는다.</strong> 그 행의 경고대로 외곽 폭(바깥 엣지 폭)이나 제자리 회전에서 역산한 "유효 폭"은 이 칸의 값이 아니다</td><td>05 에서 적은 값이 있으면 그 값과 그 상태 주석을. 칸이 아직 <code>____</code> 일 때만 아래 두 길 중 하나</td></tr>
+          <tr><td><code>wheel_separation</code> [m]</td><td>"바퀴 간 거리" 행 — 저장소에는 <code>____</code> 로 들어 있다(1세대에 실측 기록이 없다). <strong>05 §3-1 에서 이미 자로 재서 <code>NOMINAL(ruler, …)</code> 로 적었다면 그 줄을 그대로 옮긴다 — 다시 재지 않는다.</strong> 그 행의 경고대로 외곽 폭(바깥 엣지 폭)이나 제자리 회전에서 역산한 "유효 폭"은 이 칸의 값이 아니다</td><td>05 에서 적은 값이 있으면 그 값과 그 상태 주석을 옮긴다. 칸이 아직 <code>____</code> 일 때만 아래 두 방법 중 하나를 쓴다</td></tr>
         </tbody>
       </table></div>
-      <p>INVENTORY 의 칸이 아직 비어 있을 때 <code>wheel_separation</code> 의 두 길 — 가짜 MCU 앞에서의 결과는 <strong>동일</strong>하다(이 절의 기대 결과는 이 값이 0 만 아니면 같은 수로 나온다. 이유는 이 절 끝의 표). 차이는 그 뒤에 있다.</p>
+      <p>INVENTORY 의 칸이 아직 비어 있을 때 <code>wheel_separation</code> 을 정하는 방법은 아래 둘이다. 가짜 MCU 앞에서의 결과는 두 방법이 <strong>동일</strong>하다. 이 절의 기대 결과는 이 값이 0 만 아니면 같은 수로 나온다(이유는 이 절 끝의 표). 차이는 06b 에서 생긴다.</p>
       <ul>
-        <li><strong>(가) 줄자로 잰다 → <code>NOMINAL(ruler, &lt;날짜&gt;)</code>.</strong> 모터가 섀시에 고정돼 있으므로 좌우 바퀴 <em>접지 중심선</em> 사이는 지금도 잴 수 있다. INVENTORY 6절의 그 행에 먼저 적고 yaml 로 옮긴다(05 §3-1 이 시킨 것과 같은 측정이다 — 거기서 했다면 이미 (가)에 있다). 필요한 것: 줄자, 섀시에 손이 닿을 것. 06b 에 그대로 들고 간다.</li>
-        <li><strong>(나) 아무 양수 → <code>NOMINAL(fake)</code>.</strong> 필요한 것: 없음. yaml 에만 두고 INVENTORY 의 칸은 <code>____</code> 로 남긴다(같은 파일의 <code>max_linear_vel</code> 이 이미 그렇게 돼 있다). 06b 입구의 <code>scripts/check_nominal.sh</code> 가 이 줄을 <code>fake</code> 로 잡아내므로 실물 모터를 굴리기 전에 (가)를 해야 한다 — 일이 뒤로 밀릴 뿐 없어지지 않는다.</li>
+        <li><strong>(가) 줄자로 잰다 → <code>NOMINAL(ruler, &lt;날짜&gt;)</code>.</strong> 모터가 섀시에 고정돼 있으므로 좌우 바퀴 <em>접지 중심선</em> 사이는 지금도 잴 수 있다. INVENTORY 6절의 그 행에 먼저 적고 yaml 로 옮긴다(05 §3-1 의 측정과 같다. 05 §3-1 에서 이미 쟀다면 (가)를 마친 상태다). 필요한 것: 줄자, 섀시에 손이 닿을 것. 이 값은 06b 에서도 그대로 쓴다.</li>
+        <li><strong>(나) 아무 양수 → <code>NOMINAL(fake)</code>.</strong> 필요한 것: 없음. yaml 에만 두고 INVENTORY 의 칸은 <code>____</code> 로 남긴다(같은 파일의 <code>max_linear_vel</code> 이 이미 그렇게 돼 있다). 06b 입구의 <code>scripts/check_nominal.sh</code> 가 이 줄을 <code>fake</code> 로 검출하므로 실물 모터를 굴리기 전에 (가)를 해야 한다. 측정을 06b 로 미룰 뿐 생략할 수는 없다.</li>
       </ul>
       <pre><code class="lang-yaml"># robot_params.yaml 의 mcu_bridge: 블록 — 값과 상태 낱말을 "같은 줄"에 적는다 (check_nominal.sh 는 줄 단위로 센다)
     wheel_radius: &lt;값&gt;        # [m]  NOMINAL(gen1-record, &lt;기록일&gt;) INVENTORY 6절 바퀴 지름(공칭) ÷ 2
     wheel_separation: &lt;값&gt;    # [m]  NOMINAL(ruler, &lt;잰 날짜&gt;) 좌우 접지 중심선 사이, 줄자      ← (나)라면 NOMINAL(fake)
     encoder_cpr: &lt;값&gt;         # [counts/rev] NOMINAL(gen1-record, &lt;기록일&gt;) INVENTORY 6절 엔코더 분해능 — 출력축 기준, 산술값</code></pre>
-      <p>같은 블록의 <code>baudrate</code> · <code>base_frame</code> · <code>imu_frame</code> · <code>imu_primary</code> 도 이때 함께 고친다 — 목록은 이 절 끝 "런치파일에 C++ 판을 꽂기"에 있다. <code>base_frame</code> 이 <code>base_link</code> 인 채로는 아래 TF 확인이 통과하지 못한다(이해 확인 9번).</p>
+      <p>같은 블록의 <code>baudrate</code> · <code>base_frame</code> · <code>imu_frame</code> · <code>imu_primary</code> 도 이때 함께 고친다. 목록은 이 절 끝 "런치파일에서 C++ 판으로 교체하기"에 있다. <code>base_frame</code> 이 <code>base_link</code> 인 채로는 아래 TF 확인이 통과하지 못한다(이해 확인 9번).</p>
       <p><strong>어디서 고치는가.</strong> <code>hardware/INVENTORY.md</code> 와 <code>robot_params.yaml</code> 의 원본은 Mac 의 저장소에 있고, Pi 의 <code>~/ros2_rpi5</code> 는 실행 사본이다(02 §3-2).
       그래서 <strong>Mac 에서 고치고, Mac 에서 세고, Pi 로 보낸다.</strong> Pi 의 사본을 직접 고치면 다음 <code>sync-to-pi.sh</code> 가 Mac 의 것으로 덮어쓴다. <span class="tag mac">Mac</span></p>
       <pre><code class="lang-bash"># Mac, 저장소 루트에서. 세 줄의 상태가 바뀌었는지 센다.
@@ -1327,41 +1342,41 @@ ros2 topic echo /odom --field pose.pose.position.x --once
 
 # Python 판 (참고 구현)
 ros2 launch rpi5_mcu_bridge mcu_bridge.launch.py simulate:=true</code></pre>
-      <p><strong>TF 확인:</strong> <code>ros2 launch rpi5_description description.launch.py use_fake_joints:=false</code> 를 함께 띄운 뒤 <code>ros2 run tf2_tools view_frames</code> → PDF 에 <code>odom → base_footprint → base_link → …</code> 가 한 덩어리로 이어져야 한다. <code>ros2 run tf2_ros tf2_echo odom base_link</code> 의 x 가 <code>/odom</code> 과 같은지 본다.
-      <strong>바퀴 링크 4개</strong>(<code>front_left_wheel_link</code> … <code>rear_right_wheel_link</code>)도 <code>base_link</code> 아래에 붙어 있어야 한다. 가짜 관절 발행자를 껐으므로(<code>use_fake_joints:=false</code>) 그 TF 의 재료는 브리지의 <code>/joint_states</code> 뿐이다.
-      빠져 있으면 <code>ros2 topic echo /joint_states --once</code> 의 <code>name</code> 을 05 의 xacro 관절 이름(<code>${prefix}_wheel_joint</code>)과 글자 단위로 비교한다 — §3-4 의 <code>js.name</code>.</p>
+      <p><strong>TF 확인:</strong> <code>ros2 launch rpi5_description description.launch.py use_fake_joints:=false</code> 를 함께 띄운다. 그다음 <code>ros2 run tf2_tools view_frames</code> 로 만든 PDF 에서 <code>odom → base_footprint → base_link → …</code> 가 하나의 트리로 이어져야 한다. <code>ros2 run tf2_ros tf2_echo odom base_link</code> 의 x 가 <code>/odom</code> 과 같은지 본다.
+      <strong>바퀴 링크 4개</strong>(<code>front_left_wheel_link</code> … <code>rear_right_wheel_link</code>)도 <code>base_link</code> 아래에 연결돼 있어야 한다. 가짜 관절 발행자를 껐으므로(<code>use_fake_joints:=false</code>) 바퀴 TF 의 입력은 브리지의 <code>/joint_states</code> 뿐이다.
+      빠져 있으면 <code>ros2 topic echo /joint_states --once</code> 의 <code>name</code> 을 05 의 xacro 관절 이름(<code>${prefix}_wheel_joint</code>)과 글자 단위로 비교한다. 고칠 곳은 §3-4 의 <code>js.name</code> 이다.</p>
 
       <h4>가짜 MCU 가 검증한 것 / 검증하지 못한 것</h4>
-      <p>위의 확인이 전부 통과했다면, 무엇이 "확실히 맞다"가 됐고 무엇이 아직 아닌지를 갈라 둔다. 경계는 코드에서 나온다: <code>simulate:=true</code> 에서 노드는 포트를 열지 않고, <code>LoopbackMcu</code> 가 만든 <code>McuState</code> · <code>ImuSample</code> 을 <strong>프레임으로 바꾸지 않은 채</strong> 곧바로 <code>handle_state()</code> · <code>handle_imu()</code> 에 넘긴다(§3-4 의 <code>on_cmd_timer()</code> · <code>on_rx_timer()</code> 의 <code>if (simulate_)</code> 가지).
-      즉 가짜 MCU 는 <em>시리얼 선의 Pi 쪽 끝보다 안쪽</em>만 통과한다.</p>
+      <p>위의 확인이 전부 통과했다면, 무엇이 "확실히 맞다"가 됐고 무엇이 아직 아닌지를 구분해 둔다. 경계는 코드에서 정해진다. <code>simulate:=true</code> 에서 노드는 포트를 열지 않는다. <code>LoopbackMcu</code> 가 만든 <code>McuState</code> · <code>ImuSample</code> 은 <strong>프레임으로 바뀌지 않은 채</strong> 곧바로 <code>handle_state()</code> · <code>handle_imu()</code> 로 넘어간다. 이 경로는 §3-4 의 <code>on_cmd_timer()</code> · <code>on_rx_timer()</code> 안의 <code>if (simulate_)</code> 가지다.
+      즉 가짜 MCU 로 검증되는 것은 <em>시리얼 선의 Pi 쪽 끝보다 안쪽</em>의 코드뿐이다.</p>
       <div class="tbl"><table>
         <thead><tr><th>검증한 것</th><th>무엇으로 봤나</th></tr></thead>
         <tbody>
           <tr><td>역운동학 · 정운동학 · 중점법 적분, 틱 ↔ m 번역</td><td><code>cmd_vel</code> 0.2 m/s 에 x 가 초당 0.2, ω 0.5 rad/s 에 gz ≈ 0.5. Python 판과 1 % 이내</td></tr>
-          <tr><td>QoS</td><td><code>topic info -v</code> — <code>/odom</code> RELIABLE, <code>/imu/data_raw</code> BEST_EFFORT, <code>/mcu/fault</code> 는 늦게 구독해도 받힌다(TRANSIENT_LOCAL)</td></tr>
+          <tr><td>QoS</td><td><code>topic info -v</code> — <code>/odom</code> RELIABLE, <code>/imu/data_raw</code> BEST_EFFORT, <code>/mcu/fault</code> 는 늦게 구독해도 마지막 값을 받는다(TRANSIENT_LOCAL)</td></tr>
           <tr><td>TF 트리</td><td><code>view_frames</code> 의 <code>odom → base_footprint → base_link → 바퀴 링크 4개</code>, <code>tf2_echo odom base_link</code></td></tr>
           <tr><td>브리지 워치독 (Pi 쪽 0.5 s)</td><td><code>topic pub</code> 을 멈추고 0.5 s 뒤 <code>twist.twist.linear.x</code> = 0</td></tr>
-          <tr><td>EKF 배선</td><td>§3-10 — <code>/odometry/filtered</code> 가 나오고 <code>odom → base_footprint</code> 를 쏘는 노드가 하나</td></tr>
+          <tr><td>EKF 배선</td><td>§3-10 — <code>/odometry/filtered</code> 가 나오고 <code>odom → base_footprint</code> 를 발행하는 노드가 하나</td></tr>
           <tr><td>프레임 코덱 (인코드 · 디코드 · CRC8 · 합성 입력에서의 동기 복구)</td><td><code>protocol_check</code> — 노드 밖에서, 손으로 만든 바이트열로. 노드의 SIM 경로는 코덱을 지나지 않는다</td></tr>
         </tbody>
       </table></div>
       <div class="tbl"><table>
-        <thead><tr><th>검증하지 못한 것</th><th>왜 못 하는가</th><th>닫히는 곳</th></tr></thead>
+        <thead><tr><th>검증하지 못한 것</th><th>왜 못 하는가</th><th>검증하는 곳</th></tr></thead>
         <tbody>
           <tr><td><code>serial_port.hpp</code> (termios) 전체</td><td><code>open_port()</code> 가 불리지 않는다. 보드레이트 설정 · <code>cfmakeraw</code> · <code>VMIN=0</code> 논블로킹 읽기 · <code>write_all</code> 이 한 줄도 실행되지 않았다</td><td>06b</td></tr>
-          <tr><td>실제 스트림에서의 파서 재동기</td><td><code>protocol_check</code> 의 입력은 몇십 바이트의 합성열이다. 포트를 스트림 중간에 열었을 때, 상태 · IMU 프레임이 섞여 올 때, 프레임이 <code>read</code> 경계에서 잘려 올 때의 <code>FrameParser</code> 는 실물 스트림에서만 돈다</td><td>06b</td></tr>
-          <tr><td>fault · event 경로</td><td><code>LoopbackMcu</code> 의 <code>fault</code> 는 항상 0 이고 <code>0x83</code> 이벤트를 내지 않는다 → <code>handle_event()</code>, fault 동안의 0 명령, <code>/mcu/event</code> 발행이 한 번도 돌지 않았다</td><td>06b</td></tr>
-          <tr><td><code>tick_ms</code> → ROS 시각 환산</td><td><code>stamp_from_tick()</code> 은 돌았지만 입력이 <code>dt</code> 를 그대로 더한 완벽한 시계였다. 실물의 지터 · 두 시계의 드리프트 · MCU 리셋 · 랩어라운드가 없었다</td><td>06b</td></tr>
+          <tr><td>실제 스트림에서의 파서 재동기</td><td><code>protocol_check</code> 의 입력은 몇십 바이트의 합성열이다. 포트를 스트림 중간에 열었을 때, 상태 · IMU 프레임이 섞여 올 때, 프레임이 <code>read</code> 경계에서 잘려 올 때의 <code>FrameParser</code> 동작은 실물 스트림에서만 확인할 수 있다</td><td>06b</td></tr>
+          <tr><td>fault · event 경로</td><td><code>LoopbackMcu</code> 의 <code>fault</code> 는 항상 0 이고 <code>0x83</code> 이벤트를 내지 않는다 → <code>handle_event()</code>, fault 동안의 0 명령, <code>/mcu/event</code> 발행이 한 번도 실행되지 않았다</td><td>06b</td></tr>
+          <tr><td><code>tick_ms</code> → ROS 시각 환산</td><td><code>stamp_from_tick()</code> 은 실행됐지만 입력이 <code>dt</code> 를 그대로 더한 완벽한 시계였다. 실물의 지터 · 두 시계의 드리프트 · MCU 리셋 · 랩어라운드가 없었다</td><td>06b</td></tr>
           <tr><td><code>sensor_id = 1</code> (BNO055 토픽, <code>imu_primary: 1</code>)</td><td>가짜 IMU 는 <code>sensor_id = 0</code> 하나만 낸다 → <code>/imu/bno055/data_raw</code> 는 이름만 있고 메시지가 없다</td><td>06b</td></tr>
-          <tr><td>MCU 쪽 워치독 (200 ms)</td><td>MCU 가 없다. 본 것은 두 층 중 Pi 쪽 한 층뿐이다(이해 확인 4번)</td><td>펌웨어 가이드에서 단독으로, 그다음 06b 에서 연결한 채로</td></tr>
-          <tr><td>제원 세 값의 정확도</td><td>가짜 MCU 와 브리지가 <strong>같은</strong> r · L · cpr 로 곱하고 나누므로 서로 상쇄된다. 값이 틀려도 x 는 초당 0.2 로 나온다 — NOMINAL(fake) 로도 이 쪽이 통과하는 이유이고, 통과가 값의 보증이 아닌 이유다</td><td><a href="09a-assembly-gate.html">09a</a></td></tr>
-          <tr><td>EKF 의 융합 효과</td><td>가짜 gz 는 명령 ω 그대로라 휠과 IMU 가 언제나 일치한다 — EKF 가 고칠 차이가 없다</td><td><a href="09a-assembly-gate.html">09a</a></td></tr>
+          <tr><td>MCU 의 명령 워치독 (200 ms)</td><td>MCU 가 없다. 확인한 것은 두 층 중 Pi 쪽 한 층뿐이다(이해 확인 4번)</td><td>펌웨어 가이드에서 단독으로, 그다음 06b 에서 연결한 채로</td></tr>
+          <tr><td>제원 세 값의 정확도</td><td>가짜 MCU 와 브리지가 <strong>같은</strong> r · L · cpr 로 곱하고 나누므로 서로 상쇄된다. 값이 틀려도 x 는 초당 0.2 로 나온다. 이 상쇄 때문에 NOMINAL(fake) 로도 이 쪽을 통과하고, 같은 이유로 통과가 값을 보증하지 않는다</td><td><a href="09a-assembly-gate.html">09a</a></td></tr>
+          <tr><td>EKF 의 융합 효과</td><td>가짜 gz 는 명령 ω 그대로라 휠과 IMU 가 언제나 일치한다. EKF 가 고칠 차이가 없다</td><td><a href="09a-assembly-gate.html">09a</a></td></tr>
         </tbody>
       </table></div>
-      <p>두 번째 표의 "06b" 여섯 줄이 곧 <a href="06b-bench-integration.html">06b · 실물 MCU 벤치 통합</a>의 목차다. 06b 에서 문제가 나면 첫 번째 표에 있는 것은 의심하지 않아도 된다 — 그것이 이 쪽을 먼저 100 % 로 만드는 이유다.</p>
+      <p>두 번째 표의 "06b" 여섯 줄이 곧 <a href="06b-bench-integration.html">06b · 실물 MCU 벤치 통합</a>의 목차다. 06b 에서 문제가 나면 첫 번째 표에 있는 것은 의심하지 않아도 된다. 의심 범위를 이렇게 줄이는 것이 이 쪽을 먼저 100 % 로 만드는 이유다.</p>
 
-      <h4>런치파일에 C++ 판을 꽂기</h4>
-      <p>검증이 끝났으면 <code>ros2_ws/src/rpi5_bringup/launch/robot.launch.py</code> 의 mcu_bridge 블록에서 패키지만 바꾼다. 실행파일·노드 이름·파라미터 파일은 그대로다 — 이것이 "인터페이스가 같으면 구현을 갈아 끼울 수 있다"의 실물이다.</p>
+      <h4>런치파일에서 C++ 판으로 교체하기</h4>
+      <p>검증이 끝났으면 <code>ros2_ws/src/rpi5_bringup/launch/robot.launch.py</code> 의 mcu_bridge 블록에서 패키지만 바꾼다. 실행파일·노드 이름·파라미터 파일은 그대로다. "인터페이스가 같으면 구현을 교체할 수 있다"는 원칙의 실제 사례다.</p>
       <pre><code class="lang-python">    mcu_bridge = Node(
         package='rpi5_mcu_bridge_cpp',      # ← 'rpi5_mcu_bridge' (Python 참고 구현) 에서 교체
         executable='mcu_bridge_node',
@@ -1370,17 +1385,23 @@ ros2 launch rpi5_mcu_bridge mcu_bridge.launch.py simulate:=true</code></pre>
         parameters=[params_file],
         condition=IfCondition(LaunchConfiguration('use_mcu')),
     )</code></pre>
-      <p>그리고 <code>rpi5_bringup/package.xml</code> 의 <code>&lt;exec_depend&gt;rpi5_mcu_bridge&lt;/exec_depend&gt;</code> 를 <code>rpi5_mcu_bridge_cpp</code> 로 바꾼다. <code>robot_params.yaml</code> 의 <code>mcu_bridge:</code> 블록은 <code>baudrate: 460800</code>, <code>base_frame: "base_footprint"</code>(§2-5 ④), 그리고 새 키 <code>imu_frame: "imu_link"</code>, <code>imu_primary: 0</code> 을 갖는다.</p>
+      <p>그리고 <code>rpi5_bringup/package.xml</code> 의 <code>&lt;exec_depend&gt;rpi5_mcu_bridge&lt;/exec_depend&gt;</code> 를 <code>rpi5_mcu_bridge_cpp</code> 로 바꾼다. <code>robot_params.yaml</code> 의 <code>mcu_bridge:</code> 블록은 다음 값을 갖는다.</p>
+      <ul>
+        <li><code>baudrate: 460800</code></li>
+        <li><code>base_frame: "base_footprint"</code>(§2-5 ④)</li>
+        <li>새 키 <code>imu_frame: "imu_link"</code></li>
+        <li>새 키 <code>imu_primary: 0</code></li>
+      </ul>
 
       <h3>3-6. 펌웨어 트랙 — NUCLEO-H723ZG (STM32CubeMX + HAL) <span class="tag hw">HW</span></h3>
       <div class="callout warn"><span class="ct">이 절은 이전 중이다 — 새로 시작한다면 "MCU 펌웨어 가이드"에서</span>
-        <p>펌웨어는 <a href="fw-00-map.html">MCU 펌웨어 가이드</a>(fw-00 부터, Mac 차선)로 이전 중이다. <strong>새로 시작한다면 거기서 시작하라.</strong> 이 절은 이전이 끝나면 포인터로 줄어든다. 그때까지 본문은 그대로 둔다.
-        이 절은 이 쪽(06)의 완료 조건이 아니다 — 체크포인트에서도 뺐다. 이 절을 검증하던 항목을 받을 펌웨어 쪽은 아직 없다(이 쪽 끝 "검증 체크포인트"의 머리말). 그때까지 이 절의 확인 절차는 §3-6-8 의 "확인할 것 ①~⑦"이다.</p>
+        <p>펌웨어는 <a href="fw-00-map.html">MCU 펌웨어 가이드</a>(fw-00 부터, Mac 차선)로 이전 중이다. <strong>새로 시작한다면 MCU 펌웨어 가이드의 fw-00 에서 시작한다.</strong> 이 절은 이전이 끝나면 포인터로 줄어든다. 그때까지 본문은 그대로 둔다.
+        이 절은 이 쪽(06)의 완료 조건이 아니다. 체크포인트에서도 뺐다. 이 절을 검증하던 항목은 펌웨어 쪽(fw-14 · fw-16 · fw-17 · fw-19)의 체크포인트가 받는다(이 쪽 끝 "검증 체크포인트"의 머리말). 그때까지 이 절의 확인 절차는 §3-6-8 의 "확인할 것 ①~⑦"이다.</p>
         <p>이 절의 다음 내용은 새 가이드에서 <strong>근거와 함께 다시 도출된다.</strong> 그대로 옮겨 쓰지 말고, 해당 쪽이 나올 때까지는 "아직 정해지지 않은 것"으로 읽는다.</p>
         <ul>
           <li>BNO055 의 I2C DMA 읽기 (§3-6-1 표, §3-6-6)</li>
           <li>IWDG ~500 ms (§3-6-1 표)</li>
-          <li>UART 수신 모드 — 표는 Circular, 코드는 Normal 재무장이다 (§3-6-1 ↔ §3-6-4)</li>
+          <li>UART 수신 모드 — 표는 Circular, 코드는 Normal(매번 수신을 다시 시작하는) 방식이다 (§3-6-1 ↔ §3-6-4)</li>
           <li>드라이버 nFAULT 핀 (§3-6-7) — BTS7960 "IBT-2" 모듈에는 그 핀이 없다</li>
           <li><code>traction.c</code> 의 <code>imu-&gt;gz</code> (§3-6-9) — 프레임 구조체의 필드 이름은 <code>gz_ddps</code> 다 (§3-6-2)</li>
           <li><code>BATT_MIN_MV 9600</code> 의 "3S" 주석 (§3-6-7) — 실물 배터리는 6S 다 (<code>hardware/INVENTORY.md</code> 7절)</li>
@@ -1388,31 +1409,32 @@ ros2 launch rpi5_mcu_bridge mcu_bridge.launch.py simulate:=true</code></pre>
           <li>"A0~A5 = ADC" 핀과 PA5 (§3-6-1) — 확정 핀맵은 <code>hardware/pinmap-h723.md</code> 와 INVENTORY 2절이다</li>
         </ul>
       </div>
-      <p>완성 코드가 아니라 <strong>구조와 계약</strong>을 준다. 핀 배치·모터 드라이버·엔코더 전압은 당신의 부품에 따라 다르고, 06a 의 3.3 V/FT 핀 확인을 먼저 끝냈어야 한다. 이 트랙은 <strong>Pi 없이</strong> 진행하고 검증한다(§3-6-8 의 probe 스크립트).
-      펌웨어를 두 모듈로 나눈다는 원칙을 처음부터 지킨다: <strong>제어·안전 모듈</strong>(엔코더, PID, PWM, IMU, 전원, 상태기계)은 <code>set_target()</code>, <code>get_state()</code>, <code>fault_flags()</code> 정도의 함수만 밖으로 내놓고, <strong>통신 모듈</strong>은 그 함수를 호출하는 프레임 코덱이다. 나중에 micro-ROS 로 바꾸더라도 통신 모듈만 갈아 끼운다.</p>
+      <p>완성 코드가 아니라 <strong>구조와 계약</strong>을 준다. 핀 배치·모터 드라이버·엔코더 전압은 당신의 부품에 따라 다르고, 06a 의 3.3 V/FT 핀 확인을 먼저 끝냈어야 한다. 이 트랙은 <strong>Pi 없이</strong> 진행하고 검증한다(§3-6-8 의 probe 스크립트).</p>
+      <p>펌웨어를 두 모듈로 나눈다는 원칙을 처음부터 지킨다. <strong>제어·안전 모듈</strong>(엔코더, PID, PWM, IMU, 전원, 상태기계)은 <code>set_target()</code>, <code>get_state()</code>, <code>fault_flags()</code> 정도의 함수만 밖으로 내놓는다. <strong>통신 모듈</strong>은 그 함수를 호출하는 프레임 코덱이다. 나중에 micro-ROS 로 바꾸더라도 통신 모듈만 교체한다.</p>
 
       <h4>3-6-1. 주변장치 설정 (CubeMX)</h4>
-      <div class="tbl"><table class="compact">
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w14"><col class="w43"><col class="w43"></colgroup>
         <thead><tr><th>기능</th><th>설정</th><th>왜</th></tr></thead>
         <tbody>
           <tr><td>엔코더 ×4</td><td><strong>TIM2 (FL), TIM5 (FR), TIM23 (RL), TIM24 (RR)</strong> — 각각 Combined Channels: Encoder Mode TI1 and TI2 (4체배), 32비트 카운터, 입력 필터 5~8. 핀은 06a §3 의 배정표 (TIM5 = PA0/PA1 → <strong>SB57 OFF</strong> 로 PHY 클록을 끊는다)</td><td>하드웨어가 A/B 엣지 4개를 세고 방향도 판별. 넷 다 32비트라 랩어라운드 보정 코드가 아예 없다 (06a). 이더넷은 쓰지 않는다</td></tr>
-          <tr><td>모터 PWM ×8</td><td><strong>TIM1</strong> CH1~CH4 = RPWM (FL/FR/RL/RR), <strong>TIM8</strong> CH1~CH4 = LPWM, 20 kHz <strong>센터 정렬</strong>, TIM1 TRGO(Update) → TIM8 슬레이브 트리거로 동기. 방향은 어느 쪽에 듀티를 주는가로 정한다(부호-크기)</td><td>BTS7960 IBT-2 는 모터당 PWM 입력이 둘이다. 데드타임은 모듈이 만들고, 센터 정렬은 ADC 를 ON 펄스 중앙에서 트리거하기 위해서다. R_EN/L_EN 8개는 <code>MOTOR_EN</code> GPIO 하나로 묶어 안전 상태기계가 한 줄로 끊는다</td></tr>
+          <tr><td>모터 PWM ×8</td><td><strong>TIM1</strong> CH1~CH4 = RPWM (FL/FR/RL/RR), <strong>TIM8</strong> CH1~CH4 = LPWM, 20 kHz <strong>센터 정렬</strong>, TIM1 TRGO(Update) → TIM8 슬레이브 트리거로 동기. 방향은 어느 쪽에 듀티를 주는가로 정한다(부호-크기)</td><td>BTS7960 IBT-2 는 모터당 PWM 입력이 둘이다. 데드타임은 모듈이 만들고, 센터 정렬은 ADC 를 ON 펄스 중앙에서 트리거하기 위해서다. R_EN/L_EN 8개는 <code>MOTOR_EN</code> GPIO 하나로 묶어, 안전 상태기계가 그 GPIO 하나로 모든 드라이버를 끈다</td></tr>
           <tr><td>제어 루프</td><td><strong>TIM6</strong> 1 kHz(1 ms) 업데이트 인터럽트(NVIC 활성)</td><td>고정 주기 dt. <code>HAL_Delay</code> 로 주기를 만들면 지터가 생긴다</td></tr>
-          <tr><td>Pi 링크</td><td><strong>USART3</strong> (PD8 TX / PD9 RX = ST-LINK VCP) <strong>460800</strong> 8N1, DMA RX Circular(우선순위 High) + IDLE, DMA TX</td><td>블로킹 수신은 제어 루프를 밀어낸다. 상태·IMU·이벤트 세 종류가 제각기 나가므로 TX 도 DMA 큐</td></tr>
-          <tr><td>WT901</td><td><strong>USART6</strong>(또는 남는 UART) 230400 8N1, DMA RX Circular + IDLE</td><td>센서가 스스로 스트림을 보낸다 — Pi 링크와 같은 수신 패턴 (§2-6)</td></tr>
+          <tr><td>Pi 링크</td><td><strong>USART3</strong> (PD8 TX / PD9 RX = ST-LINK VCP) <strong>460800</strong> 8N1, DMA RX Circular(우선순위 High) + IDLE, DMA TX</td><td>블로킹 수신은 제어 루프의 실행을 지연시킨다. 상태·IMU·이벤트 세 종류가 제각기 나가므로 TX 도 DMA 큐</td></tr>
+          <tr><td>WT901</td><td><strong>USART6</strong>(또는 남는 UART) 230400 8N1, DMA RX Circular + IDLE</td><td>센서가 요청 없이 스트림을 보낸다. Pi 링크와 같은 수신 패턴 (§2-6)</td></tr>
           <tr><td>BNO055</td><td><strong>I2C1</strong> Fast Mode 400 kHz, DMA RX. ADR 핀 LOW → 주소 0x28 (HAL 은 8비트 표기 <code>0x28 &lt;&lt; 1</code>)</td><td>MCU 가 마스터. 100 Hz 타이머에서 블록 읽기. STM32 I2C 는 BNO055 의 클록 스트레칭을 처리한다</td></tr>
           <tr><td>배터리 전압·전류 + 드라이버 IS</td><td><strong>ADC3</strong> 정규 시퀀스 6채널(배터리 분압, 배터리 전류 센서, BTS7960 IS ×4), DMA 순환 변환. IS 는 R_IS 1 kΩ + 3.3 V 클램프</td><td>저전압·과전류 판단의 근거. <code>batt_mv</code>, <code>current_ma</code> 필드. IS 포화(≈3.3 V) = 드라이버 fault → 0x83 이벤트. 정밀 모터 전류 센서는 보류(2026-09-15) — 확보되면 ADC1 주입 4채널을 TIM1 Update 로 트리거</td></tr>
-          <tr><td>하드웨어 워치독</td><td><strong>IWDG</strong> ~500 ms</td><td>펌웨어 자체가 멈춰도 리셋. 소프트웨어 워치독과 별개의 층</td></tr>
+          <tr><td>하드웨어 워치독</td><td><strong>IWDG</strong> ~500 ms</td><td>펌웨어 자체가 멈춰도 리셋. 명령 워치독과 별개의 층</td></tr>
           <tr><td>메모리/캐시</td><td>모든 DMA 버퍼는 <strong>DTCM 이 아닌 SRAM</strong>(AXI SRAM/D2 SRAM)에, MPU 로 그 영역을 non-cacheable</td><td>06a 의 D-Cache 절 — H7 최대의 함정. UART 두 개 + I2C + ADC 의 DMA 버퍼 전부 해당</td></tr>
         </tbody>
       </table></div>
 
       <div class="callout warn"><span class="ct">BTS7960 "IBT-2" 연결에서 빠뜨리기 쉬운 것 (INVENTORY 6절 검토표의 요약)</span>
         <ul>
-          <li><strong>모듈 VCC 를 3.3 V 에</strong> 연결한다. 헤더와 칩 사이의 74HC244 버퍼가 5 V 로 동작하면 H 문턱이 약 3.5 V 라 3.3 V 신호를 간헐적으로 놓친다.</li>
-          <li><strong>R_EN·L_EN 8개를 <code>MOTOR_EN</code> 한 핀에</strong> 묶는다. fault 는 듀티 0(양쪽 로우사이드 ON = 브레이크). 드라이버 과열 래치 해제는 EN 을 3 µs 이상 LOW.</li>
-          <li><strong>IS 는 그대로 ADC 에 넣지 않는다.</strong> 정상 시 R_IS × I/8500 이지만 fault 시 4.5 mA 정전류라 전압이 모터 전원까지 오른다. R_IS 1 kΩ(보드가 10 kΩ 이면 1.1 kΩ 병렬) + 3.3 V 제너 클램프. 하이사이드 ON 구간에만 값이 나오므로 정규 시퀀스로 읽은 평균은 듀티가 낮을수록 낮게 보인다 — 1차 구현에서는 fault·스톨 감지에만 쓰고 §3-9 에서 측정치를 기록해 둔다(전류 센서 재검토의 근거).</li>
-          <li><strong>GND 는 스타 접지.</strong> B− 는 모터 전류 귀환, 헤더 GND 는 논리 귀환. 배터리 쪽 한 점에서만 만난다.</li>
+          <li><strong>모듈 VCC 를 3.3 V 에</strong> 연결한다. 헤더와 칩 사이의 74HC244 버퍼가 5 V 로 동작하면 H 문턱이 약 3.5 V 라 3.3 V 신호를 간헐적으로 H 로 인식하지 못한다.</li>
+          <li><strong>R_EN·L_EN 8개를 <code>MOTOR_EN</code> 한 핀에</strong> 묶는다. fault 때 출력은 듀티 0(양쪽 로우사이드 ON = 브레이크). 드라이버 과열 래치 해제는 EN 을 3 µs 이상 LOW.</li>
+          <li><p><strong>IS 는 그대로 ADC 에 넣지 않는다.</strong> 정상 시 R_IS × I/8500 이지만 fault 시 4.5 mA 정전류라 전압이 모터 전원까지 오른다. R_IS 1 kΩ(보드가 10 kΩ 이면 1.1 kΩ 병렬) + 3.3 V 제너 클램프.</p>
+            <p>하이사이드 ON 구간에만 값이 나오므로 정규 시퀀스로 읽은 평균은 듀티가 낮을수록 낮게 보인다. 그래서 1차 구현에서는 IS 를 fault·스톨 감지에만 쓰고, §3-9 에서 측정치를 기록해 둔다(전류 센서 재검토의 근거).</p></li>
+          <li><strong>GND 는 스타 접지.</strong> B− 는 모터 전류 귀환, 헤더 GND 는 논리 귀환. 두 귀환 경로는 배터리 쪽 한 점에서만 연결한다.</li>
         </ul>
       </div>
 
@@ -1483,7 +1505,7 @@ static int16_t sat_i16(float v) { return (int16_t)(v &gt;  32767.f ?  32767.f : 
 static int16_t mps2_to_mg(float a)    { return sat_i16(a / 9.80665f * 1000.f); }
 static int16_t dps_to_ddps(float w)   { return sat_i16(w * 10.f); }    /* 0.1 °/s 단위, ±3276 °/s — 센서 범위 ±2000 °/s 가 잘리지 않는다 (06a §4-3) */</code></pre>
       <div class="callout note"><span class="ct">송신은 큐 + DMA 로</span>
-        <p>상태 22 B 는 460800 bps 에서 약 0.5 ms 다. 1 ms 인터럽트 안에서 블로킹 전송하면 루프가 밀린다. 프레임을 링 버퍼에 넣고 <code>HAL_UART_Transmit_DMA</code> 가 비었을 때 다음 것을 꺼내 보내는 <code>tx_enqueue()</code> 를 두어, 제어 루프·IMU 파서·안전 상태기계가 각자 프레임을 던지기만 하게 한다. IMU 200 Hz 와 상태 50 Hz 가 섞여 나가도 프레임 단위로는 섞이지 않는다.</p>
+        <p>상태 22 B 는 460800 bps 에서 약 0.5 ms 다. 1 ms 인터럽트 안에서 블로킹 전송하면 루프 주기가 지연된다. 그래서 프레임을 링 버퍼에 넣고, DMA 송신이 비어 있을 때 다음 프레임을 꺼내 <code>HAL_UART_Transmit_DMA</code> 로 보내는 <code>tx_enqueue()</code> 를 둔다. 그러면 제어 루프·IMU 파서·안전 상태기계는 각자 프레임을 큐에 넣기만 하면 된다. IMU 200 Hz 와 상태 50 Hz 프레임이 번갈아 나가도 한 프레임의 바이트 사이에 다른 프레임이 끼어들지 않는다.</p>
       </div>
 
       <h4>3-6-3. 제어 루프 — 1 kHz(1 ms) 인터럽트에서</h4>
@@ -1562,7 +1584,7 @@ void control_step(void)                                /* TIM6 인터럽트에�
   }
   HAL_IWDG_Refresh(&amp;hiwdg);                            /* ⑥ 하드웨어 워치독 갱신 — 이 함수가 멈추면 MCU 리셋 */
 }</code></pre>
-      <p><strong>PID 게인은 P → I → D 순서로 잡는다.</strong> P 만으로 진동 직전까지 올리고, 정상상태 오차를 I 로 없애고, D 는 필요할 때만 조금. 바퀴를 띄운 상태에서 목표 속도를 계단으로 주고 엔코더 속도가 따라오는지 §3-6-8 의 probe 로 찍어 보는 것이 가장 빠르다.</p>
+      <p><strong>PID 게인은 P → I → D 순서로 정한다.</strong> P 만으로 진동 직전까지 올리고, 정상상태 오차를 I 로 없애고, D 는 필요할 때만 조금 넣는다. 바퀴를 띄운 상태에서 목표 속도를 계단으로 주고 엔코더 속도가 따라오는지 §3-6-8 의 probe 로 기록해 보는 것이 가장 빠르다.</p>
 
       <h4>3-6-4. Pi 링크 수신 — DMA + IDLE, 그리고 C 로 쓴 같은 파서</h4>
       <pre><code class="lang-cpp">/* uart_pi.c — 논블로킹 수신. 파서는 Pi 쪽 FrameParser 와 같은 상태기계다 */
@@ -1577,7 +1599,7 @@ void uart_pi_start(void)
   __HAL_DMA_DISABLE_IT(huart3.hdmarx, DMA_IT_HT);                  /* 절반 도착 인터럽트는 필요 없다 */
 }
 
-/* 바이트 하나씩 먹이는 상태기계. 완성되면 type/len/payload 를 채우고 1 을 돌려준다 */
+/* 바이트 하나씩 받는 상태기계. 완성되면 type/len/payload 를 채우고 1 을 돌려준다 */
 static int frame_push(uint8_t b, uint8_t *type, uint8_t *len, uint8_t *payload)
 {
   static enum { H0, H1, TYPE, LEN, PAYLOAD, CRC } st = H0;
@@ -1605,7 +1627,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
         set_target(v.v_left_mm_s, v.v_right_mm_s);       /* 제어 모듈의 유일한 입구. 안에서 ms_since_cmd = 0 */
       }
     }
-    uart_pi_start();                                     /* 다시 무장 */
+    uart_pi_start();                                     /* 다시 걸기 */
   } else if (huart == &amp;huart6) {
     wt901_parse(wt_rx_buf, size);                        /* §3-6-5 */
     wt901_start();
@@ -1613,7 +1635,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 }</code></pre>
 
       <h4>3-6-5. WT901 — UART 스트림 수신, 설정, 캘리브레이션</h4>
-      <p>WitMotion 계열은 설정된 속도로 11바이트 데이터 프레임을 <strong>스스로</strong> 쏟아낸다. MCU 는 수신자다. 프레임 형식은 문서화되어 있지만 <strong>설정 레지스터 값은 모델·펌웨어 판마다 표가 다르다</strong>. 아래 값은 구조를 보여 주기 위한 것이고, 보유한 WT901 의 매뉴얼 표로 반드시 확인한다 — 추측한 값으로 저장 명령까지 보내면 센서가 엉뚱한 보드레이트로 굳어 복구가 번거롭다.</p>
+      <p>WitMotion 계열은 설정된 속도로 11바이트 데이터 프레임을 <strong>요청 없이</strong> 연속으로 보낸다. MCU 는 수신만 한다. 프레임 형식은 문서화되어 있지만 <strong>설정 레지스터 값은 모델·펌웨어 판마다 표가 다르다</strong>. 아래 값은 구조를 보여 주기 위한 것이고, 보유한 WT901 의 매뉴얼 표로 반드시 확인한다. 추측한 값으로 저장 명령까지 보내면 센서가 의도하지 않은 보드레이트로 고정되어 복구가 번거롭다.</p>
       <pre class="diagram"><code>  데이터 프레임 (11 B, 센서 → MCU)
   ┌──────┬──────┬─────────────────────────────────┬──────┐
   │ 0x55 │ TYPE │ D0L D0H D1L D1H D2L D2H D3L D3H │ SUM  │   SUM = (0x55 + TYPE + D0..D7) &amp; 0xFF
@@ -1672,11 +1694,11 @@ static void wt901_parse(const uint8_t *buf, size_t n)
 void wt901_zero_gyro(void) { /* TODO(you): 2 s 동안 0x52 프레임을 모아 축별 평균 → gyro_bias_ddps. 움직이면 무효 */ }</code></pre>
       <div class="callout warn"><span class="ct">캘리브레이션은 명령 한 줄이 아니라 절차다</span>
         <p>가속도 캘리브레이션은 센서를 <strong>수평으로 놓고 완전히 정지</strong>한 상태에서, 자기 캘리브레이션은 명령 후 <strong>세 축 모두로 천천히 한 바퀴씩</strong> 돌린 뒤 종료 명령까지 보내야 반영된다. 결과는 센서 내부 플래시에 저장 명령으로 남긴다.
-        캘리브레이션 전후로 §3-7 의 정지 바이어스 표를 다시 채워 <em>무엇이 얼마나 좋아졌는지</em> 숫자로 남긴다 — 그것이 학습 항목이다.</p>
+        캘리브레이션 전후로 §3-7 의 정지 바이어스 표를 다시 채워 <em>무엇이 얼마나 좋아졌는지</em> 숫자로 남긴다. 이 전후 비교가 학습 항목이다.</p>
       </div>
 
       <h4>3-6-6. BNO055 — I2C 마스터 읽기, 모드, 캘리브레이션과 오프셋 저장</h4>
-      <p>BNO055 는 시키지 않으면 아무것도 보내지 않는다. 100 Hz(10 ms) 타이머에서 MCU 가 레지스터 블록을 DMA 로 읽는다. INT 핀은 모션 이벤트용이라 "데이터 준비" 인터럽트로 쓸 수 없다 → 폴링이 맞다. 융합 출력은 100 Hz 다.</p>
+      <p>BNO055 는 MCU 가 읽기를 요청하지 않으면 값을 보내지 않는다. 100 Hz(10 ms) 타이머에서 MCU 가 레지스터 블록을 DMA 로 읽는다. INT 핀은 모션 이벤트용이라 "데이터 준비" 인터럽트로 쓸 수 없다. 그래서 폴링으로 읽는다. 융합 출력은 100 Hz 다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>레지스터</th><th>주소</th><th>내용</th></tr></thead>
         <tbody>
@@ -1754,11 +1776,11 @@ void bno055_calib_check_1hz(uint8_t *offsets22_out)
       <div class="callout note"><span class="ct">BNO055 캘리브레이션 절차 — CALIB_STAT 이 전부 3 이 될 때까지</span>
         <ul>
           <li><strong>자이로(GYR)</strong>: 몇 초 완전 정지.</li>
-          <li><strong>가속도(ACC)</strong>: 로봇(센서)을 ±X, ±Y, ±Z 여섯 면이 각각 위를 향하게 놓고 면마다 몇 초씩 정지. 로봇에 붙인 채로는 어렵다 — 브래킷째 떼어 하거나, 필요한 면만 채우고 2 에서 타협한다.</li>
+          <li><strong>가속도(ACC)</strong>: 로봇(센서)을 ±X, ±Y, ±Z 여섯 면이 각각 위를 향하게 놓고 면마다 몇 초씩 정지. 로봇에 장착한 채로는 어렵다. 브래킷째 떼어 내서 하거나, 필요한 면만 채우고 2 에서 타협한다.</li>
           <li><strong>자기(MAG)</strong>: 공중에서 8자 동작. NDOF 모드에서만 의미가 있고, IMU 모드(자력계 미사용)에서는 0 으로 남는 것이 정상이다.</li>
-          <li><strong>SYS</strong>: 위 셋이 채워지면 따라온다. 전부 3 이면 오프셋 22 B 를 읽어 저장하고, 부팅 때 CONFIG 모드에서 되써서 매번 다시 하지 않는다.</li>
+          <li><strong>SYS</strong>: 위 셋이 채워지면 SYS 도 올라간다. 전부 3 이면 오프셋 22 B 를 읽어 저장하고, 부팅 때 CONFIG 모드에서 다시 써 넣어 캘리브레이션을 매번 반복하지 않게 한다.</li>
         </ul>
-        <p>이 절차를 ROS 에서 지켜보게 하려고 <code>event_send(EVT_CALIB_STAT, st)</code> 를 넣었다. 코드 <code>0x20</code> 은 06a 표에 없는 학습자 확장이므로 표와 <code>protocol.md</code> 에 먼저 적는다(<code>0x10</code> 은 "정상 복귀"로 이미 쓰인다). <code>ros2 topic echo /mcu/event</code> 에 <code>32:xxx</code> 가 1초마다 찍히고, 비트를 풀어 보면 어느 항목이 남았는지 보인다. Pi 쪽에서 비트를 풀어 로그로 예쁘게 찍는 것은 §3-4 <code>handle_event</code> 의 TODO 다.</p>
+        <p>이 절차의 진행을 ROS 에서 확인하려고 <code>event_send(EVT_CALIB_STAT, st)</code> 를 넣었다. 코드 <code>0x20</code> 은 06a 표에 없는 학습자 확장이므로 표와 <code>protocol.md</code> 에 먼저 적는다(<code>0x10</code> 은 "정상 복귀"로 이미 쓰인다). <code>ros2 topic echo /mcu/event</code> 에 <code>32:xxx</code> 가 1초마다 출력되고, 비트를 풀어 보면 어느 항목이 남았는지 보인다. Pi 쪽에서 비트를 풀어 읽기 쉬운 로그로 출력하는 것은 §3-4 <code>handle_event</code> 의 TODO 다.</p>
       </div>
 
       <h4>3-6-7. 안전 상태기계 — 전권은 MCU 에</h4>
@@ -1788,7 +1810,7 @@ uint8_t safety_step(uint16_t batt_mv, uint16_t current_ma, const volatile imu_pa
   if (ms_since_cmd &gt; WATCHDOG_MS)                 now |= FAULT_WATCHDOG;   /* bit0 */
   if (batt_mv &lt; BATT_MIN_MV)                      now |= FAULT_LOW_BATT;   /* bit1 */
   if (current_ma &gt; CURR_MAX_MA)                   now |= FAULT_OVERCURR;   /* bit2 */
-  if (ms_since_imu[IMU_PRIMARY] &gt; IMU_TIMEOUT_MS) now |= FAULT_IMU;        /* bit4 — IMU 가 죽으면 기울기 판정도 못 믿는다 */
+  if (ms_since_imu[IMU_PRIMARY] &gt; IMU_TIMEOUT_MS) now |= FAULT_IMU;        /* bit4 — IMU 가 멈추면 기울기 판정도 못 믿는다 */
   else if (tilt_deg(imu) &gt; TILT_MAX_DEG)          now |= FAULT_TILT;       /* bit3 */
   if (HAL_GPIO_ReadPin(DRV_FAULT_PORT, DRV_FAULT_PIN) == GPIO_PIN_RESET) now |= FAULT_DRIVER;   /* bit5, 드라이버의 nFAULT 핀 */
 
@@ -1814,12 +1836,12 @@ uint8_t safety_step(uint16_t batt_mv, uint16_t current_ma, const volatile imu_pa
   return fault_bits;
 }</code></pre>
       <div class="callout why"><span class="ct">왜 Pi 가 아니라 여기인가 — 다시</span>
-        <p>저전압에서 Pi 가 "멈춰라"를 보내려면 Pi 프로세스가 살아 있어야 하고, 시리얼이 붙어 있어야 하고, 브리지가 깨어 있어야 한다. 셋 중 하나만 깨져도 로봇은 방전될 때까지 달린다. MCU 안의 1 ms 루프는 그 셋에 의존하지 않는다.
-        Pi 는 <code>/mcu/fault</code> 와 <code>/mcu/event</code> 로 <em>결과</em>를 받아 목표를 취소하고 사람에게 알린다(10 단계). 이 관계는 "MCU 가 거부권을 가진다"로 요약된다.</p>
+        <p>저전압에서 Pi 가 "멈춰라"를 보내려면 Pi 프로세스가 동작 중이어야 하고, 시리얼이 연결돼 있어야 하고, 브리지가 실행 중이어야 한다. 셋 중 하나만 실패해도 로봇은 방전될 때까지 달린다. MCU 안의 1 ms 루프는 그 셋에 의존하지 않는다.
+        Pi 는 <code>/mcu/fault</code> 와 <code>/mcu/event</code> 로 <em>결과</em>를 받아 목표를 취소하고 사람에게 알린다(10 단계). 이 관계를 한 줄로 줄이면 "출력을 끊는 결정은 MCU 가 내린다"이다.</p>
       </div>
 
       <h4>3-6-8. Pi 없이 검증 — probe 스크립트 <span class="tag mac">Mac</span> / <span class="tag pi">Pi 호스트</span></h4>
-      <p>Nucleo 를 USB 로 꽂고(Mac 이면 <code>/dev/cu.usbmodem*</code>, Pi 호스트면 <code>/dev/mcu</code>) 계약 v2 를 Python 으로 독립 구현한 스크립트로 속도 프레임을 보내고 상태·IMU·이벤트 프레임을 해석한다. <code>pip3 install pyserial</code> 만 있으면 된다. 저장소 루트에 <code>scripts/mcu_probe.py</code> 로 저장한다. 이것은 §3-2 C++ 파서의 <strong>세 번째 독립 구현</strong>이기도 하다 — 셋이 같은 바이트를 같은 값으로 읽으면 계약이 맞다.</p>
+      <p>Nucleo 를 USB 로 꽂는다(Mac 이면 <code>/dev/cu.usbmodem*</code>, Pi 호스트면 <code>/dev/mcu</code>). 계약 v2 를 Python 으로 독립 구현한 스크립트로 속도 프레임을 보내고 상태·IMU·이벤트 프레임을 해석한다. <code>pip3 install pyserial</code> 만 있으면 된다. 저장소 루트에 <code>scripts/mcu_probe.py</code> 로 저장한다. 이 스크립트는 §3-2 C++ 파서 · 펌웨어 C 파서에 이은 <strong>세 번째 독립 구현</strong>이기도 하다. 세 구현이 같은 바이트를 같은 값으로 읽으면 계약이 맞다.</p>
       <pre><code class="lang-python">#!/usr/bin/env python3
 """MCU 단독 검증 (계약 v2): 속도 프레임을 50 Hz 로 보내고 상태/IMU/이벤트 프레임을 해석한다. ROS 불필요.
     python3 scripts/mcu_probe.py /dev/cu.usbmodem1103 0.1 0.1        # v_left v_right [m/s]
@@ -1892,12 +1914,21 @@ with serial.Serial(a.port, a.baud, timeout=0) as s:
     finally:
         s.write(frame(0x01, struct.pack('&lt;hh', 0, 0)))     # 반드시 정지
         print('imu frames per sensor:', n_imu)</code></pre>
-      <p>확인할 것: <strong>① 바퀴가 명령 방향으로 돈다 ② L/R 카운트가 전진에서 둘 다 증가한다 ③ 5초 동안 <code>BAD CRC</code> 가 0 줄이다 ④ IMU0 이 초당 100~200 개, 정지 시 az ≈ +1.00 g, gz ≈ 0 ⑤ 스크립트를 죽여도(<kbd>Ctrl</kbd>+<kbd>C</kbd>) 0.2 초 뒤 바퀴가 멈춘다(MCU 워치독) ⑥ 배터리 커넥터를 뽑아 전압을 떨어뜨리면(또는 <code>BATT_MIN_MV</code> 를 잠시 높여) EVENT low-batt(code=1, detail=mV) 가 한 번 오고 STATE 의 fault 가 0x02(bit1) 로 선다 ⑦ 스크립트를 멈춘 채 두면 0.2 초 뒤 EVENT watchdog(code=4) 과 fault bit0, 다시 보내기 시작하면 1 초 뒤 EVENT recovered(code=16, detail=1)</strong>.
-      ②에서 한쪽이 감소하면 그 엔코더의 A/B 배선을 바꾸거나 CubeMX 의 엔코더 극성을 뒤집는다 — <em>펌웨어에서 부호를 뒤집지 말고 원인을 고친다</em> (이해 확인 8번).</p>
+      <p><strong>확인할 것</strong>은 다음 일곱 가지다.</p>
+      <ul>
+        <li>① 바퀴가 명령 방향으로 돈다</li>
+        <li>② L/R 카운트가 전진에서 둘 다 증가한다</li>
+        <li>③ 5초 동안 <code>BAD CRC</code> 가 0 줄이다</li>
+        <li>④ IMU0 이 초당 100~200 개, 정지 시 az ≈ +1.00 g, gz ≈ 0</li>
+        <li>⑤ 스크립트를 종료해도(<kbd>Ctrl</kbd>+<kbd>C</kbd>) 0.2 초 뒤 바퀴가 멈춘다(MCU 의 명령 워치독)</li>
+        <li>⑥ 배터리 커넥터를 뽑아 전압을 떨어뜨리면(또는 <code>BATT_MIN_MV</code> 를 잠시 높여) EVENT low-batt(code=1, detail=mV) 가 한 번 오고 STATE 의 fault 가 0x02(bit1) 로 설정된다</li>
+        <li>⑦ 스크립트를 멈춘 채 두면 0.2 초 뒤 EVENT watchdog(code=4) 과 fault bit0, 다시 보내기 시작하면 1 초 뒤 EVENT recovered(code=16, detail=1)</li>
+      </ul>
+      <p>②에서 한쪽이 감소하면 그 엔코더의 A/B 배선을 바꾸거나 CubeMX 의 엔코더 극성을 뒤집는다. <em>펌웨어에서 부호를 뒤집지 말고 원인을 고친다</em> (이해 확인 8번).</p>
 
       <h4>3-6-9. 4륜 독립 제어와 슬립 억제 — 이 프로젝트의 기본 구성</h4>
-      <p>바퀴 네 개는 각자 32비트 엔코더(TIM2/5/23/24)와 독립 PID 를 갖는다. "앞바퀴가 주, 뒷바퀴가 보조" 같은 구분은 없다. 좌/우 구분은 <code>v_left</code>/<code>v_right</code> 를 나눌 때만 쓰고, 그 뒤로는 바퀴가 각자 자기 속도를 맞춘다.
-      스키드 스티어는 제자리 회전 때 바퀴가 옆으로 미끄러지는데, 이때 <strong>어느 바퀴가 미끄러지는지는 IMU 가 알려 준다</strong> — 요 각속도 ω(IMU) 가 있으면 바퀴 i 가 <em>땅을 잡고 있을 때</em> 내야 할 속도를 계산할 수 있기 때문이다.</p>
+      <p>바퀴 네 개는 각자 32비트 엔코더(TIM2/5/23/24)와 독립 PID 를 갖는다. "앞바퀴가 주, 뒷바퀴가 보조" 같은 구분은 없다. 좌/우 구분은 <code>v_left</code>/<code>v_right</code> 를 나눌 때만 쓰고, 그 뒤로는 바퀴별 PID 가 각 바퀴의 속도를 목표에 맞춘다.</p>
+      <p>스키드 스티어는 제자리 회전 때 바퀴가 옆으로 미끄러진다. 이때 <strong>어느 바퀴가 미끄러지는지는 IMU 값으로 판별한다</strong>. 요 각속도 ω(IMU) 가 있으면 바퀴 i 가 <em>미끄러지지 않을 때</em> 내야 할 속도를 계산할 수 있기 때문이다.</p>
       <pre class="diagram"><code>   기대 바퀴 속도 (땅을 잡고 있다면)    왼쪽: v_exp = v_body − ω_imu · W/2     오른쪽: v_exp = v_body + ω_imu · W/2
    v_body = 네 바퀴 측정 속도의 중앙값 — 헛도는 바퀴 하나에 끌려가지 않는다
    슬립 비율  s_i = (v_i − v_exp_i) / max(|v_exp_i|, v_min)        → |s_i| 가 문턱 s_th 를 넘으면 그 바퀴가 헛돈다
@@ -1910,10 +1941,10 @@ with serial.Serial(a.port, a.baud, timeout=0) as s:
 #define K_DOWN    0.05f      /* 헛돌 때 계수를 낮추는 양 (루프당) */
 #define K_UP      0.5f       /* 잡혔을 때 되돌리는 속도 (1/s) */
 #define TRAC_MIN  0.30f      /* 완전히 끊지는 않는다 — 0 이면 그 바퀴는 영원히 "잡혔다"로 보인다 */
-#define V_MIN     30.f       /* mm/s — 이보다 느리면 슬립 비율을 계산하지 않는다 (0 나눗셈·잡음) */
+#define V_MIN     30.f       /* mm/s — 분모 하한. |v_exp| 가 이보다 작으면 슬립 비율의 분모를 이 값으로 고정한다 (0 나눗셈·잡음) */
 
 static float median4(float a, float b, float c, float d)
-{ /* 정렬 후 가운데 둘의 평균 — 한두 바퀴가 튀어도 흔들리지 않는다 */
+{ /* 정렬 후 가운데 둘의 평균 — 한 바퀴가 크게 벗어나도 결과는 나머지 셋의 범위 안에 있다 */
   float v[4] = { a, b, c, d };
   for (int i = 1; i &lt; 4; ++i) for (int j = i; j &gt; 0 &amp;&amp; v[j-1] &gt; v[j]; --j) { float t = v[j]; v[j] = v[j-1]; v[j-1] = t; }
   return 0.5f * (v[1] + v[2]);
@@ -1932,39 +1963,52 @@ void traction_step(const float meas[4], const volatile imu_payload_t *imu, float
   }
 }</code></pre>
       <ul>
-        <li><strong>왜 목표가 아니라 출력을 줄이는가.</strong> 헛도는 바퀴는 속도 오차가 작아 보여도(빨리 돌고 있으니) 땅에 힘을 전달하지 못한다. 토크(= 듀티)를 낮춰야 다시 붙는다. 진짜 토크 제어는 모터별 전류 센서가 있어야 하고, 없으면 듀티가 토크의 근사다. <strong>결정(2026-09-15): 전류 센서는 보류.</strong> 1차 구현은 듀티 근사 + BTS7960 IS(fault·스톨 감지)로 가고, §3-9 실험에서 IS 측정치를 기록한 뒤 센서 추가 여부를 다시 정한다 (INVENTORY 6절).</li>
-        <li><strong>왜 IMU 인가.</strong> 엔코더 넷이 서로만 기준으로 삼으면 넷이 같이 미끄러질 때 아무도 모른다. ω 는 IMU 가 땅과 무관하게 잰다. 200 Hz(5 ms) 샘플이면 1 kHz 루프에서 최신값을 읽어 쓰기에 충분하다 (§2-6).</li>
-        <li><strong>왜 중앙값인가.</strong> 평균은 헛도는 바퀴 하나가 끌어올린다. 네 값의 중앙값(가운데 두 값의 평균)은 한두 바퀴가 튀어도 흔들리지 않는다.</li>
-        <li><strong>파라미터는 실측에서.</strong> W 와 바퀴 반지름은 INVENTORY 6절, <code>S_TH</code>·<code>K_DOWN</code>·<code>K_UP</code> 은 §3-9 의 제자리 회전 실험에서 잡는다. 바닥(장판·타일·카펫)마다 값을 기록한다.</li>
-        <li><strong>계약은 그대로다.</strong> 상태 프레임의 <code>l_tick</code>/<code>r_tick</code> 은 쪽당 앞뒤 평균이다. 바퀴별 카운트와 <code>trac_i</code> 를 Pi 에서 보고 싶으면 진단용 프레임(예: <code>0x84</code>)을 추가한다 — 계약 v2 의 TYPE 공간이 그것을 위해 남아 있다.</li>
-        <li><strong>회전 추정은 여전히 IMU 가 주역이다.</strong> 슬립을 억제해도 스키드 스티어의 휠 오도메트리 yaw 는 믿을 것이 못 된다. §3-9 의 360° 회전 캘리브레이션은 바닥마다 값이 달라지므로 EKF(§3-10)에서 휠 yaw 공분산을 크게 둔다.</li>
+        <li><p><strong>왜 목표가 아니라 출력을 줄이는가.</strong> 헛도는 바퀴는 속도 오차가 작아 보여도(빨리 돌고 있으니) 땅에 힘을 전달하지 못한다. 토크(= 듀티)를 낮춰야 땅에 다시 힘이 전달된다.</p>
+          <p>실제 토크 제어에는 모터별 전류 센서가 필요하고, 전류 센서가 없으면 듀티를 토크의 근사로 쓴다. <strong>결정(2026-09-15): 전류 센서는 보류.</strong> 1차 구현은 듀티 근사 + BTS7960 IS(fault·스톨 감지)로 가고, §3-9 실험에서 IS 측정치를 기록한 뒤 센서 추가 여부를 다시 정한다 (INVENTORY 6절).</p></li>
+        <li><strong>왜 IMU 인가.</strong> 엔코더 넷을 서로만 비교하면 넷이 같이 미끄러질 때 슬립을 검출할 수 없다. IMU 는 바퀴와 바닥의 접촉과 무관하게 ω 를 잰다. 200 Hz(5 ms) 샘플이면 1 kHz 루프에서 최신값을 읽어 쓰기에 충분하다 (§2-6).</li>
+        <li><strong>왜 중앙값인가.</strong> 평균은 헛도는 바퀴 하나의 값만으로도 올라간다. 네 값의 중앙값(가운데 두 값의 평균)은 한 바퀴의 값이 크게 벗어나도 나머지 세 값의 범위 안에 머문다. 두 바퀴가 같은 쪽으로 벗어나면 그중 하나가 가운데 두 값에 들어가므로 중앙값도 따라 움직인다.</li>
+        <li><strong>파라미터는 실측에서.</strong> W 와 바퀴 반지름은 INVENTORY 6절, <code>S_TH</code>·<code>K_DOWN</code>·<code>K_UP</code> 은 §3-9 의 제자리 회전 실험에서 정한다. 바닥(장판·타일·카펫)마다 값을 기록한다.</li>
+        <li><strong>계약은 그대로다.</strong> 상태 프레임의 <code>l_tick</code>/<code>r_tick</code> 은 좌 · 우 각각 앞뒤 평균이다. 바퀴별 카운트와 <code>trac_i</code> 를 보내는 진단용 프레임은 계약 v2 에 없다. 추가하려면 06a §4-2 의 표부터 고친다(fw-17 이해 확인 8). 번호는 그 표에 없는 빈 번호(예: <code>0x85</code>)를 쓴다. <code>0x84</code> 는 이미 설정 응답이다.</li>
+        <li><strong>회전 추정의 주 입력은 여전히 IMU 다.</strong> 슬립을 억제해도 스키드 스티어의 휠 오도메트리 yaw 는 정확하지 않다. §3-9 의 360° 회전 캘리브레이션은 바닥마다 값이 달라지므로 EKF(§3-10)에서 휠 yaw 공분산을 크게 둔다.</li>
       </ul>
 
       <h3>3-7. 두 IMU 비교 실험 — WT901 vs BNO055, 기본 IMU 정하기 <span class="tag cli">컨테이너</span> <span class="tag bench">벤치</span></h3>
       <div class="callout note"><span class="ct">이 절은 06b 로 옮겼다</span>
         <p>본문(<code>imu_stats.py</code> 스크립트, 비교표 ①~⑤, <code>imu_primary</code> 결정)은 <a href="06b-bench-integration.html">06b · 실물 MCU 벤치 통합</a>으로 옮겼다. 절 번호와 제목은 다른 쪽이 가리키고 있어 남겨 둔다.</p>
         <p><strong>왜 옮겼는가:</strong> 두 IMU 를 읽는 실물 Nucleo 와 펌웨어가 있어야 하는 첫 절이기 때문이다. 가짜 IMU 는 <code>sensor_id = 0</code> 하나만 내므로 <code>/imu/bno055/data_raw</code> 에는 메시지가 없다(§3-5 의 "검증하지 못한 것" 표). 이 쪽은 이 절 없이 100 % 가 된다.</p>
-        <p class="small">이 쪽의 다른 곳이 "§3-7 의 std", "§3-7 표"라고 부르는 것은 06b 로 옮겨 간 그 표다. 그 값이 생기기 전까지 §3-4 의 IMU 공분산과 §3-10 의 프로세스 노이즈는 임시값 그대로 둔다.</p>
+        <p class="small">이 쪽의 다른 곳이 "§3-7 의 std", "§3-7 표"라고 부르는 것은 06b 로 옮겨 간 그 표다. 그 표의 값이 생기기 전까지 §3-4 의 IMU 공분산과 §3-10 의 프로세스 노이즈는 임시값 그대로 둔다.</p>
       </div>
 
       <h3>3-8. 통합 — 실제 MCU 와 연결 <span class="tag pi">Pi 호스트</span> → <span class="tag cli">컨테이너</span> <span class="tag bench">벤치</span></h3>
       <div class="callout note"><span class="ct">이 절은 06b 로 옮겼다</span>
-        <p>본문(1) 장치와 ModemManager · 2) ROS 없이 <code>xxd</code> 로 날바이트 보기 · 3) 브리지를 실제 포트로 · 4) teleop 으로 방향 · 엔코더 부호 · 회전 부호 · 워치독 확인)은 <a href="06b-bench-integration.html">06b · 실물 MCU 벤치 통합</a>으로 옮겼다. 절 번호와 제목은 다른 쪽이 가리키고 있어 남겨 둔다.</p>
-        <p><strong>06b 를 여는 조건은 둘이다:</strong> 이 쪽의 체크포인트 100 %, 그리고 펌웨어 가이드의 F19(벤치 수용 시험) 통과. 거기에 입구에서 <code>scripts/check_nominal.sh</code> 로 <code>robot_params.yaml</code> 의 출처 칸에 <code>fake</code> 가 남아 있지 않은지 확인한다.
-        가짜 값은 가짜 MCU 앞에서만 무해하다 — 노드는 그 숫자를 그대로 계산에 쓰고, <code>max_linear_vel</code> · <code>max_angular_vel</code> 은 브리지가 <code>cmd_vel</code> 을 잘라내는 안전 클램프인데 지금 <code>NOMINAL(fake)</code> 다.</p>
+        <p>이 절의 본문 네 부분은 <a href="06b-bench-integration.html">06b · 실물 MCU 벤치 통합</a>으로 옮겼다.</p>
+        <ul>
+          <li>1) 장치와 ModemManager</li>
+          <li>2) ROS 없이 <code>xxd</code> 로 날바이트 보기</li>
+          <li>3) 브리지를 실제 포트로</li>
+          <li>4) teleop 으로 방향 · 엔코더 부호 · 회전 부호 · 워치독 확인</li>
+        </ul>
+        <p>절 번호와 제목은 다른 쪽이 가리키고 있어 남겨 둔다.</p>
+        <p><strong>06b 의 시작 조건은 둘이다:</strong> 이 쪽의 체크포인트 100 %, 그리고 펌웨어 가이드의 F19(벤치 수용 시험) 통과. 그리고 06b 입구에서 <code>scripts/check_nominal.sh</code> 로 <code>robot_params.yaml</code> 의 출처 칸에 <code>fake</code> 가 남아 있지 않은지 확인한다.
+        가짜 값은 가짜 MCU 앞에서만 무해하다. 노드는 그 숫자를 그대로 계산에 쓴다. 그리고 <code>max_linear_vel</code> · <code>max_angular_vel</code> 은 브리지가 <code>cmd_vel</code> 을 제한하는 안전 클램프인데, 지금은 <code>NOMINAL(fake)</code> 다.</p>
         <p class="small">§3-3 의 "ModemManager · udev 는 §3-8", §3-12 표의 "<code>xxd</code>(§3-8 ②)"는 06b 로 옮겨 간 같은 내용을 가리킨다.</p>
       </div>
 
       <h3>3-9. 캘리브레이션 — 바퀴 반지름, 좌우 간격, 그리고 회전은 IMU 로 <span class="tag asm">조립 후</span></h3>
       <div class="callout note"><span class="ct">이 절의 수행은 09a 로 옮겼다</span>
-        <p><strong>왜 지금이 아닌가</strong> — 세 실험이 재는 것은 전부 <em>바퀴가 하중을 받고 바닥에서 구를 때</em>의 값이다. 보정하려는 오차(타이어 눌림, 접지점의 폭, 스키드 스티어의 옆 미끄러짐)는 센서 · 보드 · 배터리가 다 올라간 최종 무게와 실제 바닥에서만 생기고, 바퀴를 띄운 벤치에서는 0 이다. 부품을 덜 올린 채 보정하면 조립 뒤에 다시 해야 한다.
-        절차와 세 주행의 표는 <a href="09a-assembly-gate.html#s3-5-4">09a §3-5-4</a> 에 있다. 여기서는 <strong>무엇을 재게 되는지</strong>만 알아 두고 지나간다 — ① 2 m 직진으로 <code>wheel_radius</code>, ② 제자리 N 바퀴로 <code>wheel_separation</code>, ③ 2 m 사각형으로 폐합 오차. ③ 은 보정하지 않고 측정만 하는데, 그 값이 <strong>yaw 공분산의 근거</strong>다(§3-4 코드의 TODO · 이해 확인 7).</p>
-        <p>그때까지 <code>robot_params.yaml</code> 의 제원은 NOMINAL 로 두고(§3-5), 그 값으로 나온 주행 결과는 믿지 않는다. 이 절이 <code>wheel_radius</code> · <code>wheel_separation</code> 의 NOMINAL 을 MEASURED 로 바꾸는 자리다(<code>encoder_cpr</code> 은 여기가 아니라 <a href="fw-09-encoder.html">fw-09</a> — §3-5).</p>
-        <p class="small">옛 판의 표 ③ 에는 폐합 오차의 합격선이 <strong>출처 없는 옛 수치</strong>로 적혀 있었다. 그것은 합격선으로 쓰지 않는다 — 09a 에서 내 로봇으로 재 본 뒤 근거와 함께 내가 정한다.</p>
+        <p><strong>왜 지금이 아닌가</strong> — 세 실험이 재는 것은 전부 <em>바퀴가 하중을 받고 바닥에서 구를 때</em>의 값이다. 보정하려는 오차(타이어 눌림, 접지점의 폭, 스키드 스티어의 옆 미끄러짐)는 센서 · 보드 · 배터리가 다 올라간 최종 무게와 실제 바닥에서만 생기고, 바퀴를 띄운 벤치에서는 0 이다. 부품을 덜 올린 채 보정하면 조립 뒤에 다시 해야 한다.</p>
+        <p>절차와 세 주행의 표는 <a href="09a-assembly-gate.html#s3-5-4">09a §3-5-4</a> 에 있다. 여기서는 <strong>무엇을 재게 되는지</strong>만 알아 두고 지나간다.</p>
+        <ul>
+          <li>① 2 m 직진으로 <code>wheel_radius</code></li>
+          <li>② 제자리 N 회전으로 <code>wheel_separation</code></li>
+          <li>③ 2 m 사각형으로 폐합 오차. ③ 은 보정하지 않고 측정만 하는데, 그 값이 <strong>yaw 공분산의 근거</strong>다(§3-4 코드의 TODO · 이해 확인 7).</li>
+        </ul>
+        <p>그때까지 <code>robot_params.yaml</code> 의 제원은 NOMINAL 로 두고(§3-5), 그 값으로 나온 주행 결과는 확정값으로 간주하지 않는다. 이 절이 <code>wheel_radius</code> · <code>wheel_separation</code> 의 NOMINAL 을 MEASURED 로 바꾸는 자리다(<code>encoder_cpr</code> 은 여기가 아니라 <a href="fw-09-encoder.html">fw-09</a> — §3-5).</p>
+        <p class="small">옛 판의 표 ③ 에는 폐합 오차의 합격선이 <strong>출처 없는 옛 수치</strong>로 적혀 있었다. 그 옛 수치는 합격선으로 쓰지 않는다. 합격선은 09a 에서 내 로봇으로 재 본 뒤 근거와 함께 내가 정한다.</p>
       </div>
 
       <h3>3-10. EKF — robot_localization 으로 휠 오도메트리와 IMU 융합 <span class="tag cli">컨테이너</span> <span class="tag sim">SIM</span></h3>
-      <p>휠 오도메트리는 <em>거리</em>는 잘 재고 <em>회전</em>은 못 재고, 자이로는 <em>회전</em>은 잘 재고 <em>거리</em>는 아예 못 잰다. 둘을 합치는 표준 도구가 <code>robot_localization</code> 의 <code>ekf_node</code> 다. 02 §3-3 의 Dockerfile 학습 단계 패키지 블록에 <code>ros-humble-robot-localization</code> 이 들어 있다 — 없으면 이미지를 다시 빌드한다.</p>
+      <p>휠 오도메트리는 <em>거리</em>는 잘 재고 <em>회전</em>은 못 재고, 자이로는 <em>회전</em>은 잘 재고 <em>거리</em>는 아예 못 잰다. 둘을 합치는 표준 도구가 <code>robot_localization</code> 의 <code>ekf_node</code> 다. 02 §3-3 의 Dockerfile 학습 단계 패키지 블록에 <code>ros-humble-robot-localization</code> 이 들어 있다. 없으면 이미지를 다시 빌드한다.</p>
       <pre><code class="lang-bash">ros2 pkg list | grep robot_localization      # 없으면 02 §3-3 으로 돌아가 Dockerfile 의 학습 단계 블록에 추가 후 rebuild</code></pre>
       <pre><code class="lang-yaml"># ros2_ws/src/rpi5_bringup/config/ekf.yaml
 ekf_filter_node:
@@ -2002,13 +2046,13 @@ ekf_filter_node:
     # 프로세스 노이즈: 클수록 "모델을 덜 믿고 센서를 더 믿는다". 기본값으로 시작하고 §3-7 표의 std 를 근거로 조정
     # process_noise_covariance: [...]</code></pre>
       <div class="callout why"><span class="ct">왜 휠에서 위치가 아니라 속도를 넣는가</span>
-        <p><code>/odom</code> 의 pose 는 브리지가 이미 적분한 값이라 누적 오차가 들어 있다. 그것을 EKF 에 "관측"으로 주면 EKF 는 드리프트를 사실로 믿고 IMU 가 아무리 반박해도 따라간다. 속도(twist)는 매 프레임의 <em>차분</em>이라 누적이 없다. EKF 가 속도를 자기 방식으로 적분하고, 회전은 IMU 의 vyaw 가 함께 결정한다.
-        같은 이유로 IMU 의 <code>orientation</code>(센서 내부 융합 각도)도 넣지 않는다 — 우리는 <code>orientation_covariance[0] = -1</code> 로 "없음"을 표시했다(§3-4). 넣고 싶으면 §3-7 표에서 그 각도가 얼마나 믿을 만한지부터 재고 나서.</p>
+        <p><code>/odom</code> 의 pose 는 브리지가 이미 적분한 값이라 누적 오차가 들어 있다. 이 pose 를 EKF 에 "관측"으로 주면 EKF 는 드리프트까지 참값으로 간주하고, IMU 값과 차이가 나도 pose 쪽을 따라간다. 속도(twist)는 매 프레임의 <em>차분</em>이라 누적이 없다. EKF 가 속도를 자기 방식으로 적분하고, 회전은 IMU 의 vyaw 가 함께 결정한다.
+        같은 이유로 IMU 의 <code>orientation</code>(센서 내부 융합 각도)도 넣지 않는다. §3-4 에서 <code>orientation_covariance[0] = -1</code> 로 "없음"을 표시했다. 넣고 싶으면 먼저 §3-7 표에서 그 각도의 오차가 얼마인지 잰다.</p>
       </div>
-      <p><strong>실행 순서</strong> — TF 는 한 프레임에 부모가 하나다. 브리지의 <code>publish_tf</code> 를 <strong>먼저 끄고</strong> EKF 를 켠다. 05 의 URDF 에 <code>imu_link</code> 가 살아 있어야 EKF 가 IMU 의 각속도를 <code>base_footprint</code> 축으로 돌려 놓을 수 있다.</p>
-      <p><strong>구성은 가짜 MCU 로 닫는다.</strong> §3-2 의 <code>LoopbackMcu</code> 가 가짜 IMU 를 내는 이유가 이것이다 — ekf.yaml · 토픽 이름 · QoS · 프레임 이름 · TF 발행자가 하나인지는 전부 하드웨어 없이 확인된다.
-      <code>imu_link</code> 는 URDF 에서 온다. 05 에서 <code>rpi5_robot.urdf.xacro</code> 의 <code>imu_link</code> 블록을 이미 살렸다면 기본 모델을 그대로 쓰고, 아직이라면(IMU 가 섀시에 장착되지 않아 위치를 잴 수 없다) 05 의 가짜 치수 모델 <code>model:=test_robot.urdf.xacro</code> 를 쓴다 — 거기에는 <code>imu_link</code> 가 들어 있다.
-      어느 쪽이든 이 확인의 결과는 같다: <code>two_d_mode</code> 에서 EKF 가 IMU 로부터 쓰는 것은 vyaw 하나이고, 강체의 각속도는 어느 점에서 재도 같으므로 <code>imu_link</code> 의 <em>위치</em>는 결과에 들어오지 않는다. 들어오는 것은 <em>방향</em>(rpy)뿐이고, 그 실측은 09a 의 일이다.</p>
+      <p><strong>실행 순서</strong> — TF 는 한 프레임에 부모가 하나다. 브리지의 <code>publish_tf</code> 를 <strong>먼저 끄고</strong> EKF 를 켠다. 05 의 URDF 에 <code>imu_link</code> 가 활성 상태여야 EKF 가 IMU 의 각속도를 <code>base_footprint</code> 축으로 변환할 수 있다.</p>
+      <p><strong>구성은 가짜 MCU 로 통과시킨다.</strong> §3-2 의 <code>LoopbackMcu</code> 가 가짜 IMU 를 내는 것도 이 확인을 위해서다. ekf.yaml · 토픽 이름 · QoS · 프레임 이름 · TF 발행자가 하나인지는 전부 하드웨어 없이 확인된다.</p>
+      <p><code>imu_link</code> 는 URDF 에서 온다. 05 에서 <code>rpi5_robot.urdf.xacro</code> 의 <code>imu_link</code> 블록을 이미 활성화했다면 기본 모델을 그대로 쓴다. 아직이라면(IMU 가 섀시에 장착되지 않아 위치를 잴 수 없다) 05 의 가짜 치수 모델 <code>model:=test_robot.urdf.xacro</code> 를 쓴다. 이 모델에는 <code>imu_link</code> 가 들어 있다.
+      어느 쪽이든 이 확인의 결과는 같다. <code>two_d_mode</code> 에서 EKF 가 IMU 로부터 쓰는 것은 vyaw 하나이고, 강체의 각속도는 어느 점에서 재도 같으므로 <code>imu_link</code> 의 <em>위치</em>는 결과에 들어오지 않는다. 결과에 영향을 주는 것은 <em>방향</em>(rpy)뿐이고, 방향의 실측은 09a 에서 한다.</p>
       <pre><code class="lang-bash"># 터미널 1: 브리지 — 가짜 MCU, TF 를 끈다 (yaml 의 publish_tf: false 로 바꿔도 된다)
 ros2 run rpi5_mcu_bridge_cpp mcu_bridge_node --ros-args --params-file /ros2_ws/src/rpi5_bringup/config/robot_params.yaml -p simulate:=true -p publish_tf:=false
 # 터미널 2: URDF — base_footprint → … → imu_link 를 TF 에 올린다. 바퀴 관절은 브리지의 /joint_states 가 채우므로 가짜 발행자는 끈다
@@ -2022,13 +2066,13 @@ ros2 run tf2_ros tf2_echo odom base_footprint             # 값이 나오고, �
 ros2 run tf2_ros tf2_echo base_footprint imu_link         # URDF 의 imu_link — 없으면 EKF 가 "Could not obtain transform" 경고 후 IMU 를 버린다
 ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.2}, angular: {z: 0.0}}" -r 10     # 다른 터미널에서
 ros2 topic echo /odometry/filtered --field pose.pose.position      # x 가 /odom 과 같은 빠르기로 는다 — 입력 둘이 EKF 에 닿았다는 뜻</code></pre>
-      <p>실물 MCU 에서는 <code>-p simulate:=false</code> 로 바꾸는 것만 다르다(06b 이후). 여기서 닫히는 것은 <strong>구성</strong>이다. 융합이 무엇을 <em>고치는지</em>는 아래 콜아웃이 가리키는 09a 의 몫이고, 그것은 SIM 으로 볼 수 없다.</p>
+      <p>실물 MCU 에서는 <code>-p simulate:=false</code> 로 바꾸는 것만 다르다(06b 이후). 이 쪽에서 검증을 마치는 것은 <strong>구성</strong>이다. 융합이 무엇을 <em>고치는지</em>는 아래 콜아웃이 가리키는 09a 에서 확인한다. 융합의 효과는 SIM 으로 볼 수 없다.</p>
       <div class="callout note"><span class="ct">이 절의 "효과를 눈으로"는 수행을 09a 로 옮겼다</span>
-        <p><span class="tag asm">조립 후</span> <strong>왜 지금이 아닌가</strong> — 가짜 IMU 의 gz 는 명령 ω 그대로라 휠 yaw 와 IMU yaw 가 언제나 같다: EKF 가 고칠 차이가 없다. 바퀴를 띄운 벤치에서는 반대로 휠은 회전을 보고하는데 차체(IMU)는 돌지 않는다 — 차이는 보이지만 어느 쪽이 참인지 판정할 기준(실제로 돈 각도)이 없다.
-        융합의 효과는 바퀴가 바닥에서 미끄러지며 도는 실제 제자리 회전에서만 보인다. 절차는 <a href="09a-assembly-gate.html#s3-5-5">09a §3-5-5</a> 에 있다. 여기서는 <strong>무엇을 보게 되는지</strong>만 알아 두고 지나간다 — 제자리 360° 회전에서 <code>/odom</code> yaw 와 <code>/odometry/filtered</code> yaw 를 나란히 놓고, filtered 가 어느 쪽에 가까운지.</p>
-        <p class="small">여기까지의 <strong>구성</strong>(<code>ekf.yaml</code> · 토픽 이름 · QoS · 프레임 이름 · TF 발행자가 하나인지)은 이 쪽에서 가짜 MCU 로 닫는다. 아래 "런치파일에 넣기"도 이 쪽의 일이다.</p>
+        <p><span class="tag asm">조립 후</span> <strong>왜 지금이 아닌가</strong> — 가짜 IMU 의 gz 는 명령 ω 그대로라 휠 yaw 와 IMU yaw 가 언제나 같다. 그래서 EKF 가 고칠 차이가 없다. 바퀴를 띄운 벤치에서는 반대로 휠 오도메트리에는 회전이 나오는데 차체(IMU)는 돌지 않는다. 차이는 보이지만 어느 쪽이 참인지 판정할 기준(실제로 돈 각도)이 없다.</p>
+        <p>융합의 효과는 바퀴가 바닥에서 미끄러지며 도는 실제 제자리 회전에서만 보인다. 절차는 <a href="09a-assembly-gate.html#s3-5-5">09a §3-5-5</a> 에 있다. 여기서는 <strong>무엇을 보게 되는지</strong>만 알아 두고 지나간다. 09a 에서는 제자리 360° 회전에서 <code>/odom</code> yaw 와 <code>/odometry/filtered</code> yaw 를 나란히 놓고, filtered 가 어느 쪽에 가까운지 본다.</p>
+        <p class="small">여기까지의 <strong>구성</strong>(<code>ekf.yaml</code> · 토픽 이름 · QoS · 프레임 이름 · TF 발행자가 하나인지)은 이 쪽에서 가짜 MCU 로 통과시킨다. 아래 "런치파일에 넣기"도 이 쪽에서 한다.</p>
       </div>
-      <p><strong>런치파일에 넣기</strong> — <code>robot.launch.py</code> 에 <code>use_ekf</code> 인자와 EKF 노드를 더하고, 브리지의 <code>publish_tf</code> 를 그 반대로 넘긴다(joint_state_publisher 를 <code>use_mcu</code> 의 반대로 넘긴 것과 같은 수법).</p>
+      <p><strong>런치파일에 넣기</strong> — <code>robot.launch.py</code> 에 <code>use_ekf</code> 인자와 EKF 노드를 더한다. 브리지의 <code>publish_tf</code> 에는 <code>use_ekf</code> 의 반대값을 넘긴다(joint_state_publisher 에 <code>use_mcu</code> 의 반대값을 넘긴 것과 같은 방법).</p>
       <pre><code class="lang-python">        DeclareLaunchArgument('use_ekf', default_value='true',
                               description='robot_localization EKF 로 odom+IMU 융합, TF 발행 (06 §3-10)'),
     ...
@@ -2042,48 +2086,55 @@ ros2 topic echo /odometry/filtered --field pose.pose.position      # x 가 /odom
         parameters=[PathJoinSubstitution([bringup_share, 'config', 'ekf.yaml'])],
         condition=IfCondition(LaunchConfiguration('use_ekf')),
     )</code></pre>
-      <p>뒤 단계와의 연결: 09 §3-6 의 Nav2 파라미터에서 <code>odom_topic</code> 을 <code>/odometry/filtered</code> 로 준다. EKF 를 <em>끄고</em> 싶으면 <code>use_ekf:=false</code> — 브리지가 다시 TF 를 쏘고 Nav2 는 <code>/odom</code> 을 본다. 어느 쪽이든 <code>odom → base_footprint</code> 를 쏘는 노드는 <strong>정확히 하나</strong>다.</p>
+      <p>뒤 단계와의 연결: 09 §3-6 의 Nav2 파라미터에서 <code>odom_topic</code> 을 <code>/odometry/filtered</code> 로 준다. EKF 를 <em>끄고</em> 싶으면 <code>use_ekf:=false</code> 로 띄운다. 그러면 브리지가 다시 TF 를 발행하고 Nav2 는 <code>/odom</code> 을 쓴다. 어느 쪽이든 <code>odom → base_footprint</code> 를 발행하는 노드는 <strong>정확히 하나</strong>다.</p>
 
       <h3>3-11. Foxglove 로 보기 <span class="tag mac">Mac</span> <span class="tag sim">SIM</span></h3>
-      <p>가짜 MCU 와 EKF(§3-10 의 네 터미널)를 띄워 둔 채 Mac 의 Foxglove 로 본다. 3번의 뒷부분은 06b, 4번의 뒷부분은 09a 의 일이다.</p>
+      <p>가짜 MCU 와 EKF(§3-10 의 네 터미널)를 띄워 둔 채 Mac 의 Foxglove 로 본다. 3번의 뒷부분은 06b 에서, 4번의 뒷부분은 09a 에서 한다.</p>
       <ol>
         <li><strong>Raw Messages</strong> 패널에 <code>/odom</code> — pose 와 twist 가 50 Hz 로 바뀌는지. <code>header.frame_id = odom</code>, <code>child_frame_id = base_footprint</code>.</li>
         <li><strong>Plot</strong> 패널 1: <code>/odom.pose.pose.position.x</code>, <code>/odometry/filtered.pose.pose.position.x</code> — 직진에서 두 선이 겹친다(거리는 휠이 정확하다).</li>
-        <li><strong>Plot</strong> 패널 2: <code>/imu/wt901/data_raw.angular_velocity.z</code> 와 <code>/imu/bno055/data_raw.angular_velocity.z</code> 를 한 그래프에. QoS 는 Best Effort. SIM 에서는 가짜 IMU(<code>sensor_id = 0</code>)가 WT901 토픽으로만 나온다 — 회전 명령을 주면 명령 ω 그대로의 계단이 한 줄 보이고 BNO055 쪽은 비어 있다. 여기까지가 이 쪽이다.
-        <span class="tag bench">벤치</span> 두 선이 회전 시 겹치는지, 정지 시 어느 쪽이 더 흔들리는지(§3-7 ④ 지연도 여기서 읽는다)는 실물 IMU 두 개가 있는 06b 에서 본다.</li>
-        <li><strong>3D</strong> 패널: Display frame <code>odom</code>, TF 와 URDF(<code>/robot_description</code>) 켜기. <code>cmd_vel</code> 을 주면 로봇이 <code>odom</code> 안에서 움직이고, 바퀴 관절 네 개가 <code>/joint_states</code> 로 도는 것이 보인다(같은 쪽의 앞 · 뒤 바퀴는 같은 각도다 — 상태 프레임이 쪽당 값만 싣는다, §3-4). 바퀴 링크가 TF 에 없다고 나오면 §3-5 의 TF 확인으로 돌아간다. 여기까지가 이 쪽이다.
-        <span class="tag asm">조립 후</span> 실제로 사각형을 주행한 뒤 출발점 근처로 돌아오는지 보는 것은 <a href="09a-assembly-gate.html#s3-5-4">09a §3-5-4</a>에서 한다. 왜 미루는가: 가짜 MCU 는 명령대로 완벽히 움직이므로 SIM 의 사각형은 언제나 닫힌다 — 닫히지 않는 만큼이 제원과 슬립의 오차인데, 그것은 바닥을 구르는 실물에만 있다(09a §3-5-4 ③).</li>
+        <li><strong>Plot</strong> 패널 2: <code>/imu/wt901/data_raw.angular_velocity.z</code> 와 <code>/imu/bno055/data_raw.angular_velocity.z</code> 를 한 그래프에. QoS 는 Best Effort. SIM 에서는 가짜 IMU(<code>sensor_id = 0</code>)가 WT901 토픽으로만 나온다. 회전 명령을 주면 명령 ω 그대로의 계단이 한 줄 보이고 BNO055 쪽은 비어 있다. 여기까지가 이 쪽에서 하는 확인이다.
+        <span class="tag bench">벤치</span> 두 선이 회전 시 겹치는지, 정지 시 어느 쪽의 잡음이 더 큰지(§3-7 ④ 지연도 여기서 읽는다)는 실물 IMU 두 개가 있는 06b 에서 본다.</li>
+        <li><strong>3D</strong> 패널: Display frame <code>odom</code>, TF 와 URDF(<code>/robot_description</code>) 켜기. <code>cmd_vel</code> 을 주면 로봇이 <code>odom</code> 안에서 움직이고, 바퀴 관절 네 개가 <code>/joint_states</code> 로 도는 것이 보인다. 같은 쪽의 앞 · 뒤 바퀴는 같은 각도다. 상태 프레임이 좌 · 우 각각의 값만 싣기 때문이다(§3-4). 바퀴 링크가 TF 에 없다고 나오면 §3-5 의 TF 확인으로 돌아간다. 여기까지가 이 쪽에서 하는 확인이다.
+        <span class="tag asm">조립 후</span> 실제로 사각형을 주행한 뒤 출발점 근처로 돌아오는지 보는 것은 <a href="09a-assembly-gate.html#s3-5-4">09a §3-5-4</a>에서 한다. 왜 미루는가: 가짜 MCU 는 명령대로 완벽히 움직이므로 SIM 의 사각형 경로는 언제나 출발점으로 돌아온다(폐합). 폐합되지 않는 거리가 제원과 슬립의 오차이고, 이 오차는 바닥을 구르는 실물에만 있다(09a §3-5-4 ③).</li>
       </ol>
 
       <h3>3-12. 자주 겪는 문제</h3>
-      <p>앞의 두 줄은 가짜 MCU 에서 만나는 것이다. 실물 MCU 나 주행이 있어야 만나는 증상(프레임 오류, <code>/dev/mcu</code>, fault 비트, 직진인데 휨)도 이 표에 그대로 둔다 — 06b · 09a 에서 돌아와 찾는다.</p>
+      <p>아래 표의 앞 두 줄은 가짜 MCU 에서 겪는 증상이다. 실물 MCU 나 주행이 있어야 나타나는 증상(프레임 오류, <code>/dev/mcu</code>, fault 비트, 직진인데 휨)도 이 표에 그대로 둔다. 06b · 09a 를 진행하다가 이 표로 돌아와 찾는다.</p>
       <div class="tbl"><table>
         <thead><tr><th>증상</th><th>원인 → 조치</th></tr></thead>
         <tbody>
           <tr><td><code>simulate:=true</code> 인데 <code>/odom</code> 의 x 가 0 에서 움직이지 않는다. 시작 로그에 "비어 있습니다 (0 = EMPTY 자리표시)" ERROR</td><td><code>robot_params.yaml</code> 의 제원 세 값이 0 그대로다. yaml 이 코드 기본값을 덮어써 가짜 MCU 의 바퀴 둘레가 0 이 됐다 → §3-5 의 첫 단계. 고쳤는데도 같으면 install 공간의 yaml 이 옛 사본이다(<code>rpi5_bringup</code> 재빌드)</td></tr>
-          <tr><td><code>use_fake_joints:=false</code> 로 띄우면 <code>view_frames</code> 에 바퀴 링크 4개가 없다</td><td><code>/joint_states</code> 의 <code>name</code> 이 URDF 의 관절 이름과 다르다. robot_state_publisher 는 모르는 이름을 조용히 버린다 → §3-4 의 <code>js.name</code> 을 <code>front_left_wheel_joint</code> 등 네 개로. 브리지가 안 떠 있어도 같은 증상이다(<code>ros2 topic hz /joint_states</code>)</td></tr>
+          <tr><td><code>use_fake_joints:=false</code> 로 띄우면 <code>view_frames</code> 에 바퀴 링크 4개가 없다</td><td><code>/joint_states</code> 의 <code>name</code> 이 URDF 의 관절 이름과 다르다. robot_state_publisher 는 URDF 에 없는 관절 이름을 오류 표시 없이 무시한다 → §3-4 의 <code>js.name</code> 을 <code>front_left_wheel_joint</code> 등 네 개로 고친다. 브리지가 안 떠 있어도 같은 증상이다(<code>ros2 topic hz /joint_states</code>)</td></tr>
           <tr><td>"프레임 오류 … dropped=N" 에서 N 이 계속 는다</td><td>동기 손실. ① 보드레이트(양쪽 460800?) ② GND 공통 ③ 펌웨어가 같은 UART 에 <code>printf</code> 디버그 문자열을 섞어 보낸다 → 디버그는 다른 UART 나 SWO 로</td></tr>
           <tr><td>"프레임 오류 … bad_crc=N" 이 는다, dropped 는 0</td><td>바이트는 정렬되는데 CRC 만 틀림 → 양쪽 CRC 구현 차이(다항식 0x07 / 초기값 0x00 / 범위 TYPE~PAYLOAD). <code>protocol_check</code> 의 <code>crc8(01 f4 01 f4 01)=15</code> 를 펌웨어 <code>crc8()</code> 에도 넣어 본다. 가끔만 나면 노이즈(모터선 이격)</td></tr>
           <tr><td>연결은 됐는데 <code>/odom</code> 이 0 Hz</td><td>상태 프레임이 안 온다. 호스트에서 <code>xxd</code>(§3-8 ②)로 <code>aa55 8111</code> 이 보이는지. 안 보이면 펌웨어 ⑤(50 Hz 송신) 또는 TX 배선. 보이면 브리지의 포트 파라미터</td></tr>
           <tr><td><code>/imu/data_raw</code> 는 0 Hz 인데 <code>/imu/wt901/data_raw</code> 는 나온다</td><td><code>imu_primary</code> 와 <code>sensor_id</code> 불일치(0 = WT901, 1 = BNO055). 파라미터를 바꾸거나 펌웨어의 sensor_id 를 확인</td></tr>
-          <tr><td><code>Permission denied</code> / <code>No such file</code> (/dev/mcu)</td><td>컨테이너에 장치가 안 넘어옴(02 compose 의 devices) · udev 규칙 미적용(<code>udevadm trigger</code>) · 컨테이너 사용자가 <code>dialout</code> 그룹이 아님</td></tr>
+          <tr><td><code>Permission denied</code> / <code>No such file</code> (/dev/mcu)</td><td>컨테이너에 장치가 전달되지 않음(02 compose 의 devices) · udev 규칙 미적용(<code>udevadm trigger</code>) · 컨테이너 사용자가 <code>dialout</code> 그룹이 아님</td></tr>
           <tr><td>예외 <code>can't compare times with different time sources</code></td><td><code>stamp_from_tick()</code> 이 만든 시각(<code>RCL_ROS_TIME</code>)과 <code>now()</code> 의 소스가 다르다. <code>rclcpp::Time(ns, RCL_ROS_TIME)</code> 생성자를 썼는지, <code>use_sim_time</code> 이 노드마다 다르지 않은지</td></tr>
           <tr><td>TF 에서 <code>base_footprint</code>(또는 <code>base_link</code>)에 부모가 둘</td><td>브리지 <code>publish_tf</code> 와 EKF 가 동시에 발행 → 하나만. 또는 <code>base_frame: base_link</code> 인 채 URDF 루트가 <code>base_footprint</code> → yaml 을 고친다(05 §3-8 부모 둘 실험)</td></tr>
           <tr><td>EKF 경고 <code>Could not obtain transform from imu_link to base_footprint</code></td><td>URDF 에 <code>imu_link</code> 가 없거나 robot_state_publisher 가 안 떠 있다. <code>tf2_echo base_footprint imu_link</code> 로 확인(05 §3-1·3-2 의 <code>imu_link</code>)</td></tr>
-          <tr><td>정지인데 <code>/odometry/filtered</code> yaw 가 천천히 돈다</td><td>자이로 바이어스. §3-7 ① 의 gz mean 이 06b §3-7 에서 내가 정한 허용(쓰임새에서 거꾸로 계산해 노트에 적은 값)을 넘으면 펌웨어 영점(<code>wt901_zero_gyro</code>) 또는 BNO055 캘리브레이션. IMU 공분산이 너무 작아도 그렇다</td></tr>
-          <tr><td>회전하면 <code>/odom</code> 위치가 튄다 / x 가 순간 크게 뛴다</td><td><code>tick_ms</code> 가 단조 증가하는지(펌웨어가 리셋됐거나 랩어라운드). 브리지 로그의 dt 가 음수·거대하면 그 프레임을 버리는 코드를 <code>integrate_odometry()</code> 의 TODO 에 넣는다</td></tr>
-          <tr><td>직진 명령에 로봇이 한쪽으로 휜다</td><td>① 좌우 PID 게인이 다르다(펌웨어) ② 바퀴 지름이 다르다(타이어 마모) ③ 엔코더 CPR 이 한쪽만 다르다. §3-9 ① 을 좌우 따로 잰다. 4륜이라 앞뒤 바퀴 지름 차이도 본다 — 바퀴별 PID 라 한 바퀴만 게인이 다른 경우도 있다</td></tr>
-          <tr><td>teleop 을 눌러도 안 움직이고 <code>/mcu/fault</code> 가 0 이 아니다</td><td>비트를 읽는다(06a §4-2 표): bit0 워치독(브리지가 명령을 안 보냄) · bit1 저전압(배터리) · bit2 과전류(모터 구속) · bit3 과경사(IMU 축 매핑이 틀려 정지 상태를 90° 로 본다!) · bit4 IMU 끊김 · bit5 드라이버 nFAULT</td></tr>
-          <tr><td>링크 에러 <code>undefined reference to tf2::toMsg</code> / <code>fromMsg</code></td><td><code>tf2_geometry_msgs</code> 가 <code>ament_target_dependencies</code> 에 없거나 <code>#include &lt;tf2_geometry_msgs/tf2_geometry_msgs.hpp&gt;</code> 누락</td></tr>
+          <tr><td>정지인데 <code>/odometry/filtered</code> yaw 가 천천히 변한다</td><td>자이로 바이어스. §3-7 ① 의 gz mean 이 06b §3-7 에서 내가 정한 허용(쓰임새에서 거꾸로 계산해 노트에 적은 값)을 넘으면 펌웨어 영점(<code>wt901_zero_gyro</code>) 또는 BNO055 캘리브레이션. IMU 공분산이 너무 작아도 그렇다</td></tr>
+          <tr><td>회전하면 <code>/odom</code> 위치가 불연속으로 바뀐다 / x 가 순간 크게 뛴다</td><td><code>tick_ms</code> 가 단조 증가하는지(펌웨어가 리셋됐거나 랩어라운드). 브리지 로그의 dt 가 음수이거나 매우 크면 그 프레임을 버리는 코드를 <code>integrate_odometry()</code> 의 TODO 에 넣는다</td></tr>
+          <tr><td>직진 명령에 로봇이 한쪽으로 휜다</td><td>① 좌우 PID 게인이 다르다(펌웨어) ② 바퀴 지름이 다르다(타이어 마모) ③ 엔코더 CPR 이 한쪽만 다르다. §3-9 ① 을 좌우 따로 잰다. 4륜이라 앞뒤 바퀴 지름 차이도 본다. 바퀴별 PID 라서 한 바퀴만 게인이 다른 경우도 있다</td></tr>
+          <tr><td>teleop 을 눌러도 안 움직이고 <code>/mcu/fault</code> 가 0 이 아니다</td><td>비트를 읽는다(06a §4-2 표): bit0 워치독(브리지가 명령을 안 보냄) · bit1 저전압(배터리) · bit2 과전류(모터 구속) · bit3 과경사(IMU 축 매핑이 틀려 정지 상태를 90° 로 판정한다!) · bit4 IMU 끊김 · bit5 드라이버 nFAULT</td></tr>
+          <tr><td>링크 오류 <code>undefined reference to tf2::toMsg</code> / <code>fromMsg</code></td><td><code>tf2_geometry_msgs</code> 가 <code>ament_target_dependencies</code> 에 없거나 <code>#include &lt;tf2_geometry_msgs/tf2_geometry_msgs.hpp&gt;</code> 누락</td></tr>
           <tr><td><code>parameter 'baudrate' has invalid type: expected [integer] got [string]</code></td><td>yaml 에 <code>baudrate: "460800"</code> 처럼 따옴표를 쳤다. 선언 타입(<code>declare_parameter&lt;int&gt;</code>)과 yaml 의 타입이 같아야 한다</td></tr>
-          <tr><td><code>--params-file</code> 을 줬는데 값이 안 먹는다</td><td>① 경로가 컨테이너 기준인가(<code>/ros2_ws/src/…</code>) ② yaml 의 첫 키가 노드 이름(<code>mcu_bridge</code>)과 같은가 ③ <code>ros__parameters</code> 언더스코어 2개</td></tr>
+          <tr><td><code>--params-file</code> 을 줬는데 값이 적용되지 않는다</td><td>① 경로가 컨테이너 기준인가(<code>/ros2_ws/src/…</code>) ② yaml 의 첫 키가 노드 이름(<code>mcu_bridge</code>)과 같은가 ③ <code>ros__parameters</code> 언더스코어 2개</td></tr>
         </tbody>
       </table></div>
 
       <h2>✅ 검증 체크포인트</h2>
-      <p>전부 하드웨어 0개로 닫힌다. 실물 MCU 가 있어야 하는 항목(두 IMU 비교, 날바이트, teleop 네 가지, fault 주입)은 06b 로, 조립된 로봇이 있어야 하는 항목(캘리브레이션, EKF 의 효과, 사각형 주행)은 <a href="09a-assembly-gate.html">09a</a>로 옮겼다.</p>
-      <p class="small">§3-6(펌웨어 트랙)을 검증하던 항목 다섯 개 — CRC 세 구현 일치, CubeMX 설정과 DMA 버퍼 자리, <code>mcu_probe.py</code> ①~⑦, WT901 설정 · 캘리브레이션, BNO055 오프셋 저장 · 복원 — 는 이 쪽의 완료 조건이 아니라서 이 목록에서 뺐다.
-      받을 쪽은 MCU 펌웨어 가이드의 <a href="fw-17-link-v2.html">fw-17</a> · <a href="fw-19-bench-acceptance.html">fw-19</a> · <a href="fw-14-wt901.html">fw-14</a> · <a href="fw-16-flash-store.html">fw-16</a>이고 <strong>아직 없다</strong> — 그 쪽들이 생기면 같은 주장이 그쪽의 체크포인트로 나타난다. 그때까지 §3-6 을 그대로 따라 하는 사람은 확인 절차로 §3-6-8 의 "확인할 것 ①~⑦"을 쓴다.</p>
+      <p>전부 하드웨어 없이 끝낼 수 있다. 실물 MCU 가 있어야 하는 항목(두 IMU 비교, 날바이트, teleop 네 가지, fault 주입)은 06b 로, 조립된 로봇이 있어야 하는 항목(캘리브레이션, EKF 의 효과, 사각형 주행)은 <a href="09a-assembly-gate.html">09a</a>로 옮겼다.</p>
+      <p class="small">§3-6(펌웨어 트랙)을 검증하던 다음 다섯 항목은 이 쪽의 완료 조건이 아니라서 이 목록에서 뺐다.</p>
+      <ul class="small">
+        <li>CRC 세 구현 일치</li>
+        <li>CubeMX 설정과 DMA 버퍼 자리</li>
+        <li><code>mcu_probe.py</code> ①~⑦</li>
+        <li>WT901 설정 · 캘리브레이션</li>
+        <li>BNO055 오프셋 저장 · 복원</li>
+      </ul>
+      <p class="small">이 항목들을 받을 쪽은 MCU 펌웨어 가이드의 <a href="fw-17-link-v2.html">fw-17</a> · <a href="fw-19-bench-acceptance.html">fw-19</a> · <a href="fw-14-wt901.html">fw-14</a> · <a href="fw-16-flash-store.html">fw-16</a>이다. 같은 주장이 그 쪽들의 체크포인트로 나타난다. §3-6 을 그대로 따라 하는 사람은 확인 절차로 §3-6-8 의 "확인할 것 ①~⑦"을 쓴다.</p>
       <ul class="checklist">
         <li><label><input type="checkbox" data-key="cp0"><span>차동 구동 역·정운동학을 종이에 유도하고, 중점법 적분이 왜 시작점 heading 보다 정확한지 설명할 수 있다</span></label></li>
         <li><label><input type="checkbox" data-key="cp1"><span>계약 v2 의 프레임 구조·TYPE 표·단위(mm/s, mg, 0.1 °/s, tick_ms)·CRC·보드레이트·워치독을 06a §4 표와 대조해 같음을 확인했다</span></label></li>
@@ -2091,10 +2142,10 @@ ros2 topic echo /odometry/filtered --field pose.pose.position      # x 가 /odom
         <li><label><input type="checkbox" data-key="nominal-values-filled"><span><code>robot_params.yaml</code> 의 <code>wheel_radius</code> · <code>wheel_separation</code> · <code>encoder_cpr</code> 에 0 이 아닌 값을 넣고 <strong>값과 같은 줄에</strong> 상태(<code>NOMINAL(&lt;출처&gt;, …)</code>)를 적었다. <code>scripts/check_nominal.sh</code> 의 표에서 세 줄이 EMPTY 가 아니고, 어느 줄이 <code>fake</code> 인지(있다면) 말할 수 있다</span></label></li>
         <li><label><input type="checkbox" data-key="cp4"><span><code>simulate:=true</code> 에서 <code>/odom</code> 50 Hz, <code>/imu/data_raw</code> 100 Hz, 정지 시 az ≈ 9.807, 각속도 명령 0.5 rad/s 에 gz ≈ 0.5 가 나온다</span></label></li>
         <li><label><input type="checkbox" data-key="cp5"><span>같은 <code>cmd_vel</code> 시퀀스에 Python 판(<code>rpi5_mcu_bridge</code>)과 C++ 판의 <code>/odom</code> 이 같은 값을 낸다</span></label></li>
-        <li><label><input type="checkbox" data-key="bridge-watchdog-sim"><span><code>cmd_vel</code> 발행을 멈추면 0.5 s 뒤 <code>/odom</code> 의 <code>twist.twist.linear.x</code> 가 0 이 된다 — 브리지(Pi 쪽) 워치독. MCU 쪽 200 ms 는 아직 보지 못했다는 것도 안다</span></label></li>
-        <li><label><input type="checkbox" data-key="joint-names-match-urdf"><span><code>use_fake_joints:=false</code> 로 띄운 <code>view_frames</code> 에 <code>odom → base_footprint → base_link</code> 와 바퀴 링크 4개가 한 덩어리로 붙어 있다 — <code>/joint_states</code> 의 <code>name</code> 네 개가 05 의 xacro 관절 이름과 같다</span></label></li>
-        <li><label><input type="checkbox" data-key="cp16"><span><code>ekf.yaml</code> 을 작성하고 <code>publish_tf:=false</code> 로 브리지를 띄운 뒤(<code>simulate:=true</code> 로 충분하다), <code>/tf</code> 발행자 목록에 <code>ekf_filter_node</code> 가 있고 <code>mcu_bridge</code> 는 없으며 — <code>odom → base_footprint</code> 를 쏘는 노드가 하나다 — <code>tf2_echo odom base_footprint</code> 가 나온다</span></label></li>
-        <li><label><input type="checkbox" data-key="fake-mcu-limits"><span>가짜 MCU 가 검증하지 못한 것 여섯 가지(termios, 실제 스트림의 파서 재동기, fault · event 경로, <code>tick_ms</code> 시각 환산, <code>sensor_id = 1</code>, MCU 쪽 워치독)를 표를 보지 않고 말할 수 있고, 각각이 왜 SIM 에서 돌지 않는지 §3-4 코드의 어느 가지 때문인지 짚을 수 있다</span></label></li>
+        <li><label><input type="checkbox" data-key="bridge-watchdog-sim"><span><code>cmd_vel</code> 발행을 멈추면 0.5 s 뒤 <code>/odom</code> 의 <code>twist.twist.linear.x</code> 가 0 이 된다. 이것은 브리지(Pi 쪽) 워치독이다. MCU 의 200 ms 명령 워치독은 아직 확인하지 못했다는 것도 안다</span></label></li>
+        <li><label><input type="checkbox" data-key="joint-names-match-urdf"><span><code>use_fake_joints:=false</code> 로 띄운 <code>view_frames</code> 에 <code>odom → base_footprint → base_link</code> 와 바퀴 링크 4개가 하나의 트리로 연결돼 있다. <code>/joint_states</code> 의 <code>name</code> 네 개가 05 의 xacro 관절 이름과 같다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp16"><span><code>ekf.yaml</code> 을 작성하고 <code>publish_tf:=false</code> 로 브리지를 띄운다(<code>simulate:=true</code> 로 충분하다). <code>/tf</code> 발행자 목록에 <code>ekf_filter_node</code> 가 있고 <code>mcu_bridge</code> 는 없다. 즉 <code>odom → base_footprint</code> 를 발행하는 노드가 하나다. <code>tf2_echo odom base_footprint</code> 가 값을 출력한다</span></label></li>
+        <li><label><input type="checkbox" data-key="fake-mcu-limits"><span>가짜 MCU 가 검증하지 못한 것 여섯 가지(termios, 실제 스트림의 파서 재동기, fault · event 경로, <code>tick_ms</code> 시각 환산, <code>sensor_id = 1</code>, MCU 의 명령 워치독)를 표를 보지 않고 말할 수 있다. 각각이 왜 SIM 에서 실행되지 않는지, §3-4 코드의 어느 가지 때문인지 짚을 수 있다</span></label></li>
       </ul>
       <p class="progress-line"></p>
       <div class="progress-bar"><span></span></div>
@@ -2107,36 +2158,43 @@ ros2 topic echo /odometry/filtered --field pose.pose.position      # x 가 /odom
       <details class="quiz"><summary>3. <code>/odom</code> 은 RELIABLE, <code>/imu/*</code> 는 BEST_EFFORT(SensorDataQoS)로 발행하는 이유는?</summary>
         <div class="ans"><code>/odom</code> 은 EKF·Nav2 가 기본 프로파일(RELIABLE)로 구독하므로 BEST_EFFORT 로 내면 연결 자체가 안 된다. IMU 는 100~200 Hz 스트림이라 하나 놓쳐도 다음 값이 곧 오고, 재전송이 오히려 지연을 만든다. robot_localization 은 odom·IMU 를 둘 다 SensorDataQoS 로 구독해 어느 쪽이든 받지만, <code>/odom</code> 은 Nav2 때문에 RELIABLE 이어야 한다. QoS 는 "메시지의 성격"과 "구독자가 요구하는 것"으로 정한다.</div></details>
       <details class="quiz"><summary>4. 워치독이 MCU 200 ms, Pi 0.5 s 로 두 층인 이유는? 하나로 합치면 무엇을 못 막나?</summary>
-        <div class="ans">MCU 워치독은 "Pi 가 죽었다 / USB 가 빠졌다 / 브리지가 멈췄다"를 막는다 — Pi 쪽 코드가 아무리 완벽해도 이 셋은 Pi 가 막을 수 없다. Pi 워치독은 "상위 노드(Nav2, teleop)가 멈췄는데 브리지는 살아 있다"를 막는다 — 브리지가 마지막 명령을 계속 재전송하면 MCU 워치독은 절대 발동하지 않기 때문이다. 층마다 막는 고장이 다르다.</div></details>
+        <div class="ans">MCU 의 명령 워치독은 "Pi 가 멈췄다 / USB 가 빠졌다 / 브리지가 멈췄다"를 막는다. Pi 쪽 코드가 아무리 완벽해도 이 세 고장은 Pi 가 막을 수 없다. Pi 쪽(브리지)의 명령 워치독은 "상위 노드(Nav2, teleop)가 멈췄는데 브리지는 동작 중이다"를 막는다. 브리지가 마지막 명령을 계속 재전송하면 MCU 의 명령 워치독은 절대 발동하지 않기 때문이다. 층마다 막는 고장이 다르다.</div></details>
       <details class="quiz"><summary>5. Python 판이 있는데 브리지를 C++ 로 다시 쓰는 이유는? 단지 "빠르니까"인가?</summary>
-        <div class="ans">속도는 부차적이다(50 Hz 는 Python 도 된다). 핵심은 ① 2 ms 폴링 타이머와 200 Hz IMU 처리에서 GIL·GC 지터가 없다 ② <code>int16</code>·<code>uint32</code> 랩어라운드·바이트 단위 파싱이 언어의 기본형으로 정확히 표현된다 ③ Nav2·tf2·robot_localization 이 모두 C++ 이라 같은 도구(gdb, perf, ament)로 전체를 본다 ④ 이 프로젝트의 기본 언어가 C++ 이고 다음 단계의 노드들이 전부 C++ 이다. Python 판은 답안지로 남긴다.</div></details>
+        <div class="ans"><p>속도는 부차적이다(50 Hz 는 Python 도 된다). 핵심은 다음 넷이다.</p>
+          <ul>
+            <li>① 2 ms 폴링 타이머와 200 Hz IMU 처리에서 GIL·GC 지터가 없다</li>
+            <li>② <code>int16</code>·<code>uint32</code> 랩어라운드·바이트 단위 파싱이 언어의 기본형으로 정확히 표현된다</li>
+            <li>③ Nav2·tf2·robot_localization 이 모두 C++ 이라 같은 도구(gdb, perf, ament)로 전체를 디버깅한다</li>
+            <li>④ 이 프로젝트의 기본 언어가 C++ 이고 다음 단계의 노드들이 전부 C++ 이다</li>
+          </ul>
+          <p>Python 판은 답안지로 남긴다.</p></div></details>
       <details class="quiz"><summary>6. MCU 가 이미 출력을 끊었는데 fault 동안 브리지가 굳이 0 명령을 보내는 이유는?</summary>
-        <div class="ans">안전 때문이 아니다(그건 MCU 가 했다). ① fault 가 풀리는 순간 MCU 가 마지막으로 받은 큰 명령을 그대로 실행해 튀어나가는 것을 막고 ② 상위 스택(Nav2)이 "명령을 냈는데 안 움직인다"는 상황을 <code>/mcu/fault</code> 로 알아 목표를 취소하게 한다(10 단계 감독 노드). 브리지의 0 은 MCU 결정에 대한 상위의 "동의"다.</div></details>
+        <div class="ans">안전 때문이 아니다(출력 차단은 MCU 가 이미 했다). 이유는 둘이다. ① fault 가 풀리는 순간 MCU 가 마지막으로 받은 큰 명령을 그대로 실행해 로봇이 갑자기 움직이는 것을 막는다. ② 상위 스택(Nav2)이 "명령을 냈는데 안 움직인다"는 상황을 <code>/mcu/fault</code> 로 알아 목표를 취소하게 한다(10 단계 감독 노드). 브리지가 보내는 0 명령은 상위 쪽 명령을 MCU 의 정지 결정과 일치시킨다.</div></details>
       <details class="quiz"><summary>7. <code>/odom</code> 의 공분산을 0 으로 두면 EKF 에서 무슨 일이 생기는가?</summary>
-        <div class="ans">공분산 0 = "이 측정은 완벽하다". EKF 는 휠 오도메트리를 절대 의심하지 않고 IMU 의 반박을 전부 버린다 — 융합을 켠 의미가 사라지고, 스키드 스티어에서 회전이 휠 값 그대로 틀어진다. 반대로 IMU 공분산이 너무 작으면 자이로 바이어스가 그대로 yaw 드리프트가 된다. 값은 §3-7 의 정지 std(06b 에서 잰다)와 <a href="09a-assembly-gate.html#s3-5-4">09a §3-5-4</a> ③ 의 폐합 오차에서 근거를 얻는다 — 그 전까지는 §3-4 의 임시값 그대로 둔다.</div></details>
+        <div class="ans">공분산 0 은 "이 측정은 오차가 없다"는 뜻이다. EKF 는 휠 오도메트리 값을 그대로 받아들이고, 휠 값과 다른 IMU 값을 전부 무시한다. 그러면 융합을 켠 의미가 사라지고, 스키드 스티어에서 회전이 휠 값 그대로 틀어진다. 반대로 IMU 공분산이 너무 작으면 자이로 바이어스가 그대로 yaw 드리프트가 된다. 값은 §3-7 의 정지 std(06b 에서 잰다)와 <a href="09a-assembly-gate.html#s3-5-4">09a §3-5-4</a> ③ 의 폐합 오차에서 근거를 얻는다. 그 전까지는 §3-4 의 임시값 그대로 둔다.</div></details>
       <details class="quiz"><summary>8. 전진 명령에 한쪽 엔코더 카운트가 감소한다. 펌웨어나 브리지에서 부호를 뒤집으면 안 되는 이유는?</summary>
-        <div class="ans">뒤집으면 지금은 맞지만, 원인(A/B 배선 또는 CubeMX 극성)이 남아 있어 나중에 배선을 고치거나 보드를 바꾸면 조용히 다시 반대가 된다. 그리고 "왼쪽 모터의 A/B 는 뒤집혀 있다"는 사실이 코드 어딘가의 <code>-1</code> 로만 남아 아무도 모른다. 물리 원인은 물리 층에서 고치고, 코드는 계약(전진 = 카운트 증가)만 믿는다. INVENTORY 에 배선을 적는 이유이기도 하다.</div></details>
+        <div class="ans">뒤집으면 지금은 맞지만, 원인(A/B 배선 또는 CubeMX 극성)이 남아 있어 나중에 배선을 고치거나 보드를 바꾸면 오류 표시 없이 다시 반대가 된다. 그리고 "왼쪽 모터의 A/B 는 뒤집혀 있다"는 사실이 코드 어딘가의 <code>-1</code> 로만 남아, 그 코드를 읽지 않으면 알 수 없다. 물리 원인은 물리 층에서 고치고, 코드는 계약(전진 = 카운트 증가)이 지켜진다고 가정한다. INVENTORY 에 배선을 적는 이유이기도 하다.</div></details>
       <details class="quiz"><summary>9. <code>base_frame</code> 을 저장소 yaml 대로 <code>base_link</code> 로 두면 무엇이 깨지는가?</summary>
-        <div class="ans">05 의 URDF 루트는 <code>base_footprint</code> 이고 robot_state_publisher 가 <code>base_footprint → base_link</code> 를 이미 발행한다. 브리지(또는 EKF)가 <code>odom → base_link</code> 를 쏘면 <code>base_link</code> 의 부모가 둘이 되어 TF 트리가 끊어지거나 흔들리고, <code>tf2_echo odom laser_link</code> 가 실패하거나 SLAM 지도가 떨린다. 한 프레임의 부모는 하나 — <code>odom</code> 의 자식은 URDF 루트여야 한다.</div></details>
+        <div class="ans">05 의 URDF 루트는 <code>base_footprint</code> 이고 robot_state_publisher 가 <code>base_footprint → base_link</code> 를 이미 발행한다. 브리지(또는 EKF)가 <code>odom → base_link</code> 를 발행하면 <code>base_link</code> 의 부모가 둘이 된다. 그러면 TF 트리가 끊어지거나 흔들리고, <code>tf2_echo odom laser_link</code> 가 실패하거나 SLAM 지도가 떨린다. 한 프레임의 부모는 하나 — <code>odom</code> 의 자식은 URDF 루트여야 한다.</div></details>
       <details class="quiz"><summary>10. 엔코더(타이머), BNO055(I2C), WT901(UART) — 각각 데이터를 "누가, 언제" 만드는가? MCU 는 어느 쪽에서 마스터인가?</summary>
-        <div class="ans">엔코더: 타이머 하드웨어가 A/B 엣지를 스스로 센다. CPU 는 1 ms 마다 CNT 를 읽기만 한다(읽는 순간이 샘플 시각). BNO055: MCU 가 <strong>I2C 마스터</strong>로 100 Hz 마다 레지스터 블록을 요청해야 데이터가 온다 — 안 물어보면 아무것도 안 온다. WT901: 센서가 설정된 속도로 11 B 프레임을 <strong>스스로</strong> 보내고 MCU 는 DMA 수신자다(Pi 링크와 같은 패턴). UART 에는 마스터 개념이 없고 대등하다. "1 kHz 루프에서 IMU 를 쓴다"는 세 경우 모두 "루프가 최신 값을 읽는다"이지 "1 kHz 로 센서를 읽는다"가 아니다.</div></details>
+        <div class="ans">엔코더: 타이머 하드웨어가 A/B 엣지를 CPU 개입 없이 센다. CPU 는 1 ms 마다 CNT 를 읽기만 한다(읽는 순간이 샘플 시각). BNO055: MCU 가 <strong>I2C 마스터</strong>로 100 Hz 마다 레지스터 블록을 요청해야 데이터가 온다. 요청하지 않으면 데이터가 오지 않는다. WT901: 센서가 설정된 속도로 11 B 프레임을 <strong>요청 없이</strong> 보내고 MCU 는 DMA 수신자다(Pi 링크와 같은 패턴). UART 에는 마스터 개념이 없고 대등하다. "1 kHz 루프에서 IMU 를 쓴다"는 세 경우 모두 "루프가 최신 값을 읽는다"이지 "1 kHz 로 센서를 읽는다"가 아니다.</div></details>
       <details class="quiz"><summary>11. 모든 MCU→Pi 프레임에 <code>tick_ms</code> 가 있다. Pi 가 받은 시각으로 stamp 하면 안 되는 이유는?</summary>
-        <div class="ans">USB·커널·2 ms 폴링·DDS 를 거치며 수신 시각은 수 ms 흔들리고, 상태 프레임과 IMU 프레임이 같은 순간 샘플이어도 다른 시각으로 도착한다. EKF 는 stamp 순서로 예측·갱신하므로 이 지터가 그대로 속도 추정 노이즈가 된다. MCU 의 tick 은 샘플이 <em>만들어진</em> 시각이고 두 센서가 같은 시계를 쓴다. 브리지는 첫 프레임에서 오프셋만 잡아 ROS 시각으로 옮긴다(드리프트·랩어라운드 보정은 TODO).</div></details>
+        <div class="ans">USB·커널·2 ms 폴링·DDS 를 거치며 수신 시각에 수 ms 의 지터가 생기고, 상태 프레임과 IMU 프레임이 같은 순간 샘플이어도 다른 시각으로 도착한다. EKF 는 stamp 순서로 예측·갱신하므로 이 지터가 그대로 속도 추정 노이즈가 된다. MCU 의 tick 은 샘플이 <em>만들어진</em> 시각이고 두 센서가 같은 시계를 쓴다. 브리지는 첫 프레임에서 오프셋만 계산해 ROS 시각으로 환산한다(드리프트·랩어라운드 보정은 TODO).</div></details>
       <details class="quiz"><summary>12. IMU 는 100~200 Hz 인데 왜 제어 루프는 1 kHz(1 ms)인가? 200 Hz 로 낮추면?</summary>
-        <div class="ans">루프 주기는 <strong>가장 빠른 응답이 필요한 것</strong>이 정한다: 속도 PID 와 과전류 차단이다. 모터 전류는 수 ms 안에 한계를 넘을 수 있고, PID 의 dt 가 짧을수록 미분항이 조용하고 응답이 빠르다. IMU 는 그 루프가 매 바퀴 <em>읽기만</em> 하는 최신값이다(5~10 바퀴 동안 같은 값). 200 Hz 로 낮추면 PID 가 느려지고 과전류 검출이 5 ms 늦어진다 — IMU 와는 무관하다. 반대로 IMU 를 1 kHz 로 올릴 필요도 없다.</div></details>
-      <details class="quiz"><summary>13. EKF 를 켤 때 브리지의 <code>publish_tf</code> 를 <code>false</code> 로 하는 이유는? 둘 다 켜면 에러가 나는가?</summary>
-        <div class="ans">에러는 안 난다 — 그래서 위험하다. 두 노드가 <code>odom → base_footprint</code> 를 번갈아 쏘면 tf2 는 마지막 값을 쓰므로 로봇 위치가 50 Hz 로 두 추정치 사이를 떨고, SLAM 지도가 번지고, Nav2 가 진동한다. <code>ros2 topic info /tf -v</code> 의 발행자 목록에서 <code>odom → base_footprint</code> 를 쏘는 노드(<code>ekf_filter_node</code> · <code>mcu_bridge</code>)가 정확히 하나인지 확인한다 — <code>robot_state_publisher</code> 는 바퀴 관절 TF 때문에 함께 보이는 것이 정상이다. <code>/odom</code> 토픽 자체는 계속 발행해야 한다 — EKF 의 입력이다.</div></details>
+        <div class="ans">루프 주기는 <strong>가장 빠른 응답이 필요한 것</strong>이 정한다: 속도 PID 와 과전류 차단이다. 모터 전류는 수 ms 안에 한계를 넘을 수 있고, PID 의 dt 가 짧을수록 응답이 빠르다. 단 미분항은 오차의 차이를 dt 로 나누므로, dt 가 짧을수록 측정 잡음을 더 크게 증폭한다(fw-13 §2-2 — 그래서 속도 루프의 D 는 흔히 0 이다). IMU 는 그 루프가 매 주기 <em>읽기만</em> 하는 최신값이다(5~10 주기 동안 같은 값). 200 Hz 로 낮추면 PID 가 느려지고 과전류 검출이 5 ms 늦어진다 — IMU 와는 무관하다. 반대로 IMU 를 1 kHz 로 올릴 필요도 없다.</div></details>
+      <details class="quiz"><summary>13. EKF 를 켤 때 브리지의 <code>publish_tf</code> 를 <code>false</code> 로 하는 이유는? 둘 다 켜면 오류가 나는가?</summary>
+        <div class="ans">오류는 나지 않는다. 그래서 위험하다. 두 노드가 <code>odom → base_footprint</code> 를 번갈아 발행하면 tf2 는 마지막 값을 쓰므로 로봇 위치가 두 추정치 사이를 50 Hz 로 오가고, SLAM 지도가 번지고, Nav2 가 진동한다. <code>ros2 topic info /tf -v</code> 의 발행자 목록에서 <code>odom → base_footprint</code> 를 발행하는 노드(<code>ekf_filter_node</code> · <code>mcu_bridge</code>)가 정확히 하나인지 확인한다. <code>robot_state_publisher</code> 는 바퀴 관절 TF 때문에 함께 보이는 것이 정상이다. <code>/odom</code> 토픽 자체는 계속 발행해야 한다. <code>/odom</code> 은 EKF 의 입력이다.</div></details>
       <details class="quiz"><summary>14. 두 IMU 모두 자력계가 있는데 실내에서 방위(heading)에 쓰지 않는 이유는?</summary>
-        <div class="ans">실내는 철골·콘크리트 철근·모터·스피커 자석·전선 때문에 자기장이 장소마다 수십 도씩 왜곡된다. 자력계 heading 을 EKF 에 절대 방위로 넣으면 로봇이 책상 옆을 지날 때마다 yaw 가 튄다. 실내 로봇의 절대 방위는 SLAM(라이다 스캔 정합, 09)이 준다. 자이로는 상대 회전만 주지만 드리프트가 느리고 왜곡이 없어 EKF 의 vyaw 로 쓴다. BNO055 는 그래서 NDOF 가 아니라 IMU 모드로 둔다.</div></details>
+        <div class="ans">실내는 철골·콘크리트 철근·모터·스피커 자석·전선 때문에 자기장이 장소마다 수십 도씩 왜곡된다. 자력계 heading 을 EKF 에 절대 방위로 넣으면 로봇이 책상 옆을 지날 때마다 yaw 가 갑자기 바뀐다. 실내 로봇의 절대 방위는 SLAM(라이다 스캔 정합, 09)으로 얻는다. 자이로는 상대 회전만 재지만 드리프트가 느리고 왜곡이 없어 EKF 의 vyaw 로 쓴다. BNO055 는 그래서 NDOF 가 아니라 IMU 모드로 둔다.</div></details>
       <details class="quiz"><summary>15. IMU 프레임의 각속도 단위가 0.1 °/s 다. 0.01 °/s 로 더 정밀하게 담으면 안 되는 이유는?</summary>
-        <div class="ans"><code>int16</code> 은 ±32767 이다. 0.01 °/s 단위면 ±327 °/s 에서 포화되어 센서 범위(±2000 °/s)의 대부분을 잘라 버린다 — 로봇을 손으로 홱 돌리거나 충돌하면 값이 벽에 붙는다. 0.1 °/s 면 ±3276 °/s 로 센서 범위를 다 담고, 해상도 0.1 °/s(0.0017 rad/s)는 자이로 노이즈(§3-7 std)보다 작아 잃는 것이 없다. 단위는 "범위 ÷ 65536" 으로 정하고, 06a §4-3 표에 적어 두 트랙이 같은 수로 나눈다.</div></details>
+        <div class="ans"><code>int16</code> 은 ±32767 이다. 0.01 °/s 단위면 ±327 °/s 에서 포화되어 센서 범위(±2000 °/s)의 대부분을 잘라 버린다 — 로봇을 손으로 빠르게 돌리거나 충돌하면 값이 한계에 고정된다. 0.1 °/s 면 ±3276 °/s 로 센서 범위를 다 담고, 해상도 0.1 °/s(0.0017 rad/s)는 자이로 노이즈(§3-7 std)보다 작아 잃는 것이 없다. 단위는 "범위 ÷ 65536" 으로 정하고, 06a §4-3 표에 적어 두 트랙이 같은 수로 나눈다.</div></details>
 
       <div class="callout tip"><span class="ct">다음 행선지</span>
         <ul>
-          <li><strong>번호순 다음은 <a href="07-lidar.html">07 · 라이다</a>다.</strong> 이 쪽의 체크포인트가 100 % 면 펌웨어가 어디까지 왔든 07 로 간다. Pi 차선은 Mac 차선을 기다리지 않는다.</li>
+          <li><strong>번호순 다음은 <a href="07-lidar.html">07 · 라이다</a>다.</strong> 이 쪽의 체크포인트가 100 % 면 펌웨어의 진행 정도와 관계없이 07 로 간다. Pi 차선은 Mac 차선의 완료를 기다리지 않는다.</li>
           <li><strong>펌웨어는 Mac 차선에서 병행한다</strong> — <a href="fw-00-map.html">MCU 펌웨어 가이드</a>(F0 부터). 07 · 08 계열과 번갈아 해도 되고 몰아서 해도 된다. 두 차선이 공유하는 것은 계약 v2(06a §4) 하나다.</li>
-          <li><strong><a href="06b-bench-integration.html">06b · 실물 MCU 벤치 통합</a>은 번호순 다음이 아니다.</strong> 펌웨어의 F19(벤치 수용 시험)를 통과한 뒤에 연다. 단계를 건너뛰는 것이 아니라 06b 의 자리가 F19 뒤인 것이다. 그때 들고 갈 것은 §3-5 의 "검증하지 못한 것" 표와, 출처 칸에 <code>fake</code> 가 없는 <code>robot_params.yaml</code> 이다.</li>
-          <li>§3-9 캘리브레이션, §3-10 의 "효과를 눈으로", §3-11 의 사각형 주행은 <a href="09a-assembly-gate.html">09a</a>에서 한다. 그때까지 제원은 NOMINAL 이고, 그 값으로 나온 주행 결과는 믿지 않는다.</li>
+          <li><strong><a href="06b-bench-integration.html">06b · 실물 MCU 벤치 통합</a>은 번호순 다음이 아니다.</strong> 펌웨어의 F19(벤치 수용 시험)를 통과한 뒤에 시작한다. 단계를 건너뛰는 것이 아니라 06b 의 자리가 F19 뒤인 것이다. 06b 에 가져갈 것은 §3-5 의 "검증하지 못한 것" 표와, 출처 칸에 <code>fake</code> 가 없는 <code>robot_params.yaml</code> 이다.</li>
+          <li>§3-9 캘리브레이션, §3-10 의 "효과를 눈으로", §3-11 의 사각형 주행은 <a href="09a-assembly-gate.html">09a</a>에서 한다. 그때까지 제원은 NOMINAL 이고, 그 값으로 나온 주행 결과는 확정값으로 간주하지 않는다.</li>
         </ul>
       </div>
 

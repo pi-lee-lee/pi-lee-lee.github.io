@@ -16,14 +16,18 @@
       <p class="kicker">10 · 자율주행 노드 구성</p>
       <h1>전체 조립 — 계층 런치와 임무 감독 노드</h1>
       <p class="lead">이 단계는 <strong>새 기능을 배우는 단계가 아니라, 지금까지 만든 것을 "시스템"으로 만드는 단계</strong>다.
-      런치를 계층으로 나누어 한 명령에 전체를 띄우고, 그 위에 <code>mission_supervisor</code> — 당신이 처음부터 그리고 있던
-      <em>"⑤ 계획 대비 이동의 수행 정도를 계속 판정하는"</em> 노드 — 를 C++ 로 직접 올린다. 이것이 이 커리큘럼의 최종 목표였다.</p>
+      런치를 계층으로 나누어 한 명령으로 전체를 실행하고, 그 위 계층에 <code>mission_supervisor</code> — 당신이 처음부터 그리고 있던
+      <em>"⑤ 계획 대비 이동의 수행 정도를 계속 판정하는"</em> 노드 — 를 C++ 로 직접 작성한다. 이것이 이 커리큘럼의 최종 목표였다.</p>
 
       <div class="goal">
-        <span class="label">이 단계가 끝나면</span>
-        <p><code>autonomy.launch.py</code> 하나로 전체 시스템이 기동하고, 감독 노드가 목표점 목록을 순서대로 Nav2 에 주면서 진행 상황을 판정하고,
-        사람이 앞에 서거나 정체되면 스스로 멈추거나 재시도한다. 전원을 넣으면 로봇이 스스로 떠서 자율주행할 준비가 된다.
-        그리고 "어느 계층이 문제인가"를 계층별 런치로 좁힐 수 있다.</p>
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>이 쪽이 끝나면 다음 넷이 된다.</p>
+        <ul>
+          <li><code>autonomy.launch.py</code> 하나로 전체 시스템이 기동한다.</li>
+          <li>감독 노드가 목표점 목록을 순서대로 Nav2 에 주면서 진행 상황을 판정하고, 사람이 앞에 서거나 정체되면 자동으로 멈추거나 재시도한다.</li>
+          <li>전원을 넣으면 전체 시스템이 자동으로 기동해 자율주행할 준비가 된다.</li>
+          <li>"어느 계층이 문제인가"를 계층별 런치로 좁힐 수 있다.</li>
+        </ul>
       </div>
 
       <div class="meta">
@@ -77,68 +81,76 @@
           <tr><td>운용</td><td>관측·기록. <strong>로봇 동작에 관여하지 않는다</strong></td></tr>
         </tbody>
       </table></div>
-      <p><strong>각 계층은 아래 계층의 구현을 모른다.</strong> 라이다를 바꿔도 SLAM 은 그대로, MCU 를 바꿔도 Nav2 는 그대로, 검출기를 YOLO 에서 Hailo 로 바꿔도 감독 노드는 그대로다.
+      <p><strong>각 계층은 아래 계층의 구현에 의존하지 않는다.</strong> 라이다를 바꿔도 SLAM 은 그대로, MCU 를 바꿔도 Nav2 는 그대로, 검출기를 YOLO 에서 Hailo 로 바꿔도 감독 노드는 그대로다.
       이것이 03 단계에서 배운 "느슨한 결합"의 완성형이다.</p>
 
       <div class="callout why"><span class="ct">당신의 추상 구조 ⑤ 가 여기서 코드가 된다</span>
         <p>"요청에 대해 계획을 세우고, 이동하고, 과정 중에 계획 대비 이동의 수행 정도를 계속 판정한다." — 계획과 이동은 Nav2 가 한다.
-        하지만 <strong>"계속 판정한다"</strong>는 Nav2 의 바깥에서 액션 <em>피드백</em>을 읽는 누군가가 필요하다. 03 단계에서 액션이 "진행 상황 피드백 + 취소"를
-        제공하는 통신 방식이라고 배운 이유가 정확히 이것이다. 그 누군가가 <code>mission_supervisor</code> 다.</p>
+        하지만 <strong>"계속 판정한다"</strong>에는 Nav2 의 바깥에서 액션 <em>피드백</em>을 읽는 노드가 필요하다. 03 단계에서 액션이 "진행 상황 피드백 + 취소"를
+        제공하는 통신 방식이라고 배운 이유가 정확히 이것이다. 그 노드가 <code>mission_supervisor</code> 다.</p>
       </div>
 
       <h2>2. 원리 — 왜</h2>
 
       <h3>2-1. 런치 계층화는 디버깅 전략이다</h3>
-      <p>노드가 15개를 넘어가면 하나의 런치파일로는 관리가 안 된다. 15개 노드가 동시에 뜨면 로그가 뒤섞여 어느 노드가 실패했는지 찾을 수 없다.
-      <strong>계층별로 따로 띄울 수 있어야</strong> 문제가 생겼을 때 "어느 계층인가"를 좁힐 수 있다.</p>
+      <p>노드가 15개를 넘어가면 하나의 런치파일로는 관리가 안 된다. 15개 노드가 동시에 실행되면 로그가 뒤섞여 어느 노드가 실패했는지 찾을 수 없다.
+      <strong>계층별로 따로 실행할 수 있어야</strong> 문제가 생겼을 때 "어느 계층인가"를 좁힐 수 있다.</p>
       <pre class="diagram"><code>rpi5_bringup/launch/
 ├── robot.launch.py         ← 하드웨어 계층 (센서 + 구동 + TF)          [제공됨]
 ├── perception.launch.py    ← 인지 계층 (SLAM / 검출기 선택)             [★ 직접 작성]
 ├── navigation.launch.py    ← Nav2                                    [★ 직접 작성]
 └── autonomy.launch.py      ← 위 셋 + 감독 노드를 포함하는 최상위          [★ 직접 작성]</code></pre>
       <p>★ 표시된 세 개는 저장소에 아직 없다. 04 단계에서 배운 런치 문법과 <code>ros2_ws/src/rpi5_bringup/launch/robot.launch.py</code> 를 본보기로 삼는다.
-      <strong>이것을 직접 짜는 것이 이 단계의 첫 실습이다</strong> — 시스템의 구조를 스스로 표현할 수 있는지가 여기서 드러난다.</p>
+      <strong>이 세 파일을 직접 짜는 것이 이 단계의 첫 실습이다</strong> — 시스템의 구조를 스스로 표현할 수 있는지가 이 실습에서 드러난다.</p>
 
       <h3>2-2. 안전은 기능이 아니라 요구사항이다 — 3단 방어</h3>
       <pre class="diagram"><code>   ① MCU 워치독 (하드웨어)     N ms 무명령 → 즉시 정지
-      ↑ Pi 가 죽어도 동작. 최후의 보루                       (06a·06 에서 펌웨어에 넣었다)
+      ↑ Pi 가 멈춰도 동작. 최후의 보루                       (06a·06 에서 펌웨어에 넣었다)
 
    ② mcu_bridge 워치독 (ROS)   cmd_timeout_s 초과 → 0 발행
-      ↑ 상위 노드가 죽거나 멈췄을 때                          (06 의 C++ 브리지)
+      ↑ 상위 노드가 비정상 종료되거나 멈췄을 때               (06 의 C++ 브리지)
 
    ③ 속도 제한 (파라미터)       max_linear_vel / max_angular_vel
       ↑ Nav2 튜닝 실수로 큰 값이 와도 하드웨어 보호            (robot_params.yaml)</code></pre>
-      <p>세 가지가 <strong>독립적으로</strong> 동작해야 한다. 하나가 죽어도 나머지가 남는다. 감독 노드의 "사람 앞에서 멈춤"은 이 세 겹 <em>위에</em> 얹는 네 번째 층이지,
+      <p>세 가지가 <strong>독립적으로</strong> 동작해야 한다. 하나가 멈춰도 나머지가 남는다. 감독 노드의 "사람 앞에서 멈춤"은 이 세 겹 <em>위에</em> 얹는 네 번째 층이지,
       아래 세 층을 대신하지 않는다. 그리고 물리 E-stop 버튼(모터 전원 차단)은 이 모든 소프트웨어와 무관하게 있어야 한다.</p>
 
       <h3>2-3. 감독(supervision)이란 무엇인가 — Nav2 가 이미 하는 것과 하지 않는 것</h3>
-      <p>Nav2 의 <code>bt_navigator</code> 는 행동 트리(BT)로 "경로를 못 찾으면 재계획, 막히면 제자리 회전·후진·대기"까지 <strong>스스로 복구</strong>한다.
-      그런데 그것은 <em>하나의 목표</em> 안에서의 일이다. 다음은 Nav2 가 모르는 것이다.</p>
+      <p>Nav2 의 <code>bt_navigator</code> 는 행동 트리(BT)로 "경로를 못 찾으면 재계획, 막히면 제자리 회전·후진·대기"까지 <strong>자동으로 복구</strong>한다.
+      그런데 이 복구는 <em>하나의 목표</em> 안에서만 동작한다. 다음은 Nav2 가 다루지 않는 임무 수준의 질문이다.</p>
       <div class="tbl"><table>
         <thead><tr><th>임무 수준의 질문</th><th>Nav2</th><th>감독 노드</th></tr></thead>
         <tbody>
-          <tr><td>다음 목표는 어디인가, 몇 개를 어떤 순서로 가는가</td><td>모른다</td><td><code>waypoints</code> 파라미터 + 인덱스</td></tr>
-          <tr><td>진전이 없는 상태가 얼마나 오래 지속되는가 — 포기할 것인가</td><td>복구 행동을 반복할 뿐</td><td>피드백의 <code>distance_remaining</code> 을 시간 창으로 관찰 → 정체 판정</td></tr>
+          <tr><td>다음 목표는 어디인가, 몇 개를 어떤 순서로 가는가</td><td>다루지 않는다</td><td><code>waypoints</code> 파라미터 + 인덱스</td></tr>
+          <tr><td>진전이 없는 상태가 얼마나 오래 지속되는가 — 포기할 것인가</td><td>복구 행동을 반복할 뿐</td><td>피드백의 <code>distance_remaining</code> 을 시간 구간 단위로 관찰 → 정체 판정</td></tr>
           <tr><td>실패했을 때 몇 번 재시도하고 언제 건너뛰는가</td><td>ABORTED 로 끝</td><td><code>max_retries</code> 정책</td></tr>
-          <tr><td>사람이 바로 앞에 있으면?</td><td>코스트맵의 장애물일 뿐 — <em>사람</em>인 줄 모른다</td><td><code>/detections</code> 로 일시정지, 사라지면 재개</td></tr>
+          <tr><td>사람이 바로 앞에 있으면?</td><td>코스트맵의 장애물일 뿐 — <em>사람</em>인지 구분하지 않는다</td><td><code>/detections</code> 로 일시정지, 사라지면 재개</td></tr>
           <tr><td>지금 임무가 어떤 상태인가를 밖에 알린다</td><td>액션 클라이언트에게만</td><td><code>/mission/state</code> 토픽 (Foxglove, rosbag)</td></tr>
         </tbody>
       </table></div>
-      <p><strong>정체(stall) 판정 규칙의 뼈대:</strong> 피드백이 올 때마다 <code>distance_remaining</code> 을 보고, 지금까지의 최소값보다 <code>ε</code>(예: 0.1 m) 이상 가까워졌으면 "진전"으로 기록한다.
-      마지막 진전으로부터 <code>N</code> 초(예: 10 s)가 지나면 정체다 → 목표를 취소하고 같은 목표를 다시 준다(재계획을 강제한다). <code>K</code> 회를 넘으면 그 목표를 건너뛰거나 임무를 실패로 끝낸다.</p>
-      <div class="callout warn"><span class="ct">이 규칙에는 함정이 있다 — 3-3 의 TODO 가 그것이다</span>
-        <p>① 목표 근처에서 최종 yaw 를 맞추느라 <strong>제자리 회전</strong>하는 동안 <code>distance_remaining</code> 은 줄지 않는다.
-        ② Nav2 의 <strong>복구 행동</strong>(후진·회전) 중에는 거리가 잠시 <em>늘어난다</em>.
-        ③ <strong>재계획</strong>으로 경로가 길어지면 값이 튀어오른다. 이런 순간을 정체로 오판하면 로봇은 도착 직전에 취소당한다.
-        <code>number_of_recoveries</code>, 목표 허용 오차, 시간 창을 어떻게 조합할지는 당신이 정한다.</p>
+      <p><strong>정체(stall) 판정 규칙의 뼈대</strong>는 다음 셋이다.</p>
+      <ul>
+        <li>피드백이 올 때마다 <code>distance_remaining</code> 을 보고, 지금까지의 최소값보다 <code>ε</code>(예: 0.1 m) 이상 가까워졌으면 "진전"으로 기록한다.</li>
+        <li>마지막 진전으로부터 <code>N</code> 초(예: 10 s)가 지나면 정체다 → 목표를 취소하고 같은 목표를 다시 준다(재계획을 강제한다).</li>
+        <li>재시도가 <code>K</code> 회를 넘으면 그 목표를 건너뛰거나 임무를 실패로 끝낸다.</li>
+      </ul>
+      <div class="callout warn"><span class="ct">이 규칙에는 함정이 있다 — 3-3 의 TODO 가 이 함정을 다룬다</span>
+        <p>다음 세 순간에는 정체가 아닌데도 <code>distance_remaining</code> 이 줄지 않거나 늘어난다.</p>
+        <ul>
+          <li>목표 근처에서 최종 yaw 를 맞추느라 <strong>제자리 회전</strong>하는 동안 <code>distance_remaining</code> 은 줄지 않는다.</li>
+          <li>Nav2 의 <strong>복구 행동</strong>(후진·회전) 중에는 거리가 잠시 <em>늘어난다</em>.</li>
+          <li><strong>재계획</strong>으로 경로가 길어지면 값이 갑자기 커진다.</li>
+        </ul>
+        <p>이런 순간을 정체로 오판하면 목표가 도착 직전에 취소된다.
+        <code>number_of_recoveries</code>, 목표 허용 오차, 시간 구간을 어떻게 조합할지는 당신이 정한다.</p>
       </div>
 
-      <h3>2-4. 왜 감독 노드가 <code>/cmd_vel</code> 을 직접 쏘지 않는가</h3>
+      <h3>2-4. 왜 감독 노드가 <code>/cmd_vel</code> 을 직접 발행하지 않는가</h3>
       <p>"사람이 보이면 속도 0 을 발행하면 되지 않나?" — Nav2 의 <code>controller_server</code> 도 같은 토픽에 10 Hz(100 ms 주기)로 발행하고 있다.
       같은 토픽에 발행자가 둘이면 <code>mcu_bridge</code> 는 <strong>마지막에 도착한 값</strong>을 따른다. 0 과 0.25 가 번갈아 들어가 로봇이 덜컥거리며 전진한다.
       05 단계의 "하나의 좌표계에는 부모가 하나"와 같은 종류의 문제다.</p>
-      <p>그래서 멈추는 수단은 <strong>목표 취소(goal cancel)</strong> 뿐이다. 취소하면 Nav2 가 스스로 0 을 내고 멈춘다. 발행자는 여전히 하나다.
-      정말로 여러 소스(조이스틱, 감독, Nav2)의 속도를 중재해야 한다면 그 일을 전담하는 노드(<code>twist_mux</code>, 우선순위 기반)를 <em>따로</em> 둔다 — §3-8 확장 항목이다.</p>
+      <p>그래서 멈추는 수단은 <strong>목표 취소(goal cancel)</strong> 뿐이다. 취소하면 Nav2 가 자동으로 속도 0 을 발행하고 멈춘다. 발행자는 여전히 하나다.
+      정말로 여러 소스(조이스틱, 감독, Nav2)의 속도를 중재해야 한다면 중재를 전담하는 노드(<code>twist_mux</code>, 우선순위 기반)를 <em>따로</em> 둔다 — §3-8 확장 항목이다.</p>
 
       <h3>2-5. 상태기계와 상태 토픽</h3>
       <pre class="diagram"><code>            start                          결과 SUCCEEDED (마지막 wp)
@@ -152,17 +164,18 @@
                       │  재시도 한도 초과 / ABORTED 반복 / 'abort'
                       ▼
                     FAILED</code></pre>
-      <p>상태를 <code>/mission/state</code> 로 매초 발행하는 이유는 두 가지다. ① Foxglove 의 Raw Messages 패널에 띄워 두면 로봇이 <em>왜</em> 멈췄는지 화면에서 읽을 수 있다.
-      ② rosbag 에 같이 기록되면 "그때 감독 노드는 무엇을 판단하고 있었는가"를 재생하며 확인할 수 있다. <strong>판단은 로그가 아니라 토픽으로 낸다</strong> — 로그는 그 순간에만 보이고, 토픽은 기록되고 그려진다.</p>
+      <p>상태를 <code>/mission/state</code> 로 매초 발행하는 이유는 두 가지다. ① Foxglove 의 Raw Messages 패널에 표시해 두면 로봇이 <em>왜</em> 멈췄는지 화면에서 읽을 수 있다.
+      ② rosbag 에 같이 기록되면 "그때 감독 노드는 무엇을 판단하고 있었는가"를 재생하며 확인할 수 있다.</p>
+      <p><strong>판단은 로그가 아니라 토픽으로 낸다</strong> — 로그는 그 순간에만 보이고, 토픽은 기록되고 그려진다.</p>
 
       <h3>2-6. systemd 자동 기동 — 개발 중에는 켜지 않는다</h3>
-      <p>전원을 넣으면 로봇이 뜨게 하는 것은 한 줄이다. 그러나 개발 중에 <code>enable</code> 하면 부팅 때마다 로봇이 떠서, 당신이 개발용으로 띄운 노드와 <strong>같은 이름·같은 토픽으로 충돌</strong>한다.
-      두 개의 <code>mcu_bridge</code> 가 같은 시리얼 포트를 열려고 싸우는 상황이다. 시스템이 안정된 뒤에 켠다.</p>
+      <p>전원을 넣으면 전체 시스템이 자동으로 기동하게 하는 설정은 한 줄이다. 그러나 개발 중에 <code>enable</code> 하면 부팅 때마다 전체 시스템이 기동해서, 당신이 개발용으로 실행한 노드와 <strong>같은 이름·같은 토픽으로 충돌</strong>한다.
+      두 개의 <code>mcu_bridge</code> 가 같은 시리얼 포트를 동시에 열려고 하는 상황이다. 시스템이 안정된 뒤에 켠다.</p>
 
       <h2>3. 실습</h2>
 
       <h3>3-1. 런치 계층화 — 세 파일을 직접 쓴다 <span class="tag py">Python</span></h3>
-      <p>아래는 <strong>골격</strong>이다. ★ 표시는 직접 완성한다. 세 파일 모두 <code>ros2_ws/src/rpi5_bringup/launch/</code> 에 둔다 — <code>CMakeLists.txt</code> 의 <code>install(DIRECTORY launch config …)</code> 가 이미 디렉터리 전체를 설치하므로 등록은 필요 없다.</p>
+      <p>아래는 <strong>골격</strong>이다. ★ 표시는 직접 완성한다. 세 파일 모두 <code>ros2_ws/src/rpi5_bringup/launch/</code> 에 둔다. <code>CMakeLists.txt</code> 의 <code>install(DIRECTORY launch config …)</code> 가 이미 디렉터리 전체를 설치하므로 따로 등록할 필요는 없다.</p>
 
       <h4>perception.launch.py — 인지 계층</h4>
       <pre><code class="lang-python">"""인지 계층: 지도 작성(SLAM) 또는 검출기.
@@ -310,13 +323,13 @@ def generate_launch_description():
         # ★ TODO(you): foxglove 는 compose 의 별도 서비스로 항상 떠 있다 — 여기 넣지 않는 이유를 설명할 수 있는가?
     ])</code></pre>
 
-      <div class="callout note"><span class="ct">지도 파일의 경로 — 컨테이너 안에서 살아남는 곳에</span>
+      <div class="callout note"><span class="ct">지도 파일의 경로 — 컨테이너 안에서 유지되는 곳에</span>
         <p>초안 문서에 있던 <code>/ros2_ws/../maps</code> 는 컨테이너 안에서 <code>/maps</code> 이고, <strong>마운트되어 있지 않으면 컨테이너가 끝날 때 지도도 사라진다.</strong>
         09 단계에서 <code>docker/docker-compose.yml</code> 의 <code>volumes:</code> 에 <code>../maps:/maps</code> 를 추가했어야 한다. 그러면 호스트의 <code>~/ros2_rpi5/maps/</code> 가 컨테이너의 <code>/maps/</code> 다.
-        이 페이지의 명령은 그 경로를 전제한다.</p>
+        이 쪽의 명령은 그 경로를 전제한다.</p>
       </div>
 
-      <p><strong>계층별로 따로 띄워 본다.</strong> 이것이 되어야 문제가 생겼을 때 좁힐 수 있다. <span class="tag cli">컨테이너</span></p>
+      <p><strong>계층별로 따로 실행해 본다.</strong> 계층별로 실행할 수 있어야 문제가 생겼을 때 원인 계층을 좁힐 수 있다. <span class="tag cli">컨테이너</span></p>
       <pre><code class="lang-bash"># 하드웨어만 (센서 확인: /scan /odom /camera/image_raw 가 나오는가)
 ros2 launch rpi5_bringup robot.launch.py use_lidar:=true
 
@@ -363,7 +376,7 @@ ament_package()</code></pre>
 
       <h3>3-3. <code>mission_supervisor.cpp</code> — 감독 노드 골격</h3>
       <p>아래 코드는 <strong>빌드되는 뼈대</strong>다. 정책의 핵심(정체 판정의 예외 처리, 실패 시 건너뛸지 끝낼지)은 <code>TODO(you)</code> 로 남겨 두었다.
-      먼저 이 상태로 빌드해 돌려 보고, 실제 로봇에서 오판이 나는 상황을 <em>관찰한 뒤</em> 고친다. 그 관찰이 이 단계의 학습이다.</p>
+      먼저 이 상태로 빌드해 실행해 보고, 실제 로봇에서 오판이 나는 상황을 <em>관찰한 뒤</em> 고친다. 그 관찰이 이 단계의 학습이다.</p>
       <pre><code class="lang-cpp">// =============================================================================
 //  mission_supervisor.cpp — 임무 수준 감독 노드 (10단계)
 //
@@ -451,7 +464,7 @@ public:
     // ── 2. 인터페이스 ─────────────────────────────────────────────────────
     client_ = rclcpp_action::create_client&lt;NavigateToPose&gt;(this, "navigate_to_pose");
 
-    // 센서 파생 토픽은 BEST_EFFORT 로 구독한다: 발행자가 RELIABLE 이든 BEST_EFFORT 이든 붙는다 (03 §2-7).
+    // 센서 파생 토픽은 BEST_EFFORT 로 구독한다: 발행자가 RELIABLE 이든 BEST_EFFORT 이든 연결된다 (03 §2-7).
     auto sensor_qos = rclcpp::QoS(1).best_effort();
     sub_det_ = create_subscription&lt;vision_msgs::msg::Detection2DArray&gt;(
       "detections", sensor_qos,
@@ -580,7 +593,7 @@ private:
   // ── 안전 조건 ──────────────────────────────────────────────────────────
   bool person_near() const
   {
-    // 검출 메시지가 1초 이상 오래되면 무시한다 — 검출기가 죽었을 때 영원히 멈춰 있지 않도록.
+    // 검출 메시지가 1초 이상 오래되면 무시한다 — 검출기가 비정상 종료됐을 때 영원히 멈춰 있지 않도록.
     return person_pause_ &amp;&amp; person_near_ &amp;&amp;
            (now() - person_stamp_) &lt; rclcpp::Duration::from_seconds(1.0);
   }
@@ -763,15 +776,15 @@ int main(int argc, char ** argv)
       <div class="callout why"><span class="ct">읽으면서 확인할 것 — 이 코드에 03·04·05 단계가 전부 들어 있다</span>
         <ul>
           <li><strong>액션 클라이언트(03 §2-4)</strong>: goal 을 보내고, <em>응답</em>(수락/거부) → <em>피드백</em>(진행) → <em>결과</em>(성공/중단/취소) 세 콜백이 따로 온다. 서비스로는 불가능한 구조다.</li>
-          <li><strong>QoS(03 §2-7)</strong>: 구독자를 <code>best_effort()</code> 로 두면 발행자가 어느 쪽이든 연결된다. 발행자가 BEST_EFFORT 인데 구독자가 RELIABLE 이면 침묵한다.</li>
-          <li><strong>파라미터(04 §3-6)</strong>: 정책이 전부 파라미터다. <code>ros2 param set /mission_supervisor stall_timeout_s 20.0</code> 은 지금 코드로는 시작 시 한 번만 읽으므로 반영되지 않는다 — 런타임 반영은 부록 A 의 <code>add_on_set_parameters_callback</code> 으로 확장한다.</li>
+          <li><strong>QoS(03 §2-7)</strong>: 구독자를 <code>best_effort()</code> 로 두면 발행자가 어느 쪽이든 연결된다. 발행자가 BEST_EFFORT 인데 구독자가 RELIABLE 이면 연결되지 않아 메시지를 하나도 받지 못한다.</li>
+          <li><strong>파라미터(04 §3-6)</strong>: 정책이 전부 파라미터다. <code>ros2 param set /mission_supervisor stall_timeout_s 20.0</code> 은 지금 코드로는 반영되지 않는다. 지금 코드는 파라미터를 시작 시 한 번만 읽는다. 런타임 반영은 부록 A 의 <code>add_on_set_parameters_callback</code> 으로 확장한다.</li>
           <li><strong>쿼터니언(05 §2-2)</strong>: <code>setRPY(0, 0, yaw)</code> — 평면 로봇은 yaw 만 있다. 06 의 <code>yaw_to_quaternion</code> 과 같은 값이 나온다.</li>
           <li><strong>시각 연산</strong>: <code>now() - stamp</code> 는 두 시각의 <em>클록 종류</em>가 같아야 한다. 초기화하지 않은 <code>rclcpp::Time</code> 과 빼면 예외다.</li>
         </ul>
       </div>
 
       <div class="callout warn"><span class="ct">TODO(you): MCU 의 안전 상태를 감독에 넣는다 — <code>/mcu/fault</code></span>
-        <p>06 의 브리지는 MCU 가 보고하는 fault 비트를 <code>/mcu/fault</code>(<code>std_msgs/UInt8</code>)로 올린다. MCU 는 저전압·과전류·과경사에서 <em>스스로</em> 출력을 끊으므로 로봇은 이미 멈춰 있지만, Nav2 는 그것을 모르고 계속 <code>/cmd_vel</code> 을 보낸다.
+        <p>06 의 브리지는 MCU 가 보고하는 fault 비트를 <code>/mcu/fault</code>(<code>std_msgs/UInt8</code>)로 발행한다. MCU 는 저전압·과전류·과경사에서 <em>스스로</em> 출력을 끊으므로 로봇은 이미 멈춰 있다. 그러나 이 차단은 Nav2 에 전달되지 않으므로 Nav2 는 계속 <code>/cmd_vel</code> 을 보낸다.
         감독 노드가 이 토픽을 구독해 0 이 아니면 <code>cancel_and_pause("mcu_fault")</code> 로 목표를 취소하고, 래치된 비상정지(전원 차단)라면 <code>FAILED</code> 로 끝내 사람에게 알려야 한다. 구독 한 줄과 <code>tick()</code> 의 안전 조건 한 줄을 직접 추가해 보십시오 — <code>/scan_front_min</code> 과 같은 패턴이다.</p>
       </div>
       <p>정책 값은 <code>ros2_ws/src/rpi5_bringup/config/mission_params.yaml</code> 에 둔다 (<code>autonomy.launch.py</code> 가 읽는다):</p>
@@ -794,7 +807,7 @@ int main(int argc, char ** argv)
       <pre><code class="lang-bash">cd /ros2_ws
 colcon build --symlink-install --packages-select rpi5_autonomy rpi5_bringup --parallel-workers 2
 source install/setup.bash</code></pre>
-      <p><strong>Nav2 가 active 인지 먼저 확인한다.</strong> 노드가 떠 있어도 lifecycle 이 <code>inactive</code> 면 액션 서버가 없다 (09 단계 §2-7).</p>
+      <p><strong>Nav2 가 active 인지 먼저 확인한다.</strong> 노드가 실행 중이어도 lifecycle 이 <code>inactive</code> 면 액션 서버가 없다 (09 단계 §2-7).</p>
       <pre><code class="lang-bash"># 터미널 1 — 전체 기동 (첫 실행은 반드시 받침대 위에서!)
 ros2 launch rpi5_bringup autonomy.launch.py mode:=navigation map:=/maps/my_room.yaml detector:=hailo
 
@@ -809,7 +822,7 @@ ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
 
 # 출발
 ros2 topic pub --once /mission/command std_msgs/msg/String "{data: start}"</code></pre>
-      <p>감독 노드를 단독으로 돌려 보고 싶으면 (Nav2 가 이미 떠 있을 때):</p>
+      <p>감독 노드를 단독으로 실행해 보고 싶으면 (Nav2 가 이미 실행 중일 때):</p>
       <pre><code class="lang-bash">ros2 run rpi5_autonomy mission_supervisor --ros-args \
   -p waypoints:="[1.0, 0.0, 0.0,  1.0, 1.0, 1.57]" -p autostart:=true</code></pre>
 
@@ -818,13 +831,13 @@ ros2 topic pub --once /mission/command std_msgs/msg/String "{data: start}"</code
         <li><strong>정상 주행.</strong> Foxglove 3D 패널에 <code>/plan</code>, <code>/robot_description</code>, Raw Messages 패널에 <code>/mission/state</code>. 상태가 <code>NAVIGATING → … → SUCCEEDED</code> 로 가고 <code>dist</code> 가 줄어드는가.</li>
         <li><strong>사람 검출 → PAUSED.</strong> 카메라 앞에 사람이 서면(박스 높이 ≥ <code>person_min_bbox_px</code>) 상태가 <code>PAUSED reason=person</code> 이 되고 로봇이 멈추는가. 비키면 <code>resume_hold_s</code> 뒤에 재개되는가.</li>
         <li><strong>전방 장애물 → PAUSED.</strong> 라이다 정면 25 cm 안에 손을 대면(받침대 위에서 먼저) <code>reason=front_obstacle</code>. 손을 치우면 재개.</li>
-        <li><strong>정체 유발 → 재시도.</strong> 로봇 앞을 상자로 완전히 막아 <code>distance_remaining</code> 이 줄지 않게 한다. <code>stall_timeout_s</code> 뒤에 "정체 … 취소 후 재시도" 로그가 뜨고 재계획되는가. <code>max_retries</code> 를 넘기면 건너뛰는가.</li>
-        <li><strong>오판 찾기.</strong> 목표 바로 앞에서 제자리 회전하는 동안 정체로 취소되는가? 복구 행동 중에 취소되는가? 이것이 3-3 의 TODO 를 채울 근거다. <code>ros2 bag record /mission/state /plan /cmd_vel /odom /tf</code> 로 기록해 두고 분석한다.</li>
+        <li><strong>정체 유발 → 재시도.</strong> 로봇 앞을 상자로 완전히 막아 <code>distance_remaining</code> 이 줄지 않게 한다. <code>stall_timeout_s</code> 뒤에 "정체 … 취소 후 재시도" 로그가 출력되고 재계획되는가. <code>max_retries</code> 를 넘기면 건너뛰는가.</li>
+        <li><strong>오판 찾기.</strong> 목표 바로 앞에서 제자리 회전하는 동안 정체로 취소되는가? 복구 행동 중에 취소되는가? 이 관찰 결과가 3-3 의 TODO 를 채울 근거다. <code>ros2 bag record /mission/state /plan /cmd_vel /odom /tf</code> 로 기록해 두고 분석한다.</li>
       </ol>
 
       <h3>3-5. 안전 — 실제 로봇에서 반드시</h3>
       <div class="callout warn"><span class="ct">첫 자율주행 테스트는 반드시 로봇을 받침대에 올려 바퀴를 띄운 상태로</span>
-        <p>바닥에서 처음 돌리면 예상치 못한 방향으로 돌진한다. 감독 노드의 <code>autostart</code> 기본값이 <code>false</code> 인 것도 같은 이유다 — 출발은 명시적인 명령으로만.</p>
+        <p>바닥에서 처음 주행시키면 예상치 못한 방향으로 돌진한다. 감독 노드의 <code>autostart</code> 기본값이 <code>false</code> 인 것도 같은 이유다 — 출발은 명시적인 명령으로만.</p>
       </div>
       <p>소프트웨어 정지 수단과 그 한계:</p>
       <pre><code class="lang-bash"># ① 감독 노드에 일시정지 / 중단 (목표를 취소한다 — Nav2 가 스스로 0 을 낸다)
@@ -838,10 +851,10 @@ ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{...}" 
 ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{}"
 
 # ④ 런치를 Ctrl+C — mcu_bridge 가 종료 시 정지 프레임을 보내고, 그 뒤엔 MCU 워치독이 지킨다</code></pre>
-      <p>③ 이 "이기지 못하는" 이유가 2-4 의 논리다. 그래서 정지의 정석은 <strong>goal cancel</strong>(①②)이고, 최후는 물리 E-stop 이다.</p>
+      <p>③ 의 속도 0 이 다음 주기에 덮어써지는 이유가 2-4 의 논리다. 그래서 정지의 정석은 <strong>goal cancel</strong>(①②)이고, 최후 수단은 물리 E-stop 이다.</p>
 
       <h3>3-6. 자동 기동 (systemd) <span class="tag pi">Pi 호스트</span></h3>
-      <p>먼저 <code>docker/docker-compose.yml</code> 의 <code>bringup</code> 서비스가 최상위 런치를 띄우도록 고친다:</p>
+      <p>먼저 <code>docker/docker-compose.yml</code> 의 <code>bringup</code> 서비스가 최상위 런치를 실행하도록 고친다:</p>
       <pre><code class="lang-yaml">  bringup:
     &lt;&lt;: *ros-common
     container_name: ros2_bringup
@@ -875,10 +888,10 @@ sudo systemctl start rpi5-robot           # 지금 한 번 (부팅 시 자동은
 sudo journalctl -u rpi5-robot -f          # 로그 확인
 sudo systemctl enable rpi5-robot          # ← 시스템이 안정된 뒤에만</code></pre>
       <div class="callout warn"><span class="ct">개발 중에는 <code>enable</code> 하지 마십시오</span>
-        <p>부팅 때마다 로봇이 뜨면 개발용으로 띄운 노드와 충돌한다(같은 시리얼 포트, 같은 토픽에 두 발행자). 2-6 의 이유다.</p>
+        <p>부팅 때마다 전체 시스템이 기동하면 개발용으로 실행한 노드와 충돌한다(같은 시리얼 포트, 같은 토픽에 두 발행자). 2-6 에서 설명한 이유다.</p>
       </div>
 
-      <h3>3-7. 운용 점검표 — 로봇을 돌리기 전에 매번</h3>
+      <h3>3-7. 운용 점검표 — 로봇을 주행시키기 전에 매번</h3>
       <pre><code class="lang-bash"># ── 기동 전 (Pi 호스트) ──
 vcgencmd measure_temp                 # 온도 (70℃ 이하)
 vcgencmd get_throttled                # 0x0
@@ -898,15 +911,15 @@ ros2 topic echo /scan_front_min --once   # 전방 거리 (inf 가 아니어야 �
 ros2 topic hz /cmd_vel                # 명령이 나가는가
 htop                                  # CPU 여유 (Hailo 를 쓰면 50% 미만이어야 한다)
 ros2 topic echo /mcu/fault --once     # 0 이어야 한다 (06 의 MCU 안전 상태)
-ros2 bag record -o run_$(date +%s) /scan /odom /odometry/filtered /imu/data_raw /mcu/fault /tf /tf_static /cmd_vel /detections /tracks /objects /mission/state /plan</code></pre>
+ros2 bag record -o rosbag2_run_$(date +%s) /scan /odom /odometry/filtered /imu/data_raw /mcu/fault /tf /tf_static /cmd_vel /detections /tracks /objects /mission/state /plan</code></pre>
 
       <h3>3-8. 다음으로 확장할 것들</h3>
       <div class="tbl"><table>
         <thead><tr><th>주제</th><th>내용</th><th>얻는 것</th></tr></thead>
         <tbody>
           <tr><td><strong>IMU 융합 튜닝</strong></td><td>06 에서 EKF 로 이미 구성했다. 여기서는 공분산 값, roll/pitch 사용 여부, <code>/odometry/filtered</code> 와 <code>/odom</code> 의 차이를 rosbag 으로 비교</td><td>회전 정확도 개선, 스키드 스티어의 미끄러짐 보상</td></tr>
-          <tr><td><strong>물체 위치를 지도 좌표로</strong></td><td>08d 의 <code>object_localizer</code> 를 <code>target_frame:=map</code> 으로 띄우고, 시야 밖 물체를 몇 초 기억하는 물체 메모리를 얹는다 (08d §3-9 표의 첫 행)</td><td>"지도의 (x, y) 에 사람" — 로봇이 돌아서도 남는다. 벽까지 거리를 <code>/scan</code> 대신 <code>/map</code> 점유 셀로</td></tr>
-          <tr><td><strong>동적 장애물 회피</strong></td><td>08d 의 <code>/objects</code> 를 <code>PointCloud2</code> 로 바꿔 Nav2 obstacle layer 의 관측 소스로</td><td>사람과, 라이다가 못 보는 낮은 물체를 미리 피함</td></tr>
+          <tr><td><strong>물체 위치를 지도 좌표로</strong></td><td>08d 의 <code>object_localizer</code> 를 <code>target_frame:=map</code> 으로 실행하고, 시야 밖 물체를 몇 초 기억하는 물체 메모리를 추가한다 (08d §3-9 표의 첫 행)</td><td>"지도의 (x, y) 에 사람" — 로봇이 돌아서도 남는다. 벽까지 거리를 <code>/scan</code> 대신 <code>/map</code> 점유 셀로</td></tr>
+          <tr><td><strong>동적 장애물 회피</strong></td><td>08d 의 <code>/objects</code> 를 <code>PointCloud2</code> 로 바꿔 Nav2 obstacle layer 의 관측 소스로</td><td>사람과, 라이다가 검출하지 못하는 낮은 물체를 미리 피함</td></tr>
           <tr><td><strong>속도 소스 중재</strong></td><td><code>twist_mux</code> — 조이스틱/감독/Nav2 의 <code>/cmd_vel</code> 을 우선순위로 중재</td><td>2-4 의 "두 발행자" 문제의 정식 해법</td></tr>
           <tr><td><strong>경로 순회</strong></td><td><code>nav2_waypoint_follower</code> — 우리 감독 노드의 waypoint 순회를 Nav2 가 제공하는 것으로 대체·비교</td><td>순찰 로봇</td></tr>
           <tr><td><strong>다중 로봇</strong></td><td>네임스페이스 분리</td><td>협동 주행</td></tr>
@@ -915,9 +928,9 @@ ros2 bag record -o run_$(date +%s) /scan /odom /odometry/filtered /imu/data_raw 
       </table></div>
 
       <h4>카메라-라이다 융합은 08d 로 옮겼다 — 여기서는 그 결과를 소비한다</h4>
-      <p>검출 박스(픽셀)를 <code>/scan</code>·<code>camera_info</code>·TF 로 미터로 바꾸는 수식과 구현은 <a href="08d-tracking-fusion.html">08d</a> 에 있다. 이 단계의 감독 노드는 <code>/detections</code> 대신 <code>/objects</code>(<code>vision_msgs/Detection3DArray</code>, <code>base_link</code> 또는 <code>map</code> 기준)를 구독해 "사람이 보인다"가 아니라 <strong>"사람이 1.2 m 앞에 있다"</strong>로 판단한다.</p>
+      <p>검출 박스(픽셀)를 <code>/scan</code>·<code>camera_info</code>·TF 로 미터로 바꾸는 수식과 구현은 <a href="08d-tracking-fusion.html">08d</a> 에 있다. 이 단계의 감독 노드는 <code>/detections</code> 대신 <code>/objects</code>(<code>vision_msgs/Detection3DArray</code>, <code>base_link</code> 또는 <code>map</code> 기준)를 구독한다. 그래서 "사람이 보인다"가 아니라 <strong>"사람이 1.2 m 앞에 있다"</strong>로 판단한다.</p>
       <div class="callout tip"><span class="ct">TODO(you): 감독 노드를 거리 기반으로</span>
-        <p>§3-3 골격의 검출 구독을 <code>Detection3DArray</code> 로 바꾸고, <code>results[0].pose.covariance[0]</code> 가 0.04(σ 20 cm) 를 넘는 위치는 정지 판단에서 제외하십시오. 그러면 라이다로 잰 위치(σ 5 cm)만 급정지에 쓰이고, 지면 평면으로 어림한 먼 물체는 "주의"에만 쓰인다 — 08d §2-6 이 공분산에 방법의 신뢰도를 담아 둔 이유가 여기서 드러난다.</p>
+        <p>§3-3 골격의 검출 구독을 <code>Detection3DArray</code> 로 바꾸고, <code>results[0].pose.covariance[0]</code> 가 0.04(σ 20 cm) 를 넘는 위치는 정지 판단에서 제외하십시오. 그러면 라이다로 잰 위치(σ 5 cm)만 급정지에 쓰이고, 지면 평면으로 어림한 먼 물체는 "주의"에만 쓰인다. 08d §2-6 이 공분산에 방법의 신뢰도를 담아 둔 이유가 이 구분에서 드러난다.</p>
       </div>
 
       <h4>EKF 를 쓰는 지금의 구성 — TF 발행 주체는 하나</h4>
@@ -926,27 +939,27 @@ mcu_bridge:
   ros__parameters:
     publish_tf: false      # ← EKF 가 odom → base_footprint 를 발행한다</code></pre>
       <p><code>robot_localization</code> 의 <code>ekf_node</code> 가 <code>/odom</code> 과 <code>/imu/data_raw</code> 를 융합해 <code>odom → base_footprint</code> TF 를 발행한다(06).
-      <strong>05 단계의 철칙: 하나의 좌표계에는 부모가 하나뿐이다.</strong> 두 노드가 같은 TF 를 쏘면 트리가 떨리고 모든 것이 망가진다. 06 의 브리지에 <code>publish_tf</code> 파라미터가 있는 이유가 이것이다.</p>
+      <strong>05 단계의 철칙: 하나의 좌표계에는 부모가 하나뿐이다.</strong> 두 노드가 같은 TF 를 발행하면 그 변환 값이 두 값 사이를 오가고, 그 TF 를 쓰는 모든 노드가 틀린 좌표를 받는다. 06 의 브리지에 <code>publish_tf</code> 파라미터가 있는 이유가 이것이다.</p>
 
       <h2>✅ 검증 체크포인트</h2>
       <p>이 프로젝트의 완성 기준이다.</p>
       <ul class="checklist">
         <li><label><input type="checkbox" data-key="cp0"><span><strong>시스템</strong> — <code>perception.launch.py</code>, <code>navigation.launch.py</code>, <code>autonomy.launch.py</code> 세 개를 직접 작성했다</span></label></li>
-        <li><label><input type="checkbox" data-key="cp1"><span><code>autonomy.launch.py</code> 하나로 전체 시스템이 뜬다</span></label></li>
-        <li><label><input type="checkbox" data-key="cp2"><span>계층별 런치파일로 따로 띄울 수 있다 (하드웨어만 / +인지 / 전부)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp1"><span><code>autonomy.launch.py</code> 하나로 전체 시스템이 기동한다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp2"><span>계층별 런치파일로 따로 실행할 수 있다 (하드웨어만 / +인지 / 전부)</span></label></li>
         <li><label><input type="checkbox" data-key="cp3"><span><code>ros2 node list</code> 에 모든 노드가 보인다</span></label></li>
         <li><label><input type="checkbox" data-key="cp4"><span>TF 트리가 map → odom → base_footprint → 센서들 로 완결된다 (<code>view_frames</code>)</span></label></li>
         <li><label><input type="checkbox" data-key="cp5"><span><strong>감독 노드</strong> — <code>rpi5_autonomy</code> 가 빌드되고 <code>/mission/state</code> 가 1 Hz 로 발행된다</span></label></li>
-        <li><label><input type="checkbox" data-key="cp6"><span><code>start</code> 명령으로 waypoint 를 순서대로 돌고 <code>SUCCEEDED</code> 로 끝난다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp6"><span><code>start</code> 명령으로 waypoint 를 순서대로 주행하고 <code>SUCCEEDED</code> 로 끝난다</span></label></li>
         <li><label><input type="checkbox" data-key="cp7"><span>사람이 카메라 앞에 서면 <code>PAUSED reason=person</code> 으로 전이하고, 비키면 재개된다</span></label></li>
         <li><label><input type="checkbox" data-key="cp8"><span>전방 <code>front_stop_m</code> 안에 장애물을 두면 <code>PAUSED reason=front_obstacle</code> 로 전이한다</span></label></li>
-        <li><label><input type="checkbox" data-key="cp9"><span>앞을 막아 정체를 만들면 "취소 후 재시도" 로그가 뜨고, 한도를 넘기면 건너뛴다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp9"><span>앞을 막아 정체를 만들면 "취소 후 재시도" 로그가 출력되고, 한도를 넘기면 건너뛴다</span></label></li>
         <li><label><input type="checkbox" data-key="cp10"><span>정체 판정의 오판 사례(제자리 회전, 복구 행동)를 하나 이상 관찰하고 <code>TODO(you)</code> 를 보완했다</span></label></li>
         <li><label><input type="checkbox" data-key="cp11"><span><strong>기능</strong> — 지도를 만들고 저장할 수 있다</span></label></li>
         <li><label><input type="checkbox" data-key="cp12"><span>저장한 지도로 자율주행이 된다</span></label></li>
-        <li><label><input type="checkbox" data-key="cp13"><span>Foxglove 에서 목표점을 찍으면 로봇이 스스로 간다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp13"><span>Foxglove 에서 목표점을 지정하면 로봇이 자동으로 그 지점까지 주행한다</span></label></li>
         <li><label><input type="checkbox" data-key="cp14"><span>주행 중 장애물이 나타나면 피하거나 멈춘다</span></label></li>
-        <li><label><input type="checkbox" data-key="cp15"><span>Hailo 추론이 돌면서도 주행이 끊기지 않는다 (CPU 여유 확인)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp15"><span>Hailo 추론이 실행되는 동안에도 주행이 끊기지 않는다 (CPU 여유 확인)</span></label></li>
         <li><label><input type="checkbox" data-key="cp16"><span><strong>안전</strong> — Wi-Fi 를 끊으면 로봇이 정지한다 (브리지 워치독)</span></label></li>
         <li><label><input type="checkbox" data-key="cp17"><span>USB 를 뽑으면 로봇이 정지한다 (MCU 워치독)</span></label></li>
         <li><label><input type="checkbox" data-key="cp18"><span>속도 제한이 동작한다 (큰 <code>cmd_vel</code> 을 줘도 제한됨)</span></label></li>
@@ -960,26 +973,44 @@ mcu_bridge:
       <h2>🤔 이해 확인</h2>
       <p>이 프로젝트 전체를 이해했는지 확인하는 질문이다. <strong>막히는 항목이 있으면 해당 단계로 돌아간다.</strong></p>
       <details class="quiz"><summary>1. 라이다를 다른 모델로 바꾸면 어느 파일들을 고쳐야 하는가?</summary>
-        <div class="ans">① 드라이버 패키지 교체(Dockerfile 의 apt 또는 <code>.repos</code> + 런치파일의 package/executable), ② <code>robot_params.yaml</code> 의 lidar_node 파라미터(보드레이트 등),
-        ③ 장착 위치가 바뀌었다면 URDF 의 <code>lidar_*</code> 속성. <strong>SLAM, Nav2, mcu_bridge, 감독 노드는 건드리지 않는다.</strong> 이것이 노드 분리의 효과다.</div></details>
+        <div class="ans"><ul>
+          <li>① 드라이버 패키지 교체(Dockerfile 의 apt 또는 <code>.repos</code> + 런치파일의 package/executable)</li>
+          <li>② <code>robot_params.yaml</code> 의 lidar_node 파라미터(보드레이트 등)</li>
+          <li>③ 장착 위치가 바뀌었다면 URDF 의 <code>lidar_*</code> 속성</li>
+        </ul>
+        <p><strong>SLAM, Nav2, mcu_bridge, 감독 노드는 건드리지 않는다.</strong> 이것이 노드 분리의 효과다.</p></div></details>
       <details class="quiz"><summary>2. <code>map → odom → base_link</code> 세 좌표계를 각각 누가 발행하며, 왜 나뉘어 있는가?</summary>
         <div class="ans"><code>map→odom</code> 은 SLAM/AMCL(불연속 보정), <code>odom→base_link</code> 는 mcu_bridge 또는 EKF(연속적, 누적오차 있음). 나눠 두면 제어기는 부드러운 odom 을 쓰고 경로계획은 정확한 map 을 쓸 수 있다.
-        합치면 위치 보정 때마다 로봇이 순간이동해 제어가 폭주한다.</div></details>
+        합치면 위치 보정 때마다 로봇의 위치 값이 불연속으로 바뀌어 제어가 폭주한다.</div></details>
       <details class="quiz"><summary>3. Nav2 가 <code>/cmd_vel</code> 을 보냈는데 로봇이 안 움직인다. 어떤 순서로 확인하는가?</summary>
-        <div class="ans">① <code>ros2 topic hz /cmd_vel</code> — 실제로 발행되는가 ② <code>ros2 topic echo /cmd_vel</code> — 값이 0 이 아닌가 ③ <code>ros2 node info /mcu_bridge</code> — 구독하고 있는가(토픽 이름/네임스페이스)
-        ④ mcu_bridge 로그 — 워치독이 걸렸는가, 시리얼 오류인가 ⑤ MCU 원시 바이트 — 프레임이 나가는가. <strong>그래프 → 데이터 → 하드웨어 순으로 좁힌다.</strong></div></details>
+        <div class="ans"><ul>
+          <li>① <code>ros2 topic hz /cmd_vel</code> — 실제로 발행되는가</li>
+          <li>② <code>ros2 topic echo /cmd_vel</code> — 값이 0 이 아닌가</li>
+          <li>③ <code>ros2 node info /mcu_bridge</code> — 구독하고 있는가(토픽 이름/네임스페이스)</li>
+          <li>④ mcu_bridge 로그 — 워치독이 동작했는가, 시리얼 오류인가</li>
+          <li>⑤ MCU 원시 바이트 — 프레임이 나가는가</li>
+        </ul>
+        <p><strong>그래프 → 데이터 → 하드웨어 순으로 좁힌다.</strong></p></div></details>
       <details class="quiz"><summary>4. Hailo 추론을 켰더니 SLAM 지도가 깨지기 시작했다. 무엇을 의심하는가?</summary>
-        <div class="ans">① CPU 포화로 SLAM 의 스캔 처리가 지연됨 → <code>htop</code>. 추론 전처리(리사이즈)가 CPU 를 먹고 있을 가능성이 크다. ② 전력 부족으로 라이다가 불안정 → <code>vcgencmd get_throttled</code>.
-        ③ 발열로 스로틀링 → <code>measure_temp</code>. Hailo 자체가 아니라 <strong>주변 자원 경합</strong>이 원인인 경우가 많다.</div></details>
+        <div class="ans"><ul>
+          <li>① CPU 포화로 SLAM 의 스캔 처리가 지연됨 → <code>htop</code>. 추론 전처리(리사이즈)가 CPU 를 차지하고 있을 가능성이 크다.</li>
+          <li>② 전력 부족으로 라이다가 불안정 → <code>vcgencmd get_throttled</code>.</li>
+          <li>③ 발열로 스로틀링 → <code>measure_temp</code>.</li>
+        </ul>
+        <p>Hailo 자체가 아니라 <strong>주변 자원 경합</strong>이 원인인 경우가 많다.</p></div></details>
       <details class="quiz"><summary>5. 이 로봇에서 "노드를 분리한 것"이 실제로 어떤 이득을 주었는가? 하나만 들어 보십시오.</summary>
         <div class="ans">예: MCU 프로토콜이 확정되기 전에도 <code>simulate:=true</code> 로 ROS 쪽 전체 데이터 흐름(cmd_vel → 운동학 → odom → TF)을 검증할 수 있었다.
         또는: 검출기를 YOLO(CPU)에서 Hailo 로 바꿨는데 감독 노드는 한 줄도 바꾸지 않았다 — 같은 <code>/detections</code> 계약 덕분이다.</div></details>
       <details class="quiz"><summary>6. 감독 노드가 사람을 보고 <code>/cmd_vel</code> 에 0 을 직접 발행하면 무엇이 문제인가?</summary>
         <div class="ans">Nav2 의 controller_server 도 같은 토픽에 10 Hz 로 발행한다. 발행자가 둘이면 mcu_bridge 는 마지막에 온 값을 따르므로 0 과 주행 속도가 번갈아 들어가 로봇이 덜컥이며 전진한다.
-        멈추는 수단은 goal cancel(Nav2 가 스스로 0 을 냄)이고, 정말 여러 소스를 섞어야 하면 <code>twist_mux</code> 같은 중재 노드를 따로 둔다.</div></details>
+        멈추는 수단은 goal cancel(Nav2 가 자동으로 0 을 발행함)이고, 정말 여러 소스를 중재해야 하면 <code>twist_mux</code> 같은 중재 노드를 따로 둔다.</div></details>
       <details class="quiz"><summary>7. <code>distance_remaining</code> 만으로 정체를 판정할 때의 함정은? 어떻게 보완하는가?</summary>
-        <div class="ans">① 목표 근처에서 최종 yaw 정렬(제자리 회전) 중에는 거리가 줄지 않는다 → 목표 허용 오차 안이면 판정 제외. ② 복구 행동(후진·회전) 중에는 거리가 잠시 늘어난다 → <code>number_of_recoveries</code> 증가 시 타이머 리셋 또는 timeout 연장.
-        ③ 재계획으로 경로가 길어지면 값이 튄다 → 최소값 기준을 완화. 공통 보완은 "충분히 긴 시간 창"과 "로봇 자세(<code>current_pose</code>)도 안 움직였는가"를 함께 보는 것이다.</div></details>
+        <div class="ans"><ul>
+          <li>① 목표 근처에서 최종 yaw 정렬(제자리 회전) 중에는 거리가 줄지 않는다 → 목표 허용 오차 안이면 판정 제외.</li>
+          <li>② 복구 행동(후진·회전) 중에는 거리가 잠시 늘어난다 → <code>number_of_recoveries</code> 증가 시 타이머 리셋 또는 timeout 연장.</li>
+          <li>③ 재계획으로 경로가 길어지면 값이 갑자기 커진다 → 최소값 기준을 완화.</li>
+        </ul>
+        <p>공통 보완은 "충분히 긴 시간 구간"과 "로봇 자세(<code>current_pose</code>)도 안 움직였는가"를 함께 보는 것이다.</p></div></details>
       <details class="quiz"><summary>8. 감독 노드의 상태를 로그가 아니라 토픽(<code>/mission/state</code>)으로 내는 이유는?</summary>
         <div class="ans">로그는 그 순간 그 터미널에만 보인다. 토픽은 Foxglove 에 그려지고 rosbag 에 <em>다른 토픽과 같은 시간축으로</em> 기록되어, "그때 감독 노드는 무엇을 판단했고 로봇은 무엇을 하고 있었는가"를 재생하며 대조할 수 있다.
         판단 결과는 시스템의 일부이므로 시스템의 통신 방식(토픽)으로 낸다.</div></details>
@@ -989,12 +1020,12 @@ mcu_bridge:
         <p>여기까지 왔다면 아래를 할 수 있게 된 것이다.</p>
         <ul>
           <li>ROS 2 의 통신 구조(토픽/서비스/액션)를 <strong>언제 무엇을 쓸지 판단</strong>하며 설계</li>
-          <li>TF 트리를 세우고 <strong>좌표 변환 문제를 스스로 진단</strong></li>
+          <li>TF 트리를 구성하고 <strong>좌표 변환 문제를 스스로 진단</strong></li>
           <li>하드웨어를 ROS 표준 인터페이스로 <strong>번역하는 노드를 C++ 로 직접 작성</strong></li>
           <li>영상을 OpenCV 로 다루고, YOLO 검출을 <strong>표준 메시지로 내고, 가속기로 옮기며 인터페이스를 유지</strong></li>
-          <li>SLAM 과 Nav2 를 <strong>구조를 이해한 채로</strong> 튜닝하고, 그 위에 <strong>임무 감독 노드</strong>를 올림</li>
+          <li>SLAM 과 Nav2 를 <strong>구조를 이해한 채로</strong> 튜닝하고, 그 위 계층의 <strong>임무 감독 노드</strong>를 작성</li>
         </ul>
-        <p><strong>이 중 어느 것도 "명령어를 외운 것"이 아니다.</strong> 그것이 이 커리큘럼의 목표였다. 이제 당신의 로봇에 필요한 다음 노드는 당신이 설계한다.
+        <p><strong>이 중 어느 것도 "명령어를 외운 것"이 아니다.</strong> 외우지 않고 이해해서 할 수 있게 되는 것이 이 커리큘럼의 목표였다. 이제 당신의 로봇에 필요한 다음 노드는 당신이 설계한다.
         → <a href="rosproject.html">로드맵으로 돌아가기</a> · 막히면 <a href="99-troubleshooting.html">99 · 트러블슈팅</a></p>
       </div>
 
