@@ -248,7 +248,7 @@ grep -n "&gt;DTCMRAM\|_estack" STM32H723xG_flash.ld   # 어느 섹션이 DTCM �
       <ul>
         <li>① 센다(<code>uart_err</code> · <code>last_err</code> — HAL 을 부르기 <strong>전에</strong>).</li>
         <li>② 오류 플래그를 지운다(<code>__HAL_UART_CLEAR_FLAG</code>). 지우지 않고 다시 걸면 밀린 ORE 가 시작 직후 다시 발생해 <code>uart_ex.c:917-923</code> 의 <code>HAL_ERROR</code> 가지로 간다.</li>
-        <li>③ <strong><code>old_pos = 0</code></strong>(DMA 가 <code>buf[0]</code> 부터 다시 쓴다 — <code>stream_rx_reset()</code>).</li>
+        <li>③ <strong><code>old_pos = N</code></strong>(<code>stream_rx_reset()</code>). DMA 는 <code>buf[0]</code> 부터 다시 쓰지만 0 이 아니라 N 으로 둔다. 다시 건 직후 <strong>바이트 없이</strong> IDLE 이 오면 HAL 은 Circular 모드에서 남은 수 == N 을 "TC 뒤의 IDLE"로 보고 <code>Size = N</code> 을 알린다(<code>uart.c:2425</code>). <code>old_pos</code> 가 0 이면 버퍼에 남은 <strong>옛 바이트 N 개를 새것으로</strong> 입력한다. N 이면 §2-8 (a) 의 규칙 1 이 거르고, 다음 위치는 규칙 2 의 되감김 가지가 <code>buf[0 .. pos)</code> 로 입력한다. 2026-10-20 <a href="fw-14-wt901.html">fw-14</a> 에서 실측으로 발견했다 — 속도를 일부러 어긋나게 연 동안 옛 프레임 68만 개가 SUM 이 맞는 새 프레임으로 들어왔다.</li>
         <li>④ 다시 건다. <code>HAL_OK</code> 일 때만 <code>rearm++</code>.</li>
       </ul>
       <div class="callout note"><span class="ct">DMA 수신에서는 ORE 가 잘 나지 않는다 — 기한을 지키는 것이 바뀌었기 때문</span>
@@ -292,7 +292,7 @@ grep -n "&gt;DTCMRAM\|_estack" STM32H723xG_flash.ld   # 어느 섹션이 DTCM �
       <div class="callout tip"><span class="ct">채울 자리마다 힌트 카드가 있다 — 읽는 순서</span>
         <p>골격의 채울 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 붙어 있고(이 쪽은 T1 ~ T7), 그 주석 안에 <strong>번호 걸음</strong>이 있다. 먼저 걸음을 보고 직접 써 본다.
         막히면 "직접 채우기" 절에서 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인.</p>
-        <p>완결 코드는 두 시험을 통과한 코드다(2026-10-02). 하나는 Mac 의 호스트 시험(<code>PASS stream_rx 14 cases</code>)이고, 다른 하나는 이 프로젝트의 펌웨어 빌드다. 펌웨어 빌드는 링크까지 했다 — <code>.dma_buf</code> 조각을 넣은 링커 스크립트로, 두 버퍼가 <code>0x30000000</code> · <code>0x30000100</code> 에 놓이는 것까지 확인했다. 보드에서 도는 것 — 특히 실습 A 의 실패와 실습 D 의 어긋남 — 은 "굽고 보기"에서 내가 확인한다.
+        <p>완결 코드는 두 시험을 통과한 코드다(2026-10-02). 하나는 Mac 의 호스트 시험(<code>PASS stream_rx 14 cases</code>, 2026-10-20 <code>reset</code> 수정 뒤 15)이고, 다른 하나는 이 프로젝트의 펌웨어 빌드다. 펌웨어 빌드는 링크까지 했다 — <code>.dma_buf</code> 조각을 넣은 링커 스크립트로, 두 버퍼가 <code>0x30000000</code> · <code>0x30000100</code> 에 놓이는 것까지 확인했다. 보드에서 도는 것 — 특히 실습 A 의 실패와 실습 D 의 어긋남 — 은 "굽고 보기"에서 내가 확인한다.
         붙여 넣는 것으로 끝내지 않는다 — 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
       </div>
 
@@ -665,7 +665,8 @@ void stream_rx_init(stream_rx_t *s, const uint8_t *buf, uint16_t size, stream_rx
 /* pos = HAL_UARTEx_RxEventCallback() 의 Size 인자: DMA 가 다음에 쓸 자리, buf[0] 부터 센다.
  * 길이가 아니라 위치(1..N)다. old_pos 와 pos 사이의 바이트를 도착 순서대로 입력하고, pos 를 기억한다. */
 void stream_rx_advance(stream_rx_t *s, uint16_t pos);
-/* 수신 오류 뒤에는 DMA 가 buf[0] 부터 다시 시작한다: 옛 위치를 잊는다. */
+/* 수신 오류 뒤에는 DMA 가 buf[0] 부터 다시 시작한다: 옛 위치를 잊는다.
+ * old_pos 를 0 이 아니라 N 으로 둔다 - 다시 건 직후의 IDLE(Size = N)이 옛 바이트를 다시 입력하지 않게. */
 void stream_rx_reset(stream_rx_t *s);
 
 #endif /* STREAM_RX_H */</code></pre>
@@ -682,7 +683,11 @@ void stream_rx_init(stream_rx_t *s, const uint8_t *buf, uint16_t size, stream_rx
 
 void stream_rx_reset(stream_rx_t *s)
 {
-  s-&gt;old_pos = 0u;                 /* 오류 뒤 DMA 는 buf[0] 부터 다시 쓴다 */
+  s-&gt;old_pos = s-&gt;size;            /* 오류 뒤 DMA 는 buf[0] 부터 다시 쓴다. 0 이 아니라 N 으로 둔다:
+                                      다시 건 직후 바이트 없이 IDLE 이 오면 HAL 은 Size = N 을 알린다
+                                      (uart.c:2425, Circular). old_pos 가 0 이면 버퍼에 남은 옛 바이트 N 개를
+                                      새것으로 입력한다. N 이면 pos == old_pos 로 걸러지고, 다음 위치는
+                                      되감김 가지가 buf[0 .. pos) 로 입력한다 (2026-10-20, fw-14 에서 발견) */
 }
 
 /* old_pos 와 pos 사이를 전부 입력하고, pos 를 기억한다.
@@ -734,8 +739,11 @@ void console_rx_start(void)
   /* 문맥: app_init(), 한 번.
      TODO(you) [T5]: 위치 추적을 초기화하고 Circular DMA 수신을 건다 - 힌트 카드 T5
        1) stream_rx_init(&amp;s_rx, s_rx_dma, RX_DMA_SIZE, rx_feed);
-       2) HAL_UARTEx_ReceiveToIdle_DMA(&amp;huart3, s_rx_dma, RX_DMA_SIZE) 를 부르고 반환값을 받는다
-       3) 부팅 때 HAL_OK 가 아니면 무엇을 뜻하는지 정한다(fw-05 의 T1 과 같은 물음이다)
+       2) 밀린 오류 플래그 넷을 지우고(__HAL_UART_CLEAR_FLAG) RDR 을 비운다(__HAL_UART_SEND_REQ, UART_RXDATA_FLUSH_REQUEST)
+          - 수신기는 MX_USART3_UART_Init() 때부터 켜져 있다. 그사이 쌓인 ORE 가 남아 있으면 다음 줄 안에서
+            오류 인터럽트가 시작 중인 수신을 끝내 EIE 가 꺼진 채 남는다 (fw-14 §2-9 의 상자)
+       3) HAL_UARTEx_ReceiveToIdle_DMA(&amp;huart3, s_rx_dma, RX_DMA_SIZE) 를 부르고 반환값을 받는다
+       4) 부팅 때 HAL_OK 가 아니면 무엇을 뜻하는지 정한다(fw-05 의 T1 과 같은 물음이다)
      HT 인터럽트를 끄지 않는다 (06 은 껐다: 그것은 Normal 모드의 처방이었다, 2-8). */
 }
 
@@ -768,7 +776,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 
       <h4 id="s3-3-3">3-3-3. 직접 채우기</h4>
       <p>채점표부터 놓는다. 아래 두 블록이 <code>firmware/host_tests/test_stream_rx.c</code> 한 파일이다(순서대로 이어 붙인다). 시험 파일은 전량으로 준다 — 벡터가 곧 채점표이기 때문이다. 벡터의 출처는 파일 머리 주석에 있다. <code>Size</code> 의 뜻과 "TC 뒤 IDLE 이 N 을 한 번 더 알린다"는 HAL 소스(§2-8 (a))에서, 33 바이트 묶음과 256 의 관계는 산술(256 mod 33 = 25)에서 나왔다.
-      2026-09-22 에 Mac 의 <code>cc</code> 로 힌트 T3 의 완결 코드와 함께 돌려 <code>PASS stream_rx 14 cases</code> 를 확인했다. 틀린 코드가 어느 벡터에서 멈추는지도 확인했다.</p>
+      2026-09-22 에 Mac 의 <code>cc</code> 로 힌트 T3 의 완결 코드와 함께 돌려 <code>PASS stream_rx 14 cases</code> 를 확인했다. 틀린 코드가 어느 벡터에서 멈추는지도 확인했다. 2026-10-20 에 <code>stream_rx_reset()</code> 을 고치면서 벡터 하나를 더해 <strong>15</strong> 가 됐다 — 옛 <code>reset</code>(<code>old_pos = 0</code>)은 <code>s.old_pos == N</code> 에서 멈춘다.</p>
       <ul>
         <li>빈 골격: 첫 벡터(<code>out_n == 10u</code>)</li>
         <li>"N 을 0 으로 정리한" 변형: <code>s.old_pos == 256u</code></li>
@@ -825,7 +833,9 @@ static void group1(void)
   CHECK(calls == 2u);                                  /* 끝 조각, 그다음 앞 조각 - 이 순서로 두 번 부른다 */
 
   stream_rx_reset(&amp;s);                                 /* 오류 경로: DMA 가 buf[0] 부터 다시 시작한다 */
-  CHECK(s.old_pos == 0u);
+  CHECK(s.old_pos == N);                               /* 0 이 아니라 N - 아래 줄의 이유 */
+  clear(); stream_rx_advance(&amp;s, N);                   /* 다시 건 직후, 바이트 없이 온 IDLE: HAL 은 Size == N (uart.c:2425) */
+  CHECK(out_n == 0u);                                  /* old_pos 를 0 으로 두면 여기서 옛 바이트 256 개를 입력한다 */
   clear(); stream_rx_advance(&amp;s, 1u);
   CHECK(out_n == 1u &amp;&amp; out[0] == 0u);
 }</code></pre>
@@ -861,7 +871,7 @@ int main(void)
 }</code></pre>
       <pre><code class="lang-bash">cd firmware
 cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_stream_rx.c h723zg/User/Src/System/stream_rx.c -o /tmp/test_stream_rx &amp;&amp; /tmp/test_stream_rx</code></pre>
-      <pre><code class="lang-text">(기대)  PASS stream_rx 14 cases
+      <pre><code class="lang-text">(기대)  PASS stream_rx 15 cases
 (빈 골격이면)  Assertion failed: (out_n == 10u &amp;&amp; out[0] == 0u &amp;&amp; out[9] == 9u &amp;&amp; s.old_pos == 10u), … line 29</code></pre>
       <ol class="steps">
         <li><strong><code>stream_rx_advance()</code></strong> — §2-8 (a) 의 규칙 셋을 그대로 옮긴다. 막히면 이렇게 본다. 되감기 가지에서 첫 조각의 길이는 <code>size − old_pos</code> 이고, <code>old_pos == size</code> 면 0 이다. 그 호출을 건너뛸지 길이 0 으로 부를지는 내가 선택한다. 시험은 둘 다 통과시킨다 — <code>calls == 2u</code> 를 세는 벡터는 두 조각이 <strong>모두</strong> 비어 있지 않은 경우다. 호스트 시험이 통과할 때까지 굽지 않는다.</li>
@@ -914,7 +924,7 @@ void stream_rx_advance(stream_rx_t *s, uint16_t pos)
             <tr><td>되감기의 두 조각 순서를 바꿨다</td><td><code>out[0] == 250u</code></td><td>끝 조각 먼저</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — §3-3-3 의 명령으로 <code>PASS stream_rx 14 cases</code>. 통과하기 전에는 굽지 않는다(체크포인트 <code>stream-rx-host-pass</code>).</p>
+        <p><strong>확인</strong> — §3-3-3 의 명령으로 <code>PASS stream_rx 15 cases</code>. 통과하기 전에는 굽지 않는다(체크포인트 <code>stream-rx-host-pass</code>).</p>
         </div></details>
 
       <details class="hint" id="hint-t4"><summary>힌트 T4 — <code>rx_feed()</code> · 받은 n 바이트를 링에 넣는다</summary>
@@ -963,12 +973,15 @@ void console_rx_start(void)
 {
   stream_rx_init(&amp;s_rx, s_rx_dma, RX_DMA_SIZE, rx_feed);
 
+  __HAL_UART_CLEAR_FLAG(&amp;huart3, UART_CLEAR_OREF | UART_CLEAR_NEF | UART_CLEAR_PEF | UART_CLEAR_FEF);
+  __HAL_UART_SEND_REQ(&amp;huart3, UART_RXDATA_FLUSH_REQUEST);   /* RDR 에 남은 바이트를 버린다 */
   HAL_StatusTypeDef st = HAL_UARTEx_ReceiveToIdle_DMA(&amp;huart3, s_rx_dma, RX_DMA_SIZE);
   FW_ASSERT(st == HAL_OK);
 }</code></pre>
         <p><strong>코드 설명</strong></p>
         <ul>
           <li><code>stream_rx_init(&amp;s_rx, s_rx_dma, RX_DMA_SIZE, rx_feed);</code> — 추적기(<code>&amp;s_rx</code>)에 셋을 알려 준다: 버퍼, 크기, 그리고 새 바이트를 받을 함수. 마지막 인자 <code>rx_feed</code> 는 <strong>괄호 없이</strong> 쓴다 — 함수를 부르는 것이 아니라 함수의 주소를 넘기는 것이다(fw-05 의 <code>cli_register("led", cmd_led)</code> 와 같다).</li>
+          <li><code>__HAL_UART_CLEAR_FLAG(…)</code> · <code>__HAL_UART_SEND_REQ(&amp;huart3, UART_RXDATA_FLUSH_REQUEST)</code> — 수신을 걸기 전에 밀린 오류 플래그 넷과 RDR 의 남은 바이트를 비운다. 수신기는 <code>MX_USART3_UART_Init()</code> 때부터 켜져 있어서, 부팅 중에 글자가 들어오면 ORE 가 미리 켜질 수 있다. 그대로 걸면 HAL 이 EIE 를 켜는 순간(DMAR 을 켜기 전) 오류 인터럽트가 시작 중인 수신을 끝내고 <strong>EIE 가 꺼진 채</strong> 남는다 — 그 뒤의 오류는 세지지도 다시 걸리지도 않는다. 2026-10-20 <a href="fw-14-wt901.html#s2-9">fw-14 §2-9</a> 에서 USART6 으로 실측한 경로다(명령 창은 ST-LINK 라 드물다).</li>
           <li><code>HAL_UARTEx_ReceiveToIdle_DMA(&amp;huart3, s_rx_dma, RX_DMA_SIZE)</code> — "이 버퍼에 DMA 로 받아라. 선이 유휴 상태가 되면(IDLE) 알려 달라". CubeMX 에서 수신 DMA 를 Circular 로 설정했으므로(§3-1-1) 버퍼 끝에서 멈추지 않고 앞으로 되감는다.</li>
           <li>순서 — 추적기 초기화가 <strong>먼저</strong>다. 수신을 시작한 직후부터 콜백(T6)이 올 수 있고, 그 콜백이 <code>s_rx</code> 를 쓴다.</li>
           <li><code>FW_ASSERT(st == HAL_OK);</code> — fw-05 의 T1 과 같은 판단이다(다르게 써도 되는 곳 — LD3 만 켜고 가는 답도 있다).</li>
@@ -1144,7 +1157,8 @@ grep -n "\.dma_buf" STM32H723xG_flash.ld                                        
  ② main() 앞머리에서 MPU_Config() 가 SCB_EnableDCache() 보다 앞에 있다 [추정 — CubeMX 가 내는 순서다. 눈으로 확인한다]
     순서가 뒤집혀 있으면 캐시를 켠 뒤에 리전이 적용되는 짧은 구간이 생긴다 — 그 사실을 노트에 적는다. 부팅 때 한 번뿐이라 이 쪽의 관찰은 바뀌지 않는다.
  ③ MPU_Config() 안에 두 번째 HAL_MPU_ConfigRegion() 블록이 생겼다 — Number = MPU_REGION_NUMBER1, BaseAddress = 0x30000000, Size = MPU_REGION_SIZE_32KB
- ④ .dma_buf 가 네 줄(섹션 · KEEP 둘 · &gt;RAM_D2) 그대로 있다. 없으면 재생성이 링커 스크립트를 덮어쓴 것이다 — 3-2-2 의 조각을 다시 붙이고 다시 빌드한다.
+ ④ .dma_buf 가 세 줄(섹션 · KEEP 둘) 그대로 있다. 닫는 줄 } &gt;RAM_D2 에는 .dma_buf 라는 글자가 없어 이 grep 에 걸리지 않는다.
+    세 줄이 없으면 재생성이 링커 스크립트를 덮어쓴 것이다 — 3-2-2 의 조각을 다시 붙이고 다시 빌드한다.
     이것을 건너뛰고 구우면 버퍼가 DTCM 으로 돌아가 상태 ① 이 되고, 실습 D 는 아무것도 보여 주지 못한다(증상 표의 마지막 행).</code></pre>
       <p><code>MPU_Config()</code> 를 손으로 고치지 않는 이유는 §2-5 에서 적은 그대로다. <code>USER CODE</code> 밖의 생성물이라 다음 재생성에서 지워진다. 이 쪽이 생성물을 손으로 고치는 곳은 링커 스크립트 하나뿐이고(실습 B), 그래서 위 ④ 가 필요하다.</p>
 
@@ -1240,7 +1254,7 @@ mem n=2 …            (부팅 줄이 n=1 을 썼으므로 처음 친 mem 은 n=
           <span class="sub">판정 수단: 명령 창 출력 · §3-2-4 · 뒤의 쪽(fw-12 · fw-14 · fw-17)이 이 자리를 전제한다</span></span></label></li>
         <li><label><input type="checkbox" data-key="map-shows-dma-section"><span><strong>경로 통과</strong> — <code>.map</code> 에 <code>.dma_buf</code> 출력 섹션이 <code>0x30000000</code> 에 있고, <code>nm</code> 이 낸 두 버퍼 심볼의 주소 하위 5 비트가 0 이다
           <span class="sub">판정 수단: <code>grep</code> · <code>arm-none-eabi-nm</code> 출력 · §3-2-4 · CubeMX 를 재생성할 때마다 다시 본다(§3-4-1 ③ 의 넷째 grep)</span></span></label></li>
-        <li><label><input type="checkbox" data-key="stream-rx-host-pass"><span><strong>경로 통과</strong> — Mac 에서 <code>PASS stream_rx 14 cases</code> 가 나왔다. 되감기 · <code>pos == old_pos</code> · <code>pos == N</code> 세 경우가 모두 통과했다
+        <li><label><input type="checkbox" data-key="stream-rx-host-pass"><span><strong>경로 통과</strong> — Mac 에서 <code>PASS stream_rx 15 cases</code> 가 나왔다. 되감기 · <code>pos == old_pos</code> · <code>pos == N</code> 세 경우가 모두 통과했다
           <span class="sub">판정 수단: 호스트 시험 출력 · §3-3-3 · <code>map-shows-dma-section</code> 과 함께 보드 없이 통과시킬 수 있는 항목이다</span></span></label></li>
         <li><label><input type="checkbox" data-key="cli-on-circular-dma"><span><strong>경로 통과</strong> — 명령 창이 Circular DMA 수신으로 돈다: <code>help</code> 가 돌고 <code>idle_events</code> 가 친 글자만큼 늘며, 300 자를 두 번 붙여넣으면 <code>ht_tc_events</code> 가 늘고 에코의 글자 순서가 맞다
           <span class="sub">판정 수단: 명령 창 출력(<code>mem</code> 의 두 칸) · §3-3-4 의 1 · 2 · 순서가 틀리면 되감기 두 조각의 차례를 본다</span></span></label></li>

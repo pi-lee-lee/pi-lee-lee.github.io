@@ -27,7 +27,7 @@
         <ul>
           <li><code>save</code> 를 치면 값이 플래시로 들어가고, NRST 를 눌러 다시 부팅해도 <code>save show</code> 가 <strong>같은 값</strong>을 보인다.</li>
           <li>그 <code>save</code> 한 번에 걸린 지우기 시간이 <code>erase_us</code> 로 찍히고, 그 숫자가 워치독 예산표의 마지막 행이 된다.</li>
-          <li><code>MOTOR_EN</code> 이 HIGH 인 동안 <code>save</code> 를 치면 <code>ERR save motor-en-high</code> 로 거부된다.</li>
+          <li>EN 네 핀 중 하나라도 HIGH 인 동안 <code>save</code> 를 치면 <code>ERR save motor-en-high</code> 로 거부된다.</li>
         </ul>
         <p><strong>이 쪽에 필요한 것</strong></p>
         <ul>
@@ -45,7 +45,7 @@
 
       <div class="meta">
         <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag mac">Mac</span></div>
-        <div><span class="k">선행</span><a href="fw-06-tick-watchdog.html#s2-6">fw-06 §2-6</a> — 워치독 예산표와 <code>wdg_service_main()</code> · <a href="fw-06-tick-watchdog.html#s2-3">fw-06 §2-3</a> — DWT 의 <code>CYCCNT</code> · <a href="fw-08-pwm-safe-output.html#s3-1">fw-08 §3-1</a> — <code>MOTOR_EN</code> 라벨 · <a href="fw-07-memory-dma.html#s3-2">fw-07 §3-2</a> — 링커 스크립트를 고치고 <code>.map</code> 으로 확인하는 법 · <a href="fw-05-cli.html#s3-2">fw-05 §3-2</a> — <code>cli_register()</code></div>
+        <div><span class="k">선행</span><a href="fw-06-tick-watchdog.html#s2-6">fw-06 §2-6</a> — 워치독 예산표와 <code>wdg_service_main()</code> · <a href="fw-06-tick-watchdog.html#s2-3">fw-06 §2-3</a> — DWT 의 <code>CYCCNT</code> · <a href="fw-08-pwm-safe-output.html#s3-1">fw-08 §3-1</a> — <code>motor_any_enabled()</code> 와 EN 네 핀의 라벨 · <a href="fw-07-memory-dma.html#s3-2">fw-07 §3-2</a> — 링커 스크립트를 고치고 <code>.map</code> 으로 확인하는 법 · <a href="fw-05-cli.html#s3-2">fw-05 §3-2</a> — <code>cli_register()</code></div>
         <div><span class="k">채우는 INVENTORY 칸</span>없음 (이 쪽은 값을 확정하지 않는다 — 지우기 시간과 워치독 주기는 내 노트에 적는다)</div>
         <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
       </div>
@@ -83,7 +83,7 @@
         <thead><tr><th>어느 쪽</th><th>무엇을 주고받는가</th></tr></thead>
         <tbody>
           <tr><td><a href="fw-06-tick-watchdog.html#s2-6">fw-06 §2-6</a></td><td>워치독 예산표를 받아 <strong>마지막 행(섹터 지우기)을 채우고 완성한다.</strong> IWDG 의 주기가 그때 도출된다 — 이 쪽은 그 숫자를 대신 정하지 않는다</td></tr>
-          <tr><td><a href="fw-08-pwm-safe-output.html">fw-08</a> · <a href="fw-11-power-sequence.html">fw-11</a></td><td><code>MOTOR_EN</code> 의 상태를 <strong>읽는다.</strong> HIGH 면 저장을 거부한다(안전 규칙 S13)</td></tr>
+          <tr><td><a href="fw-08-pwm-safe-output.html">fw-08</a> · <a href="fw-11-power-sequence.html">fw-11</a></td><td>EN 네 핀의 상태를 <strong>읽는다</strong>(<code>motor_any_enabled()</code>). 하나라도 HIGH 면 저장을 거부한다(안전 규칙 S13)</td></tr>
           <tr><td><a href="fw-13-pid-protection.html">fw-13</a> · <a href="fw-15-bno055.html">fw-15</a></td><td>저장할 값 — PID 게인 셋, BNO055 오프셋 22 B. 둘 다 <strong>실습 E</strong>(§3-6)에서 넣는다</td></tr>
           <tr><td><a href="fw-17-link-v2.html">fw-17</a></td><td>이 쪽이 쓰는 CRC-8 은 계약 v2 의 CRC 와 <strong>같은 다항식 · 같은 초깃값</strong>이다. 두 구현을 하나로 합칠지는 fw-17 에서 정한다(§2-6)</td></tr>
         </tbody>
@@ -174,19 +174,19 @@
         (이 문단은 §2-2 의 도출에 자기모순이 없는지 확인한 것이기도 하다 — 틱이 늘지 못하면 틱으로 재는 타임아웃의 경과 시간도 늘지 못한다.)</p>
       </div>
 
-      <h3 id="s2-3">2-3. 그래서 저장은 <code>MOTOR_EN</code> LOW 에서만 한다 (안전 규칙 S13)</h3>
+      <h3 id="s2-3">2-3. 그래서 저장은 EN 네 핀이 모두 LOW 일 때만 한다 (안전 규칙 S13)</h3>
       <p>§2-2 의 결론을 모터가 도는 상황에 대입하면 이렇게 된다 — <strong>1 kHz 제어 루프가 1~4 초 동안 멈춰 있는데, PWM 타이머는 하드웨어라 멈추지 않는다.</strong>
       마지막으로 쓴 듀티가 그대로 계속 나간다. 속도 PID 도, 보호 3종도(<a href="fw-13-pid-protection.html#s2-6">fw-13 §2-6</a>), 200 ms 명령 워치독도 전부 그 루프 안에 있다 —
       <strong>루프가 멈춘 동안 이것들은 모두 동작하지 않는다.</strong> 그동안 로봇을 멈출 수 있는 것은 물리적인 차단뿐이다.</p>
-      <div class="callout warn"><span class="ct">S13 — 플래시 지우기 · 쓰기는 <code>MOTOR_EN</code> LOW 에서만</span>
+      <div class="callout warn"><span class="ct">S13 — 플래시 지우기 · 쓰기는 EN 네 핀이 모두 LOW 일 때만</span>
         <ul>
           <li>지우는 동안 코드 실행과 1 kHz 루프가 멈춘다(§2-2). 근거: DS13313 표 44 의 섹터 지우기 1~4 s.</li>
-          <li>그래서 <code>save</code> 는 명령을 받자마자 <strong>가장 먼저</strong> <code>MOTOR_EN</code> 을 보고, HIGH 면 아무것도 하지 않고 <code>ERR save motor-en-high</code> 를 찍는다.</li>
+          <li>그래서 <code>save</code> 는 명령을 받자마자 <strong>가장 먼저</strong> EN 네 핀을 보고, 하나라도 HIGH 면 아무것도 하지 않고 <code>ERR save motor-en-high</code> 를 찍는다.</li>
           <li><strong>"내가 지금 안 돌리고 있으니 괜찮다" 는 판정이 아니다.</strong> 사람의 기억이 아니라 핀의 상태로 판정한다 — 이 핀 판정이 §3-3-2 의 첫 줄이다.</li>
           <li>조립 뒤(<a href="fw-20-after-assembly.html">fw-20</a>)에는 이 규칙이 더 엄격해진다: 바퀴가 바닥에 닿아 있으면 <strong>멈춰 두고</strong> 저장한다.</li>
         </ul>
       </div>
-      <p>거꾸로, 이 제약은 <strong>이 쪽을 벤치에서 안전하게 만든다.</strong> 모터 전원이 아예 없는 책상 위에서는 <code>MOTOR_EN</code> 이 늘 LOW 라 저장이 언제나 허락된다.
+      <p>거꾸로, 이 제약은 <strong>이 쪽을 벤치에서 안전하게 만든다.</strong> 모터 전원이 아예 없는 책상 위에서는 EN 네 핀이 늘 LOW 라 저장이 언제나 허락된다.
       그래서 이 쪽에는 <code>.tag.power</code> 절이 없고 STOP 리스트도 없다 — <strong>모터 전원을 넣는 절이 하나도 없기 때문</strong>이다.</p>
 
       <h3 id="s2-4">2-4. 워치독 예산표가 여기서 완성된다</h3>
@@ -200,10 +200,10 @@
           <tr><td>주 루프 최장 1회전</td><td><code>____</code> ms</td><td><code>stat</code> 의 <code>loop_us_max</code></td><td>kick 은 "주 루프와 1 kHz 가 둘 다 동작 중일 때만"</td><td>fw-06</td></tr>
           <tr><td><code>i2c scan</code> — 주소마다 트랜잭션이 끝나지 않는 최악</td><td>(주소 개수) × Trials × Timeout = <code>____</code> ms</td><td>산술 — 세 값은 내가 고른다</td><td>주소마다 kick · Timeout 을 낮추거나 범위를 좁힌다</td><td>fw-10</td></tr>
           <tr><td><code>adc spread &lt;n&gt;</code> 표본 수집</td><td>n ÷ (변환율) 초</td><td>산술 — 내 변환율로</td><td>n 의 상한을 낮게 두거나 수집 루프에서 kick</td><td>fw-12</td></tr>
-          <tr><td>CLI 의 긴 덤프(<code>step</code> 의 CSV)</td><td>행 수 × 줄 길이 ÷ 46 kB/s</td><td>산술(460800 8N1)</td><td>덤프 중 kick · 덤프는 <code>MOTOR_EN</code> LOW 에서</td><td>fw-13</td></tr>
+          <tr><td>CLI 의 긴 덤프(<code>step</code> 의 CSV)</td><td>행 수 × 줄 길이 ÷ 46 kB/s</td><td>산술(460800 8N1)</td><td>덤프 중 kick · 덤프는 EN 네 핀 LOW 에서</td><td>fw-13</td></tr>
           <tr><td>WT901 설정 절차의 대기 · USART6 속도 전환</td><td><code>____</code></td><td>매뉴얼에 수치 없음 — 관찰</td><td>비블로킹 상태기계(조각 대기 + kick)</td><td>fw-14</td></tr>
           <tr><td>BNO055 POR · 모드 전환</td><td>650 ms · 19 ms · 7 ms</td><td>BNO055 데이터시트 Table 0-2 · 3-6</td><td>전부 상태기계의 상태 — 주 루프를 붙잡지 않는다</td><td>fw-15</td></tr>
-          <tr><td><strong>내장 플래시 섹터 지우기</strong></td><td><strong>typ 1.1~2 s / max 2.2~4 s</strong><br>(내가 고른 병렬도의 줄, §2-1)</td><td>DS13313 표 44</td><td><code>MOTOR_EN</code> LOW 에서만 <strong>+ IWDG 와의 공존 방식을 여기서 결정</strong></td><td><strong>fw-16(이 쪽)</strong></td></tr>
+          <tr><td><strong>내장 플래시 섹터 지우기</strong></td><td><strong>typ 1.1~2 s / max 2.2~4 s</strong><br>(내가 고른 병렬도의 줄, §2-1)</td><td>DS13313 표 44</td><td>EN 네 핀 LOW 에서만 <strong>+ IWDG 와의 공존 방식을 여기서 결정</strong></td><td><strong>fw-16(이 쪽)</strong></td></tr>
           <tr><td>전원 시퀀스(사전충전 ≈ 수 초)</td><td>행 없음</td><td>—</td><td>상태기계가 비블로킹이다</td><td>fw-11(설명만)</td></tr>
           <tr><td>옵션 바이트 쓰기</td><td>행 없음</td><td>—</td><td>펌웨어가 쓰지 않는다(도구로 한 번)</td><td>fw-03(설명만)</td></tr>
         </tbody>
@@ -212,7 +212,7 @@
         <div class="tbl"><table class="compact">
           <thead><tr><th>구간</th><th>최장 시간</th><th>출처</th><th>처리</th></tr></thead>
           <tbody>
-            <tr><td>내장 플래시 섹터 지우기 (<code>save</code> · <code>save erase</code>)</td><td>typ 1.1~2 s / max 2.2~4 s — 내가 고른 병렬도의 줄(§2-1)</td><td>DS13313 Rev 5 표 44</td><td><code>MOTOR_EN</code> LOW 에서만 + §2-4-2 에서 고른 공존 방식</td></tr>
+            <tr><td>내장 플래시 섹터 지우기 (<code>save</code> · <code>save erase</code>)</td><td>typ 1.1~2 s / max 2.2~4 s — 내가 고른 병렬도의 줄(§2-1)</td><td>DS13313 Rev 5 표 44</td><td>EN 네 핀 LOW 에서만 + §2-4-2 에서 고른 공존 방식</td></tr>
           </tbody>
         </table></div>
         <p><strong>NVIC 우선순위 표에 더하는 행은 없다</strong> — 이 쪽은 인터럽트를 하나도 새로 켜지 않는다.
@@ -395,7 +395,7 @@
         막히면 "직접 채우기" 절에서 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인.</p>
         <p>완결 코드는 2026-10-03 에 두 검사를 통과했다. 하나는 Mac 의 호스트 시험이다(<code>PASS nvstore 34 cases</code>, <code>-fsanitize=undefined,address</code> 까지 경고와 오류가 없다).
         다른 하나는 이 프로젝트의 펌웨어 빌드다(링크까지, <code>User/</code> 경고 0 — §3-1-2 의 링커 조각을 넣어 <code>_snvstore</code> 가 <code>0x080e0000</code> 에 놓이는 것까지).
-        단 둘은 임시였다. <code>hiwdg1</code> 과 <code>MOTOR_EN</code> 라벨은 fw-06 · fw-08 의 CubeMX 생성물이 만드는 이름이라, 빌드에서는 임시 정의로 대신했다. T8 의 두 상수 <code>NVSTORE_WDG_RELOAD_*</code> 는 §2-4 에서 <strong>내가</strong> 도출하는 값이라 자리표시 <code>0u</code> 그대로 두었다(채우기 전에는 <code>_Static_assert</code> 가 빌드를 멈춘다 — 의도된 것, 증상 표 참고).
+        단 둘은 임시였다. <code>hiwdg1</code> 은 fw-06 의 CubeMX 생성물이 만드는 이름이고 <code>motor_any_enabled()</code> 는 fw-08 의 <code>motor.h</code> 가 주는 함수(EN_FL … EN_RR 네 라벨을 읽는다)라, 빌드에서는 임시 정의로 대신했다. 2026-10-14 의 EN 개편으로 T8 의 ① 한 줄이 <code>motor_any_enabled()</code> 로 바뀌었다 — 그 줄은 아직 빌드로 다시 확인하지 않았다. T8 의 두 상수 <code>NVSTORE_WDG_RELOAD_*</code> 는 §2-4 에서 <strong>내가</strong> 도출하는 값이라 자리표시 <code>0u</code> 그대로 두었다(채우기 전에는 <code>_Static_assert</code> 가 빌드를 멈춘다 — 의도된 것, 증상 표 참고).
         보드에서 도는 것 — 세 시계의 값, 찢어진 쓰기 뒤의 <code>save show</code> — 은 "굽고 보기"에서 내가 확인한다.</p>
         <p>붙여 넣는 것으로 끝내지 않는다 — 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.
         이 쪽에는 <strong>내가 정하는 것</strong>이 넷 있다.</p>
@@ -625,16 +625,16 @@ static inline int32_t nvstore_scan(const uint8_t *sector, uint16_t nslots,
 </code></pre>
       <p class="small">"안전한 쪽으로 틀린 기본값" 이 여기서는 이렇다 — <code>nvstore_blank()</code> 가 <code>false</code>(=&nbsp;"비어 있지 않다") 를 돌려주면 아무 데도 쓰지 않는다.
       <code>nvstore_scan()</code> 이 <code>*free_out = nslots</code> 를 돌려주면 "꽉 찼으니 지우고 써라" 가 된다. 반대 방향으로 틀리면(비지 않은 자리를 비었다고 하면) 이미 쓴 워드에 덮어쓰게 된다(§2-5).</p>
-      <p>마지막은 순수하지 않은 쪽 — 플래시와 <code>MOTOR_EN</code> 을 다루는 공개 함수들이다. 시그니처만 여기에 두고 몸은 실습 B 에서 <code>nvstore.c</code> 에 쓴다.</p>
+      <p>마지막은 순수하지 않은 쪽 — 플래시와 EN 핀을 다루는 공개 함수들이다. 시그니처만 여기에 두고 몸은 실습 B 에서 <code>nvstore.c</code> 에 쓴다.</p>
       <pre><code class="lang-c">
-/* ---------------- 순수하지 않음: 플래시와 MOTOR_EN 을 만진다 ---------------- */
+/* ---------------- 순수하지 않음: 플래시를 만지고 EN 네 핀을 읽는다 ---------------- */
 
 bool     nvstore_init(void);            /* app_init() 에서, tick_init() 뒤에. 훑고 읽어 온다. false = 아직 저장된 것 없음 */
 bool     nvstore_loaded(void);          /* 부팅 때 저장된 레코드가 돌아왔는가? */
 const nv_data_t *nvstore_data(void);    /* RAM 의 이미지. 읽어 온 것이 없으면 0 으로 채워져 있다 */
 nv_data_t *nvstore_stage(void);         /* 같은 이미지, 쓰기 가능: 값을 넣고 save 한다 */
-bool     nvstore_save(void);            /* main 문맥에서만. MOTOR_EN 은 LOW 여야 한다. 지워야 하면 1..4 s 블로킹 */
-bool     nvstore_erase(void);           /* main 문맥에서만. MOTOR_EN 은 LOW 여야 한다. 1..4 s 블로킹 */
+bool     nvstore_save(void);            /* main 문맥에서만. EN 네 핀이 모두 LOW 여야 한다. 지워야 하면 1..4 s 블로킹 */
+bool     nvstore_erase(void);           /* main 문맥에서만. EN 네 핀이 모두 LOW 여야 한다. 1..4 s 블로킹 */
 uint32_t nvstore_last_erase_us(void);   /* CYCCNT 로 잰 마지막 지우기의 길이, 0 = 아직 지운 적 없음 */
 uint32_t nvstore_last_erase_tick_ms(void); /* "같은" 지우기를 1 kHz 틱으로 잰 것 - 둘은 다르다, §3-4 */
 void     nvstore_cli_register(void);    /* `save` 를 등록한다 */
@@ -1063,9 +1063,10 @@ PASS nvstore 34 cases</code></pre>
       <pre><code class="lang-c">/* User/Src/System/nvstore.c - 저장소 본체. main 문맥 전용: 여기 있는 것은 전부 블로킹이다.
  * 문맥:
  *   nvstore_init()  : app_init(), tick_init() 뒤 (사이클 카운터를 읽는다)
- *   nvstore_save() / nvstore_erase() / cmd_save() : 주 루프에서만, MOTOR_EN LOW 에서만
+ *   nvstore_save() / nvstore_erase() / cmd_save() : 주 루프에서만, EN 네 핀이 모두 LOW 일 때만
  * 1 kHz 콜백에서는 절대 부르지 않는다. 어차피 지우기가 그 콜백을 1..4 s 멈춘다. */
-#include "main.h"          /* HAL + CubeMX 핀 라벨 (MOTOR_EN_GPIO_Port ...) */
+#include "main.h"          /* HAL (플래시 · IWDG 핸들 hiwdg1) */
+#include "Periph/motor.h"  /* motor_any_enabled() - fw-08. EN 네 핀을 읽는다 */
 #include "System/nvstore.h"
 #include "System/wdg.h"   /* wdg_service_main() - fw-06 */
 #include "System/tick.h"  /* tick_get_ms()      - fw-06 */
@@ -1135,8 +1136,8 @@ uint32_t nvstore_last_erase_tick_ms(void) { return s_erase_tick_ms; }
 static bool nv_may_write(const char *cmd)
 {
   /* TODO(you) [T8]: 안전 규칙 S13 - 모든 플래시 쓰기 앞의 관문 - 힌트 카드 T8
-       1) HAL_GPIO_ReadPin(MOTOR_EN_GPIO_Port, MOTOR_EN_Pin) == GPIO_PIN_SET 이면
-          printf("ERR %s motor-en-high\r\n", cmd); return false; - 내가 설정한 변수가 아니라 핀을 읽는다
+       1) motor_any_enabled() 가 참이면 (EN 네 핀 중 하나라도 HIGH - fw-08 의 motor.h)
+          printf("ERR %s motor-en-high\r\n", cmd); return false; - 내가 설정한 변수가 아니라 핀을 읽는다 (motor_enable_mask() 가 네 핀을 읽는다)
        2) §2-4-2 에서 고른 답을 여기서 한다 (워치독을 늘린다 / 아무것도 안 한다).
           늘린다면: 그 호출은 "실패할 수 있고", 실패할 때는 리로드가 "이미" 바뀌어 있다
           (hal_iwdg.c 가 :196-197 에서 PR/RLR 을 쓰고, :203-212 에서 SR 을 기다린다).
@@ -1244,7 +1245,7 @@ void nvstore_cli_register(void)
 </code></pre>
       <div class="callout warn"><span class="ct">S13 을 지키는 것은 <code>cmd_save()</code> 한 군데다</span>
         <p><code>nvstore_save()</code> 와 <code>nvstore_erase()</code> 는 공개 함수인데 <code>nv_may_write()</code> 는 <strong>그 둘 안이 아니라 <code>cmd_save()</code> 안</strong>에 있다.
-        즉 다른 코드가 <code>nvstore_save()</code> 를 직접 부르면 <code>MOTOR_EN</code> 검사를 건너뛴다 — 지금은 <strong>헤더 주석("main context only. MOTOR_EN must be LOW")만이 그 우회를 막는다.</strong></p>
+        즉 다른 코드가 <code>nvstore_save()</code> 를 직접 부르면 EN 검사를 건너뛴다 — 지금은 <strong>헤더 주석("main 문맥에서만. EN 네 핀이 모두 LOW 여야 한다")만이 그 우회를 막는다.</strong></p>
         <p>이 쪽이 그렇게 둔 이유는 거부 메시지가 <code>ERR &lt;명령&gt; &lt;이유&gt;</code> 꼴이라 <strong>명령 이름을 아는 자리</strong>에서 찍혀야 하기 때문이다.
         다르게 둘 수도 있다 — <code>nvstore_save()</code> 안에서 검사하고 <code>false</code> 만 돌려준 뒤 부른 쪽이 이유를 찍는다(검사가 함수 안으로 들어가고, 이유 토큰을 돌려주는 자료형이 하나 는다).
         <strong>어느 쪽으로 두든, 이 함수들을 <code>cmd_save()</code> 밖에서 부르게 된다면 그때 검사를 함수 안으로 옮긴다.</strong> <a href="fw-19-bench-acceptance.html">fw-19</a> 의 경계 검사가 이 호출자를 셀 수 있다.</p>
@@ -1258,7 +1259,7 @@ void nvstore_cli_register(void)
           <code>nvstore_init()</code> 은 <strong><code>tick_init()</code> 뒤</strong>여야 한다(<code>CYCCNT</code>). 그리고 <code>User/</code> 의 새 파일 둘을 최상위 <code>CMakeLists.txt</code> 의 <code>#&nbsp;Add user sources here</code> 에 등록한다.</li>
         <li><strong><code>nvstore_init()</code></strong> — <code>nvstore_scan()</code> 한 번. <code>newest &lt; 0</code> 이면 저장된 레코드가 없는 것이고, 레코드가 없는 것은 <strong>오류가 아니다</strong>(처음 굽는 보드는 늘 그렇다).
           있으면 그 슬롯의 값 <code>len</code> 바이트를 <code>s_data</code> 로 옮긴다.</li>
-        <li><strong><code>nv_may_write()</code></strong> — <code>MOTOR_EN</code> 을 <strong>핀에서</strong> 읽는다: <code>HAL_GPIO_ReadPin(MOTOR_EN_GPIO_Port, MOTOR_EN_Pin) == GPIO_PIN_SET</code> 이면 거부.
+        <li><strong><code>nv_may_write()</code></strong> — EN 네 핀을 <strong>핀에서</strong> 읽는다: <code>motor_any_enabled()</code>(fw-08 의 <code>motor_enable_mask()</code> 가 네 핀을 읽는다)가 참이면 거부.
           §2-4-2 에서 고른 방법이 (다)였다면 여기가 리로드를 늘리는 자리이고, 늘린 것을 <strong>되돌리는 자리는 <code>nvstore_save()</code> 의 끝</strong>이다.</li>
         <li><strong><code>nvstore_save()</code></strong> — <strong>순서가 전부다.</strong> 값 워드 셋을 먼저, 머리 워드를 마지막에.
           순서를 바꾸면 이 파일의 시험은 전부 통과하는데 실습 D(§3-5)의 찢어진 쓰기에서만 틀린다.</li>
@@ -1351,7 +1352,7 @@ bool nvstore_init(void)
 
       <details class="hint" id="hint-t8"><summary>힌트 T8 — <code>nv_may_write()</code> · 안전 규칙 S13 의 관문</summary>
         <div class="ans">
-        <p><strong>할 일</strong> — 모든 플래시 쓰기 · 지우기 앞에서 <code>cmd_save()</code> 가 부른다(§3-3-2 의 상자: 이 한 군데가 S13 을 지킨다). <code>MOTOR_EN</code> 핀이 HIGH 면 <code>ERR &lt;cmd&gt; motor-en-high</code> 를 찍고 <code>false</code>. 그다음 §2-4-2 에서 고른 워치독 처리를 하고, 멈추기 직전의 마지막 kick 을 한 뒤 <code>true</code>. 끝났을 때 참이어야 하는 것: <code>true</code> 를 돌려줬다면 지금 1 ~ 4 s 멈춰도 모터가 돌고 있지 않고 IWDG 가 그 시간을 견딘다.</p>
+        <p><strong>할 일</strong> — 모든 플래시 쓰기 · 지우기 앞에서 <code>cmd_save()</code> 가 부른다(§3-3-2 의 상자: 이 한 군데가 S13 을 지킨다). EN 네 핀 중 하나라도 HIGH 면(<code>motor_any_enabled()</code>) <code>ERR &lt;cmd&gt; motor-en-high</code> 를 찍고 <code>false</code>. 그다음 §2-4-2 에서 고른 워치독 처리를 하고, 멈추기 직전의 마지막 kick 을 한 뒤 <code>true</code>. 끝났을 때 참이어야 하는 것: <code>true</code> 를 돌려줬다면 지금 1 ~ 4 s 멈춰도 모터가 돌고 있지 않고 IWDG 가 그 시간을 견딘다.</p>
         <p><strong>완결 코드</strong> — 이 판은 §2-4-2 의 <strong>방법 (다)</strong> 용이다: 멈추는 구간 동안 리로드를 늘리고, 끝나면 되돌린다. (가)를 골랐으면 아래 "다르게 써도 되는 곳" ②.</p>
         <pre><code class="lang-c">/* 완결 코드 T8 - User/Src/System/nvstore.c */
 /* --- nv_may_write() 위에 더하는 묶음. §2-4-2 의 길 (다) 에만 속한다 -
@@ -1377,7 +1378,7 @@ static void nv_wdg_restore(void)
 /* --- 골격의 함수 --- */
 static bool nv_may_write(const char *cmd)
 {
-  if (HAL_GPIO_ReadPin(MOTOR_EN_GPIO_Port, MOTOR_EN_Pin) == GPIO_PIN_SET) {   /* 1 핀을 읽는다 - 변수가 아니라 */
+  if (motor_any_enabled()) {                          /* 1 EN 네 핀을 읽는다 - 변수가 아니라 (fw-08 motor.h) */
     printf("ERR %s motor-en-high\r\n", cmd);          /* 안전 규칙 S13 */
     return false;
   }
@@ -1399,28 +1400,29 @@ static bool nv_may_write(const char *cmd)
           <li><code>#define NVSTORE_WDG_RELOAD_RUN 0u</code> · <code>_ERASE 0u</code> — <strong>내가 §2-4 에서 도출하는 두 숫자</strong>의 자리다. <code>RUN</code> 은 fw-06 §2-6 의 계산 칸에서 나온 평소 <code>Reload</code>(CubeMX 에 넣은 그 값), <code>ERASE</code> 는 표 44 의 지우기 max(T6 에서 고른 줄)를 덮는 <code>Reload</code>. 이 카드는 숫자를 넣지 않는다 — 넣으면 그 계산이 사라진다(§2-4-2 의 상자).</li>
           <li><code>_Static_assert(… != 0, "nvstore.c: … is still EMPTY")</code> — <code>Reload = 0</code> 은 "0 으로 리로드" = 거의 즉시 리셋이다. 자리표시가 <strong>위험한 쪽</strong>을 가리키므로 채우기 전까지 빌드를 멈춘다. <code>_Static_assert</code> 는 컴파일 때 검사하는 조건문(C11) — 조건이 거짓이면 그 문자열을 오류로 찍고 멈춘다. 증상 표의 "의도된 정지" 행이 이것이다.</li>
           <li><code>nv_wdg_restore()</code> — 늘린 것을 되돌리는 반쪽. <code>hiwdg1.Init.Reload</code> 를 평소 값으로 바꾸고 <code>HAL_IWDG_Init()</code> 을 다시 부른다. <strong>어디서 부르는가</strong>: 멈추는 구간에 들어간 쪽의 <strong>모든 출구</strong> — <code>nvstore_save()</code> 의 출구 셋(T10)과 <code>cmd_save()</code> 의 <code>erase</code> 가지(T13). <code>nvstore_erase()</code> 안에서 부르지 않는 이유는 T9 — 두 시계 사이에 아무것도 두지 않기 위해서다. 순서상 <code>nv_may_write()</code> 보다 <strong>위에</strong> 정의해 앞선 선언이 필요 없게 했다(반대로 두고 <code>static void nv_wdg_restore(void);</code> 한 줄을 앞에 놓아도 동일).</li>
-          <li><code>HAL_GPIO_ReadPin(MOTOR_EN_GPIO_Port, MOTOR_EN_Pin) == GPIO_PIN_SET</code> — ① <strong>핀을 읽는다</strong>. "내가 <code>en 1</code> 을 안 쳤으니까"가 아니라 지금 그 네트에 나가 있는 레벨이다(이해 확인 6). 두 매크로는 CubeMX 의 User Label <code>MOTOR_EN</code>(fw-08 §3-1-1)이 <code>main.h</code> 에 만든 이름이다.</li>
+          <li><code>motor_any_enabled()</code> — ① <strong>핀을 읽는다</strong>. "내가 <code>en 1</code> 을 안 쳤으니까"가 아니라 지금 그 네트 넷에 나가 있는 레벨이다(이해 확인 6). fw-08 의 <code>motor.h</code> 가 주는 <code>static inline</code> 함수다 — 안에서 <code>motor_enable_mask()</code> 가 EN_FL … EN_RR 네 핀을 <code>HAL_GPIO_ReadPin()</code> 으로 읽어 비트 넷으로 돌려주고, 하나라도 1 이면 참이다. 네 라벨은 CubeMX 의 User Label(fw-08 §3-1-1)이 <code>main.h</code> 에 만든 이름이다.</li>
           <li><code>printf("ERR %s motor-en-high\r\n", cmd);</code> — 거부 줄은 <code>ERR &lt;명령&gt; &lt;이유&gt;</code> 꼴(fw-05 §2-4). 명령 이름을 인자로 받는 이유가 이 줄이다 — <code>save</code> 와 <code>save erase</code> 가 같은 관문을 지나므로.</li>
           <li><code>hiwdg1.Init.Reload = NVSTORE_WDG_RELOAD_ERASE; if (HAL_IWDG_Init(&amp;hiwdg1) != HAL_OK)</code> — ② 이미 돌고 있는 IWDG 에 <code>HAL_IWDG_Init()</code> 을 다시 부르는 것이 곧 RM0468 §50.3.6 의 "실행 중 변경" 절차다(<code>0x5555</code> → PR · RLR → SR 대기 → 리로드, <code>$HAL/Src/stm32h7xx_hal_iwdg.c:172</code> 부터). <code>HAL_IWDG_Init()</code> 이 <code>HAL_TIMEOUT</code> 을 돌려줄 수 있다 — SR 의 세 플래그가 <code>HAL_IWDG_DEFAULT_TIMEOUT</code> 안에 내려오지 않으면.</li>
           <li>실패 가지에서 <code>nv_wdg_restore()</code> 를 먼저 — <strong>타임아웃이어도 리로드는 이미 넓어진 뒤</strong>다. 그 함수는 PR · RLR 을 먼저 쓰고(<code>:196-197</code>) <strong>그다음</strong> SR 을 기다린다(<code>:203-212</code>). 돌아오는 자리가 대기 루프 안이므로 "아무 일도 없었다"가 아니다. 되돌리지 않으면 지우지도 않은 채 워치독만 느슨해진 보드가 된다 — §2-4-2 (다)의 비용 칸이 경고한 상태.</li>
           <li><code>printf("ERR %s not-ready\r\n", cmd);</code> — 토큰이 <code>flash-error</code> 가 아닌 이유: <code>flash-error</code> 는 HAL 이 지우기 · 쓰기에 실패했을 때의 토큰이다(T11 · T13). 여기서 실패한 것은 플래시가 아니라 <strong>워치독 폭 변경</strong>이다. 이미 등재된 <code>not-ready</code>("아직 할 수 있는 상태가 아니다" — fw-12 의 <code>adc</code>, fw-11 의 <code>en</code>)를 되쓴다. 같은 뜻에는 같은 토큰, 다른 뜻에는 다른 토큰 — <code>save</code> 가 왜 거부됐는지를 명령 창의 한 낱말로 갈라 볼 수 있어야 한다.</li>
           <li><code>wdg_service_main();</code> — ③ 멈추기 직전의 마지막 kick. fw-06 의 "박자가 유지될 때만 kick" 정책을 그대로 따른다.</li>
           <li><p><strong>다르게 써도 되는 곳</strong> — ① <strong>거부 줄을 누가 찍는가</strong>: 이 함수가 찍으면 <code>cmd</code> 인자가 필요하고, 부른 쪽이 찍으려면 이유를 돌려줘야 한다(둘 다 된다 — §3-3-2 의 상자).</p>
-            <p>② <strong>§2-4-2 에서 (가)를 골랐으면</strong> 이 함수는 <code>MOTOR_EN</code> 검사와 마지막 kick 세 줄뿐이다. <code>extern</code> · 상수 둘 · 가드 둘 · <code>nv_wdg_restore()</code> 가 <strong>아예 없다</strong> — 코드가 이만큼 줄어드는 것이 (가)의 이점이다. 그러면 T10 · T13 의 <code>nv_wdg_restore()</code> 줄도 지운다. (나)를 골랐으면 이 함수는 (가)와 같고, 저장 자체가 다음 부팅으로 미뤄진다 — 그 구조는 이 쪽의 골격 밖이다.</p>
+            <p>② <strong>§2-4-2 에서 (가)를 골랐으면</strong> 이 함수는 EN 검사와 마지막 kick 세 줄뿐이다. <code>extern</code> · 상수 둘 · 가드 둘 · <code>nv_wdg_restore()</code> 가 <strong>아예 없다</strong> — 코드가 이만큼 줄어드는 것이 (가)의 이점이다. 그러면 T10 · T13 의 <code>nv_wdg_restore()</code> 줄도 지운다. (나)를 골랐으면 이 함수는 (가)와 같고, 저장 자체가 다음 부팅으로 미뤄진다 — 그 구조는 이 쪽의 골격 밖이다.</p>
             <p>③ <code>Prescaler</code> 도 같이 바꾸는가 — <code>Reload</code> 만으로 원하는 시간이 안 나오면 바꿔야 하고, 그러면 <code>PVU</code> 도 같이 기다린다(<code>HAL_IWDG_Init</code> 이 세 플래그를 함께 본다).</p>
             <p>④ 마지막 kick 을 <code>HAL_IWDG_Refresh()</code> 로 하는 답은 fw-06 의 정책을 <strong>우회한다</strong> — 1 kHz 가 멈춰 있어도 kick 이 나간다.</p></li>
         </ul>
-        <p><strong>쓰는 API</strong> — <code>HAL_GPIO_ReadPin()</code>: <code>$HAL/Inc/stm32h7xx_hal_gpio.h:265</code>, 반환 <code>GPIO_PIN_SET</code> / <code>GPIO_PIN_RESET</code>, 어느 문맥에서든 된다. <code>HAL_IWDG_Init()</code>: <code>$HAL/Inc/stm32h7xx_hal_iwdg.h:138</code>, 몸 <code>$HAL/Src/stm32h7xx_hal_iwdg.c:172</code> — <code>HAL_OK</code> 또는 <code>HAL_TIMEOUT</code>(<code>:209</code>; 핸들이 <code>NULL</code> 이면 <code>HAL_ERROR</code>, <code>:179</code>). 대기 루프가 <code>HAL_GetTick()</code> 을 쓰므로(<code>:205</code>) <strong>main 문맥에서만</strong>. <code>wdg_service_main()</code> 은 fw-06 의 함수(<code>System/wdg.h</code>).</p>
-        <pre><code class="lang-c">GPIO_PinState     HAL_GPIO_ReadPin(const GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin);
+        <p><strong>쓰는 API</strong> — <code>motor_any_enabled()</code>: fw-08 의 <code>User/Inc/Periph/motor.h</code>(<code>static inline</code>; 안의 <code>motor_enable_mask()</code> 가 <code>HAL_GPIO_ReadPin()</code> 으로 네 핀을 읽는다), 어느 문맥에서든 된다. <code>HAL_IWDG_Init()</code>: <code>$HAL/Inc/stm32h7xx_hal_iwdg.h:138</code>, 몸 <code>$HAL/Src/stm32h7xx_hal_iwdg.c:172</code> — <code>HAL_OK</code> 또는 <code>HAL_TIMEOUT</code>(<code>:209</code>; 핸들이 <code>NULL</code> 이면 <code>HAL_ERROR</code>, <code>:179</code>). 대기 루프가 <code>HAL_GetTick()</code> 을 쓰므로(<code>:205</code>) <strong>main 문맥에서만</strong>. <code>wdg_service_main()</code> 은 fw-06 의 함수(<code>System/wdg.h</code>).</p>
+        <pre><code class="lang-c">uint8_t            motor_enable_mask(void);   /* fw-08 motor.h: bit0 FL · bit1 FR · bit2 RL · bit3 RR - 핀을 읽는다 */
+static inline bool motor_any_enabled(void);   /* 위 마스크 != 0 */
 HAL_StatusTypeDef HAL_IWDG_Init(IWDG_HandleTypeDef *hiwdg);</code></pre>
         <p><strong>흔한 실수</strong></p>
         <div class="tbl"><table class="compact">
           <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
           <tbody>
             <tr><td>두 상수를 <code>0u</code> 그대로 두고 빌드했다</td><td><code>error: static assertion failed: "nvstore.c: NVSTORE_WDG_RELOAD_ERASE is still EMPTY"</code> (그다음 줄에 <code>_RUN</code> 도) — <strong>의도된 정지</strong></td><td>§2-4 에서 도출한 두 값을 적는다</td></tr>
-            <tr><td><code>MOTOR_EN</code> 라벨을 CubeMX 에 아직 안 만들었다(fw-08 을 건너뛰었다)</td><td><code>error: 'MOTOR_EN_GPIO_Port' undeclared (first use in this function)</code></td><td>fw-08 §3-1-1 의 User Label, 또는 그 쪽이 쓴 임시 정의</td></tr>
+            <tr><td><code>#include "Periph/motor.h"</code> 를 빼먹었다(또는 fw-08 을 건너뛰었다)</td><td><code>error: implicit declaration of function 'motor_any_enabled' [-Wimplicit-function-declaration]</code></td><td>파일 머리의 include 한 줄, 또는 fw-08 §3-1 의 <code>motor.h</code> 부터</td></tr>
             <tr><td><code>extern IWDG_HandleTypeDef hiwdg1;</code> 을 빼먹었다</td><td><code>error: 'hiwdg1' undeclared (first use in this function)</code></td><td>파일 머리에 <code>extern</code> 한 줄</td></tr>
-            <tr><td>핀 대신 "내가 둔 플래그"를 봤다</td><td>아무 말도 없다. 다른 창의 <code>en 1</code> 을 모른다(이해 확인 6)</td><td><code>HAL_GPIO_ReadPin()</code></td></tr>
+            <tr><td>핀 대신 "내가 둔 플래그"를 봤다</td><td>아무 말도 없다. 다른 창의 <code>en 1</code> 을 모른다(이해 확인 6)</td><td><code>motor_any_enabled()</code> — 핀을 읽는다</td></tr>
             <tr><td>실패 가지에서 되돌리지 않았다</td><td>아무 말도 없다. <code>ERR save not-ready</code> 뒤로 워치독이 늘어난 채 돈다</td><td><code>nv_wdg_restore()</code> 를 <code>printf</code> 앞에</td></tr>
           </tbody>
         </table></div>
@@ -1429,7 +1431,7 @@ HAL_StatusTypeDef HAL_IWDG_Init(IWDG_HandleTypeDef *hiwdg);</code></pre>
 
       <details class="hint" id="hint-t9"><summary>힌트 T9 — <code>nvstore_erase()</code> · 섹터 하나를 지운다 — 두 시계 사이에는 지우기뿐</summary>
         <div class="ans">
-        <p><strong>할 일</strong> — 저장 섹터 전체를 지운다. 1 ~ 4 s 블로킹, main 문맥, <code>MOTOR_EN</code> LOW(관문은 부른 쪽). 골격이 준 두 시계(<code>m0/t0</code> · <code>t1/m1</code>) 사이에 <strong>지우기만</strong> 넣는다 — 그 네 줄이 실습 C 의 측정 자체다. 끝났을 때 참이어야 하는 것: 성공하면 <code>s_free = 0</code> · <code>s_dirty = false</code>(골격이 한다), 실패하면 <code>false</code> 와 HAL 이 남긴 오류 코드.</p>
+        <p><strong>할 일</strong> — 저장 섹터 전체를 지운다. 1 ~ 4 s 블로킹, main 문맥, EN 네 핀 LOW(관문은 부른 쪽). 골격이 준 두 시계(<code>m0/t0</code> · <code>t1/m1</code>) 사이에 <strong>지우기만</strong> 넣는다 — 그 네 줄이 실습 C 의 측정 자체다. 끝났을 때 참이어야 하는 것: 성공하면 <code>s_free = 0</code> · <code>s_dirty = false</code>(골격이 한다), 실패하면 <code>false</code> 와 HAL 이 남긴 오류 코드.</p>
         <p><strong>완결 코드</strong></p>
         <pre><code class="lang-c">/* 완결 코드 T9 - User/Src/System/nvstore.c */
 bool nvstore_erase(void)
@@ -1726,7 +1728,7 @@ save kp_milli=1111 ki_milli=2222 kd_milli=3333 bno=0        &lt;- 플래시에�
       </div>
 
       <p><strong>남은 관찰 하나 — 거부가 실제로 일어나는가.</strong> 그리고 벤치에서는 왜 그 거부를 볼 수 없는가.</p>
-      <p><code>MOTOR_EN</code> 이 HIGH 인 동안 <code>save</code> 를 치면 이렇게 나와야 한다:</p>
+      <p>EN 네 핀 중 하나라도 HIGH 인 동안 — 아래처럼 <code>en 1</code>(두 인자 꼴 = 넷 다) 뒤에 — <code>save</code> 를 치면 이렇게 나와야 한다:</p>
       <pre><code class="lang-text">&gt; pwr up            (사전충전이 끝나 armed 가 된 뒤)
 OK pwr
 &gt; en 1
@@ -1735,13 +1737,13 @@ OK en
 ERR save motor-en-high</code></pre>
       <div class="callout warn"><span class="ct">책상 위의 Nucleo 만으로는 이 줄을 볼 수 없다</span>
         <p><a href="fw-11-power-sequence.html">fw-11</a> 이 <code>en 1</code> 에 조건을 달았기 때문이다 — 전원 시퀀스가 <code>POWER_ARMED</code> 가 아니면 <code>ERR en not-ready</code> 로 거부된다.
-        그리고 <code>POWER_ARMED</code> 는 INA226 이 읽은 버스 전압으로 사전충전 완료를 판정해야 도달한다. <strong>배터리와 사전충전 회로가 없으면 <code>MOTOR_EN</code> 을 HIGH 로 만들 방법이 없다.</strong></p>
+        그리고 <code>POWER_ARMED</code> 는 INA226 이 읽은 버스 전압으로 사전충전 완료를 판정해야 도달한다. <strong>배터리와 사전충전 회로가 없으면 EN 핀을 HIGH 로 만들 방법이 없다.</strong></p>
         <p>그래서 이 항목은 <strong>두 단으로</strong> 통과시킨다 —</p>
         <ul>
           <li><strong>지금(부품 없이)</strong>: <code>nv_may_write()</code> 가 거부하는 <strong>경로</strong>는 호스트 시험으로 볼 수 없다(핀을 읽으므로). 대신 <strong>골격의 안전한 기본값</strong>이 그 자리를 지킨다 — 채우기 전의 <code>nv_may_write()</code> 는 <code>false</code> 를 돌려주므로 <code>save</code> 가 <strong>전부 거부된다.</strong> 이 거부를 한 번 보고("<code>save</code> 가 아무 일도 하지 않는다") 넘어간다.</li>
           <li><strong>전원부가 생긴 뒤</strong>: 위 네 줄을 실제로 쳐서 <code>ERR save motor-en-high</code> 를 본다. 이 쪽으로 돌아와 체크한다.</li>
         </ul>
-        <p><strong>핀을 손으로 HIGH 로 만들어 흉내 내지 않는다.</strong> 안전 규칙 S3 은 "사전충전이 끝날 때까지 <code>MOTOR_EN</code> 은 LOW" 이고, 시험을 위해 이 규칙을 우회하는 습관이 남는 것이 시험을 못 하는 것보다 나쁘다.</p>
+        <p><strong>핀을 손으로 HIGH 로 만들어 흉내 내지 않는다.</strong> 안전 규칙 S3 은 "사전충전이 끝날 때까지 EN 네 핀은 LOW" 이고, 시험을 위해 이 규칙을 우회하는 습관이 남는 것이 시험을 못 하는 것보다 나쁘다.</p>
       </div>
 
       <h3 id="s3-4">3-4. 실습 C — 지우기에 걸리는 시간, 그리고 IWDG</h3>
@@ -1863,7 +1865,7 @@ save kp_milli=1111 ki_milli=2222 kd_milli=3333 bno=0        &lt;- 옛 값 그대
       <h4 id="s3-6-2">3-6-2. 함수 둘 — 값이 드나드는 자리</h4>
       <p><code>nvstore.c</code> 는 다른 모듈을 하나도 모른다. 아는 것은 <strong><code>nv_data_t</code> 구조체 하나</strong>뿐이고, 그 구조체에 값을 적고 읽는 일은 바깥 모듈이 한다.
       그래서 값 하나마다 함수가 둘 필요하다 — <strong>꺼내는 함수</strong>(저장할 때)와 <strong>넣는 함수</strong>(복원할 때).</p>
-      <pre><code class="lang-c">/* bno055.h 에 더한다 (fw-15 의 모듈).  둘 다 main 문맥 · MOTOR_EN LOW 에서만.
+      <pre><code class="lang-c">/* bno055.h 에 더한다 (fw-15 의 모듈).  둘 다 main 문맥 · EN 네 핀 LOW 에서만.
    CONFIG 로 갔다 오므로 융합 출력이 19 + 7 = 26 ms 멈춘다 (fw-15 2-3). */
 bool bno055_read_offsets(uint8_t *out22);        /* false = 아직 읽을 상태가 아니다 */
 bool bno055_write_offsets(const uint8_t *in22);  /* 저장해 둔 프로파일을 되쓴다 */
@@ -1937,7 +1939,7 @@ void control_set_gains(int32_t kp_milli, int32_t ki_milli, int32_t kd_milli);</c
           <span class="sub">판정 수단: 호스트 시험 출력 · §3-2-4 · 둘째 줄의 합격 조건은 "경고와 오류가 없는 것" 이지 마지막의 <code>PASS</code> 가 아니다</span></span></label></li>
         <li><label><input type="checkbox" data-key="save-restores-after-reset"><span><strong>경로 통과</strong> — <code>save</code> 뒤 NRST 로 재부팅해도 <code>save show</code> 가 <code>valid=1</code> 과 <strong>같은 값</strong>을 보인다
           <span class="sub">판정 수단: 명령 창 출력 · §3-3-4 · 한 번 더 <code>save</code> 하면 <code>slot</code> · <code>seq</code> 가 하나씩 늘고 <code>erased=0</code> 이다(덧쓰기)</span></span></label></li>
-        <li><label><input type="checkbox" data-key="save-refused-when-armed"><span><strong>발동 확인 (전원부가 있어야 통과된다)</strong> — <code>MOTOR_EN</code> 이 HIGH 인 동안 <code>save</code> 가 <code>ERR save motor-en-high</code> 로 거부된다
+        <li><label><input type="checkbox" data-key="save-refused-when-armed"><span><strong>발동 확인 (전원부가 있어야 통과된다)</strong> — EN 네 핀 중 하나라도 HIGH 인 동안 <code>save</code> 가 <code>ERR save motor-en-high</code> 로 거부된다
           <span class="sub">판정 수단: 명령 창 출력 · §3-3-4. 배터리 · 사전충전 회로가 없으면 <code>en 1</code> 자체가 <code>ERR en not-ready</code> 로 막혀 <strong>실물로 일으킬 수 없다</strong> — <a href="fw-11-power-sequence.html">fw-11</a> 을 끝낸 뒤 이 항목으로 돌아온다. 핀을 손으로 HIGH 로 만들어 흉내 내지 않는다</span></span></label></li>
         <li><label><input type="checkbox" data-key="erase-time-measured"><span><strong>경로 통과</strong> — 내 보드의 섹터 지우기 시간을 시계 <strong>셋</strong>으로 재서 적었다(<code>____</code> µs · <code>____</code> ms · <code>____</code> s), I-Cache 설정도 함께
           <span class="sub">판정 수단: 명령 창의 <code>erase_us</code> · <code>erase_tick_ms</code> + 스톱워치 + <code>grep EnableICache</code> · §3-4-4 · 셋이 왜 다른지를 문장으로 적는다</span></span></label></li>
@@ -2028,7 +2030,7 @@ grep -rln "EndOfOperationCallback" $FW_H7/Projects | head               # 4 ST �
         <div class="ans"><p>지우는 동안 <strong>PWM 타이머는 하드웨어라 멈추지 않는다.</strong> 1 kHz 루프가 멈추면 속도 PID 도, 보호 3종도, 200 ms 명령 워치독도 함께 동작하지 않는데,
         마지막으로 쓴 듀티는 계속 나간다. 그 상태가 1~4 초 이어지면 로봇을 멈출 수 있는 것은 물리적 차단뿐이다(안전 규칙 S13).</p>
         <p>사람의 기억은 이 판정의 근거가 될 수 없다 — 다른 창에서 <code>en 1</code> 이 이미 들어갔을 수도 있고, 전원 시퀀스가 상태를 바꿨을 수도 있다.
-        <code>HAL_GPIO_ReadPin(MOTOR_EN_GPIO_Port, MOTOR_EN_Pin)</code> 은 <strong>지금 그 네트에 실제로 나가 있는 레벨</strong>을 돌려준다.
+        <code>motor_any_enabled()</code> 는 <code>motor_enable_mask()</code> 로 EN 네 핀을 읽으므로 <strong>지금 그 네트 넷에 실제로 나가 있는 레벨</strong>로 판정한다.
         같은 이유로, 시험을 하려고 그 핀을 손으로 HIGH 로 만들지 않는다 — 우회하는 습관이 남는 것이 시험을 못 하는 것보다 나쁘다(§3-3-4).</p></div></details>
 
       <details class="quiz"><summary>7. 플래시에 게인을 저장했는데도 <code>check_nominal.sh</code> 가 여전히 빈칸을 세는 이유</summary>

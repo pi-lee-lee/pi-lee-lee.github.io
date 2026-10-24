@@ -284,7 +284,7 @@
         <div class="tbl"><table class="compact">
           <thead><tr><th>구간</th><th>최장 시간</th><th>출처</th><th>처리</th></tr></thead>
           <tbody>
-            <tr><td><code>adc spread &lt;n&gt;</code> 의 표본 수집</td><td>n ÷ 40 000 초 — n = 1000 이면 <strong>25 ms</strong></td><td>산술(트리거 40 kHz, 주기 25 µs)</td><td>내가 정한 상한 <code>____</code> 을 IWDG 주기보다 짧게 정하거나, 수집 루프 안에서 kick 한다(<a href="fw-06-tick-watchdog.html#s2-7">fw-06 §2-7</a>). <code>MOTOR_EN</code> 이 HIGH 인 동안에는 치지 않는다</td></tr>
+            <tr><td><code>adc spread &lt;n&gt;</code> 의 표본 수집</td><td>n ÷ 40 000 초 — n = 1000 이면 <strong>25 ms</strong></td><td>산술(트리거 40 kHz, 주기 25 µs)</td><td>내가 정한 상한 <code>____</code> 을 IWDG 주기보다 짧게 정하거나, 수집 루프 안에서 kick 한다(<a href="fw-06-tick-watchdog.html#s2-7">fw-06 §2-7</a>). EN 네 핀 중 하나라도 HIGH 인 동안에는 치지 않는다</td></tr>
           </tbody>
         </table></div>
         <p><code>adc zero</code> 도 여러 표본을 평균하므로 같은 성질이다 — 평균 개수를 정할 때 이 표를 같이 본다(§3-2-3).</p>
@@ -1173,7 +1173,7 @@ adc zero_raw=&lt;n&gt; n=&lt;표본 수&gt; cal=1</code></pre>
         <ol>
           <li>바퀴가 <strong>공중에</strong> 떠 있고 손 · 선 · 공구가 바퀴에서 떨어져 있다.</li>
           <li>배터리와 IBT-2 사이에 <strong>사전충전 회로</strong>가 있다(직결 아님).</li>
-          <li>DMM 으로 <strong>MOTOR_EN 네트 = 0 V</strong>, RELAY_EN 네트 = 0 V 를 확인했다 — <strong>"0 V 라서"가 아니라 풀다운이 실재해서임을</strong> 판정법으로 구분했다(<a href="fw-08-pwm-safe-output.html#s3-2-4">fw-08 §3-2-4</a>).</li>
+          <li>DMM 으로 <strong>EN 네트 넷 = 0 V</strong>, RELAY_EN 네트 = 0 V 를 확인했다 — <strong>"0 V 라서"가 아니라 풀다운이 실재해서임을</strong> 판정법으로 구분했다(<a href="fw-08-pwm-safe-output.html#s3-2-4">fw-08 §3-2-4</a>).</li>
           <li>TVS 의 밴드 방향을 눈으로 확인했다(IBT-2 쪽은 밴드가 B+).</li>
           <li>전원을 끊는 수단(스위치 · 커넥터)에 <strong>손이 닿는다.</strong></li>
           <li>ACS758 의 <strong>신호선 셋은 Nucleo 3V3 에서만</strong> 급전되고 있다(별도 레일 아님 — §2-6). 1차측(IP+ · IP−)은 배터리 경로에 <strong>직렬로</strong> 들어가 있고 신호측과 섞이지 않았다.</li>
@@ -1226,7 +1226,7 @@ adc spread n=200 raw_min=&lt;n&gt; raw_max=&lt;n&gt; raw_avg=&lt;n&gt;</code></p
         <p>두 판의 표가 사실상 같게 나와도 실패가 아니라 <strong>결과</strong>다: "내 배터리 쪽 전류에서는 트리거 시점이 값을 바꾸지 않았다"를 날짜와 함께 노트에 적는다(fw-07 의 D-Cache 관찰을 적어 둔 것과 같은 처리다). 그 한 줄이 fw-18 의 과전류 판정을 설계할 때 "이 신호는 평균값만 판정에 쓴다"의 근거가 된다.</p>
         <p>반대로 <strong><code>IS</code> 를 배선했다면</strong>(§3-5) 같은 비교를 <code>IS</code> 채널에서 한다 — <code>IS</code> 는 하이사이드가 켜져 있는 동안에만 뜻이 있는 신호라 <strong>차이가 가장 크게 나는 자리</strong>다. <code>IS</code> 채널에서도 차이가 없다면 트리거 시점이 아니라 다른 것(SMP · 턴온 지연 3.1 µs · 듀티)을 의심한다.</p>
       </div>
-      <p>끝나면 <strong>전원을 내린다</strong>: <code>pwr down</code> 은 <code>MOTOR_EN</code> 을 먼저 LOW 로 내리고 그 다음에 <code>RELAY_EN</code> 을 내린다. 차단 뒤에도 벌크 커패시터에 전하가 남으므로 배선을 만지기 전에 DMM 으로 버스 전압을 본다(블리더가 없다).</p>
+      <p>끝나면 <strong>전원을 내린다</strong>: <code>pwr down</code> 은 EN 네 핀을 먼저 LOW 로 내리고 그 다음에 <code>RELAY_EN</code> 을 내린다. 차단 뒤에도 벌크 커패시터에 전하가 남으므로 배선을 만지기 전에 DMM 으로 버스 전압을 본다(블리더가 없다).</p>
 
       <h3 id="s3-4">3-4. (선택) 버스 전압을 ADC 로 읽는다 — <code>BATT_V</code> 분압</h3>
       <div class="callout note"><span class="ct">정해진 것 — 버스 전압은 INA226 (사용자 결정 2026-10-12). 이 절은 참고로만 읽는다</span>

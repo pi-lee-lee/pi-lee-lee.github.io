@@ -29,7 +29,9 @@
     { id: '06b', file: '06b-bench-integration.html', num: '06b', title: '실물 MCU 벤치 통합', group: 'main' },
     { id: '09a', file: '09a-assembly-gate.html', num: '09a', title: '조립·실측 관문', group: 'main' },
     { id: '09', file: '09-slam-nav2.html', num: '09', title: 'SLAM과 Nav2', group: 'main' },
+    { id: '09b', file: '09b-frontier-explore.html', num: '09b', title: '프런티어 탐사 — 지도 완성 판정', group: 'main' },
     { id: '10', file: '10-autonomy.html', num: '10', title: '자율주행 노드 구성', group: 'main' },
+    { id: '11', file: '11-multi-map.html', num: '11', title: '다중 지도 — 구역 관리와 지도 전환', group: 'main' },
     { id: '99', file: '99-troubleshooting.html', num: '99', title: '트러블슈팅', group: 'main' },
     // MCU 펌웨어 A-Z 가이드 (fw 그룹) — fw_style §1-1 의 id·num·file·title. 있는 쪽만 등록한다(2026-09-22: fw-00~fw-06)
     { id: 'fw-00', file: 'fw-00-map.html', num: 'F0', title: '지도와 준비', group: 'fw' },
@@ -122,7 +124,10 @@
     //   기록이 정말 있다면 관문에서 그 항목 하나를 다시 체크하면 된다 — 잃는 것이 얻는 것보다 작다.
     '06:cp15': null,   // 2 m 직진·5바퀴·사각형 — 바닥 주행이 필요하다
     '06:cp17': null,   // 360° 회전에서 EKF yaw 비교 — 바닥 주행이 필요하다
-    '07:cp12': null    // 라이다 장착 위치 실측 — 차체에 올려야 잰다
+    '07:cp12': null,   // 라이다 장착 위치 실측 — 차체에 올려야 잰다
+    // fw-14: 단계 1 이 "0x54 를 끈다"에서 "껐다가 되돌린다"로 바뀌었다(2026-10-16, 자북 판정 결정).
+    //   옛 항목의 주장(세 종류만 온다)은 새 항목(왕복)의 절반이라 잇지 않는다 — 되돌리기를 다시 확인한다.
+    'fw-14:wt-rsw-three-types': null
   };
 
   // JSON 이 객체가 아닌 것(null·숫자·배열)을 담고 있어도 뒤의 코드가 죽지 않게 형태를 확인한다.

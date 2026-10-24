@@ -1,0 +1,1652 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>11 · 다중 지도 — 구역마다 지도를 나누고 지도를 바꿔 가며 다닌다</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="11">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">11 · 다중 지도</p>
+      <h1>층을 구역으로 나눠 그리고, 지도를 바꿔 가며 구역 사이를 다닌다</h1>
+      <p class="lead"><a href="09b-frontier-explore.html">09b</a> 는 구역 하나를 그렸다. 이 쪽의 구역 관리 노드 <code>region_manager</code> 는 한 층을 구역 단위로 탐사한다.
+      구역 하나를 다 그리면 출구 하나를 건너 다음 구역을 그린다. 건널 출구는 사용자에게 물을 수 있다. 건널 출구가 더 없으면 층 지도를 구역마다 잘라 저장하고 구역 그래프를 쓴다.
+      항법 모드에서는 목표가 있는 구역까지 출구를 차례로 지나며, 출구마다 지도를 바꾼다.</p>
+      <p class="lead">층은 지도를 따로 둔다. 층마다 SLAM 을 따로 실행해 층 지도를 만들고, 두 층은 엘리베이터 간선으로 잇는다. 엘리베이터를 타는 동작은 그 뒤 단계(작성 예정)에서 다루고, 이 쪽에서는 그 구간을 사람이 로봇을 옮겨 대신한다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>이 쪽이 끝나면 다음 다섯이 보인다.</p>
+        <ul>
+          <li>판으로 나눈 시험 구역 둘을 사람이 조종하지 않고 구역 단위로 탐사하고, <code>/maps/f1/r0.yaml</code> · <code>r1.yaml</code> 처럼 구역마다 지도 파일이 생긴다.</li>
+          <li>구역이 끝날 때마다 <code>/regions/state</code> 에 건널 출구 목록이 나오고, <code>go &lt;k&gt;</code> 로 고른 출구를 건넌다.</li>
+          <li><code>/maps/f1/graph.yaml</code> 에 구역과 간선(출구 양쪽의 자세)이 기록된다.</li>
+          <li>항법 모드에서 <code>goto</code> 명령 하나로 다른 구역의 목표까지 가며, 출구를 지날 때마다 지도가 바뀐다.</li>
+          <li>두 방을 두 층처럼 등록하면, 로봇이 엘리베이터 간선 앞에서 멈추고 <code>arrived</code> 를 기다린다.</li>
+        </ul>
+        <p><strong>이 쪽에 필요한 것</strong></p>
+        <ul>
+          <li>09b 전부 — 특히 실습 B(출구 판정). 출구가 확정되어야 구역이 나뉜다</li>
+          <li><a href="10-autonomy.html">10</a> §3-9 권장 — AMCL 이 active 인지 확인하고 초기 위치를 주는 방법이 같다</li>
+          <li>시험 구역 — 판으로 나눈 두 구역, 그 사이에 로봇이 지나갈 수 있는 틈 하나, 틈 옆의 표시 물체(09b §3-8 과 같은 것)</li>
+          <li>실습 D 만 — 서로 떨어진 방 둘(두 층 대신)</li>
+        </ul>
+        <p><strong>없으면</strong></p>
+        <ul>
+          <li>출구 표시가 없으면 구역이 나뉘지 않고 층 전체가 구역 하나로 기록된다. 실습 B · C 의 절차는 구역 하나로도 확인할 수 있다.</li>
+          <li>방이 하나뿐이면 실습 D 를 건너뛴다.</li>
+        </ul>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">그래프에서의 위치</span>새 노드 <code>region_manager</code>(계획 계층). 탐사 모드는 <code>slam_toolbox</code> + Nav2(AMCL 없음) + <code>map_saver_server</code> 위에서, 항법 모드는 <code>map_server</code> + <code>amcl</code> + Nav2 위에서 실행한다</div>
+        <div><span class="k">전제</span>09b 100 % · 10 §3-9 권장 · 09b 의 <code>rpi5_explore</code> 패키지와 <code>explore_core.hpp</code></div>
+        <div><span class="k">수행 환경</span><span class="tag asm">조립 후</span> · <span class="tag pi">Pi 호스트</span> <span class="tag cli">컨테이너</span> · 순수 헤더 시험만 <span class="tag mac">Mac</span> 또는 컨테이너</div>
+        <div><span class="k">언어</span><span class="tag cpp">C++</span> 구역 관리 노드 · 순수 헤더</div>
+        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h (학습 노트에 적는다 — 이 쪽은 입력을 저장하지 않는다)</div>
+      </div>
+
+      <h2 id="overview">1. 개요 — 층, 구역, 간선</h2>
+      <p>지도는 세 층위로 나뉜다. 층마다 SLAM 세션 하나와 좌표계 하나가 있고, 층 지도를 출구에서 자른 조각이 구역 지도다. 구역은 간선으로 이어진다.</p>
+      <pre class="diagram"><code> building.yaml                                 사람이 쓴다 (§3-8)
+ ├── /maps/f1/graph.yaml                       층 f1: SLAM 세션 하나, 좌표계 하나
+ │     f1/r0 ──exit── f1/r1 ──exit── f1/r2     간선의 두 자세가 같은 좌표
+ ├── /maps/b1/graph.yaml                       층 b1: 다른 SLAM 세션, 다른 좌표계
+ │     b1/r0 ──exit── b1/r1
+ └── edges:  f1/r2 ══elevator══ b1/r0          두 자세가 서로 다른 좌표계에 있다</code></pre>
+      <p><code>region_manager</code> 는 모드가 둘이다. 같은 노드가 파라미터 <code>mode</code> 에 따라 다른 입력과 출력을 쓴다.</p>
+      <pre class="diagram"><code> mode:=explore                                   mode:=navigate
+ ──────────────────────────────────────────      ──────────────────────────────────────────
+ 입력  /map · /global_costmap/costmap            입력  /map (map_server) · TF
+       /scan · /objects · TF                           /amcl/get_state
+       regions/command: start · go · finish            regions/command: goto · arrived
+ 출력  navigate_to_pose (Nav2)                   출력  navigate_to_pose (Nav2)
+       regions/region_map → /map_saver/save_map        /map_server/load_map
+       &lt;maps_dir&gt;/&lt;floor&gt;/graph.yaml                   /initialpose (공분산 포함)
+       regions/state · markers · crossings             regions/state</code></pre>
+      <p>이 쪽에서 처음 나오는 용어를 한 줄씩 정한다.</p>
+      <div class="tbl"><table class="compact fixed">
+        <colgroup><col class="w20"><col class="w80"></colgroup>
+        <thead><tr><th>용어</th><th>이 쪽에서의 뜻</th></tr></thead>
+        <tbody>
+          <tr><td>구역</td><td>입구에서 시작해, 확정된 출구를 모두 벽으로 두고 09b §2-3 의 칠하기를 한 영역</td></tr>
+          <tr><td>입구</td><td>로봇이 그 구역에 처음 들어간 자세. 첫 구역은 층의 출발 자세다</td></tr>
+          <tr><td>옆 점</td><td>출구 중심에서 출구 선의 수직 방향으로 <code>side_m</code> 떨어진 두 점. 출구의 양쪽이 어느 구역인지 이 두 점으로 본다</td></tr>
+          <tr><td>건널 곳</td><td>한쪽 옆 점만 구역 안에 있는 출구. 다른 쪽은 아직 탐사하지 않은 공간이다</td></tr>
+          <tr><td>간선</td><td>두 옆 점이 서로 다른 구역에 있는 출구. 방향마다 하나씩, 출구 하나에서 간선 둘이 나온다. 엘리베이터 간선은 두 층을 잇는다</td></tr>
+          <tr><td>겹침 띠</td><td>구역 지도에 더 남기는 둘레 <code>band_m</code>. 벽과 이웃 구역의 출구 근처가 들어간다</td></tr>
+          <tr><td>그래프 파일</td><td><code>&lt;maps_dir&gt;/&lt;floor&gt;/graph.yaml</code>. 층 하나의 구역 · 간선 · 마지막 자세</td></tr>
+          <tr><td>건물 파일</td><td>층 그래프 파일 목록과 층 사이 간선을 적은 파일. 사람이 쓴다(§3-8)</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout note"><span class="ct">09b 와 같은 것, 다른 것</span>
+        <ul>
+          <li><strong>같은 것</strong> — 구역 하나 안의 탐사 규칙. 프런티어, 출구 판정(틈 + 표시), 제외 목록, 완성 유지 시간은 09b 노드의 함수를 그대로 옮겨 쓴다. 09b 노드 자체는 고치지 않는다.</li>
+          <li><strong>다른 것</strong> — 구역이 완성되면 출발점이 아니라 다음 출구로 간다. 층의 출구 목록을 처음부터 끝까지 들고 있어서, 모든 구역의 확정 출구가 늘 벽이다. 층이 끝나면 구역 지도와 그래프 파일을 쓴다.</li>
+        </ul>
+      </div>
+      <div class="callout note"><span class="ct">이 쪽이 하지 않는 것</span>
+        <ul>
+          <li>엘리베이터를 타는 동작과 층 판별은 다루지 않는다. 그 자리는 상태 <code>AWAIT_ELEVATOR</code> 로 비워 두고, 사람이 로봇을 옮긴 뒤 <code>arrived</code> 를 보낸다(§2-5).</li>
+          <li>층 사이를 자동으로 탐사하지 않는다. 층마다 따로 실행한다.</li>
+          <li>탐사에서 항법으로의 자동 전환은 넣지 않았다. 10 §3-9 의 런치 이벤트 연쇄에서 탐사 노드 자리에 <code>region_manager</code> 를 넣으면 같은 방법이 된다 — 항법 구성의 지도는 그래프 파일의 <code>end_region</code> 지도다.</li>
+        </ul>
+      </div>
+
+      <h2 id="why">2. 원리 — 왜</h2>
+
+      <h3 id="s2-1">2-1. 층마다 SLAM 하나 — 그리고 관리 노드를 따로 두는 이유</h3>
+      <p>층과 층 사이에서는 SLAM 을 이어서 실행할 수 없다. 이유는 둘이다.</p>
+      <ul>
+        <li>엘리베이터 안에서 라이다는 카 내부만 보고, 카가 움직이는 동안 바퀴는 멈춰 있어 <code>/odom</code> 이 0 이다. 문이 열리면 같은 자세에서 다른 층이 보인다. SLAM 이 이 스캔을 원래 층 지도에 맞추려 하면 지도가 망가진다.</li>
+        <li>2D 격자 지도에는 높이 축이 없다. 두 층은 같은 x-y 위에 겹쳐 있어서, 한 지도에 그리면 두 층의 벽이 같은 칸에 찍힌다.</li>
+      </ul>
+      <p>그래서 층마다 SLAM 세션 하나, 좌표계 하나를 둔다. 같은 층 안에서는 출구를 걸어서 지나가므로 SLAM 이 이어진다 — 층 안의 구역 지도는 모두 같은 좌표계를 쓴다. 이 사실이 두 가지를 쉽게 만든다.</p>
+      <ul>
+        <li>층 안의 간선은 두 자세가 같은 좌표다(<code>pose_to = pose_from</code>).</li>
+        <li>새 출구가 이미 탐사한 구역으로 이어지는지(고리)를 좌표로 판정할 수 있다. 출구마다 번호를 붙인 표식이 필요 없다(§2-3).</li>
+      </ul>
+      <p>관리 노드를 따로 두는 이유는 09b 탐사 노드의 시작 조건에 있다. 09b 노드는 빈 출구 목록으로 시작한다. 그 노드로 구역 B 를 탐사하면 구역 A 의 다른 출구를 모르므로, 칠하기가 A 를 지나 그 출구 밖으로 퍼진다.
+      <code>region_manager</code> 는 층의 출구 목록을 처음부터 끝까지 들고 있고, 모든 구역의 확정 출구를 벽으로 둔다. 구역 하나 안의 탐사 규칙은 09b 노드의 함수를 그대로 옮겨 쓰고, 09b 노드는 고치지 않는다.</p>
+
+      <h3 id="s2-2">2-2. 구역의 정의 — 입구에서, 출구를 모두 벽으로 두고 칠한 영역</h3>
+      <p>구역은 칸 목록으로 저장하지 않는다. <strong>입구 자세 하나</strong>로 저장하고, 필요할 때마다 다시 칠한다. 칠하기는 09b §2-3 과 같다 — 입구 칸에서 시작해 코스트맵의 0~98 칸만 지나고, 확정된 출구를 모두 가상 벽(09b §2-5-3)으로 둔다.</p>
+      <ul>
+        <li>첫 구역 <code>r0</code> 의 입구는 층을 탐사하기 시작한 자세다.</li>
+        <li>새 구역의 입구는 출구를 건넌 직후의 자세다(§2-3).</li>
+      </ul>
+      <p>칸 목록이 아니라 입구를 저장하는 이유는, 탐사 도중 출구가 확정될 때마다 구역의 모양이 바뀌기 때문이다. 벽이 늘면 구역은 줄어든다. 칸 목록을 저장해 두면 나중에 확정된 출구가 반영되지 않는다. 입구와 출구 목록만 들고 있다가 다시 칠하면, 늘 지금의 출구로 나뉜 구역이 나온다.</p>
+      <p>출구가 확정되지 않은 곳에서는 두 구역이 하나로 이어진다. 두 구역의 칠한 영역이 겹치면 <code>region_index()</code> 는 앞 번호의 구역을 돌려준다. 그래서 구역 나눔은 09b 실습 B 의 출구 판정이 동작해야 성립한다.</p>
+
+      <h3 id="s2-3">2-3. 출구의 두 옆 — 간선인가, 건널 곳인가</h3>
+      <p>구역이 완성되면 확정된 출구마다 양쪽을 본다. 출구 중심에서 출구 선의 수직 방향(법선)으로 <code>side_m</code> 떨어진 두 점이 옆 점이다(T1). <code>side_m</code> 의 기본값은 <code>2 · robot_radius</code> 다.
+      출구 선 바로 옆은 부풀린 문설주의 99 칸일 수 있는데, 옆 점은 로봇 중심이 놓일 수 있는 칸이어야 구역 안으로 판정되기 때문이다.</p>
+      <div class="tbl"><table class="compact fixed">
+        <colgroup><col class="w30"><col class="w20"><col class="w50"></colgroup>
+        <thead><tr><th>두 옆 점</th><th>판정</th><th>하는 일</th></tr></thead>
+        <tbody>
+          <tr><td>서로 다른 두 구역 안</td><td>간선 둘</td><td>방향마다 하나. 자세는 그 쪽 옆 점에서 출구 중심을 보는 자세이고, 같은 층이라 <code>pose_to = pose_from</code> 이다</td></tr>
+          <tr><td>한쪽만 구역 안</td><td>건널 곳</td><td>구역 안의 옆 점이 가까운 쪽, 다른 옆 점이 먼 쪽(아직 탐사하지 않은 공간)</td></tr>
+          <tr><td>두 점이 같은 구역 안</td><td>무시</td><td>구역을 나누지 않는 틈이다 — 틈 양쪽이 다른 경로로 이어져 있다</td></tr>
+          <tr><td>두 점 모두 구역 밖</td><td>아직 판정 안 함</td><td>멀리서 보인 출구다. 이웃 구역을 탐사한 뒤 다시 본다</td></tr>
+        </tbody>
+      </table></div>
+      <p>고리도 이 표로 판정된다. 구역 C 의 새 출구 너머가 이미 탐사한 구역 A 이면, 먼 옆 점이 A 의 칠한 영역 안에 있다. 그러면 그 출구는 건널 곳이 아니라 간선이 된다. 층 안이 한 좌표계이므로 이 비교가 성립한다.</p>
+      <p>건너기는 두 걸음이다.</p>
+      <ol class="steps">
+        <li>가까운 옆 점까지 간다 — 출구 중심을 보는 자세로.</li>
+        <li>먼 옆 점까지 간다 — 출구를 등지는 자세로. 먼 옆 점은 아직 모르는 칸일 수 있다. <code>allow_unknown: true</code>(09b §2-2)가 그 경로를 허용한다.</li>
+      </ol>
+      <p>도착한 자세가 새 구역의 입구가 된다. 두 걸음 중 하나가 <code>max_failures</code> 번 넘게 실패하면 그 출구를 제쳐 두고 다시 판정한다. 다른 출구가 아직 탐사하지 않은 공간으로 이어질 수 있기 때문이다.</p>
+
+      <h3 id="s2-4">2-4. 구역 지도 자르기 — 겹침 띠와 map_saver</h3>
+      <p>구역의 칠한 영역은 로봇 중심이 닿는 칸이다. 그 칸만 잘라 내면 벽이 빠진다 — 벽은 99 · 100 띠 너머에 있기 때문이다. 그래서 둘레를 더 남긴다.</p>
+      <ol class="steps">
+        <li>칠한 영역의 칸에서 <code>band_m</code> 안에 있는 <code>/map</code> 칸을 모두 남긴다(T2). 8-이웃 걸음으로 세므로 남는 모양은 정사각형이다.</li>
+        <li>남기지 않는 칸은 -1(모름)로 바꾸고, 남긴 칸의 경계 상자로 자른 뒤 원점을 그 상자의 왼쪽 아래 모서리로 옮긴다(T3).</li>
+      </ol>
+      <p>겹침 띠가 필요한 이유는 둘이다.</p>
+      <ul>
+        <li>벽이 지도에 들어가야 AMCL 이 스캔을 맞춘다.</li>
+        <li>지도를 바꾸는 자리(출구의 옆 점)가 두 구역 지도 모두에 들어가야 한다. 바꾸기 직전의 위치가 새 지도 안에 있어야 그 지도에서 초기 위치를 줄 수 있다. 그래서 <code>band_m</code> 은 <code>side_m</code> 보다 넉넉히 크게 정한다(내가 정하는 값, 출발값 1.0 m).</li>
+      </ul>
+      <p>저장은 Nav2 의 map_saver 가 한다. 자른 격자를 <code>regions/region_map</code> 토픽에 TRANSIENT_LOCAL 로 내고, <code>/map_saver/save_map</code> 서비스(Humble <code>SaveMap.srv</code>)에 그 토픽을 저장하게 한다.
+      요청의 필드는 <code>map_topic</code> · <code>map_url</code> · <code>image_format</code> · <code>map_mode</code> · <code>free_thresh</code> · <code>occupied_thresh</code> 이고, 응답은 <code>result</code>(bool) 하나다.
+      09 의 <code>map_saver_cli</code> 와 같은 저장 코드를 쓰므로 <code>.pgm</code> · <code>.yaml</code> 의 형식과 문턱(0.25 · 0.65)이 09 §3-5 와 같다.</p>
+      <p><code>map_saver_server</code> 는 lifecycle 노드다. lifecycle_manager 가 active 로 올려야 서비스가 응답한다. Humble <code>nav2_bringup</code> 의 <code>slam_launch.py</code> 도 같은 구성(<code>map_saver_server</code> + <code>node_names: ['map_saver']</code> 인 lifecycle_manager)을 쓴다.</p>
+
+      <h3 id="s2-5">2-5. 지도 사이 이동 — load_map 과 /initialpose</h3>
+      <p>목표가 다른 구역에 있으면 구역 그래프에서 간선 수가 가장 적은 경로를 찾는다(너비 우선 탐색, T4). 간선에는 방향이 있다 — 출구 하나에서 간선이 둘 나오는 이유다. 간선 하나를 지나는 순서는 다음과 같다.</p>
+      <ol class="steps">
+        <li>Nav2 로 간선의 <code>pose_from</code> 까지 간다 — 지금 지도의 좌표다.</li>
+        <li><code>/map_server/load_map</code> 서비스(Humble <code>LoadMap.srv</code>)로 다음 구역의 지도를 올린다. 요청은 <code>map_url</code>, 응답의 <code>result</code> 가 0(<code>RESULT_SUCCESS</code>)이면 성공이다.</li>
+        <li><code>/initialpose</code> 로 간선의 <code>pose_to</code> 를 공분산과 함께 준다(09b §2-7).</li>
+        <li><code>relocalize_s</code> 동안 기다린 뒤 다음 간선이나 목표로 간다.</li>
+      </ol>
+      <p>3 이 필요한 이유는 AMCL 의 동작에 있다. Humble 의 <code>amcl_node.cpp</code> 는 새 지도를 받아도 파티클을 다시 초기화하지 않는다. 같은 층이면 좌표가 같아서 파티클이 그대로 맞지만, 층이 바뀌면 옛 층의 좌표를 그대로 들고 있게 된다.
+      그래서 같은 층에서도 늘 다시 준다 — 층 사이와 같은 절차를 한 가지로 쓰기 위해서다.</p>
+      <p>global_costmap 의 <code>static_layer</code> 도 새 <code>/map</code> 을 받아 격자 크기를 바꾼다. 그래서 지도는 진행 중인 목표가 없을 때, 로봇이 멈춰 있는 동안 바꾼다.</p>
+      <p>엘리베이터 간선은 <code>pose_from</code>(층 1 지도)과 <code>pose_to</code>(층 B1 지도)가 서로 다른 좌표계에 있다. 절차는 같고, 1 과 2 사이에 상태 <code>AWAIT_ELEVATOR</code> 가 들어간다. 지금은 사람이 로봇을 다른 층의 엘리베이터 앞으로 옮긴 뒤 <code>arrived</code> 를 보낸다.
+      그 뒤 단계에서는 이 자리에 층 판별이 들어간다 — 카 안에서 위를 보는 카메라로 층 표시를 읽고, 내린 뒤 주변을 촬영해 층을 확인하고, 틀리면 다시 타는 순서다.</p>
+
+      <h3 id="s2-6">2-6. 사용자에게 묻기 — 구역이 끝날 때마다</h3>
+      <p><code>ask_user</code> 가 참이면 구역이 끝날 때 상태가 <code>AWAIT_USER</code> 가 된다. 이때 사용자에게 두 가지를 보인다.</p>
+      <ul>
+        <li><code>/regions/state</code> 의 <code>options=0:f1/r0-&gt;?,1:…</code> — 건널 곳의 번호와 그 출구가 있는 구역</li>
+        <li><code>/regions/crossings</code> — 건널 곳마다 가까운 옆 점 위에 <code>go k</code> 글자 마커. Foxglove 3D 에서 어느 출구가 몇 번인지 본다</li>
+      </ul>
+      <p>사용자는 <code>regions/command</code> 에 <code>go &lt;k&gt;</code>(그 출구를 건넌다) 또는 <code>finish</code>(층 탐사를 끝낸다)를 보낸다. 묻는 이유는 탐사 범위를 사람이 정하게 하기 위해서다 — 계단 쪽 출구나 들어가면 안 되는 방을 건너지 않게 할 수 있다.
+      <code>ask_user</code> 가 거짓이면 가장 가까운 건널 곳을 고른다. 고르는 규칙은 09b 의 목표 고르기와 같은 질문이라 <code>TODO(you)</code> 로 남겼다.</p>
+
+      <h3 id="s2-7">2-7. 상태와 종료 코드</h3>
+      <p>탐사 모드의 상태는 다음과 같다. <code>TO_EXIT</code> · <code>CROSSING</code> · <code>RETURNING</code> 의 목표가 실패하면 같은 목표를 다시 보내고, <code>max_failures</code> 를 넘으면 표의 오른쪽으로 간다.</p>
+      <pre class="diagram"><code> WAIT_DATA
+     │  start
+     ▼
+ EXPLORING  (구역 하나, 09b 의 규칙)
+     │  갈 수 있는 프런티어 0 이 complete_hold_s 동안 유지 → 출구 판정 (§2-3)
+     ▼
+ (판정) ── 건널 곳 있음 ──► AWAIT_USER ── go &lt;k&gt; ──► TO_EXIT ──► CROSSING ──► EXPLORING
+     │   ask_user:=false 면 AWAIT_USER 없이 가장 가까운 곳으로
+     │  건널 곳 없음 · finish
+     ▼
+ RETURNING ──► SETTLING ──► SAVING (구역마다 지도) ──► DONE (0)</code></pre>
+      <p>항법 모드의 상태는 다음과 같다.</p>
+      <pre class="diagram"><code> LOCALIZING   AMCL 이 active 인지 확인하고 /initialpose
+     ▼
+ IDLE         goto &lt;구역&gt; &lt;x&gt; &lt;y&gt; &lt;yaw&gt; 를 기다린다
+     │  경로 = 간선 목록 (T4)
+     ▼
+ TO_EDGE      간선의 pose_from 까지
+     │  exit 간선                           │  elevator 간선
+     ▼                                      ▼
+ SWITCHING    load_map → /initialpose       AWAIT_ELEVATOR ── arrived ──► SWITCHING
+     │  relocalize_s 뒤: 간선이 남았으면 TO_EDGE, 아니면
+     ▼
+ TO_GOAL      목표 자세까지 → IDLE</code></pre>
+      <p>종료 코드는 09b 와 같은 규칙에 둘을 더했다. 0 = DONE(층 완성), 1 = DONE 전에 끝남(Ctrl+C), 2 = 시간 한도(층 전체), 3 = 출발점 복귀 실패, 4 = <code>stop</code>, 5 = 그래프 파일 쓰기 실패, 6 = map_saver 저장 실패, 7 = <code>graph_file</code> 을 읽지 못함. <code>exit_on_done</code> 이 참일 때만 프로세스가 끝난다.</p>
+
+      <h2 id="lab">3. 실습</h2>
+      <p>코드(§3-1 ~ §3-4)를 먼저 갖춘 뒤 실습 A(§3-5) · B(§3-6) · C(§3-7) · D(§3-8)를 차례로 한다. 멈추는 순서는 09b §3-1 과 같다 — 먼저 <code>stop</code>, 상태와 Nav2 로그로 취소를 확인한 다음 Ctrl+C. 명령 토픽만 <code>regions/command</code> 로 바뀐다.</p>
+
+      <h3 id="s3-1">3-1. 09b 패키지에 더하기 <span class="tag cpp">C++</span> <span class="tag mac">Mac</span></h3>
+      <p>새 패키지를 만들지 않고 09b 의 <code>rpi5_explore</code> 에 파일 셋을 더한다 — 순수 헤더 <code>include/rpi5_explore/region_core.hpp</code>, 시험 <code>test/test_region_core.cpp</code>, 노드 <code>src/region_manager.cpp</code>. 같은 패키지라 <code>explore_core.hpp</code> 를 그대로 include 한다.</p>
+      <p><code>CMakeLists.txt</code> 에 더하는 줄(<code>ament_package()</code> 앞):</p>
+      <pre><code class="lang-cmake">find_package(lifecycle_msgs REQUIRED)         # GetState: is AMCL active?
+find_package(yaml_cpp_vendor REQUIRED)        # yaml-cpp, the way nav2_map_server uses it
+
+add_executable(region_manager src/region_manager.cpp)
+target_include_directories(region_manager PRIVATE include)
+target_compile_features(region_manager PRIVATE cxx_std_17)
+ament_target_dependencies(region_manager
+  rclcpp rclcpp_action nav2_msgs nav_msgs sensor_msgs std_msgs
+  vision_msgs visualization_msgs geometry_msgs tf2 tf2_ros tf2_geometry_msgs
+  lifecycle_msgs yaml_cpp_vendor)
+
+install(TARGETS region_manager DESTINATION lib/${PROJECT_NAME})</code></pre>
+      <p><code>package.xml</code> 에는 <code>&lt;depend&gt;lifecycle_msgs&lt;/depend&gt;</code> 와 <code>&lt;depend&gt;yaml_cpp_vendor&lt;/depend&gt;</code> 를 더한다. yaml-cpp 는 그래프 파일을 읽는 데 쓴다. Humble 의 <code>nav2_map_server</code> 도 <code>yaml_cpp_vendor</code> 를 <code>ament_target_dependencies</code> 에 넣는 같은 방법으로 쓴다.</p>
+      <p>파라미터 파일을 새로 만든다 — <code>ros2_ws/src/rpi5_bringup/config/regions_params.yaml</code>. 09b 의 <code>explore_params.yaml</code> 은 노드 이름 <code>frontier_explorer</code> 아래에 있으므로 이 노드에는 적용되지 않는다. 09b 값은 옮겨 적는다.</p>
+      <pre><code class="lang-yaml">region_manager:
+  ros__parameters:
+    # the 09b set - copy the values from explore_params.yaml (same names, same meanings)
+    robot_radius: 0.0           # ____ EMPTY. copy nav2_params.yaml robot_radius (09a setting B)
+    robot_frame: base_footprint
+    exit_class_id: ""           # ____ the marker class used in 09b §3-8
+    exit_max_width_m: 0.0       # ____ the value decided in 09b §3-8
+    exit_margin_m: 0.0          # ____ the value decided in 09b §3-2
+    complete_hold_s: 8.0        # the value set in 09b §3-7
+    explore_timeout_s: 1800.0   # for the WHOLE floor here - raise it for a floor with many regions
+    # the region set
+    floor: f1
+    maps_dir: /maps
+    ask_user: true
+    band_m: 1.0                 # overlap band - I decide (§2-4); clearly larger than side_m (2 x robot_radius)</code></pre>
+
+      <h3 id="s3-2">3-2. 순수 헤더 <code>region_core.hpp</code> — 골격 <span class="tag cpp">C++</span></h3>
+      <p>네 블록을 순서대로 한 파일에 쓴다. 채울 자리는 <code>TODO(you) [T1]</code> ~ <code>[T4]</code> 넷이고, <code>region_index()</code> 는 그대로 쓴다. 골격 그대로도 컴파일되고, 시험은 실패를 출력하며 끝까지 실행된다.</p>
+      <p><strong>① 옆 점</strong> — T1. 법선은 a → b 방향을 왼쪽으로 90° 돌린 방향이다.</p>
+      <pre><code class="lang-cpp">// region_core.hpp - pure core of region_manager (stage 11). Builds on explore_core.hpp (09b).
+// Includes nothing from ROS, so a plain C++17 compiler builds and tests it
+// (c++ -std=c++17 -Wall -Wextra -Iinclude test/test_region_core.cpp).
+#pragma once
+#include &lt;algorithm&gt;
+#include &lt;cstddef&gt;
+#include &lt;cstdint&gt;
+#include &lt;queue&gt;
+#include &lt;vector&gt;
+
+#include "rpi5_explore/explore_core.hpp"
+
+namespace rpi5_explore
+{
+
+// The two points at distance d from the exit's center, on the unit normal of a -&gt; b.
+//   u = (b - a) / |b - a|,  n = (-u.y, u.x)  (u turned 90 degrees to the left)
+//   left = center + d * n,  right = center - d * n.  false (and no output) if a == b.
+inline bool side_points(const Exit &amp; e, double d, Point &amp; left, Point &amp; right)
+{
+  // TODO(you) [T1]: the two points d away from the exit's center, on its normal - hint card T1
+  //   1) len = distance(a, b); return false if len == 0
+  //   2) n = (-(b.y - a.y) / len, (b.x - a.x) / len)   - the direction a -&gt; b turned 90 degrees left
+  //   3) c = midpoint of a and b; left = c + d n; right = c - d n; return true
+  //   Delete the placeholder line below when you start.
+  (void)e; (void)d; (void)left; (void)right; return false;
+}</code></pre>
+      <p><strong>② 어느 구역인가 · 띠</strong> — <code>region_index()</code> 는 그대로 쓴다. T2 는 09b 의 칠하기와 같은 너비 우선 탐색인데, 시작점이 여럿이고 걸음 수에 한계가 있다.</p>
+      <pre><code class="lang-cpp">// Index of the first region whose mask (one byte per costmap cell) contains the costmap cell of p.
+// -1 if p is outside the costmap or in no region.
+inline int region_index(const Grid &amp; cost, const std::vector&lt;std::vector&lt;uint8_t&gt;&gt; &amp; masks, Point p)
+{
+  Cell c;
+  if (!cell_of(cost, p, c)) { return -1; }
+  const std::size_t k = cost.index(c.x, c.y);
+  for (std::size_t i = 0; i &lt; masks.size(); ++i) {
+    if (masks[i].size() == cost.data.size() &amp;&amp; masks[i][k]) { return static_cast&lt;int&gt;(i); }
+  }
+  return -1;
+}
+
+// /map cells to keep for one region. Seeds = /map cells whose center lies on a reachable costmap cell.
+// Every /map cell within band_cells 8-neighbor steps of a seed is kept too (a square of side
+// 2 * band_cells + 1 around each seed). Returns one byte per /map cell: 1 = keep.
+inline std::vector&lt;uint8_t&gt; band_mask(
+  const Grid &amp; map, const Grid &amp; cost, const std::vector&lt;uint8_t&gt; &amp; reach, int band_cells)
+{
+  std::vector&lt;uint8_t&gt; keep(map.data.size(), 0);
+  // TODO(you) [T2]: seeds + up to band_cells 8-neighbor steps - hint card T2
+  //   1) return keep (all 0) if reach does not match the costmap or band_cells &lt; 0
+  //   2) seeds: every /map cell whose center (cell_center) falls on a costmap cell with reach == 1;
+  //      give each seed distance 0, keep = 1, push it into a std::queue&lt;Cell&gt;
+  //   3) breadth-first: pop a cell; if its distance == band_cells, do not expand it; otherwise every
+  //      8-neighbor inside the map without a distance gets distance + 1, keep = 1, and is pushed
+  //   Delete the placeholder line below when you start.
+  (void)cost; (void)reach; (void)band_cells;
+  return keep;
+}</code></pre>
+      <p><strong>③ 자르기</strong> — T3.</p>
+      <pre><code class="lang-cpp">// Cut a region map out of /map. Cells with keep == 0 become -1 (unknown); the grid is then cut to the
+// bounding box of the kept cells and its origin moves to the box's lower-left corner.
+// Returns an empty grid (width 0) if nothing is kept or keep does not match the map.
+inline Grid crop(const Grid &amp; map, const std::vector&lt;uint8_t&gt; &amp; keep)
+{
+  Grid out;
+  out.resolution = map.resolution;
+  out.width = 0;
+  // TODO(you) [T3]: cut to the bounding box of the kept cells - hint card T3
+  //   1) return out if keep.size() != map.data.size()
+  //   2) find x0, y0 (smallest) and x1, y1 (largest) over the kept cells; return out if none
+  //   3) out: width = x1 - x0 + 1, height = y1 - y0 + 1, origin moved by (x0, y0) cells,
+  //      data filled with -1
+  //   4) copy map.at(x, y) into out at (x - x0, y - y0) for the kept cells only
+  //   Delete the placeholder line below when you start.
+  (void)keep;
+  return out;
+}
+
+struct Edge
+{
+  int from = -1;   // region index
+  int to = -1;
+};</code></pre>
+      <p><strong>④ 구역 사이 경로</strong> — T4. 칸 대신 구역을, 이웃 대신 간선을 따라가는 너비 우선 탐색이다.</p>
+      <pre><code class="lang-cpp">// Fewest-edges route from region `from` to region `to` over directed edges (breadth-first search).
+// Returns edge indices in travel order; empty if from == to, an index is out of range, or no route.
+inline std::vector&lt;int&gt; region_path(int n_regions, const std::vector&lt;Edge&gt; &amp; edges, int from, int to)
+{
+  std::vector&lt;int&gt; path;
+  // TODO(you) [T4]: fewest-edges route, breadth-first - hint card T4
+  //   1) return path (empty) if from == to or an index is out of range
+  //   2) via[r] = index of the edge that first reached region r; seen[r] = reached
+  //   3) queue from `from`; for each popped region r, every edge with e.from == r and an unseen e.to:
+  //      mark seen, set via, and - if e.to == to - walk back from `to` with via, reverse, return
+  //   4) return path (empty) if the queue empties first
+  //   Delete the placeholder line below when you start.
+  (void)n_regions; (void)edges; (void)from; (void)to;
+  return path;
+}
+
+}  // namespace rpi5_explore</code></pre>
+
+      <h3 id="s3-3">3-3. 시험 파일과 채우는 순서 <span class="tag cpp">C++</span> <span class="tag mac">Mac</span></h3>
+      <p class="small">이 파일은 전량 제공이다 — 이유: 벡터가 곧 채점표다. 기대값은 손으로 계산할 수 있는 값만 골랐고, 계산은 주석에 적었다.</p>
+      <p><code>ros2_ws/src/rpi5_explore/test/test_region_core.cpp</code>. 세 블록을 순서대로 한 파일에 쓴다.</p>
+      <pre><code class="lang-cpp">// test_region_core.cpp - grading vectors for region_core.hpp (stage 11).
+// Build and run (Mac or container):
+//   c++ -std=c++17 -Wall -Wextra -Iinclude test/test_region_core.cpp -o /tmp/test_region_core &amp;&amp; /tmp/test_region_core
+#include &lt;cmath&gt;
+#include &lt;cstdio&gt;
+#include &lt;vector&gt;
+
+#include "rpi5_explore/region_core.hpp"
+
+using namespace rpi5_explore;
+
+static int g_cases = 0;
+static int g_fail = 0;
+#define CHECK(cond) do { ++g_cases; if (!(cond)) { ++g_fail; \
+  std::printf("FAIL line %d: %s\n", __LINE__, #cond); } } while (0)
+#define NEAR(a, b, tol) (std::fabs((a) - (b)) &lt;= (tol))
+
+static Grid make_grid(int w, int h, int8_t v, double res = 1.0)
+{
+  Grid g;
+  g.width = w; g.height = h; g.resolution = res;
+  g.data.assign(static_cast&lt;std::size_t&gt;(w) * h, v);
+  return g;
+}
+static int count(const std::vector&lt;uint8_t&gt; &amp; m) { int n = 0; for (uint8_t b : m) { n += b; } return n; }
+
+static void test_side_points()     // T1
+{
+  Point l, r;
+  Exit e; e.a = {0.0, 0.0}; e.b = {2.0, 0.0};
+  CHECK(side_points(e, 0.5, l, r));
+  CHECK(NEAR(l.x, 1.0, 1e-9) &amp;&amp; NEAR(l.y, 0.5, 1e-9));     // left of a -&gt; b is +y
+  CHECK(NEAR(r.x, 1.0, 1e-9) &amp;&amp; NEAR(r.y, -0.5, 1e-9));
+  Exit up; up.a = {1.0, 1.0}; up.b = {1.0, 3.0};            // a -&gt; b points +y, so left is -x
+  CHECK(side_points(up, 0.4, l, r));
+  CHECK(NEAR(l.x, 0.6, 1e-9) &amp;&amp; NEAR(l.y, 2.0, 1e-9));
+  CHECK(NEAR(r.x, 1.4, 1e-9) &amp;&amp; NEAR(r.y, 2.0, 1e-9));
+  Exit diag; diag.a = {0.0, 0.0}; diag.b = {3.0, 4.0};      // length 5: n = (-0.8, 0.6)
+  CHECK(side_points(diag, 1.0, l, r));
+  CHECK(NEAR(l.x, 0.7, 1e-9) &amp;&amp; NEAR(l.y, 2.6, 1e-9));     // center (1.5, 2.0) + (-0.8, 0.6)
+  Exit dot; dot.a = {1.0, 1.0}; dot.b = {1.0, 1.0};
+  CHECK(!side_points(dot, 0.5, l, r));
+}
+
+static void test_region_index()    // given code (not a TODO)
+{
+  Grid c = make_grid(4, 1, 0);
+  std::vector&lt;std::vector&lt;uint8_t&gt;&gt; masks = {{1, 1, 0, 0}, {0, 0, 1, 0}};
+  CHECK(region_index(c, masks, {0.5, 0.5}) == 0);
+  CHECK(region_index(c, masks, {2.5, 0.5}) == 1);
+  CHECK(region_index(c, masks, {3.5, 0.5}) == -1);          // in no region
+  CHECK(region_index(c, masks, {9.0, 0.5}) == -1);          // outside the costmap
+}</code></pre>
+      <pre><code class="lang-cpp">static void test_band_mask()       // T2
+{
+  Grid m = make_grid(7, 7, 0);
+  Grid c = make_grid(7, 7, 0);
+  std::vector&lt;uint8_t&gt; reach(c.data.size(), 0);
+  reach[c.index(3, 3)] = 1;
+  CHECK(count(band_mask(m, c, reach, 0)) == 1);
+  CHECK(count(band_mask(m, c, reach, 1)) == 9);             // 3 x 3 square: 8-neighbor steps
+  CHECK(count(band_mask(m, c, reach, 2)) == 25);            // 5 x 5
+  const std::vector&lt;uint8_t&gt; k1 = band_mask(m, c, reach, 1);
+  CHECK(k1[m.index(2, 2)] == 1 &amp;&amp; k1[m.index(1, 3)] == 0);  // diagonal neighbor in, two steps out
+  reach[c.index(0, 0)] = 1;
+  CHECK(count(band_mask(m, c, reach, 1)) == 13);            // 9 + the 4 cells of the corner square
+  Grid fine = make_grid(14, 14, 0, 0.5);                    // costmap with another resolution
+  std::vector&lt;uint8_t&gt; rf(fine.data.size(), 0);
+  rf[fine.index(7, 7)] = 1;                                 // covers world (3.5..4.0, 3.5..4.0)
+  CHECK(count(band_mask(m, fine, rf, 0)) == 1);             // map cell (3, 3) has its center at (3.5, 3.5)
+  CHECK(count(band_mask(m, c, std::vector&lt;uint8_t&gt;(3, 1), 1)) == 0);   // reach size mismatch
+}
+
+static void test_crop()            // T3
+{
+  Grid m = make_grid(5, 5, 0);
+  m.origin_x = -1.0; m.origin_y = 2.0;
+  for (int i = 0; i &lt; 25; ++i) { m.data[i] = static_cast&lt;int8_t&gt;(i); }   // cell value = its index
+  std::vector&lt;uint8_t&gt; keep(25, 0);
+  keep[m.index(1, 2)] = 1; keep[m.index(2, 2)] = 1; keep[m.index(1, 3)] = 1; keep[m.index(2, 4)] = 1;
+  const Grid g = crop(m, keep);
+  CHECK(g.width == 2 &amp;&amp; g.height == 3);                      // box x = 1..2, y = 2..4
+  CHECK(NEAR(g.origin_x, 0.0, 1e-9) &amp;&amp; NEAR(g.origin_y, 4.0, 1e-9));   // -1 + 1 * 1.0, 2 + 2 * 1.0
+  if (g.width == 2 &amp;&amp; g.height == 3) {
+    CHECK(g.at(0, 0) == 11 &amp;&amp; g.at(1, 0) == 12);             // (1, 2) and (2, 2) of the map
+    CHECK(g.at(0, 1) == 16);                                 // (1, 3)
+    CHECK(g.at(1, 1) == -1);                                 // (2, 3) not kept -&gt; unknown
+    CHECK(g.at(0, 2) == -1 &amp;&amp; g.at(1, 2) == 22);             // (1, 4) not kept, (2, 4) kept
+  }
+  CHECK(crop(m, std::vector&lt;uint8_t&gt;(25, 0)).width == 0);   // nothing kept
+  CHECK(crop(m, std::vector&lt;uint8_t&gt;(3, 1)).width == 0);    // size mismatch
+}</code></pre>
+      <pre><code class="lang-cpp">static void test_region_path()     // T4
+{
+  // 0 &lt;-&gt; 1 &lt;-&gt; 2, 0 -&gt; 3 (one way), and a long way 0 -&gt; 4 -&gt; 5 -&gt; 2
+  const std::vector&lt;Edge&gt; e = {{0, 1}, {1, 0}, {1, 2}, {2, 1}, {0, 3}, {0, 4}, {4, 5}, {5, 2}};
+  std::vector&lt;int&gt; p = region_path(6, e, 0, 2);
+  CHECK(p.size() == 2);                                      // fewest edges: 0 -&gt; 1 -&gt; 2
+  if (p.size() == 2) { CHECK(p[0] == 0 &amp;&amp; p[1] == 2); }
+  p = region_path(6, e, 2, 3);
+  CHECK(p.size() == 3);                                      // 2 -&gt; 1 -&gt; 0 -&gt; 3
+  if (p.size() == 3) { CHECK(p[0] == 3 &amp;&amp; p[1] == 1 &amp;&amp; p[2] == 4); }
+  CHECK(region_path(6, e, 3, 0).empty());                    // no edge leaves region 3
+  CHECK(region_path(6, e, 1, 1).empty());                    // already there
+  CHECK(region_path(6, e, 0, 9).empty());                    // out of range
+}
+
+int main()
+{
+  test_side_points();
+  test_region_index();
+  test_band_mask();
+  test_crop();
+  test_region_path();
+  if (g_fail == 0) {
+    std::printf("PASS region_core %d cases\n", g_cases);
+    return 0;
+  }
+  std::printf("FAIL region_core %d of %d cases\n", g_fail, g_cases);
+  return 1;
+}</code></pre>
+      <pre><code class="lang-bash">cd ~/ros2_rpi5/ros2_ws/src/rpi5_explore      # Mac  (container: cd /ros2_ws/src/rpi5_explore)
+c++ -std=c++17 -Wall -Wextra -Iinclude test/test_region_core.cpp -o /tmp/test_region_core &amp;&amp; /tmp/test_region_core
+c++ -std=c++17 -Wall -Wextra -g -fsanitize=undefined,address -Iinclude test/test_region_core.cpp -o /tmp/test_region_core_san &amp;&amp; /tmp/test_region_core_san</code></pre>
+      <ol class="steps">
+        <li>T1 — <code>side_points()</code>. 중심에서 법선 방향으로 ± d.</li>
+        <li>T2 — <code>band_mask()</code>. 시작점 여럿, 8-이웃, 걸음 수 한계 <code>band_cells</code>.</li>
+        <li>T3 — <code>crop()</code>. 경계 상자, 원점 옮기기, 남기지 않는 칸은 -1.</li>
+        <li>T4 — <code>region_path()</code>. 구역 단위 너비 우선 탐색과 되짚기.</li>
+      </ol>
+      <p>아래 표는 집필자가 완결 코드를 T1 부터 차례로 끼워 넣으며 실제로 실행한 결과다(2026-10-12 · Mac · <code>clang++ -std=c++17</code>). 잘못된 구현 아홉 가지도 일부러 만들어 실행했다 — 여덟은 실패를 출력했고, 하나(T4 에서 <code>seen</code> 을 빼는 것)는 시험이 끝나지 않았다.</p>
+      <div class="tbl"><table class="compact fixed">
+        <colgroup><col class="w20"><col class="w35"><col class="w45"></colgroup>
+        <thead><tr><th>채운 자리</th><th>마지막 줄</th><th>처음 나오는 실패</th></tr></thead>
+        <tbody>
+          <tr><td>(골격)</td><td><code>FAIL region_core 18 of 29 cases</code></td><td><code>side_points(e, 0.5, l, r)</code></td></tr>
+          <tr><td>T1</td><td><code>FAIL region_core 10 of 29 cases</code></td><td><code>count(band_mask(m, c, reach, 0)) == 1</code></td></tr>
+          <tr><td>T1 ~ T2</td><td><code>FAIL region_core 4 of 29 cases</code></td><td><code>g.width == 2 &amp;&amp; g.height == 3</code></td></tr>
+          <tr><td>T1 ~ T3</td><td><code>FAIL region_core 2 of 33 cases</code></td><td><code>p.size() == 2</code></td></tr>
+          <tr><td>T1 ~ T4</td><td><code>PASS region_core 35 cases</code></td><td>없다. 진단 빌드도 오류 없이 같은 줄을 낸다</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout tip"><span class="ct">채울 자리마다 힌트 카드가 있다 — 읽는 순서</span>
+        <p>먼저 골격의 번호 걸음만 보고 써 본다. 막히면 그 자리의 카드를 연다. 카드를 연 뒤에도 코드를 옮겨 적기보다 설명을 읽고 자기 손으로 다시 쓴다.</p>
+        <p class="small">짝: 걸음 1 ↔ <a href="#hint-t1">T1</a> · 걸음 2 ↔ <a href="#hint-t2">T2</a> · 걸음 3 ↔ <a href="#hint-t3">T3</a> · 걸음 4 ↔ <a href="#hint-t4">T4</a></p>
+      </div>
+
+      <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>side_points()</code> · 출구 중심에서 법선 방향으로 ± d</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 출구(끝점 a · b)와 거리 d 를 받아, 중심에서 a → b 의 왼쪽 법선 방향으로 d 떨어진 점(left)과 반대쪽 점(right)을 출력 인자로 돌려준다. a 와 b 가 같으면 방향이 없으므로 false.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T1 - ros2_ws/src/rpi5_explore/include/rpi5_explore/region_core.hpp */
+inline bool side_points(const Exit &amp; e, double d, Point &amp; left, Point &amp; right)
+{
+  const double len = distance(e.a, e.b);
+  if (len == 0.0) { return false; }
+  const double nx = -(e.b.y - e.a.y) / len;
+  const double ny = (e.b.x - e.a.x) / len;
+  const Point c{(e.a.x + e.b.x) / 2.0, (e.a.y + e.b.y) / 2.0};
+  left = {c.x + d * nx, c.y + d * ny};
+  right = {c.x - d * nx, c.y - d * ny};
+  return true;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>len</code> 으로 나누는 것은 방향을 길이 1 로 만드는 것이다. 나누지 않으면 출구가 넓을수록 옆 점이 멀어진다.</li>
+          <li><code>(-dy, dx)</code> — 벡터 <code>(dx, dy)</code> 를 왼쪽으로 90° 돌린 것이다. 오른쪽은 부호를 바꾼 <code>(dy, -dx)</code> 이고, 코드는 중심에서 빼는 것으로 대신한다.</li>
+          <li><code>Point &amp; left</code> 는 출력 인자다 — 함수 안에서 대입한 값이 부른 쪽의 변수에 남는다.</li>
+          <li>다르게 써도 되는 곳 — 어느 쪽을 left 로 부르든 판정(§2-3)에는 상관없다. 다만 시험은 "a → b 의 왼쪽"을 left 로 채점한다.</li>
+        </ul>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w40"><col class="w30"></colgroup>
+          <thead><tr><th>쓴 것</th><th>시험이 내는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>법선을 오른쪽으로 돌린다 · 길이로 나누지 않는다 · 중심 대신 a 에서 잰다</td><td>셋 다 <code>FAIL line &lt;n&gt;: NEAR(l.x, 1.0, 1e-9) &amp;&amp; NEAR(l.y, 0.5, 1e-9)</code> 부터</td><td>n = (-dy, dx) / len, 기준점은 중점</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — <code>test_side_points()</code> 의 실패가 사라지고, 첫 실패가 <code>band_mask</code> 로 넘어간다(§3-3 표의 "T1" 줄).</p>
+        </div></details>
+
+      <details class="hint" id="hint-t2"><summary>힌트 T2 — <code>band_mask()</code> · 시작점 여럿, 8-이웃, 걸음 수 한계</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 구역의 칠한 영역(코스트맵 기준)과 걸음 수 <code>band_cells</code> 를 받아, <code>/map</code> 칸마다 남길지(1)를 돌려준다. 시작점은 중심이 칠한 칸 위에 있는 <code>/map</code> 칸이고, 그 칸들에서 8-이웃으로 <code>band_cells</code> 걸음 안의 칸을 모두 남긴다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T2 - ros2_ws/src/rpi5_explore/include/rpi5_explore/region_core.hpp */
+inline std::vector&lt;uint8_t&gt; band_mask(
+  const Grid &amp; map, const Grid &amp; cost, const std::vector&lt;uint8_t&gt; &amp; reach, int band_cells)
+{
+  std::vector&lt;uint8_t&gt; keep(map.data.size(), 0);
+  if (reach.size() != cost.data.size() || band_cells &lt; 0) { return keep; }
+  std::vector&lt;int&gt; dist(map.data.size(), -1);
+  std::queue&lt;Cell&gt; todo;
+  for (int y = 0; y &lt; map.height; ++y) {
+    for (int x = 0; x &lt; map.width; ++x) {
+      Cell c;
+      if (!cell_of(cost, cell_center(map, {x, y}), c) || !reach[cost.index(c.x, c.y)]) { continue; }
+      dist[map.index(x, y)] = 0;
+      keep[map.index(x, y)] = 1;
+      todo.push({x, y});
+    }
+  }
+  while (!todo.empty()) {
+    const Cell c = todo.front();
+    todo.pop();
+    const int d = dist[map.index(c.x, c.y)];
+    if (d == band_cells) { continue; }
+    for (int dy = -1; dy &lt;= 1; ++dy) {
+      for (int dx = -1; dx &lt;= 1; ++dx) {
+        const int nx = c.x + dx;
+        const int ny = c.y + dy;
+        if ((dx == 0 &amp;&amp; dy == 0) || !map.inside(nx, ny) || dist[map.index(nx, ny)] &gt;= 0) { continue; }
+        dist[map.index(nx, ny)] = d + 1;
+        keep[map.index(nx, ny)] = 1;
+        todo.push({nx, ny});
+      }
+    }
+  }
+  return keep;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>dist</code> — 칸마다 시작점에서 몇 걸음인지. -1 은 아직 닿지 않았다는 뜻이고, 한 칸을 두 번 넣지 않는 표시를 겸한다(09b 힌트 T2 의 <code>mask</code> 와 같은 역할).</li>
+          <li>시작점을 <strong>모두 먼저</strong> 큐에 넣는다. 그래야 너비 우선 탐색이 "가장 가까운 시작점까지의 걸음 수"를 센다. 시작점을 하나씩 따로 칠하면 같은 결과를 내지만 칸마다 여러 번 계산한다.</li>
+          <li><code>if (d == band_cells) { continue; }</code> — 한계 걸음에 닿은 칸은 남기되 이웃으로 넓히지 않는다. 그래서 정확히 <code>band_cells</code> 걸음까지 남는다.</li>
+          <li>코스트맵과 <code>/map</code> 의 해상도가 달라도 <code>cell_center()</code> → <code>cell_of()</code> 로 세계 좌표를 거쳐 맞춘다(09b 힌트 T3 의 <code>reachable</code> 과 같다).</li>
+        </ul>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w40"><col class="w30"></colgroup>
+          <thead><tr><th>쓴 것</th><th>시험이 내는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>4-이웃으로 넓힌다</td><td><code>FAIL line &lt;n&gt;: count(band_mask(m, c, reach, 1)) == 9</code></td><td>8-이웃 — 띠가 다이아몬드가 아니라 정사각형이어야 한다</td></tr>
+            <tr><td>한계를 한 걸음 늦게 건다(<code>band_cells + 1</code>)</td><td><code>FAIL line &lt;n&gt;: count(band_mask(m, c, reach, 0)) == 1</code></td><td>거리 == <code>band_cells</code> 인 칸은 넓히지 않는다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — <code>test_band_mask()</code> 의 실패가 사라지고, 첫 실패가 <code>crop</code> 으로 넘어간다(§3-3 표의 "T1 ~ T2" 줄).</p>
+        </div></details>
+
+      <details class="hint" id="hint-t3"><summary>힌트 T3 — <code>crop()</code> · 경계 상자로 자르고 원점을 옮긴다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — <code>/map</code> 과 남길 칸 표시를 받아, 남긴 칸의 경계 상자 크기의 새 격자를 만든다. 남기지 않은 칸은 -1, 원점은 상자의 왼쪽 아래 칸의 모서리다. 남긴 칸이 없으면 너비 0 인 격자.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T3 - ros2_ws/src/rpi5_explore/include/rpi5_explore/region_core.hpp */
+inline Grid crop(const Grid &amp; map, const std::vector&lt;uint8_t&gt; &amp; keep)
+{
+  Grid out;
+  out.resolution = map.resolution;
+  out.width = 0;
+  if (keep.size() != map.data.size()) { return out; }
+  int x0 = map.width, y0 = map.height, x1 = -1, y1 = -1;
+  for (int y = 0; y &lt; map.height; ++y) {
+    for (int x = 0; x &lt; map.width; ++x) {
+      if (!keep[map.index(x, y)]) { continue; }
+      x0 = std::min(x0, x); y0 = std::min(y0, y);
+      x1 = std::max(x1, x); y1 = std::max(y1, y);
+    }
+  }
+  if (x1 &lt; 0) { return out; }
+  out.width = x1 - x0 + 1;
+  out.height = y1 - y0 + 1;
+  out.origin_x = map.origin_x + x0 * map.resolution;
+  out.origin_y = map.origin_y + y0 * map.resolution;
+  out.data.assign(static_cast&lt;std::size_t&gt;(out.width) * out.height, -1);
+  for (int y = y0; y &lt;= y1; ++y) {
+    for (int x = x0; x &lt;= x1; ++x) {
+      if (keep[map.index(x, y)]) { out.data[out.index(x - x0, y - y0)] = map.at(x, y); }
+    }
+  }
+  return out;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>x0 = map.width</code> · <code>x1 = -1</code> 로 시작하면 첫 남긴 칸에서 둘 다 그 칸으로 바뀐다. 끝까지 <code>x1 &lt; 0</code> 이면 남긴 칸이 없다는 뜻이다.</li>
+          <li>원점 — 칸 <code>(x0, y0)</code> 의 모서리는 세계 좌표로 <code>origin + x0 · resolution</code> 이다. 원점을 옮기지 않으면 지도가 그만큼 어긋난 자리에 놓인다(map_server 가 읽는 <code>origin</code>, 09 §3-5).</li>
+          <li>상자 안이라도 남기지 않은 칸은 -1 로 둔다 — 이웃 구역의 안쪽까지 지도에 들어가지 않게 하려는 것이다. 겹침 띠만큼만 이웃이 들어간다.</li>
+        </ul>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w40"><col class="w30"></colgroup>
+          <thead><tr><th>쓴 것</th><th>시험이 내는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>원점을 옮기지 않는다</td><td><code>FAIL line &lt;n&gt;: NEAR(g.origin_x, 0.0, 1e-9) &amp;&amp; NEAR(g.origin_y, 4.0, 1e-9)</code></td><td>원점에 <code>x0 · resolution</code>, <code>y0 · resolution</code> 을 더한다</td></tr>
+            <tr><td>상자 안의 칸을 모두 옮긴다</td><td><code>FAIL line &lt;n&gt;: g.at(1, 1) == -1</code></td><td>남긴 칸만 옮기고 나머지는 -1</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — <code>test_crop()</code> 의 실패가 사라지고, 첫 실패가 <code>region_path</code> 로 넘어간다(§3-3 표의 "T1 ~ T3" 줄).</p>
+        </div></details>
+
+      <details class="hint" id="hint-t4"><summary>힌트 T4 — <code>region_path()</code> · 간선 수가 가장 적은 경로</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 구역 수, 방향이 있는 간선 목록, 출발 · 도착 구역을 받아, 지나갈 간선의 번호를 차례대로 돌려준다. 같은 구역이거나 번호가 범위 밖이거나 경로가 없으면 빈 목록.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T4 - ros2_ws/src/rpi5_explore/include/rpi5_explore/region_core.hpp */
+inline std::vector&lt;int&gt; region_path(int n_regions, const std::vector&lt;Edge&gt; &amp; edges, int from, int to)
+{
+  std::vector&lt;int&gt; path;
+  if (from == to || from &lt; 0 || to &lt; 0 || from &gt;= n_regions || to &gt;= n_regions) { return path; }
+  std::vector&lt;int&gt; via(n_regions, -1);         // edge used to reach each region
+  std::vector&lt;uint8_t&gt; seen(n_regions, 0);
+  std::queue&lt;int&gt; todo;
+  seen[from] = 1;
+  todo.push(from);
+  while (!todo.empty()) {
+    const int r = todo.front();
+    todo.pop();
+    for (std::size_t k = 0; k &lt; edges.size(); ++k) {
+      const Edge &amp; e = edges[k];
+      if (e.from != r || e.to &lt; 0 || e.to &gt;= n_regions || seen[e.to]) { continue; }
+      seen[e.to] = 1;
+      via[e.to] = static_cast&lt;int&gt;(k);
+      if (e.to == to) {
+        for (int at = to; at != from; at = edges[via[at]].from) { path.push_back(via[at]); }
+        std::reverse(path.begin(), path.end());
+        return path;
+      }
+      todo.push(e.to);
+    }
+  }
+  return path;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li>너비 우선 탐색은 간선 수가 적은 구역부터 꺼낸다. 그래서 처음 닿은 경로가 간선 수가 가장 적은 경로다 — 시험의 "긴 경로 0 → 4 → 5 → 2" 가 뽑히지 않는 이유다.</li>
+          <li><code>via[r]</code> — 구역 r 에 처음 닿게 한 간선. 도착하면 <code>via</code> 를 따라 출발점까지 거꾸로 걸어가고, <code>std::reverse</code> 로 순서를 뒤집는다.</li>
+          <li><code>seen</code> — 이미 닿은 구역에는 다시 가지 않는다. 출구마다 간선이 양방향으로 있으므로, 이것이 없으면 0 → 1 → 0 → 1 … 을 끝없이 반복한다.</li>
+          <li>다르게 써도 되는 곳 — 간선마다 거리를 두고 짧은 거리 순(데이크스트라)으로 찾을 수도 있다. 이 쪽은 지도를 바꾸는 횟수를 줄이는 쪽을 골랐다.</li>
+        </ul>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w40"><col class="w30"></colgroup>
+          <thead><tr><th>쓴 것</th><th>시험이 내는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>되짚은 경로를 뒤집지 않는다</td><td><code>FAIL line &lt;n&gt;: p[0] == 0 &amp;&amp; p[1] == 2</code></td><td>되짚은 뒤 <code>std::reverse</code></td></tr>
+            <tr><td><code>seen</code> 검사를 뺀다</td><td>아무 줄도 출력하지 않고 시험이 끝나지 않는다(무한 반복). Ctrl+C 로 끊는다</td><td>닿은 구역은 표시하고 다시 넣지 않는다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — <code>PASS region_core 35 cases</code>. 진단 빌드도 오류 없이 같은 줄을 낸다.</p>
+        </div></details>
+
+      <h3 id="s3-4">3-4. 구역 관리 노드 <code>region_manager.cpp</code> <span class="tag cpp">C++</span> <span class="tag cli">컨테이너</span></h3>
+      <p><code>ros2_ws/src/rpi5_explore/src/region_manager.cpp</code>. 새로 쓰는 열여덟 묶음(①~⑱)과, 09b 노드에서 그대로 옮겨 오는 함수들로 이루어진다. 정책 한 곳(건널 곳 고르기)은 <code>TODO(you)</code> 로 남겼다.</p>
+      <div class="callout note"><span class="ct">이 노드의 빌드 상태</span>
+        <p>09b 노드와 같다 — 집필 환경(Mac)에는 ROS 가 없어 ROS 타입과 yaml-cpp 를 흉내 낸 가짜 헤더로 문법만 확인했다(<code>-Wall -Wextra -Wpedantic</code>, 경고 0). 실제 API 와 맞는지는 Pi 컨테이너의 첫 <code>colcon build</code> 가 확인한다.
+        순수 헤더(§3-2)는 Mac 에서 시험 35 case 와 진단 빌드를 실제로 통과시켰다.</p>
+      </div>
+      <p><strong>09b 노드에서 그대로 옮겨 오는 것</strong> — 09b §3-6 의 블록에서 아래 함수를 글자 그대로 옮긴다. 이 함수들이 쓰는 멤버 이름은 이 노드에도 같은 이름으로 있다(⑱).</p>
+      <div class="tbl"><table class="compact fixed">
+        <colgroup><col class="w18"><col class="w52"><col class="w30"></colgroup>
+        <thead><tr><th>09b 블록</th><th>옮기는 함수</th><th>이 노드에서 놓는 자리</th></tr></thead>
+        <tbody>
+          <tr><td>①</td><td><code>yaw_of()</code> · <code>to_grid()</code> · <code>apply()</code></td><td>② 블록 앞</td></tr>
+          <tr><td>⑤</td><td><code>exit_detection_on()</code> · <code>robot_pose()</code> · <code>on_objects()</code> · <code>fresh_cues()</code> (<code>exit_code()</code> 는 빼고)</td><td>⑤ 블록 다음, 차례대로</td></tr>
+          <tr><td>⑥</td><td><code>on_scan()</code> · <code>exit_walls()</code></td><td>〃</td></tr>
+          <tr><td>⑦ · ⑧</td><td><code>enum class Plan</code> · <code>blacklisted()</code> · <code>update_frontiers()</code> · <code>plan_next_goal()</code> · <code>target_alive()</code> · <code>note_failure()</code></td><td>〃</td></tr>
+          <tr><td>⑨ · ⑩</td><td><code>send_goal()</code> · <code>cancel_goal()</code> (<code>on_result()</code> 는 빼고 — 이 노드의 것을 쓴다)</td><td>〃</td></tr>
+          <tr><td>⑬</td><td><code>finish()</code> · <code>maybe_shutdown()</code> · <code>confirmed_exits()</code></td><td>〃</td></tr>
+          <tr><td>⑮</td><td><code>publish_markers()</code></td><td>⑰ 블록 다음</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">09b 의 <code>send_goal()</code> 은 결과 콜백을 람다(<code>[this](…) { on_result(r); }</code>)로 넘긴다. 클래스 이름을 쓰지 않으므로 이 노드로 옮겨도 그대로 컴파일된다.</p>
+      <p><strong>① 머리</strong> — 09b 의 include 에 서비스 둘(<code>SaveMap</code> · <code>LoadMap</code>), <code>GetState</code>, <code>PoseWithCovarianceStamped</code>, yaml-cpp, <code>region_core.hpp</code> 가 더해졌다.</p>
+      <pre><code class="lang-cpp">// region_manager.cpp - explores a floor region by region and moves between region maps (stage 11).
+//   mode:=explore  : slam_toolbox + Nav2 (no AMCL). Explore one region with the 09b rules, set its exits
+//                    as walls, cross an exit to an unexplored side, explore the next region ... then cut
+//                    one map per region and write the region graph (&lt;maps_dir&gt;/&lt;floor&gt;/graph.yaml).
+//   mode:=navigate : map_server + AMCL + Nav2. "goto &lt;region&gt; &lt;x&gt; &lt;y&gt; &lt;yaw&gt;": drive to each exit on the
+//                    route, switch the map there (load_map + /initialpose), drive on.
+// Functions marked [09b] are those of frontier_explorer.cpp (09b §3-6), copied unchanged.
+#include &lt;algorithm&gt;
+#include &lt;chrono&gt;
+#include &lt;cmath&gt;
+#include &lt;cstdio&gt;
+#include &lt;filesystem&gt;
+#include &lt;fstream&gt;
+#include &lt;memory&gt;
+#include &lt;sstream&gt;
+#include &lt;string&gt;
+#include &lt;vector&gt;
+
+#include "rclcpp/rclcpp.hpp"
+#include "rclcpp_action/rclcpp_action.hpp"
+#include "nav2_msgs/action/navigate_to_pose.hpp"
+#include "nav2_msgs/srv/load_map.hpp"
+#include "nav2_msgs/srv/save_map.hpp"
+#include "lifecycle_msgs/msg/state.hpp"
+#include "lifecycle_msgs/srv/get_state.hpp"
+#include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
+#include "nav_msgs/msg/occupancy_grid.hpp"
+#include "sensor_msgs/msg/laser_scan.hpp"
+#include "std_msgs/msg/string.hpp"
+#include "vision_msgs/msg/detection3_d_array.hpp"
+#include "visualization_msgs/msg/marker_array.hpp"
+#include "tf2/LinearMath/Quaternion.h"
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_listener.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include "yaml-cpp/yaml.h"
+
+#include "rpi5_explore/explore_core.hpp"
+#include "rpi5_explore/region_core.hpp"
+
+using namespace std::chrono_literals;
+namespace core = rpi5_explore;
+using NavigateToPose = nav2_msgs::action::NavigateToPose;
+using GoalHandle = rclcpp_action::ClientGoalHandle&lt;NavigateToPose&gt;;
+
+struct Pose2D { double x = 0.0; double y = 0.0; double yaw = 0.0; };   // map frame</code></pre>
+      <p><strong>② 새 도우미</strong> — 격자를 메시지로 바꾸는 <code>to_msg()</code>(map_saver 에 넘길 지도), 자세를 글자로 쓰고 읽는 함수, 옆 점의 방향을 정하는 <code>facing()</code> · <code>away()</code>.</p>
+      <pre><code class="lang-cpp">// core::Grid -&gt; message, for the region map handed to map_saver
+static nav_msgs::msg::OccupancyGrid to_msg(const core::Grid &amp; g, const std::string &amp; frame, const rclcpp::Time &amp; stamp)
+{
+  nav_msgs::msg::OccupancyGrid m;
+  m.header.frame_id = frame;
+  m.header.stamp = stamp;
+  m.info.resolution = static_cast&lt;float&gt;(g.resolution);
+  m.info.width = static_cast&lt;uint32_t&gt;(g.width);
+  m.info.height = static_cast&lt;uint32_t&gt;(g.height);
+  m.info.origin.position.x = g.origin_x;
+  m.info.origin.position.y = g.origin_y;
+  m.info.origin.orientation.w = 1.0;
+  m.data.assign(g.data.begin(), g.data.end());
+  return m;
+}
+
+static std::string pose_str(const Pose2D &amp; p)
+{
+  char b[96];
+  std::snprintf(b, sizeof(b), "[%.3f, %.3f, %.3f]", p.x, p.y, p.yaw);
+  return b;
+}
+
+static Pose2D pose_of(const YAML::Node &amp; n)       // [x, y, yaw]
+{
+  return {n[0].as&lt;double&gt;(), n[1].as&lt;double&gt;(), n[2].as&lt;double&gt;()};
+}
+
+static Pose2D facing(core::Point p, core::Point target)   // stand at p, look at target
+{
+  return {p.x, p.y, std::atan2(target.y - p.y, target.x - p.x)};
+}
+
+static Pose2D away(core::Point p, core::Point from)       // stand at p, look away from `from`
+{
+  return {p.x, p.y, std::atan2(p.y - from.y, p.x - from.x)};
+}</code></pre>
+      <p><strong>③ 생성자 — 상태와 파라미터</strong> — 상태는 두 모드의 것을 한 열거형에 둔다. 주석의 자리에 09b ② 의 파라미터 선언을 옮긴다(<code>exits_file</code> 줄만 뺀다 — 이 노드는 그래프 파일을 쓴다).</p>
+      <pre><code class="lang-cpp">class RegionManager : public rclcpp::Node
+{
+public:
+  enum class State {
+    WAIT_DATA, EXPLORING, AWAIT_USER, TO_EXIT, CROSSING, RETURNING, SETTLING, SAVING,   // mode explore
+    LOCALIZING, IDLE, TO_EDGE, SWITCHING, AWAIT_ELEVATOR, TO_GOAL,                       // mode navigate
+    DONE, ABORTED };
+
+  RegionManager()
+  : Node("region_manager"), tf_buffer_(get_clock()), tf_listener_(tf_buffer_)
+  {
+    // ---- 1. parameters: the 09b set (same names and meanings; no exits_file) ...
+    // &lt;- paste the parameter declarations of 09b §3-6 (2) here, without the exits_file line
+    // ... and the region set
+    declare_parameter&lt;std::string&gt;("mode", "explore");        // explore | navigate
+    declare_parameter&lt;std::string&gt;("floor", "f1");            // region names: f1/r0, f1/r1, ...
+    declare_parameter&lt;std::string&gt;("maps_dir", "/maps");      // region maps go to &lt;maps_dir&gt;/&lt;floor&gt;/
+    declare_parameter&lt;bool&gt;("ask_user", true);                // explore: ask before crossing an exit
+    declare_parameter&lt;double&gt;("side_m", 0.0);                 // 0 = 2 * robot_radius: side points off the exit line
+    declare_parameter&lt;double&gt;("band_m", 1.0);                 // overlap band around each region map (§2-4)
+    declare_parameter&lt;std::string&gt;("graph_file", "");         // navigate: building.yaml or &lt;floor&gt;/graph.yaml
+    declare_parameter&lt;std::string&gt;("start_region", "");       // navigate: "" = end_region of the graph
+    declare_parameter&lt;std::vector&lt;double&gt;&gt;("initial_pose", std::vector&lt;double&gt;{});   // navigate, with start_region
+    declare_parameter&lt;double&gt;("relocalize_s", 3.0);           // navigate: wait after /initialpose
+    declare_parameter&lt;double&gt;("initial_pose_sigma_xy", 0.15);   // = nav2_params xy_goal_tolerance (09b §2-7)
+    declare_parameter&lt;double&gt;("initial_pose_sigma_yaw", 0.25);  // = nav2_params yaw_goal_tolerance</code></pre>
+      <p><strong>④ 생성자 — 파라미터 읽기</strong> — 주석의 자리에 09b ③ 의 <code>get_parameter</code> 줄들(<code>robot_radius_</code> 부터 <code>exit_on_done_</code> 까지)을 옮긴다.</p>
+      <pre><code class="lang-cpp">    // &lt;- paste the get_parameter lines of 09b §3-6 (3) here (robot_radius_ .. exit_on_done_), without exits_file
+    mode_ = get_parameter("mode").as_string();
+    floor_ = get_parameter("floor").as_string();
+    maps_dir_ = get_parameter("maps_dir").as_string();
+    ask_user_ = get_parameter("ask_user").as_bool();
+    side_m_ = get_parameter("side_m").as_double();
+    band_m_ = get_parameter("band_m").as_double();
+    graph_file_ = get_parameter("graph_file").as_string();
+    start_region_ = get_parameter("start_region").as_string();
+    initial_pose_ = get_parameter("initial_pose").as_double_array();
+    relocalize_s_ = get_parameter("relocalize_s").as_double();
+    sigma_xy_ = get_parameter("initial_pose_sigma_xy").as_double();
+    sigma_yaw_ = get_parameter("initial_pose_sigma_yaw").as_double();
+    if (side_m_ &lt;= 0.0) { side_m_ = 2.0 * robot_radius_; }
+    if (mode_ == "explore" &amp;&amp; robot_radius_ &lt;= 0.0) {
+      RCLCPP_ERROR(get_logger(), "robot_radius is EMPTY - copy robot_radius from nav2_params.yaml. Not starting.");
+    }
+    t_start_ = goal_sent_ = settle_since_ = none_since_ = switch_since_ = now();</code></pre>
+      <p><strong>⑤ 생성자 — 인터페이스</strong> — 입력은 09b 와 같고, 명령과 상태의 토픽 이름이 <code>regions/…</code> 로 바뀌었다. 서비스 클라이언트 셋이 더해졌다. 항법 모드는 여기서 그래프 파일을 읽는다.</p>
+      <pre><code class="lang-cpp">    // ---- 2. interfaces: the 09b inputs plus services for saving and loading maps
+    auto latched = rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable();
+    sub_map_ = create_subscription&lt;nav_msgs::msg::OccupancyGrid&gt;(
+      "map", latched,
+      [this](const nav_msgs::msg::OccupancyGrid &amp; m) { map_ = to_grid(m); have_map_ = true; });
+    sub_cost_ = create_subscription&lt;nav_msgs::msg::OccupancyGrid&gt;(
+      "global_costmap/costmap", latched,
+      [this](const nav_msgs::msg::OccupancyGrid &amp; m) { cost_ = to_grid(m); have_cost_ = true; });
+    sub_scan_ = create_subscription&lt;sensor_msgs::msg::LaserScan&gt;(
+      "scan", rclcpp::SensorDataQoS(),
+      std::bind(&amp;RegionManager::on_scan, this, std::placeholders::_1));
+    sub_obj_ = create_subscription&lt;vision_msgs::msg::Detection3DArray&gt;(
+      "objects", rclcpp::QoS(1).best_effort(),
+      std::bind(&amp;RegionManager::on_objects, this, std::placeholders::_1));
+    sub_cmd_ = create_subscription&lt;std_msgs::msg::String&gt;(
+      "regions/command", 10,
+      [this](const std_msgs::msg::String &amp; m) { on_command(m.data); });
+    pub_state_ = create_publisher&lt;std_msgs::msg::String&gt;("regions/state", 10);
+    pub_markers_ = create_publisher&lt;visualization_msgs::msg::MarkerArray&gt;("regions/markers", 1);
+    pub_crossings_ = create_publisher&lt;visualization_msgs::msg::MarkerArray&gt;("regions/crossings", 1);
+    pub_region_map_ = create_publisher&lt;nav_msgs::msg::OccupancyGrid&gt;("regions/region_map", latched);
+    pub_initialpose_ = create_publisher&lt;geometry_msgs::msg::PoseWithCovarianceStamped&gt;("initialpose", 10);
+    save_client_ = create_client&lt;nav2_msgs::srv::SaveMap&gt;("map_saver/save_map");
+    load_client_ = create_client&lt;nav2_msgs::srv::LoadMap&gt;("map_server/load_map");
+    amcl_state_ = create_client&lt;lifecycle_msgs::srv::GetState&gt;("amcl/get_state");
+    client_ = rclcpp_action::create_client&lt;NavigateToPose&gt;(this, "navigate_to_pose");
+    timer_ = create_wall_timer(1s, std::bind(&amp;RegionManager::tick, this));   // state machine, 1 Hz
+
+    if (mode_ == "navigate") {
+      if (load_graph()) { state_ = State::LOCALIZING; }
+      else { finish(State::ABORTED, 7, "cannot use graph_file " + graph_file_); }
+    }
+  }
+
+  int exit_code() const { return exit_code_; }
+
+private:</code></pre>
+      <p><strong>⑥ 구역 · 판정</strong> — §2-2 · §2-3. <code>classify_exits()</code> 는 판정할 때마다 간선과 건널 곳을 처음부터 다시 만든다 — 출구가 늘면 구역이 바뀌기 때문이다.</p>
+      <pre><code class="lang-cpp">  // ---- 3. regions (mode explore) ----------------------------------------------------------
+  struct RegionRec { std::string name; Pose2D entry; std::string map_file; };
+  struct Crossing { int exit = -1; int region = -1; Pose2D near; Pose2D far; };   // near: explored side
+  struct EdgeRec { int from = -1; int to = -1; std::string type; Pose2D pose_from; Pose2D pose_to; };
+
+  // One reachable mask per region: flood fill from the region's entry with every confirmed exit
+  // as a wall (09b §2-5-3). A region is "what the robot can reach from its entry without crossing an exit".
+  std::vector&lt;std::vector&lt;uint8_t&gt;&gt; region_masks() const
+  {
+    std::vector&lt;std::vector&lt;uint8_t&gt;&gt; masks;
+    const std::vector&lt;core::Cell&gt; walls = exit_walls();
+    for (const RegionRec &amp; g : regions_) {
+      core::Cell c;
+      if (core::cell_of(cost_, {g.entry.x, g.entry.y}, c)) { masks.push_back(core::reachable_mask(cost_, c, walls)); }
+      else { masks.emplace_back(cost_.data.size(), 0); }
+    }
+    return masks;
+  }
+
+  bool failed(std::size_t i) const
+  {
+    return std::find(failed_exits_.begin(), failed_exits_.end(), static_cast&lt;int&gt;(i)) != failed_exits_.end();
+  }
+
+  // Look at both sides of every confirmed exit (§2-3):
+  //   both sides in two different regions -&gt; two directed edges (the map switch happens on each side)
+  //   one side in a region, the other in none -&gt; a crossing to unexplored space
+  //   same region on both sides, or no region on either side -&gt; not a region boundary (yet); ignored
+  void classify_exits()
+  {
+    masks_ = region_masks();
+    crossings_.clear();
+    edges_.clear();
+    for (std::size_t i = 0; i &lt; exits_.size(); ++i) {
+      const core::Exit &amp; e = exits_[i];
+      core::Point l, r;
+      if (e.hits &lt; min_hits_ || failed(i) || !core::side_points(e, side_m_, l, r)) { continue; }
+      const int il = core::region_index(cost_, masks_, l);
+      const int ir = core::region_index(cost_, masks_, r);
+      const core::Point c{(e.a.x + e.b.x) / 2.0, (e.a.y + e.b.y) / 2.0};
+      if (il &gt;= 0 &amp;&amp; ir &gt;= 0 &amp;&amp; il != ir) {
+        edges_.push_back({il, ir, "exit", facing(l, c), facing(l, c)});   // same frame: pose_to = pose_from
+        edges_.push_back({ir, il, "exit", facing(r, c), facing(r, c)});
+      } else if (il &gt;= 0 &amp;&amp; ir &lt; 0) {
+        crossings_.push_back({static_cast&lt;int&gt;(i), il, facing(l, c), away(r, c)});
+      } else if (ir &gt;= 0 &amp;&amp; il &lt; 0) {
+        crossings_.push_back({static_cast&lt;int&gt;(i), ir, facing(r, c), away(l, c)});
+      }
+    }
+  }</code></pre>
+      <p><strong>⑦ 구역 완성 · 건너기 시작</strong> — <code>start_leg()</code> 는 상태와 목표를 함께 정한다. 목표가 실패하면 <code>tick()</code> 이 <code>leg_</code> 를 다시 보낸다(⑯).</p>
+      <pre><code class="lang-cpp">  void start_leg(State s, const Pose2D &amp; p)
+  {
+    state_ = s;
+    leg_ = p;
+    send_goal(p);
+  }
+
+  // The current region has no reachable frontier (complete_hold_s held).
+  void on_region_done()
+  {
+    classify_exits();
+    RCLCPP_INFO(get_logger(), "%s complete - %zu exit(s) lead to unexplored space",
+                regions_[cur_].name.c_str(), crossings_.size());
+    if (crossings_.empty()) { finish_floor(); return; }
+    if (ask_user_) { state_ = State::AWAIT_USER; return; }     // "go &lt;k&gt;" or "finish" on regions/command
+    // TODO(you): which exit first? Nearest by straight line is a start - the same question as the
+    //   target choice in 09b. Write the rule you chose here.
+    Pose2D r;
+    std::size_t best = 0;
+    if (robot_pose(r)) {
+      double bd = core::distance({r.x, r.y}, {crossings_[0].near.x, crossings_[0].near.y});
+      for (std::size_t k = 1; k &lt; crossings_.size(); ++k) {
+        const double d = core::distance({r.x, r.y}, {crossings_[k].near.x, crossings_[k].near.y});
+        if (d &lt; bd) { bd = d; best = k; }
+      }
+    }
+    start_crossing(best);
+  }
+
+  void start_crossing(std::size_t k)
+  {
+    chosen_ = static_cast&lt;int&gt;(k);
+    leg_failures_ = 0;
+    RCLCPP_INFO(get_logger(), "crossing exit %d from %s", crossings_[k].exit, regions_[crossings_[k].region].name.c_str());
+    start_leg(State::TO_EXIT, crossings_[k].near);
+  }</code></pre>
+      <p><strong>⑧ 건너기 실패 · 새 구역 · 층 마무리</strong> — 새 구역에 들어가면 제외 목록을 비운다. 앞 구역에서 못 간 자리가 새 구역의 목표를 막지 않게 하려는 것이다.</p>
+      <pre><code class="lang-cpp">  // A leg to or through an exit failed. After max_failures the exit is set aside and the floor is
+  // looked at again - another exit may still lead to unexplored space.
+  void leg_failed()
+  {
+    if (++leg_failures_ &lt;= max_failures_) { return; }        // tick() sends the same leg again
+    failed_exits_.push_back(crossings_[chosen_].exit);
+    RCLCPP_WARN(get_logger(), "exit %d set aside after %d failures", crossings_[chosen_].exit, leg_failures_);
+    on_region_done();
+  }
+
+  // The robot stands on the far side of the exit: a new region starts here, with this pose as entry.
+  void enter_new_region()
+  {
+    Pose2D r;
+    if (!robot_pose(r)) { r = crossings_[chosen_].far; }
+    regions_.push_back({floor_ + "/r" + std::to_string(regions_.size()), r, ""});
+    cur_ = static_cast&lt;int&gt;(regions_.size()) - 1;
+    blacklist_.clear();                                        // the 09b bookkeeping starts fresh
+    strikes_.clear();
+    none_seen_ = false;
+    state_ = State::EXPLORING;
+    RCLCPP_INFO(get_logger(), "entered %s at (%.2f, %.2f)", regions_[cur_].name.c_str(), r.x, r.y);
+  }
+
+  // No exit leads to unexplored space (or "finish"): back to the floor start for the loop closure
+  // (09b §2-7), settle, then cut the region maps.
+  void finish_floor()
+  {
+    RCLCPP_INFO(get_logger(), "floor %s: %zu region(s) - returning to the floor start", floor_.c_str(), regions_.size());
+    leg_failures_ = 0;
+    start_leg(State::RETURNING, regions_[0].entry);
+  }</code></pre>
+      <p><strong>⑨ 구역 안의 탐사 · 저장 시작</strong> — 09b ⑪ · ⑫ 의 탐사 단계와 같고, 완성되면 <code>on_region_done()</code> 을 부른다. 저장 전에 <code>&lt;maps_dir&gt;/&lt;floor&gt;</code> 디렉터리를 만든다 — map_saver 는 디렉터리를 만들지 않는다.</p>
+      <pre><code class="lang-cpp">  // 09b's EXPLORING step, except that a complete region leads to on_region_done() instead of home.
+  void explore_tick(const rclcpp::Time &amp; t)
+  {
+    if ((t - t_start_).seconds() &gt; explore_timeout_s_) { finish(State::ABORTED, 2, "explore_timeout_s exceeded"); return; }
+    if (goal_active_) {
+      if (cancel_pending_) { return; }
+      if ((t - goal_sent_).seconds() &gt; goal_timeout_s_) { cancel_goal(true); return; }
+      Pose2D r;
+      if (robot_pose(r) &amp;&amp; update_frontiers(r) &amp;&amp; !target_alive()) { cancel_goal(false); }
+      return;
+    }
+    switch (plan_next_goal()) {
+      case Plan::SENT:
+        none_seen_ = false;
+        break;
+      case Plan::WAIT:
+        break;
+      case Plan::NONE:
+        if (!none_seen_) { none_seen_ = true; none_since_ = t; }
+        if ((t - none_since_).seconds() &gt;= complete_hold_s_) { none_seen_ = false; on_region_done(); }
+        break;
+    }
+  }
+
+  // ---- 4. region maps and the graph file ------------------------------------------------
+  void start_saving()
+  {
+    classify_exits();                                          // final masks and edges, after the loop closure
+    std::error_code ec;
+    std::filesystem::create_directories(maps_dir_ + "/" + floor_, ec);
+    save_index_ = 0;
+    save_pending_ = false;
+    state_ = State::SAVING;
+  }</code></pre>
+      <p><strong>⑩ 구역 지도 하나 저장</strong> — §2-4. 지도를 토픽에 낸 직후에 서비스를 부른다. map_saver 는 요청을 받은 뒤 그 토픽을 구독하는데, TRANSIENT_LOCAL 이라 마지막 지도를 받는다. 응답은 콜백으로 받으므로 <code>tick()</code> 을 멈추게 하지 않는다.</p>
+      <pre><code class="lang-cpp">  // One region per call: band (§2-4) -&gt; crop -&gt; publish on regions/region_map -&gt; map_saver saves it.
+  void save_tick()
+  {
+    if (save_pending_) { return; }
+    if (save_index_ &gt;= regions_.size()) {
+      if (!write_graph()) { finish(State::ABORTED, 5, "could not write the graph file"); return; }
+      finish(State::DONE, 0, "floor complete");
+      return;
+    }
+    if (!save_client_-&gt;service_is_ready()) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "map_saver/save_map not ready - is map_saver_server active?");
+      return;
+    }
+    const int band_cells = static_cast&lt;int&gt;(std::ceil(band_m_ / map_.resolution));
+    const core::Grid cut = core::crop(map_, core::band_mask(map_, cost_, masks_[save_index_], band_cells));
+    if (cut.width == 0) {
+      RCLCPP_WARN(get_logger(), "%s: empty region map - skipped", regions_[save_index_].name.c_str());
+      ++save_index_;
+      return;
+    }
+    pub_region_map_-&gt;publish(to_msg(cut, map_frame_, now()));   // TRANSIENT_LOCAL: map_saver gets it on request
+    const std::string base = maps_dir_ + "/" + regions_[save_index_].name;   // /maps/f1/r0 -&gt; .yaml + .pgm
+    auto req = std::make_shared&lt;nav2_msgs::srv::SaveMap::Request&gt;();
+    req-&gt;map_topic = pub_region_map_-&gt;get_topic_name();
+    req-&gt;map_url = base;
+    req-&gt;image_format = "pgm";
+    req-&gt;map_mode = "trinary";
+    req-&gt;free_thresh = 0.25f;                                  // the values in 09 §3-5's yaml
+    req-&gt;occupied_thresh = 0.65f;
+    save_pending_ = true;
+    save_client_-&gt;async_send_request(
+      req, [this, base](rclcpp::Client&lt;nav2_msgs::srv::SaveMap&gt;::SharedFuture f) {
+        save_pending_ = false;
+        if (!f.get()-&gt;result) { finish(State::ABORTED, 6, "map_saver could not save " + base); return; }
+        regions_[save_index_].map_file = base + ".yaml";
+        RCLCPP_INFO(get_logger(), "saved %s.yaml", base.c_str());
+        ++save_index_;
+      });
+  }</code></pre>
+      <p><strong>⑪ 그래프 파일</strong> — 09b 의 출구 목록 파일처럼 손으로 YAML 을 쓴다. <code>end_region</code> · <code>end_pose</code> 가 항법 모드의 첫 초기 위치가 된다.</p>
+      <pre><code class="lang-cpp">  bool write_graph()
+  {
+    const std::string path = maps_dir_ + "/" + floor_ + "/graph.yaml";
+    std::ofstream f(path);
+    if (!f) { RCLCPP_ERROR(get_logger(), "cannot open %s", path.c_str()); return false; }
+    Pose2D end;
+    if (!robot_pose(end)) { end = regions_[0].entry; }
+    const int er = std::max(0, core::region_index(cost_, masks_, {end.x, end.y}));
+    f &lt;&lt; "# written by region_manager (11) when the floor was complete\n";
+    f &lt;&lt; "floor: " &lt;&lt; floor_ &lt;&lt; "\n";
+    f &lt;&lt; "map_frame: " &lt;&lt; map_frame_ &lt;&lt; "\n";
+    f &lt;&lt; "end_region: " &lt;&lt; regions_[er].name &lt;&lt; "\n";
+    f &lt;&lt; "end_pose: " &lt;&lt; pose_str(end) &lt;&lt; "\n";
+    f &lt;&lt; "regions:\n";
+    for (const RegionRec &amp; g : regions_) {
+      f &lt;&lt; "  - name: " &lt;&lt; g.name &lt;&lt; "\n    map: " &lt;&lt; g.map_file &lt;&lt; "\n    entry: " &lt;&lt; pose_str(g.entry) &lt;&lt; "\n";
+    }
+    if (edges_.empty()) { f &lt;&lt; "edges: []\n"; }
+    else { f &lt;&lt; "edges:\n"; }
+    for (const EdgeRec &amp; e : edges_) {
+      f &lt;&lt; "  - from: " &lt;&lt; regions_[e.from].name &lt;&lt; "\n    to: " &lt;&lt; regions_[e.to].name &lt;&lt; "\n    type: " &lt;&lt; e.type
+        &lt;&lt; "\n    pose_from: " &lt;&lt; pose_str(e.pose_from) &lt;&lt; "\n    pose_to: " &lt;&lt; pose_str(e.pose_to) &lt;&lt; "\n";
+    }
+    RCLCPP_INFO(get_logger(), "wrote %s: %zu region(s), %zu edge(s)", path.c_str(), regions_.size(), edges_.size());
+    return static_cast&lt;bool&gt;(f);
+  }</code></pre>
+      <p><strong>⑫ 그래프 읽기</strong> — 층 그래프 하나 또는 건물 파일. yaml-cpp 는 키가 없거나 형이 맞지 않으면 예외를 던지므로 전체를 <code>try</code> 로 감싼다.</p>
+      <pre><code class="lang-cpp">  // ---- 5. moving between region maps (mode navigate) --------------------------------------
+  int region_named(const std::string &amp; name) const
+  {
+    for (std::size_t i = 0; i &lt; regions_.size(); ++i) { if (regions_[i].name == name) { return static_cast&lt;int&gt;(i); } }
+    return -1;
+  }
+
+  // graph_file is one floor graph (regions + edges) or a building file: "graphs" lists floor graphs and
+  // "edges" adds edges between floors (type elevator, pose_from and pose_to in two different map frames).
+  bool load_graph()
+  {
+    try {
+      const YAML::Node top = YAML::LoadFile(graph_file_);
+      std::vector&lt;YAML::Node&gt; floors;
+      if (top["graphs"]) {
+        for (const auto &amp; p : top["graphs"]) { floors.push_back(YAML::LoadFile(p.as&lt;std::string&gt;())); }
+      } else {
+        floors.push_back(top);
+      }
+      for (const YAML::Node &amp; fl : floors) {
+        for (const auto &amp; r : fl["regions"]) {
+          regions_.push_back({r["name"].as&lt;std::string&gt;(), pose_of(r["entry"]), r["map"].as&lt;std::string&gt;()});
+        }
+      }
+      auto add_edges = [this](const YAML::Node &amp; list) {
+          for (const auto &amp; e : list) {
+            const int a = region_named(e["from"].as&lt;std::string&gt;());
+            const int b = region_named(e["to"].as&lt;std::string&gt;());
+            if (a &lt; 0 || b &lt; 0) { RCLCPP_WARN(get_logger(), "edge with an unknown region - skipped"); continue; }
+            edges_.push_back({a, b, e["type"].as&lt;std::string&gt;(), pose_of(e["pose_from"]), pose_of(e["pose_to"])});
+          }
+        };
+      for (const YAML::Node &amp; fl : floors) { if (fl["edges"]) { add_edges(fl["edges"]); } }
+      if (top["graphs"] &amp;&amp; top["edges"]) { add_edges(top["edges"]); }
+      if (start_region_.empty()) {
+        cur_ = region_named(floors.front()["end_region"].as&lt;std::string&gt;());
+        nav_pose_ = pose_of(floors.front()["end_pose"]);
+      } else {
+        cur_ = region_named(start_region_);
+        if (cur_ &gt;= 0) { nav_pose_ = (initial_pose_.size() == 3) ? Pose2D{initial_pose_[0], initial_pose_[1], initial_pose_[2]} : regions_[cur_].entry; }
+      }
+    } catch (const std::exception &amp; e) {
+      RCLCPP_ERROR(get_logger(), "graph_file %s: %s", graph_file_.c_str(), e.what());
+      return false;
+    }
+    RCLCPP_INFO(get_logger(), "graph: %zu region(s), %zu edge(s), start in %s", regions_.size(), edges_.size(),
+                cur_ &gt;= 0 ? regions_[cur_].name.c_str() : "?");
+    return cur_ &gt;= 0;
+  }</code></pre>
+      <p><strong>⑬ 초기 위치</strong> — 10 §3-9 의 두 기다림(AMCL active, 구독 연결)을 그대로 쓴다. <code>send_pose()</code> 는 지도를 바꿀 때마다 다시 쓴다.</p>
+      <pre><code class="lang-cpp">  // /initialpose with a covariance (09b §2-7). false while AMCL's subscription is not matched yet.
+  bool send_pose(const Pose2D &amp; p)
+  {
+    if (pub_initialpose_-&gt;get_subscription_count() == 0) { return false; }
+    geometry_msgs::msg::PoseWithCovarianceStamped m;
+    m.header.frame_id = map_frame_;
+    m.header.stamp = now();
+    m.pose.pose.position.x = p.x;
+    m.pose.pose.position.y = p.y;
+    tf2::Quaternion q;
+    q.setRPY(0.0, 0.0, p.yaw);
+    m.pose.pose.orientation = tf2::toMsg(q);
+    m.pose.covariance[0] = sigma_xy_ * sigma_xy_;
+    m.pose.covariance[7] = sigma_xy_ * sigma_xy_;
+    m.pose.covariance[35] = sigma_yaw_ * sigma_yaw_;
+    pub_initialpose_-&gt;publish(m);
+    return true;
+  }
+
+  // The first initial pose waits for AMCL to be active (the same steps as 10 §3-9).
+  void localize_tick()
+  {
+    if (state_request_pending_ || !amcl_state_-&gt;service_is_ready()) { return; }
+    if (!amcl_active_) {
+      state_request_pending_ = true;
+      amcl_state_-&gt;async_send_request(
+        std::make_shared&lt;lifecycle_msgs::srv::GetState::Request&gt;(),
+        [this](rclcpp::Client&lt;lifecycle_msgs::srv::GetState&gt;::SharedFuture f) {
+          state_request_pending_ = false;
+          amcl_active_ = (f.get()-&gt;current_state.id == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+        });
+      return;
+    }
+    if (send_pose(nav_pose_)) {
+      state_ = State::IDLE;
+      RCLCPP_INFO(get_logger(), "localized in %s - send: goto &lt;region&gt; &lt;x&gt; &lt;y&gt; &lt;yaw&gt;", regions_[cur_].name.c_str());
+    }
+  }</code></pre>
+      <p><strong>⑭ 경로 시작 · 간선 도착</strong> — 엘리베이터 간선이면 <code>AWAIT_ELEVATOR</code> 에서 멈춘다(§2-5).</p>
+      <pre><code class="lang-cpp">  void start_route(const std::string &amp; region, const Pose2D &amp; goal)
+  {
+    if (state_ != State::IDLE) { RCLCPP_WARN(get_logger(), "busy - goto ignored"); return; }
+    const int to = region_named(region);
+    if (to &lt; 0) { RCLCPP_WARN(get_logger(), "unknown region %s", region.c_str()); return; }
+    std::vector&lt;core::Edge&gt; plain;
+    for (const EdgeRec &amp; e : edges_) { plain.push_back({e.from, e.to}); }
+    path_ = core::region_path(static_cast&lt;int&gt;(regions_.size()), plain, cur_, to);
+    if (to != cur_ &amp;&amp; path_.empty()) { RCLCPP_WARN(get_logger(), "no route to %s", region.c_str()); return; }
+    goal_pose_ = goal;
+    path_pos_ = 0;
+    leg_failures_ = 0;
+    next_leg();
+  }
+
+  void next_leg()
+  {
+    if (path_pos_ &lt; path_.size()) { start_leg(State::TO_EDGE, edges_[path_[path_pos_]].pose_from); }
+    else { start_leg(State::TO_GOAL, goal_pose_); }
+  }
+
+  void arrive_at_edge()
+  {
+    leg_failures_ = 0;
+    const EdgeRec &amp; e = edges_[path_[path_pos_]];
+    if (e.type == "elevator") {                                // the ride itself is a later stage
+      state_ = State::AWAIT_ELEVATOR;
+      RCLCPP_WARN(get_logger(), "elevator to %s: take the robot there, then send \"arrived\"", regions_[e.to].name.c_str());
+      return;
+    }
+    state_ = State::SWITCHING;
+    switch_step_ = 0;
+  }</code></pre>
+      <p><strong>⑮ 지도 바꾸기</strong> — §2-5 의 2 ~ 4. <code>switch_step_</code> 이 네 단계를 가른다 — 0 요청 전, 1 응답 대기, 2 초기 위치 보낼 차례, 3 다시 맞추는 시간 대기.</p>
+      <pre><code class="lang-cpp">  // Map switch at an edge (§2-5): load the next region's map, then re-seed AMCL in that map - AMCL keeps
+  // its particles when a new map arrives (09b §2-7), so the pose must be given again.
+  void switch_tick(const rclcpp::Time &amp; t)
+  {
+    const EdgeRec &amp; e = edges_[path_[path_pos_]];
+    if (switch_step_ == 0) {
+      if (!load_client_-&gt;service_is_ready()) { return; }
+      auto req = std::make_shared&lt;nav2_msgs::srv::LoadMap::Request&gt;();
+      req-&gt;map_url = regions_[e.to].map_file;
+      switch_step_ = 1;                                        // 1 = waiting for the response
+      load_client_-&gt;async_send_request(
+        req, [this](rclcpp::Client&lt;nav2_msgs::srv::LoadMap&gt;::SharedFuture f) {
+          if (f.get()-&gt;result != nav2_msgs::srv::LoadMap::Response::RESULT_SUCCESS) { abort_route("load_map failed"); return; }
+          switch_step_ = 2;
+        });
+    } else if (switch_step_ == 2) {
+      if (!send_pose(e.pose_to)) { return; }
+      switch_since_ = t;
+      switch_step_ = 3;
+    } else if (switch_step_ == 3 &amp;&amp; (t - switch_since_).seconds() &gt;= relocalize_s_) {
+      cur_ = e.to;
+      ++path_pos_;
+      next_leg();
+    }
+  }
+
+  void abort_route(const std::string &amp; why)
+  {
+    if (goal_active_ &amp;&amp; !cancel_pending_) { cancel_goal(false); }
+    state_ = State::IDLE;
+    RCLCPP_ERROR(get_logger(), "route stopped in %s: %s", regions_[cur_].name.c_str(), why.c_str());
+  }</code></pre>
+      <p><strong>⑯ 결과 · 명령 · 상태기계</strong> — 결과 콜백은 상태마다 다음 걸음을 정한다. 실패한 걸음은 <code>tick()</code> 이 같은 목표로 다시 보내고, 횟수는 결과 콜백이 센다.</p>
+      <pre><code class="lang-cpp">  // ---- 6. results, commands, state machine -----------------------------------------------
+  void on_result(const GoalHandle::WrappedResult &amp; res)
+  {
+    goal_active_ = false;
+    goal_handle_.reset();
+    const bool ok = (res.code == rclcpp_action::ResultCode::SUCCEEDED);
+    const bool bad = (res.code == rclcpp_action::ResultCode::ABORTED) ||
+                     (res.code == rclcpp_action::ResultCode::CANCELED &amp;&amp; cancel_counts_);
+    switch (state_) {
+      case State::EXPLORING:
+        if (bad) { note_failure(target_); }                   // the 09b rule
+        break;
+      case State::TO_EXIT:
+        if (ok) { leg_failures_ = 0; start_leg(State::CROSSING, crossings_[chosen_].far); }
+        else if (bad) { leg_failed(); }
+        break;
+      case State::CROSSING:
+        if (ok) { enter_new_region(); }
+        else if (bad) { leg_failed(); }
+        break;
+      case State::RETURNING:
+        if (ok) { state_ = State::SETTLING; settle_since_ = now(); }
+        else if (bad &amp;&amp; ++leg_failures_ &gt; max_failures_) { finish(State::ABORTED, 3, "could not return to the floor start"); }
+        break;
+      case State::TO_EDGE:
+        if (ok) { arrive_at_edge(); }
+        else if (bad &amp;&amp; ++leg_failures_ &gt; max_failures_) { abort_route("could not reach the exit"); }
+        break;
+      case State::TO_GOAL:
+        if (ok) { state_ = State::IDLE; RCLCPP_INFO(get_logger(), "arrived (%s)", regions_[cur_].name.c_str()); }
+        else if (bad &amp;&amp; ++leg_failures_ &gt; max_failures_) { abort_route("could not reach the goal"); }
+        break;
+      default:
+        break;
+    }
+    cancel_pending_ = false;
+    maybe_shutdown();
+  }</code></pre>
+      <pre><code class="lang-cpp">  // regions/command: start | stop | go &lt;k&gt; | finish | goto &lt;region&gt; &lt;x&gt; &lt;y&gt; &lt;yaw&gt; | arrived
+  void on_command(const std::string &amp; c)
+  {
+    std::istringstream in(c);
+    std::string word;
+    in &gt;&gt; word;
+    if (word == "start") {
+      start_requested_ = true;
+    } else if (word == "stop") {
+      finish(State::ABORTED, 4, "stopped by command");       // finish() cancels an active goal
+    } else if (word == "go" &amp;&amp; state_ == State::AWAIT_USER) {
+      std::size_t k = 0;
+      if (in &gt;&gt; k &amp;&amp; k &lt; crossings_.size()) { start_crossing(k); }
+      else { RCLCPP_WARN(get_logger(), "go &lt;k&gt;: k must be one of the options in regions/state"); }
+    } else if (word == "finish" &amp;&amp; state_ == State::AWAIT_USER) {
+      finish_floor();
+    } else if (word == "goto") {
+      std::string region;
+      Pose2D g;
+      if (in &gt;&gt; region &gt;&gt; g.x &gt;&gt; g.y &gt;&gt; g.yaw) { start_route(region, g); }
+      else { RCLCPP_WARN(get_logger(), "goto &lt;region&gt; &lt;x&gt; &lt;y&gt; &lt;yaw&gt;"); }
+    } else if (word == "arrived" &amp;&amp; state_ == State::AWAIT_ELEVATOR) {
+      state_ = State::SWITCHING;
+      switch_step_ = 0;
+    } else {
+      RCLCPP_WARN(get_logger(), "not accepted in this state: %s", c.c_str());
+    }
+  }</code></pre>
+      <pre><code class="lang-cpp">  void tick()
+  {
+    const rclcpp::Time t = now();
+    switch (state_) {
+      case State::WAIT_DATA: {
+        Pose2D r;
+        if (robot_radius_ &lt;= 0.0 || !have_map_ || !have_cost_ || !robot_pose(r)) { break; }
+        if (!autostart_ &amp;&amp; !start_requested_) { break; }
+        regions_.push_back({floor_ + "/r0", r, ""});           // the floor start is region 0's entry
+        cur_ = 0;
+        t_start_ = t;
+        state_ = State::EXPLORING;
+        RCLCPP_INFO(get_logger(), "exploring %s from (%.2f, %.2f)", regions_[0].name.c_str(), r.x, r.y);
+        break;
+      }
+      case State::EXPLORING: explore_tick(t); break;
+      case State::TO_EXIT:
+      case State::CROSSING:
+      case State::RETURNING:
+      case State::TO_EDGE:
+      case State::TO_GOAL:
+        if (!goal_active_ &amp;&amp; !cancel_pending_) { send_goal(leg_); }   // retry a failed leg (on_result counts)
+        break;
+      case State::SETTLING:
+        if ((t - settle_since_).seconds() &gt;= settle_s_) { start_saving(); }
+        break;
+      case State::SAVING: save_tick(); break;
+      case State::LOCALIZING: localize_tick(); break;
+      case State::SWITCHING: switch_tick(t); break;
+      case State::AWAIT_USER:                                  // waits for go &lt;k&gt; / finish
+      case State::AWAIT_ELEVATOR:                              // waits for arrived
+      case State::IDLE:                                        // waits for goto
+      case State::DONE:
+      case State::ABORTED:
+        break;
+    }
+    if (!rclcpp::ok()) { return; }                             // finish() may have shut the context down
+    publish_state();
+    publish_markers();
+    publish_crossings();
+  }</code></pre>
+      <p><strong>⑰ 상태 · 건널 곳 마커</strong> — <code>AWAIT_USER</code> 일 때 상태 문자열에 선택지를 붙이고, Foxglove 에는 <code>go k</code> 글자를 그린다(§2-6).</p>
+      <pre><code class="lang-cpp">  // ---- 7. outputs -----------------------------------------------------------------------
+  void publish_state()
+  {
+    static const char * names[] = {"WAIT_DATA", "EXPLORING", "AWAIT_USER", "TO_EXIT", "CROSSING", "RETURNING",
+                                   "SETTLING", "SAVING", "LOCALIZING", "IDLE", "TO_EDGE", "SWITCHING",
+                                   "AWAIT_ELEVATOR", "TO_GOAL", "DONE", "ABORTED"};
+    std::ostringstream out;
+    out &lt;&lt; names[static_cast&lt;int&gt;(state_)];
+    if (cur_ &gt;= 0 &amp;&amp; cur_ &lt; static_cast&lt;int&gt;(regions_.size())) { out &lt;&lt; " region=" &lt;&lt; regions_[cur_].name; }
+    out &lt;&lt; " regions=" &lt;&lt; regions_.size() &lt;&lt; " exits=" &lt;&lt; confirmed_exits() &lt;&lt; " frontiers=" &lt;&lt; frontiers_.size();
+    if (state_ == State::AWAIT_USER) {
+      out &lt;&lt; " options=";
+      for (std::size_t k = 0; k &lt; crossings_.size(); ++k) {
+        out &lt;&lt; (k ? "," : "") &lt;&lt; k &lt;&lt; ":" &lt;&lt; regions_[crossings_[k].region].name &lt;&lt; "-&gt;?";
+      }
+      out &lt;&lt; " (send: go &lt;k&gt; | finish)";
+    }
+    if (!reason_.empty()) { out &lt;&lt; " reason=" &lt;&lt; reason_; }
+    std_msgs::msg::String m;
+    m.data = out.str();
+    pub_state_-&gt;publish(m);
+  }
+
+  // The number k of each crossing, written next to its near side point - what "go &lt;k&gt;" refers to.
+  void publish_crossings()
+  {
+    visualization_msgs::msg::MarkerArray arr;
+    visualization_msgs::msg::Marker clear;
+    clear.action = visualization_msgs::msg::Marker::DELETEALL;
+    arr.markers.push_back(clear);
+    for (std::size_t k = 0; k &lt; crossings_.size(); ++k) {
+      visualization_msgs::msg::Marker m;
+      m.header.frame_id = map_frame_;
+      m.header.stamp = now();
+      m.ns = "crossing";
+      m.id = static_cast&lt;int&gt;(k);
+      m.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+      m.action = visualization_msgs::msg::Marker::ADD;
+      m.pose.position.x = crossings_[k].near.x;
+      m.pose.position.y = crossings_[k].near.y;
+      m.pose.orientation.w = 1.0;
+      m.scale.z = 0.3;                                         // text height [m]
+      m.color.r = 0.2; m.color.g = 0.6; m.color.b = 1.0; m.color.a = 1.0;
+      m.text = "go " + std::to_string(k);
+      arr.markers.push_back(m);
+    }
+    pub_crossings_-&gt;publish(arr);
+  }</code></pre>
+      <p><strong>⑱ 멤버 · <code>main()</code></strong> — 앞부분은 09b 와 같은 이름의 멤버다. 옮겨 온 함수들이 이 이름을 쓴다.</p>
+      <pre><code class="lang-cpp">  struct Cue { core::Point p; rclcpp::Time stamp; };            // the same two structs as 09b
+  struct Strike { core::Point p; int count = 0; };
+
+  // parameters: the 09b set
+  double robot_radius_ = 0.0, exit_max_width_m_ = 0.0, exit_margin_m_ = 0.0, jump_m_ = 0.0;
+  double fuse_radius_m_ = 0.0, cue_sigma_max_m_ = 0.0, cue_max_age_s_ = 0.0, merge_radius_m_ = 0.0;
+  double goal_timeout_s_ = 0.0, blacklist_radius_m_ = 0.0, settle_s_ = 0.0, explore_timeout_s_ = 0.0;
+  double complete_hold_s_ = 0.0;
+  int min_hits_ = 0, max_failures_ = 0;
+  std::string map_frame_, robot_frame_, exit_class_id_;
+  bool autostart_ = false, exit_on_done_ = false;
+  // parameters: the region set
+  std::string mode_, floor_, maps_dir_, graph_file_, start_region_;
+  bool ask_user_ = true;
+  double side_m_ = 0.0, band_m_ = 0.0, relocalize_s_ = 0.0, sigma_xy_ = 0.0, sigma_yaw_ = 0.0;
+  std::vector&lt;double&gt; initial_pose_;
+  // state shared with the 09b functions
+  State state_ = State::WAIT_DATA;
+  int exit_code_ = 1;                // 1 = ended before DONE; 0 = DONE; 2..7 = ABORTED reasons
+  std::string reason_;
+  bool have_map_ = false, have_cost_ = false, start_requested_ = false, none_seen_ = false;
+  bool goal_active_ = false, cancel_pending_ = false, cancel_counts_ = false, shutdown_requested_ = false;
+  rclcpp::Time t_start_, goal_sent_, settle_since_, none_since_, switch_since_;
+  core::Point target_;
+  core::Grid map_, cost_;
+  std::vector&lt;core::Frontier&gt; frontiers_, deferred_;
+  std::vector&lt;core::Opening&gt; candidates_;
+  std::vector&lt;core::Exit&gt; exits_;
+  std::vector&lt;Cue&gt; cues_;
+  std::vector&lt;Strike&gt; strikes_;
+  std::vector&lt;core::Point&gt; blacklist_;</code></pre>
+      <pre><code class="lang-cpp">  // regions
+  std::vector&lt;RegionRec&gt; regions_;
+  std::vector&lt;Crossing&gt; crossings_;
+  std::vector&lt;EdgeRec&gt; edges_;
+  std::vector&lt;std::vector&lt;uint8_t&gt;&gt; masks_;
+  std::vector&lt;int&gt; failed_exits_;
+  int cur_ = -1, chosen_ = -1, leg_failures_ = 0, switch_step_ = 0;
+  Pose2D leg_, nav_pose_, goal_pose_;
+  std::size_t save_index_ = 0, path_pos_ = 0;
+  bool save_pending_ = false, amcl_active_ = false, state_request_pending_ = false;
+  std::vector&lt;int&gt; path_;
+  // ROS
+  tf2_ros::Buffer tf_buffer_;
+  tf2_ros::TransformListener tf_listener_;
+  GoalHandle::SharedPtr goal_handle_;
+  rclcpp_action::Client&lt;NavigateToPose&gt;::SharedPtr client_;
+  rclcpp::Subscription&lt;nav_msgs::msg::OccupancyGrid&gt;::SharedPtr sub_map_, sub_cost_;
+  rclcpp::Subscription&lt;sensor_msgs::msg::LaserScan&gt;::SharedPtr sub_scan_;
+  rclcpp::Subscription&lt;vision_msgs::msg::Detection3DArray&gt;::SharedPtr sub_obj_;
+  rclcpp::Subscription&lt;std_msgs::msg::String&gt;::SharedPtr sub_cmd_;
+  rclcpp::Publisher&lt;std_msgs::msg::String&gt;::SharedPtr pub_state_;
+  rclcpp::Publisher&lt;visualization_msgs::msg::MarkerArray&gt;::SharedPtr pub_markers_, pub_crossings_;
+  rclcpp::Publisher&lt;nav_msgs::msg::OccupancyGrid&gt;::SharedPtr pub_region_map_;
+  rclcpp::Publisher&lt;geometry_msgs::msg::PoseWithCovarianceStamped&gt;::SharedPtr pub_initialpose_;
+  rclcpp::Client&lt;nav2_msgs::srv::SaveMap&gt;::SharedPtr save_client_;
+  rclcpp::Client&lt;nav2_msgs::srv::LoadMap&gt;::SharedPtr load_client_;
+  rclcpp::Client&lt;lifecycle_msgs::srv::GetState&gt;::SharedPtr amcl_state_;
+  rclcpp::TimerBase::SharedPtr timer_;
+};
+
+int main(int argc, char ** argv)
+{
+  rclcpp::init(argc, argv);
+  auto node = std::make_shared&lt;RegionManager&gt;();
+  rclcpp::spin(node);
+  const int code = node-&gt;exit_code();
+  if (rclcpp::ok()) { rclcpp::shutdown(); }
+  return code;
+}</code></pre>
+      <pre><code class="lang-bash"># 컨테이너
+cd /ros2_ws &amp;&amp; colcon build --symlink-install --packages-select rpi5_explore rpi5_bringup --parallel-workers 2 &amp;&amp; source install/setup.bash</code></pre>
+
+      <h3 id="s3-5">3-5. 실습 A — 두 구역 탐사 <span class="tag asm">조립 후</span> <span class="tag cli">컨테이너</span></h3>
+      <p>판으로 시험 구역을 둘로 나누고, 판 사이에 로봇이 지나갈 수 있는 틈 하나를 낸다. 틈 옆에 표시 물체(09b §3-8 에서 쓴 것)를 둔다. 터미널 다섯을 연다.</p>
+      <pre><code class="lang-bash"># 터미널 1 · 2 · 3: 로봇, SLAM, Nav2 (위치 추정 부분 없이) — 09b §3-7 의 터미널 1 ~ 3 과 같다
+
+# 터미널 4: map_saver_server 와 그것을 active 로 올리는 lifecycle_manager (§2-4)
+ros2 run nav2_map_server map_saver_server --ros-args -p use_sim_time:=false &amp;
+ros2 run nav2_lifecycle_manager lifecycle_manager --ros-args -r __node:=lifecycle_manager_saver \
+  -p use_sim_time:=false -p autostart:=true -p node_names:="['map_saver']"
+
+# 터미널 5: 08d 의 연쇄 (object_localizer 에 -p target_frame:=map) — 09b §3-8 과 같다
+
+# 터미널 6: 구역 관리 노드
+ros2 run rpi5_explore region_manager --ros-args \
+  --params-file $(ros2 pkg prefix rpi5_bringup)/share/rpi5_bringup/config/regions_params.yaml -p mode:=explore</code></pre>
+      <pre><code class="lang-bash">ros2 lifecycle get /map_saver                    # active
+ros2 topic echo /regions/state                   # WAIT_DATA … 
+ros2 topic pub --once /regions/command std_msgs/msg/String "{data: start}"</code></pre>
+      <p>Foxglove 3D 에 <code>/map</code> · <code>/regions/markers</code> · <code>/regions/crossings</code> 를 켜고 아래 순서를 본다.</p>
+      <ol class="steps">
+        <li><code>EXPLORING region=f1/r0</code> — 09b 와 같은 탐사. 틈을 보면 빨간 선(확정된 출구)이 생기고, 그 너머가 주황(미룬 프런티어)이 된다.</li>
+        <li><code>AWAIT_USER … options=0:f1/r0-&gt;?</code> — 출구 옆에 <code>go 0</code> 글자가 보인다. <code>ros2 topic pub --once /regions/command std_msgs/msg/String "{data: 'go 0'}"</code> 를 보낸다.</li>
+        <li><code>TO_EXIT</code> → <code>CROSSING</code> — 로봇이 출구 앞에서 출구를 보는 자세로 멈춘 뒤, 틈을 지나 맞은편으로 간다.</li>
+        <li><code>EXPLORING region=f1/r1</code> — 두 번째 구역. 첫 구역 쪽으로는 칠하기가 넘어가지 않는다(지나온 출구가 벽이다).</li>
+        <li>건널 곳이 더 없으면 <code>RETURNING</code> → <code>SETTLING</code> → <code>SAVING</code> → <code>DONE … reason=floor complete</code>.</li>
+      </ol>
+      <p><strong>일부러 일으켜 본다.</strong> 처음부터 다시 실행해 첫 <code>AWAIT_USER</code> 에서 <code>finish</code> 를 보낸다. 출구를 건너지 않고 바로 <code>RETURNING</code> 으로 가고, 저장되는 구역은 <code>r0</code> 하나다.</p>
+
+      <h3 id="s3-6">3-6. 실습 B — 구역 지도와 그래프 파일 <span class="tag pi">Pi 호스트</span> <span class="tag mac">Mac</span></h3>
+      <pre><code class="lang-bash">ls /maps/f1                       # graph.yaml  r0.pgm  r0.yaml  r1.pgm  r1.yaml
+cat /maps/f1/graph.yaml           # regions 2, edges 2 (f1/r0 -&gt; f1/r1, f1/r1 -&gt; f1/r0), end_region, end_pose
+cat /maps/f1/r1.yaml              # origin 이 층 지도와 다르다 — 잘라 낸 상자의 모서리 (§2-4)
+# Mac 에서 눈으로 본다
+scp pi5:~/ros2_rpi5/maps/f1/r0.pgm pi5:~/ros2_rpi5/maps/f1/r1.pgm /tmp/ &amp;&amp; open /tmp/r0.pgm /tmp/r1.pgm</code></pre>
+      <ul>
+        <li>두 그림 모두 출구 둘레가 들어 있다 — 겹침 띠다. 출구 너머로 <code>band_m</code> 만큼 이웃 구역이 보이고, 그보다 먼 곳은 회색(모름)이다.</li>
+        <li>간선의 <code>pose_from</code> 두 개는 출구를 사이에 두고 마주 본다. 같은 층이라 <code>pose_to</code> 가 <code>pose_from</code> 과 같다.</li>
+      </ul>
+
+      <h3 id="s3-7">3-7. 실습 C — 구역 사이 이동 <span class="tag asm">조립 후</span> <span class="tag cli">컨테이너</span></h3>
+      <p>항법 구성으로 바꾼다. 지도는 그래프 파일의 <code>end_region</code> 의 지도다 — 로봇은 탐사를 마친 자리(출발점)에 그대로 둔다.</p>
+      <pre><code class="lang-bash"># 터미널 1: 로봇
+# 터미널 2: Nav2 + map_server + amcl — 09 §3-7 의 명령에 map:=/maps/f1/&lt;end_region 의 이름&gt;.yaml
+# 터미널 3: 구역 관리 노드 (항법 모드)
+ros2 run rpi5_explore region_manager --ros-args \
+  --params-file $(ros2 pkg prefix rpi5_bringup)/share/rpi5_bringup/config/regions_params.yaml \
+  -p mode:=navigate -p graph_file:=/maps/f1/graph.yaml
+ros2 topic echo /regions/state                   # LOCALIZING → IDLE region=f1/r0
+grep -A3 "name: f1/r1" /maps/f1/graph.yaml       # entry: [x, y, yaw] - the pose where the robot entered f1/r1
+ros2 topic pub --once /regions/command std_msgs/msg/String "{data: 'goto f1/r1 &lt;x&gt; &lt;y&gt; &lt;yaw&gt;'}"</code></pre>
+      <p class="small">항법 모드에서는 지금 구역의 지도만 올라와 있어서, Foxglove 에는 다른 구역이 보이지 않는다. 그래서 목표는 그래프 파일에 있는 그 구역의 <code>entry</code> 자세로 준다. 다른 점을 고르려면 그 구역 지도의 <code>.yaml</code>(<code>origin</code> · <code>resolution</code>)과 <code>.pgm</code> 그림을 보고 구역 안의 점을 계산한다.</p>
+      <ul>
+        <li>상태가 <code>TO_EDGE</code> → <code>SWITCHING</code> → <code>TO_GOAL</code> → <code>IDLE region=f1/r1</code> 순서로 바뀐다.</li>
+        <li><code>SWITCHING</code> 에서 Foxglove 의 <code>/map</code> 이 <code>r1</code> 의 잘린 지도로 바뀌고, <code>/particle_cloud</code> 가 출구 앞에서 다시 퍼졌다가 모인다.</li>
+        <li><strong>일부러 일으켜 본다</strong> — <code>goto f1/r9 0 0 0</code> 처럼 없는 구역을 주면 <code>unknown region f1/r9</code> 경고가 찍히고 <code>IDLE</code> 에 머문다.</li>
+      </ul>
+
+      <h3 id="s3-8">3-8. 실습 D — 두 번째 층 등록과 엘리베이터 간선 <span class="tag asm">조립 후</span></h3>
+      <p>엘리베이터가 없어도 서로 떨어진 방 둘로 절차를 확인할 수 있다. 방 2 를 층 <code>b1</code> 로 다룬다. 엘리베이터를 타는 대신 사람이 로봇을 옮긴다.</p>
+      <ol class="steps">
+        <li><strong>층 b1 을 탐사한다</strong> — 로봇을 방 2 로 옮기고, SLAM 과 Nav2 를 새로 실행한다(새 SLAM 세션 = 새 좌표계). 실습 A 와 같은 명령에 <code>-p floor:=b1</code> 을 더한다. <code>/maps/b1/graph.yaml</code> 이 생긴다.</li>
+        <li><strong>"엘리베이터 앞" 자세를 잰다</strong> — 방마다 한 자리를 엘리베이터 앞으로 정한다. 그 층의 항법 구성에서 로봇을 그 자리에 두고 <code>ros2 run tf2_ros tf2_echo map base_footprint</code> 로 x · y · yaw(라디안)를 읽는다. 층 f1 과 층 b1 에서 각각 한다.</li>
+        <li><strong>건물 파일을 쓴다</strong> — 아래 꼴로 <code>/maps/building.yaml</code>. 간선은 방향마다 하나씩 둘이다.</li>
+        <li><strong>층 사이로 보낸다</strong> — 층 f1 의 항법 구성에서 <code>-p graph_file:=/maps/building.yaml</code> 로 구역 관리 노드를 실행하고 <code>goto b1/r0 &lt;x&gt; &lt;y&gt; &lt;yaw&gt;</code> 를 보낸다. 좌표는 <code>/maps/b1/graph.yaml</code> 에 있는 <code>b1/r0</code> 의 <code>entry</code> 자세다.</li>
+        <li><strong>엘리베이터 구간</strong> — 로봇이 층 f1 의 엘리베이터 앞에서 <code>AWAIT_ELEVATOR</code> 로 멈춘다. 로봇을 방 2 의 엘리베이터 앞에 같은 방향으로 옮기고 <code>{data: arrived}</code> 를 보낸다. <code>b1</code> 지도가 올라오고 초기 위치가 주어진 뒤 목표로 간다.</li>
+      </ol>
+      <pre><code class="lang-yaml"># /maps/building.yaml - written by hand
+graphs: [/maps/f1/graph.yaml, /maps/b1/graph.yaml]
+edges:
+  - from: f1/r1                 # the region of f1 that has the elevator door
+    to: b1/r0
+    type: elevator
+    pose_from: [0.0, 0.0, 0.0]  # ____ in f1's map frame: in front of the elevator (tf2_echo on f1)
+    pose_to: [0.0, 0.0, 0.0]    # ____ in b1's map frame: in front of the elevator (tf2_echo on b1)
+  - from: b1/r0
+    to: f1/r1
+    type: elevator
+    pose_from: [0.0, 0.0, 0.0]  # ____ b1 side
+    pose_to: [0.0, 0.0, 0.0]    # ____ f1 side</code></pre>
+      <p class="small">항법 모드는 <code>start_region</code> 이 비어 있으면 첫 그래프(<code>graphs</code> 의 첫 줄)의 <code>end_region</code> · <code>end_pose</code> 에서 시작한다. 다른 자리에서 시작하려면 <code>-p start_region:=b1/r0 -p initial_pose:="[x, y, yaw]"</code> 를 준다.</p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="region-core-host-pass"><span><strong>경로 통과</strong> — 순수 헤더의 시험이 <code>PASS region_core 35 cases</code> 를 내고, 진단 빌드도 오류 없이 같은 줄을 낸다
+          <span class="sub">판정 수단: 호스트 시험 출력 · §3-3</span></span></label></li>
+        <li><label><input type="checkbox" data-key="region-manager-build-clean"><span><strong>경로 통과</strong> — <code>rpi5_explore</code> 가 두 실행 파일(<code>frontier_explorer</code> · <code>region_manager</code>)과 함께 경고 없이 빌드된다
+          <span class="sub">판정 수단: <code>colcon build</code> 출력 · §3-4</span></span></label></li>
+        <li><label><input type="checkbox" data-key="map-saver-active"><span><strong>경로 통과</strong> — <code>ros2 lifecycle get /map_saver</code> 가 active 이고 <code>/map_saver/save_map</code> 서비스가 보인다
+          <span class="sub">판정 수단: <code>ros2 lifecycle get</code> · <code>ros2 service list</code> · §3-5</span></span></label></li>
+        <li><label><input type="checkbox" data-key="ask-user-options-shown"><span><strong>경로 통과</strong> — 첫 구역이 끝나면 상태가 <code>AWAIT_USER … options=0:f1/r0-&gt;?</code> 이고, Foxglove 의 출구 옆에 <code>go 0</code> 이 보인다
+          <span class="sub">판정 수단: <code>/regions/state</code> · <code>/regions/crossings</code> · §3-5</span></span></label></li>
+        <li><label><input type="checkbox" data-key="two-regions-explored"><span><strong>경로 통과</strong> — <code>go 0</code> 뒤 로봇이 출구를 건너 두 번째 구역을 탐사하고, 칠하기가 첫 구역으로 넘어가지 않으며, <code>DONE … reason=floor complete</code> 로 끝난다
+          <span class="sub">판정 수단: <code>/regions/state</code> 의 <code>region=</code> · Foxglove · §3-5</span></span></label></li>
+        <li><label><input type="checkbox" data-key="finish-skips-crossing"><span><strong>발동 확인</strong> — 첫 <code>AWAIT_USER</code> 에서 <code>finish</code> 를 보내면 출구를 건너지 않고 <code>r0</code> 하나만 저장된다
+          <span class="sub">판정 수단: <code>/regions/state</code> · <code>ls /maps/f1</code> · §3-5</span></span></label></li>
+        <li><label><input type="checkbox" data-key="region-maps-saved"><span><strong>경로 통과</strong> — <code>/maps/f1</code> 에 구역 지도 둘과 그래프 파일이 있고, 그래프의 간선이 둘이며, 두 그림 모두 출구 둘레(겹침 띠)를 담고 있다
+          <span class="sub">판정 수단: <code>ls</code> · <code>cat graph.yaml</code> · <code>.pgm</code> 그림 · §3-6</span></span></label></li>
+        <li><label><input type="checkbox" data-key="route-switches-map"><span><strong>경로 통과</strong> — 항법 모드에서 <code>goto</code> 로 다른 구역의 점을 주면 <code>TO_EDGE → SWITCHING → TO_GOAL → IDLE</code> 로 바뀌고, 그사이 <code>/map</code> 이 바뀐 뒤에도 <code>/scan</code> 이 지도의 벽과 겹친다
+          <span class="sub">판정 수단: <code>/regions/state</code> · Foxglove · §3-7</span></span></label></li>
+        <li><label><input type="checkbox" data-key="unknown-region-rejected"><span><strong>발동 확인</strong> — 없는 구역으로 <code>goto</code> 를 보내면 <code>unknown region</code> 경고가 찍히고 <code>IDLE</code> 에 머문다
+          <span class="sub">판정 수단: 노드 로그 · <code>/regions/state</code> · §3-7</span></span></label></li>
+        <li><label><input type="checkbox" data-key="elevator-waits-arrived"><span><strong>경로 통과</strong> — 건물 파일로 층 사이 목표를 주면 엘리베이터 앞에서 <code>AWAIT_ELEVATOR</code> 로 멈추고, <code>arrived</code> 뒤 다른 층의 지도로 바뀌어 목표에 간다
+          <span class="sub">판정 수단: <code>/regions/state</code> · Foxglove · §3-8 (방이 하나뿐이면 미통과로 둔다)</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <div class="tbl"><table class="compact fixed">
+        <colgroup><col class="w24"><col class="w30"><col class="w28"><col class="w18"></colgroup>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td>층 전체가 <code>f1/r0</code> 하나로 끝난다</td><td>확정된 출구가 없다 — 출구 판정이 꺼져 있거나(<code>exit_class_id</code> 빈칸) 표시가 보이지 않았다</td><td>시작 로그의 <code>exit detection</code> · 빨간 선이 생기는가</td><td>09b §3-8 · §3-1</td></tr>
+          <tr><td>출구가 있는데 <code>0 exit(s) lead to unexplored space</code></td><td><code>min_hits</code> 를 채우지 못했다 · 옆 점이 부풀린 칸(99)에 떨어진다 · 두 옆이 같은 구역이다</td><td>빨간 선이 있는가 · <code>side_m</code> 과 <code>robot_radius</code></td><td>§2-3</td></tr>
+          <tr><td>두 번째 구역의 탐사가 첫 구역으로 넘어간다</td><td>지나온 출구가 확정 출구 목록에 없다 · 가상 벽의 끝이 문설주에 닿지 않는다</td><td>Foxglove 의 빨간 선과 주황 점</td><td>09b §2-5-3 · §2-2</td></tr>
+          <tr><td><code>SAVING</code> 에서 멈춰 <code>save_map not ready</code></td><td><code>map_saver_server</code> 가 active 가 아니다(lifecycle_manager 가 없다)</td><td><code>ros2 lifecycle get /map_saver</code></td><td>§3-5 터미널 4</td></tr>
+          <tr><td>종료 코드 6, <code>map_saver could not save</code></td><td><code>/maps/&lt;floor&gt;</code> 에 쓸 수 없다 · 토픽 QoS 가 맞지 않는다</td><td><code>ls -ld /maps</code>(09 §3-1 의 마운트) · <code>ros2 topic info /regions/region_map -v</code></td><td>09 §3-1 · §2-4</td></tr>
+          <tr><td>종료 코드 7, <code>cannot use graph_file</code></td><td>경로가 틀렸다 · 손으로 쓴 건물 파일의 YAML 형식이 틀렸다</td><td>로그의 yaml-cpp 오류 문구</td><td>§3-8</td></tr>
+          <tr><td><code>goto</code> 에 <code>no route</code></td><td>그래프에 그 구역으로 가는 간선이 없다</td><td><code>graph.yaml</code> 의 <code>edges</code></td><td>§2-3 · §3-6</td></tr>
+          <tr><td>지도를 바꾼 뒤 위치가 틀어진다</td><td><code>band_m</code> 이 작아 바꾸는 자리가 새 지도 밖이다 · <code>relocalize_s</code> 가 짧다</td><td>새 구역의 <code>.pgm</code> 에 출구 옆 점 둘레가 있는가</td><td>§2-4 · §2-5</td></tr>
+          <tr><td>엘리베이터 구간 뒤 위치가 틀리다</td><td><code>pose_to</code> 를 다른 층의 지도에서 재지 않았다 · 로봇을 다른 방향으로 놓았다</td><td>그 층에서 <code>tf2_echo map base_footprint</code> 를 다시 잰다</td><td>§3-8</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. 층마다 지도를 따로 두는 이유 둘은?</summary>
+        <div class="ans"><p>① 엘리베이터 안에서는 라이다가 카 내부만 보고 <code>/odom</code> 이 0 이며, 문이 열리면 같은 자세에서 다른 층이 보이므로 SLAM 을 이어 갈 수 없다. ② 2D 격자에는 높이 축이 없어 두 층의 벽이 같은 칸에 겹친다(§2-1).</p></div></details>
+      <details class="quiz"><summary>2. 09b 탐사 노드를 구역마다 다시 실행하면 무엇이 문제인가?</summary>
+        <div class="ans"><p>09b 노드는 빈 출구 목록으로 시작한다. 구역 B 를 탐사할 때 구역 A 의 다른 출구를 모르므로, 칠하기가 A 를 지나 그 출구 밖까지 퍼진다. 그래서 층의 출구 목록을 처음부터 끝까지 들고 있는 관리 노드를 따로 둔다(§2-1).</p></div></details>
+      <details class="quiz"><summary>3. 구역을 칸 목록이 아니라 입구 자세로 저장하는 이유는?</summary>
+        <div class="ans"><p>탐사 도중 출구가 확정될 때마다 벽이 늘어 구역의 모양이 바뀐다. 칸 목록은 나중에 확정된 출구를 반영하지 못한다. 입구와 출구 목록으로 필요할 때 다시 칠하면 늘 지금의 출구로 나뉜 구역이 나온다(§2-2).</p></div></details>
+      <details class="quiz"><summary>4. 새 출구가 이미 탐사한 구역으로 이어지는지(고리)를 표식 번호 없이 판정할 수 있는 이유는?</summary>
+        <div class="ans"><p>한 층은 SLAM 하나라서 모든 구역이 같은 좌표계에 있다. 출구의 먼 옆 점이 이미 탐사한 구역의 칠한 영역 안에 있는지를 좌표로 비교하면 된다. 들어 있으면 그 출구는 건널 곳이 아니라 간선이다(§2-1 · §2-3).</p></div></details>
+      <details class="quiz"><summary>5. 구역 지도에 겹침 띠를 남기는 이유 둘은? <code>band_m</code> 은 <code>side_m</code> 과 비교해 어떻게 정하는가?</summary>
+        <div class="ans"><p>① 칠한 영역은 로봇 중심이 닿는 칸이라 벽이 빠진다 — 벽이 있어야 AMCL 이 스캔을 맞춘다. ② 지도를 바꾸는 자리(출구의 옆 점)가 새 지도 안에 있어야 그 지도에서 초기 위치를 줄 수 있다. 그래서 <code>band_m</code> 은 <code>side_m</code> 보다 넉넉히 크게 정한다(§2-4).</p></div></details>
+      <details class="quiz"><summary>6. 같은 층에서 지도를 바꾼 뒤에도 <code>/initialpose</code> 를 다시 주는 이유는?</summary>
+        <div class="ans"><p>AMCL 은 새 지도를 받아도 파티클을 다시 초기화하지 않는다. 같은 층이면 좌표가 같아 파티클이 맞지만, 층이 바뀌면 옛 층의 좌표를 들고 있게 된다. 절차를 하나로 쓰기 위해 같은 층에서도 늘 다시 준다(§2-5).</p></div></details>
+      <details class="quiz"><summary>7. 출구 하나에서 간선이 둘 나오는 이유는?</summary>
+        <div class="ans"><p>간선에는 방향이 있다. 지도를 바꾸는 자세(<code>pose_from</code>)가 출발하는 쪽 옆 점이므로, A → B 와 B → A 의 자세가 다르다. 그래서 방향마다 간선을 하나씩 둔다(§2-3 · §2-5).</p></div></details>
+      <details class="quiz"><summary>8. (일부러 틀려 보기) T4 에서 <code>seen</code> 검사를 빼면 어떻게 되는가?</summary>
+        <div class="ans"><p>출구마다 간선이 양방향으로 있어서 탐색이 0 → 1 → 0 → 1 … 을 끝없이 반복한다. 시험은 아무 줄도 출력하지 않고 끝나지 않는다(힌트 T4 의 흔한 실수).</p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>엘리베이터</strong> → 그 뒤 단계(작성 예정). 이 쪽의 <code>AWAIT_ELEVATOR</code> 자리에 엘리베이터 탑승과 층 판별(위를 보는 카메라로 층 표시 읽기 → 내린 뒤 주변 확인 → 틀리면 다시 탑승)이 들어간다.</li>
+          <li><strong>탐사에서 항법으로 자동 전환</strong>이 필요하면 → <a href="10-autonomy.html">10</a> §3-9 의 연쇄에서 탐사 노드 자리에 <code>region_manager</code>(<code>exit_on_done:=true</code>)를 넣고, 항법 구성의 지도를 그래프 파일의 <code>end_region</code> 지도로 한다.</li>
+          <li>이 쪽에서 정한 값(<code>band_m</code>, <code>side_m</code> 을 바꿨다면 그 값, 엘리베이터 앞 자세)과 그 근거를 학습 노트에 적었는가.</li>
+        </ul>
+      </div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

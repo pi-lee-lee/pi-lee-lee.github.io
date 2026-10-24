@@ -465,7 +465,7 @@ grep -n "USART3\|GPIO_AF7_USART3" Core/Src/stm32h7xx_hal_msp.c            # 핀 
           <tr><td><code>User/Inc/Tools/reset_cause.h</code> · <code>User/Src/Tools/reset_cause.c</code></td><td><strong>전량</strong></td><td><code>RCC_RSR</code> 값 → 낱말. HAL 헤더를 포함하지 않는 순수 로직이라 Mac 의 <code>cc</code> 로 시험한다</td></tr>
           <tr><td><code>firmware/host_tests/test_reset_cause.c</code></td><td>전량 (시험 = 채점표)</td><td>RM0468 표 52 의 행을 그대로 옮긴 벡터 11개</td></tr>
           <tr><td><code>User/Inc/Tools/console.h</code> · <code>User/Src/Tools/console.c</code></td><td>앞 절반 전량 · 뒤 절반 <strong>골격</strong></td><td>전량: <code>RSR</code> 을 한 번 읽고 지우기 / 골격: <code>_write()</code> · 배너</td></tr>
-          <tr><td><code>User/Inc/Tools/log.h</code> · <code>User/Inc/Config/fw_config.h</code></td><td>빈 틀</td><td><code>LOG_*</code> · <code>FW_ASSERT</code> 의 자리, 빌드 스위치의 자리(<a href="fw-17-link-v2.html">fw-17</a>이 <code>LINK_MODE</code> 를 넣는다)</td></tr>
+          <tr><td><code>User/Inc/Tools/log.h</code> · <code>User/Inc/Config/fw_config.h</code></td><td>빈 틀</td><td><code>LOG_*</code> · <code>FW_ASSERT</code> 의 자리, 빌드 때 정하는 설정의 자리(지금은 비어 있다. VCP 의 TEXT / V2 모드는 빌드 스위치가 아니라 실행 중 상태다 — <a href="fw-17-link-v2.html">fw-17</a>)</td></tr>
         </tbody>
       </table></div>
 
@@ -669,8 +669,8 @@ void console_print_banner(void)
 #ifndef FW_CONFIG_H
 #define FW_CONFIG_H
 
-/* fw-17 이 여기에 LINK_MODE (TEXT / V2) 를 더한다. 그때까지는 텍스트 콘솔뿐이라
- * 이 파일은 일부러 빈 틀이다. */
+/* 빌드 때 정하는 설정의 자리. 지금은 일부러 빈 틀이다.
+ * VCP 의 TEXT / V2 모드는 여기에 두지 않는다 - 실행 중에 바꾸는 상태다(fw-17). */
 
 #endif /* FW_CONFIG_H */</code></pre>
       <p>이 쪽은 <strong>인터럽트를 하나도 켜지 않는다</strong>(송신은 폴링이다) — 그래서 NVIC 우선순위 표에 더하는 행이 없다. USART3 의 인터럽트는 fw-05 에서, DMA 는 <a href="fw-07-memory-dma.html">fw-07</a>에서 켠다.</p>
@@ -808,7 +808,7 @@ uint32_t HAL_RCC_GetPCLK1Freq(void);      /* stm32h7xx_hal_rcc.c:1517 - HCLK 에
           <li><code>LOG_NOW_MS()</code> — 첫 <code>%lu</code> 에 들어가는 시각. <code>log.h</code> 위쪽에서 이미 <code>(unsigned long)</code> 으로 바꿔 두었다. 이 이름을 거치기 때문에 fw-06 이 시각 원천을 바꿀 때 한 줄만 고친다.</li>
           <li><code>, ##__VA_ARGS__</code> — 핵심 한 줄. 가변 인자가 <strong>하나도 없으면</strong> 앞의 쉼표를 지우라는 GNU C 확장이다(gcc · clang 둘 다 받는다. 이 프로젝트는 <code>-std=gnu11</code>). 이것이 없으면 <code>LOG_INF("app", "init done")</code> 이 <code>printf("…", LOG_NOW_MS(), )</code> 로 펼쳐져 쉼표 뒤가 비어 오류다(표). 표준만 쓰는 빌드(<code>-std=c11 -pedantic</code>)는 <code>token pasting of ',' and __VA_ARGS__ is a GNU extension</code> 경고를 낸다 — Mac 의 <code>cc</code> 에서 확인. 이 헤더는 <code>main.h</code> 를 포함하므로 호스트 시험으로는 가지 않는다.</li>
           <li>네 줄은 등급 글자(<code>E</code> <code>W</code> <code>I</code> <code>D</code>) 한 글자만 다르다. 골격의 <code>((void)0)</code> 자리표시는 지웠다 — 그 자리표시는 "아무 일도 안 하는 식"이었다(네 매크로를 쓴 코드가 빌드되게 하려고).</li>
-          <li><strong>다르게 써도 되는 곳</strong> — ① <code>tag</code> 를 리터럴 잇기 대신 <code>%s</code> 인자로 넘겨도 된다: <code>printf("[%lu] E %s: " fmt "\r\n", LOG_NOW_MS(), tag, ##__VA_ARGS__)</code>. 그러면 <code>tag</code> 가 변수여도 되고 출력은 같다(동일). ② 넷을 공통 매크로 하나로 묶어 등급 글자만 넘기는 꼴도 같다 — 여기서는 네 줄을 눈으로 견주기 쉽게 그대로 네 줄로 썼다. ③ 끝에 <code>fflush(stdout)</code> 을 더할지 — 줄 끝이 <code>\n</code> 이라 줄 버퍼링이면 바로 나가고, 걸음 4 에서 버퍼링을 껐다면 더 그렇다. ④ <code>LOG_DBG</code> 를 빌드 스위치로 끄는 것은 <a href="fw-17-link-v2.html">fw-17</a>이 <code>fw_config.h</code> 에 <code>LINK_MODE</code> 를 둘 때 함께 한다 — 지금은 넷 다 찍는다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① <code>tag</code> 를 리터럴 잇기 대신 <code>%s</code> 인자로 넘겨도 된다: <code>printf("[%lu] E %s: " fmt "\r\n", LOG_NOW_MS(), tag, ##__VA_ARGS__)</code>. 그러면 <code>tag</code> 가 변수여도 되고 출력은 같다(동일). ② 넷을 공통 매크로 하나로 묶어 등급 글자만 넘기는 꼴도 같다 — 여기서는 네 줄을 눈으로 견주기 쉽게 그대로 네 줄로 썼다. ③ 끝에 <code>fflush(stdout)</code> 을 더할지 — 줄 끝이 <code>\n</code> 이라 줄 버퍼링이면 바로 나가고, 걸음 4 에서 버퍼링을 껐다면 더 그렇다. ④ V2 모드에서 이 글자들이 USART3 에 나가지 않게 막는 일은 <a href="fw-17-link-v2.html">fw-17</a>이 한다 — 지금은 TEXT 뿐이라 넷 다 찍는다.</li>
         </ul>
         <p><strong>쓰는 API</strong> — HAL 호출은 없다(<code>printf</code> 와 <code>LOG_NOW_MS()</code> 뿐). <code>LOG_NOW_MS()</code> 안의 <code>HAL_GetTick()</code> 은 <code>stm32h7xx_hal.h:1081</code>(<code>__weak</code> 정의 <code>stm32h7xx_hal.c:338</code>)에 있다. SysTick 이 1 ms 마다 올리는 카운터 [ms]를 돌려준다.</p>
         <p><strong>흔한 실수</strong></p>

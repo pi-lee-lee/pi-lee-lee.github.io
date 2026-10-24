@@ -104,6 +104,8 @@
                      둘 다 띄우면 같은 자식 프레임(odom)의 부모를 두 노드가 쏜다 → TF 가 떨리고 모든 것이 망가진다</code></pre>
       <p>05 단계의 철칙 "하나의 좌표계에는 부모가 하나뿐이다"가 여기서 다시 나온다. 지도를 만들 때는 slam_toolbox 만, 주행할 때는 AMCL(또는 slam_toolbox 의 localization 모드) 만 <code>map → odom</code> 을 발행해야 한다.
       그래서 이 가이드는 두 모드를 <strong>별도의 런치</strong>로 띄운다. 10 단계의 <code>autonomy.launch.py</code> 가 <code>mode:=mapping|navigation</code> 인자로 이 선택을 고정한다.</p>
+      <p>세 번째 구성도 있다. <a href="09b-frontier-explore.html">09b</a> 의 탐사는 <code>slam_toolbox</code> 와 Nav2 의 항법 부분(<code>navigation_launch.py</code>)을 함께 띄우고, AMCL 은 띄우지 않는다.
+      그래서 <code>map → odom</code> 을 발행하는 노드는 여전히 <code>slam_toolbox</code> 하나이고, 이 규칙이 그대로 지켜진다(09b §2-2).</p>
       <div class="callout note"><span class="ct"><code>nav2_bringup</code> 에도 SLAM 옵션이 있다</span>
         <p><code>ros2 launch nav2_bringup bringup_launch.py slam:=True …</code> 로 띄우면 AMCL+map_server 대신 slam_toolbox 를 함께 띄워 준다.
         편리하지만 무엇이 무엇을 발행하는지가 런치 안에 감춰진다. <strong>이 단계에서는 이해를 위해 slam_toolbox 를 따로 띄운다.</strong> 구조를 안 뒤에는 어느 쪽을 써도 된다.</p>
@@ -389,8 +391,11 @@ ros2 topic info /cmd_vel -v                      # 발행자가 누구인가 (§
         <li><code>/scan</code> 점들이 지도의 벽과 겹치면 성공이다. 어긋나면 다시 찍는다. 파티클 구름이 로봇 주변으로 모여드는 것이 보인다.</li>
       </ol>
       <h4>CLI 로 (Foxglove 가 안 될 때)</h4>
+      <p>공분산을 적지 않으면 0 이 되어, AMCL 의 파티클 전부가 정확히 한 점에서 시작한다(09b §2-7). 손으로 놓은 자리의 오차를 덮는 σ 를 내가 정하고, <code>covariance</code> 의 0 · 7 · 35 번 자리에 분산(σ²)을 넣는다 — 차례로 x · y · yaw 다.</p>
       <pre><code class="lang-bash">ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
-  "{header: {frame_id: 'map'}, pose: {pose: {position: {x: 0.0, y: 0.0}, orientation: {w: 1.0}}}}"
+  "{header: {frame_id: 'map'}, pose: {pose: {position: {x: 0.0, y: 0.0}, orientation: {w: 1.0}},
+    covariance: [&lt;var_x&gt;, 0, 0, 0, 0, 0,  0, &lt;var_y&gt;, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0,
+                 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, &lt;var_yaw&gt;]}}"
 ros2 run tf2_ros tf2_echo map odom          # 이제 값이 나와야 한다</code></pre>
       <p>지도를 만들 때 출발한 자리에 로봇을 두면 <code>(0, 0, yaw 0)</code> 이 초기 위치다 — 지도의 원점은 SLAM 을 시작한 자리이기 때문이다.</p>
 

@@ -16,9 +16,23 @@
       <p class="kicker">F17 · 계약 v2 링크</p>
       <h1>같은 선으로, 이번에는 사람이 아니라 Pi 와 이야기한다</h1>
       <p class="lead"><a href="fw-05-cli.html">fw-05</a> 부터 지금까지 USART3 은 <strong>명령 창</strong>이었다 — 내가 치고 내가 읽었다.
-      이 쪽은 같은 선·같은 설정(460800 8N1)으로 <strong>계약 v2 의 이진 프레임</strong>을 주고받는다. 바뀌는 것은 배선도 CubeMX 도 아니고 <strong>빌드 스위치 하나</strong>다.
+      이 쪽은 같은 선·같은 설정(460800 8N1)으로 <strong>계약 v2 의 이진 프레임</strong>을 주고받는다. 바뀌는 것은 배선도 CubeMX 도 아니고 <strong>VCP 의 모드</strong>다.
       여기서 만든 <code>frames.h</code> 는 Pi 쪽 C++ 브리지(<a href="06-mcu-bridge.html">06</a> §3-2)와 Python probe 가 이미 구현해 둔 것의 <strong>세 번째 구현</strong>이고, 셋이 같은 바이트를 같은 값으로 읽는 것이 이 쪽의 산출물이다.
       <a href="fw-18-safety-fsm.html">fw-18</a> 의 안전 상태기계가 만드는 이벤트도 이 링크로 나간다.</p>
+      <div class="callout warn"><span class="ct">개정 대기 — 이 쪽의 코드는 아직 빌드 스위치 판이다 (2026-10-12, 결정 19)</span>
+        <p>모드 전환 방식이 바뀌었다. 이전: 빌드 스위치 <code>LINK_MODE</code>(TEXT / V2 를 고르려면 재플래시). 지금: <strong>재플래시 없이 실행 중에 전환하고, 전원을 넣으면 TEXT 로 시작한다.</strong> 두 모드는 동시에 돌지 않는다.</p>
+        <p>이미 정해진 요구는 둘이다.</p>
+        <ul>
+          <li>V2 모드에서는 USART3 에 글자 바이트가 한 바이트도 나가지 않는다(이전 판은 <code>LOG_*</code> 를 컴파일로 지워서 지켰다).</li>
+          <li>MCU 가 리셋되면 TEXT 로, 출력이 꺼진 채 돌아온다. 브리지는 이것을 알아채고 V2 진입을 다시 요청한다.</li>
+        </ul>
+        <p>아래 골격 · 힌트 카드 · <code>fw_config.h</code> · <code>#if LINK_MODE</code> 는 <strong>이전 판 그대로</strong>다. 다음 셋을 정할 때 이 쪽의 코드를 다시 쓴다.</p>
+        <ul>
+          <li>TEXT → V2 전환 수단과 V2 → TEXT 전환 수단(V2 쪽은 계약에 프레임을 하나 더하는 일 — 06a §4-2)</li>
+          <li>V2 → TEXT 의 진입 조건과 RUN 복귀 방식(명령 · 무입력 시간 초과 · 리셋)</li>
+          <li>지금 모드를 <code>0x81</code> 상태 프레임에 싣는 방법</li>
+        </ul>
+        <p>V2 전환을 요청할 쪽도 함께 정한다. 브리지(<a href="06-mcu-bridge.html">06</a>)뿐 아니라 <code>scripts/mcu_probe.py</code> 도 부팅 직후의 MCU 와는 TEXT 상태에서 만난다. probe 가 스스로 요청할지, 사람이 먼저 전환할지를 정한다. fw-18 · fw-19 · 06b 의 probe 절차가 이 결정을 따른다.</p></div>
 
       <div class="goal">
         <span class="label">이 쪽이 끝나면 보이는 것</span>
@@ -48,7 +62,7 @@
         <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag mac">Mac</span></div>
         <div><span class="k">선행</span><a href="fw-07-memory-dma.html#s2-8">fw-07 §2-8</a> — Circular 수신의 최소 사실 셋 · <code>stream_rx</code> · <code>DMA_BUF</code> /
           <a href="fw-13-pid-protection.html">fw-13</a> — <code>control.h</code> 의 공개 API 다섯 · <a href="fw-13-pid-protection.html#s2-10">§2-10</a> 의 1 kHz 콜백 순서 /
-          <a href="fw-05-cli.html">fw-05</a> — <code>console_rx_pop()</code> 와 <code>cli_feed()</code> 의 자리 / <a href="fw-04-debugger.html">fw-04</a> — gdb 로 변수 읽기 / <a href="fw-02-toolchain.html#s3-1-2">fw-02 §3-1-2</a> — <code>LINK_MODE</code> 를 받는 CMake 자리</div>
+          <a href="fw-05-cli.html">fw-05</a> — <code>console_rx_pop()</code> 와 <code>cli_feed()</code> 의 자리 / <a href="fw-04-debugger.html">fw-04</a> — gdb 로 변수 읽기 / <a href="fw-02-toolchain.html#s3-1-2">fw-02 §3-1-2</a> — 빌드 도구(인자 없음)</div>
         <div><span class="k">채우는 INVENTORY 칸</span>2절 "MCU가 제공해야 하는 최소 기능 (계약 v2)" 의 네 항목(0x01 · 0x81 · 0x82 · 0x83). fault 비트 · 이벤트 코드의 <strong>확정</strong>과 <code>protocol.md</code> 작성은 학습자 과제다 — 이 쪽은 양식만 준다</div>
         <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
       </div>
@@ -81,7 +95,7 @@
           <tr><td>계약 v2</td><td>06a §4 의 사양서. 프레임 모양 · TYPE 표 · 단위 · CRC · 워치독 시간을 정한다. <strong>이 쪽은 계약을 구현할 뿐 바꾸지 않는다</strong></td></tr>
           <tr><td>프레임(frame)</td><td><code>AA 55</code> + TYPE + LEN + PAYLOAD + CRC8 한 덩어리. 가장 짧은 것이 9 B(0x01), 상태 · IMU 가 22 B</td></tr>
           <tr><td>와이어 형식(wire format)</td><td>선을 실제로 지나가는 바이트 배치 — <code>frames.h</code> 의 <code>*_payload_t</code>. MCU 안에서 쓰는 자료형(<code>state_t</code> · <code>imu_sample_t</code>)과 <strong>다른 것</strong>이고, 둘 사이 변환은 한 파일에서만 한다</td></tr>
-          <tr><td>링크 모드(<code>LINK_MODE</code>)</td><td>같은 USART3 을 글자로 쓸지 프레임으로 쓸지 고르는 <strong>빌드 스위치</strong>. 바꾸려면 다시 굽는다 — 런타임 전환이 아니다</td></tr>
+          <tr><td>링크 모드(TEXT / V2)</td><td>같은 USART3 을 글자로 쓸지 프레임으로 쓸지 고르는 <strong>실행 중 상태</strong>. 재플래시 없이 바꾸고, 부팅은 TEXT 다(2026-10-12 개정 — 이전 판은 빌드 스위치 <code>LINK_MODE</code>였다. 이 쪽의 코드는 아직 이전 판이다 — 맨 위 상자)</td></tr>
           <tr><td>probe</td><td><code>scripts/mcu_probe.py</code>. Pi 도 ROS 도 없이 Mac 이 Pi 역할을 한다. 계약의 독립 구현이라 <strong>펌웨어가 틀렸는지 probe 가 틀렸는지</strong>를 가릴 수 있다</td></tr>
           <tr><td>송신 큐</td><td>보낼 프레임을 쌓아 두는 바이트 링. 1 ms 안에서 앞 프레임의 송신이 끝날 때까지 기다리지 않기 위한 것</td></tr>
         </tbody>

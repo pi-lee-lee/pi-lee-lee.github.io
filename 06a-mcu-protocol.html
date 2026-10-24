@@ -220,7 +220,7 @@
         <li>기울기 기반 긴급정지는 §2-6 의 원칙대로 Pi 프로세스의 실행 여부에 좌우되면 안 된다.</li>
         <li>MCU 는 센서의 데이터 준비 신호나 타이머와 동기화된 시각을 찍을 수 있지만, Pi 의 리눅스 I2C 는 실시간성이 없다.</li>
       </ul>
-      <p><strong>ROS 가 IMU 에서 필요로 하는 것</strong>은 하나뿐이다. <code>sensor_msgs/Imu</code> 를 50~200 Hz 로 받아 <code>robot_localization</code> 의 EKF 가 <code>/odom</code> 과 융합해 회전 오차를 줄이는 것. 그래서 MCU 는 IMU 를 자기 제어에 쓰면서 <em>동시에</em> 샘플을 Pi 로 보내고, 브리지는 그 샘플을 <code>/imu/data_raw</code> 로 발행한다. <code>odom → base_footprint</code> TF 는 EKF 가 대신 발행하므로 브리지의 <code>publish_tf</code> 는 <code>false</code> 가 된다(05 의 "부모는 하나" 규칙). 실내에서 자력계 방위는 모터와 철골 때문에 수십 도씩 틀어지므로 EKF 에는 각속도와 가속도만 넣고 자력계는 쓰지 않는다.</p>
+      <p><strong>ROS 가 IMU 에서 필요로 하는 것</strong>은 하나뿐이다. <code>sensor_msgs/Imu</code> 를 50~200 Hz 로 받아 <code>robot_localization</code> 의 EKF 가 <code>/odom</code> 과 융합해 회전 오차를 줄이는 것. 그래서 MCU 는 IMU 를 자기 제어에 쓰면서 <em>동시에</em> 샘플을 Pi 로 보내고, 브리지는 그 샘플을 <code>/imu/data_raw</code> 로 발행한다. <code>odom → base_footprint</code> TF 는 EKF 가 대신 발행하므로 브리지의 <code>publish_tf</code> 는 <code>false</code> 가 된다(05 의 "부모는 하나" 규칙). 실내에서 자력계 방위는 모터와 철골 때문에 수십 도씩 틀어지므로 EKF 에는 각속도와 가속도만 넣는다. 자력계를 쓰는 곳은 한 군데다 — <strong>기동 시 한 번, WT901 로 자북 방위를 판정한다</strong>(2026-10-16 결정). 모터가 돌기 전, 전원만 들어온 때(모터 전류의 자기장이 없는 때)에 0x53 각도의 yaw(9축 알고리즘의 자기장 기준 절대각 — WT901 매뉴얼 §6.13)를 읽고, 0x54 자기 원시값으로 그 yaw 를 믿어도 되는지 검사한다(복각 · 크기 비 — fw-14). 그 뒤의 자력계 · yaw 값은 받아도 쓰지 않는다. BNO055 의 자력계는 쓰지 않는다(IMU 모드). 판정한 방위는 Pi 가 지도의 북쪽 정렬과 출발 때의 초기 방향에 쓴다(2026-10-16 결정). 판정은 사전충전이 끝난 뒤 K1 을 닫기 전에 하고, Pi 는 설정 프레임으로 요청해 받는다 — 계약(§4)의 해당 줄은 링크를 다루는 쪽에서 쓴다.</p>
       <div class="tbl"><table class="fixed"><colgroup><col class="w14"><col class="w32"><col class="w54"></colgroup>
         <thead><tr><th></th><th>BNO055</th><th>WT901</th></tr></thead>
         <tbody>
@@ -230,10 +230,10 @@
           <tr><td>새 값 생성 속도</td><td>융합 모드 100 Hz (10 ms)</td><td>설정으로 최대 200 Hz (5 ms). 내부 필터 대역폭의 기본값은 20 Hz 라 "200 Hz 출력"이 "200 Hz 대역"이라는 뜻은 아니다 (매뉴얼 §6.10)</td></tr>
           <tr><td>MCU 의 역할</td><td>버스 마스터. 100 Hz 타이머에서 레지스터 블록 읽기 (한 번 약 0.5 ms). 전송을 인터럽트로 할지 DMA 로 할지는 <a href="fw-15-bno055.html">fw-15</a>에서 근거와 함께 도출한다</td><td>UART 면 수신자. 센서가 요청 없이 스트림을 보낸다 (DMA Circular + IDLE). 읽기 명령도 ACK 도 없어서, 설정이 적용됐는지는 <em>스트림이 어떻게 바뀌었는가</em>로만 확인한다</td></tr>
           <tr><td>캘리브레이션</td><td>레지스터에 sys/gyro/accel/mag 상태(0~3)가 있어 <strong>캘리브레이션 절차를 배우기에 좋다</strong></td><td>프로토콜 명령(<code>CALSW</code>)으로 가속도(자이로도 함께)·자력 보정. 단 매뉴얼의 절차는 Windows PC 도구 기준이고, 명령 수준의 소요 시간·종료·저장 절차는 매뉴얼에 없다 → <a href="fw-14-wt901.html">fw-14</a>에서 전후를 재서 확인한다</td></tr>
-          <tr><td>문서·드라이버</td><td>Bosch 데이터시트, 자료 많음</td><td>WitMotion 매뉴얼 — 파일명은 v5.0, 본문의 판 표기는 V4.0(2018-08-10). 2026-09 에 산 개체의 펌웨어가 이 판과 같은지는 확인되지 않았다 → <a href="fw-14-wt901.html">fw-14</a>의 첫 수신에서 확인한다: 설정 명령을 보내기 전의 출고 스트림이 위 행과 같은가. 설정을 바꿔 저장한 뒤에는 공장 초기화 없이 출고 스트림을 다시 볼 수 없다</td></tr>
+          <tr><td>문서·드라이버</td><td>Bosch 데이터시트, 자료 많음</td><td>WitMotion 매뉴얼 — 파일명은 v5.0, 본문의 판 표기는 V4.0(2018-08-10). 2026-09 에 산 개체의 펌웨어가 이 판과 같은지는 확인되지 않았다 → <a href="fw-14-wt901.html">fw-14</a>의 첫 수신에서 확인한다: 설정 명령을 보내기 전의 출고 스트림이 위 행과 같은가. 2026-10-19 확인: 출고 스트림은 위 행과 같았고, 쓰기에는 매뉴얼에 없는 잠금 해제가 필요했다(<a href="fw-14-wt901.html#s2-4">fw-14 §2-4</a>). 설정을 바꿔 저장한 뒤에는 공장 초기화 없이 출고 스트림을 다시 볼 수 없다</td></tr>
         </tbody>
       </table></div>
-      <p class="small">WT901 의 출고값(9600 bps · 10 Hz)과 목표값(230400 bps · 200 Hz)은 바뀌는 때가 다르다. 출력 주기는 설정 명령 → 저장 → <strong>전원 재투입</strong> 뒤에 바뀐다(§7.2.9). 보드레이트는 언제 바뀌는지 매뉴얼만으로 판단할 수 없다. 코드표(§7.2.10)에는 적용 시점이 없고 PC 도구 절(§6.6)의 문장은 두 가지로 읽힌다. 그래서 <a href="fw-14-wt901.html">fw-14</a>에서 스트림을 보며 확인한다.</p>
+      <p class="small">WT901 의 출고값(9600 bps · 10 Hz)과 목표값(230400 bps · 200 Hz)은 바뀌는 때가 다르다. 출력 주기는 설정 명령 → 저장 → <strong>전원 재투입</strong> 뒤에 바뀐다(§7.2.9). 보드레이트는 언제 바뀌는지 매뉴얼만으로 판단할 수 없다. 코드표(§7.2.10)에는 적용 시점이 없고 PC 도구 절(§6.6)의 문장은 두 가지로 읽힌다. 그래서 <a href="fw-14-wt901.html">fw-14</a>에서 스트림을 보며 확인했다 — <strong>보유 개체는 BAUD 명령을 받는 즉시 바뀐다</strong>(2026-10-20 실측, <a href="fw-14-wt901.html#s2-5">fw-14 §2-5</a>). 쓰기 명령 앞에는 매뉴얼에 없는 잠금 해제가 필요했다(<a href="fw-14-wt901.html#s2-4">fw-14 §2-4</a>).</p>
       <p class="small">매뉴얼 안의 모순이 하나 있다. §6.5 의 주의 글 끝에 "기본 보드레이트는 115200"이라는 문장이 있지만, 같은 매뉴얼의 다른 다섯 곳과 보드레이트 코드표(<code>0x02</code> = 9600, default)는 전부 9600 이다. 이 가이드는 <strong>9600 을 채택</strong>하고 포트를 9600 으로 먼저 연다.</p>
       <div class="callout tip"><span class="ct">결정: 둘 다 연결해 비교하고, 기본은 WT901(UART)</span>
         <p>WT901 을 UART 로 연결하는 것이 구조상 가장 단순하다. 1 kHz(1 ms) 제어 루프 옆에서 버스를 점유하는 마스터 트랜잭션이 없다. 수신 방식이 Pi 링크와 같은 UART DMA(Circular) + IDLE 이라 수신 코드 한 벌을 두 링크가 같이 쓴다(<a href="fw-07-memory-dma.html">fw-07</a>에서 만들고 <a href="fw-14-wt901.html">fw-14</a> · <a href="fw-17-link-v2.html">fw-17</a>이 핸들만 바꿔 쓴다). H723 은 UART 가 8개라 포트도 남는다.</p>
@@ -306,11 +306,11 @@
           <tr><td><strong>엔코더 쿼드러처 디코딩</strong></td><td><code>encoder_cpr</code> 값의 근거</td><td>4체배·기어비 누락으로 CPR 이 수십~수백 배 틀림</td><td><strong>TIM 엔코더 모드</strong>로 하드웨어가 처리</td></tr>
           <tr><td><strong>속도 PID ×4</strong></td><td>직진 정확도, 오도메트리 신뢰도, 좌우 쌍의 동기</td><td>적분 와인드업, 게인 순서(P→I→D)</td><td><strong>하드웨어 FPU</strong> — float PID 4개도 부담 없음</td></tr>
           <tr><td><strong>고정 주기 제어 루프</strong></td><td><code>dt</code> 가 흔들리면 PID·odom 이 같이 흔들림</td><td><code>delay()</code> 로 주기를 만들면 지터 발생</td><td>타이머 인터럽트, 1 kHz(1 ms) 도 여유</td></tr>
-          <tr><td><strong>전원 감시와 차단</strong></td><td>저전압·과전류 → 전원 차단이 안전의 1차 층</td><td>ADC 분압비 오류, 임계값에 히스테리시스 없음(떨림)</td><td>전류는 ACS758 → ADC3(12비트), 버스 전압은 INA226(I2C) 또는 분압 → ADC3 (결정 대기 — §3-3-B). 차단 출력은 <code>MOTOR_EN</code> · <code>RELAY_EN</code> GPIO</td></tr>
+          <tr><td><strong>전원 감시와 차단</strong></td><td>저전압·과전류 → 전원 차단이 안전의 1차 층</td><td>ADC 분압비 오류, 임계값에 히스테리시스 없음(떨림)</td><td>전류는 ACS758 → ADC3(12비트), 버스 전압은 INA226(I2C) 또는 분압 → ADC3 (결정 대기 — §3-3-B). 차단 출력은 EN 네 핀(<code>EN_FL … EN_RR</code>, 모듈마다 1핀) · <code>RELAY_EN</code> GPIO</td></tr>
           <tr><td><strong>IMU 수신과 과경사 판정</strong></td><td>전복 정지, 요 각속도 보정</td><td>축 방향 부호, 단위(mg vs m/s²), 자력계 값을 그대로 씀</td><td>UART DMA Circular(WT901) / I2C(BNO055 — 인터럽트냐 DMA 냐는 펌웨어 가이드에서 도출)</td></tr>
           <tr><td><strong>워치독 타이머</strong></td><td>Pi 가 멈춰도 로봇을 멈추는 최후 보루</td><td>ROS 워치독에만 의존해 생략. 멈춤(IWDG 가 검출한다)과 "멈추지 않고 폭주"(IWDG 가 검출하지 못한다)를 구분하지 않음</td><td>IWDG 내장 — 시간 예산은 <a href="fw-06-tick-watchdog.html">fw-06</a> 에서 도출한다</td></tr>
           <tr><td><strong>프레임 송수신</strong></td><td>모터 구동 중에도 통신 유지</td><td><strong>블로킹 수신으로 제어 루프가 지연됨</strong></td><td><strong>UART DMA(Circular) + IDLE 인터럽트</strong>로 논블로킹. 버퍼를 어디에 두는가가 먼저다 — §3-3-A</td></tr>
-          <tr><td><strong>관측 수단 (VCP 텍스트 명령 창)</strong></td><td>계약 v2 에 없는 값(바퀴별 카운트·듀티·ADC 채널·루프 지터)을 벤치에서 본다 — §3-4</td><td>1 kHz 루프 안에서 글자를 출력한다 → 출력 동작이 측정하려는 지터를 만든다 (460800 bps ≈ 46 kB/s)</td><td>USART3 = ST-LINK VCP 하나를 빌드 스위치로 TEXT / V2 전환. 1 kHz 데이터는 RAM 에 모아 끝난 뒤 덤프</td></tr>
+          <tr><td><strong>관측 수단 (VCP 텍스트 명령 창)</strong></td><td>계약 v2 에 없는 값(바퀴별 카운트·듀티·ADC 채널·루프 지터)을 벤치에서 본다 — §3-4</td><td>1 kHz 루프 안에서 글자를 출력한다 → 출력 동작이 측정하려는 지터를 만든다 (460800 bps ≈ 46 kB/s)</td><td>USART3 = ST-LINK VCP 하나를 TEXT / V2 두 모드로 번갈아 쓴다. 모드는 실행 중에 바꾼다(재플래시 없음). 1 kHz 데이터는 RAM 에 모아 끝난 뒤 덤프</td></tr>
         </tbody>
       </table></div>
 
@@ -366,18 +366,18 @@
       <ul>
         <li>TIM2_CH1 은 <strong>PA15 로 확정</strong>(PA5 후보 삭제)</li>
         <li>ADC3 6채널의 <strong>핀 교체</strong></li>
-        <li>"임의 GPIO"로 비워 두었던 MOTOR_EN · RELAY_EN · ESTOP_SENSE · 예비 UART 의 배정</li>
+        <li>"임의 GPIO"로 비워 두었던 EN 네 핀(<code>EN_FL … EN_RR</code>, 2026-10-14 부터 모듈마다 1핀) · RELAY_EN · ESTOP_SENSE · 예비 UART 의 배정</li>
       </ul>
       <div class="tbl"><table class="fixed"><colgroup><col class="w12"><col class="w28"><col class="w60"></colgroup>
         <thead><tr><th>기능</th><th>배정</th><th>이유 · 조건</th></tr></thead>
         <tbody>
           <tr><td>엔코더 ×4</td><td><strong>TIM2 (FL), TIM5 (FR), TIM23 (RL), TIM24 (RR)</strong></td><td>엔코더 모드 + <strong>넷 다 32비트 카운터</strong>. 바퀴마다 하나씩, 랩어라운드 보정 코드가 아예 없다. 대가: TIM5 채널이 PA0/PA1 뿐이라 이더넷(PA1 = REF_CLK)을 포기한다 — 아래 핀 표</td></tr>
-          <tr><td>모터 드라이버</td><td><strong>BTS7960 "IBT-2" 모듈 ×4</strong> (2026-09-15 확정)</td><td>모듈 VCC 는 <strong>3.3 V — Nucleo 3V3 에서</strong>(74HC244 버퍼 문턱), R_EN/L_EN 8개는 <code>MOTOR_EN</code> 한 핀으로. IS 를 ADC 에 <strong>배선할지는 결정 대기</strong>(INVENTORY 2절 (b))다. 배선하면 모듈마다 R_IS 병렬 저항(실물 내장이 10 kΩ 이라 합성 약 1 kΩ 으로) + GND 기준 클램프 + 핀 옆 커패시터가 무납땜으로 4세트 필요하다. 배선하지 않으면(1세대의 선택) 과전류는 총전류(ACS758) 하나로 본다(INVENTORY 6절 검토표)</td></tr>
+          <tr><td>모터 드라이버</td><td><strong>BTS7960 "IBT-2" 모듈 ×4</strong> (2026-09-15 확정)</td><td>모듈 VCC 는 <strong>3.3 V — Nucleo 3V3 에서</strong>(74HC244 버퍼 문턱), EN 은 모듈마다 1핀(<code>EN_FL … EN_RR</code>, 2026-10-14 결정 — 모듈 안에서 R_EN · L_EN 을 묶는다). IS 를 ADC 에 <strong>배선할지는 결정 대기</strong>(INVENTORY 2절 (b))다. 배선하면 모듈마다 R_IS 병렬 저항(실물 내장이 10 kΩ 이라 합성 약 1 kΩ 으로) + GND 기준 클램프 + 핀 옆 커패시터가 무납땜으로 4세트 필요하다. 배선하지 않으면(1세대의 선택) 과전류는 총전류(ACS758) 하나로 본다(INVENTORY 6절 검토표)</td></tr>
           <tr><td>모터 PWM ×8</td><td><strong>TIM1 CH1~4 (RPWM)</strong> = PE9 / PE11 / PE13 / PE14, <strong>TIM8 CH1~4 (LPWM)</strong> = PC6 / PC7 / PC8 / PC9. 20 kHz(50 µs) 센터 정렬, TIM1 → TIM8 동기</td><td>모터당 입력이 둘(RPWM/LPWM)이라 부호-크기 구동: 한쪽에 듀티, 반대쪽 0. 데드타임은 BTS7960 이 만든다. 부호-크기 구동에서 TIM1 → TIM8 동기가 <em>무엇을 주는지</em>는 <a href="fw-08-pwm-safe-output.html">fw-08</a>에서 근거와 함께 다시 도출한다. Zio 에서 TIM1 넷은 D6 / D5 / <strong>D3 / D4</strong> 순이라 CH3·CH4 가 실크 번호와 엇갈린다</td></tr>
-          <tr><td rowspan="2">모터 EN · 전원 차단 · 비상정지 감지</td><td><code>MOTOR_EN</code> = <strong>PG12</strong> [제안] · <code>RELAY_EN</code> = <strong>PG3</strong> [제안]</td><td>출력 둘은 푸시풀, 초기 LOW. <strong>리셋 중 I/O 는 Hi-Z</strong> 라 그 구간의 LOW 는 <em>외부 회로</em>가 만든다. MOTOR_EN 은 모듈 내장 풀다운이, RELAY_EN 은 코일 드라이버의 옵토 LED 무전류 = OFF 가 맡는다. <code>PRECHARGE_EN</code> 핀은 <strong>없다</strong>(사전충전 저항이 스위치 없이 상시 연결 — INVENTORY 7절)</td></tr>
+          <tr><td rowspan="2">모터 EN · 전원 차단 · 비상정지 감지</td><td><code>EN_FL</code> = <strong>PD13</strong> · <code>EN_FR</code> = <strong>PD12</strong> · <code>EN_RL</code> = <strong>PD11</strong> · <code>EN_RR</code> = <strong>PE10</strong> [제안] (모듈마다 1핀, 2026-10-14) · <code>RELAY_EN</code> = <strong>PG3</strong> [제안]</td><td>출력 다섯은 푸시풀, 초기 LOW. <strong>리셋 중 I/O 는 Hi-Z</strong> 라 그 구간의 LOW 는 <em>외부 회로</em>가 만든다. EN 네 핀은 각 모듈의 내장 풀다운(R_EN ‖ L_EN = 15 kΩ)이, RELAY_EN 은 코일 드라이버의 옵토 LED 무전류 = OFF 가 맡는다. <code>PRECHARGE_EN</code> 핀은 <strong>없다</strong>(사전충전 저항이 스위치 없이 상시 연결 — INVENTORY 7절)</td></tr>
           <tr><td><code>ESTOP_SENSE</code> = <strong>PE15</strong> [제안]</td><td>ESTOP_SENSE 는 입력 + EXTI15 이고 같은 핀에 <code>TIM1_BKIN</code> 이 있어 나중에 하드웨어 브레이크로 바꿀 수 있다. 결선(액티브 레벨 · 풀업/풀다운 · 디바운스)은 <strong>결정 대기</strong>(INVENTORY 2절 (c))</td></tr>
           <tr><td>제어 루프</td><td>TIM6 1 kHz(1 ms) 업데이트 인터럽트</td><td>고정 주기 dt</td></tr>
-          <tr><td>Pi 통신 · 벤치 명령 창</td><td><strong>USART3</strong> (PD8 TX / PD9 RX) 460800 8N1, DMA RX <strong>Circular</strong> + IDLE, DMA TX</td><td>ST-LINK VCP 가 USART3 에 결선돼 있다(SB12 · SB19 기본 ON). RX 모드는 Circular 로 정했다(2026-09-22, Normal 과의 비교는 표 아래). 어느 모드든 수신 오류 하나에 HAL 이 DMA 를 멈추므로 <code>ErrorCallback</code> 에서 DMA 를 다시 시작하는 코드가 필요하다. 같은 VCP 를 빌드 스위치로 TEXT(명령 창) / V2(계약 v2)로 바꿔 쓴다 — §3-4</td></tr>
+          <tr><td>Pi 통신 · 벤치 명령 창</td><td><strong>USART3</strong> (PD8 TX / PD9 RX) 460800 8N1, DMA RX <strong>Circular</strong> + IDLE, DMA TX</td><td>ST-LINK VCP 가 USART3 에 결선돼 있다(SB12 · SB19 기본 ON). RX 모드는 Circular 로 정했다(2026-09-22, Normal 과의 비교는 표 아래). 어느 모드든 수신 오류 하나에 HAL 이 DMA 를 멈추므로 <code>ErrorCallback</code> 에서 DMA 를 다시 시작하는 코드가 필요하다. 같은 VCP 를 TEXT(명령 창) / V2(계약 v2) 두 모드로 번갈아 쓰고, 모드는 실행 중에 바꾼다 — §3-4</td></tr>
           <tr><td>WT901</td><td>USART6 (PG14 TX / PG9 RX) + DMA RX Circular + IDLE</td><td>스트림 수신. Pi 링크와 같은 수신 코드(핸들만 다르다). PC7 도 USART6_RX 후보지만 TIM8_CH2 로 쓰므로 PG9 다. 출고 9600 bps 에서 시작해 설정 명령으로 230400 bps 까지 올린다(§2-8)</td></tr>
           <tr><td>BNO055 (+ INA226)</td><td>I2C1 400 kHz — PB8 SCL / PB9 SDA</td><td>MCU 가 마스터, 100 Hz(10 ms) 읽기. 클록 스트레칭은 STM32 I2C 가 처리. 1세대 부품 INA226 ×2(<code>0x40</code> / <code>0x41</code>)를 같은 버스에 연결할 수 있다. BNO055(<code>0x28</code>)와 주소가 겹치지 않는다. 풀업 조건은 INVENTORY 2절 IMU 표. 전송을 인터럽트로 할지 DMA 로 할지는 <strong>여기서 정하지 않는다</strong>. DMA 면 §3-3-A 의 버퍼 제약이 붙고 H7 HAL 의 I2C DMA 오류 경로도 따져야 한다. <a href="fw-10-i2c-ina226.html">fw-10</a> · <a href="fw-15-bno055.html">fw-15</a>에서 근거와 함께 다시 도출한다</td></tr>
           <tr><td rowspan="2">전원 감시 · 모터 전류</td><td><strong>ADC3 (12비트)</strong> 정규 시퀀스 6채널 — 전부 Single-ended, 샘플링 시간 12.5 cycles 이상, 트리거 <code>TIM1_TRGO2</code>, DMA.</td><td>6채널을 한 인스턴스에 모을 수 있는 쪽이 ADC3 다. 핀 선택 · Single-ended · 12.5 cycles 의 근거는 표 아래에 적었다.</td></tr>
@@ -396,7 +396,7 @@
         <tbody>
           <tr><td>FL 앞왼쪽</td><td><strong>TIM2</strong></td><td><strong>PA15</strong> — Zio D20 (CN7-9) 만 쓴다</td><td>PB3 — D23 (CN7-15)</td><td><strong>PA5 는 쓰지 않는다</strong>: 핀 구조가 <code>TT_ha</code>(5 V 비허용)이고 주입 전류 절대 최대가 −0/0 mA 인 핀이다(DS13313 표 7 · 표 10). PA15 는 <code>FT</code> 라 엔코더 8핀의 전기 조건이 같아진다. PA15 의 Morpho 자리(CN11-17)는 짝 핀 CN11-18 이 <strong>5 V</strong> 라 쓰지 않는다. PA0/PA1 은 TIM5 가 쓴다. PB3(SWO 핀)의 처리는 표 아래에 적었다</td></tr>
           <tr><td>FR 앞오른쪽</td><td><strong>TIM5</strong></td><td>PA0 — D32 (CN10-29) 또는 CN11-28</td><td>PA1 — CN11-30, <strong>Morpho 전용</strong></td><td><strong>PA1 = ETH_REF_CLK.</strong> PHY(U15)가 50 MHz 를 출력하므로 <strong>SB57 을 제거</strong>한다(아래 상자). 제거하지 않으면 두 출력이 서로 반대 레벨로 구동돼 충돌하고 카운터가 폭주한다</td></tr>
-          <tr><td>RL 뒤왼쪽</td><td><strong>TIM23</strong></td><td>PF6 — A8 (CN10-11) 또는 CN11-9</td><td>PF7 — D62 (CN9-26) 또는 CN11-11</td><td>칩의 후보는 PF0/PF1 · PG12/PG13 도 있으나 PF6/PF7 로 확정. PG12 는 MOTOR_EN 이 쓴다. CubeMX 가 TIM23 을 다른 후보 핀에 먼저 배정할 수 있다. 배정된 핀을 확인한다</td></tr>
+          <tr><td>RL 뒤왼쪽</td><td><strong>TIM23</strong></td><td>PF6 — A8 (CN10-11) 또는 CN11-9</td><td>PF7 — D62 (CN9-26) 또는 CN11-11</td><td>칩의 후보는 PF0/PF1 · PG12/PG13 도 있으나 PF6/PF7 로 확정. PG12 는 비어 있지만(예비, 2026-10-14 EN 개편으로) 배정은 PF6/PF7 그대로다. CubeMX 가 TIM23 을 다른 후보 핀에 먼저 배정할 수 있다. 배정된 핀을 확인한다</td></tr>
           <tr><td>RR 뒤오른쪽</td><td><strong>TIM24</strong></td><td>PF11 — CN12-62, Morpho 전용</td><td>PF12 — CN12-59, Morpho 전용</td><td>선택지 없음</td></tr>
         </tbody>
       </table></div>
@@ -423,7 +423,7 @@
           <tr><td>모터 드라이버 입력</td><td>3.3 V 를 HIGH 로 인식하는가. IBT-2 는 모듈 VCC 를 3.3 V 로 줄 때 인식한다(입력단 74HC244 의 VIH = 0.7 × VCC, INVENTORY 2절 "배선 전 확인")</td></tr>
           <tr><td>전류 센서·분압 출력</td><td>ADC 입력이 3.3 V 를 넘지 않는가. 아날로그 모드의 핀은 절대 최대 4 V 이고 VDD 쪽 클램프 다이오드가 없어 <strong>직렬 저항은 전압을 막지 못한다</strong> → GND 기준 클램프(≤ 3.6 V). 분압은 하단 저항이 연결되어 있을 때만 분압이다</td></tr>
           <tr><td>센서·엔코더의 전원을 어디서 따는가</td><td><strong>Nucleo 3V3 에서만</strong>(엔코더 ×4 · WT901 · BNO055 · INA226 · ACS758 · IBT-2 모듈 VCC). 별도의 5 V / 3.3 V 레일에서 따면, Nucleo 는 꺼져 있는데 센서에는 전원이 들어와 있는 상태가 생기고 그때 FT 핀의 한도가 4.0 V 로 내려간다. 3V3 레일의 전류 예산(권고 상한 300 mA / 차단 500 mA — UM2407 §7.4.1)은 아직 재지 않았다 → <a href="fw-01-pinmap.html">fw-01</a> 의 DMM 절차</td></tr>
-          <tr><td>커넥터의 이웃 핀</td><td>Zio · Morpho 는 2열 2.54 mm 라 점퍼선이 한 칸 옆으로 잘못 꽂히면 전원 핀에 닿는다. 3V3 인출 CN8-7 의 바로 아래가 CN8-9 = <strong>5 V</strong>, MOTOR_EN(CN10-2)의 짝 핀이 AVDD, RELAY_EN(CN8-16)의 짝 핀이 VIN 이다. 전원 핀은 <strong>전원을 끈 채</strong> 꽂고, 켠 뒤 3V3–GND 전압부터 잰다(INVENTORY 2절 "배선 전 필수 조건" ④)</td></tr>
+          <tr><td>커넥터의 이웃 핀</td><td>Zio · Morpho 는 2열 2.54 mm 라 점퍼선이 한 칸 옆으로 잘못 꽂히면 전원 핀에 닿는다. 3V3 인출 CN8-7 의 바로 아래가 CN8-9 = <strong>5 V</strong>, RELAY_EN(CN8-16)의 짝 핀이 VIN 이다. EN 네 핀(CN10-19 · 21 · 23 · 24)의 이웃 전원 핀은 GND(CN10-17 · CN10-22)뿐이라 한 칸 옆에 닿으면 LOW 쪽이다. 전원 핀은 <strong>전원을 끈 채</strong> 꽂고, 켠 뒤 3V3–GND 전압부터 잰다(INVENTORY 2절 "배선 전 필수 조건" ④)</td></tr>
         </tbody>
       </table></div>
 
@@ -477,11 +477,19 @@
           <li><code>0x81</code> 의 <code>l_tick</code> / <code>r_tick</code> 은 <strong>좌 · 우 각각 앞뒤 평균</strong>이고 "바퀴별 값은 MCU 안에서만 쓴다". 4개 엔코더를 하나씩 확인하거나 바퀴별 계단 응답을 보는 데 필요한 값이 와이어에 없다.</li>
           <li>듀티 · ADC 채널별 값 · 1 kHz 루프의 지터도 계약에 없고, 설정 프레임 <code>0x02</code> / <code>0x84</code> 는 "처음에는 구현하지 않는다".</li>
         </ul>
-        <p>그래서 <strong>결정(2026-09-22): 텍스트 명령 창(CLI)을 앞에, 계약 v2 는 뒤에.</strong> ST-LINK VCP(USART3) 하나를 빌드 스위치 <code>LINK_MODE</code> 로 TEXT / V2 로 바꿔 쓴다. TEXT 에서는 <code>enc</code> · <code>pwm</code> · <code>adc</code> · <code>step</code> 같은 명령으로 계약 밖의 값을 보고, V2 에서는 같은 포트가 이진 프레임 전용이 된다. 제어·안전 모듈은 두 모드에서 같은 코드다(§2-5 의 구조에 벤치용 관측 수단이 하나 더 추가된 꼴).</p>
+        <p>그래서 <strong>결정(2026-09-22): 텍스트 명령 창(CLI)을 앞에, 계약 v2 는 뒤에.</strong> ST-LINK VCP(USART3) 하나를 TEXT / V2 두 모드로 번갈아 쓴다. TEXT 에서는 <code>enc</code> · <code>pwm</code> · <code>adc</code> · <code>step</code> 같은 명령으로 계약 밖의 값을 보고, V2 에서는 같은 포트가 이진 프레임 전용이 된다. 제어·안전 모듈은 두 모드에서 같은 코드다(§2-5 의 구조에 벤치용 관측 수단이 하나 더 추가된 꼴).</p>
+        <p><strong>모드 전환 방식(2026-10-12 개정):</strong> 처음에는 빌드 스위치(<code>LINK_MODE</code>, 바꾸려면 재플래시)였다. 지금은 <strong>재플래시 없이 실행 중에 바꾼다.</strong> 정해진 것은 셋이다.</p>
+        <ul>
+          <li>두 모드는 동시에 돌지 않는다. 한 순간에는 TEXT 와 V2 중 하나만 VCP 를 쓴다.</li>
+          <li>전원을 넣으면 <strong>TEXT 모드</strong>로 시작한다.</li>
+          <li>V2 모드에서는 USART3 에 글자 바이트가 한 바이트도 나가지 않는다. 글자가 섞이면 받는 쪽 파서의 동기가 깨진다.</li>
+        </ul>
+        <p>부팅이 TEXT 라서 따라오는 요구가 하나 있다. 운영 중에 MCU 가 리셋되면(IWDG · 저전압 등) MCU 는 TEXT 모드로, 출력이 꺼진 채 돌아온다. 브리지는 이 상태를 알아채고 V2 진입을 다시 요청해야 한다.</p>
+        <p>아직 정하지 않은 것(결정 대기 — <a href="fw-17-link-v2.html">fw-17</a>): TEXT → V2 와 V2 → TEXT 의 전환 수단, V2 → TEXT 의 진입 조건, 지금 모드를 <code>0x81</code> 에 싣는 방법. V2 에서 TEXT 로 들어가는 수단은 계약에 프레임을 하나 더하는 일이라 이 문서 §4-2 를 함께 고친다.</p>
         <p>이 결정의 대가(사실)는 셋이다.</p>
         <ul>
           <li>최종 펌웨어에 TEXT / V2 두 경로가 남는다.</li>
-          <li>V2 모드에는 CLI 가 없어 관측 수단이 probe 스크립트와 gdb 뿐이다.</li>
+          <li>V2 모드에는 CLI 가 없어 관측 수단이 probe 스크립트와 gdb 뿐이다. 명령 창이 필요하면 TEXT 로 전환한다. TEXT 인 동안에는 계약 v2 프레임을 주고받지 않는다.</li>
           <li>계약의 200 ms 명령 워치독은 TEXT 모드에서도 동작하므로 계단 응답 명령과 어떻게 공존시킬지를 따로 정해야 한다(결정 대기 — <a href="fw-13-pid-protection.html">fw-13</a>).</li>
         </ul>
         <p>고르지 않은 쪽(계약 v2 와 probe 를 먼저)에서는 첫 통전 시점에 200 ms 워치독과 세 구현(C · C++ · Python)의 CRC 일치가 이미 확보돼 있다. 대신 바퀴별 값을 보려면 계약에 진단용 TYPE 을 추가해야 하고, 그러면 이 문서 · <code>protocol.hpp</code> · 브리지를 같이 고치게 된다. 안전 출력단(EN · IWDG)을 첫 통전보다 앞에 두는 것은 어느 순서에서도 가능하다. 이 축은 <strong>동일</strong>하다.</p>
@@ -555,7 +563,7 @@
           <tr><td>워치독</td><td>MCU: <strong>200 ms</strong> 동안 워치독을 되감는 프레임이 없으면 → 정지 (= 50 Hz 명령 10개 결손). <em>무엇이 되감는가</em>는 <strong>결정 대기</strong> — 표 아래 상자 · Pi: <strong>0.5 s</strong> 무 <code>cmd_vel</code> → 0 송신</td><td>MCU 쪽은 "Pi 가 멈췄다 / 브리지가 멈췄다" — <strong>MCU 는 동작 중이고 명령만 끊긴 경우</strong>를, Pi 쪽은 "상위 노드가 멈췄다"를 각각 막는다. USB 가 빠진 경우는 표 아래에 적었다</td></tr>
         </tbody>
       </table></div>
-      <p class="small">USB 가 빠진 경우는 Nucleo 의 급전 방식에 달렸다. 지금처럼 USB(ST-LINK — 셀프 파워 허브 경유)로 급전하면(INVENTORY 7절) MCU 가 같이 꺼지므로 표의 MCU 쪽 워치독도 동작하지 않는다. 그때 바퀴를 멈추는 것은 제어기 전원이 끊기면 <code>MOTOR_EN</code> 을 LOW 로 끌어내리는 모듈의 풀다운이다(§3-3-B, <a href="06b-bench-integration.html#s2-4">06b §2-4</a>). 조립 후의 급전 방식(USB · E5V · VIN)은 아직 정하지 않았다(<a href="09a-assembly-gate.html#s3-1-2">09a</a>).</p>
+      <p class="small">USB 가 빠진 경우는 Nucleo 의 급전 방식에 달렸다. 지금처럼 USB(ST-LINK — 셀프 파워 허브 경유)로 급전하면(INVENTORY 7절) MCU 가 같이 꺼지므로 표의 MCU 쪽 워치독도 동작하지 않는다. 그때 바퀴를 멈추는 것은 제어기 전원이 끊기면 EN 네 핀을 LOW 로 끌어내리는 각 모듈의 풀다운이다(§3-3-B, <a href="06b-bench-integration.html#s2-4">06b §2-4</a>). 조립 후의 급전 방식(USB · E5V · VIN)은 아직 정하지 않았다(<a href="09a-assembly-gate.html#s3-1-2">09a</a>).</p>
       <div class="callout note"><span class="ct">결정 대기 — MCU 의 200 ms 워치독을 무엇이 되감는가</span>
         <p>이 문서의 이전 판은 "200 ms 무<em>프레임</em>", 06 §1-1 의 표는 "200 ms 무<em>명령</em>"이라고 적어 두 쪽의 기술이 서로 달랐다. 둘은 다른 규칙이다.</p>
         <ul>
@@ -616,7 +624,7 @@
         <tbody>
           <tr><td>통신 방식 (A / B)</td><td><strong>B. 커스텀 시리얼 — 계약 v2</strong> (2026-09-13). A 는 나중에 통신 모듈만 교체하는 선택지로 남겼다</td><td>이유 세 가지(내 말로): <code>____</code></td></tr>
           <tr><td>트랙의 흐름</td><td>트랙 1 = 06(가짜 MCU, SIM) · 트랙 2 = 펌웨어 가이드(벤치) · 합류 = 06b · 주행 캘리브레이션 = 09a (2026-09-22)</td><td>두 트랙이 서로 기다리지 않아도 되는 이유: <code>____</code></td></tr>
-          <tr><td>펌웨어 장 순서 · 관측 수단</td><td><strong>텍스트 명령 창(CLI) 먼저, 계약 v2 는 뒤.</strong> VCP 하나를 빌드 스위치로 TEXT / V2 전환 (2026-09-22)</td><td>계약 v2 만으로는 볼 수 없는 값 세 가지: <code>____</code></td></tr>
+          <tr><td>펌웨어 장 순서 · 관측 수단</td><td><strong>텍스트 명령 창(CLI) 먼저, 계약 v2 는 뒤.</strong> VCP 하나를 TEXT / V2 로 번갈아 쓴다 (2026-09-22). 전환은 실행 중에, 부팅은 TEXT (2026-10-12)</td><td>계약 v2 만으로는 볼 수 없는 값 세 가지: <code>____</code></td></tr>
           <tr><td>펌웨어 툴체인</td><td>STM32CubeMX 6.18.1 + STM32CubeCLT 1.21.0, HAL = STM32Cube FW_H7 V1.13.0 (2026-09-22 개발 머신에 설치된 판)</td><td><strong>돌아와서</strong> — <a href="fw-00-map.html#s3-1">fw-00 §3-1</a> 의 설치 확인 뒤: 내 머신의 판이 다르면 <code>____</code></td></tr>
           <tr><td>클럭</td><td><strong>520 MHz</strong> = VOS0, 옵션 바이트 <code>CPU_FREQ_BOOST</code> = 0(공장 기본값) — 결정 9 개정(2026-09-29, 이전 550 MHz). 부스트를 쓰지 않으므로 ITCM · DTCM 의 ECC 가 동작한다</td><td><strong>돌아와서</strong> — <a href="fw-03-clock-console.html#s3-1">fw-03 §3-1</a> 에서 읽은 뒤: 내 보드의 옵션 바이트 현재값 <code>____</code> (기대 0)</td></tr>
           <tr><td>구동 방식 / 모터 수 / 모터 드라이버</td><td>4륜 스키드 스티어 (2026-09-13) / 4 / <strong>BTS7960 "IBT-2" 모듈 ×4</strong> (2026-09-15)</td><td><strong>돌아와서</strong> — <a href="fw-12-adc.html">fw-12</a>에서: IS 를 배선하는가(결정 대기 — INVENTORY 2절 (b)) <code>____</code></td></tr>
@@ -626,7 +634,7 @@
           <tr><td>IMU 기본 / 비교용 / 버스와 포트</td><td><strong>WT901</strong> (UART — USART6 PG14 / PG9) / BNO055 (I2C1 PB8 / PB9) (2026-09-13). 둘 다 Nucleo 3V3 급전 (2026-09-22)</td><td><strong>돌아와서</strong> — <a href="06b-bench-integration.html#s3-7">06b §3-7</a> 의 두 센서 비교 실험 뒤: 최종 기본 IMU <code>____</code></td></tr>
           <tr><td>UART 수신 DMA 모드</td><td><strong>Circular</strong> — USART3 · USART6 공통 (2026-09-22). 근거는 속도가 아니라 유실 내성이다</td><td>Normal(매번 다시 시작하는) 방식과의 차이를 한 줄로: <code>____</code></td></tr>
           <tr><td>설정값의 영속화</td><td>H723 <strong>내장 플래시</strong> (2026-09-22)</td><td>—</td></tr>
-          <tr><td>전원 감시: 배터리 · 전류 센서 · 차단 수단</td><td>1세대 실물 그대로 (2026-09-22) — 부품과 기록값은 INVENTORY 7절 "전원·안전 부품". 차단 출력은 <code>MOTOR_EN</code> · <code>RELAY_EN</code>, 사전충전은 상시 연결</td><td><strong>돌아와서</strong> — <a href="fw-10-i2c-ina226.html">fw-10</a> · <a href="fw-12-adc.html">fw-12</a>에서: 버스 전압을 무엇으로 읽는가 — <strong>INA226 #1</strong>(INVENTORY 2절 (a), 2026-10-12 결정)<br><strong>돌아와서</strong> — <a href="fw-20-after-assembly.html">fw-20</a>에서 실측으로 확정한 뒤: 저전압 임계 <code>____</code> · 과전류 임계 <code>____</code></td></tr>
+          <tr><td>전원 감시: 배터리 · 전류 센서 · 차단 수단</td><td>1세대 실물 그대로 (2026-09-22) — 부품과 기록값은 INVENTORY 7절 "전원·안전 부품". 차단 출력은 EN 네 핀(<code>EN_FL … EN_RR</code>) · <code>RELAY_EN</code>, 사전충전은 상시 연결</td><td><strong>돌아와서</strong> — <a href="fw-10-i2c-ina226.html">fw-10</a> · <a href="fw-12-adc.html">fw-12</a>에서: 버스 전압을 무엇으로 읽는가 — <strong>INA226 #1</strong>(INVENTORY 2절 (a), 2026-10-12 결정)<br><strong>돌아와서</strong> — <a href="fw-20-after-assembly.html">fw-20</a>에서 실측으로 확정한 뒤: 저전압 임계 <code>____</code> · 과전류 임계 <code>____</code></td></tr>
           <tr><td>과경사 정지 각도</td><td>— (아직 정하지 않았다)</td><td><strong>돌아와서</strong> — <a href="fw-20-after-assembly.html">fw-20</a>에서 실측으로 확정한 뒤: <code>____</code> °</td></tr>
           <tr><td>보드레이트 / MCU 워치독 / Pi 워치독</td><td><strong>460800</strong> 8N1 / 200 ms / 0.5 s (2026-09-13, 계약 v2)</td><td><strong>돌아와서</strong> — <a href="fw-13-pid-protection.html">fw-13</a>에서 명령 워치독을 쓰기 전에: MCU 워치독을 무엇이 되감는가(§4-3 결정 대기) <code>____</code></td></tr>
           <tr><td>이벤트 · IMU 샘플이 통신 모듈에 전달되는 경로</td><td>— (§2-5 결정 대기. 펌웨어 가이드의 기본 진행은 "끌어가기")</td><td><strong>돌아와서</strong> — <a href="fw-13-pid-protection.html">fw-13</a>에서 제어 모듈의 공개 함수를 만들기 전에: <code>____</code></td></tr>
@@ -655,7 +663,7 @@
         <li><label><input type="checkbox" data-key="cp14"><span>계약 v2 의 메시지 표·단위·<code>tick_ms</code>·CRC·보드레이트·워치독을 읽고, 바꿀 것이 있으면 바꿔서 확정했다</span></label></li>
         <li><label><input type="checkbox" data-key="cp15"><span>대역폭 계산을 따라 해 보고 460800 으로 시작하는 이유를 안다</span></label></li>
         <li><label><input type="checkbox" data-key="two-tracks-and-cli-first"><span>트랙 1(06, SIM) · 트랙 2(펌웨어 가이드, 벤치) · 합류(06b) · 관문(09a)의 흐름을 그릴 수 있다. 펌웨어 가이드가 계약 v2 보다 텍스트 명령 창을 먼저 만드는 이유를 §4-2 의 <code>0x01</code> / <code>0x81</code> 정의로 설명할 수 있다</span></label></li>
-        <li><label><input type="checkbox" data-key="pinmap-changes-known"><span>확정 핀맵에서 이전 판과 달라진 곳(TIM2_CH1 = PA15, ADC3 의 새 6핀, MOTOR_EN · RELAY_EN · ESTOP_SENSE)을 말할 수 있다. SB57 제거가 왜 되돌리기 어려운 작업인지, 센서·엔코더를 Nucleo 3V3 에서만 급전하는 이유를 말할 수 있다</span></label></li>
+        <li><label><input type="checkbox" data-key="pinmap-changes-known"><span>확정 핀맵에서 이전 판과 달라진 곳(TIM2_CH1 = PA15, ADC3 의 새 6핀, EN 네 핀 · RELAY_EN · ESTOP_SENSE)을 말할 수 있다. SB57 제거가 왜 되돌리기 어려운 작업인지, 센서·엔코더를 Nucleo 3V3 에서만 급전하는 이유를 말할 수 있다</span></label></li>
         <li><label><input type="checkbox" data-key="cp16"><span>5절 결정 기록에서 <strong>표시가 없는 칸(지금 채우는 칸)</strong>을 채웠고, INVENTORY 에 아직 없는 결정은 <code>hardware/INVENTORY.md</code> 에 옮겨 적었다. "돌아와서" 칸은 이 항목의 조건이 아니다</span></label></li>
       </ul>
       <p class="progress-line"></p>

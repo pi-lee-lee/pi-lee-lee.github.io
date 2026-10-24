@@ -78,7 +78,7 @@
         </tbody>
       </table></div>
       <p>이 쪽은 <strong>코드를 한 줄도 주지 않는다.</strong> 골격도 비교본도 없다. 주는 것은 표와 절차와 <code>grep</code> 명령이고, 채우는 것은 전부 내 기록이다.
-      그래서 다른 쪽과 달리 "빌드 · 플래시 · 관찰"이 실습마다 한 번씩 오지 않는다 — 실습 A · B · D 는 Mac 에서 끝나고, 실습 C 만 보드를 돌린다(TEXT 빌드 한 번, V2 빌드 한 번).</p>
+      그래서 다른 쪽과 달리 "빌드 · 플래시 · 관찰"이 실습마다 한 번씩 오지 않는다 — 실습 A · B · D 는 Mac 에서 끝나고, 실습 C 만 보드를 돌린다. 실습 C 에서 굽기는 한 번이고, TEXT 모드와 V2 모드를 차례로 본다.</p>
       <div class="callout note"><span class="ct">CubeMX 는 열지 않는다 — 다만 <code>.ioc</code> 는 읽는다</span>
         <p>이 쪽은 <strong>새 설정이 없다.</strong> 실습 B 는 CubeMX 화면이 아니라 <code>.ioc</code> 파일과 생성된 <code>main.c</code> 를 <code>grep</code> 으로 읽어 원장과 대조한다 — 화면을 눌러 확인하는 것보다 빠르고, 결과를 그대로 노트에 붙일 수 있다.
         대조에서 어긋난 행이 나오면 그때는 <strong>CubeMX 를 열어 고치고 다시 생성</strong>한다(<code>.ioc</code> 를 손으로 고치지 않는다 — 다음 생성 때 되돌아가거나, 더 나쁘게는 화면과 파일이 달라진다).</p>
@@ -116,13 +116,13 @@
       </div>
 
       <h3 id="s2-2">2-2. 두 모드가 최종 펌웨어에 남는다 — 그 비용을 적어 둔다</h3>
-      <p>이 가이드는 관측 수단을 두 모드로 나눠 써 왔다. <code>LINK_MODE=TEXT</code> 면 VCP 가 명령 창(CLI)이 되고, <code>LINK_MODE=V2</code> 면 같은 VCP 가 계약 v2 의 이진 프레임 전용이 된다.
+      <p>이 가이드는 관측 수단을 두 모드로 나눠 써 왔다. TEXT 모드면 VCP 가 명령 창(CLI)이 되고, V2 모드면 같은 VCP 가 계약 v2 의 이진 프레임 전용이 된다. 모드는 실행 중에 바꾸고, 전원을 넣으면 TEXT 로 시작한다.
       벤치에서 눈으로 볼 수 있었던 것 — 바퀴별 카운트, 듀티, PID 내부값, 계단 응답 CSV — 은 전부 TEXT 모드에서만 볼 수 있다. 계약에는 그런 필드가 없기 때문이다(06a §4-2).</p>
       <p>그 대가가 최종 펌웨어에 남는다. 정직하게 적으면 이렇다.</p>
       <ul>
         <li><strong>모듈이 하나 더 있다.</strong> 06a 의 그림은 "제어·안전 모듈 + 통신 모듈" 둘인데, 실제 소스에는 벤치용 명령 창 코드(<code>cli.c</code> · 각 모듈의 <code>*_cli_register()</code> · <code>cmd_*()</code>)이 셋째로 있다. 코드 크기와 읽을 것이 그만큼 는다.</li>
-        <li><strong>모드를 바꾸는 것은 재플래시다.</strong> 실행 중에 전환되지 않는다. 조립한 뒤에 이것이 문제가 된다 — ST-LINK USB 가 Pi 에 꽂혀 있기 때문이다. 그 동선은 <a href="fw-20-after-assembly.html">fw-20</a> 의 첫 실습이 정한다.</li>
-        <li><strong>V2 에서는 CLI 가 없다.</strong> 그래서 V2 빌드에서의 관측 수단은 <code>scripts/mcu_probe.py</code> 의 출력과 gdb 로 읽는 카운터 변수 둘뿐이다. 이 쪽의 실습 C-2 가 V2 행을 확인할 때 이 두 수단을 그대로 쓴다.</li>
+        <li><strong>두 모드는 동시에 돌지 않는다.</strong> TEXT 로 바꾸면 계약 v2 링크가 끊기므로 Pi 쪽 브리지를 먼저 멈춰야 한다. 또 부팅이 TEXT 라서, 운영 중에 MCU 가 리셋되면 브리지가 V2 진입을 다시 요청해야 한다.</li>
+        <li><strong>V2 에서는 CLI 가 없다.</strong> 그래서 V2 모드에서의 관측 수단은 <code>scripts/mcu_probe.py</code> 의 출력과 gdb 로 읽는 카운터 변수 둘뿐이다. 이 쪽의 실습 C-2 가 V2 행을 확인할 때 이 두 수단을 그대로 쓴다.</li>
         <li><strong>대신 얻은 것</strong>: 제어·안전 모듈은 두 모드에서 <strong>같은 코드</strong>다. 코드가 다른 곳은 <strong>둘</strong>이다 — <code>app.c</code>(초기화와 주 루프)와 <code>tick.c</code>(1 kHz 콜백 안의 한 줄, <a href="fw-17-link-v2.html#s2-10">fw-17 §2-10</a>). <code>tick.c</code> 가 더해진 것은 콜백의 정의가 그 파일에 있기 때문이고, 설계가 달라진 것이 아니다. TEXT 에서 본 제어 동작이 V2 에서도 같은 코드로 실행된다. 그래서 벤치에서 적은 기록을 조립 뒤까지 그대로 가져갈 수 있다.</li>
       </ul>
       <p>이 비용을 줄이는 방법(예: 벤치용 명령 창 코드를 컴파일 대상에서 전부 빼는 빌드, 계약에 진단 TYPE 을 더하기)은 여기서 고르지 않는다. 계약을 넓히는 것은 06a 가 정할 일이고, 벤치용 명령 창 코드를 빼면 조립 뒤에 관측 수단이 없어진다.
@@ -170,7 +170,7 @@
       숫자가 미리 적혀 있으면 그 숫자가 판단의 기준점이 되어 내 실물의 값을 의심하지 않게 된다. 수치가 이미 정해진 행은 <strong>출처가 있는 것뿐</strong>이다: 계약값 200 ms(명령 워치독), 배너의 520 000 000 · 130 000 000, 데이터시트의 한계값.</p>
       <div class="callout warn"><span class="ct">B18 과 B20 은 다른 시험이다 — 하나가 다른 하나를 대신하지 못한다</span>
         <p><strong>USB 케이블을 뽑는 것은 워치독 시험이 아니다.</strong> 지금 Nucleo 는 ST-LINK 의 USB 로 급전된다(UM2407 의 JP2 기본 = 5V_USB_STLK). 케이블을 뽑으면 MCU 자체가 꺼진다 —
-        그때 시험되는 것은 "<strong>전원이 사라졌을 때 MOTOR_EN 네트가 LOW 로 떨어지는가</strong>"이고, 그 결과를 정하는 것은 펌웨어가 아니라 모듈의 풀다운이다(B20).</p>
+        그때 시험되는 것은 "<strong>전원이 사라졌을 때 EN 네트 넷이 LOW 로 떨어지는가</strong>"이고, 그 결과를 정하는 것은 펌웨어가 아니라 모듈의 풀다운이다(B20).</p>
         <p>명령 워치독(200 ms)은 <strong>MCU 가 동작하는 채로</strong> 명령만 끊겼을 때의 동작이다. 그래서 판정은 <code>scripts/mcu_probe.py</code> 가 <strong>송신만 멈추고</strong>(연결은 유지), 이벤트의 <code>tick_ms</code> 와 마지막 속도 명령을 받은 tick 의 <strong>차</strong>로 한다 — Mac 의 시계로 재지 않는다(B18).</p>
         <p>두 행을 <strong>따로</strong> 기록한다. 하나만 하고 둘 다 됐다고 적으면, 조립한 뒤 "명령이 끊겼는데 바퀴가 계속 돈다"를 전원 문제로 찾게 된다.</p>
       </div>
@@ -232,7 +232,7 @@
           <tr><td>R8</td><td>"M7 @ 550 MHz" 를 무조건처럼</td><td>VOS0 단독 상한은 <strong>520</strong>. 550 은 옵션 바이트 <code>CPU_FREQ_BOOST</code> 가 있어야 하고(대가는 TCM ECC 꺼짐), HAL 은 검사하지 않는다. 이 프로젝트는 부스트 없이 520 을 쓴다</td><td>fw-02 · fw-03</td><td><strong>예</strong> — B1(배너가 520 000 000 이고, 부스트 비트 0 이 기록돼 있다)</td></tr>
           <tr><td>R9</td><td>"TIM2 PA5", "A0~A5 = ADC3 6채널"</td><td>그 핀들이 그 기능에 <strong>없거나</strong> 맞지 않는다 — 서류에서 먼저 걸러야 하는 오류였다</td><td>fw-01 → fw-09 · fw-12</td><td><strong>예</strong> — 실습 B (가) 7 · 10행(확정 핀과 대조)</td></tr>
           <tr><td>R10</td><td>"안 하면 DMA 는 도는데 데이터가 안 바뀐다 — D-Cache"</td><td>기본 링커 스크립트에서는 캐시 이전에 <strong>DTCM 이라 DMA 가 접근하지 못한다</strong>(결정적 실패). 캐시는 기본 OFF 다</td><td>fw-07</td><td><strong>예</strong> — B4(세 상태를 가른 기록)</td></tr>
-          <tr><td>R11</td><td>WT901 잠금 해제 "필수" · 자기 캘리브레이션 <code>01 07</code> · 요 영점 <code>01 04</code></td><td>매뉴얼에 없다 / 그 값이 아니다 / WT901 에는 요 영점이 <strong>없다</strong>. SAVE 와 재전원도 빠져 있었다</td><td>fw-14</td><td><strong>예</strong> — B14</td></tr>
+          <tr><td>R11</td><td>WT901 잠금 해제 "필수" · 자기 캘리브레이션 <code>01 07</code> · 요 영점 <code>01 04</code></td><td>매뉴얼에 없다 / 그 값이 아니다 / WT901 에는 요 영점이 <strong>없다</strong>. SAVE 와 재전원도 빠져 있었다. 잠금 해제는 매뉴얼에 없지만 보유 개체에는 필요했다(2026-10-19 실측) — fw-14 가 쓰기마다 보낸다</td><td>fw-14</td><td><strong>예</strong> — B14</td></tr>
           <tr><td>R12</td><td><code>BATT_MIN_MV 9600 /* 3S */</code> 등 예시 임계값</td><td>배터리가 <strong>6S</strong> 다. 나머지 임계값은 출처가 아예 없다</td><td>fw-18(EMPTY 로) → fw-20(실측 확정)</td><td><strong>아니오</strong> — 임계는 실측 뒤에 정해진다(§2-6). 이 쪽에서는 "EMPTY 가 아닌 내 값이 들어가 있는가"까지</td></tr>
           <tr><td>R13</td><td>PID · 안전 · 상태 송신을 전부 TIM6 ISR 에서 + 전역 변수 공유</td><td>선택지와 대가를 따져 본 적이 없었다. 값 넘겨주기도 미정이었다</td><td>fw-13</td><td><strong>예</strong> — B2 · B12 · 실습 A(전역 공유가 접근 함수로 바뀌었다)</td></tr>
           <tr><td>R14</td><td><code>bno055_init</code> 의 <code>HAL_Delay(700)</code> · <code>(25)</code> · <code>(20)</code></td><td>출처(데이터시트 표)가 없고 IWDG 주기와 충돌한다</td><td>fw-15</td><td><strong>예</strong> — B15 · 실습 B (다)의 BNO055 행</td></tr>
@@ -341,7 +341,7 @@ control_set_target
           <tr><td>3</td><td>fw-05</td><td>USART3 global interrupt Enable</td><td><code>NVIC.USART3_IRQn</code> (생성 후 확인)</td><td>____</td></tr>
           <tr><td>4</td><td>fw-06</td><td>TIM6 (내가 고른 PSC · ARR — 이 가이드의 예시값은 259 / 999) + global interrupt · IWDG1</td><td><code>TIM6.</code> · <code>NVIC.TIM6_DAC_IRQn</code> · <code>IWDG1</code> (생성 후 확인)</td><td>____</td></tr>
           <tr><td>5</td><td>fw-07</td><td>USART3 DMA RX = <strong>Circular</strong> · TX = Normal · D-Cache · MPU 리전 1(RAM_D2 비캐시)</td><td><code>Dma.USART3_RX</code> · <code>Dma.USART3_TX</code> (생성 후 확인) · <code>MPU_Config</code> (생성물 <code>main.c</code>)</td><td>____</td></tr>
-          <tr><td>6</td><td>fw-08</td><td>TIM1 · TIM8 PWM 8채널(센터 정렬 · PSC 0 · ARR 6500 · idle LOW · OSSI) · PG12 <code>MOTOR_EN</code> · TIM1 TRGO = Update (TIM8 동기는 결정 대기)</td><td><code>TIM1.</code> · <code>TIM8.</code> · <code>PG12.GPIO_Label</code> (생성 후 확인)</td><td>____</td></tr>
+          <tr><td>6</td><td>fw-08</td><td>TIM1 · TIM8 PWM 8채널(센터 정렬 · PSC 0 · ARR 6500 · idle LOW · OSSI) · PD13 · PD12 · PD11 · PE10 = <code>EN_FL</code> … <code>EN_RR</code>(GPIO_Output · Low · Pull-down, PG12 는 Reset_State) · TIM1 TRGO = Update (TIM8 동기는 결정 대기)</td><td><code>TIM1.</code> · <code>TIM8.</code> · <code>PD13.GPIO_Label</code> … <code>PE10.GPIO_Label</code> · <code>Mcu.PinsNb</code> = 37 (생성 후 확인)</td><td>____</td></tr>
           <tr><td>7</td><td>fw-09</td><td>TIM2 · TIM5 · TIM23 · TIM24 Encoder Mode (PA15/PB3 · PA0/PA1 · PF6/PF7 · PF11/PF12) + 내가 고른 입력 필터</td><td><code>TIM2.</code> <code>TIM5.</code> <code>TIM23.</code> <code>TIM24.</code> (생성 후 확인)</td><td>____</td></tr>
           <tr><td>8</td><td>fw-10</td><td>I2C1 (PB8/PB9) 400 kHz + EV · ER interrupt</td><td><code>I2C1.</code> · <code>NVIC.I2C1_EV_IRQn</code> · <code>NVIC.I2C1_ER_IRQn</code> (생성 후 확인)</td><td>____</td></tr>
           <tr><td>9</td><td>fw-11</td><td>PG3 <code>RELAY_EN</code>(리셋 직후 LOW) · B1 EXTI · PE15 는 Reset_State(ESTOP_SENSE 쓰지 않음)</td><td><code>PG3.PinState=GPIO_PIN_RESET</code> · <code>NVIC.EXTI15_10_IRQn</code> (생성 후 확인)</td><td>____</td></tr>
@@ -375,10 +375,10 @@ control_set_target
           <tr><td>주 루프 최장 1회전</td><td>실측</td><td><code>stat</code> 의 <code>loop_us_max</code></td><td>kick 은 "주 루프와 1 kHz 가 둘 다 동작 중일 때만"</td><td>fw-06</td><td>____ ms</td></tr>
           <tr><td><code>i2c scan</code> — 주소마다 트랜잭션이 끝나지 않는 최악</td><td>산술</td><td>(주소 개수) × <code>I2C_SCAN_TRIALS</code> × <code>I2C_SCAN_TIMEOUT_MS</code></td><td>주소마다 kick · Timeout 을 낮추거나 범위를 좁힌다</td><td>fw-10</td><td>____ ms</td></tr>
           <tr><td><code>adc spread &lt;n&gt;</code> 표본 수집</td><td>산술</td><td>n ÷ (내 변환율)</td><td>n 의 상한을 낮게 두거나 수집 루프에서 kick</td><td>fw-12</td><td>____ ms</td></tr>
-          <tr><td>CLI 의 긴 덤프(<code>step</code> 의 CSV)</td><td>산술</td><td>행 수 × 한 행의 글자 수 × 1000 ÷ 46 080 (460800 8N1)</td><td>덤프 루프 안에서 kick · 덤프는 <strong>MOTOR_EN LOW 에서만</strong></td><td>fw-13</td><td>____ ms</td></tr>
+          <tr><td>CLI 의 긴 덤프(<code>step</code> 의 CSV)</td><td>산술</td><td>행 수 × 한 행의 글자 수 × 1000 ÷ 46 080 (460800 8N1)</td><td>덤프 루프 안에서 kick · 덤프는 <strong>EN 네 핀이 모두 LOW 일 때만</strong></td><td>fw-13</td><td>____ ms</td></tr>
           <tr><td>WT901 설정 절차의 정착 대기 · USART6 속도 전환</td><td>매뉴얼에 수치 없음 — 관찰</td><td><code>WT_CFG_SETTLE_MS</code> × 대기 횟수 / <code>DeInit</code>+<code>Init</code> 실측</td><td>비블로킹 상태기계(조각 대기 + kick)</td><td>fw-14</td><td>____ ms</td></tr>
           <tr><td>BNO055 POR · 모드 전환</td><td>데이터시트</td><td>POR 650 ms · CONFIG 전환 19 ms · 모드 전환 7 ms</td><td>전부 상태기계의 상태로 — 주 루프를 붙잡지 않는다(<strong>더할 블로킹이 없다</strong>)</td><td>fw-15</td><td>____ ms</td></tr>
-          <tr><td>내장 플래시 섹터 지우기</td><td>typ 1.1~2 s / <strong>max 2.2~4 s</strong></td><td>DS13313 표 44</td><td><strong>MOTOR_EN LOW 에서만</strong> + IWDG 와의 공존 방식(fw-16 이 정한다)</td><td>fw-16</td><td>____ ms</td></tr>
+          <tr><td>내장 플래시 섹터 지우기</td><td>typ 1.1~2 s / <strong>max 2.2~4 s</strong></td><td>DS13313 표 44</td><td><strong>EN 네 핀이 모두 LOW 일 때만</strong> + IWDG 와의 공존 방식(fw-16 이 정한다)</td><td>fw-16</td><td>____ ms</td></tr>
           <tr><td>전원 시퀀스(사전충전 ≈ 수 초)</td><td><strong>행 없음</strong></td><td>—</td><td>상태기계가 비블로킹이다(<code>power.c</code> 에 <code>HAL_Delay</code> 0줄)</td><td>fw-11(설명만)</td><td>—</td></tr>
           <tr><td>옵션 바이트 쓰기</td><td><strong>행 없음</strong></td><td>—</td><td>펌웨어가 쓰지 않는다 — 도구로 한 번</td><td>fw-03(설명만)</td><td>—</td></tr>
         </tbody>
@@ -393,7 +393,7 @@ grep -n "^ProjectManager.TargetToolchain\|^PB3\.\|^RCC\.DIVN1\|^RCC\.SYSCLKFreq_
 grep -n "^TIM1\.\|^TIM6\.\|^TIM8\.\|^TIM2\.\|^TIM5\.\|^TIM23\.\|^TIM24\." h723zg.ioc
 grep -n "^USART3\.\|^USART6\.\|^I2C1\.\|^ADC3\.\|^IWDG" h723zg.ioc
 grep -n "^Dma\." h723zg.ioc                        # DMA 요청과 모드(Circular/Normal)
-grep -n "^PG3\.\|^PG12\.\|^PG9\.\|^PE15\." h723zg.ioc
+grep -n "^PG3\.\|^PD13\.\|^PD12\.\|^PD11\.\|^PE10\.\|^PG9\.\|^PE15\." h723zg.ioc   # EN 네 핀 · RELAY · USART6_RX · 예비. PG12 줄은 없어야 한다
 
 # (가) 14행 — 켜지 않기로 한 것이 "없는가"
 grep -n "USART2\|ETH\|USB_OTG\|TIM8_BKIN" h723zg.ioc       # 기대: 아무것도 없거나 Disable/Reset_State 만
@@ -411,7 +411,7 @@ grep -n "dma_buf\|RAM_D2" STM32H723xG_flash.ld</code></pre>
       <pre><code class="lang-bash">grep -n "MX_.*_Init(void)" Core/Src/main.c | head -20      # 초기화 함수가 전부 있는가
 grep -n "HAL_NVIC_SetPriority" Core/Src/*.c | head -20     # 실제로 걸린 우선순위 (둘째 인자)
 grep -n "MPU_Config\|SCB_EnableDCache" Core/Src/main.c
-grep -n "LINK_MODE" User/Src/app.c User/Src/System/tick.c # 모드로 갈리는 자리가 이 둘뿐인가 (2-2)</code></pre>
+grep -n "&lt;모드 변수&gt;" User/Src/app.c User/Src/System/tick.c # 모드로 갈리는 자리가 이 둘뿐인가 (2-2). 변수 이름은 fw-17 에서 정한 것</code></pre>
 
       <h4 id="s3-2-4">3-2-4. 보고 판정하기</h4>
       <p><strong>(가)</strong> — 14행이 모두 "원장과 같다"여야 한다. 다른 행이 나오면 <strong>어느 쪽이 맞는지부터 정한다</strong>: 내가 설계를 바꿨으면 원장이 낡은 것이고(노트에 사유를 적는다), 내가 실수로 바꿨으면 CubeMX 를 열어 되돌리고 <strong>다시 생성</strong>한다.
@@ -434,7 +434,7 @@ grep -n "LINK_MODE" User/Src/app.c User/Src/System/tick.c # 모드로 갈리는 
           <tr><td>B2</td><td>1 kHz(주기 1 ms) 루프의 지터 통계가 기록돼 있다 (합격선 ____ µs)</td><td>경로</td><td><code>stat</code></td><td><code>fw-06:jitter-stat-read</code></td><td>불가</td><td>____</td></tr>
           <tr><td>B3</td><td>주 루프 · ISR 어느 쪽이 멈춰도 IWDG 가 리셋한다. IWDG 는 초기화가 끝난 뒤에 시작한다(fw-06 §2-7 의 (가) — (나)는 표 아래 B3)</td><td>발동</td><td>배너의 reset 줄 · <code>grep</code></td><td><code>fw-06:iwdg-trips-on-main-hang</code> · <code>fw-06:iwdg-trips-on-isr-hang</code> · <code>fw-06:iwdg-start-order-grep</code></td><td>불가</td><td>____</td></tr>
           <tr><td>B4</td><td>DMA 버퍼가 RAM_D2 에 있고 32 B 정렬이며, D-Cache 를 켠 채로 수신이 일치한다</td><td>경로</td><td><code>mem</code> · <code>.map</code></td><td><code>fw-07:dma-buf-in-ram-d2</code> · <code>fw-07:mpu-noncache-match</code></td><td>불가</td><td>____</td></tr>
-          <tr><td>B5</td><td>리셋 중에도, USB 를 뽑았을 때도 MOTOR_EN 네트가 LOW 다 — <strong>"0 V 라서"가 아니라 판정법으로</strong> 갈랐다</td><td>발동</td><td>DMM + 판정법</td><td><code>fw-08:en-low-in-reset-judged</code> · <code>fw-08:en-zero-when-usb-unplugged</code></td><td>불가</td><td>____</td></tr>
+          <tr><td>B5</td><td>리셋 중에도, USB 를 뽑았을 때도 EN 네트 넷이 LOW 다 — <strong>"0 V 라서"가 아니라 판정법으로</strong> 갈랐다</td><td>발동</td><td>DMM + 판정법</td><td><code>fw-08:en-low-in-reset-judged</code> · <code>fw-08:en-zero-when-usb-unplugged</code></td><td>불가</td><td>____</td></tr>
           <tr><td>B6</td><td>디버거로 멈추면 PWM 출력이 꺼진다</td><td>발동</td><td>DMM</td><td><code>fw-08:halt-turns-pwm-off</code></td><td>불가</td><td>____</td></tr>
           <tr><td>B7</td><td>듀티에 비례해 DMM 전압이 변하고, 한 바퀴의 R/L 이 <strong>동시에</strong> 듀티를 갖지 않으며, <code>pwm</code> 이 자동으로 0 으로 돌아간다</td><td>경로 + 발동</td><td>DMM · 명령 창</td><td><code>fw-08:duty-dmm-proportional</code> · <code>fw-08:rl-never-both</code> · <code>fw-08:pwm-timeout-fires</code></td><td>불가</td><td>____</td></tr>
           <tr><td>B8</td><td>네 엔코더의 counts/rev 와 부호가 실측돼 <code>hardware/INVENTORY.md</code> 에 있다</td><td>경로</td><td><code>enc</code></td><td><code>fw-09:enc-cpr-measured</code> · <code>fw-09:enc-sign-four-recorded</code></td><td><strong>가능</strong> — 내가 가진 모터 수만큼만. 나머지 바퀴는 09a 입구 조건</td><td>____</td></tr>
@@ -458,23 +458,23 @@ grep -n "LINK_MODE" User/Src/app.c User/Src/System/tick.c # 모드로 갈리는 
       <p class="small">B3 — 둘째 문장은 <a href="fw-06-tick-watchdog.html#s2-7">fw-06 §2-7</a> 의 기본 진행 (가)다. (나)를 골랐으면 그 문장을 "초기화의 모든 대기가 조각나 있다"로 읽고, <code>grep</code> 도 <a href="fw-06-tick-watchdog.html#s3-2-4">fw-06 §3-2-4</a> 의 (나) 쪽 줄을 쓴다. 어느 쪽이든 판정은 <code>fw-06:iwdg-start-order-grep</code> 과 같다.</p>
       <p class="small">B9 — 버스 전압을 ADC 분압으로 고른 경우에는 <code>fw-12:battv-divider-checked-before-pin</code> 과 그 선택 절의 DMM 대조 기록으로 <strong>대체</strong>한다.</p>
       <p class="small">B13 — 벤치에서는 바퀴를 붙잡지 않는다.</p>
-      <p class="small">B16 — <code>save-refused-when-armed</code> 는 <code>MOTOR_EN</code> 이 HIGH 인 동안을 보는 항목이라 C-2 에서 통과시킨다. <code>en 1</code> 은 <a href="fw-11-power-sequence.html">fw-11</a> 이 <code>POWER_ARMED</code> 전에는 <code>ERR en not-ready</code> 로 막아 두었다(핀을 손으로 HIGH 로 만들어 흉내 내지 않는다).</p>
+      <p class="small">B16 — <code>save-refused-when-armed</code> 는 EN 네 핀 중 하나라도 HIGH 인 동안을 보는 항목이라 C-2 에서 통과시킨다. <code>en 1</code> 은 <a href="fw-11-power-sequence.html">fw-11</a> 이 <code>POWER_ARMED</code> 전에는 <code>ERR en not-ready</code> 로 막아 두었다(핀을 손으로 HIGH 로 만들어 흉내 내지 않는다).</p>
 
       <h4 id="s3-3-3">3-3-3. 채우기 — 순서</h4>
       <p>순서가 있다. 뒤집으면 앞의 결과를 다시 돌려야 한다.</p>
       <ol class="steps">
-        <li><strong>TEXT 빌드를 한 번 굽는다.</strong> <code>firmware/tools/build.sh TEXT</code> → <code>firmware/tools/flash.sh TEXT</code>. 이 빌드의 <strong>배너 <code>build</code> 줄</strong>을 노트 맨 위에 적는다 — 22행 전부가 <strong>이 식별자</strong>의 기록이다.</li>
+        <li><strong>펌웨어를 한 번 굽는다.</strong> <code>firmware/tools/flash.sh</code>(부팅은 TEXT 모드). 이 빌드의 <strong>배너 <code>build</code> 줄</strong>을 노트 맨 위에 적는다 — 22행 전부가 <strong>이 식별자</strong>의 기록이다.</li>
         <li><strong>호스트 시험을 전부 돌린다</strong>(보드와 무관하다). 각 쪽의 <code>host_tests/test_*.c</code> 를 값 채점 줄과 <code>-fsanitize=undefined</code> 진단 줄 <strong>두 벌</strong>로. 진단 줄은 <strong>진단 메시지가 하나도 없는 것</strong>이 합격이다.</li>
         <li><strong>배너 · <code>grep</code> 으로 통과되는 행</strong>: B1 · B3(<code>iwdg-start-order-grep</code>) · B4(<code>.map</code>) · B21 · B22.</li>
-        <li><strong>명령 창만으로 통과되는 행</strong>: B2 · B3(<code>hang</code> 둘) · B4(<code>mem</code>) · B11 · B14 · B15 · B16. 다만 B16 의 <code>fw-16:save-refused-when-armed</code> 는 <strong>여기서 통과되지 않는다.</strong> <code>MOTOR_EN</code> 이 HIGH 여야 하고 <code>en 1</code> 은 <code>POWER_ARMED</code> 전에 거부되므로 <strong>C-2 의 2단계</strong>에서 통과시킨다(<a href="fw-16-flash-store.html">fw-16</a> 도 같은 내용을 적는다).</li>
+        <li><strong>명령 창만으로 통과되는 행</strong>: B2 · B3(<code>hang</code> 둘) · B4(<code>mem</code>) · B11 · B14 · B15 · B16. 다만 B16 의 <code>fw-16:save-refused-when-armed</code> 는 <strong>여기서 통과되지 않는다.</strong> EN 이 HIGH 여야 하고 <code>en 1</code> 은 <code>POWER_ARMED</code> 전에 거부되므로 <strong>C-2 의 2단계</strong>에서 통과시킨다(<a href="fw-16-flash-store.html">fw-16</a> 도 같은 내용을 적는다).</li>
         <li><strong>DMM 이 필요한 행</strong>(전원은 아직 넣지 않는다): B5 · B6 · B7 · <strong>B9</strong>. B9 는 INA226 의 <code>vbus_mv</code> 를 <strong>DMM 과 견주어</strong> 차이를 적는 행이다. 그래서 표의 판정 수단이 <code>ina</code> · DMM 이다.</li>
-        <li><strong>V2 빌드로 바꿔 굽는다</strong>: <code>firmware/tools/build.sh V2</code> → <code>flash.sh V2</code>. 여기서 B17 · B18 의 probe 쪽 · B19 · B20 과 <strong>수용 시험 ③ ④ ⑥ ⑦</strong>(모터 전원이 필요 없는 넷)을 통과시킨다. <strong>V2 에는 CLI 가 없다</strong> — 관측은 probe 출력과 gdb 로 읽는 카운터뿐이다(§2-2).
+        <li><strong>V2 모드로 전환한다</strong>(전환 수단은 <a href="fw-17-link-v2.html">fw-17</a> 에서 정한 것. 다시 굽지 않는다). 여기서 B17 · B18 의 probe 쪽 · B19 · B20 과 <strong>수용 시험 ③ ④ ⑥ ⑦</strong>(모터 전원이 필요 없는 넷)을 통과시킨다. <strong>V2 에는 CLI 가 없다</strong> — 관측은 probe 출력과 gdb 로 읽는 카운터뿐이다(§2-2).
         probe 의 <strong>명령줄</strong>과 ⑦ · B18 의 <strong>두 번 돌리는 절차</strong>는 <a href="#s3-4-2">§3-4-2</a> 의 상자에 있다. 그 절차는 <code>--mute-after</code> 로 송신만 끊고, 두 번째 실행의 <code>--sec</code> 을 내가 정한 <code>RELEASE_HOLD_MS</code> 보다 크게 하는 것이다. <strong>바퀴를 돌리지 않는 여기서는 <code>vl</code> · <code>vr</code> 을 0 으로</strong> 두고 그대로 쓴다. <kbd>Ctrl</kbd>+<kbd>C</kbd> 로 강제 종료해서는 워치독을 볼 수 없다.</li>
         <li>남은 셋(B10 · B12 · B13)과 B16 의 <code>save-refused-when-armed</code>, 그리고 수용 시험 ① ② ⑤ 는 <strong>C-2</strong> 에서. 그 절은 모터 전원을 넣는다.</li>
       </ol>
-      <div class="callout note"><span class="ct">빌드를 두 번 굽는데 "같은 빌드 하나"인가</span>
-        <p><code>LINK_MODE</code> 는 <strong>같은 소스</strong>에서 빌드를 둘로 나누는 컴파일 스위치다(§2-2). 제어·안전 모듈은 두 빌드에서 같은 코드이므로, TEXT 에서 본 제어 동작은 V2 에서도 같다.
-        노트에는 <strong>두 빌드의 <code>build</code> 줄을 나란히</strong> 적고, 둘의 날짜·시각이 같은 소스에서 나온 것인지 확인한다. 중간에 소스를 고쳤으면 <strong>고친 뒤의 것으로 앞의 행도 다시 돌린다.</strong></p>
+      <div class="callout note"><span class="ct">두 모드를 보는데 "같은 빌드 하나"인가</span>
+        <p>그렇다. TEXT 와 V2 는 <strong>같은 바이너리</strong> 안의 두 모드다(§2-2). 그래서 22행 전부가 배너의 <code>build</code> 줄 하나의 기록이다. 제어·안전 모듈은 두 모드에서 같은 코드이므로, TEXT 에서 본 제어 동작은 V2 에서도 같다.
+        중간에 소스를 고쳐 다시 구웠으면 <strong>고친 뒤의 것으로 앞의 행도 다시 돌린다.</strong></p>
       </div>
 
       <h4 id="s3-3-4">3-3-4. 보고 판정하기</h4>
@@ -490,7 +490,7 @@ grep -n "LINK_MODE" User/Src/app.c User/Src/System/tick.c # 모드로 갈리는 
         <ol>
           <li>바퀴가 <strong>공중에</strong> 떠 있고 손 · 선 · 공구가 바퀴에서 떨어져 있다.</li>
           <li>배터리와 IBT-2 사이에 <strong>사전충전 회로</strong>가 있다(직결 아님).</li>
-          <li>DMM 으로 <strong>MOTOR_EN 네트 = 0 V</strong>, RELAY_EN 네트 = 0 V 를 확인했다 — <strong>"0 V 라서"가 아니라 풀다운이 실재해서임을</strong> 판정법으로 갈랐다(<a href="fw-08-pwm-safe-output.html#s3-2-4">fw-08 §3-2-4</a>). Hi-Z 핀은 DMM 으로 재도 0 V 로 보인다.</li>
+          <li>DMM 으로 <strong>EN 네트 넷 = 0 V</strong>, RELAY_EN 네트 = 0 V 를 확인했다 — <strong>"0 V 라서"가 아니라 풀다운이 실재해서임을</strong> 판정법으로 갈랐다(<a href="fw-08-pwm-safe-output.html#s3-2-4">fw-08 §3-2-4</a>). Hi-Z 핀은 DMM 으로 재도 0 V 로 보인다.</li>
           <li>TVS 의 밴드 방향을 눈으로 확인했다(IBT-2 쪽은 밴드가 B+).</li>
           <li>전원을 끊는 수단(스위치 · 커넥터)에 <strong>손이 닿는다.</strong></li>
           <li><strong>디버그 동결이 들어간 빌드다</strong> — TIM1 · TIM8 의 <code>__HAL_DBGMCU_FREEZE_*</code> + OSSI + idle LOW(<a href="fw-08-pwm-safe-output.html#s2-7">fw-08 §2-7</a>). <strong>이 절에서는 gdb 를 실제로 쓴다</strong>(V2 행의 카운터를 읽는다). 동결이 없으면 중단점에서 멈춘 동안 <strong>마지막 듀티가 계속 나간다.</strong> 이 확인은 아래 0단계에서 다시 한다.</li>
@@ -498,7 +498,7 @@ grep -n "LINK_MODE" User/Src/app.c User/Src/System/tick.c # 모드로 갈리는 
           <li><code>DUTY_LIMIT_BENCH_PERMILLE</code> 이 내가 정한 값으로 들어가 있고, 이 실습에서 <strong>더 올리지 않는다.</strong></li>
           <li><strong>바퀴를 손으로 붙잡아 멈추지 않는다.</strong> 감속비 1:47 의 기어드 모터라 출력축 토크가 크다 — <strong>STALL 의 발동은 벤치의 일이 아니다</strong>(B13 은 경로만, 발동은 fw-20).</li>
           <li>엔코더 · 센서 · IBT-2 VCC · INA226 · ACS758 의 전원은 <strong>Nucleo 의 3V3 에서만</strong> 따 왔다(별도 레일 아님).</li>
-          <li><strong>USB 를 뽑는 시험(B20)은 이 절에서 하지 않는다.</strong> B20 은 전원 상실 시험이고, 바퀴가 도는 동안 하는 것이 아니다 — <strong>모터 전원을 넣지 않은 상태</strong>에서, C-1 의 6단계(V2 빌드)와 같은 자리에서 따로 한다(§2-4).</li>
+          <li><strong>USB 를 뽑는 시험(B20)은 이 절에서 하지 않는다.</strong> B20 은 전원 상실 시험이고, 바퀴가 도는 동안 하는 것이 아니다 — <strong>모터 전원을 넣지 않은 상태</strong>에서, C-1 의 6단계(V2 모드)와 같은 자리에서 따로 한다(§2-4).</li>
         </ol>
       </div>
       <p>여기서 통과시키는 것은 다섯이다: <strong>DoD 의 B10 · B12 · B13</strong>, <strong>B16 의 한 키</strong>(<code>save-refused-when-armed</code>), 그리고 <strong>수용 시험 ①~⑦</strong>.
@@ -551,19 +551,19 @@ python3 scripts/mcu_probe.py /dev/cu.usbmodem&lt;네 번호&gt; 0 0 --sec &lt;n&
         <pre><code class="lang-bash">grep -rn "DBGMCU_FREEZE" firmware/h723zg/User/Src firmware/h723zg/Core/Src
 # 기대: TIM1 과 TIM8 둘 다 나온다. 한쪽만 나오면 그 타이머의 4채널이 멈춘 동안 계속 나간다</code></pre>
         그리고 <strong>실물로 한 번 더</strong>: 모터 전원 없이 <code>pwm fl 200</code> 을 치고 DMM 을 RPWM_FL 핀에 댄 채 gdb 로 중단시킨다. 전압이 <strong>0 으로 떨어지면</strong> 동결이 동작하는 것이다. 떨어지지 않으면 <strong>여기서 멈추고</strong> <a href="fw-08-pwm-safe-output.html#s2-7">fw-08 §2-7</a> 로 돌아간다 — 이 절의 나머지를 할 수 없다.</li>
-        <li><strong>전원 올리기 (B10)</strong> — TEXT 빌드. <code>pwr stat</code> 으로 상태를 보면서 <code>relay 1</code> 을 <strong>사전충전 전에</strong> 한 번 쳐 본다(<code>ERR relay precharge-not-done</code> 이 나와야 한다). 그 다음 <code>pwr up</code> 으로 정상 순서를 밟고, <code>pwr down</code> 으로 내리며 <strong>EN 이 먼저 내려가는지</strong>를 DMM 으로 확인한다.
+        <li><strong>전원 올리기 (B10)</strong> — TEXT 모드. <code>pwr stat</code> 으로 상태를 보면서 <code>relay 1</code> 을 <strong>사전충전 전에</strong> 한 번 쳐 본다(<code>ERR relay precharge-not-done</code> 이 나와야 한다). 그 다음 <code>pwr up</code> 으로 정상 순서를 밟고, <code>pwr down</code> 으로 내리며 <strong>EN 이 먼저 내려가는지</strong>를 DMM 으로 확인한다.
         <strong>내리기 전, ARMED 인 동안에 <code>save</code> 를 한 번 친다.</strong> <code>ERR save motor-en-high</code> 가 나오면 C-1 에서 미뤄 둔 B16 의 한 키(<code>fw-16:save-refused-when-armed</code>)가 여기서 통과된다. 이것이 그 항목을 실물로 일으킬 수 있는 <strong>유일한 자리</strong>다(<a href="fw-16-flash-store.html">fw-16</a>).</li>
         <li><strong>계단 응답 (B12)</strong> — <code>step &lt;바퀴&gt; &lt;목표&gt; &lt;ms&gt;</code> 로 CSV 를 뽑아 노트에 붙인다. 앞서 fw-13 에서 적은 기록과 <strong>같은 모양인지</strong> 본다. 다르면 그 사이에 바뀐 것이 있다는 뜻이고, 무엇이 바뀌었는지 찾는 것이 이 행을 두는 이유다.</li>
         <li><strong>보호 3종 (B13)</strong> — 엔코더 선 하나를 뽑아 FEEDBACK_LOST, A/B 를 바꿔 FEEDBACK_SIGN, 그리고 <strong>급가속에서 오트립하지 않는 것</strong>까지. <strong>STALL 은 호스트 시험의 경로 통과로만</strong> 확인한다 — 바퀴를 붙잡지 않는다.</li>
         <li><strong>전원을 내린다.</strong> <code>pwr down</code> → DMM 으로 버스 전압이 내려가는 것을 본다(블리더가 없으므로 전하가 남는다 — 배선을 만지기 전에 한 번 더 잰다).</li>
-        <li><strong>V2 빌드로 바꿔 굽고 ① ② ⑤ 를 본다.</strong> <code>build.sh V2</code> → <code>flash.sh V2</code> → 전원을 다시 올린다 → 아래 한 줄.
+        <li><strong>V2 모드로 전환하고 ① ② ⑤ 를 본다.</strong> 전환(fw-17 에서 정한 수단) → 전원이 내려가 있으면 다시 올린다 → 아래 한 줄.
         <pre><code class="lang-bash">ls /dev/cu.usbmodem*                                  # 포트 번호를 먼저 확인한다
 python3 scripts/mcu_probe.py /dev/cu.usbmodem&lt;네 번호&gt; &lt;vl&gt; &lt;vr&gt; --sec &lt;n&gt; --mute-after &lt;s&gt;</code></pre>
         <code>port</code> · <code>vl</code> · <code>vr</code> 은 <strong>필수 위치 인자</strong>다(<a href="fw-17-link-v2.html#s3-2-3">fw-17 §3-2-3</a>) — 빼고 치면 probe 가 그 자리에서 끝난다.
         <code>vl</code> · <code>vr</code> 의 단위는 <strong>m/s</strong> 이고, <strong>0 을 주면 바퀴가 돌지 않아 ① ② ⑤ 를 하나도 볼 수 없다.</strong> 얼마로 할지는 <strong>내가 정한다</strong> — STOP 리스트 8번의 <code>DUTY_LIMIT_BENCH_PERMILLE</code> 안에서 <strong>작은 값부터</strong> 올린다.
         <code>--mute-after</code> 로 ⑤ 까지 한 실행에서 보는 이유는 <a href="#s3-4-2">§3-4-2</a> 의 상자에 있다.
-        <strong>V2 에는 명령 창이 없다</strong> — 지금 보이는 것은 probe 의 출력과 LD2(MOTOR_EN 의 거울)뿐이고, 카운터를 더 보려면 gdb 로 변수를 읽는다(그래서 0단계가 먼저였다).</li>
-        <li><strong>③ ④ ⑥ ⑦ 은 모터 전원이 필요 없다.</strong> C-1 의 6단계(V2 빌드)에서 이미 볼 수 있으므로 그 단계에서 통과시키고(⑦ 의 <strong>두 번 돌리는 절차와 명령줄</strong>은 <a href="#s3-4-2">§3-4-2</a> 의 상자에 있다), 여기서는 <strong>①②⑤ 만</strong> 채운다. ⑤ 를 여기에 둔 이유는 ⑤ 가 "<strong>바퀴가 멈추는 것</strong>"을 보는 행이기 때문이다. 바퀴가 돌고 있어야 멈추는 것을 볼 수 있다.</li>
+        <strong>V2 에는 명령 창이 없다</strong> — 지금 보이는 것은 probe 의 출력과 LD2(EN 표시 — 넷 다 HIGH 상시 점등 · 1~3 점멸 · 0 소등)뿐이고, 카운터를 더 보려면 gdb 로 변수를 읽는다(그래서 0단계가 먼저였다).</li>
+        <li><strong>③ ④ ⑥ ⑦ 은 모터 전원이 필요 없다.</strong> C-1 의 6단계(V2 모드)에서 이미 볼 수 있으므로 그 단계에서 통과시키고(⑦ 의 <strong>두 번 돌리는 절차와 명령줄</strong>은 <a href="#s3-4-2">§3-4-2</a> 의 상자에 있다), 여기서는 <strong>①②⑤ 만</strong> 채운다. ⑤ 를 여기에 둔 이유는 ⑤ 가 "<strong>바퀴가 멈추는 것</strong>"을 보는 행이기 때문이다. 바퀴가 돌고 있어야 멈추는 것을 볼 수 있다.</li>
         <li><strong>끝나면 전원을 내리고</strong> 케이블을 정리한다. 배선을 만지기 전에 버스 전압을 다시 잰다.</li>
       </ol>
 
@@ -652,12 +652,12 @@ grep -rn "TODO(you)" firmware/h723zg/User | wc -l            # 코드가 비어 
           <tr><td>배너의 SYSCLK 가 <strong>550 000 000</strong> 이다</td><td><code>.ioc</code> 의 <code>RCC.SYSCLKFreq_VALUE</code> 가 550000000 이다(<code>DIVM1</code> 4 구성이면 <code>DIVN1</code> 275). 이 값이 들어가는 경위와 결과는 표 아래</td><td><code>grep -n "^RCC.DIVM1\|^RCC.DIVN1\|^RCC.PLLFRACN\|^RCC.SYSCLKFreq_VALUE" h723zg.ioc</code></td><td>§3-2-4 — 실습 B (가) 2행. 8 ÷ <code>DIVM1</code> × <code>DIVN1</code> 이 520 이 되게 고치고 다시 생성한다(M 4 면 N 260, M 1 이면 N 65 — fw-03 §2-8). <code>RCC.PLLFRACN</code> 도 함께 본다(표 아래)</td></tr>
           <tr><td>같은 <code>stat</code> 인데 <code>dt_us_max</code> 가 앞 쪽에서 적은 값보다 훨씬 크다</td><td>그 사이에 켠 인터럽트의 선점 우선순위가 TIM6 보다 높거나 같다 — §2-3 의 제약 ①</td><td>실습 B (나) 의 <code>NVIC.</code> 줄 둘째 칸</td><td>§3-2-4 (나)</td></tr>
           <tr><td><code>HAL_NVIC_SetPriority</code> 의 값이 <code>.ioc</code> 의 값과 다르다</td><td>생성이 안 됐거나, 내 코드가 나중에 덮어썼다</td><td><code>grep -rn "HAL_NVIC_SetPriority" Core/Src User/Src</code></td><td>§3-2-3 — 덮어쓴 줄을 지우고 CubeMX 로 일원화</td></tr>
-          <tr><td>V2 빌드에서 배너도 CLI 도 반응이 없다</td><td><strong>설계다.</strong> V2 에서는 VCP 가 이진 프레임 전용이고 <code>LOG_*</code> · 배너는 컴파일로 제거된다</td><td>배너가 안 보이는 것 자체 · probe 를 연결하면 프레임이 온다</td><td>고칠 것이 없다 (§2-2) — 관측은 probe 와 gdb</td></tr>
+          <tr><td>V2 모드에서 배너도 CLI 도 반응이 없다</td><td><strong>설계다.</strong> V2 에서는 VCP 가 이진 프레임 전용이고 <code>LOG_*</code> · 배너 글자가 USART3 에 나가지 않게 막혀 있다</td><td>배너가 안 보이는 것 자체 · probe 를 연결하면 프레임이 온다</td><td>고칠 것이 없다 (§2-2) — 관측은 probe 와 gdb</td></tr>
           <tr><td>gdb 로 멈췄는데 <strong>바퀴가 계속 돈다</strong></td><td>디버그 동결이 없는 빌드다. 멈춘 동안 마지막 듀티가 그대로 나간다</td><td>바로 전원을 내리고 <code>grep -rn "DBGMCU_FREEZE" User/Src Core/Src</code></td><td>§3-4-3 의 0단계 · <a href="fw-08-pwm-safe-output.html#s2-7">fw-08 §2-7</a></td></tr>
           <tr><td><code>step</code> 의 CSV 모양이 fw-13 때 적어 둔 것과 다르다</td><td>그 사이에 소스가 바뀌었다. <strong>이런 변화를 찾으려고 22행을 같은 빌드에서 다시 돌린다</strong></td><td>두 CSV 를 나란히 놓고 본다 · <code>git diff</code></td><td>§3-3-3 의 상자 — 바뀐 것을 찾고, 찾은 뒤 앞의 행도 다시 돌린다</td></tr>
           <tr><td><code>./scripts/check_nominal.sh</code> 는 깨끗한데 실습 D 의 <code>grep</code> 에서 줄이 나온다</td><td>스크립트는 <code>firmware/</code> 아래의 <strong><code>*.h</code> 만</strong> 본다 — <code>.c</code> 의 <code>TODO(you)</code> 는 세지 않는다</td><td>두 출력을 견준다</td><td>고칠 것이 없다 (§3-5-3 의 상자) — 둘 다 돌린다</td></tr>
-          <tr><td>probe 의 ② 에서 한쪽 카운트가 <strong>감소</strong>한다</td><td>그 바퀴의 엔코더 A/B 가 반대로 연결됐거나 CubeMX 의 극성이 반대다</td><td>probe 의 <code>STATE</code> 줄 <code>L=</code> · <code>R=</code> · <code>enc</code>(TEXT 빌드)</td><td>§3-4-4 — 배선이나 <code>.ioc</code> 를 고친다. <strong><code>ENC_SIGN_*</code> 로 덮지 않는다</strong></td></tr>
-          <tr><td>⑦ 에서 워치독 이벤트는 오는데 <strong>복구 이벤트가 안 온다</strong></td><td>해제 정책이 "자동 해제"가 아니거나, 복구 조건의 유지 시간을 아직 넘기지 않았다</td><td>probe 를 <strong>다시 한 번 돌려</strong>(§3-4-2 의 상자) 내가 정한 <code>RELEASE_HOLD_MS</code> 보다 오래 기다려 본다 · <code>fault stat</code>(TEXT 빌드)</td><td>해제 정책은 <strong>내가 정한 것</strong>이다 — 정한 대로 동작하는지를 본다(fw-18)</td></tr>
+          <tr><td>probe 의 ② 에서 한쪽 카운트가 <strong>감소</strong>한다</td><td>그 바퀴의 엔코더 A/B 가 반대로 연결됐거나 CubeMX 의 극성이 반대다</td><td>probe 의 <code>STATE</code> 줄 <code>L=</code> · <code>R=</code> · <code>enc</code>(TEXT 모드)</td><td>§3-4-4 — 배선이나 <code>.ioc</code> 를 고친다. <strong><code>ENC_SIGN_*</code> 로 덮지 않는다</strong></td></tr>
+          <tr><td>⑦ 에서 워치독 이벤트는 오는데 <strong>복구 이벤트가 안 온다</strong></td><td>해제 정책이 "자동 해제"가 아니거나, 복구 조건의 유지 시간을 아직 넘기지 않았다</td><td>probe 를 <strong>다시 한 번 돌려</strong>(§3-4-2 의 상자) 내가 정한 <code>RELEASE_HOLD_MS</code> 보다 오래 기다려 본다 · <code>fault stat</code>(TEXT 모드)</td><td>해제 정책은 <strong>내가 정한 것</strong>이다 — 정한 대로 동작하는지를 본다(fw-18)</td></tr>
         </tbody>
       </table></div>
       <p class="small">배너의 SYSCLK 가 550 000 000 인 행 — 이 값이 들어가는 경위는 둘이다. CubeMX Clock Configuration 화면의 550 안내를 따랐거나, Board Selector 의 <code>…_AllConfig</code> 프리셋 값이 남았다. 부스트 비트가 0 인 보드에서는 이 설정이 오류 표시 없이 규격 밖의 클럭으로 동작한다. 고칠 때 HSI 분수 PLL 이 남아 있으면 <code>RCC.PLLFRACN</code> 도 함께 본다 — DIVN1 만 바꾸면 520 이 안 된다.</p>
@@ -700,11 +700,11 @@ grep -rln "&lt;CB&gt;" $FW_H7/Projects/NUCLEO-H723ZG/Examples    # (4) 이 보�
           <li>(다) 공개 API 안에서 <strong>계약 밖 정보를 주고받는</strong> 경우(예: <code>state_t</code> 에 벤치용 칸을 몰래 더하기).</li>
         </ul>
         <p>그래서 이 검사는 <strong>실수를 잡는 장치</strong>이지 우회를 막는 장치가 아니다. 내가 일부러 우회하면 검사가 무의미해진다는 것을 알고 쓴다.</p></div></details>
-      <details class="quiz"><summary>3. <code>LINK_MODE</code> 를 둘로 둔 대가를 세 가지 적어 보라. 그리고 그 대가를 치르고 <strong>얻은 것</strong>은?</summary>
+      <details class="quiz"><summary>3. VCP 를 TEXT / V2 두 모드로 나눈 대가를 세 가지 적어 보라. 그리고 그 대가를 치르고 <strong>얻은 것</strong>은?</summary>
         <div class="ans"><p><strong>대가</strong>는 다음 셋이다.</p>
         <ul>
           <li>(1) 최종 펌웨어에 벤치용 명령 창 코드(<code>cli.c</code> · 각 모듈의 <code>*_cli_register()</code> · <code>cmd_*()</code>)가 <strong>셋째 모듈</strong>로 남는다 — 06a 의 그림은 모듈이 둘인데 소스는 셋이다.</li>
-          <li>(2) 모드 전환이 <strong>재플래시</strong>다 — 실행 중에 바꿀 수 없고, 조립하면 ST-LINK USB 가 Pi 에 꽂혀 있어 그 자체가 동선 문제가 된다.</li>
+          <li>(2) 두 모드는 <strong>동시에 돌지 않는다</strong> — TEXT 로 바꾸면 계약 v2 링크가 끊겨 브리지를 먼저 멈춰야 하고, 부팅이 TEXT 라 리셋 뒤에는 브리지가 V2 진입을 다시 요청해야 한다.</li>
           <li>(3) V2 에서는 CLI 가 없어 <strong>관측 수단이 둘</strong>(probe 출력 · gdb 로 읽는 변수)로 준다.</li>
         </ul>
         <p><strong>얻은 것</strong>: 제어 · 안전 모듈이 두 모드에서 <strong>같은 코드</strong>라는 것이다(코드가 다른 곳은 <code>app.c</code> 와 <code>tick.c</code> <strong>둘</strong>뿐이다 — fw-17 §2-10). 그래서 TEXT 에서 본 계단 응답 · 보호 트립 · 워치독 동작이 V2 에서도 같은 코드의 동작이고,
@@ -734,7 +734,7 @@ grep -rln "&lt;CB&gt;" $FW_H7/Projects/NUCLEO-H723ZG/Examples    # (4) 이 보�
         <p>그래서 순서가 A → B → C 다. <strong>설정이 어긋난 채로 돌린 관찰은 관찰이 아니다.</strong> 이것이 실습 B 를 DoD 앞에 둔 이유이고, 22행을 <strong>같은 빌드 하나</strong>로 돌리는 이유이기도 하다.</p></div></details>
       <details class="quiz"><summary>7. (안전) "USB 를 뽑아 봤더니 바퀴가 멈췄다 — 워치독이 되는군" 이 왜 틀린 결론인가? 그리고 STALL 을 벤치에서 발동시키지 않는 이유는?</summary>
         <div class="ans"><p><strong>USB</strong>: 지금 Nucleo 는 ST-LINK 의 USB 로 급전된다(UM2407 의 JP2 기본 = 5V_USB_STLK). 케이블을 뽑으면 <strong>MCU 자체가 꺼진다</strong> — 워치독이 동작할 기회조차 없다.
-        그때 시험된 것은 "전원이 사라졌을 때 MOTOR_EN 네트가 LOW 로 떨어지는가"이고, 그 답을 내는 것은 펌웨어가 아니라 <strong>IBT-2 모듈의 풀다운</strong>이다. 그래서 B20 은 <strong>전원 상실 시험</strong>이고 B18(명령 워치독)과 별개다.
+        그때 시험된 것은 "전원이 사라졌을 때 EN 네트 넷이 LOW 로 떨어지는가"이고, 그 답을 내는 것은 펌웨어가 아니라 <strong>IBT-2 모듈의 풀다운</strong>이다. 그래서 B20 은 <strong>전원 상실 시험</strong>이고 B18(명령 워치독)과 별개다.
         명령 워치독은 <strong>MCU 가 동작하는 채로</strong> 명령만 끊겼을 때의 동작이라, probe 가 <strong>송신만 멈추고</strong> 판정은 <strong>MCU 의 tick 차</strong>로 한다 — Mac 의 시계로 재지 않는다.
         둘을 하나로 적으면, 조립 뒤 "명령이 끊겼는데 바퀴가 계속 돈다"를 전원 문제로 찾게 된다.</p>
         <p><strong>STALL</strong>: 감속비 1:47 의 기어드 모터라 출력축 토크가 크다. 바퀴를 손으로 붙잡아 멈추는 시험은 손 · 선 · 공구가 말려 들어갈 수 있고, 모터와 드라이버에도 최악의 조건이다.
@@ -747,7 +747,7 @@ grep -rln "&lt;CB&gt;" $FW_H7/Projects/NUCLEO-H723ZG/Examples    # (4) 이 보�
           <li><strong>여덟 항목이 모두 통과됐으면</strong> → 조립으로 간다. 다음은 <a href="09a-assembly-gate.html">09a</a> 다 — 받침대 → 바닥 → 벽 → 주행의 순서로 세팅마다 체크리스트가 통과된다. 이 쪽의 실습 D 표가 그 입구 조건이다.</li>
           <li><strong>펌웨어 쪽의 마지막 쪽</strong>은 <a href="fw-20-after-assembly.html">fw-20</a> 이고, fw-20 은 <strong>09a 안에서</strong> 한다 — 부하 재튜닝 · (트랙 폭을 잰 <strong>뒤에</strong>) 슬립 억제 · 임계값 확정과 저장 · 조건을 둔 STALL 발동.</li>
           <li><strong>부품이 없어 미룬 행이 있으면</strong> → 그 행과 사유를 09a 의 입구 조건 목록에 옮겨 적는다. 09a 는 "그 부품이 도착했다"를 전제로 다시 묻는다.</li>
-          <li><strong>실물 MCU 를 Pi 에 연결해 ROS 2 쪽까지 보고 싶으면</strong> → <a href="06b-bench-integration.html">06b</a>(실물 MCU 벤치 통합)가 그 자리다. 이 쪽의 V2 빌드가 그 입구다.</li>
+          <li><strong>실물 MCU 를 Pi 에 연결해 ROS 2 쪽까지 보고 싶으면</strong> → <a href="06b-bench-integration.html">06b</a>(실물 MCU 벤치 통합)가 그 자리다. 이 쪽에서 V2 모드까지 통과한 펌웨어가 그 입구다.</li>
           <li>이 쪽에서 얻은 두 줄(<strong>DoD-Bench 통과일</strong> · 그때의 <strong>빌드 식별자</strong>)을 <code>hardware/INVENTORY.md</code> 2절에 적었는가.</li>
         </ul>
       </div>

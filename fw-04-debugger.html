@@ -48,7 +48,7 @@
 
       <h2 id="overview">1. 개요 — 세 번째 관측 수단</h2>
       <p>지금까지 보드 안을 관측하는 수단은 둘이었다. <strong>LED</strong>(fw-02)와 <strong>VCP 콘솔의 글자</strong>(fw-03).
-      둘 다 펌웨어가 직접 출력하는 것만 보인다. 펌웨어가 출력하기 전에 멈췄거나, 글자 창이 없는 빌드(V2 모드)에서는 아무것도 안 보인다.
+      둘 다 펌웨어가 직접 출력하는 것만 보인다. 펌웨어가 출력하기 전에 멈췄거나, 글자 창이 없는 V2 모드에서는 아무것도 안 보인다.
       디버거는 방향이 반대다 — <strong>밖에서 CPU 를 멈추고</strong> 메모리와 레지스터를 읽는다. 펌웨어 쪽에 출력 코드가 없어도 된다.</p>
 
       <pre class="diagram"><code> Mac                                           NUCLEO-H723ZG
@@ -191,7 +191,7 @@
       </div>
 
       <h3 id="s2-4">2-4. V2 모드에는 글자 창이 없다 — 그때 남는 관측 수단이 gdb 다</h3>
-      <p>이 가이드는 VCP 하나를 빌드 스위치 <code>LINK_MODE</code> 로 두 가지 용도에 쓴다. TEXT 모드에서는 명령 창(CLI)과 <code>LOG_*</code> 글자가 나가고, V2 모드에서는 Pi 와 주고받는 <strong>이진 프레임만</strong> 나간다.
+      <p>이 가이드는 VCP 하나를 TEXT / V2 두 모드로 번갈아 쓴다. TEXT 모드에서는 명령 창(CLI)과 <code>LOG_*</code> 글자가 나가고, V2 모드에서는 Pi 와 주고받는 <strong>이진 프레임만</strong> 나간다. 모드는 실행 중에 바꾼다(<a href="fw-17-link-v2.html">fw-17</a>). TEXT 로 바꾸면 명령 창으로 볼 수 있지만, TEXT 인 동안에는 계약 v2 프레임을 주고받지 않는다.
       V2 에서 글자가 한 줄이라도 섞여 나가면 프레임이 깨지므로 <code>LOG_*</code> 는 컴파일 단계에서 사라진다. 그리고 계약 v2 에는 바퀴별 카운트 · 듀티 · 수신 오류 카운터 같은 벤치 관측값이 없다(<a href="06a-mcu-protocol.html">06a</a> §4-2) — 그 관측값을 보려고 계약을 넓히지도 않는다.</p>
       <p>그러면 V2 모드에서 "CRC 오류가 몇 번 났는가", "수신이 몇 번 다시 걸렸는가"를 무엇으로 보는가. <strong>모듈 안의 <code>static</code> 카운터를 gdb 로 읽는다.</strong> 그래서 이 쪽의 실습 A 가 일부러 <code>static</code> 변수를 읽고 바꾸는 것으로 되어 있다.</p>
       <ul>
@@ -699,7 +699,7 @@ void hardfault_capture(const uint32_t *msp, const uint32_t *psp, uint32_t exc_re
 }</code></pre>
         <p><strong>코드 설명</strong></p>
         <ul>
-          <li><code>#include "Tools/log.h"</code> — 파일 머리의 <code>#include "main.h"</code> 곁에 둔다. fw-03 을 아직 안 했으면 이 줄과 <code>LOG_ERR</code> 석 줄을 뺀다. V2 빌드에서는 <code>LOG_ERR</code> 이 <code>((void)0)</code> 으로 사라지므로(fw-03) 그대로 둬도 된다.</li>
+          <li><code>#include "Tools/log.h"</code> — 파일 머리의 <code>#include "main.h"</code> 곁에 둔다. fw-03 을 아직 안 했으면 이 줄과 <code>LOG_ERR</code> 석 줄을 뺀다. V2 모드에서는 이 글자가 USART3 에 나가지 않게 막으므로(<a href="fw-17-link-v2.html">fw-17</a>) 그대로 둬도 된다.</li>
           <li><code>const uint32_t *stacked = hardfault_frame_on_psp(exc_return) ? psp : msp;</code> — <code>a ? b : c</code> 는 "a 가 참이면 b, 아니면 c"(삼항 연산자). <code>if / else</code> 로 써도 같다(동일). 판단을 T4 에 맡겨 두었으므로 여기는 고르기만 한다 — 걸음 1.</li>
           <li><code>hardfault_decode(stacked, &amp;s_last.frame);</code> — <code>&amp;s_last.frame</code> 은 "구조체 <code>s_last</code> 안의 구조체 <code>frame</code> 의 주소"(출력 인자, fw-05 T3 와 같다). <code>s_last</code> 는 포인터가 아니라 변수라서 <code>.</code> 이다.</li>
           <li><code>SCB-&gt;CFSR</code> · <code>SCB-&gt;HFSR</code> — <code>SCB</code> 는 CMSIS 가 준 <strong>포인터 매크로</strong>(<code>core_cm7.h:1787</code>)라 <code>-&gt;</code> 다. 포획한 순간에 읽어 둔다 — gdb 없이 현장에서 멈췄을 때 남는 것은 콘솔 한 줄뿐이고, 그 줄은 이 값을 찍는다.</li>
@@ -714,7 +714,7 @@ void hardfault_capture(const uint32_t *msp, const uint32_t *psp, uint32_t exc_re
         <ul>
           <li><code>void HAL_GPIO_WritePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin, GPIO_PinState PinState);</code>(<code>stm32h7xx_hal_gpio.h:266</code>): 포트 · 핀 · <code>GPIO_PIN_SET</code>/<code>GPIO_PIN_RESET</code>, 반환 없음. 레지스터 한 번 쓰기라 핸들러 안에서도 된다.</li>
           <li><code>SCB-&gt;CFSR</code> · <code>SCB-&gt;HFSR</code>(<code>core_cm7.h:470-471</code>): 읽기만 한다.</li>
-          <li><code>LOG_ERR(tag, fmt, …)</code>(fw-03 의 <code>log.h</code>): TEXT 모드에서 <code>printf</code> → 폴링 송신(블로킹), V2 에서 <code>((void)0)</code>.</li>
+          <li><code>LOG_ERR(tag, fmt, …)</code>(fw-03 의 <code>log.h</code>): TEXT 모드에서 <code>printf</code> → 폴링 송신(블로킹). V2 모드에서는 USART3 에 나가지 않는다(<a href="fw-17-link-v2.html">fw-17</a>).</li>
           <li><strong>못 쓰는 것</strong>: <code>HAL_Delay()</code> · "기다리는" 호출 전부(§2-1 끝).</li>
         </ul>
         <p><strong>흔한 실수</strong></p>
@@ -938,7 +938,7 @@ arm-none-eabi-addr2line -e build/Debug/h723zg.elf -f -p 0x&lt;pc&gt;          # 
           <tr><td><code>set var s_blink_ms</code> 를 했는데 점멸이 그대로다</td><td>주기가 아직 리터럴 · 매크로다(바꿀 메모리가 없다) / 변수를 읽는 자리가 루프 밖이다</td><td><code>list app_loop</code> 로 기다리는 줄이 변수를 쓰는지 본다</td><td>§3-1-2</td></tr>
           <tr><td><code>s_last.frame.pc</code> 가 <code>hardfault_poll</code> 이 아니라 <code>hardfault_poll</code> 을 부른 쪽을 가리킨다</td><td><code>naked</code> 가 적용되지 않아 프롤로그가 SP 를 옮겼다</td><td><code>objdump --disassemble=HardFault_Handler</code> 의 첫 명령이 <code>push</code> 인가</td><td>§2-1 · <code>USER CODE BEGIN PFP</code> 의 선언</td></tr>
           <tr><td><code>pc</code> 칸이 <code>0xfffffff9</code> 같은 값이다</td><td>핸들러 안의 LR(<code>EXC_RETURN</code>)을 돌아갈 주소로 읽었다 — 프레임이 아니라 레지스터를 봤다</td><td><code>s_last.exc_return</code> 과 같은 값인가</td><td>§2-1 의 표</td></tr>
-          <tr><td>LD3 는 켜졌는데 콘솔에 <code>E hardfault:</code> 줄이 없다(<code>s_last</code> 는 찼다)</td><td>V2 빌드라 <code>LOG_*</code> 가 비어 있다 / fault 가 마침 다른 송신 도중에 나서 <code>HAL_UART_Transmit</code> 이 <code>HAL_BUSY</code> 로 돌아왔다(<code>stm32h7xx_hal_uart.c:1126</code> · <code>:1198</code>) / fw-03 을 아직 안 했다</td><td>gdb 로 <code>p/x s_last</code></td><td>결함이 아니다 — 정본은 <code>s_last</code></td></tr>
+          <tr><td>LD3 는 켜졌는데 콘솔에 <code>E hardfault:</code> 줄이 없다(<code>s_last</code> 는 찼다)</td><td>V2 모드라 글자 출력이 막혀 있다 / fault 가 마침 다른 송신 도중에 나서 <code>HAL_UART_Transmit</code> 이 <code>HAL_BUSY</code> 로 돌아왔다(<code>stm32h7xx_hal_uart.c:1126</code> · <code>:1198</code>) / fw-03 을 아직 안 했다</td><td>gdb 로 <code>p/x s_last</code></td><td>결함이 아니다 — 정본은 <code>s_last</code></td></tr>
           <tr><td>fault 핸들러에 넣은 <code>HAL_Delay</code> 에서 영원히 안 나온다</td><td>HardFault 안에서는 SysTick 이 못 들어와 <code>uwTick</code> 이 늘지 않는다(<code>stm32h7xx_hal.c:405-419</code>)</td><td>gdb 로 멈추고 <code>bt</code> — <code>HAL_Delay</code> 안이다</td><td>§2-1 끝 — 기다리는 호출을 뺀다</td></tr>
           <tr><td>(fw-09 이후) 디버그 중에만 FL 엔코더 값이 이상하다</td><td>디버그 구성에 SWV 가 켜져 PB3 가 구동된다 [추정]</td><td>§3-1-4 의 <code>ps</code> · <code>launch.json</code> 의 <code>swoConfig</code></td><td>§2-5</td></tr>
         </tbody>
@@ -976,10 +976,10 @@ grep -rl "void HardFault_Handler" $FW_H7/Projects/NUCLEO-H723ZG | grep "\.c$" | 
       <details class="quiz"><summary>6. 이 프로젝트에서 SWV 를 켜면 안 되는 이유는? <code>ST-LINK_gdbserver</code> 에서 "SWV 를 끈다"는 것은 구체적으로 무엇인가?</summary>
         <div class="ans"><p>SWO 는 PB3 한 핀에만 나오고 PB3 는 FL 엔코더의 B 상(TIM2_CH2)이다. PB3 는 리셋 직후 <code>MX_GPIO_Init</code> 전까지 AF0(JTDO/TRACESWO)이다. 그 구간에 SWV 가 켜지면 MCU 가 PB3 를 출력으로 구동해 엔코더 출력과 충돌한다 — 두 출력이 서로 반대 레벨이 될 수 있다. 구동한다는 부분은 추정 등급이다(<code>hardware/pinmap-h723.md</code> §2-B).
         gdbserver 에는 SWV 를 끄는 스위치가 없다. <code>-z</code>(SWO 포트) · <code>-a</code>(CPU 클럭) · <code>-b</code>(분주) 셋을 <strong>주지 않는 것</strong>이 끈 것이다. <code>-d</code> 는 SWD 로 연결하라는 뜻이라 줘야 한다. cortex-debug 에서는 <code>swoConfig</code> 를 두지 않는다(<code>enabled</code> 의 기본값이 <code>false</code>).</p></div></details>
-      <details class="quiz"><summary>7. V2 빌드로 구운 보드에서 "수신 오류가 몇 번 났는가"를 보고 싶다. 콘솔도 명령 창도 없다. 어떻게 보는가? 그때 모터 전원이 들어가 있다면 무엇을 먼저 확인하는가?</summary>
+      <details class="quiz"><summary>7. V2 모드로 돌고 있는 보드에서 "수신 오류가 몇 번 났는가"를 V2 모드를 벗어나지 않고 보고 싶다. 콘솔도 명령 창도 없다. 어떻게 보는가? 그때 모터 전원이 들어가 있다면 무엇을 먼저 확인하는가?</summary>
         <div class="ans"><p>그 모듈의 <code>static</code> 카운터를 gdb 로 읽는다. <code>static</code> 도 ELF 의 심볼 표에 있으므로 <code>p &lt;이름&gt;</code> 으로 읽히고, 같은 이름이 여러 파일에 있으면 <code>p '&lt;파일&gt;.c'::&lt;이름&gt;</code> 으로 지정한다. 보드를 리셋하지 않으려면 서버를 <code>-g</code> 로 띄워 연결한다.
         계약에 카운터용 메시지를 더하는 방법은 택하지 않는다 — 벤치 관측 때문에 계약 v2 를 넓히지 않는다는 것이 이 가이드의 규칙이다(06a §4-2).
-        gdb 가 메모리를 읽는 동안 CPU 는 멈춰 있다. 제어 루프 · 보호 · 명령 워치독도 같이 멈춘다. 그래서 모터 전원이 들어가 있으면 <strong>먼저 모터를 정지시킨 상태에서</strong>(MOTOR_EN LOW) 연결해 fw-08 의 동결 설정이 활성인지를 본다 — <code>p/x DBGMCU-&gt;APB2FZ1</code> 의 bit 0 · 1. 연결하는 동작 자체가 CPU 를 멈추므로, 동결 설정이 확인되기 전에는 바퀴가 도는 동안 연결하지 않는다(§2-3 의 예고 상자).</p></div></details>
+        gdb 가 메모리를 읽는 동안 CPU 는 멈춰 있다. 제어 루프 · 보호 · 명령 워치독도 같이 멈춘다. 그래서 모터 전원이 들어가 있으면 <strong>먼저 모터를 정지시킨 상태에서</strong>(EN 네 핀 LOW) 연결해 fw-08 의 동결 설정이 활성인지를 본다 — <code>p/x DBGMCU-&gt;APB2FZ1</code> 의 bit 0 · 1. 연결하는 동작 자체가 CPU 를 멈추므로, 동결 설정이 확인되기 전에는 바퀴가 도는 동안 연결하지 않는다(§2-3 의 예고 상자).</p></div></details>
 
       <h2 id="next">다음 행선지</h2>
       <div class="callout tip"><span class="ct">여기까지 했으면</span>

@@ -171,6 +171,7 @@ ros2 topic echo /map --qos-durability transient_local --once</code></pre>
           <tr><td>goal 이 즉시 거부됨</td><td>목표의 <code>frame_id</code> 가 TF 에 없음(초기 위치 미설정), 또는 서버가 준비 전</td><td><code>view_frames</code> 에 map 이 있는가, <code>/initialpose</code></td></tr>
           <tr><td>피드백이 안 옴</td><td>클라이언트가 <code>SendGoalOptions.feedback_callback</code> 을 등록하지 않음</td><td>CLI 로 <code>ros2 action send_goal … --feedback</code> 이 오면 코드 쪽 문제다</td></tr>
           <tr><td>취소해도 로봇이 계속 감</td><td>취소한 goal handle 이 현재 goal 이 아님 / 다른 클라이언트가 새 goal 을 보냄</td><td><code>ros2 action info /navigate_to_pose</code> 로 클라이언트 수 확인 — 감독 노드와 CLI 가 동시에 goal 을 보내고 있지 않은가</td></tr>
+          <tr><td>클라이언트 노드(탐사 노드 · 감독 노드)를 Ctrl+C 로 껐는데 로봇이 계속 감</td><td>액션 서버는 클라이언트가 끝나도 받은 목표를 계속 수행한다</td><td>끄기 전에 목표를 먼저 취소한다 — 탐사 노드는 <code>explore/command</code> 에 <code>stop</code> (<a href="09b-frontier-explore.html#s2-8">09b §2-8</a>)</td></tr>
         </tbody>
       </table></div>
 
@@ -250,7 +251,7 @@ journalctl -u ModemManager -n 30       # 우리 장치를 건드렸는가</code>
           <tr><td>정지 상태인데 <code>angular_velocity.z</code> 가 0 이 아님</td><td>자이로 바이어스 미보정</td><td>정지 N 초 평균을 펌웨어에서 빼거나 BNO055 는 CALIB_STAT 의 GYR 이 3 이 될 때까지 정지</td></tr>
           <tr><td>정지 상태의 <code>linear_acceleration.z</code> 가 −9.81 이거나 다른 축에 나옴</td><td>장착 축 불일치, 축 재매핑·부호 오류</td><td>REP-103 기준으로 z 위가 +9.81. BNO055 AXIS_MAP_CONFIG/SIGN, WT901 은 장착 방향, 펌웨어 변환식</td></tr>
           <tr><td>WT901 체크섬 오류 연발</td><td>보드레이트 설정 불일치, 배선</td><td>센서 설정값과 USART 설정 비교, 저장 명령 후 재부팅</td></tr>
-          <tr><td>BNO055 CALIB_STAT 이 3 이 안 됨</td><td>자기 캘리브레이션 미완 / 모터·철제 프레임의 자기 간섭</td><td>8자 동작·6방향 정지, 센서를 모터에서 떨어뜨림. 실내에서는 어차피 자력계 방위를 쓰지 않는다</td></tr>
+          <tr><td>BNO055 CALIB_STAT 이 3 이 안 됨</td><td>자기 캘리브레이션 미완 / 모터·철제 프레임의 자기 간섭</td><td>8자 동작·6방향 정지, 센서를 모터에서 떨어뜨림. BNO055 의 자력계는 어차피 쓰지 않는다(IMU 모드 — 자북 판정은 WT901, fw-14)</td></tr>
           <tr><td><code>/imu/data_raw</code> 가 TF 에 연결되지 않음</td><td>URDF 에 <code>imu_link</code> 없음 / frame_id 불일치</td><td>05 의 imu_link 블록, <code>imu_frame</code> 파라미터</td></tr>
           <tr><td>EKF 출력(<code>/odometry/filtered</code>)이 없거나 값이 급변함</td><td><code>odom0/imu0_config</code> 오류, <code>two_d_mode</code> 미설정, TF 발행자 둘(브리지 <code>publish_tf: true</code> + EKF)</td><td>ekf.yaml 재확인, 브리지 <code>publish_tf: false</code>, <code>ros2 topic echo /tf</code> 로 발행자 확인</td></tr>
         </tbody>
@@ -333,6 +334,9 @@ vcgencmd measure_temp</code></pre>
           <tr><td>목표 근처에서 맴돎</td><td><code>xy_goal_tolerance</code> 과소</td><td>키움</td></tr>
           <tr><td>주행이 진동함</td><td>가속 한계 과대</td><td><code>acc_lim_*</code> 줄임</td></tr>
           <tr><td>로봇이 덜컥거리며 전진</td><td><code>/cmd_vel</code> 발행자가 둘 (Nav2 + 다른 노드)</td><td><code>ros2 topic info /cmd_vel -v</code> 로 발행자 수 확인 → 하나만 남긴다 (10 §2-4)</td></tr>
+          <tr><td>탐사(09b)가 몇 초 만에 끝나고 출발점으로 돌아감</td><td><code>complete_hold_s</code> 가 <code>/map</code> · 코스트맵 주기의 합보다 짧음 · <code>always_send_full_costmap</code> 없음</td><td><code>ros2 topic hz</code> 로 두 주기를 재서 정한다 (<a href="09b-frontier-explore.html#s2-6">09b §2-6</a> · §3-2)</td></tr>
+          <tr><td>탐사(09b)가 좁은 복도를 남긴 채 끝남</td><td>프런티어 덩어리의 크기를 로봇 중심이 갈 수 있는 칸만으로 잼</td><td>크기는 덩어리 전체로, 목표만 갈 수 있는 칸으로 (<a href="09b-frontier-explore.html#s2-4">09b §2-4</a>)</td></tr>
+          <tr><td>초기 위치를 줬는데 AMCL 위치가 틀리고 파티클이 한 점에 모여 있음</td><td><code>/initialpose</code> 의 공분산이 0 (또는 <code>set_initial_pose</code> 경로)</td><td>공분산에 분산(σ²)을 넣어 다시 보낸다 (<a href="09b-frontier-explore.html#s2-7">09b §2-7</a> · 09 §3-8)</td></tr>
           <tr><td>코스트맵에 <code>/scan</code> 이 반영되지 않음</td><td>코스트맵 구독자와 드라이버의 QoS 불일치, 또는 <code>obstacle_max_range</code> 가 0</td><td><code>ros2 topic info /scan -v</code> 로 costmap 구독자의 QoS 를 발행자와 비교하고 (§3), <code>nav2_params.yaml</code> 의 <code>____</code> 가 채워졌는지 본다 (09 §3-6)</td></tr>
         </tbody>
       </table></div>

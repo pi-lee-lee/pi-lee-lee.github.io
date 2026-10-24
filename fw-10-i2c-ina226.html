@@ -62,6 +62,7 @@
 
    0x40  INA226 #1   VBUS 핀 -&gt; Node C     02h 버스 전압  LSB 1.25 mV   -&gt; vbus_mv
    0x41  INA226 #2   IN+/IN- -&gt; 0.1 ohm    01h 션트 전압  LSB 2.5 uV    -&gt; ipc_ua
+                     VBUS 핀 -&gt; IN+ (N_ES) 02h 버스 전압  = 배터리 쪽 전압 (fw-11)
    0x28  BNO055                            fw-15 에서 같은 버스에 연결된다</code></pre>
       <p>새로 나오는 용어를 먼저 한 줄씩 정해 둔다.</p>
       <div class="tbl"><table class="compact">
@@ -151,8 +152,9 @@
         <li><strong>폴링 주기의 바닥이 여기서 나온다.</strong> 한 쌍(버스 + 션트)이 새로 나오기까지 1.1 + 1.1 = 2.2 ms 가 걸린다. 데이터시트의 <strong>최댓값</strong>으로 보면 1.21 + 1.21 = <strong>2.42 ms</strong> 다(전기적 특성 표 t_CT, 5쪽 — CT bit = 100 은 typ 1.1 / max 1.21 ms).
           그보다 빨리 읽으면 <strong>같은 값을 다시 읽는다</strong>(틀리지는 않지만 버스만 쓴다). 얼마로 할지는 내가 정한다 — 사전충전은 초 단위로 일어나는 일이므로(1세대 기록 τ ≈ 2.4 s) 아주 빠를 이유가 없고, 이 주기가 길수록 판정도 그만큼 늦어진다. §3-3-3 에 적을 칸을 뒀다.</li>
       </ul>
-      <div class="callout warn"><span class="ct">INA226 에서 24 V 를 받아도 되는 핀은 VBUS 하나뿐이다</span>
+      <div class="callout warn"><span class="ct">INA226 에서 24 V 를 받아도 되는 핀은 VBUS · IN+ · IN− 셋이다</span>
         <p><code>VBUS</code> 의 <strong>절대 최대</strong>는 −0.3 ~ 40 V 다(데이터시트 5.1 Absolute Maximum Ratings, 4쪽). 그 안에서 <strong>쓰라고 보증한 범위</strong>는 0 ~ 36 V 다(5.5 Electrical Characteristics, 5쪽 — 각주가 "Do not apply more than 36 V"라고 명시했다). 24 V 는 그 안이다.</p>
+        <p><code>IN+</code> · <code>IN−</code> 도 24 V 를 받는다. 절대 최대는 공통 모드 −0.3 ~ 40 V, 차동 ±40 V 다(같은 5.1 표). 공통 모드 제거비(CMRR)의 시험 조건이 0 V ≤ <code>V_IN+</code> ≤ 36 V 이고(5.5, 5쪽), 하이사이드 측정이란 원래 션트 양 끝이 버스 전압에 떠 있는 구성이다. #2 는 설계상 <code>IN+</code> · <code>IN−</code> 에 약 24 V 가 걸린다. 다만 두 핀 사이의 <strong>차</strong>는 션트 입력 범위 ±81.92 mV 안이어야 값이 의미를 갖는다.</p>
         <p>나머지 핀의 한도는 VBUS 와 다르다. 칩 전원 <code>VS</code> 는 6 V, <code>SDA</code> 는 GND − 0.3 V ~ 6 V 인데, <strong><code>SCL</code> 만 GND − 0.3 V ~ <code>V_VS</code> + 0.3 V</strong> 다(같은 5.1 표).
         VS 를 3.3 V 로 급전하는 이 쪽에서 <code>SCL</code> 의 절대 최대는 <strong>3.6 V</strong> 다. 그래서 <strong>풀업의 윗단도 VS 와 같은 3V3 레일</strong>이어야 하고, 5 V 풀업은 이 한 줄로 배제된다.
         <code>A0</code> · <code>A1</code> 은 절대 최대 표에 <strong>아예 없다</strong>. 5.5 의 디지털 입력 항목에 <code>V_IH</code> max 6 V 가 적혀 있을 뿐이다. 이 둘은 애초에 GND · SCL · SDA · VS 중 하나에 묶으라고 돼 있어 VS 위로 올라갈 일이 없다(핀 표, 3쪽).
@@ -231,18 +233,28 @@
           <tr><td>다른 마스터와 충돌했다(이 프로젝트에는 마스터가 하나라 보기 어렵다)</td><td>ARLO</td><td><code>HAL_I2C_ERROR_ARLO</code> (<code>0x02</code>)</td><td><strong>ER</strong> (<code>:4696-4703</code>)</td></tr>
           <tr><td>SDA 나 SCL 이 0 에 고정돼 있다(단락 · 다른 장치가 LOW 로 유지하고 있다)</td><td>선이 계속 0 — SCL 이 HIGH 인 동안의 SDA 하강이 없으니 <strong>스타트 조건이 만들어지지 않는다</strong></td><td><code>HAL_BUSY</code> 로 <strong>즉시 돌아오지 않는다.</strong> <strong>적어도 첫 주소에서는</strong> <code>Timeout</code> 을 통째로 쓰고 <code>HAL_I2C_ERROR_TIMEOUT</code>(<code>0x20</code>, <code>stm32h7xx_hal_i2c.h:169</code>)으로 끝난다(근거는 표 아래)</td><td>인터럽트가 <strong>안 온다</strong> — 트랜잭션이 시작조차 안 됐기 때문이다</td></tr>
           <tr><td>풀업이 하나도 없다(두 선이 떠 있다)</td><td>정해지지 않는다 — 두 선이 어디에 머무는지가 기생 용량과 누설로 정해진다</td><td><strong>이 가이드가 예측하지 않는다.</strong> 위 행처럼 <code>Timeout</code> 을 다 쓸 수도, 어디선가 START 가 검출돼 BUSY 가 1 인 채 <code>HAL_BUSY</code> 가 즉시 돌아올 수도 있다. 내 보드에서 어느 쪽인지는 §3-2-4 의 "일부러 틀려 보기 ①" 에서 <strong>걸린 시간을 재서</strong> 가른다</td><td>어느 쪽이든 완료 인터럽트는 <strong>안 온다</strong></td></tr>
+          <tr><td>트랜잭션이 없는 동안 선이 흔들렸다(켠 채로 모듈의 전원선을 뽑았다 꽂는 순간 — 2026-10-23 실측. 신호선을 뽑았다 꽂을 때도 같은 일이 생길 수 있다 <em>[추정 — RM 의 BUSY 규칙에서 나온 것이고 보드에서는 아직 보지 않았다]</em>)</td><td>SCL 이 HIGH 인 동안 SDA 가 떨어져 <strong>START 만</strong> 검출되고, 그 뒤 STOP 은 오지 않는다. 두 선은 다시 1 로 돌아온다</td><td><strong>없다.</strong> <code>I2C_ISR</code> 의 BUSY 가 1 로 남는다. 그 뒤로 <code>HAL_I2C_IsDeviceReady()</code> · <code>HAL_I2C_Mem_Read_IT()</code> 는 버스에 신호를 하나도 내지 않고 <code>HAL_BUSY</code> 를 즉시 돌려준다 — <strong>MCU 를 리셋하기 전까지 계속</strong>(아래 상자)</td><td>인터럽트가 <strong>안 온다</strong> — 진행 중인 트랜잭션이 없었다</td></tr>
         </tbody>
       </table></div>
       <p class="small"><strong>선이 0 에 고정된 행의 근거.</strong> BUSY 는 <strong>START 를 검출해야</strong> 1 이 되는 플래그다(RM0468 Rev 3 §52.7.7 p.2049 — <code>I2C_ISR</code> 비트 15 "set by hardware when a START condition is detected"). 같은 비트는 STOP 을 검출해야 지워진다(같은 줄).
       그래서 <strong>적어도 첫 주소에서는</strong> <code>stm32h7xx_hal_i2c.c:3275-3278</code> 의 첫 검사를 그냥 지나간다. 그 뒤 STOPF·AF 가 오지 않으면 <code>:3298-3319</code> 의 대기 루프가 <code>Timeout</code> 을 통째로 쓰고 <code>HAL_I2C_ERROR_TIMEOUT</code> 으로 끝난다.
-      BUSY 가 어쩌다 한 번 1 이 되면 그 뒤 주소들은 반대로 <code>HAL_BUSY</code> 로 즉시 돌아올 수 있다. 어느 쪽이든 워치독 예산은 최악으로 계산한다(§2-9).</p>
+      BUSY 가 어쩌다 한 번 1 이 되면 그 뒤 주소들은 반대로 <code>HAL_BUSY</code> 로 즉시 돌아올 수 있다 — 그 BUSY 는 STOP 이 오기 전까지 스스로 지워지지 않는다(아래 상자). 어느 쪽이든 워치독 예산은 최악으로 계산한다(§2-9).</p>
       <p><strong>여기서 나오는 결론 하나</strong>: ER 인터럽트만 켜면 모듈이 없는 것을 검출하지 못한다. <code>HAL_I2C_ER_IRQHandler()</code> 가 보는 것은 BERR · OVR · ARLO 세 플래그뿐이다(<code>stm32h7xx_hal_i2c.c:4670-4714</code> — 함수 전체가 이 세 플래그만 검사한다). NACK 은 <code>HAL_I2C_EV_IRQHandler()</code> 가 <code>hi2c-&gt;XferISR</code> 로 넘긴 쪽(<code>:4660</code>)에서 처리된다.
       그래서 CubeMX 에서 <strong>event 와 error 를 둘 다</strong> 켠다. 한쪽만 켜면 증상이 "값이 안 바뀐다"로 나와 배선을 의심하게 된다.</p>
-      <p>복구에 따로 할 일은 없다. 오류가 나면 HAL 이 핸들의 상태를 <code>HAL_I2C_STATE_READY</code> 로 되돌리고(<code>I2C_ITError()</code>, <code>:6593</code>) 오류 콜백을 부른다(<code>I2C_TreatErrorCallback()</code>, <code>:6685</code>).
+      <p><strong>트랜잭션 도중에 난 오류</strong>(NACK · BERR · ARLO)는 복구에 따로 할 일이 없다. 오류가 나면 HAL 이 핸들의 상태를 <code>HAL_I2C_STATE_READY</code> 로 되돌리고(<code>I2C_ITError()</code>, <code>:6593</code>) 오류 콜백을 부른다(<code>I2C_TreatErrorCallback()</code>, <code>:6685</code>).
       <code>I2C_TreatErrorCallback()</code> 이 하는 일은 <code>PreviousState = I2C_STATE_NONE</code>(<code>:6704</code>)과 콜백 호출이다. 그래서 다음 폴링 주기에 트랜잭션을 다시 시작하면 된다.
       다만 <strong>오류 코드는 누적된다</strong>(<code>|=</code>) — 다음 트랜잭션을 시작하기 전에 지우지 않으면 옛 오류가 계속 보인다. 이 구분("이번에 실패했다" ↔ "언젠가 실패한 적이 있다")이 <code>ina</code> 출력의 <code>err</code> 와 <code>last_err</code> 두 칸이다.</p>
       <p class="small">ST 의 예제가 같은 구분을 코드로 적어 뒀다. <code>$FW_H7/Projects/NUCLEO-H723ZG/Examples/I2C/I2C_TwoBoards_ComPolling/Src/main.c:307-320</code> 의 <code>HAL_I2C_ErrorCallback()</code> 은 <code>HAL_I2C_GetError() != HAL_I2C_ERROR_AF</code> 일 때만 LED3 를 켠다.
       주석이 그 이유를 적어 뒀다("When Slave doesn't acknowledge its address, Master restarts communication"). <strong>NACK 은 정상 통신의 일부다.</strong></p>
+      <div class="callout warn"><span class="ct">예외 하나 — BUSY 가 1 로 남으면 HAL 은 스스로 풀지 못한다 (2026-10-23 실측)</span>
+        <p><strong>본 것.</strong> <code>i2c scan</code> 이 <code>0x40</code> · <code>0x41</code> 을 찾던 보드에서, 켠 채로 INA226 모듈의 전원선을 뽑았다 꽂은 뒤 스캔하면 <code>found=0</code> 이 나왔다. 그때 두 선은 둘 다 1 이었고, 16개 주소를 도는 데 0 ms 가 걸렸고, <code>I2C_ISR</code> 의 BUSY 는 1 이었다. 선을 건드리지 않고 여섯 번 다시 쳐도 같았다. RESET 버튼을 누르자 BUSY 는 0 이 되었고, 첫 스캔에서 두 주소가 다시 나왔다.</p>
+        <p><strong>왜 그런가.</strong> BUSY 는 "set by hardware when a START condition is detected. It is cleared by hardware when a STOP condition is detected, <strong>or when PE=0</strong>" 이다(RM0468 Rev 3 §52.7.7, <code>I2C_ISR</code> 비트 15). 선을 꽂는 순간의 흔들림이 START 로 검출되었고, STOP 은 오지 않았다.
+        HAL 은 트랜잭션을 시작하기 전에 이 비트를 먼저 본다 — <code>HAL_I2C_IsDeviceReady()</code> 는 <code>stm32h7xx_hal_i2c.c:3275</code>, <code>HAL_I2C_Mem_Read_IT()</code> 는 <code>:2899</code> 에서 1 이면 <code>HAL_BUSY</code> 를 돌려준다. 블로킹 <code>HAL_I2C_Mem_Read()</code> 는 <code>:2682</code> 에서 <code>I2C_TIMEOUT_BUSY</code>(25 ms, <code>:344</code>) 동안 기다린 뒤 실패한다.
+        어느 쪽이든 버스에 START · STOP 을 내지 않으므로 BUSY 를 지우는 두 사건(STOP 검출 · PE=0) 중 어느 것도 일어나지 않는다. 진행 중인 트랜잭션도 없었으니 오류 콜백도 오지 않는다. 그래서 위 문단의 "다음 주기에 다시 시작하면 된다"가 이 경우에는 성립하지 않는다 — 다시 시작하려는 시도가 전부 버스에 닿기 전에 돌아온다.</p>
+        <p><strong>푸는 법.</strong> RM0468 §52.4.6 Software reset(1997쪽): PE 를 지우면 "Internal states machines are reset and communication control bits, as well as status bits come back to their reset value. <strong>The configuration registers are not impacted.</strong>" 지워지는 비트 목록에 <code>I2C_ISR</code> 의 BUSY 가 있다. 순서는 "PE must be kept low during at least 3 APB clock cycles … Write PE=0 - Check PE=0 - Write PE=1" 이다.
+        그래서 "핸들은 <code>HAL_I2C_STATE_READY</code> 인데 BUSY 가 1" 이면 PE 를 껐다 켠다. 이 프로젝트의 I2C1 에는 마스터가 MCU 하나뿐이므로, 핸들이 READY(진행 중인 전송 없음)인데 BUSY 가 1 인 상태는 이 고착 말고는 없다. 이 일을 하는 함수가 <a href="#hint-t12">T12</a> <code>i2c_unstick_busy()</code> 이고, 스캔(T5)과 주기 폴링(T7)이 트랜잭션을 시작하기 직전에 부른다.</p>
+        <p class="small">PE 를 껐다 켜는 것으로 풀리지 않는 경우도 있다. <strong>슬레이브가 SDA 를 0 으로 붙잡고 있으면</strong>(위 표의 "선이 0 에 고정" 행) PE 는 MCU 쪽만 초기화하므로 선은 그대로 0 이다. 그 경우는 SCL 을 GPIO 로 직접 흔드는 다른 복구가 필요하고, 이 쪽은 다루지 않는다. 2026-10-23 의 실측은 두 선이 1 이었으므로 이 경우가 아니다.</p>
+      </div>
 
       <h3 id="s2-7">2-7. 1세대의 ISO1540 은 쓰지 않는다</h3>
       <p>1세대는 MCU 와 INA226 사이에 ISO1540(I2C 절연기)을 뒀다. 이 프로젝트는 두지 않는다. 이유는 "필요 없어졌다"가 아니라 <strong>1세대에서도 절연이 성립하지 않았다</strong>는 것이다.</p>
@@ -305,7 +317,7 @@
       끝자리 번호의 뜻은 언제나 같다(1 = CubeMX, 2 = 골격, 3 = 직접 채우기, 4 = 굽고 보기). 코드가 없는 실습 A 에서는 2 = 빈 표, 3 = 측정, 4 = 보고 판정하기다.</p>
       <div class="callout tip"><span class="ct">채울 자리마다 힌트 카드가 있다 — 읽는 순서</span>
         <p>골격의 채울 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 붙어 있고, 그 주석 안에 <strong>번호 걸음</strong>이 있다. 먼저 걸음을 보고 직접 써 본다.
-        이 쪽의 번호는 T1 ~ T11 이다 — 헤더의 순수 함수 넷이 T1 ~ T4, 스캔과 초기화가 T5 · T6, 상태기계 · 콜백 둘 · 접근 함수 셋 · <code>ina</code> 명령이 T7 ~ T11.
+        이 쪽의 번호는 T1 ~ T12 이다 — 헤더의 순수 함수 넷이 T1 ~ T4, 스캔과 초기화가 T5 · T6, 상태기계 · 콜백 둘 · 접근 함수 넷 · <code>ina</code> 명령이 T7 ~ T11, BUSY 고착 풀기가 T12(2026-10-23 추가).
         막히면 "직접 채우기" 절에서 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인.</p>
         <p>완결 코드는 두 시험을 통과한 코드다(2026-10-03). 하나는 Mac 의 호스트 시험이다(<code>PASS ina226 18 cases</code> — <code>-fsanitize=undefined,address</code> 를 더한 빌드도 같은 글자). 다른 하나는 이 프로젝트의 펌웨어 빌드다(링크까지, <code>User/</code> 경고 0).
         다만 빌드를 위해 두 가지를 임시로 채웠다. ① 학습자의 <code>.ioc</code> 에 I2C1 이 아직 없어 <code>hi2c1</code> · <code>MX_I2C1_Init()</code> 을 임시 정의로 두었다. ② 내가 정하는 두 값 <code>I2C_SCAN_TIMEOUT_MS</code> · <code>INA226_POLL_MS</code> 에는 빌드용 숫자를 넣었다. 카드의 완결 코드에는 그 숫자가 없다 — 그 두 값은 끝까지 내가 정한다.
@@ -314,12 +326,21 @@
       </div>
 
       <h3 id="s3-1">3-1. 실습 A — 풀업을 잰다 (코드 없음)</h3>
-      <p>버스를 꽂기 전에 하는 일이고, 펌웨어는 한 줄도 필요 없다. 재는 것은 저항 셋이다.</p>
+      <p>버스를 꽂기 전에 하는 일이고, 펌웨어는 한 줄도 필요 없다. 재는 곳은 다섯이다.</p>
       <ul>
         <li><strong>SDA ↔ 3V3</strong></li>
         <li><strong>SCL ↔ 3V3</strong></li>
         <li>"연결되면 안 되는 곳"을 확인하는 <strong>SDA ↔ GND</strong> · <strong>SDA ↔ SCL</strong></li>
+        <li>SDA ↔ GND 를 판정할 기준이 되는 <strong>3V3 ↔ GND</strong></li>
       </ul>
+      <div class="callout note"><span class="ct">"연결되면 안 되는 곳"이 OL 로 나오지 않는 이유</span>
+        <p>전원이 꺼진 회로에서도 SDA 와 SCL 은 풀업을 거쳐 <strong>같은 3V3 노드</strong>에 이어져 있다. DMM 은 그 노드를 지나는 길을 잰다.</p>
+        <ul>
+          <li><strong>SDA ↔ SCL</strong> = SDA 풀업 + SCL 풀업. 두 풀업이 직렬로 보인다. 두 선이 서로 닿았으면 0 Ω 근처가 나온다.</li>
+          <li><strong>SDA ↔ GND</strong> = SDA 풀업 + (3V3 ↔ GND). 3V3 ↔ GND 에는 꺼진 칩 · 부품이 보이는 값이 있다. 그래서 3V3 ↔ GND 를 따로 재 두고, 두 값의 차이가 풀업 값과 같은지로 판정한다. SDA 가 GND 에 따로 닿은 길이 있으면 SDA ↔ GND 가 이 합보다 <strong>작게</strong> 나온다.</li>
+        </ul>
+        <p>전원이 들어가면 3V3 는 레귤레이터가 붙잡는 레일이 되므로, 3V3 ↔ GND 의 값은 SDA 의 레벨에 영향을 주지 않는다.</p>
+      </div>
       <div class="callout warn"><span class="ct">재기 전에</span>
         <ol>
           <li><strong>USB 케이블을 뽑는다.</strong> 저항 측정은 전원이 없는 회로에서만 뜻이 있다 — 전원이 들어와 있으면 DMM 이 저항이 아니라 회로의 전압을 보게 된다.</li>
@@ -341,15 +362,16 @@
           <tr><td>③</td><td>INA226 #1 + #2</td><td>SDA ↔ 3V3</td><td>5.0 kΩ</td><td><code>____</code></td><td>②와 같으면 둘째 모듈의 3V3 이 연결되지 않았다</td></tr>
           <tr><td>④</td><td>③ + 외부 4.7 kΩ (달기로 정했다면)</td><td>SDA ↔ 3V3</td><td>2.42 kΩ</td><td><code>____</code></td><td>③과 같으면 저항 다리가 연결되지 않았다 · 훨씬 작으면 저항 값을 잘못 골랐다</td></tr>
           <tr><td>⑤</td><td>마지막 단계 그대로</td><td>SCL ↔ 3V3</td><td>SDA 와 <strong>같아야</strong> 한다</td><td><code>____</code></td><td>한쪽만 다르면 그 선의 풀업 하나가 빠졌다 — 스캔 결과가 불안정하다</td></tr>
-          <tr><td>⑥</td><td>마지막 단계 그대로</td><td>SDA ↔ GND</td><td>OL 에 가깝다</td><td><code>____</code></td><td>수백 Ω 이하면 어딘가 GND 와 연결됐다 — 이 상태로는 버스가 동작하지 않는다</td></tr>
-          <tr><td>⑦</td><td>마지막 단계 그대로</td><td>SDA ↔ SCL</td><td>OL</td><td><code>____</code></td><td>저항이 낮게 나오면 두 선이 서로 닿아 있다(브레드보드에서 흔하다)</td></tr>
+          <tr><td>⑥</td><td>마지막 단계 그대로</td><td>SDA ↔ GND</td><td>마지막 SDA 값 + ⑧</td><td><code>____</code></td><td>합보다 작으면 SDA 가 GND 에 따로 닿은 길이 있다 · 수백 Ω 이하면 이 상태로는 버스가 동작하지 않는다</td></tr>
+          <tr><td>⑦</td><td>마지막 단계 그대로</td><td>SDA ↔ SCL</td><td>SDA 값 + SCL 값 (④를 달았으면 약 4.8 kΩ)</td><td><code>____</code></td><td>0 Ω 근처면 두 선이 서로 닿아 있다(브레드보드에서 흔하다)</td></tr>
+          <tr><td>⑧</td><td>마지막 단계 그대로</td><td>3V3 ↔ GND</td><td>정해진 값이 없다 — 꺼진 칩 · 부품이 보이는 값</td><td><code>____</code></td><td>⑥ 을 판정하는 기준이다. 0 Ω 근처면 3V3 와 GND 가 닿았다 — 전원을 넣지 않는다. 값이 kΩ 대로 낮으면 모듈을 하나씩 재서 어느 모듈의 값인지 가른다</td></tr>
         </tbody>
       </table></div>
 
       <h4 id="s3-1-3">3-1-3. 측정</h4>
       <ol class="steps">
         <li><strong>DMM 을 저항(Ω) 모드로 두고 프로브를 맞대어 0 Ω 근처인지 본다.</strong> 프로브 자체의 저항(보통 0.2 ~ 0.5 Ω)을 먼저 알아 둔다 — 수 kΩ 을 재는 이 실습에서는 무시할 수 있지만, 계측의 첫걸음은 언제나 "이 도구가 지금 맞게 읽고 있는가"다.</li>
-        <li><strong>①부터 순서대로</strong> 꽂으며 잰다. 각 단계에서 SDA 쪽을 재고, 마지막 단계에서만 ⑤~⑦ 을 더 잰다.</li>
+        <li><strong>①부터 순서대로</strong> 꽂으며 잰다. 각 단계에서 SDA 쪽을 재고, 마지막 단계에서만 ⑤~⑧ 을 더 잰다.</li>
         <li>읽은 값을 표에 적는다. <strong>반올림하지 말고 DMM 이 보여 준 자릿수 그대로</strong> 적는다 — 4.98 k 와 5.2 k 는 뜻이 다르다(5.2 k 는 모듈 하나의 풀업이 10 kΩ 이 아닐 수 있다는 뜻이다).</li>
         <li>(선택) BNO055 모듈이 이미 있으면 BNO055 모듈 <strong>하나만</strong> 꽂고 잰다. 1세대 기록대로 OL 이면 "이 모듈에는 풀업이 없다"가 내 개체에서도 참이라는 확인이다. 이 확인은 <code>hardware/INVENTORY.md</code> 2절이 <code>____</code> 로 비워 둔 칸이다 — <strong>값은 내가 적는다.</strong></li>
       </ol>
@@ -371,9 +393,9 @@
         <tbody>
           <tr><td>I2C1 Mode</td><td><strong>I2C</strong></td><td>핀맵 정본의 확정 핀 PB8(SCL) · PB9(SDA)가 I2C1 이다(<code>hardware/pinmap-h723.md</code> §2-C, AF4). SB55 · SB62 가 기본 OFF 라 A4 · A5 의 ADC 와 이미 분리돼 있다</td><td><code>Mcu.IP?=I2C1</code> · <code>PB8.Signal=I2C1_SCL</code> <em>(생성 후 확인)</em></td></tr>
           <tr><td>I2C Speed Mode</td><td><strong>Fast Mode</strong></td><td>INA226 은 Fast mode(f(SCL) ≤ 0.4 MHz)를 지원한다(데이터시트 Table 6-3, 21쪽). 블로킹 스캔이 네 배 빨라지고, 뒤에 BNO055 가 같은 버스에 연결되면 그만큼 여유가 는다</td><td><code>I2C1.I2C_Speed_Mode=I2C_Fast</code> <em>(CubeMX 6.18.1 의 IP 정의에서 확인한 철자 — <code>I2C-i2c2_v1_1F7_Cube_Modes.xml</code>)</em></td></tr>
-          <tr><td>I2C Speed Frequency (KHz)</td><td><strong>400</strong></td><td>Fast Mode 에서 CubeMX 가 허용하는 최댓값이자 기본값(같은 IP 정의: Fast 의 DefaultValue = Max = 400)</td><td><code>I2C1.Speed=400</code> <em>(생성 후 확인)</em></td></tr>
+          <tr><td>I2C Speed Frequency (KHz)</td><td><strong>400</strong></td><td>Fast Mode 에서 CubeMX 가 허용하는 최댓값이자 기본값(같은 IP 정의: Fast 의 DefaultValue = Max = 400)</td><td><strong>줄이 없다.</strong> 400 은 Fast 의 기본값이고, CubeMX 는 기본값과 다른 항목만 <code>.ioc</code> 에 적는다 — <code>I2C1.IPParameters=Timing,I2C_Speed_Mode</code> 둘뿐이다. 400 인지는 <code>I2C1.Timing</code> 을 풀어서 본다(§3-2-2 의 기대) <em>(2026-10-20 실제 .ioc 에서 확인)</em></td></tr>
           <tr><td>Timing (TIMINGR)</td><td><strong>CubeMX 계산값 — 숫자를 적지 않는다</strong></td><td>커널 클럭(기본 PCLK1)과 속도로 CubeMX 가 산출한다. <strong>클럭 트리를 바꾸면 다시 생성해야 한다</strong> — fw-03 의 트리(APB1 130 MHz)를 전제로 나온 값이다</td><td><code>I2C1.Timing</code> · 커널 클럭은 <code>RCC.I2C123Freq_Value</code> <em>(이 키는 실제 H723 <code>.ioc</code> 에서 확인했다)</em></td></tr>
-          <tr><td>PB8 · PB9 의 GPIO Pull-up/Pull-down</td><td>외부 풀업을 달았으면 <strong>No pull-up and no pull-down</strong> / 안 달았으면 <strong>Pull-up</strong></td><td>§2-4 의 실측이 정한다. MCU 내부 풀업은 수십 kΩ 이라 내부 풀업만으로 버스를 동작시키기엔 약하고, 외부 풀업과 겹치면 합성이 또 내려간다</td><td><code>PB8.GPIO_PuPd</code> <em>(키 철자: 생성 후 확인)</em></td></tr>
+          <tr><td>PB8 · PB9 의 GPIO Pull-up/Pull-down</td><td>외부 풀업을 달았으면 <strong>No pull-up and no pull-down</strong> / 안 달았으면 <strong>Pull-up</strong></td><td>§2-4 의 실측이 정한다. MCU 내부 풀업은 수십 kΩ 이라 내부 풀업만으로 버스를 동작시키기엔 약하고, 외부 풀업과 겹치면 합성이 또 내려간다</td><td>No pull 은 기본값이라 <strong>줄이 없다.</strong> Pull-up 을 고르면 <code>PB8.GPIO_PuPd=GPIO_PULLUP</code> 줄이 생긴다 <em>(키 철자는 같은 .ioc 의 <code>PG9.GPIO_PuPd=GPIO_PULLUP</code> — fw-14 의 USART6 RX — 에서 확인)</em></td></tr>
           <tr><td>I2C1 event interrupt</td><td><strong>Enabled</strong> · Preemption Priority <strong>7</strong></td><td>§2-9 의 NVIC 행. 완료도 <strong>NACK 도</strong> 이 쪽으로 온다(§2-6) — 안 켜면 IT 전송이 시작만 되고 끝나지 않는다</td><td><code>NVIC.I2C1_EV_IRQn</code> <em>(꼴은 <code>true\:7\:0\:…</code> — 둘째 칸이 선점 우선순위)</em></td></tr>
           <tr><td>I2C1 error interrupt</td><td><strong>Enabled</strong> · Preemption Priority <strong>7</strong></td><td>BERR · OVR · ARLO 세 플래그를 받는다. event 와 <strong>같은 값</strong></td><td><code>NVIC.I2C1_ER_IRQn</code></td></tr>
         </tbody>
@@ -388,18 +410,22 @@
         <tbody>
           <tr><td>1</td><td>왼쪽 <strong>Connectivity → I2C1</strong></td><td><strong>Mode = I2C</strong>. 핀 PB8 · PB9 가 초록으로 표시되는지 본다 — 다른 핀이 할당되면 핀 배치도에서 PB8 · PB9 를 직접 눌러 <code>I2C1_SCL</code> · <code>I2C1_SDA</code> 를 고른다</td></tr>
           <tr><td>2</td><td>I2C1 → <strong>Parameter Settings</strong> → Timing configuration</td><td>I2C Speed Mode = <strong>Fast Mode</strong>, I2C Speed Frequency (KHz) = <strong>400</strong>. Timing 칸은 읽기 전용으로 값이 바뀐다 — <strong>적어 두지 않는다</strong></td></tr>
-          <tr><td>3</td><td>I2C1 → <strong>GPIO Settings</strong></td><td>PB8 · PB9 의 Pull-up/Pull-down 을 §2-4 에서 정한 대로. 나머지(Alternate Function Open Drain · Very High)는 그대로</td></tr>
+          <tr><td>3</td><td>I2C1 → <strong>GPIO Settings</strong></td><td>PB8 · PB9 의 Pull-up/Pull-down 을 §2-4 에서 정한 대로. 나머지(Alternate Function Open Drain · Maximum output speed = <strong>Low</strong>)는 그대로. Low 는 CubeMX 의 기본값이고 생성물에 <code>GPIO_SPEED_FREQ_LOW</code> 로 나온다. ST 의 <code>I2C_TwoBoards_ComIT</code> 예제는 Very High 로 적었지만(<code>Src/stm32h7xx_hal_msp.c:72</code>) 400 kHz 에는 Low 로 충분하다 — 핀은 선을 0 으로 끌어내리기만 하고, Low 의 하강시간은 50 pF 에서 최대 16.6 ns(DS13313 표 54), Fast mode 의 한계는 300 ns 다</td></tr>
           <tr><td>4</td><td>I2C1 → <strong>NVIC Settings</strong></td><td>I2C1 event interrupt · I2C1 error interrupt <strong>둘 다 Enabled</strong></td></tr>
           <tr><td>5</td><td>왼쪽 <strong>System Core → NVIC</strong></td><td>두 행의 Preemption Priority = <strong>7</strong>. 앞 쪽에서 정한 TIM6 = 1 · USART3 = 6 · SysTick = 15 는 그대로인지 같이 본다</td></tr>
           <tr><td>6</td><td><strong>GENERATE CODE</strong></td><td>—</td></tr>
         </tbody>
       </table></div>
       <pre><code class="lang-bash">cd firmware/h723zg
-grep -n "^I2C1\.\|^PB8\.\|^PB9\.\|NVIC.I2C1\|I2C123Freq" h723zg.ioc     # 값 표의 일곱 행이 .ioc 에 있는가
+grep -n "^I2C1\.\|^PB8\.\|^PB9\.\|NVIC.I2C1\|I2C123Freq" h723zg.ioc     # 값 표의 행이 .ioc 에 있는가 (기본값인 둘은 줄이 없다)
 grep -n "MX_I2C1_Init\|hi2c1" Core/Src/main.c                           # 초기화가 생성됐는가
 grep -n "I2C1_EV_IRQHandler\|I2C1_ER_IRQHandler" Core/Src/stm32h7xx_it.c # 핸들러 둘이 생성됐는가
 grep -n "GPIO_AF4_I2C1\|GPIO_MODE_AF_OD\|GPIO_PULLUP\|GPIO_NOPULL" Core/Src/stm32h7xx_hal_msp.c</code></pre>
-      <pre><code class="lang-text">(기대: .ioc 에 I2C1.Speed 가 400, I2C1.Timing 에 어떤 16진수 하나, NVIC 두 줄의 둘째 칸이 7.
+      <pre><code class="lang-text">(기대: .ioc 에 I2C1.I2C_Speed_Mode=I2C_Fast 와 I2C1.Timing 의 16진수 하나, NVIC 두 줄의 둘째 칸이 7.
+ I2C1.Speed 줄과 PB8.GPIO_PuPd 줄은 없다 - 400 과 No pull 은 기본값이라 CubeMX 가 적지 않는다(§3-2-1 표).
+ 400 kHz 인지는 Timing 을 푼다. 커널 130 MHz(I2C123Freq_Value)에서 0x00C045ED 면
+   PRESC 0 → 한 칸 7.69 ns, SCLL 0xED = 237, SCLH 0x45 = 69 → (238 + 70) × 7.69 ns ≈ 2.37 µs,
+   필터 · 동기 지연을 더해 ≈ 2.5 µs = 400 kHz. 100 kHz 였으면 SCLL 이 8비트에 안 들어 PRESC 가 0 이 아니다.
  main.c 에는 MX_I2C1_Init 의 선언 · 호출 · 정의와 hi2c1 가 나온다.
  stm32h7xx_it.c 에는 IRQHandler 가 둘 다 있다 - 하나만 있으면 NVIC 체크 하나를 빠뜨린 것이다.
  hal_msp.c 의 GPIO 설정이 AF4 · Open Drain 이고, Pull 은 내가 고른 쪽이다.
@@ -493,9 +519,10 @@ static inline int32_t ina226_shunt_ua(uint16_t raw, uint32_t shunt_mohm)
 /* --- 모듈 API (ina226.c) ------------------------------------------------ */
 void     ina226_init(void);                  /* app_init(). 저장해 둔 값을 비운다. 버스 통신 없음. */
 void     ina226_service_main(void);          /* app_loop(), 한 바퀴에 한 번. 막지 않는다. */
-bool     ina226_get_vbus_mv(int32_t *out_mv);/* false = 부팅 뒤 좋은 샘플이 아직 없다 */
-bool     ina226_get_ipc_ua(int32_t *out_ua);
-uint32_t ina226_sample_age_ms(void);         /* 마지막 좋은 쌍 이후 ms */
+bool     ina226_get_vbus_mv(int32_t *out_mv);/* #1. false = 부팅 뒤 그 장치를 아직 한 번도 못 읽었다 */
+bool     ina226_get_ipc_ua(int32_t *out_ua); /* #2. 같은 뜻 - 두 장치는 서로 따로 */
+uint32_t ina226_vbus_age_ms(void);           /* #1 을 마지막으로 읽은 뒤 ms */
+uint32_t ina226_ipc_age_ms(void);            /* #2 를 마지막으로 읽은 뒤 ms */
 void     ina226_cli_register(void);          /* "i2c" 를 등록한다. 3-3 부터는 "ina" 도 */
 
 #endif /* INA226_H */</code></pre>
@@ -523,6 +550,20 @@ _Static_assert((I2C_SCAN_TIMEOUT_MS) != 0u,
 static bool s_bus_hold;      /* main 문맥. true = ina226_service_main() (3-3) 은 아무것도 걸면 안 된다 */
 static void cmd_ina(int argc, char *argv[]);   /* 뒤쪽 절반(3-3-2)에서 정의한다 */
 
+/* I2C1 의 BUSY 비트가 1 로 남았으면 PE 를 껐다 켜서 지운다 (2-6 의 상자). main 문맥.
+   true = 지웠다. 스캔(T5)과 주기 폴링(T7)이 트랜잭션을 시작하기 직전에 부른다. */
+static bool i2c_unstick_busy(void)
+{
+  /* TODO(you) [T12]: 핸들은 READY 인데 BUSY 가 1 이면 PE 를 껐다 켠다 - 힌트 카드 T12
+       1) HAL_I2C_GetState(&amp;hi2c1) 가 HAL_I2C_STATE_READY 가 아니면 false - 전송 중에는 BUSY = 1 이 정상이다
+       2) __HAL_I2C_GET_FLAG(&amp;hi2c1, I2C_FLAG_BUSY) 가 SET 이 아니면 false - 할 일이 없다
+       3) __HAL_I2C_DISABLE(&amp;hi2c1) - PE = 0 (RM0468 52.4.6)
+       4) CR1 의 PE 를 한 번 읽어 0 인지 확인한다 - 0 이 아니면 false
+       5) __HAL_I2C_ENABLE(&amp;hi2c1) - PE = 1, 그리고 true
+     채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
+  return false;
+}
+
 static void cmd_i2c(int argc, char *argv[])
 {
   /* "i2c scan" - main 문맥, 블로킹. 범위 안의 모든 주소를 찔러 본다:
@@ -547,13 +588,14 @@ static void cmd_i2c(int argc, char *argv[])
        1) argc != 2 이거나 argv[1] 이 "scan" 이 아니면 "ERR i2c bad-arg" 를 찍고 돌아간다 (strcmp - string.h)
        2) s_bus_hold = true. 그다음 HAL_I2C_GetState(&amp;hi2c1) 가 HAL_I2C_STATE_READY 가 될 때까지 기다린다
           - tick_get_ms() 로 상한을 두고, 넘으면 s_bus_hold 를 내리고 ERR 한 줄을 찍고 돌아간다
+          기다린 뒤 i2c_unstick_busy() 를 한 번 부른다 (T12 - 2-6 의 상자)
        3) a = I2C_SCAN_FIRST .. I2C_SCAN_LAST 마다: wdg_service_main() (2-9 의 처리 ③을 골랐다면),
           HAL_I2C_IsDeviceReady() 가 HAL_OK 가 아니면 다음 주소로. HAL_OK 면 HAL_I2C_Mem_Read() 로
           INA226_REG_MANUF_ID 두 바이트를 읽어 주소와 ID 를 배열에 적고 found 를 올린다
        4) s_bus_hold = false
        5) "i2c found=&lt;n&gt;" 한 줄, 그다음 찾은 것마다 "  0x&lt;xx&gt; id=0x&lt;xxxx&gt;" 한 줄
      채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
-  (void)argc; (void)argv; (void)s_bus_hold;
+  (void)argc; (void)argv; (void)s_bus_hold; (void)i2c_unstick_busy;
 }</code></pre>
       <p>같은 파일, 이어서 — 초기화와 명령 등록이다. 등록 함수는 fw_style.md 4-4절 의 규칙대로 모듈당 하나이고, 실습 C 에서 <code>ina</code> 등록 줄이 여기에 더해진다.</p>
       <pre><code class="lang-c">/* User/Src/Device/ina226.c (앞쪽 절반, 이어서) */
@@ -590,11 +632,29 @@ void ina226_cli_register(void)
               그러면 위의 "<code>HAL_OK</code> 만 있다로 센다" 규칙이 그 <code>HAL_BUSY</code> 를 "없다"로 세어 <code>found</code> 가 칠 때마다 달라진다.
               그래서 <code>s_bus_hold</code> 를 1 로 설정하고, <code>HAL_I2C_GetState()</code> 가 <code>HAL_I2C_STATE_READY</code> 가 될 때까지 기다린 뒤 주소를 차례로 부른다. 기다리는 시간에는 <strong>상한을 둔다</strong>. <code>s_bus_hold</code> 는 함수를 빠져나가는 모든 경로에서 내린다.
               이 대기는 §3-3-2 끝에서 fw-15 로 넘긴 그 물음("지금 이 버스는 누구 것인가")이 <strong>내 모듈 안에서 버스를 쓰는 쪽이 둘이 되는 순간 이미 나타난 것</strong>이다.</li>
+            <li>BUSY 고착 풀기 — 위의 대기가 끝난 뒤, 주소를 부르기 전에 <code>i2c_unstick_busy()</code>(T12)를 한 번 부른다. 켠 채로 선을 뽑았다 꽂으면 BUSY 가 1 로 남을 수 있고, 그러면 모든 주소가 <code>HAL_BUSY</code> 로 즉시 돌아와 리셋 전까지 <code>found=0</code> 이 된다(§2-6 의 상자). T12 는 <strong>함수 하나를 먼저 채우고</strong> <code>cmd_i2c()</code> 에서 한 줄로 부르는 순서다.</li>
             <li>제조사 ID — 주소를 찾을 때마다 <code>FEh</code> 를 <strong>블로킹</strong>으로 한 번 더 읽어 같은 줄에 붙인다. "누군가 ACK 했다"와 "그 칩이 INA226 이다"는 다른 주장이고, 뒤의 것이 있어야 배선이 맞다고 판단할 수 있다. 여기서 블로킹을 쓰는 이유는 §2-5 의 마지막 줄이다 — 사람이 한 번 치는 명령이라 주 루프를 블로킹해도 된다.</li>
           </ul></li>
-        <li><strong>등록하고 부른다.</strong> <code>app.c</code> 의 <code>app_init()</code> 안, <code>app_cli_register();</code> 다음 줄에 <code>ina226_init();</code> 과 <code>ina226_cli_register();</code>. 그리고 최상위 <code>CMakeLists.txt</code> 의 <code># Add user sources here</code> 에 <code>User/Src/Device/ina226.c</code>.</li>
+        <li><strong>등록하고 부른다.</strong> <code>app.c</code> 에 세 줄, 최상위 <code>CMakeLists.txt</code> 에 한 줄이다. 다른 줄은 그대로 둔다. 한 줄씩이라 카드는 없다 — 아래 두 블록이 그 전부다.
+          <pre><code class="lang-c">/* User/Src/app.c - 실습 B 가 더하는 줄 셋. 자리는 앞 쪽들이 넣은 줄들의 끝 */
+#include "Device/ina226.h"            /* 위쪽 #include 묶음에. 없으면 아래 두 줄이 implicit declaration 오류 */
+
+void app_init(void)
+{
+  ...
+  wt901_init();                       /* (fw-14 가 넣은 줄) */
+  ina226_init();                      /* _init() 줄들의 끝에. 버스 통신 없음 - 변수만 비운다 (T6) */
+  ...
+  wt901_cli_register();               /* (fw-14 가 넣은 줄) */
+  ina226_cli_register();              /* _cli_register() 줄들의 끝에 - cli_init() 뒤여야 한다. help 에 i2c 가 보인다 */
+  ...
+}</code></pre>
+          <pre><code class="lang-text"># h723zg/CMakeLists.txt - "# Add user sources here" 묶음의 마지막 줄로
+    User/Src/Device/ina226.c</code></pre></li>
       </ol>
-      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 2 = T1 · 걸음 3 = T5 · 골격의 <code>ina226_init()</code> 이 T6(걸음에는 따로 없다 — 걸음 4 에서 <code>app_init()</code> 이 부르기 전에 채운다). 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 2 = T1 · 걸음 3 = T5 · T12(T12 는 걸음 3 의 다섯째 불릿 — 번호가 T6 뒤인 것은 2026-10-23 에 더해졌기 때문이다) · 골격의 <code>ina226_init()</code> 이 T6(걸음에는 따로 없다 — 걸음 4 에서 <code>app_init()</code> 이 부르기 전에 채운다). 헤더의 <strong>T2 · T3 · T4 는 실습 C 의 것</strong>이다 — 카드도 §3-3-3 아래에 있다. 실습 B 에서는 자리표시 그대로 둔다(스캔의 <code>id</code> 가 <code>0x0000</code> 으로 찍히는 것이 그 흔적이다). 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <p class="small"><strong>골격 확인(2026-10-20, 가이드에서 뽑은 그대로 arm-gcc 빌드):</strong> <code>I2C_SCAN_TIMEOUT_MS</code> 하나만 정하면 실습 B 골격은 걸음 4 의 네 줄과 함께 그대로 빌드 · 링크된다. 경고는 하나 — <code>'cmd_ina' declared 'static' but never defined [-Wunused-function]</code>. 앞 선언만 있고 정의는 실습 C 에서 오기 때문이고, 실습 C 에서 사라진다.
+      2026-10-23 에 T12 골격(<code>i2c_unstick_busy()</code>)을 더한 뒤 같은 방법으로 다시 컴파일했다 — 경고는 그대로 하나다. T5 자리표시 줄의 <code>(void)i2c_unstick_busy;</code> 가 "아직 안 부르는 함수" 경고를 막는다.</p>
 
       <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>ina226_addr8()</code> · 7비트 주소를 HAL 의 8비트 표기로</summary>
         <div class="ans">
@@ -653,6 +713,7 @@ static void cmd_i2c(int argc, char *argv[])
       return;
     }
   }
+  (void)i2c_unstick_busy();                            /* BUSY 가 1 로 남아 있으면 지운다 - T12, 2-6 의 상자 */
 
   for (uint32_t a = I2C_SCAN_FIRST; a &lt;= I2C_SCAN_LAST; a++) {   /* 3) 범위 안의 주소를 하나씩 */
     wdg_service_main();                                /* 주소마다 되감는다 - 2-9 의 예산표 */
@@ -682,6 +743,7 @@ static void cmd_i2c(int argc, char *argv[])
           <li><code>s_bus_hold = true;</code> 를 <strong>기다리기 전에</strong> 실행한다 — 주기 폴링(T7)이 다음 바퀴에 새 읽기를 시작하지 못하게 먼저 막고, 그다음 이미 진행 중인 읽기가 끝나기를 기다린다. 순서를 바꾸면 기다리는 동안 폴링이 읽기를 또 하나 시작한다.</li>
           <li><code>while (HAL_I2C_GetState(&amp;hi2c1) != HAL_I2C_STATE_READY)</code> — 핸들이 "비어 있다"가 될 때까지 돈다. 상한은 <code>(uint32_t)(tick_get_ms() - t0) &gt; I2C_SCAN_TIMEOUT_MS</code> — 부호 없는 뺄셈(fw-02 의 <code>app_loop()</code> 과 같은 꼴). 두 바이트 트랜잭션 하나는 400 kHz 에서 백 µs 안팎이라 스캔용 타임아웃을 상한으로 다시 썼다(<strong>다르게 써도 되는 곳</strong> — 상수를 따로 둬도 된다). 넘으면 <code>s_bus_hold</code> 를 내리고 <code>ERR</code> 한 줄. <code>busy</code> 라는 낱말은 규약에 없는 내 선택이다 — <code>ERR i2c &lt;한 낱말&gt;</code> 꼴만 지키면 된다.
             실습 B 시점에는 폴링이 아직 없어 이 <code>while</code> 은 한 바퀴도 돌지 않는다. 그래도 지금 넣는 이유는 §3-2-3 걸음 3 의 셋째 불릿이다.</li>
+          <li><code>(void)i2c_unstick_busy();</code> — T12. <strong><code>while</code> 대기 뒤</strong>에 두는 이유: T12 는 핸들이 READY 일 때만 PE 를 건드린다. 대기 앞에 두면 폴링의 읽기가 진행 중인 동안에는 아무것도 하지 않고 돌아오므로, 그 읽기가 끝난 뒤 남은 고착을 놓친다. 반환값은 여기서 쓰지 않는다 — 출력의 첫 줄이 <code>i2c found=</code> 여야 하므로 "지웠다"를 따로 찍지 않는다. <strong>다르게 써도 되는 곳</strong>: 노트용으로 보고 싶으면 반환값을 세는 카운터를 두어도 된다.</li>
           <li><code>for (uint32_t a = I2C_SCAN_FIRST; a &lt;= I2C_SCAN_LAST; a++)</code> — <code>a</code> 가 <code>uint8_t</code> 면 <code>I2C_SCAN_LAST</code> 를 <code>0xFF</code> 로 넓혔을 때 <code>a &lt;= 0xFF</code> 가 항상 참이 된다(0xFF 다음은 0x00). 그래서 범위보다 넓은 형으로 센다. 같은 이유로 HAL 에 넘길 때만 <code>(uint8_t)a</code> 로 좁힌다.</li>
           <li><code>wdg_service_main();</code> 주소마다 — §2-9 의 처리 ③이다. <strong>다르게 써도 되는 곳</strong>: 범위와 타임아웃을 줄여 최악의 곱이 IWDG 주기 안에 들면 이 줄은 없어도 된다(처리 ① · ②). 무엇을 골랐는지는 노트의 예산표 행이다. <code>HAL_IWDG_Refresh()</code> 를 직접 부르지 않는 이유는 §2-9 의 마지막 문장.</li>
           <li><code>if (HAL_I2C_IsDeviceReady(…) != HAL_OK) { continue; }</code> — <code>continue</code> 는 "이번 바퀴의 나머지를 건너뛰고 다음 <code>a</code> 로". <code>HAL_OK</code> 만 "있다"이고 <code>HAL_ERROR</code> · <code>HAL_TIMEOUT</code> · <code>HAL_BUSY</code> 는 전부 "없다"다 — 찍지 않는다(§2-1: NACK 은 대답이다).</li>
@@ -710,6 +772,51 @@ static void cmd_i2c(int argc, char *argv[])
         <p><strong>확인</strong> — §3-2-4 의 출력: <code>i2c found=2</code> 와 <code>0x40</code> · <code>0x41</code> 두 줄(T2 가 비어 있는 동안은 <code>id=0x0000</code>, 채우면 <code>0x5449</code>), <code>i2c</code> 만 치면 <code>ERR i2c bad-arg</code>. 체크포인트 <code>i2c-scan-finds-two</code> · <code>ina-id-matches-datasheet</code> 가 이 자리의 것이다. "일부러 틀려 보기 ①" 에서 걸린 시간을 재는 것도 이 함수의 루프다. 보드 동작은 굽고 보기에서 확인한다.</p>
         </div></details>
 
+      <details class="hint" id="hint-t12"><summary>힌트 T12 — <code>i2c_unstick_busy()</code> · 핸들은 READY 인데 BUSY 가 1 이면 PE 를 껐다 켠다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — §2-6 의 상자에 적은 고착을 푼다. 조건은 둘이다: 핸들이 <code>HAL_I2C_STATE_READY</code>(진행 중인 전송이 없다)이고, <code>I2C_ISR</code> 의 BUSY 가 1 이다. 둘 다 참이면 RM0468 §52.4.6 의 순서(PE=0 → PE=0 확인 → PE=1)로 I2C1 을 소프트웨어 리셋한다. 부르는 쪽은 스캔(T5, 대기 루프 뒤)과 주기 폴링(T7, <code>INA_IDLE</code> 에서 읽기를 걸기 직전)이고, 문맥은 둘 다 main 이다. 끝났을 때 참이어야 하는 것: BUSY 가 0 이고, Timing · 필터 같은 설정은 그대로다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T12 - User/Src/Device/ina226.c (cmd_i2c() 바로 위) */
+static bool i2c_unstick_busy(void)
+{
+  if (HAL_I2C_GetState(&amp;hi2c1) != HAL_I2C_STATE_READY) { return false; }   /* 1) 전송 중이면 1 이 정상이다 */
+  if (__HAL_I2C_GET_FLAG(&amp;hi2c1, I2C_FLAG_BUSY) != SET) { return false; }   /* 2) 0 이면 할 일이 없다 */
+  __HAL_I2C_DISABLE(&amp;hi2c1);                                               /* 3) PE = 0 - 소프트웨어 리셋 */
+  if ((hi2c1.Instance-&gt;CR1 &amp; I2C_CR1_PE) != 0u) { return false; }          /* 4) PE = 0 을 읽어 확인한다 */
+  __HAL_I2C_ENABLE(&amp;hi2c1);                                                /* 5) PE = 1 - 설정 레지스터는 그대로다 */
+  return true;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>static bool</code> — 이 파일 안에서만 쓰는 함수다(<code>cmd_i2c</code> 와 같다). <code>cmd_i2c()</code> <strong>위에</strong> 두는 이유는 C 가 이름을 쓰기 전에 정의(또는 선언)를 봐야 하기 때문이다. 뒤쪽 절반의 T7 도 이 함수를 부르는데, 같은 파일의 더 아래라 그대로 보인다.</li>
+          <li><code>HAL_I2C_GetState(&amp;hi2c1) != HAL_I2C_STATE_READY</code> — <strong>이 줄이 없으면 위험하다.</strong> IT 읽기가 진행 중이면 BUSY 는 정상적으로 1 이다. 그때 PE 를 끄면 진행 중인 전송이 중간에 끊긴다. HAL 핸들은 그 사실을 모르므로 READY 로 돌아오지 않고, 완료 콜백도 오류 콜백도 오지 않는다. READY 이면 HAL 쪽에 진행 중인 전송이 없다는 뜻이고, 이 버스의 마스터는 MCU 하나뿐이므로 그때의 BUSY = 1 은 고착이다(§2-6 의 상자).</li>
+          <li><code>__HAL_I2C_GET_FLAG(&amp;hi2c1, I2C_FLAG_BUSY) != SET</code> — <code>I2C_ISR</code> 의 BUSY 비트를 읽는 HAL 매크로다. <code>stm32h7xx_hal_i2c.c:2899</code> · <code>:3275</code> 가 쓰는 것과 <strong>같은 식</strong>이라, HAL 이 <code>HAL_BUSY</code> 를 돌려주는 조건과 이 함수가 푸는 조건이 글자까지 같다. <code>SET</code> · <code>RESET</code> 은 CMSIS 의 <code>FlagStatus</code> 값이다.</li>
+          <li><code>__HAL_I2C_DISABLE(&amp;hi2c1);</code> — <code>CR1</code> 의 PE 비트를 0 으로 쓴다(<code>CLEAR_BIT</code>). 이 순간 SCL · SDA 출력이 풀리고, 내부 상태 기계와 <code>I2C_ISR</code> 의 상태 비트(BUSY 포함)가 리셋값으로 돌아간다. <code>TIMINGR</code> · 필터 같은 설정 레지스터는 그대로다(RM0468 §52.4.6, 1997쪽). 그래서 <code>MX_I2C1_Init()</code> 을 다시 부를 필요가 없다.</li>
+          <li><code>if ((hi2c1.Instance-&gt;CR1 &amp; I2C_CR1_PE) != 0u) { return false; }</code> — RM 의 순서 "Write PE=0 - <strong>Check PE=0</strong> - Write PE=1" 의 가운데 걸음이다. RM 은 이 순서가 "PE 가 최소 3 APB 클럭 동안 0" 을 보장한다고 적는다. 필요한 것은 <strong>되읽기 한 번</strong>이지 반복이 아니다. PE 는 소프트웨어가 쓰는 비트라 방금 쓴 0 이 그대로 읽힌다. 그래서 <code>while</code> 로 기다리지 않는다 — T5 의 대기에 상한을 둔 것(§3-2-3 걸음 3)과 같은 이유로, 끝나는 조건을 하드웨어에 맡기는 대기 루프를 새로 만들지 않는다. 0 이 아니게 읽히면(일어나지 않아야 하는 경우) PE 는 1 그대로이므로 아무것도 바꾸지 않고 <code>false</code> 로 돌아온다.</li>
+          <li><code>__HAL_I2C_ENABLE(&amp;hi2c1);</code> — PE 를 1 로 쓴다. 이때부터 I2C1 은 버스를 다시 본다. 선이 둘 다 1 이면 BUSY 는 0 으로 남는다.</li>
+          <li><strong>다르게 써도 되는 곳 ① — 레지스터를 직접.</strong> <code>(hi2c1.Instance-&gt;ISR &amp; I2C_ISR_BUSY) == 0u</code> 도 같은 비트다(<code>I2C_FLAG_BUSY</code> 는 <code>I2C_ISR_BUSY</code> 의 다른 이름 — <code>stm32h7xx_hal_i2c.h:441</code>). 매크로 쪽은 HAL 소스와 글자가 같아 grep 으로 대조하기 쉽다.</li>
+          <li><strong>다르게 써도 되는 곳 ② — <code>HAL_I2C_DeInit()</code> → <code>HAL_I2C_Init()</code>.</strong> 이 둘도 PE 를 0 으로 만들므로 BUSY 는 풀린다. 다만 <code>HAL_I2C_MspDeInit()</code> · <code>HAL_I2C_MspInit()</code> 을 거쳐 GPIO · 클럭 · NVIC 까지 다시 설정하고, <code>HAL_I2C_Init()</code> 의 실패 경로를 처리해야 한다. 이 쪽은 RM 이 BUSY 를 지우는 방법으로 적은 PE 쪽을 쓴다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong></p>
+        <ul>
+          <li><code>HAL_I2C_StateTypeDef HAL_I2C_GetState(const I2C_HandleTypeDef *hi2c)</code> — <code>stm32h7xx_hal_i2c.h:711</code>, 정의 <code>stm32h7xx_hal_i2c.c:4904</code>. T5 카드와 같다.</li>
+          <li><code>__HAL_I2C_GET_FLAG(__HANDLE__, __FLAG__)</code> — <code>stm32h7xx_hal_i2c.h:544</code>. 인자는 핸들의 <strong>주소</strong>(<code>&amp;hi2c1</code>)다 — 매크로 안에서 <code>-&gt;Instance</code> 로 쓴다. <code>I2C_FLAG_BUSY</code> 는 <code>:441</code>.</li>
+          <li><code>__HAL_I2C_DISABLE(__HANDLE__)</code> · <code>__HAL_I2C_ENABLE(__HANDLE__)</code> — <code>stm32h7xx_hal_i2c.h:578</code> · <code>:572</code>. 각각 <code>CLEAR_BIT</code> · <code>SET_BIT</code> 로 <code>CR1</code> 의 PE 를 쓴다.</li>
+          <li><code>I2C_CR1_PE</code> — CMSIS 장치 헤더 <code>stm32h723xx.h:13052</code>, 값 <code>0x00000001</code>.</li>
+          <li>근거 문서 — RM0468 Rev 3 §52.4.6 Software reset(1997쪽), §52.7.7 <code>I2C_ISR</code> 비트 15 BUSY.</li>
+        </ul>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>__HAL_I2C_GET_FLAG(hi2c1, …)</code> · <code>__HAL_I2C_DISABLE(hi2c1)</code> — <code>&amp;</code> 를 빠뜨렸다</td><td><code>error: invalid type argument of '-&gt;' (have 'I2C_HandleTypeDef' {aka 'struct __I2C_HandleTypeDef'})</code> — 앞에 붙는 파일 · 줄은 <code>stm32h7xx_hal_i2c.h:544</code>(또는 <code>:578</code>), 매크로가 펼쳐진 자리다(2026-10-23 arm-gcc 로 확인)</td><td><code>&amp;hi2c1</code> — 매크로는 핸들의 주소를 받는다</td></tr>
+            <tr><td>READY 검사(1번 줄)를 뺐다</td><td>컴파일러는 아무 말도 하지 않는다. 보드 <em>[추정 — 보드에서 아직 재현하지 않았다]</em>: 주기 폴링 중에 스캔을 치거나 이 함수를 다른 자리에서 부르면 진행 중인 IT 읽기가 끊긴다. 그러면 핸들이 READY 로 돌아오지 않아 <code>ina</code> 의 <code>age_ms</code> 가 계속 늘고 <code>err</code> 는 오르지 않는다</td><td>READY 일 때만 PE 를 건드린다</td></tr>
+            <tr><td>4번 줄을 <code>while ((hi2c1.Instance-&gt;CR1 &amp; I2C_CR1_PE) != 0u) { }</code> 로 썼다</td><td>빌드도 되고 보드에서도 첫 읽기에 빠져나온다. 다만 상한 없는 대기 루프다</td><td>되읽기 한 번으로 충분하다(위의 다섯째 불릿)</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-2-4 의 "발동 확인 — 켠 채로 전원선을 뽑았다 꽂는다". T12 를 넣기 전에는 다시 꽂은 뒤의 스캔이 리셋 전까지 <code>found=0</code> 이고, 넣은 뒤에는 <strong>리셋 없이</strong> 첫 스캔에서 <code>0x40</code> · <code>0x41</code> 이 나온다(체크포인트 <code>i2c-busy-unstick</code>). 실습 C 를 끝낸 뒤에는 같은 시험에서 <code>ina</code> 의 <code>age_ms</code> 가 리셋 없이 다시 작아진다.</p>
+        </div></details>
+
       <details class="hint" id="hint-t6"><summary>힌트 T6 — <code>ina226_init()</code> · 저장해 둔 샘플 · 시각 · 카운터를 0 으로</summary>
         <div class="ans">
         <p><strong>할 일</strong> — <code>app_init()</code> 이 부팅 때 한 번 부른다(§3-2-3 걸음 4). I2C 트랜잭션은 시작하지 않는다. 끝났을 때 참이어야 하는 것: 모듈의 모든 변수가 "부팅 직후" 값이다 — 스캔이 버스를 점유하고 있지 않고, 상태기계는 IDLE 이고, 샘플은 없고, 카운터는 0 이고, 첫 읽기는 바로 해도 된다.</p>
@@ -721,19 +828,23 @@ void ina226_init(void)
   s_phase       = INA_IDLE;
   s_vbus_mv     = 0;
   s_ipc_ua      = 0;
-  s_have_sample = false;
-  s_last_ok_ms  = 0u;
+  for (uint8_t d = 0u; d &lt; INA_DEV_COUNT; d++) {   /* 장치마다 있는 칸 넷 */
+    s_have[d]     = false;
+    s_ok_ms[d]    = 0u;
+    s_err[d]      = 0u;
+    s_last_err[d] = 0u;
+  }
   s_next_due_ms = 0u;                   /* 0 = 첫 바퀴부터 바로 읽어도 된다 */
-  s_err         = 0u;
-  s_last_err    = 0u;
+  s_isr_err     = 0u;
   s_done        = false;
   s_failed      = false;
 }</code></pre>
         <p><strong>코드 설명</strong></p>
         <ul>
           <li>파일 범위의 <code>static</code> 변수는 쓰지 않아도 0 으로 시작한다 — 그런데 왜 함수로 적는가. "부팅 직후 상태"가 <strong>한 곳에</strong> 적혀 있어 읽는 사람이 변수 목록을 한눈에 보고, 나중에 재초기화가 필요해지면 부를 자리가 있기 때문이다. 값이 0 이라도 적는다.</li>
+          <li><code>for (uint8_t d = 0u; d &lt; INA_DEV_COUNT; d++)</code> — 장치마다 있는 배열 넷(<code>s_have</code> · <code>s_ok_ms</code> · <code>s_err</code> · <code>s_last_err</code>)을 한 번에 비운다. <code>INA_DEV_COUNT</code> 는 enum 의 마지막 값이라 장치 수(2)와 같다 — 장치를 하나 더하면 enum 에 이름 하나를 더하는 것으로 이 반복도 따라 는다. <strong>다르게 써도 되는 곳</strong>: <code>memset(s_err, 0, sizeof s_err);</code> 처럼 배열마다 한 줄로 써도 같다.</li>
           <li><code>s_next_due_ms = 0u;</code> — T7 의 IDLE 가지는 <code>(int32_t)(now - s_next_due_ms) &lt; 0</code> 이면 기다린다. 0 이면 부팅 뒤 어느 시각이든 "때가 됐다"가 되어 첫 바퀴부터 읽는다.</li>
-          <li><code>s_done</code> · <code>s_failed</code> 도 <code>false</code> 로 둔다 — 다만 이 둘은 트랜잭션을 시작하기 직전에 T7 이 다시 지운다. 여기서 지우는 것은 "처음 상태"를 적는 뜻이지 이 초기화에 기대는 것이 아니다.</li>
+          <li><code>s_isr_err</code> · <code>s_done</code> · <code>s_failed</code> 도 0 · <code>false</code> 로 둔다 — 다만 이 둘은 트랜잭션을 시작하기 직전에 T7 이 다시 지운다. 여기서 지우는 것은 "처음 상태"를 적는 뜻이지 이 초기화에 기대는 것이 아니다.</li>
           <li><strong>선언의 위치.</strong> C 는 이름을 <strong>쓰기 전에</strong> 선언을 봐야 한다. §3-3-2 의 블록(<code>#include "System/tick.h"</code> 부터 <code>static volatile bool s_failed;</code> 까지)을 파일 <strong>끝에</strong> 그대로 붙이면 이 함수가 그 위에 있어 아래 표의 첫 행이 난다. 그 블록을 <code>static bool s_bus_hold;</code> 바로 아래로 올린다 — <strong>다르게 써도 되는 곳</strong>: 대신 <code>ina226_init()</code> 을 파일 끝으로 내려도 된다. 어느 쪽이든 "선언이 먼저" 다.</li>
         </ul>
         <p><strong>쓰는 API</strong> — 없다.</p>
@@ -745,7 +856,7 @@ void ina226_init(void)
             <tr><td>실습 B 에서 완결 코드를 전부 넣었다</td><td>같은 <code>error: … undeclared</code> — 그 변수들이 아직 없다</td><td>실습 B 에서는 <code>s_bus_hold = false;</code> 한 줄. 나머지는 실습 C 에서</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — 출력으로 보이는 것은 없다. 부팅 직후 첫 폴링까지 수 ms 라 <code>ERR ina no-sample</code> 을 손으로 쳐서 볼 수는 없고, 빌드가 되고 <code>ina</code> 가 <code>err=0</code> 으로 시작하는 것이 이 함수의 증거다.</p>
+        <p><strong>확인</strong> — 출력으로 보이는 것은 없다. 부팅 직후 첫 폴링까지 수 ms 라 <code>no-sample</code> 줄을 손으로 쳐서 볼 수는 없고, 빌드가 되고 <code>ina</code> 의 두 줄이 <code>err=0</code> 으로 시작하는 것이 이 함수의 증거다.</p>
         </div></details>
       <p class="small">주소를 16진수로 찍는 것은 이 가이드에서 <a href="fw-07-memory-dma.html">fw-07</a> 의 <code>mem</code> 이 버퍼 주소를 찍은 데 이은 두 번째다. 다른 값은 전부 정수로 찍는다(&lt;키&gt;=&lt;값&gt;, 단위는 키 이름 끝에).
       I2C 주소와 제조사 ID 를 예외로 두는 이유는 둘 다 <strong>측정값이 아니라 데이터시트 표의 글자</strong>이기 때문이다. Table 6-2 가 <code>0x40</code>, Table 7-14 가 <code>0x5449</code> 라고 적은 값을 펌웨어가 <code>64</code> · <code>21577</code> 로 찍으면 표와 대조할 수 없다.</p>
@@ -768,13 +879,26 @@ ERR i2c bad-arg</code></pre>
           <p><code>id</code> 가 <code>0x5449</code> 가 아닌 값으로 나오면 그 주소에 있는 것은 다른 칩이다(같은 버스에 무엇을 더 달았는지 본다).</p>
           <p>어느 쪽이 <code>0x41</code> 인지(=어느 모듈의 A0 가 VS 에 연결돼 있는지)를 <strong>모듈에 표시해 둔다</strong> — 실습 C 에서 둘을 바꿔 꽂으면 값이 서로 바뀐다.</p></li>
         <li><strong>하나만 나오면</strong> 두 모듈이 같은 주소일 가능성이 높다(둘 다 <code>0x40</code>). 그러면 같은 주소에 두 칩이 대답해 값이 섞인다 — 한 장을 빼고 스캔해 보면 바로 갈린다.</li>
-        <li><strong>아무것도 안 나오면</strong> 실습 A 의 표를 먼저 본다. ①이 OL 이 아니었거나 ⑥이 수백 Ω 이었다면 원인은 배선이다. 표에 이상이 없었다면 <code>&lt;&lt; 1</code>, NVIC, 전원 순서로 증상 ↔ 원인 표를 따라간다.</li>
+        <li><strong>아무것도 안 나오면</strong> 실습 A 의 표를 먼저 본다. ①이 OL 이 아니었거나 ⑥이 마지막 SDA 값 + ⑧ 보다 작았다면(수백 Ω 이하였다면) 원인은 배선이다. 표에 이상이 없었다면 <code>&lt;&lt; 1</code>, NVIC, 전원 순서로 증상 ↔ 원인 표를 따라간다.</li>
       </ul>
       <p><strong>일부러 틀려 보기 ① — 풀업을 뗀다.</strong> USB 를 뽑고 외부 풀업(달았다면)과 모듈의 3V3 을 뺀 뒤 다시 켜고 <code>i2c scan</code> 을 친다. <code>found=0</code> 이 나온다 — 여기까지는 "모듈이 없다"와 같다.
       <strong>다른 것은 걸린 시간이다.</strong> 명령이 돌아오는 데 몇 초가 걸리는지(또는 즉시 돌아오는지) 세어 노트에 적는다. 풀업이 없으면 두 선이 어디에 머무는지 정해지지 않는다. 그래서 HAL 이 BUSY 로 즉시 돌아올 수도(<code>:3275</code>), 주소마다 타임아웃을 쓸 수도(<code>:3298</code>) 있다.</p>
-      <p><strong>어느 쪽이었는지는 이 가이드가 예측하지 않는다. 내가 보고 적는다.</strong> 그리고 그동안 보드가 리셋되는지(배너가 다시 찍히는지)도 본다 — §2-9 의 예산표 행을 보드에서 확인하는 자리다. 확인했으면 원래대로 돌려놓는다.</p>
+      <p><strong>어느 쪽이었는지는 이 가이드가 예측하지 않는다. 내가 보고 적는다.</strong> 그리고 그동안 보드가 리셋되는지(배너가 다시 찍히는지)도 본다 — §2-9 의 예산표 행을 보드에서 확인하는 자리다. 확인했으면 원래대로 돌려놓는다.
+      T12 가 들어간 뒤에는 스캔 앞에서 BUSY 고착을 한 번 지우므로, 두 선이 떠 있는 동안 BUSY 가 다시 서는지까지 이 시험의 결과에 섞인다. 그 결과도 예측하지 않고 본 대로 적는다.</p>
       <p><strong>일부러 틀려 보기 ② — <code>&lt;&lt; 1</code> 을 뺀다.</strong> <code>ina226_addr8()</code> 이 인자를 그대로 돌려주게 잠깐 고치고 스캔한다. 언제나 <code>found=0</code> 이고, 이번에는 <strong>즉시 끝난다</strong>(없는 주소는 NACK 이 빨리 온다). 선 위로 나간 것은 7비트 주소 <code>0x20</code> ~ <code>0x27</code> 이었고 그 주소들에는 아무도 없다 — 8비트로 밀어야 <code>0x40</code> 을 부를 수 있다는 것이 이 관찰이다.
       "칩이 안 보인다"가 반드시 하드웨어 문제는 아니라는 것을 한 번 보고 나면, 나중에 BNO055 가 스캔에 안 나올 때 배선부터 의심하지 않게 된다. 되돌려 놓는다.</p>
+      <p><strong>발동 확인 — 켠 채로 모듈의 전원선을 뽑았다 꽂는다 (T12).</strong> 보드를 켠 채로 INA226 모듈 한 장의 VS(3V3) 선을 뽑았다가 다시 꽂고 <code>i2c scan</code> 을 친다. 결과가 그대로면 몇 번 더 뽑았다 꽂는다 — 선이 흔들리는 모양은 매번 다르다.</p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w24"><col class="w36"><col class="w40"></colgroup>
+        <thead><tr><th></th><th>T12 를 넣기 전 (2026-10-23 실측)</th><th>T12 를 넣은 뒤</th></tr></thead>
+        <tbody>
+          <tr><td>다시 꽂은 뒤 첫 스캔</td><td><code>found=0</code>. 두 선은 1 이고 0 ms 에 끝난다</td><td><code>found=2</code> · <code>0x40</code> · <code>0x41</code></td></tr>
+          <tr><td>그 뒤 스캔을 반복</td><td>계속 <code>found=0</code></td><td>계속 <code>found=2</code></td></tr>
+          <tr><td>풀리는 때</td><td>RESET 버튼(리셋이 PE 를 0 으로 만든다)</td><td>스캔 앞의 <code>i2c_unstick_busy()</code></td></tr>
+        </tbody>
+      </table></div>
+      <p>T12 를 넣기 전의 모습을 내 보드에서 보고 싶으면 <code>cmd_i2c()</code> 의 <code>(void)i2c_unstick_busy();</code> 줄을 잠깐 주석으로 막고 같은 시험을 한다. BUSY 를 직접 보려면 대기 루프 뒤에 아래 한 줄을 잠깐 넣는다 — 고착이면 <code>busy=1</code> 이다. 확인했으면 둘 다 되돌린다.</p>
+      <pre><code class="lang-c">printf("dbg busy=%u\r\n", (unsigned)(__HAL_I2C_GET_FLAG(&amp;hi2c1, I2C_FLAG_BUSY) == SET));   /* 임시 - 확인 뒤 지운다 */</code></pre>
+      <p class="small">이 시험은 전원선을 뽑는다. 실습 C 의 ③ 이 일부러 <strong>신호선(SDA)</strong>만 뽑는 것과 다른 경우다 — 그쪽에서 보려는 것은 트랜잭션 도중의 NACK(HAL 이 스스로 복구한다)이고, 이쪽에서 보려는 것은 트랜잭션 밖에서 생긴 BUSY 고착(HAL 이 모른다)이다. SDA 를 뽑았다 꽂을 때도 BUSY 가 고착될 수 있지만 <em>[추정]</em>, 그때는 T7 의 T12 줄이 풀어 주므로 ③ 의 결과(다시 꽂으면 <code>age_ms</code> 가 작아진다)는 그대로다. 모듈의 VBUS 에는 이 시험 동안에도 아무것도 걸지 않는다.</p>
 
       <h3 id="s3-3">3-3. 실습 C — <code>ina</code> 로 읽고, DMM 과 견주고, 뽑았다 꽂는다</h3>
       <p>스캔은 "누가 있나"까지다. 이제 값을 가져온다. 읽기는 <strong>인터럽트 방식으로</strong> 시작하고 주 루프가 상태를 한 단계씩 진행한다 — 블로킹이 아니어야 하는 이유는 §2-5 의 상자에 있다.</p>
@@ -788,53 +912,58 @@ ERR i2c bad-arg</code></pre>
                                 1.21 + 1.21 = 2.42 ms 가 든다(데이터시트 5쪽). 2-3 을 본다. */
 _Static_assert((INA226_POLL_MS) != 0u, "ina226.c: INA226_POLL_MS is still EMPTY");
 
-enum { INA_IDLE = 0, INA_WAIT_VBUS, INA_WAIT_IPC };
+enum { INA_IDLE = 0, INA_WAIT_VBUS, INA_WAIT_IPC };          /* WAIT 두 값은 장치 순서와 같다 */
+enum { INA_DEV_VBUS = 0, INA_DEV_IPC, INA_DEV_COUNT };     /* #1(0x40) = 02h 버스 전압, #2(0x41) = 01h 션트 전압 */
 
-static uint8_t  s_phase;                /* 위 enum 중 하나. main 문맥 전용. */
+static const uint8_t k_dev_addr[INA_DEV_COUNT] = { INA226_ADDR_VBUS, INA226_ADDR_IPC };
+static const uint8_t k_dev_reg[INA_DEV_COUNT]  = { INA226_REG_BUS_V, INA226_REG_SHUNT_V };
+
+static uint8_t  s_phase;                /* 위 첫 enum 중 하나. main 문맥 전용. */
 static uint8_t  s_rx[2];                /* 레지스터 하나, MSB 먼저. CPU 가 채운다(DMA 없음) -&gt; DTCM 이어도 된다 */
 static int32_t  s_vbus_mv;
 static int32_t  s_ipc_ua;
-static bool     s_have_sample;          /* 둘 다 한 번씩 읽기 전까지 false */
-static uint32_t s_last_ok_ms;
+static bool     s_have[INA_DEV_COUNT];       /* 장치마다: 한 번이라도 읽었으면 true. 한 장치가 실패해도 다른 장치는 따로 */
+static uint32_t s_ok_ms[INA_DEV_COUNT];      /* 장치마다: 마지막으로 읽기에 성공한 시각 */
+static uint32_t s_err[INA_DEV_COUNT];        /* 장치마다: 부팅 뒤 실패한 트랜잭션 수 */
+static uint32_t s_last_err[INA_DEV_COUNT];   /* 장치마다: 가장 최근 실패의 HAL_I2C_GetError() */
 static uint32_t s_next_due_ms;
-static uint32_t s_err;                  /* 부팅 뒤 실패한 트랜잭션 수 */
-static uint32_t s_last_err;             /* 가장 최근 실패의 HAL_I2C_GetError() */
+static volatile uint32_t s_isr_err;     /* 오류 콜백(ISR)이 적는다 - 주 루프가 그 장치의 s_last_err 로 옮긴다 */
 static volatile bool s_done;            /* 완료 콜백(ISR)이 true 로 설정한다 */
 static volatile bool s_failed;          /* 오류 콜백(ISR)이 true 로 설정한다 */
 
-/* 세 상태 기계의 한 걸음. app_loop() 한 바퀴에 한 번 불린다. 절대 막지 않는다.
+/* 상태 기계의 한 걸음. app_loop() 한 바퀴에 한 번 불린다. 절대 막지 않는다.
+ * 두 장치는 서로 따로다 - 한 장치가 실패해도 다른 장치는 계속 읽는다.
  *   INA_IDLE      : s_bus_hold 가 1 이면 아무것도 안 한다 (스캔이 버스를 쥐고 있다).
- *                   아니면, tick_get_ms() 가 s_next_due_ms 에 닿았을 때 INA226_ADDR_VBUS 의
- *                   02h 읽기를 HAL_I2C_Mem_Read_IT(..., I2C_MEMADD_SIZE_8BIT,
- *                   s_rx, 2) 로 걸고 INA_WAIT_VBUS 로 간다. 호출이 HAL_OK 를 돌려주지 않으면
- *                   실패로 다룬다 (아래) - 기다리다 갇히지 않는다.
- *   INA_WAIT_VBUS : s_done   -&gt; ina226_be16(s_rx) -&gt; ina226_bus_mv() -&gt; s_vbus_mv,
- *                              그다음 INA226_ADDR_IPC 의 01h 를 걸고 INA_WAIT_IPC 로
- *                   s_failed -&gt; 실패
- *   INA_WAIT_IPC  : s_done   -&gt; ina226_shunt_ua(..., INA226_SHUNT_MOHM) -&gt; s_ipc_ua,
- *                              s_have_sample = true, s_last_ok_ms = tick_get_ms(), IDLE
- *                   s_failed -&gt; 실패
- *   실패          : s_err++, INA_IDLE 로 돌아가고, 다음 시도를 예약한다.
- *                   s_have_sample 은 지우지 않는다 - 옛 값도 여전히 마지막으로 아는 값이다.
- *                   그 값이 낡았다고 말하는 것은 ina226_sample_age_ms() 다.
- * s_done / s_failed 는 각 트랜잭션을 걸기 전에 지운다, 뒤가 아니라. */
+ *                   아니면, tick_get_ms() 가 s_next_due_ms 에 닿았을 때 i2c_unstick_busy() (T12)
+ *                   를 한 번 부르고, 장치 #1 부터 "다음 장치" 로.
+ *   INA_WAIT_VBUS / INA_WAIT_IPC : 기다리는 장치 d = s_phase - INA_WAIT_VBUS.
+ *                   s_failed -&gt; s_err[d]++, s_last_err[d] = s_isr_err. 저장해 둔 값과 s_have[d] 는 그대로
+ *                   s_done   -&gt; ina226_be16(s_rx) 를 d 에 맞게 환산한다
+ *                               (#1: ina226_bus_mv() -&gt; s_vbus_mv,  #2: ina226_shunt_ua(..., INA226_SHUNT_MOHM) -&gt; s_ipc_ua),
+ *                               s_have[d] = true, s_ok_ms[d] = tick_get_ms()
+ *                   둘 다 아니면 돌아간다 (아직 선 위에 있다). 성공이든 실패든 그다음은 장치 d + 1 부터 "다음 장치".
+ *   다음 장치     : 남은 장치의 읽기를 HAL_I2C_Mem_Read_IT(..., I2C_MEMADD_SIZE_8BIT, s_rx, 2) 로 건다.
+ *                   걸리면 그 장치의 WAIT 로. HAL_OK 가 아니면 그 장치만 s_err[d]++ 하고 그다음 장치로
+ *                   - 기다리다 갇히지 않는다. 남은 장치가 없으면 INA_IDLE 로, s_next_due_ms = now + INA226_POLL_MS.
+ * s_done / s_failed 는 각 트랜잭션을 걸기 전에 지운다, 뒤가 아니라.
+ * 저장해 둔 값이 낡았다고 말하는 것은 ina226_vbus_age_ms() / ina226_ipc_age_ms() 다. */
 void ina226_service_main(void)
 {
-  /* TODO(you) [T7]: 위 주석의 세 상태를 switch 하나로 - 힌트 카드 T7
+  /* TODO(you) [T7]: 위 주석의 상태들을 switch 하나로 - 힌트 카드 T7
        1) now = tick_get_ms()
        2) INA_IDLE: s_bus_hold 면 돌아간다. 아직 s_next_due_ms 전이면 돌아간다 (부호 없는 뺄셈으로 견준다).
-          때가 됐으면 s_done · s_failed 를 지우고 #1 의 02h 읽기를 IT 로 건다 - HAL_OK 면 INA_WAIT_VBUS, 아니면 실패
-       3) INA_WAIT_VBUS: s_failed 면 실패. s_done 이 아니면 돌아간다. s_done 이면 s_rx -&gt; s_vbus_mv,
-          그다음 #2 의 01h 읽기를 건다 - HAL_OK 면 INA_WAIT_IPC, 아니면 실패
-       4) INA_WAIT_IPC: s_failed 면 실패. s_done 이면 s_rx -&gt; s_ipc_ua, s_have_sample = true,
-          s_last_ok_ms = now, INA_IDLE 로, s_next_due_ms = now + INA226_POLL_MS
-       5) 실패: s_err++, INA_IDLE 로, s_next_due_ms = now + INA226_POLL_MS. 세 군데서 같은 일이라 작은 함수로 뺀다
+          때가 됐으면 i2c_unstick_busy() 를 한 번 부르고 (T12), 장치 #1 부터 "다음 장치"
+       3) INA_WAIT_VBUS 와 INA_WAIT_IPC 는 한 가지로: d = s_phase - INA_WAIT_VBUS.
+          s_failed 면 s_err[d]++ 와 s_last_err[d] = s_isr_err. 아니고 s_done 도 아니면 돌아간다.
+          s_done 이면 s_rx 를 d 에 맞게 환산하고 s_have[d] = true, s_ok_ms[d] = now
+       4) 3) 의 끝에서 성공이든 실패든 장치 d + 1 부터 "다음 장치"
+       5) "다음 장치" 는 2) 와 4) 두 군데서 같은 일이라 작은 함수로 뺀다 (장치 순서는 k_dev_addr · k_dev_reg)
      채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
-  (void)s_phase; (void)s_rx; (void)s_next_due_ms; (void)s_last_ok_ms;
+  (void)s_phase; (void)s_rx; (void)s_next_due_ms; (void)k_dev_addr; (void)k_dev_reg;
 }
 
 </code></pre>
-      <p>그리고 같은 파일의 나머지 — <strong>ISR 문맥의 콜백 둘</strong>과 밖으로 내주는 함수들, 그리고 <code>ina</code> 명령이다.</p>
+      <p>그리고 같은 파일의 나머지 — <strong>ISR 문맥의 콜백 둘</strong>과 밖으로 내주는 함수들, 그리고 <code>ina</code> 명령이다. 두 장치를 <strong>따로</strong> 다룬다: 저장해 둔 값 · 성공 시각 · 오류 카운터가 장치마다 있고, <code>ina</code> 도 장치마다 한 줄이다. 한 장치가 응답하지 않아도 다른 장치의 값은 계속 읽히고 찍힌다(2026-10-23 — #1 의 결선을 고치는 동안 #2 의 값까지 안 보이던 앞 구조를 바꾼 것이다).</p>
       <pre><code class="lang-c">/* User/Src/Device/ina226.c (이어서) */
 /* --- HAL 콜백. ISR 문맥 (I2C1_EV / I2C1_ER, 선점 7). ---------
    플래그를 1 로 설정하고 돌아온다. printf 없음, HAL 호출 없음, 의미 있는 산술 없음. */
@@ -851,35 +980,49 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 {
   /* TODO(you) [T9]: 무엇이 틀렸는지 적고, 틀렸다고 알린다 - 힌트 카드 T9
        1) hi2c-&gt;Instance 가 I2C1 이 아니면 돌아간다
-       2) s_last_err = HAL_I2C_GetError(hi2c)   - 먼저 적고
+       2) s_isr_err = HAL_I2C_GetError(hi2c)    - 먼저 적고
        3) s_failed = true                        - 그다음 알린다 (순서가 중요하다 - 카드)
+     어느 장치의 실패인지는 여기서 모른다 - 주 루프(T7)가 s_phase 로 알고 그 장치의 칸으로 옮긴다.
      채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
   (void)hi2c;
 }
 
-/* TODO(you) [T10]: 밖으로 내주는 함수 셋 - 힌트 카드 T10
-     1) get_vbus_mv · get_ipc_ua: s_have_sample 이 false 면 false 를 돌려주고 끝.
+/* TODO(you) [T10]: 밖으로 내주는 함수 넷 - 힌트 카드 T10
+     1) get_vbus_mv · get_ipc_ua: 그 장치의 s_have[] 가 false 면 false 를 돌려주고 끝.
         아니면 *out_mv (또는 *out_ua) 에 저장해 둔 값을 쓰고 true
-     2) sample_age_ms: tick_get_ms() - s_last_ok_ms 를 부호 없는 뺄셈으로 돌려준다
-   채우기 시작하면 세 줄의 중괄호 안(빌드용 자리표시)을 지우고 본문을 쓴다. */
+     2) vbus_age_ms · ipc_age_ms: tick_get_ms() - 그 장치의 s_ok_ms[] 를 부호 없는 뺄셈으로 돌려준다
+   채우기 시작하면 네 줄의 중괄호 안(빌드용 자리표시)을 지우고 본문을 쓴다. */
 bool ina226_get_vbus_mv(int32_t *out_mv)   { (void)out_mv; return false; }
 bool ina226_get_ipc_ua(int32_t *out_ua)    { (void)out_ua; return false; }
-uint32_t ina226_sample_age_ms(void)        { return 0u; }
+uint32_t ina226_vbus_age_ms(void)          { return 0u; }
+uint32_t ina226_ipc_age_ms(void)           { return 0u; }
 
 static void cmd_ina(int argc, char *argv[])
 {
-  /* 인자 없음. 저장해 둔 쌍, 그 나이, 오류 카운터를 찍는다:
-   *   "ina vbus_mv=&lt;n&gt; ipc_ua=&lt;n&gt; age_ms=&lt;n&gt; err=&lt;n&gt; last_err=&lt;n&gt;"
-   * 한 번도 제대로 읽은 적이 없으면:  "ERR ina no-sample" */
-  /* TODO(you) [T11]: 저장해 둔 쌍과 나이 · 오류 카운터를 한 줄로 찍는다 - 힌트 카드 T11
-       1) s_have_sample 이 false 면 "ERR ina no-sample" 을 찍고 돌아간다
-       2) printf 한 번: vbus_mv · ipc_ua 는 (long) 으로 바꿔 %ld, 나머지 셋은 (unsigned long) 으로 바꿔 %lu
+  /* 인자 없음. 장치마다 한 줄 - 한 장치를 못 읽어도 다른 장치의 값과 두 장치의 오류 카운터는 나온다:
+   *   "ina n=2"
+   *   "  0x40 vbus_mv=&lt;n&gt; age_ms=&lt;n&gt; err=&lt;n&gt; last_err=&lt;n&gt;"
+   *   "  0x41 ipc_ua=&lt;n&gt; age_ms=&lt;n&gt; err=&lt;n&gt; last_err=&lt;n&gt;"
+   * 그 장치를 한 번도 읽지 못했으면 값 · 나이 대신:  "  0x40 no-sample err=&lt;n&gt; last_err=&lt;n&gt;" */
+  /* TODO(you) [T11]: 장치마다 저장해 둔 값과 나이 · 오류 카운터를 한 줄씩 찍는다 - 힌트 카드 T11
+       1) "ina n=&lt;장치 수&gt;" 한 줄 (INA_DEV_COUNT)
+       2) d = 0 .. INA_DEV_COUNT - 1 마다: s_have[d] 면 값 줄, 아니면 no-sample 줄. 주소는 k_dev_addr[d] 를 0x%02x 로
+       3) 값은 (long) 으로 바꿔 %ld, 나이 · err · last_err 은 (unsigned long) 으로 바꿔 %lu. 나이는 T10 의 두 함수
      인자는 쓰지 않는다 - (void)argc; (void)argv; 는 그대로 둔다. */
   (void)argc; (void)argv;
 }</code></pre>
+      <p>그리고 실습 B 의 <code>ina226_cli_register()</code> 에 <strong>한 줄</strong>이 는다 — 앞쪽 절반의 골격이 "3-3-2 에서 들어온다"고 적어 둔 그 줄이다. 전량이라 카드는 없다. <code>cmd_ina</code> 는 이 함수보다 아래에서 정의되지만, 앞쪽 절반의 앞 선언(<code>static void cmd_ina(int argc, char *argv[]);</code>)이 있어 여기서 이름을 써도 된다.</p>
+      <pre><code class="lang-c">/* User/Src/Device/ina226.c - ina226_cli_register() 를 이렇게 고친다. 실습 B 의 것에 "ina" 한 줄 */
+void ina226_cli_register(void)
+{
+  bool ok = cli_register("i2c", cmd_i2c);
+  ok = cli_register("ina", cmd_ina) &amp;&amp; ok;   /* 둘 다 성공해야 ok - app.c 의 led · ver 와 같은 꼴 (fw-05) */
+  FW_ASSERT(ok);
+}</code></pre>
       <p class="small">여기에 두는 두 콜백은 <strong>이 링크에 하나씩만</strong> 있을 수 있다 — <a href="fw-07-memory-dma.html">fw-07</a> 가 UART 쪽 세 콜백을 <code>console.c</code> 한 군데에 모은 것과 같은 이유다.</p>
       <p class="small"><strong>그리고 여기에 fw-15 로 넘길 물음이 하나 있다</strong>: BNO055 는 <strong>같은 I2C1</strong> 에 연결되므로 <code>hi2c-&gt;Instance</code> 로는 둘을 가를 수 없다.
-      "지금 이 트랜잭션은 누구 것인가"를 모듈 바깥에서 관리해야 한다는 뜻이고, 그 구조는 <a href="fw-15-bno055.html">fw-15</a> 에서 정한다. 이 쪽은 버스에 모듈이 하나뿐인 동안의 가장 단순한 꼴로 둔다.</p>
+      "지금 이 트랜잭션은 누구 것인가"를 모듈 바깥에서 관리해야 한다는 뜻이고, 그 구조는 <a href="fw-15-bno055.html">fw-15</a> 에서 정한다. 이 쪽은 버스에 모듈이 하나뿐인 동안의 가장 단순한 꼴로 둔다.
+      T12 <code>i2c_unstick_busy()</code> 도 같은 물음에 걸린다 — PE 는 I2C1 전체를 리셋하므로, 버스를 쓰는 모듈이 둘이 되면 이 함수를 어느 모듈에 두고 누가 부를지를 그 구조 안에서 정한다.</p>
       <p class="small"><code>s_rx</code> 를 어디에 둘지 고민하지 않아도 되는 이유: IT 로 읽으면 바이트를 옮기는 것이 CPU 라서 <strong>버퍼 자리 제약이 없다</strong>(<a href="fw-07-memory-dma.html#s2-7">fw-07 §2-7</a>). DMA 로 갔다면 <code>DMA_BUF</code> 여야 했다.</p>
 
       <h4 id="s3-3-3">3-3-3. 직접 채우기</h4>
@@ -889,10 +1032,16 @@ static void cmd_ina(int argc, char *argv[])
         <li><strong>순수 함수 셋을 채운다</strong>(<code>ina226_be16</code> · <code>ina226_bus_mv</code> · <code>ina226_shunt_ua</code>). <strong>MCU 를 굽기 전에 Mac 에서 채점한다</strong> — 아래 시험 파일이 채점표다.</li>
         <li><strong>상태기계와 콜백을 채운다.</strong> 막히는 지점의 이름까지: <code>HAL_I2C_Mem_Read_IT(&amp;hi2c1, ina226_addr8(...), INA226_REG_BUS_V, I2C_MEMADD_SIZE_8BIT, s_rx, 2)</code> ·
           <code>HAL_I2C_GetError(hi2c)</code> · <code>tick_get_ms()</code>. 시각 비교는 언제나 <strong>부호 없는 뺄셈</strong>으로 한다(<code>(uint32_t)(now - due)</code> — fw-02 의 <code>app_loop()</code> 과 같은 꼴).</li>
-        <li><strong>등록하고 부른다.</strong> <code>ina226_cli_register()</code> 에 <code>cli_register("ina", cmd_ina)</code> 한 줄, <code>app_loop()</code> 에 <code>ina226_service_main();</code> 한 줄.
+        <li><strong>등록하고 부른다.</strong> <code>ina226_cli_register()</code> 는 §3-3-2 끝의 블록대로 고친다(<code>ina</code> 한 줄). <code>app_loop()</code> 에는 한 줄이다 — 한 줄이라 카드는 없다.
+          <pre><code class="lang-c">/* User/Src/app.c - 실습 C 가 더하는 줄 하나. app_loop() 안, 다른 _service_main() 줄들의 끝 */
+  wt901_service_main();               /* (fw-14 가 넣은 줄) */
+  ina226_service_main();              /* 한 바퀴에 상태 하나 - 막지 않는다 (T7) */</code></pre>
           <strong><code>HAL_TIM_PeriodElapsedCallback()</code> 에는 아무것도 더하지 않는다</strong>(§2-5 의 상자).</li>
       </ol>
-      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 2 = T2 · T3 · T4(헤더의 순수 함수 셋 — 아래 시험 파일이 채점한다) · 걸음 3 = T7 · T8 · T9. 걸음 4 의 <code>ina</code> 명령이 T11 이고, 그 명령이 읽는 값을 밖으로 내주는 함수 셋이 T10 이다. 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 2 = T2 · T3 · T4(헤더의 순수 함수 셋 — 아래 시험 파일이 채점한다) · 걸음 3 = T7 · T8 · T9. 걸음 4 의 <code>ina</code> 명령이 T11 이고, 그 명령이 읽는 값을 밖으로 내주는 함수 넷이 T10 이다. 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
+      <p class="small"><strong>골격 확인(2026-10-20, 가이드에서 뽑은 그대로 arm-gcc 빌드):</strong> 두 값(<code>I2C_SCAN_TIMEOUT_MS</code> · <code>INA226_POLL_MS</code>)만 정하면 실습 C 골격은 뒤쪽 절반을 파일 끝에 그대로 이어 붙인 채로 빌드 · 링크된다 — 경고 6(아직 안 쓰는 <code>static</code> 변수 다섯과 아직 등록하지 않은 <code>cmd_ina</code>). T6 을 채울 때 선언 묶음을 위로 올린다(카드의 마지막 불릿). 카드 T1 ~ T11 과 §3-3-2 끝의 등록 블록을 다 넣으면 <strong>경고 0</strong>, 호스트 시험은 두 빌드 줄 다 <code>PASS ina226 18 cases</code>.
+      2026-10-23 에 T12 를 더하고 가이드에서 다시 뽑아 <code>ina226.c</code> 를 arm-gcc 로 컴파일했다 — 실습 B 골격 경고 1, 실습 C 골격 경고 6(위와 같은 여섯), 카드 T1 ~ T12 를 다 넣은 것 <strong>경고 0</strong>. 이때는 그 파일 하나만 컴파일했고 링크는 다시 하지 않았다.
+      같은 날 두 장치를 따로 다루는 구조로 T6 · T7 · T9 · T10 · T11 과 골격을 바꾼 뒤 다시 뽑아 컴파일했다 — 실습 C 골격 경고 <strong>7</strong>(아직 안 쓰는 <code>static</code> 변수 여섯 — <code>s_vbus_mv</code> · <code>s_ipc_ua</code> · <code>s_have</code> · <code>s_ok_ms</code> · <code>s_err</code> · <code>s_last_err</code> — 과 아직 등록하지 않은 <code>cmd_ina</code>), 카드 전부 <strong>경고 0</strong>. 카드의 코드는 사용자 보드에서 돌린 <code>ina226.c</code> 와 주석만 다르다.</p>
 
       <details class="hint" id="hint-t2"><summary>힌트 T2 — <code>ina226_be16()</code> · 선에서 온 두 바이트를 레지스터 값 하나로</summary>
         <div class="ans">
@@ -996,24 +1145,33 @@ static inline int32_t ina226_shunt_ua(uint16_t raw, uint32_t shunt_mohm)
         </table></div>
         </div></details>
 
-      <details class="hint" id="hint-t7"><summary>힌트 T7 — <code>ina226_service_main()</code> · 세 상태를 switch 하나로</summary>
+      <details class="hint" id="hint-t7"><summary>힌트 T7 — <code>ina226_service_main()</code> · 상태들을 switch 하나로, 두 장치는 따로</summary>
         <div class="ans">
-        <p><strong>할 일</strong> — <code>app_loop()</code> 한 바퀴에 한 번 불린다. 절대 블로킹하지 않는다 — 한 바퀴에 하는 일은 "상태 하나를 보고, 많아야 트랜잭션 하나를 시작하고, 돌아온다" 다. 읽는 것: <code>s_phase</code> · <code>s_bus_hold</code> · <code>s_done</code> · <code>s_failed</code> · 시각. 쓰는 것: <code>s_vbus_mv</code> · <code>s_ipc_ua</code> · <code>s_have_sample</code> · <code>s_last_ok_ms</code> · <code>s_err</code> · <code>s_next_due_ms</code>. 끝났을 때 참이어야 하는 것: 실패해도 다음 주기에 다시 건다 — 그리고 <strong><code>s_have_sample</code> 은 지우지 않는다</strong>(골격의 주석 "옛 값도 여전히 마지막으로 아는 값이다").</p>
-        <p><strong>완결 코드</strong> — 작은 함수 둘(<code>ina_fail</code> · <code>ina_start_read</code>)을 위에 두고, 그 아래가 골격의 함수다. 둘은 골격에 없다 — 같은 일이 세 번 나와서 뺀 것이고, <strong>다르게 써도 되는 곳</strong>이다(안에 풀어 써도 된다).</p>
+        <p><strong>할 일</strong> — <code>app_loop()</code> 한 바퀴에 한 번 불린다. 절대 블로킹하지 않는다 — 한 바퀴에 하는 일은 "상태 하나를 보고, 많아야 트랜잭션 하나를 시작하고, 돌아온다" 다. 읽는 것: <code>s_phase</code> · <code>s_bus_hold</code> · <code>s_done</code> · <code>s_failed</code> · <code>s_isr_err</code> · 시각. 쓰는 것: <code>s_vbus_mv</code> · <code>s_ipc_ua</code> 와 장치마다의 <code>s_have[]</code> · <code>s_ok_ms[]</code> · <code>s_err[]</code> · <code>s_last_err[]</code>, 그리고 <code>s_next_due_ms</code>. 끝났을 때 참이어야 하는 것: <strong>한 장치의 실패가 다른 장치의 읽기를 막지 않는다</strong> — 실패한 장치는 그 장치의 칸에만 세고 다음 장치로 넘어간다. 그리고 실패해도 <strong><code>s_have[]</code> 와 저장해 둔 값은 지우지 않는다</strong>(옛 값도 여전히 마지막으로 아는 값이다).</p>
+        <p><strong>완결 코드</strong> — 작은 함수 둘(<code>ina_start_read</code> · <code>ina_next</code>)을 위에 두고, 그 아래가 골격의 함수다. 둘은 골격에 없다 — 같은 일이 두 번 이상 나와서 뺀 것이고, <strong>다르게 써도 되는 곳</strong>이다(안에 풀어 써도 된다).</p>
         <pre><code class="lang-c">/* 완결 코드 T7 - User/Src/Device/ina226.c */
-static void ina_fail(uint32_t now)      /* 실패 한 번: 세고, IDLE 로, 다음 시도를 예약한다. s_have_sample 은 그대로 */
-{
-  s_err++;
-  s_phase       = INA_IDLE;
-  s_next_due_ms = now + INA226_POLL_MS;
-}
-
 static bool ina_start_read(uint8_t addr7, uint8_t reg)   /* 레지스터 하나(2 바이트)의 IT 읽기를 건다 */
 {
   s_done   = false;                     /* 걸기 "전에" 지운다 - 콜백은 이 함수가 돌아오기 전에도 올 수 있다 */
   s_failed = false;
   return HAL_I2C_Mem_Read_IT(&amp;hi2c1, ina226_addr8(addr7), reg,
                              I2C_MEMADD_SIZE_8BIT, s_rx, 2u) == HAL_OK;
+}
+
+/* dev 부터 차례로 읽기를 건다. 걸리면 그 장치의 WAIT 로 가고, 못 걸면 그 장치만 실패로 세고
+   다음 장치로 넘어간다. 남은 장치가 없으면 IDLE 로 돌아가 다음 주기를 예약한다. */
+static void ina_next(uint8_t dev, uint32_t now)
+{
+  while (dev &lt; INA_DEV_COUNT) {                          /* 많아야 두 바퀴 */
+    if (ina_start_read(k_dev_addr[dev], k_dev_reg[dev])) {
+      s_phase = (uint8_t)(INA_WAIT_VBUS + dev);
+      return;
+    }
+    s_err[dev]++;                                        /* 시작조차 못 했다(HAL_BUSY 등) - 오류 콜백이 없으므로 last_err 는 그대로 */
+    dev++;
+  }
+  s_phase       = INA_IDLE;
+  s_next_due_ms = now + INA226_POLL_MS;
 }
 
 void ina226_service_main(void)
@@ -1024,27 +1182,28 @@ void ina226_service_main(void)
   case INA_IDLE:
     if (s_bus_hold) { return; }                          /* 스캔이 버스를 쥐고 있다 */
     if ((int32_t)(now - s_next_due_ms) &lt; 0) { return; }  /* 아직 때가 아니다 - 뺄셈은 부호 없이, 부호만 본다 */
-    if (ina_start_read(INA226_ADDR_VBUS, INA226_REG_BUS_V)) { s_phase = INA_WAIT_VBUS; }
-    else { ina_fail(now); }
+    (void)i2c_unstick_busy();                            /* BUSY 가 1 로 남아 있으면 지운다 - T12 */
+    ina_next(INA_DEV_VBUS, now);
     return;
 
   case INA_WAIT_VBUS:
-    if (s_failed) { ina_fail(now); return; }
-    if (!s_done)  { return; }                            /* 아직 선 위에 있다 - 다음 바퀴에 다시 본다 */
-    s_vbus_mv = ina226_bus_mv(ina226_be16(s_rx));
-    if (ina_start_read(INA226_ADDR_IPC, INA226_REG_SHUNT_V)) { s_phase = INA_WAIT_IPC; }
-    else { ina_fail(now); }
+  case INA_WAIT_IPC: {
+    uint8_t dev = (uint8_t)(s_phase - INA_WAIT_VBUS);    /* 지금 기다리는 장치 */
+    if (s_failed) {                                      /* 이 장치만 실패 - 저장해 둔 값과 s_have 는 그대로 */
+      s_err[dev]++;
+      s_last_err[dev] = s_isr_err;
+    } else if (!s_done) {
+      return;                                            /* 아직 선 위에 있다 - 다음 바퀴에 다시 본다 */
+    } else {
+      uint16_t raw = ina226_be16(s_rx);
+      if (dev == INA_DEV_VBUS) { s_vbus_mv = ina226_bus_mv(raw); }
+      else                     { s_ipc_ua  = ina226_shunt_ua(raw, INA226_SHUNT_MOHM); }
+      s_have[dev]  = true;
+      s_ok_ms[dev] = now;
+    }
+    ina_next((uint8_t)(dev + 1u), now);                  /* 성공이든 실패든 다음 장치로 */
     return;
-
-  case INA_WAIT_IPC:
-    if (s_failed) { ina_fail(now); return; }
-    if (!s_done)  { return; }
-    s_ipc_ua      = ina226_shunt_ua(ina226_be16(s_rx), INA226_SHUNT_MOHM);
-    s_have_sample = true;
-    s_last_ok_ms  = now;
-    s_phase       = INA_IDLE;
-    s_next_due_ms = now + INA226_POLL_MS;
-    return;
+  }
 
   default:
     s_phase = INA_IDLE;                                  /* 있을 수 없는 값 - 처음으로 */
@@ -1053,17 +1212,24 @@ void ina226_service_main(void)
 }</code></pre>
         <p><strong>코드 설명</strong></p>
         <ul>
-          <li><code>static void ina_fail(uint32_t now)</code> — 함수 앞의 <code>static</code> 은 "이 파일 밖에서는 이 이름이 안 보인다"(<code>cmd_i2c</code> 와 같다 — fw-05 의 <code>cmd_*</code> 함수들이 전부 그렇다). 하는 일은 골격 주석의 "실패" 세 줄 그대로다: 세고, IDLE 로, 다음 시도를 예약. <code>now</code> 를 인자로 받는 이유는 같은 바퀴 안에서 시각을 한 번만 읽기 위해서다.</li>
-          <li><code>static bool ina_start_read(uint8_t addr7, uint8_t reg)</code> — <code>s_done = false; s_failed = false;</code> 를 <code>HAL_I2C_Mem_Read_IT()</code> <strong>앞에</strong> 둔다. 완료 콜백(T8)은 이 함수가 돌아오기 전에도 올 수 있다. 뒤에서 지우면 콜백이 방금 true 로 설정한 표시를 다시 지우게 되고, 상태기계는 WAIT 상태에 계속 머문다(fw-07 T2 의 <code>s_tx_done</code> 과 같은 순서다). 반환은 <code>== HAL_OK</code> 를 <code>bool</code> 로 — 부르는 쪽이 <code>if (ina_start_read(…))</code> 로 읽힌다.</li>
+          <li><code>static bool ina_start_read(uint8_t addr7, uint8_t reg)</code> — 함수 앞의 <code>static</code> 은 "이 파일 밖에서는 이 이름이 안 보인다"(<code>cmd_i2c</code> 와 같다). <code>s_done = false; s_failed = false;</code> 를 <code>HAL_I2C_Mem_Read_IT()</code> <strong>앞에</strong> 둔다. 완료 콜백(T8)은 이 함수가 돌아오기 전에도 올 수 있다. 뒤에서 지우면 콜백이 방금 true 로 설정한 표시를 다시 지우게 되고, 상태기계는 WAIT 상태에 계속 머문다(fw-07 T2 의 <code>s_tx_done</code> 과 같은 순서다). 반환은 <code>== HAL_OK</code> 를 <code>bool</code> 로 — 부르는 쪽이 <code>if (ina_start_read(…))</code> 로 읽힌다.</li>
+          <li><code>static void ina_next(uint8_t dev, uint32_t now)</code> — "다음 장치" 를 맡는다. <code>dev</code> 부터 남은 장치의 읽기를 차례로 걸어 본다. 걸리면 <code>s_phase = INA_WAIT_VBUS + dev</code> — 첫 enum 의 WAIT 두 값을 장치 순서와 같게 둔 것이 이 덧셈을 쓰려는 것이다. 못 걸면(<code>HAL_BUSY</code> 등) <strong>그 장치의 <code>s_err[dev]</code> 만</strong> 올리고 다음 장치로 간다. 이때 오류 콜백은 오지 않으므로 <code>s_last_err[dev]</code> 는 바뀌지 않는다. 남은 장치가 없으면 IDLE 로 돌아가 다음 주기를 예약한다.
+            <code>while</code> 은 <code>dev</code> 가 늘기만 하므로 많아야 <code>INA_DEV_COUNT</code> 바퀴다 — 끝나는 조건이 코드 안에 있다.</li>
+          <li><code>k_dev_addr[]</code> · <code>k_dev_reg[]</code> — 장치 번호로 주소와 레지스터를 찾는 표다(골격). #1 은 <code>02h</code>(버스 전압), #2 는 <code>01h</code>(션트 전압)를 읽는다. <code>static const</code> 라 플래시에 있고 바뀌지 않는다.</li>
           <li><code>uint32_t now = tick_get_ms();</code> — 바퀴마다 한 번. 아래 모든 시각 산술이 이 값 하나를 쓴다.</li>
-          <li><code>switch (s_phase)</code> 와 <code>case … : … return;</code> — 상태마다 가지 하나, 가지 끝은 <code>return</code>. 한 바퀴에 상태 하나만 본다는 규칙이 코드 모양에 그대로 드러난다. <strong>다르게 써도 되는 곳</strong>: <code>break;</code> 로 끝내고 함수 끝으로 떨어져도 된다 — 뒤에 공통으로 할 일이 없어 <code>return</code> 으로 썼다. <code>default</code> 는 <code>uint8_t</code> 에 enum 밖의 값이 들어올 경로가 없어도 두는 습관이다 — 들어왔다면 처음으로 돌린다.</li>
+          <li><code>switch (s_phase)</code> 와 <code>case … : … return;</code> — 상태마다 가지 하나, 가지 끝은 <code>return</code>. 한 바퀴에 상태 하나만 본다는 규칙이 코드 모양에 그대로 드러난다. <code>default</code> 는 <code>uint8_t</code> 에 enum 밖의 값이 들어올 경로가 없어도 두는 습관이다 — 들어왔다면 처음으로 돌린다.</li>
           <li><p><code>case INA_IDLE:</code> ① <code>if (s_bus_hold) { return; }</code> — 스캔(T5)이 버스를 점유하고 있으면 아무것도 걸지 않는다.</p>
             <p>② <code>(int32_t)(now - s_next_due_ms) &lt; 0</code> — <strong>뺄셈은 부호 없이</strong> 한다(되감겨도 맞다 — fw-02 의 <code>(uint32_t)(now - last)</code> 와 같은 이유). 그 결과를 부호 있는 형으로 보아 음수면 "아직 전"이다. 2<sup>31</sup> 이상인 값을 <code>int32_t</code> 로 바꾸는 것은 구현 정의 동작이고 gcc 는 2의 보수 그대로 둔다. <strong>다르게 써도 되는 곳</strong>: <code>(uint32_t)(now - s_next_due_ms) &gt;= 0x80000000u</code> 면 캐스트 없이 같은 뜻이다.</p>
-            <p>③ 때가 됐으면 #1(<code>INA226_ADDR_VBUS</code>)의 <code>02h</code> 를 건다 — 걸렸으면 <code>INA_WAIT_VBUS</code>, <code>HAL_OK</code> 가 아니면 그 자리에서 <code>ina_fail(now)</code>. 골격 주석의 "기다리다 갇히지 않는다"가 이 <code>else</code> 다.</p></li>
-          <li><code>case INA_WAIT_VBUS:</code> — <code>s_failed</code> 를 <strong>먼저</strong> 본다. HAL 은 한 트랜잭션에 완료 · 오류 콜백 중 하나만 부르지만, 둘 다 1 인 상태가 있다면 실패 쪽으로 읽는 것이 안전하다. <code>s_done</code> 이 아니면 그냥 돌아간다 — 아직 전송 중이므로 다음 바퀴에 다시 본다. 왔으면 <code>ina226_bus_mv(ina226_be16(s_rx))</code> — 환산은 여기(main)서 한다, ISR 이 아니라. 그리고 <strong>같은 바퀴에</strong> #2 의 <code>01h</code> 를 바로 건다 — 두 값의 시각 차를 줄인다.</li>
-          <li><code>case INA_WAIT_IPC:</code> — 쌍이 완성되는 자리다. <code>s_ipc_ua</code> 를 채우고 <code>s_have_sample = true; s_last_ok_ms = now;</code> 를 쓴 뒤 다음 예약 <code>s_next_due_ms = now + INA226_POLL_MS;</code> 를 둔다. 덧셈이 되감겨도 위의 뺄셈 비교라 맞다. <code>INA226_SHUNT_MOHM</code> 은 <code>robot_params.h</code> 의 값(§3-2-2 의 상자).</li>
-          <li>실패 경로가 <code>s_have_sample</code> 을 건드리지 않는 것 — §3-3-4 ③ 에서 <code>vbus_mv</code> 가 옛 값 그대로 남고 <code>age_ms</code> 만 느는 이유다. 끊긴 것을 나타내는 칸은 값이 아니라 나이다(§2-8, fw-18).</li>
-          <li>골격의 <code>(void)s_phase; …</code> 네 개는 지웠다 — 이제 전부 쓴다.</li>
+            <p>③ <code>(void)i2c_unstick_busy();</code> — T12. 읽기를 걸기 <strong>직전</strong>에 부른다. IDLE 이면 HAL 쪽에 진행 중인 전송이 없으므로 T12 의 READY 조건이 맞는 자리다. 이 줄이 없으면 BUSY 가 한 번 고착된 뒤로 <code>ina_start_read()</code> 가 리셋 전까지 매번 <code>HAL_BUSY</code> 로 실패한다 — 두 장치의 <code>err</code> 만 주기마다 오르고 <code>last_err</code> 는 바뀌지 않는다(오류 콜백이 오지 않으므로). 고착이 없으면 레지스터 두 개를 읽고 바로 돌아온다.</p>
+            <p>④ <code>ina_next(INA_DEV_VBUS, now);</code> — 장치 #1 부터 읽기를 건다.</p></li>
+          <li><p><code>case INA_WAIT_VBUS: case INA_WAIT_IPC: { … }</code> — 두 WAIT 를 한 가지로 묶었다. 하는 일이 장치 번호만 다르고 같기 때문이다. <code>case</code> 아래에서 지역 변수(<code>dev</code> · <code>raw</code>)를 만들려면 중괄호로 블록을 열어야 한다 — 없으면 <code>error: a label can only be part of a statement and a declaration is not a statement</code> 류의 오류가 난다.</p>
+            <p>① <code>dev = s_phase - INA_WAIT_VBUS</code> — 지금 기다리는 장치.</p>
+            <p>② <code>s_failed</code> 를 <strong>먼저</strong> 본다. HAL 은 한 트랜잭션에 완료 · 오류 콜백 중 하나만 부르지만, 둘 다 1 인 상태가 있다면 실패 쪽으로 읽는 것이 안전하다. 실패면 <strong>그 장치의</strong> <code>s_err[dev]</code> 를 올리고 ISR 이 적어 둔 <code>s_isr_err</code> 를 그 장치의 <code>s_last_err[dev]</code> 로 옮긴다 — 오류 콜백(T9)은 어느 장치의 실패인지 모르고, 그것을 아는 것은 <code>s_phase</code> 를 가진 이쪽이다.</p>
+            <p>③ <code>s_done</code> 이 아니면 그냥 돌아간다 — 아직 전송 중이므로 다음 바퀴에 다시 본다.</p>
+            <p>④ 왔으면 <code>ina226_be16(s_rx)</code> 를 장치에 맞게 환산한다 — 환산은 여기(main)서 한다, ISR 이 아니라. <code>INA226_SHUNT_MOHM</code> 은 <code>robot_params.h</code> 의 값(§3-2-2 의 상자). 그리고 <code>s_have[dev] = true; s_ok_ms[dev] = now;</code>.</p>
+            <p>⑤ <code>ina_next(dev + 1u, now)</code> — 성공이든 실패든 <strong>같은 바퀴에</strong> 다음 장치의 읽기를 건다. 두 값의 시각 차를 줄이고, 한 장치의 실패가 다른 장치를 막지 않게 하는 자리가 여기다. #2 가 끝나면 <code>dev + 1u</code> 가 장치 수와 같아 <code>ina_next</code> 가 IDLE 로 돌리고 다음 주기를 예약한다. 덧셈 <code>now + INA226_POLL_MS</code> 가 되감겨도 IDLE 의 뺄셈 비교라 맞다.</p></li>
+          <li>실패 경로가 <code>s_have[dev]</code> 와 저장해 둔 값을 건드리지 않는 것 — §3-3-4 ③ 에서 <code>0x40</code> 줄의 <code>vbus_mv</code> 가 옛 값 그대로 남고 <code>age_ms</code> 만 느는 이유다. 끊긴 것을 나타내는 칸은 값이 아니라 나이다(§2-8, fw-18).</li>
+          <li>골격의 <code>(void)s_phase; …</code> 자리표시 줄은 지웠다 — 이제 전부 쓴다.</li>
         </ul>
         <p><strong>쓰는 API</strong></p>
         <ul>
@@ -1074,14 +1240,16 @@ void ina226_service_main(void)
         <div class="tbl"><table class="compact">
           <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
           <tbody>
-            <tr><td><code>HAL_I2C_Mem_Read_IT(&amp;hi2c1, INA226_ADDR_VBUS, …)</code> — 7비트를 그대로</td><td>컴파일러는 아무 말도 하지 않는다(2026-10-03 arm-gcc 로 확인). 보드: <code>err</code> 가 바퀴마다 오르고 <code>last_err=4</code></td><td><code>ina226_addr8(…)</code> 로 감싼다(T1)</td></tr>
+            <tr><td>두 장치를 표시 하나(<code>s_have_sample</code>)와 실패 함수 하나로 묶었다 — #1 이 실패하면 그 주기를 통째로 버린다</td><td>컴파일러는 아무 말도 하지 않는다. 보드: #1 이 응답하지 않는 동안 #2 의 값도 한 번도 나오지 않는다 — 2026-10-23 사용자가 #1 결선을 고치는 동안 실제로 본 증상이고, 이 카드가 장치별 구조로 바뀐 이유다</td><td>장치마다 칸을 두고, 실패해도 다음 장치로(<code>ina_next</code>)</td></tr>
+            <tr><td>실패 가지(<code>if (s_failed)</code>)에서 <code>ina_next()</code> 를 부르지 않고 <code>return</code> 했다</td><td>컴파일러는 아무 말도 하지 않는다. <code>s_failed</code> 가 true 인 채 WAIT 에 남아 바퀴마다 같은 실패를 다시 센다 — 그 장치의 <code>err</code> 가 주 루프 속도로 오르고 다른 장치의 <code>age_ms</code> 도 계속 는다 <em>[코드로 따진 결과 — 보드에서 재현하지 않았다]</em></td><td>성공이든 실패든 끝에서 <code>ina_next(dev + 1u, now)</code></td></tr>
+            <tr><td><code>HAL_I2C_Mem_Read_IT(&amp;hi2c1, INA226_ADDR_VBUS, …)</code> — 7비트를 그대로</td><td>컴파일러는 아무 말도 하지 않는다(2026-10-03 arm-gcc 로 확인). 보드: 두 줄 다 <code>no-sample</code>, <code>err</code> 가 주기마다 오르고 <code>last_err=4</code></td><td><code>ina226_addr8(…)</code> 로 감싼다(T1)</td></tr>
             <tr><td><code>if (now &lt; s_next_due_ms) { return; }</code></td><td>컴파일러는 아무 말도 하지 않는다. <code>tick_get_ms()</code> 가 최댓값을 넘어 0 으로 돌아가는 순간(2<sup>32</sup> ms ≈ 49.7 일) 한 번 틀린다 — fw-02 의 이해 확인 4</td><td>부호 없는 뺄셈으로 견준다</td></tr>
-            <tr><td><code>case</code> 끝의 <code>return</code>(또는 <code>break</code>)을 빠뜨렸다</td><td>컴파일러는 아무 말도 하지 않는다 — <code>-Wall</code> 에는 fall-through 경고가 없다(2026-10-03 확인. <code>-Wextra</code> 를 더하면 <code>warning: this statement may fall through [-Wimplicit-fallthrough=]</code> 와 <code>note: here</code> 가 난다). 보드: 당장은 드러나지 않을 수 있다(표 아래)</td><td>가지마다 <code>return;</code> — 한 바퀴에 상태 하나</td></tr>
-            <tr><td><code>s_done = false;</code> 를 <code>HAL_I2C_Mem_Read_IT()</code> <strong>뒤에</strong> 썼다</td><td>컴파일러는 아무 말도 하지 않는다. 콜백이 먼저 온 바퀴에는 표시가 지워져 WAIT 에서 계속 머문다 — <code>age_ms</code> 만 늘고 <code>err</code> 는 그대로</td><td>읽기를 시작하기 <strong>전에</strong> 지운다(<code>ina_start_read</code>)</td></tr>
+            <tr><td><code>case INA_IDLE:</code> 끝의 <code>return</code> 을 빠뜨렸다</td><td>컴파일러는 아무 말도 하지 않는다 — <code>-Wall</code> 에는 fall-through 경고가 없다(2026-10-03 확인. <code>-Wextra</code> 를 더하면 <code>warning: this statement may fall through [-Wimplicit-fallthrough=]</code> 와 <code>note: here</code> 가 난다). 보드: 당장은 드러나지 않을 수 있다(표 아래)</td><td>가지마다 <code>return;</code> — 한 바퀴에 상태 하나. 두 WAIT 를 묶은 <code>case INA_WAIT_VBUS: case INA_WAIT_IPC:</code> 는 일부러 붙인 것이라 다르다</td></tr>
+            <tr><td><code>s_done = false;</code> 를 <code>HAL_I2C_Mem_Read_IT()</code> <strong>뒤에</strong> 썼다</td><td>컴파일러는 아무 말도 하지 않는다. 콜백이 먼저 온 바퀴에는 표시가 지워져 WAIT 에서 계속 머문다 — 두 장치의 <code>age_ms</code> 만 늘고 <code>err</code> 는 그대로</td><td>읽기를 시작하기 <strong>전에</strong> 지운다(<code>ina_start_read</code>)</td></tr>
           </tbody>
         </table></div>
-        <p class="small"><strong>셋째 행(<code>return</code> 누락)의 보드 쪽.</strong> 다음 가지 첫머리의 <code>if (!s_done) { return; }</code> 가 방금 시작한 읽기를 "아직 안 왔다"로 막기 때문에 당장은 드러나지 않을 수 있다. 그래서 더 위험하다. 진행 중인 읽기가 없는데도 다음 가지로 들어가는 구조라, 가지가 조금만 바뀌어도 아직 안 온 <code>s_rx</code> 를 환산하게 된다.</p>
-        <p><strong>확인</strong> — §3-3-4 의 첫 <code>ina</code> 줄: <code>err=0 last_err=0</code> 에 <code>age_ms</code> 가 폴링 주기보다 작다. ③ 뽑았다 꽂기에서 <code>err</code> 가 오르고 <code>vbus_mv</code> 는 옛 값, <code>age_ms</code> 가 계속 늘다가, 다시 꽂으면 <code>age_ms</code> 가 작아진다(체크포인트 <code>i2c-unplug-recovers</code>). 복구에 코드가 따로 없는 것은 HAL 이 오류 뒤 핸들을 READY 로 되돌리고(§2-6) 이 함수가 다음 주기에 트랜잭션을 다시 시작하기 때문이다. "일부러 틀려 보기 ③" 의 <code>loop_us_max</code> 변화도 이 함수가 주 루프 한 번에 쓰는 시간이다. 보드 동작은 굽고 보기에서 확인한다.</p>
+        <p class="small"><strong>다섯째 행(<code>return</code> 누락)의 보드 쪽.</strong> 아래 WAIT 가지의 <code>else if (!s_done) { return; }</code> 가 방금 시작한 읽기를 "아직 안 왔다"로 막기 때문에 당장은 드러나지 않을 수 있다. 그래서 더 위험하다. 진행 중인 읽기가 없는데도 다음 가지로 들어가는 구조라, 가지가 조금만 바뀌어도 아직 안 온 <code>s_rx</code> 를 환산하게 된다.</p>
+        <p><strong>확인</strong> — §3-3-4 의 첫 <code>ina</code> 출력: 두 장치 줄 다 <code>err=0 last_err=0</code> 에 <code>age_ms</code> 가 폴링 주기보다 작다. ③ 에서 #1 의 SDA 를 뽑으면 <code>0x40</code> 줄의 <code>err</code> 가 오르고 <code>vbus_mv</code> 는 옛 값, <code>age_ms</code> 가 계속 늘다가, 다시 꽂으면 <code>age_ms</code> 가 작아진다. 그동안 <code>0x41</code> 줄은 <code>age_ms</code> 가 작은 채로 남는다 — 두 장치가 따로라는 증거다(체크포인트 <code>i2c-unplug-recovers</code>). NACK 같은 트랜잭션 오류에 복구 코드가 따로 없는 것은 HAL 이 오류 뒤 핸들을 READY 로 되돌리고(§2-6) 이 함수가 다음 주기에 트랜잭션을 다시 시작하기 때문이다. 트랜잭션 밖에서 생긴 BUSY 고착은 HAL 이 모르므로 ③ 의 T12 한 줄이 맡는다. "일부러 틀려 보기 ③" 의 <code>loop_us_max</code> 변화도 이 함수가 주 루프 한 번에 쓰는 시간이다. 보드 동작은 굽고 보기에서 확인한다.</p>
         </div></details>
 
       <details class="hint" id="hint-t8"><summary>힌트 T8 — <code>HAL_I2C_MemRxCpltCallback()</code> · 읽기가 다 끝났다고 주 루프에 알린다</summary>
@@ -1122,14 +1290,14 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c)
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 {
   if (hi2c-&gt;Instance != I2C1) { return; }
-  s_last_err = HAL_I2C_GetError(hi2c);  /* 무엇이었는지 먼저 적는다 (4 = HAL_I2C_ERROR_AF) */
-  s_failed   = true;                    /* 그다음 알린다 - 주 루프가 s_failed 를 본 뒤 s_last_err 를 읽는다 */
+  s_isr_err = HAL_I2C_GetError(hi2c);   /* 무엇이었는지 먼저 적는다 (4 = HAL_I2C_ERROR_AF) */
+  s_failed  = true;                     /* 그다음 알린다 - 주 루프가 s_failed 를 본 뒤 s_isr_err 를 읽는다 */
 }</code></pre>
         <p><strong>코드 설명</strong></p>
         <ul>
           <li><code>if (hi2c-&gt;Instance != I2C1) { return; }</code> — T8 과 같은 가드를 "아니면 나간다" 꼴로 썼다. 할 일이 두 줄이라 이쪽이 들여쓰기를 줄인다. 뜻은 같다.</li>
-          <li><code>s_last_err = HAL_I2C_GetError(hi2c);</code> 가 <strong>먼저</strong> — 오류 코드를 적는다. <code>4</code> 가 <code>HAL_I2C_ERROR_AF</code>(NACK) 다(§3-3-4 ③ 의 <code>last_err=4</code>). 코드는 비트 OR 로 쌓인 값이라 둘 이상이 겹쳐 있을 수도 있다(§2-6).</li>
-          <li><code>s_failed = true;</code> 가 <strong>그다음</strong> — 알린다. 순서의 이유: main 쪽은 <code>s_failed</code> 를 보고 나서야 이번 실패를 다룬다. 알림 플래그를 먼저 true 로 설정하면 그 사이에 main 이 끼어들어 아직 적히지 않은 <code>s_last_err</code> 를 볼 수 있다. 지금 코드에서 <code>s_last_err</code> 를 읽는 곳은 <code>ina</code> 명령뿐이라 실제 피해는 작다. 그래도 <strong>"데이터 먼저, 플래그 나중"</strong>은 ISR ↔ main 이 변수를 나눠 쓸 때의 기본 순서다(fw-05 T2 의 링이 "먼저 쓰고, 그다음 head" 인 것과 같다).</li>
+          <li><code>s_isr_err = HAL_I2C_GetError(hi2c);</code> 가 <strong>먼저</strong> — 오류 코드를 적는다. 어느 장치의 실패인지는 여기서 모른다 — T7 이 <code>s_phase</code> 로 장치를 알고 그 장치의 <code>s_last_err[]</code> 로 옮긴다. 그래서 ISR 이 쓰는 칸은 장치마다가 아니라 하나(<code>volatile</code>)다. <code>4</code> 가 <code>HAL_I2C_ERROR_AF</code>(NACK) 다(§3-3-4 ③ 의 <code>last_err=4</code>). 코드는 비트 OR 로 쌓인 값이라 둘 이상이 겹쳐 있을 수도 있다(§2-6).</li>
+          <li><code>s_failed = true;</code> 가 <strong>그다음</strong> — 알린다. 순서의 이유: main 쪽은 <code>s_failed</code> 를 보고 나서야 이번 실패를 다룬다. 알림 플래그를 먼저 true 로 설정하면 main 은 <code>s_failed</code> 를 보자마자 아직 적히지 않은 <code>s_isr_err</code> 를 그 장치의 <code>s_last_err[]</code> 로 옮긴다. 다만 이 ISR 은 main 을 선점해 끝까지 돈 뒤 돌아가므로, 두 줄 사이에 main 이 끼어드는 일은 이 구조에서는 없다. 그래도 <strong>"데이터 먼저, 플래그 나중"</strong>은 ISR ↔ main 이 변수를 나눠 쓸 때의 기본 순서다(fw-05 T2 의 링이 "먼저 쓰고, 그다음 head" 인 것과 같다).</li>
           <li>이 함수가 하지 않는 것 — 트랜잭션을 다시 시작하기. HAL 은 오류 뒤 핸들을 READY 로 되돌리므로(§2-6) T7 이 다음 주기에 다시 시작한다. ISR 안에서 트랜잭션을 시작하면 main 의 상태기계와 어긋난다.</li>
         </ul>
         <p><strong>쓰는 API</strong> — <code>uint32_t HAL_I2C_GetError(const I2C_HandleTypeDef *hi2c)</code>: <code>stm32h7xx_hal_i2c.h:713</code>, 정의 <code>stm32h7xx_hal_i2c.c:4927</code>. 핸들의 <code>ErrorCode</code> 를 돌려준다 — <code>HAL_I2C_ERROR_BERR</code>(<code>0x01</code>, <code>stm32h7xx_hal_i2c.h:164</code>) · <code>ARLO</code>(<code>0x02</code>, <code>:165</code>) · <code>AF</code>(<code>0x04</code>, <code>:166</code>) · <code>TIMEOUT</code>(<code>0x20</code>, <code>:169</code>)의 OR. ISR 에서 불러도 되는 함수다(읽기만 한다). 콜백 자체의 선언은 <code>stm32h7xx_hal_i2c.h:701</code>, <code>__weak</code> 기본은 <code>stm32h7xx_hal_i2c.c:4853</code>.</p>
@@ -1137,43 +1305,49 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
         <div class="tbl"><table class="compact">
           <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
           <tbody>
-            <tr><td>CubeMX 에서 I2C1 <strong>error</strong> interrupt 만 켰다</td><td>빌드는 된다. IT 읽기가 시작만 되고 끝나지 않는다 — 완료도 NACK 도 <strong>event</strong> 인터럽트로 오기 때문이다(§2-6). 상태기계는 첫 <code>INA_WAIT_VBUS</code> 에서 멈추고 <code>ina</code> 는 언제나 <code>ERR ina no-sample</code> 이다. 모듈을 뽑아도 <code>last_err</code> 는 0 그대로 — 이 콜백이 불릴 경로가 없다</td><td>§3-2-1 의 표: event · error 둘 다 Enabled</td></tr>
+            <tr><td>CubeMX 에서 I2C1 <strong>error</strong> interrupt 만 켰다</td><td>빌드는 된다. IT 읽기가 시작만 되고 끝나지 않는다 — 완료도 NACK 도 <strong>event</strong> 인터럽트로 오기 때문이다(§2-6). 상태기계는 첫 <code>INA_WAIT_VBUS</code> 에서 멈추고 <code>ina</code> 의 두 줄은 언제나 <code>no-sample</code>, <code>err=0</code> 이다. 모듈을 뽑아도 <code>last_err</code> 는 0 그대로 — 이 콜백이 불릴 경로가 없다</td><td>§3-2-1 의 표: event · error 둘 다 Enabled</td></tr>
             <tr><td>여기서 <code>HAL_I2C_Mem_Read_IT()</code> 로 바로 다시 시작했다</td><td>컴파일러는 아무 말도 하지 않는다. T7 은 아직 WAIT 상태인데 새 트랜잭션이 시작돼 둘이 어긋난다</td><td>표시만. 다시 시작하는 것은 T7 의 다음 주기</td></tr>
-            <tr><td><code>s_failed = true;</code> 를 먼저, <code>s_last_err</code> 를 나중에</td><td>컴파일러는 아무 말도 하지 않는다. 지금은 드러나지 않는 순서 문제다 — 위 코드 설명의 셋째 항목</td><td>적고 나서 알린다</td></tr>
+            <tr><td><code>s_failed = true;</code> 를 먼저, <code>s_isr_err</code> 를 나중에</td><td>컴파일러는 아무 말도 하지 않는다. 지금은 드러나지 않는 순서 문제다 — 위 코드 설명의 셋째 항목</td><td>적고 나서 알린다</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — §3-3-4 ③: SDA 점퍼를 뽑으면 <code>err</code> 가 오르고 <code>last_err=4</code>. 다른 수가 나오면 §2-6 의 표에서 찾는다(체크포인트 <code>i2c-unplug-recovers</code>). 보드 동작은 굽고 보기에서 확인한다.</p>
+        <p><strong>확인</strong> — §3-3-4 ③: #1 의 SDA 점퍼를 뽑으면 <code>0x40</code> 줄의 <code>err</code> 가 오르고 <code>last_err=4</code>. 다른 수가 나오면 §2-6 의 표에서 찾는다(체크포인트 <code>i2c-unplug-recovers</code>). 보드 동작은 굽고 보기에서 확인한다.</p>
         </div></details>
 
-      <details class="hint" id="hint-t10"><summary>힌트 T10 — <code>ina226_get_vbus_mv()</code> · <code>ina226_get_ipc_ua()</code> · <code>ina226_sample_age_ms()</code> · 밖으로 내주는 함수 셋</summary>
+      <details class="hint" id="hint-t10"><summary>힌트 T10 — <code>ina226_get_vbus_mv()</code> · <code>ina226_get_ipc_ua()</code> · <code>ina226_vbus_age_ms()</code> · <code>ina226_ipc_age_ms()</code> · 밖으로 내주는 함수 넷</summary>
         <div class="ans">
-        <p><strong>할 일</strong> — 다른 모듈(fw-11 의 전원 순서, fw-18 의 안전 상태기계)이 이 모듈의 값을 읽어 가는 함수들이다. 읽기 둘은 <strong>출력 인자</strong>로 값을 주고 반환값 <code>bool</code> 로 "유효한가"를 알린다 — 부팅 뒤 좋은 쌍이 한 번도 없었으면 <code>false</code>. 나이는 마지막 좋은 쌍 이후 지난 ms 다. 셋 다 main 문맥에서 불린다.</p>
+        <p><strong>할 일</strong> — 다른 모듈(fw-11 의 전원 순서, fw-18 의 안전 상태기계)이 이 모듈의 값을 읽어 가는 함수들이다. 읽기 둘은 <strong>출력 인자</strong>로 값을 주고 반환값 <code>bool</code> 로 "유효한가"를 알린다 — 부팅 뒤 <strong>그 장치를</strong> 한 번도 읽지 못했으면 <code>false</code>. 나이 둘은 그 장치를 마지막으로 읽은 뒤 지난 ms 다. 두 장치는 서로 따로라, #1 이 응답하지 않아도 #2 의 값과 나이는 그대로 나온다. 넷 다 main 문맥에서 불린다.</p>
         <p><strong>완결 코드</strong></p>
         <pre><code class="lang-c">/* 완결 코드 T10 - User/Src/Device/ina226.c */
 bool ina226_get_vbus_mv(int32_t *out_mv)
 {
-  if (!s_have_sample) { return false; }
+  if (!s_have[INA_DEV_VBUS]) { return false; }
   *out_mv = s_vbus_mv;
   return true;
 }
 
 bool ina226_get_ipc_ua(int32_t *out_ua)
 {
-  if (!s_have_sample) { return false; }
+  if (!s_have[INA_DEV_IPC]) { return false; }
   *out_ua = s_ipc_ua;
   return true;
 }
 
-uint32_t ina226_sample_age_ms(void)
+uint32_t ina226_vbus_age_ms(void)
 {
-  return (uint32_t)(tick_get_ms() - s_last_ok_ms);   /* 좋은 쌍이 아직 없으면 부팅 이후 시간이 된다 */
+  return (uint32_t)(tick_get_ms() - s_ok_ms[INA_DEV_VBUS]);   /* 아직 못 읽었으면 부팅 이후 시간이 된다 */
+}
+
+uint32_t ina226_ipc_age_ms(void)
+{
+  return (uint32_t)(tick_get_ms() - s_ok_ms[INA_DEV_IPC]);
 }</code></pre>
         <p><strong>코드 설명</strong></p>
         <ul>
-          <li><code>if (!s_have_sample) { return false; }</code> — 값을 쓰지 <strong>않고</strong> 돌아간다. 그래서 부르는 쪽은 반환값을 먼저 보고 <code>*out</code> 을 읽어야 한다 — fw-05 T3 의 <code>console_rx_pop()</code> 과 같은 약속이다.</li>
+          <li><code>if (!s_have[INA_DEV_VBUS]) { return false; }</code> — 값을 쓰지 <strong>않고</strong> 돌아간다. 그래서 부르는 쪽은 반환값을 먼저 보고 <code>*out</code> 을 읽어야 한다 — fw-05 T3 의 <code>console_rx_pop()</code> 과 같은 약속이다. 장치 번호는 이름(<code>INA_DEV_VBUS</code> · <code>INA_DEV_IPC</code>)으로 쓴다 — <code>s_have[0]</code> 보다 어느 장치인지가 보인다.</li>
           <li><code>*out_mv = s_vbus_mv;</code> — <code>*</code> 는 포인터가 <strong>가리키는 곳</strong>에 쓴다(역참조). 부르는 쪽은 <code>int32_t v; if (ina226_get_vbus_mv(&amp;v)) { … }</code> 처럼 자기 변수의 주소를 넘긴다. <code>*</code> 를 빼면 아래 표의 첫 행 — 포인터 변수 자체에 값을 넣으려는 것이라 형이 안 맞는다.</li>
-          <li><code>(uint32_t)(tick_get_ms() - s_last_ok_ms)</code> — 부호 없는 뺄셈(fw-02). 좋은 쌍이 아직 없으면 <code>s_last_ok_ms</code> 가 0 이라 "부팅 이후 시간"이 나온다 — 부르는 쪽이 읽기의 <code>false</code> 와 함께 보면 된다. <strong>다르게 써도 되는 곳</strong>: <code>s_have_sample</code> 이 <code>false</code> 면 <code>UINT32_MAX</code> 를 돌려주는 설계도 있다 — "무한히 낡았다"를 값으로 나타내는 방식이다. 어느 쪽이든 fw-18 이 그 약속대로 읽으면 된다.</li>
-          <li>세 함수가 한 줄짜리였던 골격의 중괄호 안(<code>(void)out_mv; return false;</code> 등)은 지우고 본문을 썼다.</li>
+          <li><code>(uint32_t)(tick_get_ms() - s_ok_ms[…])</code> — 부호 없는 뺄셈(fw-02). 그 장치를 아직 못 읽었으면 <code>s_ok_ms[]</code> 가 0 이라 "부팅 이후 시간"이 나온다 — 부르는 쪽이 읽기의 <code>false</code> 와 함께 보면 된다. <strong>다르게 써도 되는 곳</strong>: <code>s_have[]</code> 가 <code>false</code> 면 <code>UINT32_MAX</code> 를 돌려주는 설계도 있다 — "무한히 낡았다"를 값으로 나타내는 방식이다. 어느 쪽이든 fw-11 · fw-18 이 그 약속대로 읽으면 된다.</li>
+          <li><strong>나이를 장치마다 두는 이유</strong> — 두 장치가 따로 실패하므로, "둘 중 하나라도 낡았다"를 한 값으로 내주면 어느 쪽이 끊겼는지 부르는 쪽이 알 수 없다. fw-11 은 전압(#1)과 전류(#2)를 서로 다른 판정에 쓴다.</li>
+          <li>네 함수가 한 줄짜리였던 골격의 중괄호 안(<code>(void)out_mv; return false;</code> 등)은 지우고 본문을 썼다.</li>
         </ul>
         <p><strong>쓰는 API</strong> — <code>uint32_t tick_get_ms(void)</code>(User/Inc/System/tick.h 의 <code>tick_init()</code> 바로 아래 선언). HAL 은 부르지 않는다.</p>
         <p><strong>흔한 실수</strong></p>
@@ -1181,42 +1355,58 @@ uint32_t ina226_sample_age_ms(void)
           <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
           <tbody>
             <tr><td><code>out_mv = s_vbus_mv;</code> — <code>*</code> 를 뺐다</td><td><code>error: assignment to 'int32_t *' {aka 'long int *'} from 'int32_t' {aka 'long int'} makes pointer from integer without a cast [-Wint-conversion]</code></td><td><code>*out_mv = …</code></td></tr>
-            <tr><td><code>s_have_sample</code> 검사 없이 값을 썼다</td><td>컴파일러는 아무 말도 하지 않는다. 부팅 직후 0 mV · 0 µA 가 "유효한 값"으로 나간다 — fw-06 §2-4 의 "그럴듯한 값"</td><td>첫 줄의 <code>if</code></td></tr>
+            <tr><td><code>s_have[]</code> 검사 없이 값을 썼다</td><td>컴파일러는 아무 말도 하지 않는다. 부팅 직후 0 mV · 0 µA 가 "유효한 값"으로 나간다 — fw-06 §2-4 의 "그럴듯한 값"</td><td>첫 줄의 <code>if</code></td></tr>
+            <tr><td><code>ina226_get_ipc_ua()</code> 에서 <code>s_have[INA_DEV_VBUS]</code> 를 봤다 — 장치를 바꿔 썼다</td><td>컴파일러는 아무 말도 하지 않는다. #2 만 읽히고 #1 이 끊긴 동안 전류가 "없다"로 나간다 — 반대 경우에는 0 µA 가 "유효"로 나간다</td><td>함수 이름과 같은 장치의 칸</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — 이 쪽에서는 부르는 곳이 없다(<code>ina</code> 명령은 같은 파일의 변수를 직접 읽는다). fw-11 이 처음 부른다. 빌드가 되는 것으로 확인하고, 원하면 T11 을 이 셋으로 다시 써 봐도 된다 — 그 꼴도 경고 없이 빌드된다(2026-10-03 arm-gcc 로 확인).</p>
+        <p><strong>확인</strong> — 이 쪽에서는 부르는 곳이 <code>ina</code> 명령(T11)의 나이 둘뿐이다. 읽기 둘은 fw-11 이 처음 부른다. 빌드가 되는 것으로 확인한다.</p>
         </div></details>
 
-      <details class="hint" id="hint-t11"><summary>힌트 T11 — <code>cmd_ina()</code> · 저장해 둔 쌍과 나이 · 오류 카운터를 한 줄로 찍는다</summary>
+      <details class="hint" id="hint-t11"><summary>힌트 T11 — <code>cmd_ina()</code> · 장치마다 저장해 둔 값과 나이 · 오류 카운터를 한 줄씩 찍는다</summary>
         <div class="ans">
-        <p><strong>할 일</strong> — <code>ina</code> 를 치면 한 줄: <code>ina vbus_mv=&lt;n&gt; ipc_ua=&lt;n&gt; age_ms=&lt;n&gt; err=&lt;n&gt; last_err=&lt;n&gt;</code>(fw_style.md 4-4절 의 꼴). 부팅 뒤 좋은 쌍이 한 번도 없었으면 <code>ERR ina no-sample</code>. 인자는 없다. I2C 트랜잭션은 시작하지 않는다 — 저장해 둔 값을 찍을 뿐이다. 등록은 걸음 4 의 <code>cli_register("ina", cmd_ina)</code>.</p>
+        <p><strong>할 일</strong> — <code>ina</code> 를 치면 첫 줄 <code>ina n=2</code>, 그 뒤 장치마다 들여 쓴 한 줄(fw_style.md 4-4절 의 "여러 줄 출력 ②" 꼴 — <code>i2c scan</code> 과 같다). 그 장치를 한 번도 읽지 못했으면 값 · 나이 대신 <code>no-sample</code> 을 찍고, <strong>오류 카운터는 그래도 찍는다</strong> — 끊긴 장치가 왜 끊겼는지(<code>last_err</code>)를 보려면 그 줄이 있어야 하기 때문이다. 인자는 없다. I2C 트랜잭션은 시작하지 않는다 — 저장해 둔 값을 찍을 뿐이다. 등록은 걸음 4 의 <code>cli_register("ina", cmd_ina)</code>.</p>
         <p><strong>완결 코드</strong></p>
         <pre><code class="lang-c">/* 완결 코드 T11 - User/Src/Device/ina226.c */
 static void cmd_ina(int argc, char *argv[])
 {
+  static const char *const k_key[INA_DEV_COUNT] = { "vbus_mv", "ipc_ua" };
+  const int32_t  val[INA_DEV_COUNT] = { s_vbus_mv, s_ipc_ua };
+  const uint32_t age[INA_DEV_COUNT] = { ina226_vbus_age_ms(), ina226_ipc_age_ms() };
+
   (void)argc; (void)argv;               /* 인자를 쓰지 않는다 - 그대로 둔다 */
-  if (!s_have_sample) { printf("ERR ina no-sample\r\n"); return; }
-  printf("ina vbus_mv=%ld ipc_ua=%ld age_ms=%lu err=%lu last_err=%lu\r\n",
-         (long)s_vbus_mv, (long)s_ipc_ua, (unsigned long)ina226_sample_age_ms(),
-         (unsigned long)s_err, (unsigned long)s_last_err);
+  printf("ina n=%u\r\n", (unsigned)INA_DEV_COUNT);
+  for (uint8_t d = 0u; d &lt; INA_DEV_COUNT; d++) {
+    if (s_have[d]) {
+      printf("  0x%02x %s=%ld age_ms=%lu err=%lu last_err=%lu\r\n",
+             (unsigned)k_dev_addr[d], k_key[d], (long)val[d], (unsigned long)age[d],
+             (unsigned long)s_err[d], (unsigned long)s_last_err[d]);
+    } else {
+      printf("  0x%02x no-sample err=%lu last_err=%lu\r\n",
+             (unsigned)k_dev_addr[d], (unsigned long)s_err[d], (unsigned long)s_last_err[d]);
+    }
+  }
 }</code></pre>
         <p><strong>코드 설명</strong></p>
         <ul>
+          <li><code>static const char *const k_key[INA_DEV_COUNT] = { "vbus_mv", "ipc_ua" };</code> — 장치마다 값의 키 이름이다. 두 장치가 재는 것이 달라(전압 · 전류) 키도 다르다. 앞의 <code>const</code> 는 "가리키는 글자를 바꾸지 않는다", 뒤의 <code>const</code> 는 "배열 칸(포인터)도 바꾸지 않는다". 함수 안의 <code>static</code> 이라 부를 때마다 새로 만들지 않는다.</li>
+          <li><code>val[]</code> · <code>age[]</code> — 장치 번호로 값과 나이를 꺼낼 수 있게 함수 첫머리에서 배열로 모은다. 그래서 아래 반복문이 장치마다 같은 <code>printf</code> 한 줄로 끝난다. 나이는 T10 의 두 함수를 부른다.</li>
           <li><code>(void)argc; (void)argv;</code> 를 <strong>그대로 둔다</strong> — 시그니처는 fw-05 의 <code>cli_fn_t</code> 가 정한 것이라 인자를 안 써도 받아야 한다. 안 쓰는 인자는 이렇게 표시해야 <code>-Wall</code> 의 "unused parameter" 경고가 나오지 않는다.</li>
-          <li><code>if (!s_have_sample) { printf("ERR ina no-sample\r\n"); return; }</code> — 규약의 오류 줄. T10 의 읽기 함수가 <code>false</code> 를 돌려주는 조건과 같은 변수다.</li>
-          <li><code>printf</code> 한 번에 다섯 값을 찍는다 — <code>int32_t</code> 둘은 <code>(long)</code> 으로 바꿔 <code>%ld</code>, <code>uint32_t</code> 셋은 <code>(unsigned long)</code> 으로 바꿔 <code>%lu</code> 로 찍는다(fw-05 T9 와 같다). arm-gcc 의 <code>int32_t</code> 는 <code>long int</code> 라 <code>%d</code> 와 어긋나기 때문이다(아래 표). 인자가 길어 두 줄로 나눴다 — C 에서는 괄호 안의 줄바꿈이 뜻에 영향을 주지 않는다. <code>age_ms</code> 는 T10 의 <code>ina226_sample_age_ms()</code> 를 불러 쓴다.</li>
-          <li><strong>다르게 써도 되는 곳</strong> — 변수를 직접 읽는 대신 T10 의 <code>ina226_get_vbus_mv(&amp;v)</code> · <code>ina226_get_ipc_ua(&amp;i)</code> 로 받는 꼴이다. 그 둘 중 하나라도 <code>false</code> 면 <code>no-sample</code> 로 간다. 같은 파일 안이라 직접 읽어도 되지만, 공개 함수를 거치면 "밖에서 보이는 값"을 그대로 찍는 셈이다. 두 꼴 다 경고 없이 빌드된다(2026-10-03 확인).</li>
+          <li><code>printf("ina n=%u\r\n", (unsigned)INA_DEV_COUNT);</code> — 첫 줄은 뒤에 몇 줄이 오는지다(<code>i2c found=&lt;n&gt;</code> 와 같은 꼴). <code>INA_DEV_COUNT</code> 는 enum 값이라 <code>int</code> 다 — <code>%u</code> 에 맞게 <code>(unsigned)</code> 로 바꿔 넘긴다.</li>
+          <li><code>if (s_have[d]) { … } else { … }</code> — 장치마다 따로 판정한다. 한 장치가 <code>no-sample</code> 이어도 다른 장치의 줄은 값과 함께 나온다. 이것이 2026-10-23 에 바꾼 핵심이다 — 앞 구조는 둘 중 하나라도 없으면 <code>ERR ina no-sample</code> 한 줄로 끝나, 살아 있는 장치의 값과 끊긴 장치의 <code>last_err</code> 를 둘 다 가렸다.</li>
+          <li>값 줄의 <code>printf</code> — <code>%s</code> 에 키 이름, <code>int32_t</code> 값은 <code>(long)</code> 으로 바꿔 <code>%ld</code>, <code>uint32_t</code> 셋은 <code>(unsigned long)</code> 으로 바꿔 <code>%lu</code>(fw-05 T9 와 같다). arm-gcc 의 <code>int32_t</code> 는 <code>long int</code> 라 <code>%d</code> 와 어긋나기 때문이다(아래 표). 주소는 <code>0x%02x</code> — §3-2-4 아래 문단의 이유(데이터시트 표의 글자와 대조한다)로 16진수다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — 변수를 직접 읽는 대신 T10 의 <code>ina226_get_vbus_mv(&amp;v)</code> · <code>ina226_get_ipc_ua(&amp;i)</code> 의 반환값으로 줄을 고르는 꼴이다. 같은 파일 안이라 직접 읽어도 되지만, 공개 함수를 거치면 "밖에서 보이는 값"을 그대로 찍는 셈이다. 장치가 둘뿐이니 반복문 없이 두 줄을 풀어 써도 된다.</li>
         </ul>
         <p><strong>쓰는 API</strong> — <code>printf</code> 뿐이다. 등록은 <code>bool cli_register(const char *name, cli_fn_t fn)</code> 로 한다(User/Inc/Tools/cli.h 의 <code>cli_init()</code> 다음 줄, fw-05). 표가 찼으면 <code>false</code> 를 돌려준다. 그래서 <code>ina226_cli_register()</code> 안에서 <code>ok = cli_register("ina", cmd_ina) &amp;&amp; ok;</code> 로 모아 <code>FW_ASSERT(ok)</code> 에 넣는다(<code>app.c</code> 의 <code>led</code> · <code>ver</code> 와 같은 꼴).</p>
         <p><strong>흔한 실수</strong></p>
         <div class="tbl"><table class="compact">
           <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
           <tbody>
-            <tr><td><code>printf("ina vbus_mv=%d …", s_vbus_mv, …)</code></td><td><code>warning: format '%d' expects argument of type 'int', but argument 2 has type 'int32_t' {aka 'long int'} [-Wformat=]</code></td><td><code>(long)s_vbus_mv</code> 와 <code>%ld</code></td></tr>
-            <tr><td><code>no-sample</code> 분기를 빠뜨렸다</td><td>컴파일러는 아무 말도 하지 않는다. 모듈을 다 뽑고 부팅하면 <code>vbus_mv=0 ipc_ua=0</code> 이 정상처럼 찍힌다</td><td>첫 줄의 <code>if</code></td></tr>
+            <tr><td><code>printf("… %s=%d …", …, val[d], …)</code></td><td><code>warning: format '%d' expects argument of type 'int', but argument 4 has type 'int32_t' {aka 'long int'} [-Wformat=]</code></td><td><code>(long)val[d]</code> 와 <code>%ld</code></td></tr>
+            <tr><td><code>no-sample</code> 분기를 빠뜨렸다</td><td>컴파일러는 아무 말도 하지 않는다. 모듈을 뽑고 부팅하면 그 장치 줄에 <code>vbus_mv=0</code> 이 정상처럼 찍힌다</td><td><code>if (s_have[d])</code></td></tr>
+            <tr><td>한 장치라도 <code>no-sample</code> 이면 <code>ERR</code> 한 줄을 찍고 돌아갔다</td><td>컴파일러는 아무 말도 하지 않는다. 살아 있는 장치의 값과 끊긴 장치의 <code>last_err</code> 가 둘 다 안 보인다 — 2026-10-23 에 실제로 겪은 증상</td><td>장치마다 줄을 찍는다</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — §3-3-4 의 출력 꼴 그대로 한 줄이 나온다. <code>ERR ina no-sample</code> 을 눈으로 보려면 모듈을 다 뽑은 채 부팅한다 — 모든 읽기가 실패해 <code>s_have_sample</code> 이 계속 <code>false</code> 다. 체크포인트 <code>ina-vbus-matches-dmm</code> · <code>ina-ipc-near-zero</code> · <code>i2c-unplug-recovers</code> 가 전부 이 한 줄을 읽는다. 보드 동작은 굽고 보기에서 확인한다.</p>
+        <p><strong>확인</strong> — §3-3-4 의 출력 꼴 그대로 세 줄이 나온다. <code>no-sample</code> 줄을 눈으로 보려면 모듈 한 장을 뽑은 채 부팅한다 — 그 장치 줄만 <code>no-sample</code> 이고 <code>err</code> 가 오르며, 다른 장치 줄은 값이 나온다. 체크포인트 <code>ina-vbus-matches-dmm</code> · <code>ina-ipc-near-zero</code> · <code>i2c-unplug-recovers</code> 가 전부 이 출력을 읽는다. 보드 동작은 굽고 보기에서 확인한다.</p>
         </div></details>
       <p class="small">이 시험 파일은 전량 제공이다 — 이유: 벡터가 곧 채점표이고, 기대값은 전부 데이터시트의 표에서 나온 것이라 내가 정할 여지가 없다. 값 하나가 틀리면 틀린 환산식을 통과시킨다.</p>
       <pre><code class="lang-c">/* firmware/host_tests/test_ina226.c — 하드웨어 없음, HAL 없음. ina226.h 하나만 채점한다.
@@ -1281,7 +1471,9 @@ PASS ina226 18 cases          &lt;- 둘째 줄도 조용하면 통과다</code><
       <pre><code class="lang-bash">cd firmware
 tools/flash.sh</code></pre>
       <pre><code class="lang-text">&gt; ina
-ina vbus_mv=&lt;n&gt; ipc_ua=&lt;n&gt; age_ms=&lt;n&gt; err=0 last_err=0</code></pre>
+ina n=2
+  0x40 vbus_mv=&lt;n&gt; age_ms=&lt;n&gt; err=0 last_err=0
+  0x41 ipc_ua=&lt;n&gt; age_ms=&lt;n&gt; err=0 last_err=0</code></pre>
       <p><strong>① <code>vbus_mv</code> 를 DMM 과 견준다.</strong> INA226 #1 의 <code>VBUS</code> 핀에 <strong>Nucleo 의 3V3</strong> 을 걸고(이 쪽에서 24 V 는 쓰지 않는다 — §2-3 의 경고 상자), DMM 으로 같은 두 점(<code>VBUS</code> ↔ GND)을 잰다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>#</th><th>VBUS 에 건 것</th><th>DMM (V)</th><th><code>ina</code> 의 <code>vbus_mv</code></th><th>차이 (mV)</th></tr></thead>
@@ -1304,17 +1496,24 @@ ina vbus_mv=&lt;n&gt; ipc_ua=&lt;n&gt; age_ms=&lt;n&gt; err=0 last_err=0</code><
       그리고 여기서 잰 것은 <strong>이 벤치 배선에서의 바닥</strong>이다. 션트가 실제 사전충전 경로에 들어가면 동상 전압도 주변 잡음도 달라지므로, <a href="fw-11-power-sequence.html">fw-11</a> 에서 그 구성으로 한 번 더 잰다 — 이 값은 그때 견줄 기준선이다.</p>
       <p><strong>③ 뽑았다 꽂는다 (발동 확인).</strong> 보드를 켠 채로 <strong>INA226 #1 의 SDA 점퍼 하나</strong>를 뽑는다(전원선이 아니라 신호선을 뽑는다 — 전원선을 뽑으면 모듈의 풀업 10 kΩ 도 같이 빠져 버스 전체가 달라진다).</p>
       <pre><code class="lang-text">&gt; ina
-ina vbus_mv=&lt;n&gt; ipc_ua=&lt;n&gt; age_ms=&lt;n&gt; err=0 last_err=0
-        ... SDA 점퍼를 뽑는다, 몇 초 기다린다 ...
+ina n=2
+  0x40 vbus_mv=&lt;n&gt; age_ms=&lt;n&gt; err=0 last_err=0
+  0x41 ipc_ua=&lt;n&gt; age_ms=&lt;n&gt; err=0 last_err=0
+        ... #1 의 SDA 점퍼를 뽑는다, 몇 초 기다린다 ...
 &gt; ina
-ina vbus_mv=&lt;옛 값 그대로&gt; ipc_ua=&lt;n&gt; age_ms=&lt;계속 는다&gt; err=&lt;n&gt; last_err=4
+ina n=2
+  0x40 vbus_mv=&lt;옛 값 그대로&gt; age_ms=&lt;계속 는다&gt; err=&lt;n&gt; last_err=4
+  0x41 ipc_ua=&lt;n&gt; age_ms=&lt;작은 값&gt; err=0 last_err=0
         ... 다시 꽂는다 ...
 &gt; ina
-ina vbus_mv=&lt;n&gt; ipc_ua=&lt;n&gt; age_ms=&lt;작은 값&gt; err=&lt;아까 그 수 그대로&gt; last_err=4</code></pre>
+ina n=2
+  0x40 vbus_mv=&lt;n&gt; age_ms=&lt;작은 값&gt; err=&lt;아까 그 수 그대로&gt; last_err=4
+  0x41 ipc_ua=&lt;n&gt; age_ms=&lt;작은 값&gt; err=0 last_err=0</code></pre>
       <ul>
         <li><strong><code>vbus_mv</code> 가 옛 값 그대로인 것이 중요하다.</strong> 값이 0 이 되지 않는다 — 센서가 끊겼다고 해서 "전압이 0 V 다"가 참이 되는 것은 아니기 때문이다. 끊긴 것을 보여 주는 칸은 <code>age_ms</code> 다.
           <a href="fw-06-tick-watchdog.html#s2-4">fw-06 §2-4</a> 의 "끊어진 센서가 주는 그럴듯한 값"이 바로 이 옛 값이고, 그래서 <a href="fw-18-safety-fsm.html">fw-18</a> 의 안전 상태기계는 값이 아니라 <strong>나이</strong>를 본다.</li>
         <li><code>last_err=4</code> 는 <code>HAL_I2C_ERROR_AF</code>(<code>0x04</code>) — 주소를 불렀는데 아무도 ACK 하지 않았다는 뜻이다(§2-6). 다른 수가 나오면 그 표에서 찾는다.</li>
+        <li><strong>그동안 <code>0x41</code> 줄은 그대로다.</strong> #1 이 끊겨도 #2 는 계속 읽히고 <code>age_ms</code> 가 작게 남는다 — 두 장치를 따로 다루는 구조(T7 · T11)를 보드에서 확인하는 자리다. 이 쪽은 #1 하나를 뽑지만, #1 만 꽂고 #2 를 뽑아도 같은 모양이 반대 줄에 나온다.</li>
         <li>다시 꽂은 뒤 <code>err</code> 가 <strong>0 으로 돌아가지 않는</strong> 것도 설계다. "지금 되는가"(<code>age_ms</code>)와 "언젠가 실패한 적이 있는가"(<code>err</code>)는 다른 질문이다. 벤치를 몇 시간 돌린 뒤 <code>err</code> 가 몇인지가 곧 이 버스의 오류 이력이다.</li>
       </ul>
       <p><strong>일부러 틀려 보기 ③ — 폴링 주기를 1 ms 로 줄인다.</strong> <code>INA226_POLL_MS</code> 를 바닥(3 ms)보다 작게 두고 굽는다. 값은 <strong>틀리지 않는다</strong> — 다만 같은 변환 결과를 여러 번 읽는다.
@@ -1323,7 +1522,7 @@ ina vbus_mv=&lt;n&gt; ipc_ua=&lt;n&gt; age_ms=&lt;작은 값&gt; err=&lt;아까 
       <h2 id="checkpoints">✅ 검증 체크포인트</h2>
       <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.</p>
       <ul class="checklist">
-        <li><label><input type="checkbox" data-key="i2c-pullup-measured"><span><strong>경로 통과</strong> — 모듈을 하나씩 더 꽂으며 SDA ↔ 3V3 저항을 재서 표 일곱 줄을 채웠고, 마지막 값이 0.97 kΩ 보다 크다
+        <li><label><input type="checkbox" data-key="i2c-pullup-measured"><span><strong>경로 통과</strong> — 모듈을 하나씩 더 꽂으며 SDA ↔ 3V3 저항을 재서 표 여덟 줄을 채웠고, 마지막 값이 0.97 kΩ 보다 크다
           <span class="sub">판정 수단: DMM · §3-1-4 · 산술 예상과 어긋난 줄이 있으면 그 줄의 원인을 적는다</span></span></label></li>
         <li><label><input type="checkbox" data-key="scan-budget-computed"><span><strong>경로 통과</strong> — 스캔의 최악 시간 <code>(주소 수) × Trials × Timeout</code> 을 계산해 fw-06 의 IWDG 주기와 견주었다. 처리(범위 · 타임아웃 · <code>wdg_service_main()</code>)를 골라 워치독 예산표에 행으로 적었다
           <span class="sub">판정 수단: 내 노트의 예산표 · §2-9 · §3-2-3</span></span></label></li>
@@ -1341,7 +1540,9 @@ ina vbus_mv=&lt;n&gt; ipc_ua=&lt;n&gt; age_ms=&lt;작은 값&gt; err=&lt;아까 
           <span class="sub">판정 수단: 명령 창 출력 · §3-3-4 · 합격 수치는 없다 — 이 폭 자체가 다음 쪽 문턱의 바닥이다</span></span></label></li>
         <li><label><input type="checkbox" data-key="pullup-removed-scan-empty"><span><strong>발동 확인</strong> — 풀업을 뗀 채 스캔하면 <code>found=0</code> 이고, 명령이 돌아오는 데 걸린 시간을 재서 적었다(그동안 보드가 리셋됐는지도)
           <span class="sub">판정 수단: 명령 창 출력 + 시계 + 부팅 배너 · §3-2-4 의 "일부러 틀려 보기 ①"</span></span></label></li>
-        <li><label><input type="checkbox" data-key="i2c-unplug-recovers"><span><strong>발동 확인</strong> — 켠 채로 SDA 점퍼를 뽑으면 <code>err</code> 이 오르고 <code>age_ms</code> 가 계속 늘며 <code>vbus_mv</code> 는 <strong>옛 값 그대로</strong>다. 다시 꽂으면 <code>age_ms</code> 가 작아지고 <code>err</code> 은 그대로 남는다
+        <li><label><input type="checkbox" data-key="i2c-busy-unstick"><span><strong>발동 확인</strong> — 켠 채로 모듈의 VS 선을 뽑았다 꽂은 뒤에도 <code>i2c scan</code> 이 <strong>리셋 없이</strong> <code>0x40</code> · <code>0x41</code> 을 찾는다. T12 줄을 막으면 같은 시험에서 리셋 전까지 <code>found=0</code> 이 이어지는 것도 한 번 보았다
+          <span class="sub">판정 수단: 명령 창 출력 · §3-2-4 의 "발동 확인 — 켠 채로 모듈의 전원선을 뽑았다 꽂는다" · 근거는 §2-6 의 상자</span></span></label></li>
+        <li><label><input type="checkbox" data-key="i2c-unplug-recovers"><span><strong>발동 확인</strong> — 켠 채로 #1 의 SDA 점퍼를 뽑으면 <code>0x40</code> 줄의 <code>err</code> 이 오르고 <code>age_ms</code> 가 계속 늘며 <code>vbus_mv</code> 는 <strong>옛 값 그대로</strong>다. 그동안 <code>0x41</code> 줄은 <code>age_ms</code> 가 작게 남는다. 다시 꽂으면 <code>age_ms</code> 가 작아지고 <code>err</code> 은 그대로 남는다
           <span class="sub">판정 수단: 명령 창 출력 · §3-3-4 · <code>last_err</code> 이 4(<code>HAL_I2C_ERROR_AF</code>)인지도 본다</span></span></label></li>
       </ul>
       <p class="progress-line"></p>
@@ -1353,18 +1554,20 @@ ina vbus_mv=&lt;n&gt; ipc_ua=&lt;n&gt; age_ms=&lt;작은 값&gt; err=&lt;아까 
         <tbody>
           <tr><td>빌드가 <code>ina226.c: I2C_SCAN_TIMEOUT_MS is still EMPTY</code> · <code>INA226_POLL_MS is still EMPTY</code> 로 멈춘다</td><td>내가 정할 값이 아직 자리표시 0 이다. 의도된 정지다</td><td>컴파일러 메시지에 키 이름이 나온다</td><td>§3-2-3 · §3-3-3</td></tr>
           <tr><td><code>i2c scan</code> 이 <code>found=0</code> 인데 <strong>즉시</strong> 끝난다</td><td>주소를 8비트로 밀지 않았다 · 스캔 범위가 모듈 주소를 안 덮는다 · 모듈 VS 에 3V3 이 연결되지 않았다(그래도 풀업에는 전원이 있으므로 버스는 동작한다)</td><td><code>grep -n "addr8" User/Src/Device/ina226.c</code> · 실습 A 표의 ② 가 10 kΩ 이었는가 · DMM 으로 모듈 VS ↔ GND</td><td>§2-2 · §3-2-3</td></tr>
+          <tr><td><code>i2c scan</code> 이 <code>found=0</code> 이고 즉시 끝나는데, <strong>다시 쳐도 계속 0 이고 RESET 뒤에는 정상</strong>이다. 직전에 켠 채로 선을 뽑았다 꽂았다</td><td><code>I2C_ISR</code> 의 BUSY 가 1 로 남았다. 모든 HAL 호출이 버스에 손대지 않고 <code>HAL_BUSY</code> 로 돌아온다 · <code>i2c_unstick_busy()</code> 가 아직 비어 있거나 스캔에서 부르지 않는다</td><td>대기 루프 뒤에 <code>dbg busy</code> 한 줄(§3-2-4) — <code>busy=1</code> 이면 이 원인이다 · <code>grep -n "i2c_unstick_busy" User/Src/Device/ina226.c</code> — 정의 하나와 호출 둘(스캔 · T7)</td><td>§2-6 의 상자 · <a href="#hint-t12">힌트 T12</a></td></tr>
           <tr><td><code>i2c scan</code> 이 오래 걸린다 · 스캔 도중 보드가 리셋된다(배너의 reset 줄 = IWDG)</td><td>주소마다 <code>Timeout</code> 을 통째로 쓰고 있고 그 합이 IWDG 주기를 넘었다. 그렇게 되는 경우는 둘이다 — 트랜잭션이 시작은 됐는데 끝나지 않거나(§2-9 셋째), 선이 0 에 고정돼 있어 START 자체가 안 만들어지거나(§2-9 둘째)</td><td>걸린 시간을 시계로 · 내 예산표 행의 계산</td><td>§2-9 · §3-2-3 (범위 · 타임아웃 · <code>wdg_service_main()</code>)</td></tr>
           <tr><td>주소가 <strong>하나만</strong> 나온다 (<code>0x40</code>)</td><td>모듈 두 장이 같은 주소다 — 둘째 장의 A0 가 VS 에 연결되지 않았다. 같은 주소에 두 칩이 대답하면 값이 섞인다</td><td>한 장씩 빼고 스캔해 본다 · 모듈의 주소 점퍼를 눈으로</td><td>§2-2 의 주소표</td></tr>
           <tr><td><code>id</code> 가 <code>0x5449</code> 가 아닌 값으로 나온다</td><td>그 주소에 있는 것이 INA226 이 아니다 · 레지스터 번호를 <code>FEh</code> 가 아닌 것으로 읽었다</td><td>&mdash;</td><td>§2-3 의 레지스터 표</td></tr>
-          <tr><td><code>ina</code> 가 언제나 <code>ERR ina no-sample</code> 인데 스캔은 둘을 찾는다</td><td>I2C1 <strong>event</strong> 인터럽트가 안 켜졌다 — IT 전송이 시작만 되고 완료 콜백이 안 온다(ER 만 켜면 이렇게 된다) · 상태기계가 <code>INA_IDLE</code> 에서 안 나간다 · <code>app_loop()</code> 에 <code>ina226_service_main();</code> 을 안 넣었다 <em>[추정 — 표 아래]</em></td><td><code>grep -n "NVIC.I2C1" h723zg.ioc</code> — 두 줄이 다 <code>true</code> 인가 · <code>grep -rn "ina226_service_main" User/Src/app.c</code></td><td>§2-6 · §3-2-1 · §3-3-3</td></tr>
-          <tr><td><code>vbus_mv</code> 가 늘 0 인데 <code>age_ms</code> 는 작다(= 읽기는 되고 있다)</td><td><code>ina226_bus_mv()</code> 가 아직 <code>TODO</code> 라 0 을 돌려준다 · <code>02h</code> 대신 <code>04h</code>(Current)를 읽었다 — Calibration 이 0 이라 그 레지스터는 계속 0 이다</td><td>호스트 시험 · <code>grep -n "INA226_REG_" User/Src/Device/ina226.c</code></td><td>§2-3 · §3-3-3</td></tr>
+          <tr><td><code>ina</code> 의 두 줄이 언제나 <code>no-sample</code> 이고 <code>err=0</code> 인데 스캔은 둘을 찾는다</td><td>I2C1 <strong>event</strong> 인터럽트가 안 켜졌다 — IT 전송이 시작만 되고 완료 콜백이 안 온다(ER 만 켜면 이렇게 된다) · 상태기계가 <code>INA_IDLE</code> 에서 안 나간다 · <code>app_loop()</code> 에 <code>ina226_service_main();</code> 을 안 넣었다 <em>[추정 — 표 아래]</em></td><td><code>grep -n "NVIC.I2C1" h723zg.ioc</code> — 두 줄이 다 <code>true</code> 인가 · <code>grep -rn "ina226_service_main" User/Src/app.c</code></td><td>§2-6 · §3-2-1 · §3-3-3</td></tr>
+          <tr><td><code>ina</code> 의 <strong>한 줄만</strong> <code>no-sample</code> 이고 그 줄의 <code>err</code> 가 계속 오른다</td><td>그 장치만 응답하지 않는다 — <code>last_err=4</code> 면 그 주소에 ACK 가 없다(전원 · SDA · SCL 결선, 주소 점퍼). <code>last_err=0</code> 인데 <code>err</code> 만 오르면 읽기가 시작조차 안 됐다(<code>HAL_BUSY</code>)</td><td><code>i2c scan</code> 에 그 주소가 나오는가 · DMM 으로 그 모듈의 VS ↔ GND</td><td>§2-6 · §3-2-4</td></tr>
+          <tr><td><code>vbus_mv</code> 가 늘 0 인데 <code>age_ms</code> 는 작다(= 읽기는 되고 있다)</td><td>#1 의 <strong>VBUS 핀(3번)</strong>에 아무것도 걸리지 않았다 — 02h 는 IN+ 가 아니라 VBUS 핀의 전압이다. IN+ 에만 걸고 VBUS 를 묶지 않으면 0 이다 · <code>ina226_bus_mv()</code> 가 아직 <code>TODO</code> 라 0 을 돌려준다 · <code>02h</code> 대신 <code>04h</code>(Current)를 읽었다 — Calibration 이 0 이라 그 레지스터는 계속 0 이다</td><td>호스트 시험 · <code>grep -n "INA226_REG_" User/Src/Device/ina226.c</code></td><td>§2-3 · §3-3-3</td></tr>
           <tr><td><code>ipc_ua</code> 가 0 근처가 아니라 <strong>800 000 근처의 큰 양수</strong>로 나온다</td><td>션트 레지스터를 부호 없는 값으로 읽었다. <code>0xFFFF</code>(−1 LSB)가 65535 로 읽히면 +1.6 A 쯤으로 보인다</td><td>호스트 시험의 <code>0xFFFF</code> · <code>0x8300</code> 벡터가 실패한다</td><td>§2-3 · <a href="#hint-t4">힌트 T4</a></td></tr>
           <tr><td>호스트 시험 <strong>첫 줄은 <code>PASS</code></strong> 인데 둘째 줄에 <code>runtime error: left shift …</code></td><td>부호를 넓히면서 시프트를 썼다 — 값은 맞지만 정의되지 않은 동작이다</td><td>둘째 빌드가 가리키는 줄 번호</td><td>§3-3-3 의 상자</td></tr>
           <tr><td><code>i2c scan</code> 을 칠 때마다 <code>found</code> 가 달라진다(실습 C 를 끝낸 뒤부터)</td><td>주기 폴링이 시작해 둔 읽기와 스캔이 겹쳤다. HAL 은 핸들이 <code>READY</code> 가 아니면 <code>HAL_BUSY</code> 로 즉시 돌아오고, 스캔은 그 <code>HAL_BUSY</code> 를 "없다"로 센다</td><td>같은 명령을 연달아 다섯 번 쳐 본다 — 결과가 매번 다르면 이 원인이다</td><td>§3-2-3 의 <code>s_bus_hold</code> 걸음</td></tr>
           <tr><td>스캔은 되는데 값이 이따금 튄다 · <code>err</code> 이 천천히 는다</td><td>풀업이 약하다(상승시간) · 점퍼선이 길다 · SDA 와 SCL 이 나란히 붙어 있다</td><td>실습 A 의 합성 저항 값 · 선을 짧게 바꿔 보고 <code>err</code> 의 증가 속도를 견준다</td><td>§2-4 (위 한계는 계산이 아니라 관찰로 정한다)</td></tr>
         </tbody>
       </table></div>
-      <p class="small">[추정] "<code>ina</code> 가 언제나 <code>ERR ina no-sample</code> 인데 스캔은 둘을 찾는다" 행은 이 쪽을 마친 뒤 보드에서 확정한다. 힌트 T5 의 완결 코드로는 EV 가 꺼지면 스캔도 <code>ERR i2c busy</code> 로 끝날 수 있다.</p>
+      <p class="small">[추정] "<code>ina</code> 의 두 줄이 언제나 <code>no-sample</code> 이고 <code>err=0</code> 인데 스캔은 둘을 찾는다" 행은 이 쪽을 마친 뒤 보드에서 확정한다. 힌트 T5 의 완결 코드로는 EV 가 꺼지면 스캔도 <code>ERR i2c busy</code> 로 끝날 수 있다.</p>
 
       <h2 id="quiz">🤔 이해 확인</h2>
       <details class="quiz"><summary>1. (4중 검색) 이 쪽에서 쓴 <code>HAL_I2C_ErrorCallback</code> 을 네 군데에서 찾아 적어 보라 — 헤더 → <code>__weak</code> → 호출 시점 → 예제</summary>

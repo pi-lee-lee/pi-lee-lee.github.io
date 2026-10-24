@@ -202,6 +202,7 @@ window.RPI5_ABBR = [
   ["VOH", "abbr-vih", "Input High Voltage · Output High Voltage", 0, "입력을 HIGH 로 읽는 최소 전압 · 출력이 HIGH 일 때 보장하는 최소 전압"],
   ["VOS", "abbr-vos", "Voltage Scaling", 1, "코어 전압 단계"],
   ["VSS", "abbr-vss", "Ground (supply)", 0, "MCU 핀 이름으로서의 GND"],
+  ["WMM", "abbr-wmm", "World Magnetic Model", 0, "세계 자기장 모델"],
   ["WVU", "abbr-pvu", "Prescaler · Reload · Window Value Update", 0, "IWDG 상태 레지스터의 갱신 진행 플래그 셋"],
   ["XIP", "abbr-xip", "eXecute In Place", 0, "코드를 RAM 으로 옮기지 않고 플래시에서 바로 실행하는 것"],
   ["XOR", "abbr-xor", "Exclusive OR", 0, "배타적 논리합 — 두 비트가 다를 때만 1"],

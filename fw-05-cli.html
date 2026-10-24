@@ -103,7 +103,7 @@
       <p>Pi 와 MCU 사이의 계약 v2(<a href="06a-mcu-protocol.html">06a</a> §4-2)로 오가는 프레임은 네 가지뿐이다: 속도 명령(0x01) · 상태(0x81) · IMU(0x82) · 이벤트(0x83). 상태 프레임에 드는 것은 좌 · 우 각각의 평균 틱 · 배터리 전압 · 전류 · fault 다.
       상태 프레임의 틱은 "좌 · 우 각각 앞뒤 평균"이고 <strong>바퀴별 값은 MCU 안에서만 쓴다</strong>고 그 표에 적혀 있다. 그런데 벤치에서 보고 싶은 것은 정확히 그 MCU 안의 값이다 — 바퀴 하나의 엔코더 카운트, 채널 하나의 듀티, ADC 의 raw 값, 1 kHz(주기 1 ms) 루프의 지터, PID 의 적분항.</p>
       <p>방법은 둘이다. (가) 계약에 진단용 TYPE 을 더한다 — 그러면 Pi 쪽 브리지 · 파이썬 도구 · 펌웨어 세 곳이 같이 바뀌고, 벤치가 끝나면 쓸모없는 필드가 계약에 남는다.
-      (나) 계약은 그대로 두고 <strong>벤치 전용의 글자 창</strong>을 하나 둔다 — 같은 VCP 선을 빌드 스위치로 갈라 쓴다(TEXT ↔ V2, 전환은 <a href="fw-17-link-v2.html">fw-17</a>).</p>
+      (나) 계약은 그대로 두고 <strong>벤치 전용의 글자 창</strong>을 하나 둔다 — 같은 VCP 선을 TEXT / V2 두 모드로 번갈아 쓴다. 모드는 실행 중에 바꾸고 부팅은 TEXT 다(전환은 <a href="fw-17-link-v2.html">fw-17</a>).</p>
       <p>이 프로젝트는 (나)로 정했다(텍스트 CLI 를 앞에, 계약 v2 를 뒤에).
       계약의 유일한 원천은 06a §4-2 이고, 이 창에서 무엇을 찍든 계약은 한 글자도 바뀌지 않는다. 순서의 이유(왜 계약 v2 가 뒤인가)는 <a href="fw-00-map.html">fw-00</a> §2-2 에 있다.</p>
       <p>대가도 적어 둔다. 최종 펌웨어에 벤치용 창이 하나 더 남는다(코드와 시험할 모드가 는다). 그리고 <strong>V2 모드에는 이 창이 없다</strong> — VCP 가 이진 프레임 전용이 되기 때문이다.
@@ -157,7 +157,7 @@ void encoder_cli_register(void)
         <tbody>
           <tr><td><code>void (*)(int argc, char *argv[])</code></td><td>C 프로그래머가 이미 아는 <code>main</code> 의 꼴. <code>argv[0]</code> 이 명령 이름이다. 결과는 반환값이 아니라 <strong>출력 줄</strong>(<code>OK</code> / <code>ERR</code>)로 낸다 — 읽는 쪽이 사람과 스크립트이기 때문</td><td>명령 함수에 <code>OK</code> / <code>ERR</code> 출력이 빠지면 받는 쪽이 성패를 알 수 없다 → 출력 규약(§2-4)을 함수마다 지킨다</td></tr>
           <tr><td>토큰화는 <strong>복사하지 않는다</strong> — 줄 버퍼의 공백을 <code>'\0'</code> 으로 덮어쓰고 <code>argv[i]</code> 는 그 버퍼 안을 가리킨다</td><td>버퍼 하나로 끝난다. 공백을 덮어쓰는 그 한 글자가 앞 토큰을 C 문자열로 닫는다</td><td><code>argv[]</code> 는 <strong>명령 함수가 돌아올 때까지만</strong> 유효하다. 포인터를 전역에 저장해 두면 다음 줄이 들어올 때 다른 글자가 된다</td></tr>
-          <tr><td>이름은 <code>strcmp</code> <strong>정확 일치</strong>(접두 일치 없음, 대소문자 구분)</td><td><code>en</code> 과 <code>enc</code> 가 둘 다 있다. 오타가 다른 명령으로 실행되면 안 된다 — 뒤 쪽에서 <code>en 1</code>(MOTOR_EN)과 <code>relay 1</code> 이 이 명령 창에 더해진다</td><td>줄여 칠 수 없다</td></tr>
+          <tr><td>이름은 <code>strcmp</code> <strong>정확 일치</strong>(접두 일치 없음, 대소문자 구분)</td><td><code>en</code> 과 <code>enc</code> 가 둘 다 있다. 오타가 다른 명령으로 실행되면 안 된다 — 뒤 쪽에서 <code>en all 1</code>(모터 드라이버의 EN 네 핀)과 <code>relay 1</code> 이 이 명령 창에 더해진다</td><td>줄여 칠 수 없다</td></tr>
           <tr><td>고정 크기 배열(<code>CLI_MAX_CMD</code>), <code>malloc</code> 없음</td><td>RAM 사용량이 링크 때 확정된다. 이 가이드의 명령은 21개(<code>help</code> 부터 <code>trac</code> 까지)라서 예시값을 24 로 뒀다</td><td><strong>가득 찬 뒤의 등록은 거절된다</strong> — 아래 상자</td></tr>
           <tr><td>토큰이 <code>CLI_MAX_ARGS</code> 를 넘으면 <strong>실행하지 않는다</strong>(<code>ERR … too-many-args</code>)</td><td>넘친 토큰을 오류 표시 없이 버리고 실행하면 사용자가 친 것과 다른 명령이 돈다</td><td>—</td></tr>
         </tbody>
@@ -1139,7 +1139,7 @@ ERR led too-many-args
       <p>하나씩 무엇을 본 것인지:</p>
       <ul>
         <li><code>help</code> 의 <code>n=3</code> 은 지금 등록된 셋이다. 뒤 쪽을 할 때마다 이 수가 는다 — <strong><code>rejected</code> 가 0 이 아니게 되면</strong> §2-3 의 함정이 실제로 난 것이다.</li>
-        <li><code>led 2 toggle</code> 에서 LD2(노랑)가 눈에 보이게 바뀐다. <code>led 1 …</code> 은 곧 심박이 덮어쓴다(LD1 은 주 루프 심박). 그리고 <a href="fw-08-pwm-safe-output.html">fw-08</a>부터 LD2 는 MOTOR_EN 의 거울, LD3 는 fault · ASSERT 표시가 된다 — 그 뒤로 이 명령은 "LED 가 동작하는가"를 보는 용도로만 남는다.</li>
+        <li><code>led 2 toggle</code> 에서 LD2(노랑)가 눈에 보이게 바뀐다. <code>led 1 …</code> 은 곧 심박이 덮어쓴다(LD1 은 주 루프 심박). 그리고 <a href="fw-08-pwm-safe-output.html">fw-08</a>부터 LD2 는 EN 네 핀의 표시(넷 다 HIGH = 상시 점등, 1~3 = 점멸, 0 = 소등 — 1 kHz 틱이 맞추므로 이 명령으로 바꾼 LD2 는 EN 마스크가 바뀌는 순간 덮인다), LD3 는 fault · ASSERT 표시가 된다 — 그 뒤로 이 명령은 "LED 가 동작하는가"를 보는 용도로만 남는다.</li>
         <li><code>ver</code> 의 세 줄이 부팅 때의 세 줄과 글자 하나 다르지 않다(같은 함수이므로). 뒤 쪽에서 "지금 도는 펌웨어가 방금 구운 펌웨어인가"를 이 명령의 build 줄로 확인한다.</li>
         <li>마지막의 빈 <code>&gt;</code> 는 Enter 만 친 것이다 — 빈 줄은 아무것도 실행하지 않고 프롬프트만 다시 나온다. Enter 한 번에 프롬프트가 <strong>두 번</strong> 나오면 <code>\r\n</code> 을 줄 끝 둘로 센 것이다(3-2-3 의 1번).</li>
       </ul>
@@ -1371,7 +1371,7 @@ grep -rln "HAL_UART_RxCpltCallback" $FW_H7/Projects/*/Examples/UART         # �
 
       <details class="quiz"><summary>2. 바퀴별 엔코더 카운트를 Pi 에서 보고 싶어졌다. 계약 v2 에 TYPE 을 하나 더하지 않고 글자 창을 둔 이유는? 그 대가는?</summary>
         <div class="ans"><p>계약을 넓히면 펌웨어 · Pi 의 브리지 · 파이썬 도구 세 구현이 같이 바뀌고, 벤치가 끝난 뒤에도 그 필드가 계약에 남는다. 계약의 원천은 06a §4-2 하나이고, 그 절에는 "바퀴별 값은 MCU 안에서만 쓴다"고 적혀 있다.
-        글자 창은 같은 VCP 선을 빌드 스위치로 갈라 쓰므로 계약은 한 글자도 바뀌지 않는다. 대가: 최종 펌웨어에 모드가 둘 남는다(코드 · 시험 대상이 는다). V2 모드에는 이 명령 창이 없어서 그때의 관측은 probe 출력과 gdb 로 읽는 카운터 변수뿐이다 — 그래서 카운터를 <code>printf</code> 안이 아니라 변수로 둔다.</p></div></details>
+        글자 창은 같은 VCP 선을 두 모드로 번갈아 쓰므로 계약은 한 글자도 바뀌지 않는다. 대가: 최종 펌웨어에 모드가 둘 남는다(코드 · 시험 대상이 는다). V2 모드에는 이 명령 창이 없어서 그때의 관측은 probe 출력과 gdb 로 읽는 카운터 변수뿐이다 — 그래서 카운터를 <code>printf</code> 안이 아니라 변수로 둔다.</p></div></details>
 
       <details class="quiz"><summary>3. 에코를 <code>HAL_UART_RxCpltCallback</code> 안에서 <code>printf</code> 로 하면 무엇이 문제인가? 숫자로 답하라.</summary>
         <div class="ans"><p>460800 8N1 에서 한 바이트는 21.7 µs 다. 폴링 송신으로 한 글자를 되돌려 찍으면 ISR 이 적어도 그만큼 — 한 바이트 시간 — 길어진다. 붙여넣기처럼 바이트가 21.7 µs 마다 잇달아 오면 ISR 이 바이트마다 그 이상을 쓰므로 따라갈 수 없다. RXNE 뒤 한 바이트 시간 안에 RDR 을 읽지 못하는 바이트가 곧 나오고, 그 순간 ORE 와 함께 바이트를 잃는다. RM0468 §53.5.6 에 따르면 ORE 가 1 이면 이미 하나는 잃은 것이다.

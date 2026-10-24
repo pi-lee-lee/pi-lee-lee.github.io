@@ -15,7 +15,7 @@
 
       <p class="kicker">F18 · 안전 상태기계</p>
       <h1>일부러 고장을 내고, 이벤트가 정확히 한 번 오는 것을 본다</h1>
-      <p class="lead"><a href="fw-13-pid-protection.html">fw-13</a> 은 바퀴 하나의 되먹임이 끊기는 것을 검출했고, 그때 "넷을 다 정지시킬 것인가, MOTOR_EN 까지 내릴 것인가"를 이 쪽으로 넘겼다.
+      <p class="lead"><a href="fw-13-pid-protection.html">fw-13</a> 은 바퀴 하나의 되먹임이 끊기는 것을 검출했고, 그때 "넷을 다 정지시킬 것인가, EN 까지 내릴 것인가"를 이 쪽으로 넘겼다.
       <a href="fw-17-link-v2.html">fw-17</a> 은 이벤트 프레임 0x83 을 만들었지만 <strong>0x83 이벤트를 내는 코드가 아직 없어서</strong> 0건이 정상이었다. 이 쪽은 두 쪽이 남긴 일을 함께 마무리하고, 그러려고 두 가지를 만든다.
       하나는 전압 · 전류 · 기울기 · 명령 끊김 · IMU 침묵을 보고 <strong>Pi 에게 묻지 않고</strong> 출력을 끊는 상태기계이고, 다른 하나는 그 결과를 상태 비트와 이벤트로 내보내는 경로다.
       여기서 정한 임계값은 벤치의 임시값이고, 실측으로 확정하는 것은 <a href="fw-20-after-assembly.html">fw-20</a> 이다.</p>
@@ -24,9 +24,9 @@
         <span class="label">이 쪽이 끝나면 보이는 것</span>
         <p>이 쪽이 끝나면 다음 셋을 직접 확인할 수 있다.</p>
         <ul>
-          <li>TEXT 빌드에서 <code>fault inject tilt</code> 를 치면 LD3 가 켜지고 <code>fault stat</code> 이 <strong>이벤트 한 줄</strong>을 꺼내 보여 준다. 같은 명령을 다시 쳐도 이벤트는 더 늘지 않고 비트만 유지된다.</li>
+          <li>TEXT 모드에서 <code>fault inject tilt</code> 를 치면 LD3 가 켜지고 <code>fault stat</code> 이 <strong>이벤트 한 줄</strong>을 꺼내 보여 준다. 같은 명령을 다시 쳐도 이벤트는 더 늘지 않고 비트만 유지된다.</li>
           <li><code>fault clear</code> 뒤 내가 정한 유지 시간이 지나면 복구 이벤트가 한 줄 더 온다.</li>
-          <li>V2 빌드에서 probe 의 송신만 멈추면(<code>--mute-after</code>) 0x83 이벤트가 온다. 그 <code>detail</code> 에 적힌 <strong>MCU 자신의 ms</strong> 를 계약값 200 과 비교한다.</li>
+          <li>V2 모드에서 probe 의 송신만 멈추면(<code>--mute-after</code>) 0x83 이벤트가 온다. 그 <code>detail</code> 에 적힌 <strong>MCU 자신의 ms</strong> 를 계약값 200 과 비교한다.</li>
         </ul>
         <p><strong>이 쪽에 필요한 것</strong></p>
         <ul>
@@ -57,7 +57,7 @@
       <ul>
         <li>① 일곱 가지 위험 조건을 1 kHz(주기 1 ms)로 판정해 <strong>래치</strong>한다.</li>
         <li>② 래치가 0 에서 1 로 바뀌는 <strong>엣지</strong>마다 이벤트를 한 번 낸다.</li>
-        <li>③ 조건마다 내가 정한 만큼 <strong>끊는다</strong> — 듀티까지인가, MOTOR_EN 까지인가, 릴레이까지인가.</li>
+        <li>③ 조건마다 내가 정한 만큼 <strong>끊는다</strong> — 듀티까지인가, EN 네 핀까지인가, 릴레이까지인가.</li>
       </ul>
       <pre class="diagram"><code> 입력이 모이는 곳 (main 문맥, app_loop 한 바퀴에 한 번)
    ina226_get_vbus_mv()   -&gt; batt_mv   (fw-10)
@@ -74,7 +74,7 @@
         v                                    v
    출력을 끊는다                         이벤트가 나가는 길 (소비자는 모드당 하나)
      듀티 0 (네 바퀴)                      TEXT : fault stat 이 큐를 꺼내 찍는다
-     + MOTOR_EN LOW   (내 선택)            V2   : comm_frame.c 가 끌어가 0x83 으로
+     + EN 네 핀 LOW   (내 선택)            V2   : comm_frame.c 가 끌어가 0x83 으로
      + RELAY_EN LOW   (내 선택)                  (fw-17)</code></pre>
       <p>새로 나오는 용어를 먼저 한 줄씩 정의해 둔다.</p>
       <div class="tbl"><table class="compact">
@@ -84,7 +84,7 @@
           <tr><td>래치(latch)</td><td>조건이 사라져도 유지되는 기록. 상태 프레임의 <code>fault</code> 비트가 이것이다</td></tr>
           <tr><td>엣지(rising edge)</td><td>래치가 0 → 1 로 바뀌는 그 한 틱. <strong>이벤트는 여기서만</strong> 난다(§2-2)</td></tr>
           <tr><td>안쪽 비트 / 바깥 비트</td><td>안쪽 = <code>SAFE_BIT(SAFE_I_*)</code>, 이 모듈이 조건을 세는 번호. 바깥 = 계약의 <code>fault u8</code> 비트. <strong>둘은 다른 것</strong>이고 사이의 표는 내가 만든다(§2-3)</td></tr>
-          <tr><td>끊는 범위(cut)</td><td>fault 비트가 1 이 되었을 때 출력을 어디까지 내리는가 — 듀티 / + MOTOR_EN / + RELAY_EN. 조건마다 다르게 고를 수 있다(§2-9)</td></tr>
+          <tr><td>끊는 범위(cut)</td><td>fault 비트가 1 이 되었을 때 출력을 어디까지 내리는가 — 듀티 / + EN 네 핀 / + RELAY_EN. 조건마다 다르게 고를 수 있다(§2-9)</td></tr>
           <tr><td>해제 정책</td><td>조건이 사라진 뒤 래치를 어떻게 푸는가 — 자동 / 횟수 래치 / 영구 래치. <strong>내가 정한다</strong>(§2-4)</td></tr>
         </tbody>
       </table></div>
@@ -103,7 +103,7 @@
       <p>바꿔 말하면 이 모듈의 설계 기준은 <strong>"무엇이 멈춰도 이 모듈만은 계속 실행된다"</strong> 이다. 그래서 이 쪽의 코드에는 세 가지가 없다 — 통신 모듈의 헤더, 블로킹 호출, 글자 출력.
       Pi 는 결과만 받는다: 상태 프레임의 <code>fault</code> 비트와 이벤트 프레임. 그 두 결과를 받아 목표를 취소하는 것은 상위가 한다(06a §2-6 의 상자). 상위가 목표를 취소하지 못해도 로봇은 이미 멈춰 있다.</p>
       <div class="callout why"><span class="ct">이 모듈이 <em>못</em> 하는 것도 같이 적어 둔다</span>
-        <p>MCU 자신이 멈추면 이 상태기계도 멈춘다. 그 경우의 안전장치는 <a href="fw-06-tick-watchdog.html">fw-06</a> 의 하드웨어 워치독(IWDG)이다. 전원이 사라지면 코드가 아무것도 못 한다. 그 경우의 안전장치는 MOTOR_EN 의 <strong>풀다운</strong>이다(<a href="fw-08-pwm-safe-output.html#s2-6">fw-08 §2-6</a>).
+        <p>MCU 자신이 멈추면 이 상태기계도 멈춘다. 그 경우의 안전장치는 <a href="fw-06-tick-watchdog.html">fw-06</a> 의 하드웨어 워치독(IWDG)이다. 전원이 사라지면 코드가 아무것도 못 한다. 그 경우의 안전장치는 EN 네 핀의 <strong>풀다운</strong>(모듈마다 하나)이다(<a href="fw-08-pwm-safe-output.html#s2-6">fw-08 §2-6</a>).
         세 장치는 서로를 대신하지 못한다. <a href="fw-13-pid-protection.html#s2-12">fw-13 §2-12</a> 가 세 장치를 가른 상자를 다시 읽고 오는 편이 좋다. 이 쪽의 실습 B 와 실습 D 가 시험하는 것이 정확히 세 장치 사이의 경계다.</p>
       </div>
 
@@ -212,19 +212,19 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
         기본 진행에서 이 쪽이 하는 일은 <strong>조건의 자리를 비워 두고 그 사실을 적는 것</strong>이다. <code>driver_fault</code> 를 <code>false</code> 로 고정하므로, <code>bit[SAFE_I_DRIVER]</code> 를 배정하든 말든 그 비트는 1 이 되지 않는다.
         "자리를 지우지 않는" 이유는 (나)를 고르는 날 상태기계를 고치지 않아도 되게 하려는 것이다. 호스트 시험 벡터 17 이 "기본 진행에서는 이 조건이 1 이 되지 않는다"를 채점한다.</p>
       </div>
-      <div class="callout why"><span class="ct">06 의 "MOTOR_EN 을 3 µs 이상 LOW 로 래치 해제" — 데이터시트에 있다. 다만 뜻이 좁다</span>
-        <p>06 의 fault 차단 줄에 <code>드라이버 fault 면 MOTOR_EN 을 3 µs 이상 LOW 로 래치 해제</code> 라는 주석이 붙어 있다. 이 가이드는 그 숫자를 데이터시트에서 <strong>직접 확인했다</strong>
+      <div class="callout why"><span class="ct">06 의 "EN 을 3 µs 이상 LOW 로 래치 해제" — 데이터시트에 있다. 다만 뜻이 좁다</span>
+        <p>06 의 fault 차단 줄에 <code>드라이버 fault 면 EN 을 3 µs 이상 LOW 로 래치 해제</code> 라는 주석이 붙어 있다. 이 가이드는 그 숫자를 데이터시트에서 <strong>직접 확인했다</strong>
         (<code>~/ros2/datasheet/BTS7960_Infineon_motordriver.pdf</code>, Infineon Rev 1.1 2004-12-07): §4.3.13 표 행 <code>treset</code> = <strong>최소 3 µs</strong>(INH low), 16쪽.
         §4.3.3 의 문장이 그 조건을 적는다 — 과열이면 두 출력단이 꺼진 채 <strong>래치</strong>되고, <strong>INH 핀에 최소 <code>treset</code> 길이의 LOW</strong> 가 와야 풀리며,
         <strong>그 사이에 접합 온도가 열 히스테리시스 ΔT 이상 내려가 있어야 한다</strong>(§4.3.12: ΔT typ 7 K, §4.3.10: TjSD 152/175/200 °C).</p>
         <p>그러니 "3 µs LOW 를 주면 풀린다"는 <strong>필요 조건이지 충분 조건이 아니다.</strong> 식지 않았으면 다시 래치된다 — 그리고 데이터시트는 "과열 보호를 되풀이해 쓰면 수명이 준다"고 적어 두었다(§4.3.3 마지막 줄).
-        더 중요한 것은 이 프로젝트의 배선이다: <strong>MOTOR_EN 한 핀이 모듈 4장의 R_EN · L_EN 8선을 함께 끈다</strong>(<code>hardware/pinmap-h723.md</code> §1-2 N1).
-        그래서 한 모듈을 복구하려고 주는 3 µs LOW 는 <strong>네 모듈 전부</strong>의 래치에 적용되고, 그 순간 네 모듈이 다 꺼진다. 채널 하나만 골라 풀 방법은 이 배선에 없다.</p>
+        이 프로젝트의 배선은 그 펄스를 <strong>모듈 단위로</strong> 줄 수 있게 돼 있다: EN 은 모듈마다 1핀이다(EN_FL … EN_RR — <code>hardware/pinmap-h723.md</code> §1-2 N1, 2026-10-14 개편). 한 모듈의 EN 만 3 µs LOW 로 내리면 그 모듈의 래치만 풀리고 나머지 셋은 돌던 그대로다(<code>motor_enable(wheel, false)</code> 뒤 <code>true</code>).
+        단 어느 모듈이 래치됐는지를 <strong>아는</strong> 수단은 IS 결선 (b) 뒤에야 생긴다 — 아래 문단.</p>
         <p>그런데 <strong>지금은 그 펄스를 보낼 자리가 없다.</strong> 위의 결정 대기가 (가)인 동안 "드라이버가 래치됐다"는 것을 알 수단이 아예 없기 때문이다.
         알 수 없는 사건에 대해 복구 펄스를 주기적으로 보내는 것은 복구가 아니라 <strong>주기적인 출력 차단</strong>이다. (나)를 고르는 날 §4.4.5 의 진리표가 바로 이어진다(아래).</p>
       </div>
       <div class="tbl"><table class="compact">
-        <thead><tr><th>모듈 상태</th><th>INH(=MOTOR_EN)</th><th>IS 핀</th><th>출처</th></tr></thead>
+        <thead><tr><th>모듈 상태</th><th>INH(= 그 모듈의 EN_x)</th><th>IS 핀</th><th>출처</th></tr></thead>
         <tbody>
           <tr><td>정상 — HSS 활성</td><td>1</td><td><strong>CS</strong> = 부하 전류에 비례하는 전류원</td><td>§4.4.5 진리표 · §4.4.4</td></tr>
           <tr><td>정상 — LSS 활성 / 대기</td><td>1 / 0</td><td>0</td><td>§4.4.5</td></tr>
@@ -284,14 +284,14 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
       </div>
 
       <h3 id="s2-9">2-9. 끊는 범위 — <a href="fw-13-pid-protection.html#s3-3-4">fw-13 §3-3-4</a> 가 넘긴 질문을 여기서 다룬다</h3>
-      <p>fw-13 은 보호 3종이 트립하면 <strong>그 바퀴 하나의 듀티만</strong> 0 으로 했다. 그리고 그 문단에 이렇게 적어 두었다: "넷을 다 멈출 것인가, MOTOR_EN 까지 내릴 것인가는 안전 상태기계가 결정하고 fw-18 에서 다룬다. 여기서 좁게 끊는 것이 최종 답이라고 읽지 않는다."
+      <p>fw-13 은 보호 3종이 트립하면 <strong>그 바퀴 하나의 듀티만</strong> 0 으로 했다. 그리고 그 문단에 이렇게 적어 두었다: "넷을 다 멈출 것인가, EN 까지 내릴 것인가는 안전 상태기계가 결정하고 fw-18 에서 다룬다. 여기서 좁게 끊는 것이 최종 답이라고 읽지 않는다."
       1세대는 같은 사고(엔코더 GND 단선 → 되먹임 상실)에 <strong>전 모터 정지 + 주 전원 릴레이 열기</strong>로 대응했다(2026-07-18 의 백스톱). 출처는 <code>~/ros2/docs/bench/motor_bench_findings_2026-07-17.md</code> 계열 기록이다.</p>
       <p>이 쪽은 그 질문을 <strong>조건마다 따로</strong> 답하게 만든다. 끊는 레벨은 셋이고, 누적이다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>레벨</th><th>무엇을 내리는가</th><th>다시 달리려면</th><th>이것으로 막히지 <em>않는</em> 것</th></tr></thead>
         <tbody>
           <tr><td><code>SAFE_CUT_DUTY</code> (0)</td><td>네 바퀴의 듀티 0 + 적분 리셋. <strong>모든 fault 가 최소한 이것은 한다</strong></td><td>래치가 풀리면 다음 틱부터</td><td>PWM 이 아니라 <em>드라이버</em>가 고장 난 경우. 소프트웨어가 멈춘 경우</td></tr>
-          <tr><td><code>SAFE_CUT_EN</code> (1)</td><td>+ MOTOR_EN LOW — 모듈의 74HC244 가 꺼져 <strong>PWM 이 무시된다</strong></td><td>전원 시퀀스를 다시 ARMED 로. 그 틱에 듀티 0 이 먼저다(fw-11 의 <code>zero_duty</code>)</td><td>K1 접점이 용착된 경우. 버스에 남은 전하</td></tr>
+          <tr><td><code>SAFE_CUT_EN</code> (1)</td><td>+ EN 네 핀 LOW(<code>motor_enable_all(false)</code>, fw-11 의 DOWN 이 한다) — 모듈의 74HC244 가 꺼져 <strong>PWM 이 무시된다</strong>. EN 이 모듈마다 1핀이라 fault 난 바퀴의 EN 만 LOW 로 두는 것도 가능하지만 쓰지 않는다 — <strong>사용자 결정 z(2026-10-14): 바퀴 하나가 지시를 수행하지 못하면 모든 바퀴를 세운다.</strong> 그래서 이 레벨은 늘 네 핀 전부다</td><td>전원 시퀀스를 다시 ARMED 로. 그 틱에 듀티 0 이 먼저다(fw-11 의 <code>zero_duty</code>)</td><td>K1 접점이 용착된 경우. 버스에 남은 전하</td></tr>
           <tr><td><code>SAFE_CUT_RELAY</code> (2)</td><td>+ RELAY_EN LOW — K1 개방, <strong>버스 자체가 끊긴다</strong></td><td>사전충전부터 전부 다시(수 초). <a href="fw-11-power-sequence.html#s2-3">fw-11 §2-3</a></td><td>벌크 캡에 남은 전하(블리더가 없다 — <a href="fw-11-power-sequence.html#s2-7">fw-11 §2-7</a>)</td></tr>
         </tbody>
       </table></div>
@@ -404,7 +404,7 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
       <h3 id="s2-13">2-13. USB 를 뽑는 시험은 워치독 시험이 아니다 — 전원 상실 시험이다</h3>
       <p>"명령이 끊기면 멈추는가"를 확인하는 가장 손쉬운 방법처럼 보이는 것이 케이블을 뽑는 것이다. 이 벤치에서 케이블을 뽑는 것은 <strong>다른 시험</strong>이다.</p>
       <p>Nucleo 의 JP2 기본 위치는 <code>5V_USB_STLK</code> 다(UM2407). 즉 지금 이 보드는 <strong>ST-LINK USB 로 급전된다.</strong> 케이블을 뽑으면 MCU 가 꺼진다.
-      MCU 가 꺼지면 200 ms 를 세는 코드도 같이 사라지므로, 그때 시험되는 것은 명령 워치독이 아니라 <strong>"제어기 전원이 사라졌을 때 무엇이 MOTOR_EN 을 LOW 로 유지하는가"</strong> 다. 답은 코드가 아니라 <strong>모듈 내장 풀다운</strong>이다.</p>
+      MCU 가 꺼지면 200 ms 를 세는 코드도 같이 사라지므로, 그때 시험되는 것은 명령 워치독이 아니라 <strong>"제어기 전원이 사라졌을 때 무엇이 EN 네 핀을 LOW 로 유지하는가"</strong> 다. 답은 코드가 아니라 <strong>모듈 내장 풀다운</strong>이다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>시험</th><th>무엇을 끊는가</th><th>무엇이 로봇을 정지시키는가</th><th>판정 수단</th><th>이 쪽의 실습</th></tr></thead>
         <tbody>
@@ -419,7 +419,7 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
         <p><a href="fw-08-pwm-safe-output.html#s2-6">fw-08 §2-6</a> 이 이미 도출했다 — DMM 의 DC 입력은 약 10 MΩ 이라 <strong>아무것도 구동하지 않는 핀도 0 V 로 읽힌다.</strong> 그러니 "0 V 였다"는 그 자체로 풀다운의 증거가 아니다.
         다만 USB 를 뽑은 상태에서는 질문이 다르다: 이때 묻는 것은 "<strong>MCU 전원이 끊겼을 때 EN 을 HIGH 로 올릴 수 있는 것이 있는가</strong>" 이고, 답이 "없다"이면 통과다. 부유든 풀다운이든 결과는 같다.</p>
         <p>그래도 <strong>풀다운이 실재하는지</strong>는 따로 확인해 둘 값이 있다 — 조립 후에는 상황이 달라지기 때문이다. fw-08 의 판정법 ②′ 그대로 <strong>두 값을 짝으로</strong> 기록한다:
-        전원을 끈 채 EN 네트 ↔ GND <strong>저항</strong>(1세대 기록: 입력마다 30 kΩ → 모듈 1장의 R_EN + L_EN 묶음이면 15 kΩ 계), 그 뒤 USB 를 뽑은 상태의 <strong>전압</strong>.</p>
+        전원을 끈 채 EN 네트 넷 각각 ↔ GND <strong>저항</strong>(1세대 기록: 입력마다 30 kΩ → 모듈 한 장의 R_EN + L_EN 묶음이라 네트마다 15 kΩ 계), 그 뒤 USB 를 뽑은 상태의 <strong>전압</strong>(네트 넷).</p>
         <p><strong>조립 후에는 이 문장이 달라진다.</strong> 지금은 모듈 VCC 도 Nucleo 의 3V3 에서 나오므로 USB 를 뽑으면 MCU 와 모듈 전원이 <em>함께</em> 끊긴다.
         조립 뒤 Nucleo 를 무엇으로 급전할지는 <strong>결정 대기</strong>다. 후보는 USB(셀프 파워 허브 경유) / E5V / VIN 세 가지다. 로봇 자체의 레일에서 급전하면 "USB 를 뽑는다"가 더 이상 전원 상실이 아니게 된다. 허브 경유라도, 허브가 업스트림(Pi)이 사라져도 포트 전원을 유지하는 모델이면 Pi 쪽 케이블을 뽑았을 때 MCU 는 살아 있다 — 모델 종속이라 확인이 필요하다.
         그러면 이 시험은 "MCU 는 동작 중인데 상위만 사라진 경우" = <strong>명령 워치독 시험</strong>으로 바뀐다. 같은 동작이 다른 것을 시험하게 되는 것이다.
@@ -601,7 +601,7 @@ void    safety_cli_register(void);  /* "fault" 를 등록한다 */
 #include "Device/ina226.h"    /* 버스 전압 - 기본 진행 (2-7) */
 #include "Periph/adc.h"       /* 배터리 전류 (fw-12) */
 #include "System/tick.h"
-#include "Periph/motor.h"     /* motor_enable() - SAFE_CUT_EN 을 골랐을 때만 (2-9) */
+#include "Periph/motor.h"     /* motor_enable_all() - SAFE_CUT_EN 을 골랐을 때만 (2-9) */
 #include "Tools/cli.h"
 #include "Tools/log.h"
 #include &lt;stdio.h&gt;
@@ -773,7 +773,7 @@ _Static_assert((IMU_TIMEOUT_MS) != 0, "robot_params.h: IMU_TIMEOUT_MS is still E
         비트를 하나씩 더하고 빼는 코드를 쓰면 S4 · S5 가 <strong>성립하지 않는 경로가 생긴다</strong>(래치가 풀릴 때 <code>fault</code> 에서 비트를 빼는 것을 잊는 식으로).</li>
         <li><strong>아래 시험을 실행한다. 두 줄 다.</strong></li>
         <li>통과하면 <code>safety.c</code> 의 <code>TODO(you)</code> 를 채우고 <code>app.c</code> 에 세 줄을 더한다. <code>app_init()</code> 에 <code>safety_init();</code>(<code>control_init()</code> 뒤)를, <code>app_loop()</code> 에 <code>safety_service_main();</code> 을 더한다.
-        <code>safety_cli_register();</code> 는 <strong><code>app.c</code> 의 TEXT 갈래에</strong> 둔다. V2 에는 CLI 가 아예 없으므로(<code>LINK_MODE</code>) V2 쪽에서 등록하면 아무도 쓸 수 없는 명령이 하나 는다.</li>
+        <code>safety_cli_register();</code> 는 <strong><code>app.c</code> 의 TEXT 갈래에</strong> 둔다. V2 모드에는 CLI 가 아예 없으므로 V2 쪽에서 등록하면 아무도 쓸 수 없는 명령이 하나 는다.</li>
         <li><p><strong>수학 라이브러리를 링크에 더한다 — 이 쪽이 처음이다.</strong> <code>safety_tilt_ddeg()</code> 가 <code>&lt;math.h&gt;</code> 의 <code>atan2f</code> · <code>sqrtf</code> 를 쓴다. 이 둘은 <code>libm.a</code> 에만 있다(<code>--specs=nano.specs</code> 가 주는 <code>libc_nano.a</code> 에도, <code>libc.a</code> 에도 없다).</p>
         <p>고치는 곳은 최상위 <code>CMakeLists.txt</code> 의 <strong>네 번째 자리</strong>다. <a href="fw-02-toolchain.html#s2-2">fw-02 §2-2</a> 가 세 자리(소스 · 포함 경로 · 매크로)를 알려 줬고, 이번에 쓰는 것은 그 아래
         <code>target_link_libraries(${CMAKE_PROJECT_NAME} …)</code> 블록의 <code># Add user defined libraries</code> 줄이다. 그 주석 줄 아래에 <code>m</code> 한 줄을 더한다.</p>
@@ -1009,7 +1009,7 @@ void safety_service_main(void)  /* app_loop() 에서 한 바퀴에 한 번. 모�
           <li><strong>다르게 써도 되는 곳</strong> — 세 가지다. ① <code>curr_valid</code> 를 늘 <code>true</code> 로 두어도 된다(블록이 없을 때의 0 mA 를 "전류 없음" 으로 받아들이면 과전류 판정에 해가 없다). ② fw-12 의 <code>adc.c</code> 에 "블록이 왔는가" 접근 함수를 하나 더해 그 함수를 써도 된다(이름은 fw_style.md 4-9절 의 규칙대로 그 쪽에 등재한다). ③ 세 묶음의 순서는 서로 독립이라 바꿔도 같다(동일).</li>
         </ul>
         <p><strong>쓰는 API</strong> — 넷, 전부 main 문맥.</p>
-        <pre><code class="lang-c">bool     ina226_get_vbus_mv(int32_t *out_mv);              /* fw-10 ina226.h: false = 부팅 뒤 좋은 샘플이 아직 없다 */
+        <pre><code class="lang-c">bool     ina226_get_vbus_mv(int32_t *out_mv);              /* fw-10 ina226.h: false = 부팅 뒤 #1 을 아직 한 번도 못 읽었다 */
 uint16_t adc_get_raw(uint8_t rank);                        /* fw-12 adc.h: 아직 블록이 하나도 오지 않았으면 0 */
 int32_t  adc_get_batt_ma(void);                            /* fw-12 adc.h: 최신 배터리 전류 [mA], 방전이 양 */
 void     control_get_imu(imu_sample_t *out, uint8_t sensor_id);   /* fw-13 control.h: out-&gt;seq == 0 은 "샘플 없음" */
@@ -1506,8 +1506,8 @@ OK fault</code></pre>
       바퀴가 도는 것은 상위가 명령을 보낸 뒤부터여야 한다.</p>
 
       <h3 id="s3-2">3-2. 실습 B — 계약 경로에서 200 ms 를 MCU 의 시계로 잰다</h3>
-      <p>같은 상태기계를 <strong>V2 빌드</strong>로 굽고, 이번에는 명령 창이 아니라 계약 프레임으로 본다. <strong>V2 모드에는 CLI 가 없다</strong>(<code>LINK_MODE</code> 가 <code>app.c</code> 한 군데에서 갈린다).
-      그래서 이 실습의 관측 수단은 둘뿐이다: <code>scripts/mcu_probe.py</code> 의 출력과 gdb 로 읽는 변수. V2 빌드에는 <code>fault stat</code> 명령이 없다.</p>
+      <p>같은 상태기계를 <strong>V2 모드</strong>로 바꿔, 이번에는 명령 창이 아니라 계약 프레임으로 본다. <strong>V2 모드에는 CLI 가 없다</strong>.
+      그래서 이 실습의 관측 수단은 둘뿐이다: <code>scripts/mcu_probe.py</code> 의 출력과 gdb 로 읽는 변수. V2 모드에는 <code>fault stat</code> 명령이 없다.</p>
 
       <h4 id="s3-2-3">3-2-3. 직접 채우기</h4>
       <ol class="steps">
@@ -1521,8 +1521,8 @@ OK fault</code></pre>
       </ol>
 
       <h4 id="s3-2-4">3-2-4. 굽고 보기</h4>
-      <pre><code class="lang-bash">firmware/tools/build.sh V2
-firmware/tools/flash.sh V2
+      <pre><code class="lang-bash">firmware/tools/flash.sh                   # 부팅은 TEXT 모드
+# V2 모드로 전환한다 - 전환 수단은 fw-17 에서 정한 것을 쓴다
 python3 scripts/mcu_probe.py /dev/cu.usbmodem&lt;n&gt; 0 0 --sec &lt;충분히 긴 값&gt; --mute-after &lt;s&gt;</code></pre>
       <p>인자 셋(<code>port</code> · <code>vl</code> · <code>vr</code>)은 <strong>위치 인자라 생략할 수 없다</strong>(fw-17 §3-2-3 의 <code>main()</code>). 바퀴를 돌릴 일이 없으므로 목표는 <code>0 0</code> 이다.
       그리고 <strong><code>--sec</code> 이 <code>--mute-after</code> 보다 충분히 커야 한다</strong> — <code>--sec</code> 의 기본값은 5 초이고, 그 시간이 끝나면 probe 가 종료한다. 뮤트 뒤의 200 ms 와 그 뒤의 몇 초를 보려면 여유를 둔다.</p>
@@ -1569,7 +1569,7 @@ bad_crc=0  bad_len=0  junk_bytes=0            &lt;- 마지막 두 줄은 끝날 
 
       <h3 id="s3-3">3-3. 실습 C-1 — 실물 신호로: IMU 를 침묵시키고, 손으로 기울인다</h3>
       <p>여기부터는 <strong>주입이 아니라 진짜 신호</strong>다. 주입으로 확인한 것은 상태기계의 논리이고, 여기서 확인하는 것은 <strong>입력을 모으는 경로가 실제로 연결돼 있는가</strong>다. 둘은 다른 시험이다.
-      배터리는 필요 없다. TEXT 빌드로 되돌아가 <code>fault stat</code> 으로 본다.</p>
+      배터리는 필요 없다. TEXT 모드로 전환해 <code>fault stat</code> 으로 본다.</p>
 
       <h4 id="s3-3-3">3-3-3. 만들고 재기 (코드 없음)</h4>
       <p>두 고장을 손으로 만든다. 순서를 지킨다 — <strong>선을 뽑고 꽂는 일은 모터 전원이 없는 상태에서</strong>, 그리고 센서 전원은 언제나 Nucleo 의 3V3 에서만 딴다(별도 레일 금지).</p>
@@ -1639,8 +1639,8 @@ bad_crc=0  bad_len=0  junk_bytes=0            &lt;- 마지막 두 줄은 끝날 
           <tr><td>②</td><td>문턱을 <strong>원래대로</strong> 되돌려 굽고 <code>pwr up</code>. <strong>먼저</strong> <code>fault inject batt</code> 로 주입하고 <code>fault stat</code> 으로 <code>batt=1</code> 을 확인한 뒤 <code>step &lt;바퀴&gt; &lt;목표&gt; &lt;ms&gt;</code></td>
               <td><strong>바퀴가 아예 돌지 않는다.</strong> CSV 의 <code>duty_permille</code> 열이 <strong>0행부터</strong> 0 이다. LD3 는 켜진 채. 레벨 1 · 2 를 골라 EN 이 이미 내려갔으면 <code>step</code> 자체가 <code>ERR step not-ready</code> 로 거부된다 — 거부되는 것도 관찰이다</td>
               <td>0 이 아닌 <code>duty_permille</code> 행이 하나라도 있는가(없어야 한다) · 거부됐다면 그 줄 그대로</td></tr>
-          <tr><td>③</td><td>②의 직후, <strong>무엇이 내려가 있는가</strong>를 본다 — <code>fault stat</code> 의 <code>cut=</code>, <code>pwr stat</code> 의 <code>state=</code> · <code>en=</code> · <code>relay=</code>, 그리고 DMM 으로 MOTOR_EN 네트</td>
-              <td><strong>내가 <code>cut[SAFE_I_LOWBATT]</code> 에 적은 그대로</strong>여야 한다. 레벨 0 이면 <code>en=1</code> 인 채 듀티만 0, 레벨 1 이면 <code>en=0</code>, 레벨 2 면 <code>relay=0</code> 이고 버스가 내려간다</td>
+          <tr><td>③</td><td>②의 직후, <strong>무엇이 내려가 있는가</strong>를 본다 — <code>fault stat</code> 의 <code>cut=</code>, <code>pwr stat</code> 의 <code>state=</code> · <code>en=</code> · <code>relay=</code>, 그리고 DMM 으로 EN 네트 넷</td>
+              <td><strong>내가 <code>cut[SAFE_I_LOWBATT]</code> 에 적은 그대로</strong>여야 한다. 레벨 0 이면 <code>en=1111</code> 인 채 듀티만 0, 레벨 1 이면 <code>en=0000</code>, 레벨 2 면 <code>relay=0</code> 이고 버스가 내려간다</td>
               <td>세 값의 조합과 내가 적은 레벨</td></tr>
           <tr><td>④</td><td><code>fault clear</code> 뒤 다시 달릴 수 있는가</td>
               <td>레벨 0 이면 래치가 풀리는 즉시. 레벨 1 이면 <code>pwr up</code> 이 다시 필요하다. 레벨 2 면 <strong>사전충전부터 전부</strong>(수 초)</td>
@@ -1663,7 +1663,7 @@ bad_crc=0  bad_len=0  junk_bytes=0            &lt;- 마지막 두 줄은 끝날 
       <h4 id="s3-5-3">3-5-3. 만들고 재기 (코드 없음)</h4>
       <ol class="steps">
         <li><strong>오늘의 급전 구성을 한 줄로 적는다.</strong> "Nucleo 는 ST-LINK USB(JP2 = 5V_USB_STLK)로 급전 · IBT-2 모듈 VCC 는 Nucleo 3V3" — 이 문장이 참이어야 아래 판정이 뜻을 가진다.</li>
-        <li><strong>전원을 모두 끈 채</strong> DMM 을 저항 모드로 두고 <strong>MOTOR_EN 네트 ↔ GND</strong> 를 잰다. 1세대 기록으로는 입력마다 30 kΩ, 모듈 1장의 R_EN + L_EN 묶음이면 15 kΩ 계다. <strong>읽은 값을 적는다.</strong></li>
+        <li><strong>전원을 모두 끈 채</strong> DMM 을 저항 모드로 두고 <strong>EN 네트 넷 각각 ↔ GND</strong> 를 잰다(모듈마다 EN 이 하나다 — EN_FL … EN_RR). 1세대 기록으로는 입력마다 30 kΩ, 모듈 한 장의 R_EN + L_EN 묶음이라 네트마다 15 kΩ 계다. <strong>읽은 값을 적는다.</strong></li>
         <li>USB 를 꽂아 켜고, <code>pwr</code> 은 올리지 않은 채(모터 전원 없이) DMM 을 DC 전압으로 바꿔 같은 네트를 잰다. 0 V 근처를 확인한다.</li>
         <li><strong>USB 케이블을 뽑는다.</strong> 같은 네트를 다시 잰다.</li>
       </ol>
@@ -1675,7 +1675,7 @@ bad_crc=0  bad_len=0  junk_bytes=0            &lt;- 마지막 두 줄은 끝날 
         <tbody>
           <tr><td>kΩ 계 (15 kΩ 근처)</td><td>0 V 근처</td><td><strong>통과</strong> — 풀다운이 실재하고, MCU 전원이 끊겨도 EN 을 HIGH 로 올릴 것이 없다</td></tr>
           <tr><td>MΩ 계 · OL</td><td>0 V 근처</td><td><strong>판정 불가</strong> — 0 V 는 DMM 자신이 만든 것일 수 있다(<a href="fw-08-pwm-safe-output.html#s2-6">fw-08 §2-6</a>). 하네스가 모듈에 꽂혀 있는지, 모듈 GND 가 이어져 있는지부터 본다</td></tr>
-          <tr><td>아무 값</td><td>0 V 가 아니다</td><td><strong>불합격</strong> — 무언가가 EN 의 전압을 올리고 있다. 이웃 핀(CN10-1 = AVDD 3.3 V)에 점퍼가 잘못 꽂혔는지부터 눈으로 본다</td></tr>
+          <tr><td>아무 값</td><td>0 V 가 아니다</td><td><strong>불합격</strong> — 무언가가 그 EN 네트의 전압을 올리고 있다. EN 핀 넷 중 하나가 3V3 에 닿았는지(점퍼 · 납땜 브리지)부터 눈으로 본다 — 새 핀의 이웃은 GND 와 빈 핀이라 한 칸 미끄러진 점퍼로는 HIGH 가 되지 않는다(<code>hardware/pinmap-h723.md</code> §5-5)</td></tr>
         </tbody>
       </table></div>
       <p>그리고 이 기록 옆에 <strong>한 문장</strong>을 같이 적는다: <em>"이것은 명령 워치독 시험이 아니다."</em>
@@ -1702,9 +1702,9 @@ bad_crc=0  bad_len=0  junk_bytes=0            &lt;- 마지막 두 줄은 끝날 
           <span class="sub">판정 수단: <code>fault stat</code> + <code>wt stat</code> / <code>bno stat</code> · §3-3-3 ② · <code>TILT_MAX_DDEG</code> 는 <code>____</code> 이고 벤치 값이다 — 확정은 <a href="fw-20-after-assembly.html">fw-20</a></span></span></label></li>
         <li><label><input type="checkbox" data-key="lowbatt-path-by-raised-threshold"><span><strong>경로 통과</strong> — 문턱을 지금 버스 전압 위로 <strong>잠시</strong> 올려 저전압 경로가 실행되는 것을 봤고, <strong>원래 값으로 되돌린 것</strong>을 소스에서 확인했다
           <span class="sub">판정 수단: <code>fault stat</code> + <code>ina</code> + <code>grep -n "temporary" …/robot_params.h</code> 가 0줄 · §3-4-3 · §3-4-4 ① · 배터리를 방전시켜 일으키지 않는다</span></span></label></li>
-        <li><label><input type="checkbox" data-key="trip-scope-observed"><span><strong>발동 확인</strong> — fault 가 1 이 됐을 때 <strong>내가 <code>cut[]</code> 에 적은 범위 그대로</strong> 내려갔다(듀티만 / + MOTOR_EN / + RELAY_EN). 그리고 <strong>돌고 있던 바퀴가 멈추는 것</strong>을 엔코더 커넥터를 뽑은 실물 고장으로 봤다. 다시 달리기까지의 시간도 적었다
+        <li><label><input type="checkbox" data-key="trip-scope-observed"><span><strong>발동 확인</strong> — fault 가 1 이 됐을 때 <strong>내가 <code>cut[]</code> 에 적은 범위 그대로</strong> 내려갔다(듀티만 / + EN 네 핀 / + RELAY_EN). 그리고 <strong>돌고 있던 바퀴가 멈추는 것</strong>을 엔코더 커넥터를 뽑은 실물 고장으로 봤다. 다시 달리기까지의 시간도 적었다
           <span class="sub">판정 수단: <code>fault stat</code> 의 <code>cut=</code> + <code>pwr stat</code> 의 <code>en=</code> · <code>relay=</code> + DMM + <code>step</code> CSV 의 <code>prot</code> · <code>duty_permille</code> 열 · §3-4-4 ③④⑤ · <strong>주입으로는 "안 돈다"까지만 보인다</strong>(<code>step</code> 이 실행되는 동안 CLI 가 명령을 받지 않는다) · fw-13 §3-3-4 가 넘긴 질문의 답이 여기서 확정된다</span></span></label></li>
-        <li><label><input type="checkbox" data-key="usb-unplug-is-power-loss"><span><strong>발동 확인</strong> — USB 를 뽑고 EN 네트를 쟀다. <strong>저항과 전압 두 값을 짝으로</strong> 기록했고, 그 옆에 "이것은 명령 워치독 시험이 아니다"와 <strong>그날의 급전 구성</strong>을 적었다
+        <li><label><input type="checkbox" data-key="usb-unplug-is-power-loss"><span><strong>발동 확인</strong> — USB 를 뽑고 EN 네트 넷을 쟀다. <strong>저항과 전압 두 값을 짝으로</strong> 기록했고, 그 옆에 "이것은 명령 워치독 시험이 아니다"와 <strong>그날의 급전 구성</strong>을 적었다
           <span class="sub">판정 수단: DMM 두 번(저항 · 전압) · §3-5-3 · §3-5-4 의 표 · 위 <code>cmd-watchdog-by-mcu-tick</code> 과 <strong>따로</strong> 기록한다</span></span></label></li>
       </ul>
       <p class="progress-line"></p>
@@ -1723,10 +1723,10 @@ bad_crc=0  bad_len=0  junk_bytes=0            &lt;- 마지막 두 줄은 끝날 
           <tr><td>조건이 사라졌는데 <code>clear_ms</code> 가 0 에서 늘지 않는다</td><td>다른 조건이 하나 더 1 이다 — 대개 <code>wdg=1</code>(TEXT 에서 아무도 목표를 안 보낸다)</td><td><code>fault stat</code> 의 일곱 칸을 하나씩</td><td>§2-4 — 해제는 <strong>모든</strong> 조건이 사라져야 시작된다. 그 설계를 바꿀지도 내 선택이다</td></tr>
           <tr><td>IMU 선을 뽑았는데 <code>tilt</code> 도 같이 1 이 된다</td><td><code>else</code> 를 안 썼거나, <code>safety_service_main()</code> 이 <code>seq == 0</code>(샘플 없음)을 확인하지 않고 옛 값을 계속 쓴다</td><td>선을 뽑아 둔 채 센서를 기울여 본다 — <code>tilt</code> 이 따라 움직이면 옛 값을 쓰는 것이다</td><td>§2-5 · <code>safety_fsm_step()</code> 의 1번 걸음과 <code>safety_service_main()</code></td></tr>
           <tr><td>V2 에서 이벤트가 하나도 안 온다 (<code>fault</code> 비트는 STATE 에 보인다)</td><td>그 조건의 <code>code[i]</code> 를 0 으로 두었다(= 이벤트를 안 내기로 한 것) · 또는 큐가 안 비워진다</td><td>gdb 로 <code>s_posted</code> · <code>s_ev_dropped</code> 를 읽는다. V2 에는 CLI 가 없다</td><td>§2-3 의 배정표 · §3-2-4 의 상자</td></tr>
-          <tr><td>V2 에서 <code>fault</code> 가 늘 0 인데 로봇은 멈춘다</td><td><strong>설계대로다</strong> — <code>bit[i]</code> 를 배정하지 않았다. 끊는 것은 <code>cut[]</code> 이 하고 <code>bit[]</code> 을 거치지 않는다</td><td>TEXT 로 구워 <code>fault stat</code> 의 일곱 칸을 본다 — TEXT 에서는 보인다</td><td>§2-3 — 배정할 것인가부터가 내 결정이다</td></tr>
+          <tr><td>V2 에서 <code>fault</code> 가 늘 0 인데 로봇은 멈춘다</td><td><strong>설계대로다</strong> — <code>bit[i]</code> 를 배정하지 않았다. 끊는 것은 <code>cut[]</code> 이 하고 <code>bit[]</code> 을 거치지 않는다</td><td>TEXT 모드로 전환해 <code>fault stat</code> 의 일곱 칸을 본다 — TEXT 에서는 보인다</td><td>§2-3 — 배정할 것인가부터가 내 결정이다</td></tr>
           <tr><td>조건이 1 인데(<code>fault stat</code> 의 칸이 1) 바퀴가 <strong>안 멈춘다</strong></td><td>게이트 줄이 빠졌거나, <strong><code>safety_step()</code> 의 반환값 대신 계약 바이트를 게이트 조건으로 썼다</strong> — <code>bit[]</code> 을 아직 배정하지 않았으면 그 바이트는 늘 0 이다</td><td><code>step</code> CSV 의 <code>duty_permille</code> 열이 트립 뒤에도 0 이 아니다. <code>fault stat</code> 의 칸은 1 인데 <code>byte=0</code> 이면 이 경우다</td><td>§3-1-2 의 <code>control.c</code> 블록 3번 — <code>if (cond)</code> 이지 <code>if (fault)</code> 가 아니다. 자리는 <code>protect_step()</code> <strong>뒤</strong>(단조 연쇄)</td></tr>
           <tr><td>레벨 1 · 2 를 골랐는데 EN · RELAY 가 안 내려간다</td><td>전원 시퀀스에 연결하는 줄이 없다. fw-11 의 <code>req_down</code> 을 1 로 설정하는 곳은 아직 CLI 뿐이다</td><td><code>fault stat</code> 의 <code>cut=</code> 은 맞는데 <code>pwr stat</code> 의 <code>en=</code> 이 안 바뀐다</td><td>§2-9 의 상자 — <code>power.c</code> 에 입구를 만들어 연결한다(이 쪽의 골격은 그 줄을 쓰지 않는다)</td></tr>
-          <tr><td>USB 를 뽑았더니 EN 네트가 0 V 가 아니다</td><td>무언가가 EN 의 전압을 올리고 있다 — 이웃 핀 CN10-1 = AVDD(3.3 V)에 점퍼가 잘못 꽂혔을 수 있다</td><td>눈으로 커넥터, 그리고 전원을 끈 채 EN ↔ 3V3 저항</td><td>§3-5-4 의 표 셋째 행 · <code>hardware/pinmap-h723.md</code> §5-5</td></tr>
+          <tr><td>USB 를 뽑았더니 EN 네트 하나가 0 V 가 아니다</td><td>무언가가 그 EN 의 전압을 올리고 있다 — EN 핀 넷 중 하나가 3V3 에 닿았다(점퍼 · 납땜 브리지). 새 핀의 이웃은 GND 와 빈 핀이라 한 칸 미끄러진 점퍼로는 HIGH 가 되지 않는다</td><td>눈으로 커넥터, 그리고 전원을 끈 채 그 EN ↔ 3V3 저항</td><td>§3-5-4 의 표 셋째 행 · <code>hardware/pinmap-h723.md</code> §5-5</td></tr>
         </tbody>
       </table></div>
 

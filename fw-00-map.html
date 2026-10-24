@@ -61,7 +61,7 @@
           <tr><td><a href="09a-assembly-gate.html">관문 09a</a></td><td>조립·실측 관문. 차체를 조립하고 임시값을 실측값으로 바꾸는 단계. fw-20 만 이 관문 안에서 한다</td></tr>
           <tr><td>계약 v2</td><td>Pi ↔ MCU 사이의 이진 프레임 사양(<a href="06a-mcu-protocol.html">06a</a> §4). 이 가이드는 계약을 <strong>구현</strong>할 뿐 넓히지 않는다</td></tr>
           <tr><td>제어·안전 모듈 / 통신 모듈</td><td>앞의 것이 엔코더·PID·PWM·IMU·전원·안전 상태기계를 갖고 함수 몇 개만 밖으로 내놓는다. 뒤의 것은 그 함수만 부르는 프레임 코덱이다</td></tr>
-          <tr><td>TEXT 모드 / V2 모드</td><td>같은 VCP(USART3, 460800 8N1)를 빌드 스위치 <code>LINK_MODE</code> 로 갈라 쓴다. TEXT = 사람이 치는 <strong>명령 창</strong>(CLI), V2 = 계약 v2 의 이진 프레임 전용(§2-2)</td></tr>
+          <tr><td>TEXT 모드 / V2 모드</td><td>같은 VCP(USART3, 460800 8N1)를 두 모드로 번갈아 쓴다. TEXT = 사람이 치는 <strong>명령 창</strong>(CLI), V2 = 계약 v2 의 이진 프레임 전용. 모드는 실행 중에 바꾸고, 부팅은 TEXT 다(§2-2)</td></tr>
           <tr><td>명령 워치독 / 하드웨어 워치독</td><td>앞의 것은 계약의 200 ms 무명령 정지(소프트웨어), 뒤의 것은 IWDG(멈춘 MCU 를 리셋하는 하드웨어). 이 가이드는 둘을 섞어 부르지 않는다</td></tr>
           <tr><td>값의 세 상태</td><td><code>____</code>(모른다) · <code>NOMINAL(출처)</code>(출처 있는 임시값) · <code>MEASURED(날짜, 방법)</code>(이 프로젝트에서 잰 값) — §2-4</td></tr>
         </tbody>
@@ -84,6 +84,7 @@
 
 [센서와 저장]  + WT901 · BNO055
   fw-07 ─► fw-14 WT901      fw-10 ─► fw-15 BNO055      fw-06 · fw-08 ─► fw-16 플래시 저장
+           fw-14 의 실습 D(자북 판정)만 fw-11 뒤
 
 [링크 · 안전 · 수용]
   fw-07 · fw-13 ─► fw-17 계약 v2 ─► fw-18 안전 상태기계 ─► fw-19 모듈 정리·벤치 수용 시험
@@ -105,7 +106,7 @@
           <tr><td><a href="fw-05-cli.html">fw-05</a> 명령 창(mini CLI)</td><td><code>help</code> · <code>led</code> · <code>ver</code> 가 동작한다. 이후 모든 벤치 관측이 이 창으로 나온다</td><td><span class="tag bench">벤치</span> <span class="tag mx">CubeMX</span></td></tr>
           <tr><td><a href="fw-06-tick-watchdog.html">fw-06</a> 1 kHz 박자와 워치독</td><td><code>stat</code> 이 1 kHz(주기 1 ms) 루프의 지터 통계를 낸다. <code>hang</code> → IWDG 리셋 → 배너의 리셋 원인이 IWDG</td><td><span class="tag bench">벤치</span> <span class="tag mx">CubeMX</span></td></tr>
           <tr><td><a href="fw-07-memory-dma.html">fw-07</a> 메모리 지도</td><td>같은 DMA 코드가 버퍼의 자리에 따라 세 가지로 갈린다: DTCM = 결정적 실패 / RAM_D2 = 동작 / + D-Cache = 불일치 → MPU 비캐시로 일치</td><td><span class="tag bench">벤치</span> <span class="tag mx">CubeMX</span></td></tr>
-          <tr><td><a href="fw-08-pwm-safe-output.html">fw-08</a> PWM 과 안전 출력단</td><td><code>pwm</code> 의 듀티에 비례하는 DC 전압이 DMM 에 읽힌다. 리셋 중에도 MOTOR_EN 네트가 LOW 다. <code>pwm</code> 은 시간이 지나면 자동으로 0 이 된다 — <strong>모터 전원 없이</strong></td><td><span class="tag bench">벤치</span> <span class="tag mx">CubeMX</span></td></tr>
+          <tr><td><a href="fw-08-pwm-safe-output.html">fw-08</a> PWM 과 안전 출력단</td><td><code>pwm</code> 의 듀티에 비례하는 DC 전압이 DMM 에 읽힌다. 리셋 중에도 EN 네트 넷이 LOW 다. <code>pwm</code> 은 시간이 지나면 자동으로 0 이 된다 — <strong>모터 전원 없이</strong></td><td><span class="tag bench">벤치</span> <span class="tag mx">CubeMX</span></td></tr>
           <tr><td><a href="fw-09-encoder.html">fw-09</a> 엔코더</td><td>바퀴를 손으로 돌리면 <code>enc</code> 의 카운트가 양방향으로 움직인다. 잰 counts/rev 와 네 바퀴의 부호를 적는다</td><td><span class="tag bench">벤치</span> <span class="tag mx">CubeMX</span></td></tr>
           <tr><td><a href="fw-10-i2c-ina226.html">fw-10</a> I2C 와 INA226</td><td><code>i2c scan</code> 이 두 주소를 찾고 <code>ina</code> 의 버스 전압이 DMM 과 맞는다</td><td><span class="tag bench">벤치</span> <span class="tag mx">CubeMX</span></td></tr>
           <tr><td><a href="fw-11-power-sequence.html">fw-11</a> 전원 시퀀스와 첫 통전</td><td><code>pwr up</code> 이 EN LOW → 사전충전 완료 판정 → RELAY_EN → 정착 → EN HIGH 를 밟고, 저듀티로 바퀴가 돈다</td><td><span class="tag bench">벤치</span> <span class="tag mx">CubeMX</span> <span class="tag power">모터 전원</span></td></tr>
@@ -113,8 +114,8 @@
           <tr><td><a href="fw-13-pid-protection.html">fw-13</a> 속도 PID + 보호 3종</td><td><code>step</code> 으로 계단 응답을 포획해 Mac 에서 그래프로 본다. 엔코더 선을 뽑으면 보호가 트립한다</td><td><span class="tag bench">벤치</span> <span class="tag power">모터 전원</span></td></tr>
           <tr><td><a href="fw-14-wt901.html">fw-14</a> WT901</td><td>출고 설정에서 한 번에 하나씩 바꿔 목표 속도에 닿고, 오래 받아도 프레임 유실이 0 이다</td><td><span class="tag bench">벤치</span> <span class="tag mx">CubeMX</span></td></tr>
           <tr><td><a href="fw-15-bno055.html">fw-15</a> BNO055</td><td><code>bno stat</code> 이 갱신되고, 선을 뽑았다 꽂아도 읽기가 복구된다. 센서의 부팅 대기가 워치독 리셋을 일으키지 않는다</td><td><span class="tag bench">벤치</span></td></tr>
-          <tr><td><a href="fw-16-flash-store.html">fw-16</a> 플래시 저장</td><td><code>save</code> 한 값이 재부팅 뒤 복원된다. MOTOR_EN 이 HIGH 면 <code>save</code> 가 거부된다</td><td><span class="tag bench">벤치</span></td></tr>
-          <tr><td><a href="fw-17-link-v2.html">fw-17</a> 계약 v2 링크</td><td>V2 로 구운 보드에 <code>scripts/mcu_probe.py</code> 를 연결하면 상태 프레임이 50 Hz(20 ms)로 오고 CRC 오류가 0 이다</td><td><span class="tag bench">벤치</span></td></tr>
+          <tr><td><a href="fw-16-flash-store.html">fw-16</a> 플래시 저장</td><td><code>save</code> 한 값이 재부팅 뒤 복원된다. EN 네 핀 중 하나라도 HIGH 면 <code>save</code> 가 거부된다</td><td><span class="tag bench">벤치</span></td></tr>
+          <tr><td><a href="fw-17-link-v2.html">fw-17</a> 계약 v2 링크</td><td>V2 모드인 보드에 <code>scripts/mcu_probe.py</code> 를 연결하면 상태 프레임이 50 Hz(20 ms)로 오고 CRC 오류가 0 이다</td><td><span class="tag bench">벤치</span></td></tr>
           <tr><td><a href="fw-18-safety-fsm.html">fw-18</a> 안전 상태기계</td><td>fault 를 주입하면 이벤트가 <strong>1회</strong> 오고 비트는 <strong>유지</strong>되다가 풀리면 복구 이벤트가 온다. 200 ms 명령 워치독을 MCU 의 tick 으로 판정한다</td><td><span class="tag bench">벤치</span> <span class="tag power">모터 전원</span></td></tr>
           <tr><td><a href="fw-19-bench-acceptance.html">fw-19</a> 모듈 정리와 벤치 수용 시험</td><td>벤치 완료 기준(DoD-Bench)의 전 행을 내 손으로 돌려 기록했다. 통신 모듈이 공개 함수만 부른다는 것을 <code>grep</code> 으로 보인다</td><td><span class="tag bench">벤치</span> <span class="tag power">모터 전원</span></td></tr>
           <tr><td><a href="fw-20-after-assembly.html">fw-20</a> 조립 후 마무리</td><td>조립된 차체에서 부하 PID 를 다시 맞추고, 트랙 폭이 확정된 <strong>뒤에</strong> 슬립 억제를 켜고, 임계값을 실측으로 확정해 저장한다</td><td><span class="tag asm">조립 후</span> <span class="tag power">모터 전원</span></td></tr>
@@ -188,17 +189,17 @@
         </tbody>
       </table></div>
       <p>방법은 둘이었다. 계약에 진단용 TYPE 을 더하거나, 계약은 그대로 두고 <strong>별도의 명령 창</strong>을 하나 두거나. 앞의 방법은 Pi 쪽 브리지(C++) · Python probe · 펌웨어(C) 세 구현을 함께 고쳐야 한다. 무엇보다 계약을 넓히는 일은 06a 가 하는 일이지 펌웨어 쪽이 임의로 전제할 일이 아니다.
-      그래서 이 가이드는 뒤의 방법을 택한다(사용자 결정, 2026-09-22): <strong>같은 VCP 를 빌드 스위치로 갈라 쓴다.</strong></p>
-      <pre class="diagram"><code>                           ┌─ LINK_MODE = TEXT ─► cli.c + LOG_*   명령 창 — 사람이 치고 읽는다
+      그래서 이 가이드는 뒤의 방법을 택한다(사용자 결정, 2026-09-22): <strong>같은 VCP 를 두 모드로 번갈아 쓴다.</strong> 처음에는 모드를 빌드 스위치(재플래시)로 바꿨고, 2026-10-12 에 <strong>실행 중 전환</strong>으로 바꿨다. 전원을 넣으면 TEXT 로 시작한다. 전환 수단은 <a href="fw-17-link-v2.html">fw-17</a> 에서 정한다.</p>
+      <pre class="diagram"><code>                           ┌─ TEXT 모드 ────────► cli.c + LOG_*   명령 창 — 사람이 치고 읽는다
                            │                                      fw-05 ~ fw-16, fw-18 의 논리 검증
  Mac ─ USB ─ VCP ─ USART3 ─┤
  같은 선, 460800 8N1       │
-                           └─ LINK_MODE = V2 ───► comm_frame.c    계약 v2 의 이진 프레임 전용
+                           └─ V2 모드 ──────────► comm_frame.c    계약 v2 의 이진 프레임 전용
                                                                   fw-17 부터. 명령 창이 없다</code></pre>
       <p>이 구조에서 지켜지는 것과 그 비용을 같이 적는다.</p>
       <ul>
         <li><strong>제어·안전 모듈은 두 모드에서 같은 코드다.</strong> 갈리는 곳은 <strong>둘</strong>이다 — <code>app.c</code>(TEXT 면 명령 창과 로그가 VCP 를 쓰고, V2 면 <code>comm_frame.c</code> 가 쓴다)와 <code>tick.c</code>(1 kHz 콜백에서 V2 일 때만 프레임 단계를 부른다). USART3 설정도 같아서 모드를 바꿀 때 CubeMX 를 다시 열지 않는다.</li>
-        <li><strong>V2 모드에는 명령 창이 없다.</strong> 글자 한 줄이라도 섞여 나가면 이진 프레임이 깨지므로 로그·배너는 V2 에서 컴파일로 제거된다. V2 에서의 관측 수단은 <code>scripts/mcu_probe.py</code> 의 출력과 디버거(fw-04)로 읽는 카운터 변수 둘뿐이다. "V2 에서 배너가 안 보인다"는 결함이 아니라 설계다.</li>
+        <li><strong>V2 모드에는 명령 창이 없다.</strong> 글자 한 줄이라도 섞여 나가면 이진 프레임이 깨지므로 V2 모드에서는 로그·배너 글자가 USART3 에 나가지 않게 막는다(방법은 fw-17). 명령 창이 필요하면 TEXT 로 전환한다. TEXT 인 동안에는 계약 v2 프레임을 주고받지 않는다. V2 에서의 관측 수단은 <code>scripts/mcu_probe.py</code> 의 출력과 디버거(fw-04)로 읽는 카운터 변수 둘뿐이다. "V2 에서 배너가 안 보인다"는 결함이 아니라 설계다.</li>
         <li><strong>비용</strong>: 최종 펌웨어에 두 모드가 남는다. "제어·안전 모듈 + 통신 모듈" 두 모듈 구조에 벤치용 명령 창이 하나 더해지는 것이고, <a href="fw-19-bench-acceptance.html">fw-19</a> 가 이것을 비용으로 명시한다.</li>
         <li><strong>순서가 따라 나온다</strong>: 명령 창(fw-05)이 먼저 있어야 fw-06 ~ fw-16 의 모든 "굽고 보기"가 관찰 수단을 갖는다. 계약 v2(fw-17)는 제어 모듈의 함수들이 갖춰진 뒤에야 실을 것이 생긴다.</li>
       </ul>
@@ -226,7 +227,7 @@
         <tbody>
           <tr><td>S1</td><td>모터 전원(24 V 계)을 넣는 절은 <span class="tag power">모터 전원</span> 배지를 달고, <strong>STOP 리스트가 실습보다 앞</strong>에 온다. 하나라도 "아니오"면 전원을 넣지 않는다</td><td>위의 모듈 소손</td><td>fw-11 · fw-12 · fw-13 · fw-18 · fw-19 · fw-20</td></tr>
           <tr><td>S2</td><td>센서 · 엔코더 · IBT-2 VCC · INA226 · ACS758 의 전원은 <strong>Nucleo 3V3 에서만</strong> 딴다(별도 레일 금지). 3V3 · 5V · GND 는 전원을 끈 채 꽂고, 켠 뒤 3V3–GND 부터 잰다</td><td>5 V 허용(FT) 핀의 입력 한도는 고정 5 V 가 아니라 VDD + 4.0 V 다(DS13313 Rev 5 표 9, p.88) — Nucleo 가 꺼져 있으면 4.0 V. 3V3 인출 핀의 바로 아래가 5 V 다(<code>hardware/pinmap-h723.md</code> §5-4 · 5-5, INVENTORY 2절 필수 조건 ① · ④)</td><td>fw-01 · fw-08 ~ fw-12 · fw-14 · fw-15</td></tr>
-          <tr><td>S3</td><td><strong>MOTOR_EN 은 사전충전이 끝날 때까지 LOW.</strong> 올릴 때 EN LOW → 사전충전 완료 판정 → RELAY_EN → 정착 → EN HIGH, 내릴 때 <strong>EN LOW 먼저</strong> → RELAY_EN LOW</td><td>EN 이 HIGH 면 드라이버가 버스에서 전류를 소비해 사전충전이 약 5 V 에서 멈춘다. 1세대 실측이다(2026-07-17, <code>D/bench/motor_bench_findings_2026-07-17.md:63-65</code>, INVENTORY 6절 · 7절)</td><td>fw-08(원리) · fw-11(절차) · fw-18</td></tr>
+          <tr><td>S3</td><td><strong>EN 네 핀은 사전충전이 끝날 때까지 LOW.</strong> 올릴 때 EN 네 핀 LOW → 사전충전 완료 판정 → RELAY_EN → 정착 → EN 네 핀 HIGH, 내릴 때 <strong>EN 네 핀 LOW 먼저</strong> → RELAY_EN LOW</td><td>EN 이 HIGH 면 드라이버가 버스에서 전류를 소비해 사전충전이 약 5 V 에서 멈춘다. 1세대 실측이다(2026-07-17, <code>D/bench/motor_bench_findings_2026-07-17.md:63-65</code>, INVENTORY 6절 · 7절)</td><td>fw-08(원리) · fw-11(절차) · fw-18</td></tr>
           <tr><td>S4</td><td><strong>DMM 으로 떠 있는(Hi-Z) 핀을 재면 0 V 로 보인다</strong> — 풀다운된 핀도, 그냥 떠 있는 핀도. 그래서 "리셋 중 EN = LOW"는 전압 한 번이 아니라 <strong>풀다운이 실재하는가</strong>로 판정한다. 전제는 IBT-2 가 결선된 상태다</td><td>DMM 의 입력 임피던스가 풀다운 역할을 한다. 리셋 중의 LOW 는 MCU 가 아니라 모듈 내장 풀다운(1세대 실측 30 kΩ)이 만든다. 모듈 VCC · GND 에 전원이 있을 때만 그렇다(<code>hardware/pinmap-h723.md</code> §2-D, INVENTORY 6절)</td><td>fw-08 · fw-11 · fw-18 · fw-19</td></tr>
           <tr><td>S5</td><td><strong>USB 분리 시험은 워치독 시험이 아니다.</strong> 명령 워치독(200 ms)은 송신만 멈추는 probe 로, MCU 의 tick 으로 판정한다</td><td>Nucleo 의 기본 급전은 ST-LINK USB 다(UM2407 Rev 6 §7.4.1, JP2 [1-2]). 케이블을 뽑으면 MCU 가 꺼진다 — 시험되는 것은 "전원 상실 시 EN 이 LOW 가 되는가"다</td><td>fw-06 · fw-11 · fw-18 · fw-19</td></tr>
           <tr><td>S6</td><td><strong>PD8/PD9 에 루프백 점퍼를 꽂지 않는다.</strong> Morpho 의 CN12-10 · CN11-69 에도 아무것도 꽂지 않는다</td><td>그 두 핀은 솔더 브리지로 ST-LINK 의 VCP 에 이어져 있다 — 점퍼를 꽂으면 ST-LINK 의 출력과 서로 반대 레벨로 구동돼 충돌한다(<code>hardware/pinmap-h723.md</code> §2-C · 7-3)</td><td>fw-01 · fw-03 · fw-05 · fw-07 · fw-17</td></tr>
@@ -236,7 +237,7 @@
           <tr><td>S10</td><td>디버거로 멈추면 <strong>PWM 출력이 마지막 듀티로 계속 나갈 수 있다</strong> → TIM1 · TIM8 의 디버그 동결 + 출력 idle LOW. 모터 전원이 들어간 상태에서 중단점을 쓰기 전에 돼 있어야 한다</td><td>코어가 멈췄을 때 타이머가 계속 도는지 멈추는지는 DBG 모듈의 <code>DBG_TIMx_STOP</code> 비트가 정하고, 멈춰야만 출력이 꺼진다(RM0468 Rev 3 §43.3.29, p.1614)</td><td>fw-04(예고) · fw-08(설정) · 모터 전원 절이 있는 모든 쪽</td></tr>
           <tr><td>S11</td><td>디버그 구성에서 <strong>SWV(SWO 트레이스)를 켜지 않는다.</strong> CubeMX 의 Debug = Serial Wire + PB3 잠금 해제</td><td>PB3 는 FL 엔코더의 B 상이다. SWV 가 켜지면 MCU 가 그 핀을 출력으로 구동해 엔코더 출력과 서로 반대 레벨로 구동돼 충돌한다 — 등급: 추정, 그래서 끄는 쪽으로 정했다(INVENTORY 2절 필수 조건 ②)</td><td>fw-02 · fw-04 · fw-09</td></tr>
           <tr><td>S12</td><td>차단 뒤에도 <strong>벌크 커패시터에 전하가 남는다</strong> — 배선을 만지기 전에 DMM 으로 버스 전압을 본다. 주 접촉기의 접점은 DMM 도통 모드로 판정할 수 없다</td><td>블리더 저항이 없다 · 접촉기에 보조 접점이 없다(INVENTORY 7절 "벌크 커패시터" · "주 접촉기 K1" 행)</td><td>fw-11</td></tr>
-          <tr><td>S13</td><td>플래시 지우기 · 쓰기는 <strong>MOTOR_EN LOW 에서만</strong></td><td>128 KB 섹터 지우기 한 번이 초 단위다 — typ 1.1 ~ 2 s, max 2.2 ~ 4 s(DS13313 Rev 5 표 44, p.122). 그동안 1 kHz 루프가 제 박자로 돈다고 가정할 수 없다</td><td>fw-16</td></tr>
+          <tr><td>S13</td><td>플래시 지우기 · 쓰기는 <strong>EN 네 핀이 모두 LOW 일 때만</strong></td><td>128 KB 섹터 지우기 한 번이 초 단위다 — typ 1.1 ~ 2 s, max 2.2 ~ 4 s(DS13313 Rev 5 표 44, p.122). 그동안 1 kHz 루프가 제 박자로 돈다고 가정할 수 없다</td><td>fw-16</td></tr>
           <tr><td>S14</td><td>24 V 계에서 오는 아날로그 신호(전류 감지 IS · 버스 전압 분압)에는 <strong>GND 기준 클램프</strong>. 핀에 꽂기 전에 DMM 으로 전압부터</td><td>아날로그 주변장치가 쓰는 핀의 입력 최대는 4 V 다(DS13313 Rev 5 표 9 각주 5, p.89). 분압은 하단 저항이 연결돼 있을 때만 분압이다(INVENTORY 2절 필수 조건 ③)</td><td>fw-12</td></tr>
           <tr><td>S15</td><td>CN13(사용자 USB)에 케이블을 꽂지 않는다. 배터리 ON 상태에서 BOOT0 점퍼 금지</td><td>USB 관련 7핀이 솔더 브리지로 CN13 쪽에 연결돼 있다 · 부트로더가 어느 핀을 구동하는지 확인하지 못했다(<code>hardware/pinmap-h723.md</code> §2-E · 5-2)</td><td>fw-01</td></tr>
         </tbody>
@@ -245,7 +246,7 @@
       <ul>
         <li>바퀴가 공중에 떠 있고 손·선·공구가 떨어져 있다</li>
         <li>배터리와 드라이버 사이에 사전충전 회로가 있다(직결 아님)</li>
-        <li>MOTOR_EN · RELAY_EN 네트가 LOW 임을 판정했다</li>
+        <li>EN 네트 넷 · RELAY_EN 네트가 LOW 임을 판정했다</li>
         <li>TVS 의 밴드 방향을 눈으로 확인했다</li>
         <li>전원을 끊는 수단에 손이 닿는다</li>
       </ul>
@@ -536,7 +537,7 @@ grep -n "LED1_PIN\|LED1_GPIO_PORT" $FW_H7/Drivers/BSP/STM32H7xx_Nucleo/stm32h7xx
         관문은 그런 값을 한 곳에 모아 확정하는 자리이고, 세 상태 표기는 그 사이에 "이 값은 아직 임시다"를 잊지 않게 하는 장치다. 벤치의 합격은 <strong>경로가 돈다</strong>는 뜻이지 숫자가 맞다는 뜻이 아니다.</p></div></details>
       <details class="quiz"><summary>3. 계약 v2 의 상태 프레임만으로는 "FL 엔코더의 부호가 맞는가"를 판정할 수 없다. 왜인가, 그리고 이 가이드는 바퀴별 부호를 어떻게 확인하는가</summary>
         <div class="ans"><p>상태 프레임의 <code>l_tick</code> 은 왼쪽 앞뒤 두 바퀴의 <strong>평균</strong>이다. FL 의 부호만 뒤집혀 있으면 평균은 0 근처가 되고, FL 이 끊겨 있으면 절반이 된다 — 어느 바퀴가 어떻게 틀렸는지가 평균에서 사라진다.
-        계약에 바퀴별 필드를 더하는 방법은 Pi 쪽 · probe · 펌웨어 세 구현을 함께 고치는 일이고 계약의 확장은 06a 의 일이다. 그래서 같은 VCP 를 <code>LINK_MODE</code> 로 갈라 TEXT 모드의 <code>enc</code> 명령으로 바퀴별 카운트 4개를 본다.
+        계약에 바퀴별 필드를 더하는 방법은 Pi 쪽 · probe · 펌웨어 세 구현을 함께 고치는 일이고 계약의 확장은 06a 의 일이다. 그래서 같은 VCP 를 TEXT 모드로 바꿔 <code>enc</code> 명령으로 바퀴별 카운트 4개를 본다.
         비용은 최종 펌웨어에 두 모드가 남는다는 것, 그리고 V2 모드에는 명령 창이 없다는 것이다.</p></div></details>
       <details class="quiz"><summary>4. 1세대의 모듈 소손은 펌웨어가 한 줄도 없을 때 났다. 그 사실이 이 가이드의 쪽 순서와 안전 규칙의 자리에 어떻게 반영돼 있는가</summary>
         <div class="ans"><p>사고의 조건은 "배터리 직결"과 "제어 입력이 떠 있음"이었다 — 둘 다 코드가 아니라 <strong>결선과 순서</strong>의 문제다. 그래서 안전 규칙은 전원 절의 앞이 아니라 부품표보다 앞(이 쪽)에 있고,

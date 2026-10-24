@@ -178,7 +178,7 @@
       <p>세 인자 중 실측된 것은 <strong>2,000</strong>(= 500 × 4) 하나고, 47 은 사양이다. 그래서 이 쪽은 출력축(바퀴)을 손으로 N 회전 돌려 counts/rev 를 직접 잰다 — 그러면 두 가지가 한 번에 나온다:</p>
       <ul>
         <li><strong><code>ENCODER_CPR</code> 의 MEASURED 값</strong>: <code>|카운트 변화| ÷ N</code>. 손으로 1회전을 맞추는 오차가 ±5° 라면 1회전에 ±1.4 % 이지만 N = 10 이면 ±0.14 % 로 줄어든다 — 그래서 여러 바퀴를 돌린다. 시작 · 끝 표시를 같은 자리에 정확히 맞추는 것이 이 측정의 핵심이다.</li>
-        <li><strong>기어비의 역검증</strong>: <code>잰 CPR ÷ 2,000</code> 이 정수(47)에 얼마나 가까운가. 47.0 근처면 "1 : 47" 이 실물에 맞는다는 증거다. 46.5 처럼 정수에서 멀면 회전 수를 잘못 셌거나 표시가 어긋났다 — 다시 잰다. 정수이되 47 이 아니면 그 값이 내 기어비다.</li>
+        <li><strong>기어비의 역검증</strong>: <code>잰 CPR ÷ 2,000</code> 이 내 기어비다. 기어는 미끄러지지 않으므로 여러 바퀴의 평균 감속비는 <strong>톱니 수의 비</strong>(유성기어면 단마다 1 + Z<sub>링</sub>/Z<sub>태양</sub> 의 곱)로 정확히 정해진다 — 가공 정밀도는 백래시와 한 바퀴 안의 속도 떨림을 만들 뿐 평균 비를 바꾸지 못한다. 그러니 제원 "1 : 47" 과 다르게 나오면 그 차이는 부품이 부정확해서가 아니라 <strong>제원의 숫자가 톱니 비를 반올림한 표시값</strong>이기 때문이고, 이때는 잰 값이 실물의 기어비다. 측정이 성공했는지는 정수에 가까운가가 아니라 <strong>회차 사이의 흩어짐</strong>으로 판정한다 — 흩어짐이 0.2 % 를 넘으면 회전 수를 잘못 셌거나 기준선이 밀린 것이니 다시 잰다.</li>
       </ul>
       <p>기록은 두 곳이다. <code>hardware/INVENTORY.md</code> 6절 "엔코더 분해능" 행에 <code>MEASURED(&lt;날짜&gt;, hand-turn &lt;N&gt; rev)</code>, "기어비" 행에 역검증 결과. 그리고 <code>robot_params.h</code>:</p>
       <pre><code class="lang-c">#define ENCODER_CPR       94000L     /* NOMINAL(gen1-record): 500 PPR x 4 x 47 [바퀴 1회전당 카운트] */   /* 실측 전 */
@@ -312,13 +312,13 @@
           <tr><td>TIM5 → Counter Period (AutoReload Register - 32 bits value )</td><td><strong>4294967295</strong></td><td>32비트 전 범위를 돌아야 부호 있는 차분이 성립한다(§2-2). IP 정의 파일은 32비트 인스턴스의 기본값을 4294967295 로 둔다 — 화면에서 그 값인지 <strong>확인</strong>한다</td><td><code>TIM5.Period</code> <em>(기본값이면 줄이 없을 수 있다 — 그러면 생성 코드의 <code>htim5.Init.Period</code> 로 확인)</em></td></tr>
           <tr><td>TIM5 → Encoder 의 채널 1 · 2 각각: Polarity / IC Selection / Prescaler Division Ratio</td><td>Rising Edge / Direct / No division (전부 기본값)</td><td>극성은 부호 상수가 대신한다(§2-7 — 여기서 뒤집지 않는다). Direct = TI1→IC1, TI2→IC2</td><td><code>TIM5.IC1Polarity</code> · <code>IC1Selection</code> · <code>IC1Prescaler</code> — 기본값이면 줄이 없다</td></tr>
           <tr><td>TIM5 → Encoder 의 채널 1 · 2 각각: Input Filter</td><td><strong>내 값</strong> (0~15, §2-9 에서 도출)</td><td>노트에 적은 이유대로</td><td><code>TIM5.IC1Filter</code> · <code>TIM5.IC2Filter</code> <em>(0 이 아니면 줄이 생긴다)</em></td></tr>
-          <tr><td>TIM2 · TIM23 · TIM24</td><td>위와 같게</td><td>TIM2 = PA15/PB3, TIM23 = PF6/PF7, TIM24 = PF11/PF12 에 놓였는지 Pinout 에서 본다. TIM23 은 다른 핀에 먼저 놓일 수 있다(표 아래)</td><td><code>SH.S_TIM2_CH1.0=TIM2_CH1,Encoder_Interface</code> 등 여덟 줄 + <code>PA15.Signal=S_TIM2_CH1</code> 꼴의 핀 줄 여덟</td></tr>
-          <tr><td>여덟 핀의 GPIO Settings → User Label</td><td><code>ENC_FL_A</code> <code>ENC_FL_B</code> <code>ENC_FR_A</code> <code>ENC_FR_B</code> <code>ENC_RL_A</code> <code>ENC_RL_B</code> <code>ENC_RR_A</code> <code>ENC_RR_B</code></td><td>핀맵 정본의 신호 이름 그대로(<code>hardware/pinmap-h723.md</code> §2-B). 코드는 라벨로만 핀을 부른다</td><td><code>PA15.GPIO_Label=ENC_FL_A</code> 꼴 여덟 줄</td></tr>
-          <tr><td>여덟 핀의 GPIO Pull-up/Pull-down</td><td>No pull-up and no pull-down (기본값)</td><td>출력 형식을 모르는 채로는 풀을 켜지 않는다 — 실습 C 에서 잰 뒤 정한다(§2-4). 입구 확인 ③의 전제도 "풀 없음"이다</td><td><code>PA15.GPIOParameters</code> 에 <code>GPIO_PuPd</code> 가 <strong>없다</strong></td></tr>
+          <tr><td>TIM2 · TIM23 · TIM24</td><td>위와 같게</td><td>TIM2 = PA15/PB3, TIM23 = PF6/PF7, TIM24 = PF11/PF12 에 놓였는지 Pinout 에서 본다. TIM23 은 다른 핀에 먼저 놓일 수 있다(표 아래)</td><td><code>SH.S_TIM2_CH1_ETR.0=TIM2_CH1,Encoder_Interface</code> 등 여덟 줄 + <code>PA15(JTDI).Signal=S_TIM2_CH1_ETR</code> 꼴의 핀 줄 여덟</td></tr>
+          <tr><td>여덟 핀의 GPIO Settings → User Label</td><td><code>ENC_FL_A</code> <code>ENC_FL_B</code> <code>ENC_FR_A</code> <code>ENC_FR_B</code> <code>ENC_RL_A</code> <code>ENC_RL_B</code> <code>ENC_RR_A</code> <code>ENC_RR_B</code></td><td>핀맵 정본의 신호 이름 그대로(<code>hardware/pinmap-h723.md</code> §2-B). 코드는 라벨로만 핀을 부른다</td><td><code>PA15(JTDI).GPIO_Label=ENC_FL_A</code> 꼴 여덟 줄</td></tr>
+          <tr><td>여덟 핀의 GPIO Pull-up/Pull-down</td><td>No pull-up and no pull-down (기본값)</td><td>출력 형식을 모르는 채로는 풀을 켜지 않는다 — 실습 C 에서 잰 뒤 정한다(§2-4). 입구 확인 ③의 전제도 "풀 없음"이다</td><td><code>PA15(JTDI).GPIOParameters</code> 에 <code>GPIO_PuPd</code> 가 <strong>없다</strong></td></tr>
           <tr><td>NVIC</td><td>아무것도 켜지 않는다</td><td>엔코더 모드는 인터럽트가 필요 없다 — 카운터 값은 코드가 필요할 때 읽는다. 이 쪽은 NVIC 표에 더하는 행이 없다</td><td><code>NVIC.TIM2_IRQn</code> 등이 <strong>없다</strong></td></tr>
         </tbody>
       </table></div>
-      <p class="small">TIM2 · TIM23 · TIM24 행: CubeMX 가 TIM23 을 PF0/PF1 · PG12/PG13 에 먼저 둘 수 있다(<code>hardware/pinmap-h723.md</code> §6 #4). PG12 는 MOTOR_EN 이다.</p>
+      <p class="small">TIM2 · TIM23 · TIM24 행: CubeMX 가 TIM23 을 PF0/PF1 · PG12/PG13 에 먼저 둘 수 있다(<code>hardware/pinmap-h723.md</code> §6 #4). PG12 는 비어 있는 예비 핀이지만 TIM23 은 PF6/PF7 로 둔다.</p>
       <p class="small"><code>.ioc</code> 키의 꼴은 CubeMX 의 다른 계열 보드 프리셋 <code>N05_…B-G473E-ZEST1S…_AllConfig.ioc</code> 에서 확인했다. Encoder 줄(TIM5 → Combined Channels 행)은 L686~707, 라벨 줄(User Label 행)은 L201~202 의 <code>PA0.GPIO_Label=…</code> 이다. 내 파일의 키는 생성 후 확인한다.</p>
       <p class="small">AF 번호는 CubeMX 가 정한다. 값은 TIM2 = AF1, TIM5 = AF2, TIM23 = AF13, TIM24 = AF14 다(DS13313 Rev 5 표 8 "pin alternate functions" p.72~85). <code>hardware/pinmap-h723.md</code> §2-B 와 같은 시트 6절 #5 가 이 값을 표와 CubeMX DB 두 출처로 확인했다. 생성된 <code>stm32h7xx_hal_msp.c</code> 의 <code>GPIO_AF1_TIM2</code> 같은 매크로에서 다시 본다(아래 grep).</p>
       <p class="small"><strong>화면 확인: 미확인 (CubeMX 6.18.1)</strong> — 아래 경로는 CubeMX 의 DB 파일과 ST 문서에서 추정한 것이다.
@@ -339,14 +339,14 @@
       <pre><code class="lang-bash">cd firmware/h723zg
 grep -n "Encoder_Interface" h723zg.ioc                                    # 여덟 줄 (TIM2·5·23·24 의 CH1·CH2)
 grep -n "^TIM2\.\|^TIM5\.\|^TIM23\.\|^TIM24\." h723zg.ioc                 # EncoderMode 넷이 TI12 인가, Period · IC1Filter 는 내 값인가
-grep -n "^PA15\.\|^PB3\|^PA0\.\|^PA1\.\|^PF6\.\|^PF7\.\|^PF11\.\|^PF12\." h723zg.ioc       # 핀 여덟 줄: Signal 과 GPIO_Label
+grep -n "^PA15\|^PB3\|^PA0\.\|^PA1\.\|^PF6\.\|^PF7\.\|^PF11\.\|^PF12\." h723zg.ioc       # 핀 여덟 개의 Signal 과 GPIO_Label. PA15 · PB3 는 키에 JTAG 이름이 붙는다: PA15(JTDI). · PB3(JTDO/TRACESWO).
 grep -n "TRACESWO" h723zg.ioc                                              # (기대: Trace_Asynchronous_SW 줄이 없다 — 입구 확인 ②)
 grep -n "MX_TIM2_Init\|MX_TIM5_Init\|MX_TIM23_Init\|MX_TIM24_Init\|HAL_TIM_Encoder_Init" Core/Src/main.c
 grep -n "HAL_TIM_Encoder_MspInit\|GPIO_AF[0-9]*_TIM" Core/Src/stm32h7xx_hal_msp.c   # 핀 · AF · 클럭이 켜지는 자리
 grep -n "ENC_[FR][LR]_[AB]" Core/Inc/main.h                                # 라벨 매크로 열여섯 줄 (_Pin · _GPIO_Port)
 grep -rn "HAL_TIM_Encoder_Start" Core/Src/                                  # (기대: 아무것도 안 나온다)</code></pre>
       <pre><code class="lang-text">(기대: .ioc 에 Encoder_Interface 여덟 줄, 네 타이머의 EncoderMode=TIM_ENCODERMODE_TI12, Period 는 4294967295(기본값이면 줄이 없다).
- 핀 줄에는 PA15.Signal=S_TIM2_CH1 · PA1.Signal=S_TIM5_CH2 처럼 내가 정한 핀이 그대로 있고, GPIO_Label 여덟 개가 핀맵의 이름이다.
+ 핀 줄에는 PA15(JTDI).Signal=S_TIM2_CH1_ETR · PA1.Signal=S_TIM5_CH2 처럼 내가 정한 핀이 그대로 있고, GPIO_Label 여덟 개가 핀맵의 이름이다.
  main.c 에 MX_TIMx_Init 넷의 선언 · 호출 · 정의와 HAL_TIM_Encoder_Init 호출 넷. msp.c 의 HAL_TIM_Encoder_MspInit 안에서
  클럭 켜기 · GPIO_AF1_TIM2 / GPIO_AF2_TIM5 / GPIO_AF13_TIM23 / GPIO_AF14_TIM24 가 보인다. 줄 번호는 사람마다 다르다.
  마지막 줄이 비어 있어야 한다 — CubeMX 는 엔코더를 "초기화"만 하고 "시작"하지 않는다. 시작은 내 몫이다(fw-06 의 TIM6 과 같다).)</code></pre>
@@ -779,7 +779,7 @@ static void cmd_enc(int argc, char *argv[])
 
       <h4 id="s3-1-4">3-1-4. 굽고 보기</h4>
       <pre><code class="lang-bash">cd firmware
-tools/flash.sh                            # 빌드까지 한다(fw-02) · 인자 없음 = TEXT 모드
+tools/flash.sh                            # 빌드까지 한다(fw-02) · 부팅은 TEXT 모드
 grep -rn "TODO(you)" h723zg/User/Src/Periph/encoder.c h723zg/User/Inc/Periph/encoder.h | wc -l # 남은 자리 (기대: 0)</code></pre>
       <p><strong>먼저, 아무것도 꽂지 않은 채</strong> 명령 창을 연다. <code>enc</code> 를 몇 초 간격으로 두 번 친다 — 네 값이 그대로이거나 ±1~2 안에서 떨린다(입력이 부유 상태라 노이즈가 엣지로 세어질 수 있다 — §2-1 의 "한 선만 움직이면 ±1"). 크게 움직이면 증상 표(SB57 행)를 본다. 이 상태에서 <strong>입구 확인 ③(B13)</strong>을 한다 — PA15 · PB3 가 이제 풀 없는 입력이다.</p>
       <p><strong>배선(FR).</strong> USB 를 <strong>뽑고</strong> 꽂는다. 엔코더 커넥터의 어느 핀이 무엇인지는 기록에 없다. 1세대의 "흰 = A, 초록 = B, 빨강 = VCC, 검정 = GND" 는 시험 전에 쓴 계획서의 값이다([추정], <code>~/ros2/docs/stage1_md30c_test_guide.md:75-78</code>). 핀은 다음 순서로 찾는다.</p>
@@ -815,15 +815,27 @@ enc fl=&lt;n&gt; fr=&lt;0 근처&gt; rl=&lt;n&gt; rr=&lt;n&gt; ...</code></pre>
       <p>꽂지 않은 세 바퀴는 0 근처에서 떨린다.</p>
       <p><strong>counts/rev 를 잰다.</strong> 바퀴 테두리와 섀시에 마스킹테이프로 기준선을 맞춘다. <code>enc zero</code> → 한 방향으로 <strong>정확히 N 회전</strong>(N = 10 을 기본으로, 기준선이 다시 맞는 순간 멈춘다) → <code>enc</code> → <code>|fr| ÷ N</code>. 두 번 더 반복해 세 값의 흩어짐을 본다(흩어짐이 기준선 맞추기의 오차다).</p>
       <div class="tbl"><table class="compact">
-        <thead><tr><th>회차</th><th>N</th><th><code>fr</code> (raw)</th><th>counts/rev = |fr| ÷ N</th><th>÷ 2,000 (= 기어비 역산)</th></tr></thead>
+        <thead><tr><th>회차</th><th>N · 방향</th><th><code>fr</code> (raw) 시작 → 끝</th><th>counts/rev = |변화| ÷ N</th><th>÷ 2,000 (= 기어비 역산)</th></tr></thead>
         <tbody>
-          <tr><td>1</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
-          <tr><td>2</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
-          <tr><td>3</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
-          <tr><td colspan="3">평균 · 흩어짐(최대 − 최소)</td><td>____ · ____</td><td>정수에 가까운가: ____</td></tr>
+          <tr><td>1</td><td>10 · 정</td><td>0 → 933,372</td><td>93,337</td><td>46.67</td></tr>
+          <tr><td>2</td><td>10 · 역</td><td>933,372 → 722</td><td>93,265</td><td>46.63</td></tr>
+          <tr><td>3</td><td>20 · 정 (리셋 후)</td><td>0 → 1,866,541</td><td>93,327</td><td>46.66</td></tr>
+          <tr><td>4</td><td>20 · 역</td><td>0 → −1,865,052</td><td>93,253</td><td>46.63</td></tr>
+          <tr><td>5</td><td>20 · 정</td><td>−1,865,052 → 167</td><td>93,261</td><td>46.63</td></tr>
+          <tr><td>6</td><td>20 · 역</td><td>167 → −1,865,204</td><td>93,269</td><td>46.63</td></tr>
+          <tr><td>7</td><td>20 · 정</td><td>−1,865,204 → 471</td><td>93,284</td><td>46.64</td></tr>
+          <tr><td colspan="3">평균 · 흩어짐(최대 − 최소)</td><td>93,285 · 85 (0.09 %)</td><td>46.63 ~ 46.67 — 제원 1 : 47 보다 0.74 % 작다</td></tr>
         </tbody>
       </table></div>
-      <p>기록: <code>hardware/INVENTORY.md</code> 6절 "엔코더 분해능" 행을 <code>MEASURED(&lt;날짜&gt;, hand-turn &lt;N&gt; rev ×3 avg)</code> 로 바꾸고, "기어비" 행에 역산값을 적는다. <code>robot_params.h</code> 의 <code>ENCODER_CPR</code> 줄을 §2-5 의 둘째 꼴로 바꾼다. 잰 값이 94,000 과 다르면 잰 값을 쓴다 — 잰 값이 산술값보다 우선한다. 단 ÷ 2,000 이 정수에서 멀면 먼저 회전 수를 의심한다.</p>
+      <p class="small"><strong>내 기록</strong> — MEASURED(2026-10-13, hand-turn, FR 바퀴 · <code>TIM5</code>, 사용자 보고). 회차 1 · 2 와 5 · 6 · 7 은 <code>enc zero</code> 없이 이어서 돌린 왕복이다 — 왕복 뒤 잔차는 722 · 167 · 471 카운트(출력축 약 2.8° · 0.6° · 1.8°)로, 정 · 역의 체계적 차이는 없다(있었다면 왕복마다 같은 쪽으로 쌓였어야 한다). 흩어짐 0.09 % 는 손으로 기준선을 맞추는 오차 안이다.</p>
+      <ul class="small">
+        <li><strong>결정</strong>(2026-10-13, 사용자): <code>ENCODER_CPR</code> = <strong>93,301</strong>(회차 1 · 2 의 평균) 유지 — 일곱 회차 평균 93,285 와 0.017 % 차라 실용상 같다. 공칭 94,000 보다 0.74 % 작다.</li>
+        <li><strong>기어비</strong>: 93,301 ÷ 2,000 ≈ <strong>46.65</strong> (MEASURED). <strong>제원은 1 : 47</strong>(NOMINAL, 1세대 기록 — 판매 사양) — 이 값은 지우지 않고 부품을 가리키는 이름으로 남긴다. 둘의 차이 0.74 % 는 제원 숫자의 반올림이다: 감속비는 톱니 수의 비라 정수일 필요가 없고(140/3 ≈ 46.67 에 가깝지만 톱니 수는 확인하지 않았다 — 추정), 가공 정밀도로는 평균 비가 달라지지 않는다. 일곱 회차의 흩어짐 0.09 % 는 손 맞춤 오차이고, 참값은 하나다 — 계산에는 잰 값을 쓴다.</li>
+        <li><strong>나머지 세 바퀴</strong>: FL(<code>TIM2</code>) 10 rev 세 번 = 93,322 · 93,317 · 93,351. RL(<code>TIM23</code>) · RR(<code>TIM24</code>) 은 93,300 ± 1,000 안쪽(사용자 보고, 바퀴별 값은 기록 없음). 네 바퀴 모두 같은 <code>ENCODER_CPR</code> 하나를 쓴다.</li>
+        <li><strong>엔코더가 보지 못하는 것</strong>: 커플링을 가장 세게 조여도 바퀴가 약 0.5° 움직이는 동안 카운트가 변하지 않는다(눈대중) — 엔코더가 모터축에 있어 기어 백래시 + 커플링 유격은 보이지 않는다.</li>
+        <li><strong>다시 재는 자리</strong>: fw-13 에서 모터로 돌려(정격 속도 20 s 의 카운트 합 ↔ CPR × 회전 수) 바퀴별로 확정한다. 근거 전체는 <code>hardware/INVENTORY.md</code> 6절 "엔코더 분해능" · "기어비" 행.</li>
+      </ul>
+      <p>기록: <code>hardware/INVENTORY.md</code> 6절 "엔코더 분해능" 행을 <code>MEASURED(&lt;날짜&gt;, hand-turn &lt;N&gt; rev ×3 avg)</code> 로 바꾸고, "기어비" 행에 역산값을 적는다. <code>robot_params.h</code> 의 <code>ENCODER_CPR</code> 줄을 §2-5 의 둘째 꼴로 바꾼다. 잰 값이 94,000 과 다르면 잰 값을 쓴다 — 잰 값이 산술값보다 우선한다. 제원 기어비(1 : 47)는 지우지 않고 옆에 둔다. 단 회차 사이의 흩어짐이 0.2 % 를 넘으면 먼저 회전 수를 의심한다.</p>
 
       <h3 id="s3-2">3-2. 실습 B — 네 바퀴의 부호를 재서 상수로 적는다</h3>
       <p>CubeMX 는 다시 열지 않는다(A 에서 넷을 켰다). 이 실습은 순서가 중요하다.</p>
@@ -1056,7 +1068,7 @@ enc fl=&lt;-&gt; fr=&lt;-&gt; rl=&lt;-&gt; rr=&lt;-&gt; ...</code></pre>
           <span class="sub">판정 수단: DMM · §3-1-4 · §3-2-3 · INVENTORY 6절 "엔코더 전원" 행의 소비 전류 빈칸</span></span></label></li>
         <li><label><input type="checkbox" data-key="enc-counts-both-directions"><span><strong>경로 통과</strong> — 꽂힌 바퀴마다 손으로 앞으로 돌리면 <code>enc</code> 의 그 값이 커지고 뒤로 돌리면 작아지며, 되돌리면 0 근처로 온다. 한 바퀴를 돌릴 때 다른 셋은 0 근처에 남는다
           <span class="sub">판정 수단: 명령 창 출력 · §3-1-4(raw, 한 바퀴) · §3-2-4(부호 적용, 네 바퀴)</span></span></label></li>
-        <li><label><input type="checkbox" data-key="enc-cpr-measured"><span><strong>경로 통과</strong> — N 회전 × 3 회차로 잰 counts/rev 의 평균과 흩어짐을 적었고, ÷ 2,000 이 정수에 가까웠다(____). <code>hardware/INVENTORY.md</code> 6절 "엔코더 분해능" · "기어비" 행과 <code>robot_params.h</code> 의 <code>ENCODER_CPR</code> 이 <code>MEASURED(…)</code> 다
+        <li><label><input type="checkbox" data-key="enc-cpr-measured"><span><strong>경로 통과</strong> — N 회전 × 3 회차 이상으로 잰 counts/rev 의 평균과 흩어짐을 적었고, 흩어짐이 0.2 % 안이었다(____ %). ÷ 2,000 으로 역산한 기어비를 제원 1 : 47 과 나란히 적었다. <code>hardware/INVENTORY.md</code> 6절 "엔코더 분해능" · "기어비" 행과 <code>robot_params.h</code> 의 <code>ENCODER_CPR</code> 이 <code>MEASURED(…)</code> 다
           <span class="sub">판정 수단: 명령 창 출력 + 마스킹테이프 · §3-1-4 의 표 · <code>grep ENCODER_CPR</code> · 이 프로젝트에서 이 값이 MEASURED 가 되는 유일한 자리</span></span></label></li>
         <li><label><input type="checkbox" data-key="enc-sign-four-recorded"><span><strong>경로 통과</strong> — <code>robot_params.h</code> 의 <code>ENC_SIGN_FL … _RR</code> 넷이 ±1 과 <code>MEASURED(…, hand-turn forward)</code> 이고, 그 빌드에서 네 바퀴를 앞으로 돌리면 <code>enc</code> 의 네 값이 <strong>모두 +</strong> 다
           <span class="sub">판정 수단: <code>grep</code> 출력 + 명령 창 출력 · §3-2-4 · 가드 메시지(<code>is still EMPTY</code>)가 한 번은 났다가 사라진 것을 봤다</span></span></label></li>
@@ -1077,7 +1089,7 @@ enc fl=&lt;-&gt; fr=&lt;-&gt; rl=&lt;-&gt; rr=&lt;-&gt; ...</code></pre>
           <tr><td>아무것도 안 해도 <code>fr</code> 이 계속 변한다(빠른 연속 변화 · 느린 드리프트)</td><td>SB57 이 실제로 끊기지 않았다(PA1 에 50 MHz) · 선을 꽂지 않은 입력이 노이즈로 토글한다(±1~2 는 정상)</td><td>입구 확인 ① · <a href="fw-01-pinmap.html#s3-3">fw-01 §3-3</a> 의 도통 표</td><td>fw-01 §3-3</td></tr>
           <tr><td>값이 65,535 근처에서 되돌아오거나 <code>d_xx</code> 가 −65,000 대로 튄다</td><td>Counter Period 가 65535 로 남아 있다 — 32비트 타이머가 16비트처럼 동작한다(§2-2)</td><td><code>grep -n "\.Period" h723zg.ioc</code> · 생성 코드의 <code>htim5.Init.Period</code></td><td>§3-1-1 값 표</td></tr>
           <tr><td>1회전에 2,000 근처가 나온다</td><td>모터축과 출력축을 혼동했다 — 2,000 은 <strong>모터축</strong> 1회전(§2-1 · §2-5). 바퀴 1회전은 기어비만큼 더 크다</td><td>÷ 2,000 이 1 근처인가 47 근처인가</td><td>§2-5</td></tr>
-          <tr><td>잰 CPR ÷ 2,000 이 정수에서 멀다(예: 46.4)</td><td>회전 수를 잘못 셌다 · 기준선이 밀렸다 · 돌리는 동안 선이 빠졌다</td><td>세 회차의 흩어짐 · <code>d_xx</code> 가 도중에 0 으로 떨어진 구간이 있었는가</td><td>§3-1-4 다시</td></tr>
+          <tr><td>회차 사이의 흩어짐이 0.2 % 를 넘는다(예: 한 회차만 1 % 작다)</td><td>회전 수를 잘못 셌다 · 기준선이 밀렸다 · 돌리는 동안 선이 빠졌다. ÷ 2,000 이 정수가 아닌 것은 증상이 아니다 — 제원 1 : 47 은 반올림한 표시값일 수 있다(§2-5)</td><td>세 회차의 흩어짐 · <code>d_xx</code> 가 도중에 0 으로 떨어진 구간이 있었는가</td><td>§3-1-4 다시</td></tr>
           <tr><td>빌드가 <code>static assertion failed … ENC_SIGN_FL is still EMPTY</code> 로 멈춘다</td><td><code>robot_params.h</code> 의 부호 키에 잰 값을 아직 적지 않았다 — 의도된 멈춤(§3-2-2)</td><td>메시지의 키 이름</td><td>§3-2-3 3번</td></tr>
           <tr><td>앞으로 돌리면 두 바퀴만 + 다</td><td>부호를 짐작으로 적었다(좌 · 우 거울상은 부호를 <em>예측</em>하지 못한다 — 1세대 기록) · 두 바퀴의 라벨(FL/FR …)이 바뀌어 꽂혔다</td><td>바퀴 하나씩 돌려 어느 값이 움직이는가</td><td>§3-2-3 2번 · §2-7</td></tr>
           <tr><td>CubeMX 에서 TIM2 가 PA15/PB3 에 놓이지 않는다 · PB3 가 회색이다</td><td>Debug 가 Serial Wire 가 아니다 · PB3 잠금이 안 풀렸다 · TIM2 를 TIM5 보다 먼저 켜서 PA0/PA1 을 차지했다</td><td><code>grep -n "TRACESWO\|SWDIO" h723zg.ioc</code></td><td><a href="fw-02-toolchain.html#s2-6">fw-02 §2-6</a> · §3-1-1 위치 표 1 · 4</td></tr>
