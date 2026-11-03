@@ -82,6 +82,8 @@
           <tr><td>blind band</td><td>보호가 <strong>일부러 판정하지 않는</strong> 구간(예: 목표가 아주 작을 때). 오트립을 막으려고 두지만, 그 구간에서는 진짜 고장도 판정되지 않는다</td></tr>
           <tr><td>명령 워치독</td><td>200 ms 동안 상위의 명령이 없으면 목표를 0 으로 만드는 <strong>소프트웨어</strong> 장치(계약 v2). <a href="fw-06-tick-watchdog.html">fw-06</a> 의 하드웨어 워치독(IWDG)과 <strong>다른 것</strong>이고, 섞어 부르지 않는다</td></tr>
           <tr><td>단조 연쇄</td><td>1 kHz 콜백 안에서 뒤에 오는 단계가 앞 단계의 출력을 <strong>줄이기만</strong> 하고 키우지는 못하게 순서를 정하는 것(§2-10)</td></tr>
+          <tr><td>1세대</td><td>이 프로젝트 이전에 같은 부품 일부로 만든 첫 로봇. 이 가이드는 그 기록을 참고로만 인용하고, 게인 · 문턱 같은 제어 상수는 값으로 옮기지 않는다</td></tr>
+          <tr><td>결정 대기</td><td>이 가이드가 아직 정하지 않은 설계 선택. 선택지마다 사실만 적고, 가이드가 우선 따르는 쪽을 "기본 진행"이라 부른다(권고가 아니다)</td></tr>
         </tbody>
       </table></div>
       <p>이 쪽이 남기는 것은 뒤의 세 쪽이 쓴다.</p>
@@ -111,9 +113,10 @@ TICK_TO_MM_S = 2 x pi x WHEEL_RADIUS_MM / ENCODER_CPR / DT
       <strong>1 ms 시간 구간 하나로는 "속도가 안 나온다"는 판정이 6 mm/s 아래를 구분하지 못한다</strong>. 문턱을 6 mm/s 아래로 두어도 정지와 극저속은 구분되지 않는다.
       시간 구간을 넓히면 계단이 작아지는 대신 판정이 늦어진다 — 어느 시간 구간을 쓸지는 내가 정한다.</p>
       <div class="callout note"><span class="ct">등급 — 이 축 전체가 아직 공칭값을 전제한다</span>
-        <p><code>WHEEL_RADIUS_MM</code> 90 은 <strong>공칭 지름 180 mm 의 절반</strong>이다(<code>hardware/INVENTORY.md</code> 6절 "바퀴 지름" 행 — NOMINAL(gen1-record), 실측 지름 칸은 아직 <code>____</code>).
-        <code>ENCODER_CPR</code> 은 fw-09 에서 내가 잰 값이거나 아직 공칭 94,000 이다. 그러니 이 쪽에서 나오는 mm/s 는 <strong>축척이 몇 % 틀려 있을 수 있는 수</strong>다.
-        그래도 제어에는 문제가 없다 — 목표와 측정이 <em>같은</em> 축척으로 틀려 있으면 게인이 그 차이를 흡수한다. 문제가 되는 것은 이 숫자를 <strong>바깥과 견줄 때</strong>(오도메트리 · 지도 축척)이고, 그 비교는 관문 09a 에서 한다.
+        <p><code>WHEEL_RADIUS_MM</code> 90 은 <strong>공칭 지름 180 mm 의 절반</strong>이다. 바퀴 지름은 아직 실측하지 않았다.<sup class="fn"><a href="#fn-1" id="fnref-1">1</a></sup>
+        <code>ENCODER_CPR</code> 은 fw-09 에서 내가 잰 값이거나 아직 공칭 94,000 이다. 그러니 이 쪽에서 나오는 mm/s 는 <strong>축척이 몇 % 틀려 있을 수 있는 수</strong>다.</p>
+        <p>그래도 제어에는 문제가 없다. 목표와 측정이 <em>같은</em> 축척으로 틀려 있으면 게인이 그 차이를 흡수한다.
+        문제가 되는 것은 이 숫자를 <strong>바깥과 견줄 때</strong>(오도메트리 · 지도 축척)이고, 그 비교는 관문 09a 에서 한다.
         그래서 이 쪽의 합격선은 "몇 mm/s 이내"라는 남의 숫자가 아니라 <strong>내가 찍은 곡선을 보고 내가 정하는 값</strong>이다.</p>
       </div>
 
@@ -160,10 +163,12 @@ TICK_TO_MM_S = 2 x pi x WHEEL_RADIUS_MM / ENCODER_CPR / DT
       </table></div>
       <p>이 쪽은 <strong>어느 것을 쓰라고 정하지 않는다.</strong> 정하는 것은 셋 다 만족해야 하는 성질이고, 그 성질을 §3-1 의 호스트 시험이 벡터로 채점한다:
       <em>200 ms 동안 출력이 포화해 있어도 적분값은 한 틱치(1 ms 어치)보다 더 자라지 않는다.</em></p>
-      <div class="callout note"><span class="ct">1세대 무부하 튜닝값(기록, 2026-07-19)을 값으로 옮기지 못하는 이유</span>
-        <p>1세대는 1 kHz 속도 PID 를 Kp 0.60 / Ki 1.50 / Kd 0 / 백캘큘레이션 Kt 2.0 으로 돌렸다(1세대 펌웨어 <code>FW/control/include/motor_ctrl.h:91,149-206</code>).
-        그런데 1세대의 오차 단위는 count/s 이고 출력 풀스케일은 500 tick 이었다 — 이 프로젝트는 mm/s 와 1000 ‰ 다. <strong>같은 숫자가 다른 물리량을 가리킨다.</strong> 그래서 이 값들은 NOMINAL 로도 쓸 수 없고 "기록"으로만 인용한다.
-        집필 중에 실제로 확인한 것이 하나 있다. 위의 Kt 2.0 을 그대로 옮긴 백캘큘레이션 구현은 §3-1 의 와인드업 벡터를 <strong>통과하지 못한다</strong>. 이 게인 스케일에서는 되돌리는 세기가 너무 약해 적분이 200 ms 동안 거의 그대로 자란다.
+      <div class="callout note"><span class="ct">1세대 무부하 튜닝값을 값으로 옮기지 못하는 이유</span>
+        <p>1세대는 1 kHz 속도 PID 를 Kp 0.60 / Ki 1.50 / Kd 0 / 백캘큘레이션 Kt 2.0 으로 돌렸다.<sup class="fn"><a href="#fn-2" id="fnref-2">2</a></sup>
+        그런데 1세대의 오차 단위는 count/s 이고 출력 풀스케일은 500 tick 이었다. 이 프로젝트는 mm/s 와 1000 ‰ 다.
+        <strong>같은 숫자가 다른 물리량을 가리킨다.</strong> 그래서 이 값들은 NOMINAL 로도 쓸 수 없고 "기록"으로만 인용한다.</p>
+        <p>집필 중에 실제로 확인한 것이 하나 있다. 위의 Kt 2.0 을 그대로 옮긴 백캘큘레이션 구현은 §3-1 의 와인드업 벡터를 <strong>통과하지 못한다</strong>.
+        이 게인 스케일에서는 되돌리는 세기가 너무 약해 적분이 200 ms 동안 거의 그대로 자란다.
         게인을 옮기면 안 된다는 주의는 추상적인 것이 아니라 컴파일해서 확인한 결과다.</p>
       </div>
 
@@ -185,14 +190,14 @@ TICK_TO_MM_S = 2 x pi x WHEEL_RADIUS_MM / ENCODER_CPR / DT
       </div>
 
       <h3 id="s2-5">2-5. 멈출 때 적분을 0 으로 — 1세대 벤치에서 확인한 것</h3>
-      <p>1세대 벤치에서 이런 일이 있었다(기록, 2026-07-18): <strong>정지 명령을 줬는데 상태는 RUN 이고 듀티가 −4 tick 남아 있었다.</strong>
-      감속하는 동안 쌓인 음의 적분이 백캘큘레이션의 고정점에서 더 줄어들지 않았고, 그 적분 때문에 목표가 0 인데도 아주 작은 듀티가 계속 나가고 있었다.
-      고친 방법은 규칙 하나였다 — <strong>목표가 0 이고 측정 속도가 바닥이면 적분을 0 으로 하고 정지 상태로 간다.</strong> 감속 램프 자체는 그대로 두었다(화물 때문에 급정지를 피해야 해서).</p>
+      <p>1세대 벤치에서 이런 일이 있었다: <strong>정지 명령을 줬는데 상태는 RUN 이고 듀티가 −4 tick 남아 있었다.</strong><sup class="fn"><a href="#fn-3" id="fnref-3">3</a></sup>
+      감속하는 동안 쌓인 음의 적분이 백캘큘레이션의 고정점에서 더 줄어들지 않았다. 그 적분 때문에 목표가 0 인데도 아주 작은 듀티가 계속 나가고 있었다.</p>
+      <p>고친 방법은 규칙 하나였다 — <strong>목표가 0 이고 측정 속도가 바닥이면 적분을 0 으로 하고 정지 상태로 간다.</strong> 감속 램프 자체는 그대로 두었다(화물 때문에 급정지를 피해야 해서).</p>
       <p>이 쪽이 가져오는 것은 그 <strong>구조</strong>다. 값("바닥"이 몇 mm/s 인가)은 §2-1 의 계단 크기와 내가 고른 측정 시간 구간에서 나오므로 내가 정한다.
       골격에서 이 규칙이 들어가는 자리는 두 군데다: 목표가 0 으로 내려올 때, 그리고 보호가 트립해서 출력을 끊을 때(§2-7). 둘 다 "다시 시작할 때 이전 회차의 상태를 남기지 않는다"는 같은 규칙이다.</p>
 
       <h3 id="s2-6">2-6. 폐루프와 보호 3종이 <em>같은 쪽</em>에 있는 이유</h3>
-      <p>1세대의 가장 비싼 사고는 이것이다(기록, 2026-07-18): <strong>엔코더의 GND 선이 끊겼다.</strong> 속도가 항상 0 으로 읽혔다.
+      <p>1세대의 가장 비싼 사고는 이것이다: <strong>엔코더의 GND 선이 끊겼다.</strong><sup class="fn"><a href="#fn-4" id="fnref-4">4</a></sup> 속도가 항상 0 으로 읽혔다.
       PID 는 "목표 5000, 측정 0" 을 보고 오차를 계속 적분했다. 듀티는 최대로 갔고 바퀴는 전속으로 돌았다. <strong>폴트는 한 건도 뜨지 않았고</strong> 정지 명령으로도 바퀴를 멈추지 못했다.</p>
       <p>왜 어느 보호도 이 고장을 검출하지 못했는가. 그때 있던 보호 셋이 <strong>동시에</strong> 판정하지 못하는 상태였다 — 1세대 기록은 이것을 "3중 블라인드"라고 부른다.</p>
       <div class="tbl"><table class="compact">
@@ -206,15 +211,15 @@ TICK_TO_MM_S = 2 x pi x WHEEL_RADIUS_MM / ENCODER_CPR / DT
       <p>그래서 새 폴트 하나가 생겼다: <strong>FEEDBACK_LOST</strong> — "이 듀티를 주고 있는데 이만큼의 속도가 안 나온다". 되먹임 자체가 끊긴 것을 되먹임이 없다는 사실로 검출한다.</p>
       <div class="callout warn"><span class="ct">이 쪽에서 같이 해야 하는 이유</span>
         <p>고리를 닫는 코드와 고리의 고장을 검출하는 코드를 <strong>다른 쪽에서</strong> 쓰면, 그 사이의 기간 동안 벤치에는 "측정이 틀리면 최대 듀티로 가는 장치"가 그대로 놓여 있게 된다.
-        이 가이드가 PID 와 보호 3종을 한 쪽에 묶은 것은 분량 때문이 아니라 그 기간을 0 으로 만들기 위해서다. 실습 B(계단 응답)를 하고 실습 C(보호)를 미루지 않는다.
-        미뤄야 한다면 그동안 <strong><code>DUTY_LIMIT_BENCH_PERMILLE</code> 을 더 낮춰 두고</strong>(fw-08 §2-9 의 상한이 PID 출력에도 그대로 적용된다) 바퀴를 공중에 둔 채로만 돌린다.</p>
+        이 가이드가 PID 와 보호 3종을 한 쪽에 묶은 것은 분량 때문이 아니라 그 기간을 0 으로 만들기 위해서다. 실습 B(계단 응답)를 하고 실습 C(보호)를 미루지 않는다.</p>
+        <p>미뤄야 한다면 그동안 <strong><code>DUTY_LIMIT_BENCH_PERMILLE</code> 을 더 낮춰 두고</strong> 바퀴를 공중에 둔 채로만 돌린다. fw-08 §2-9 의 상한이 PID 출력에도 그대로 적용되기 때문이다.</p>
       </div>
       <p>IWDG(하드웨어 워치독)가 이 사고를 막지 못한다는 점도 여기서 분명히 해 둔다. 그날 펌웨어는 <strong>멈추지 않았다</strong> — 1 kHz 루프도 주 루프도 정상으로 돌고 있었고 kick 도 제때 들어갔다.
       IWDG 가 검출하는 것은 "멈춘 것"이고, 이 사고는 "동작하면서 틀리는 것"이다. 둘은 다른 장치가 맡는다.</p>
 
       <h3 id="s2-7">2-7. 보호는 두 방향으로 틀린다 — 판정식의 구조가 전부다</h3>
       <p>1세대 총평은 이 문제를 한 줄로 적어 두었다: "보호 장치는 두 방향으로 틀린다(못 잡는다 / 잘못 잡는다). 셋 다 로직이 아니라 <strong>선을 어디에 긋느냐</strong>가 틀렸다."
-      아래 두 사고가 각각 한 방향이고, 고친 방법이 그대로 이 쪽 판정식의 <strong>구조</strong>가 된다. 숫자는 가져오지 않는다.</p>
+      아래 두 사고는 모두 잘못 잡은 쪽(오트립)이고, 고친 방법이 그대로 이 쪽 판정식의 <strong>구조</strong>가 된다. 숫자는 가져오지 않는다.</p>
       <div class="tbl"><table class="compact fixed"><colgroup><col class="w10"><col class="w24"><col class="w30"><col class="w36"></colgroup>
         <thead><tr><th>날짜(1세대 기록)</th><th>무슨 일</th><th>왜 틀렸나</th><th>구조를 어떻게 고쳤나</th></tr></thead>
         <tbody>
@@ -255,12 +260,14 @@ TICK_TO_MM_S = 2 x pi x WHEEL_RADIUS_MM / ENCODER_CPR / DT
       두 값을 곱셈 하나로 합쳐 둔 이유는 1 kHz 경로에서 나눗셈을 없애려는 것이고, 나눈 근거는 코드가 아니라 <strong>내 노트</strong>에 남는다.</p>
 
       <h3 id="s2-8">2-8. 듀티 슬루를 우회하지 않는다 — 전기적인 이유다</h3>
-      <p>"긴급 정지 · 긴급 회피는 램프를 건너뛰고 바로 최대로" 는 그럴듯하게 들린다. 1세대는 그 경로를 실제로 만들다가 <strong>듀티 슬루만은 우회 금지</strong>로 결론냈다(기록, 2026-07-19).
-      이유가 제어가 아니라 전기다 — 슬루를 없애면 네 모터가 동시에 0에서 최대로 뛰면서 <strong>버스 전압이 크게 떨어지고, 5 V 레일이 브라운아웃되고, 회피하는 도중에 제어 자체를 잃는다.</strong>
+      <p>듀티 슬루는 듀티가 한 틱에 바뀔 수 있는 크기를 제한해 듀티를 램프로 올리고 내리는 처리다.
+      "긴급 정지 · 긴급 회피는 램프를 건너뛰고 바로 최대로" 는 그럴듯하게 들린다. 1세대는 그 경로를 실제로 만들다가 <strong>듀티 슬루만은 우회 금지</strong>로 결론냈다.<sup class="fn"><a href="#fn-5" id="fnref-5">5</a></sup></p>
+      <p>이유는 제어가 아니라 전기다. 슬루를 없애면 네 모터가 동시에 0에서 최대로 뛴다. 그러면 <strong>버스 전압이 크게 떨어지고, 5 V 레일이 브라운아웃되고, 회피하는 도중에 제어 자체를 잃는다.</strong>
       같은 회차에서 잰 값: 4모터 0→정격의 피크 전류 1.97 A, 버스 23.46 V(무부하). 부하가 걸리면 이보다 커진다는 것이 이 숫자의 뜻이다.</p>
-      <p>1세대가 쓴 시간은 가속 1500 ms · 감속 400 ms · 방향 전환 정지 200 ms 였다(기록). <strong>이 값들은 옮기지 않는다</strong> — 배터리 · 배선 저항 · 사전충전 회로가 확인되기 전에는 근거가 없는 숫자다.
-      이 쪽의 골격에도 슬루는 <strong>들어 있지 않다.</strong> 슬루가 없는 상태의 계단 응답을 먼저 봐야 "PID 가 어디까지 빠른가"를 알 수 있고, 그 다음에 "전원이 어디까지 견디는가"를 재서 슬루를 정할 수 있기 때문이다.
-      이 순서를 거꾸로 하면 슬루 때문에 느려진 응답을 게인 부족으로 오해해 게인을 계속 올리게 된다. 슬루를 넣을지 · 얼마로 할지는 이 쪽의 기록을 보고 내가 정하고, 부하에서 다시 확인하는 것은 <a href="fw-20-after-assembly.html">fw-20</a> 에서 한다.</p>
+      <p>1세대가 쓴 시간은 가속 1500 ms · 감속 400 ms · 방향 전환 정지 200 ms 였다(기록). <strong>이 값들은 옮기지 않는다</strong> — 배터리 · 배선 저항 · 사전충전 회로가 확인되기 전에는 근거가 없는 숫자다.</p>
+      <p>이 쪽의 골격에도 슬루는 <strong>들어 있지 않다.</strong> 슬루가 없는 상태의 계단 응답을 먼저 봐야 "PID 가 어디까지 빠른가"를 알 수 있다. 그 다음에 "전원이 어디까지 견디는가"를 재서 슬루를 정할 수 있다.
+      이 순서를 거꾸로 하면 슬루 때문에 느려진 응답을 게인 부족으로 오해해 게인을 계속 올리게 된다.
+      슬루를 넣을지 · 얼마로 할지는 이 쪽의 기록을 보고 내가 정하고, 부하에서 다시 확인하는 것은 <a href="fw-20-after-assembly.html">fw-20</a> 에서 한다.</p>
       <div class="callout warn"><span class="ct">그래서 이 쪽의 실습은 <code>DUTY_LIMIT_BENCH_PERMILLE</code> 아래에서만 진행한다</span>
         <p>PID 의 출력도 <code>motor_set()</code> 을 지나며 fw-08 에서 내가 정한 상한에 잘린다(<a href="fw-08-pwm-safe-output.html#s2-9">fw-08 §2-9</a> 의 상한이 명령 경로든 제어 경로든 같은 자리에서 적용된다).
         슬루가 없는 이 골격에서 그 상한이 사실상 슬루 역할을 한다 — 목표를 낮게 주고 상한을 낮게 두면 0→최대 계단 자체가 일어나지 않는다. 계단 응답을 크게 찍고 싶어 상한을 올리기 전에 이 절을 다시 읽는다.</p>
@@ -285,8 +292,12 @@ TICK_TO_MM_S = 2 x pi x WHEEL_RADIUS_MM / ENCODER_CPR / DT
           </tbody>
         </table></div>
         <p>행 수의 상한은 <code>control.c</code> 의 <code>STEP_CAP_MAX</code> 이고 내가 정한다 — <strong>이 하나의 값이 RAM 소비와 워치독 예산을 동시에 정한다.</strong>
-        한 행이 몇 바이트인지는 내 CSV 열 구성에 달렸다(§3-2 의 골격은 다섯 열이다). <strong>단위에 주의한다</strong> — 바이트 ÷ (B/s) 는 <strong>초</strong>다. 표의 식에 1000 을 곱한 것은 이 때문이다. 이 표의 다른 행들과 견주려면 ms 여야 한다. 계산한 값이 내 IWDG 주기(fw-06 에서 내가 정한 값)보다 크면 둘 중 하나를 한다 — 덤프 중 kick 을 촘촘히 넣거나, <code>STEP_CAP_MAX</code> 를 줄인다.
-        <strong>NVIC 표에 더하는 행은 없다</strong>(이 쪽은 인터럽트를 새로 켜지 않는다 — 전부 fw-06 의 TIM6 ISR 안에서 실행된다).</p>
+        한 행이 몇 바이트인지는 내 CSV 열 구성에 달렸다(§3-2 의 골격은 다섯 열이다).</p>
+        <ul>
+          <li><strong>단위에 주의한다</strong> — 바이트 ÷ (B/s) 는 <strong>초</strong>다. 이 표의 다른 행들과 견주려면 ms 여야 하므로 표의 식에 1000 을 곱했다.</li>
+          <li>계산한 값이 내 IWDG 주기(fw-06 에서 내가 정한 값)보다 크면 둘 중 하나를 한다 — 덤프 중 kick 을 촘촘히 넣거나, <code>STEP_CAP_MAX</code> 를 줄인다.</li>
+          <li><strong>NVIC 표에 더하는 행은 없다.</strong> 이 쪽은 인터럽트를 새로 켜지 않는다 — 전부 fw-06 의 TIM6 ISR 안에서 실행된다.</li>
+        </ul>
       </div>
 
       <h3 id="s2-10">2-10. 1 kHz 콜백 안의 순서 — 단조 연쇄로 정한다</h3>
@@ -360,7 +371,7 @@ TICK_TO_MM_S = 2 x pi x WHEEL_RADIUS_MM / ENCODER_CPR / DT
         <p>세 장치를 같은 문장에서 "워치독" 한 낱말로 부르면, 하나를 시험하고 셋 다 동작한다고 간주하게 된다. 1세대가 실제로 그랬다.</p>
       </div>
       <div class="callout note"><span class="ct">결정 대기 — 무엇이 명령 워치독을 되감는가</span>
-        <p>계약 문서의 이전 판은 "200 ms 무프레임", 본편 06 §1-1 의 표는 "200 ms 무명령"이라 적어 두 쪽이 갈려 있었다. 둘은 다른 규칙이다(06a §4-3 의 상자).</p>
+        <p>명령 워치독을 무엇이 되감는가에 대해 서로 다른 규칙이 둘 있다(06a §4-3 의 상자).<sup class="fn"><a href="#fn-6" id="fnref-6">6</a></sup></p>
         <p><strong>(가) 유효한 0x01(속도 명령)만</strong> 되감는다 — "상위가 명령을 보내고 있는가"를 본다. 되감는 자리가 <code>control_set_target()</code> 안이라 통신 모듈은 명령 워치독을 다루지 않아도 된다.
         나중에 설정 프레임(0x02)이 생겨도, 설정 프레임만 오고 속도 명령이 끊기면 200 ms 뒤 멈춘다.</p>
         <p><strong>(나) CRC 를 통과한 모든 프레임</strong>이 되감는다 — "링크가 유지되고 있는가"를 본다. 되감는 자리는 프레임 파서(통신 모듈)다. 0x02 를 구현한 뒤 설정 프레임만 계속 오면 MCU 는 마지막 목표를 유지한 채 계속 달린다.</p>
@@ -399,8 +410,8 @@ TICK_TO_MM_S = 2 x pi x WHEEL_RADIUS_MM / ENCODER_CPR / DT
       <div class="tbl"><table class="compact">
         <thead><tr><th>타이머</th><th>레지스터(기준 <code>0x5C001000</code>)</th><th>비트</th><th>HAL 매크로 (<code>stm32h7xx_hal.h</code>)</th></tr></thead>
         <tbody>
-          <tr><td>TIM2(FL) · TIM5(FR)</td><td><code>DBGMCU_APB1LFZ1</code> — <code>0x5C00103C</code></td><td>0 · 3</td><td><code>__HAL_DBGMCU_FREEZE_TIM2()</code> :865 · <code>…_TIM5()</code> :868</td></tr>
-          <tr><td>TIM23(RL) · TIM24(RR)</td><td><code>DBGMCU_APB1HFZ1</code> — <code>0x5C001044</code></td><td>24 · 25</td><td><code>__HAL_DBGMCU_FREEZE_TIM23()</code> :886 · <code>…_TIM24()</code> :889</td></tr>
+          <tr><td>TIM2(FL) · TIM5(FR)</td><td><code>DBGMCU_APB1LFZ1</code> — <code>0x5C00103C</code></td><td>0 · 3</td><td><code>__HAL_DBGMCU_FREEZE_TIM2()</code> · <code>…_TIM5()</code><sup class="fn"><a href="#fn-7" id="fnref-7">7</a></sup></td></tr>
+          <tr><td>TIM23(RL) · TIM24(RR)</td><td><code>DBGMCU_APB1HFZ1</code> — <code>0x5C001044</code></td><td>24 · 25</td><td><code>__HAL_DBGMCU_FREEZE_TIM23()</code> · <code>…_TIM24()</code><sup class="fn"><a href="#fn-8" id="fnref-8">8</a></sup></td></tr>
         </tbody>
       </table></div>
       <p>확인하는 법은 앞 쪽들과 같다. 설정했다고 생각하는 값과 지금 레지스터에 있는 값은 다를 수 있으므로 gdb 로 <strong>읽어서</strong> 본다. 읽을 곳은 <code>x/wx 0x5C00103C</code> 의 bit 0 · 3(마스크 <code>0x00000009</code>), <code>x/wx 0x5C001044</code> 의 bit 24 · 25(마스크 <code>0x03000000</code>).
@@ -440,10 +451,16 @@ TICK_TO_MM_S = 2 x pi x WHEEL_RADIUS_MM / ENCODER_CPR / DT
       <div class="callout tip"><span class="ct">채울 자리마다 힌트 카드가 있다 — 읽는 순서</span>
         <p>골격의 채울 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 붙어 있고(이 쪽은 T1 ~ T14 — <code>pid.c</code> 둘, <code>control.c</code> 여덟, <code>protect.c</code> 넷), 그 주석 안에 <strong>번호 걸음</strong>이 있다. 먼저 걸음을 보고 직접 써 본다.
         막히면 "직접 채우기" 절에서 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인.</p>
-        <p>완결 코드는 다음 둘을 통과한 코드다(2026-10-03). ① Mac 의 호스트 시험 둘 — <code>PASS pid 16 cases</code> · <code>PASS protect 24 cases</code>. <code>-fsanitize=undefined,address</code> 를 더해도 경고와 오류가 없다.
-        ② 이 프로젝트의 펌웨어 빌드 — 링크까지 <code>User/</code> 경고 0. 앞 쪽의 <code>motor_*</code> · <code>encoder_*</code> · <code>power_get_state()</code> 는 임시 정의로 채워 빌드했다.
-        <code>control.c</code> 는 보드 없이 볼 수 없는 부분이 많다. 그래서 1 ms 마다 1차 지연 플랜트(듀티 → 속도 → 카운트)를 모사하는 호스트 시뮬레이션에서 <code>step</code> · <code>once</code> · 엔코더 단선 · A/B 바뀜을 넣어 CSV 의 모양까지 확인했다. 그 결과는 각 카드의 "확인"에 있다. 시간 · 전압 · 리셋처럼 보드에서만 볼 수 있는 것은 "굽고 보기"에서 내가 확인한다.
-        게인과 보호 문턱의 <code>____</code> · <code>EMPTY</code> 는 카드에도 빈칸이다 — 그 값을 정하는 것이 이 쪽의 실습이다. 붙여 넣는 것으로 끝내지 않는다 — 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
+        <p>완결 코드는 다음 둘을 통과한 코드다.<sup class="fn"><a href="#fn-9" id="fnref-9">9</a></sup></p>
+        <ul>
+          <li>① Mac 의 호스트 시험 둘 — <code>PASS pid 16 cases</code> · <code>PASS protect 24 cases</code>. <code>-fsanitize=undefined,address</code> 를 더해도 경고와 오류가 없다.</li>
+          <li>② 이 프로젝트의 펌웨어 빌드 — 링크까지 <code>User/</code> 경고 0. 앞 쪽의 <code>motor_*</code> · <code>encoder_*</code> · <code>power_get_state()</code> 는 임시 정의로 채워 빌드했다.</li>
+        </ul>
+        <p><code>control.c</code> 는 보드 없이 볼 수 없는 부분이 많다. 그래서 호스트 시뮬레이션에서 <code>step</code> · <code>once</code> · 엔코더 단선 · A/B 바뀜을 넣어 CSV 의 모양까지 확인했다.
+        이 시뮬레이션은 1 ms 마다 1차 지연 플랜트(듀티 → 속도 → 카운트)를 모사한다. 그 결과는 각 카드의 "확인"에 있다.
+        시간 · 전압 · 리셋처럼 보드에서만 볼 수 있는 것은 "굽고 보기"에서 내가 확인한다.</p>
+        <p>게인과 보호 문턱의 <code>____</code> · <code>EMPTY</code> 는 카드에도 빈칸이다 — 그 값을 정하는 것이 이 쪽의 실습이다.
+        붙여 넣는 것으로 끝내지 않는다. 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
       </div>
 
       <h3 id="s3-1">3-1. 실습 A — <code>pid.c</code>: 보드 없이 제어기부터 맞춘다</h3>
@@ -541,7 +558,7 @@ void pid_reset(speed_pid_t *p)
           <thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead>
           <tbody>
             <tr><td><code>p.integ = 0.0f;</code></td><td>Mac: <code>error: member reference type 'speed_pid_t *' is a pointer; did you mean to use '-&gt;'?</code><br>arm-gcc: <code>error: 'p' is a pointer; did you mean to use '-&gt;'?</code></td><td><code>-&gt;</code></td></tr>
-            <tr><td><code>prev_err</code> 를 안 지웠다</td><td>컴파일러 경고와 오류가 없고 시험도 <strong>통과한다</strong> — 집필 중 확인(2026-10-03): 벡터의 구조체는 <code>prev_err = 0</code> 으로 초기화되므로 <code>PASS pid 16 cases</code> 가 그대로 찍힌다</td><td>보드에서 드러난다: <code>kd ≠ 0</code> 일 때 두 번째 <code>step</code> 의 0 번 행 듀티가 첫 번째와 다르다(체크포인트 <code>stop-resets-integrator</code>). 헤더의 I3 을 다시 읽는다</td></tr>
+            <tr><td><code>prev_err</code> 를 안 지웠다</td><td>컴파일러 경고와 오류가 없고 시험도 <strong>통과한다</strong>.<sup class="fn"><a href="#fn-10" id="fnref-10">10</a></sup> 벡터의 구조체는 <code>prev_err = 0</code> 으로 초기화되므로 <code>PASS pid 16 cases</code> 가 그대로 찍힌다</td><td>보드에서 드러난다: <code>kd ≠ 0</code> 일 때 두 번째 <code>step</code> 의 0 번 행 듀티가 첫 번째와 다르다(체크포인트 <code>stop-resets-integrator</code>). 헤더의 I3 을 다시 읽는다</td></tr>
           </tbody>
         </table></div>
         <p><strong>확인</strong> — 이 자리만으로는 시험이 바뀌지 않는다(골격도 <code>pid_reset()</code> 을 "통과"한다). T2 와 함께 §3-1-4 의 두 줄을 돌린다.</p>
@@ -573,7 +590,7 @@ float pid_step(speed_pid_t *p, float err)
           <li><code>return u;</code> — 이 줄에 오는 <code>u</code> 는 세 갈래(위로 잘림 · 아래로 잘림 · 안) 어디서 왔든 한계 안이다 — I1 은 "검사"가 아니라 구조에서 나온다.</li>
           <li>골격의 <code>(void)p; (void)err;</code> 와 <code>return 0.0f;</code> 는 지웠다.</li>
           <li><p><strong>다르게 써도 되는 곳</strong> — 셋이 있다.</p>
-            <p>① 와인드업 방지의 꼴. <strong>적분 클램프</strong>는 <code>integ</code> 를 더한 직후 <code>±(out_max / ki)</code> 로 가두고(<code>ki != 0</code> 일 때만 — 0 으로 나누지 않게) 포화 줄에서는 <code>integ</code> 를 건드리지 않는다. <strong>백캘큘레이션</strong>은 포화 뒤 <code>integ += kt * (sat - u_raw)</code> 로 되돌린다 — 되돌리는 세기 <code>kt</code> 가 게인의 단위에 따라 정해진다(§2-3 의 상자). 집필 중 조건부 적분 · 클램프 둘을 실제로 돌려 <strong>둘 다 <code>PASS pid 16 cases</code></strong>(2026-10-03).</p>
+            <p>① 와인드업 방지의 꼴. <strong>적분 클램프</strong>는 <code>integ</code> 를 더한 직후 <code>±(out_max / ki)</code> 로 가두고(<code>ki != 0</code> 일 때만 — 0 으로 나누지 않게) 포화 줄에서는 <code>integ</code> 를 건드리지 않는다. <strong>백캘큘레이션</strong>은 포화 뒤 <code>integ += kt * (sat - u_raw)</code> 로 되돌린다 — 되돌리는 세기 <code>kt</code> 가 게인의 단위에 따라 정해진다(§2-3 의 상자). 집필 중 조건부 적분 · 클램프 둘을 실제로 돌려 <strong>둘 다 <code>PASS pid 16 cases</code></strong>.<sup class="fn"><a href="#fn-11" id="fnref-11">11</a></sup></p>
             <p>② D 항을 아예 빼고 <code>kd</code> 필드만 남길 수 있다(§2-2). 그러면 group 2 의 세 CHECK 는 <code>kd</code> 로 채점하므로 <strong>시험 파일에서 같이 뺀다</strong>. 시험 파일도 내 것이다.</p>
             <p>③ 적분을 u 뒤에 더하는 꼴도 옳다. 그러면 group 3 의 기대값이 한 칸씩 밀리므로(0 · 100 · 200) 시험도 같이 고친다.</p></li>
         </ul>
@@ -590,7 +607,7 @@ float pid_step(speed_pid_t *p, float err)
             <tr><td><code>float</code> 를 <code>==</code> 로 비교해 채점했다</td><td>컴파일러 경고와 오류가 없다. 반올림 한 비트 차이로 틀린다</td><td>시험이 쓰는 <code>near()</code> 처럼 허용 오차로</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — 걸음대로 채우면 §3-1-4 의 첫 줄의 출력이 이렇게 바뀐다(완결 코드를 걸음 단위로 잘라 실제로 돌린 것, 2026-10-03):</p>
+        <p><strong>확인</strong> — 걸음대로 채우면 §3-1-4 의 첫 줄의 출력이 이렇게 바뀐다(완결 코드를 걸음 단위로 잘라 실제로 돌린 것):<sup class="fn"><a href="#fn-12" id="fnref-12">12</a></sup></p>
         <div class="tbl"><table class="compact">
           <thead><tr><th>여기까지 채우면</th><th><code>/tmp/test_pid</code> 가 멈추는 곳</th><th>뜻</th></tr></thead>
           <tbody>
@@ -673,7 +690,7 @@ cc -std=c11 -Wall -Wextra -fsanitize=undefined -Ih723zg/User/Inc host_tests/test
       <code>pid.c</code> 는 전부 부동소수라 이 줄이 검출할 것이 많지 않다(정수 넘침 · 0 나누기가 주 대상이다). 이 줄이 실제로 오류를 보고하는 것은 실습 C 의 <code>protect.c</code> 이고, 이 줄이 무엇을 하는지는 실습 C 에서 직접 보게 된다.</p>
       <div class="callout why"><span class="ct">group 4 를 성질로 쓴 이유 — 그리고 집필 중에 확인한 것</span>
         <p>값으로 채점하면 와인드업 방지의 <strong>식</strong>을 하나로 고정하게 된다. 그러면 §2-3 의 세 꼴 중 둘이 "틀린 답"이 되어 버린다.
-        그래서 group 4 는 적분값이 자라는지만 본다. 집필 중에 네 가지 구현을 실제로 컴파일해 돌려 봤다(2026-09-23, Mac <code>cc</code>):
+        그래서 group 4 는 적분값이 자라는지만 본다. 집필 중에 네 가지 구현을 실제로 컴파일해 돌려 봤다:<sup class="fn"><a href="#fn-13" id="fnref-13">13</a></sup>
         조건부 적분 · 백캘큘레이션(되돌리는 세기를 이 게인 스케일에 맞춘 것) · 적분 클램프 <strong>셋 다 16 cases 를 통과</strong>했고,
         와인드업 방지가 <strong>없는</strong> 구현과 1세대의 <code>Kt 2.0</code> 을 그대로 옮긴 구현은 <strong>둘 다 같은 줄에서 통과하지 못했다</strong>(<code>FAIL line 48: grow &lt;= 1.0f</code>).
         "이 벡터가 이런 잘못을 검출한다"는 말은 그 잘못된 구현을 실제로 만들어 돌려 본 뒤에만 할 수 있다.</p>
@@ -937,10 +954,26 @@ static void cmd_step(int argc, char *argv[])     /* main 문맥. 이 함수는 �
      자리표시는 없다: 비어 있어도 빌드된다(게인 0 · 한계 0 - 듀티는 0 에 갇힌다). */
 }
 
+/* "&lt;명령&gt; -h" 가 찍는 도움말 (cli_register_help). 인자 형식이 바뀌면 같이 고친다 */
+static const char HELP_PID[] =
+  "pid [show | set &lt;kp|ki|kd&gt; &lt;milli&gt;]  - speed PID gains (all 4 wheels)\r\n"
+  "  milli: gain x 1000 (1200 = 1.2). RAM only - reset goes back to robot_params.h\r\n"
+  "ex) pid\r\n"
+  "    pid set kp 1200\r\n";
+static const char HELP_STEP[] =
+  "step &lt;wheel&gt; &lt;target&gt; &lt;ms&gt; [once]  - closed-loop step response, CSV dump\r\n"
+  "  wheel : fl|fr|rl|rr (target goes to that whole side)\r\n"
+  "  target: mm/s, |target| &lt;= STEP_TARGET_MAX_MM_S\r\n"
+  "  ms    : capture rows 1..STEP_CAP_MAX (1 row = 1 ms)\r\n"
+  "  once  : set target once - cmd watchdog makes it 0 after 200 ms\r\n"
+  "  needs pwr state ARMED\r\n"
+  "ex) step fl 200 2000\r\n"
+  "    step fl 200 2000 once\r\n";
+
 void control_cli_register(void)
 {
-  FW_ASSERT(cli_register("pid",  cmd_pid));
-  FW_ASSERT(cli_register("step", cmd_step));
+  FW_ASSERT(cli_register_help("pid",  cmd_pid, HELP_PID));
+  FW_ASSERT(cli_register_help("step", cmd_step, HELP_STEP));
 }</code></pre>
       <p class="small">출력 꼴은 fw-05 의 규약 그대로다 — 응답의 첫 낱말이 명령 이름, 값은 <code>키=값</code>, 단위는 키 이름 끝에, 값은 정수.
       여러 줄 덤프는 <code>#&nbsp;csv …</code> 로 열고 <code>#&nbsp;end</code> 로 닫는다. 마지막 한 줄(<code>step n=… prot=… trips=…</code>)이 이 명령이 돌려주는 답이고, <strong>덤프를 다 지나쳐 스크롤해도 요약이 보이게</strong> 하는 자리다.</p>
@@ -1026,12 +1059,12 @@ void control_set_target(int16_t vl_mm_s, int16_t vr_mm_s)   /* 어느 문맥에�
         <div class="tbl"><table class="compact">
           <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
           <tbody>
-            <tr><td><code>if (tick_get_ms() &gt; s_last_cmd_ms + CMD_WATCHDOG_MS)</code></td><td>두 컴파일러 모두 경고와 오류가 없다(2026-10-03 확인). 49.7 일마다 한 번, 되감기는 순간에 틀린다 — 벤치 시험 시간 안에는 나타나지 않는다</td><td>뺄셈으로 "경과"를 만들고 그 경과를 비교한다</td></tr>
+            <tr><td><code>if (tick_get_ms() &gt; s_last_cmd_ms + CMD_WATCHDOG_MS)</code></td><td>두 컴파일러 모두 경고와 오류가 없다.<sup class="fn"><a href="#fn-14" id="fnref-14">14</a></sup> 49.7 일마다 한 번, 되감기는 순간에 틀린다 — 벤치 시험 시간 안에는 나타나지 않는다</td><td>뺄셈으로 "경과"를 만들고 그 경과를 비교한다</td></tr>
             <tr><td><code>pid_reset()</code> 을 빼먹었다</td><td>같은 <code>step</code> 을 두 번 돌리면 두 번째의 앞 몇 행이 다르다 · 정지 뒤 아주 천천히 돈다(증상 표)</td><td>§2-5</td></tr>
             <tr><td>여기서 <code>wdg_service_main()</code> 이나 IWDG 를 건드렸다</td><td>빌드는 된다. 두 워치독이 섞인다 — §2-12 의 상자</td><td>지운다. IWDG 는 fw-06 이 다룬다</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — §3-2-4 의 <code>step fl 200 1000 once</code>: <code>target_mm_s</code> 열이 0 으로 바뀌는 행의 <code>t_ms</code> 를 적는다(체크포인트 <code>step-once-target-zeroed</code>). 집필 중 호스트 시뮬레이션(플랜트 모형, 2026-10-03)에서는 <code>&gt;</code> 로 쓴 이 코드가 <strong>200 번 행</strong>(<code>200,0,…</code>)부터 0 을 냈다 — 보드에서는 내가 확인한다.</p>
+        <p><strong>확인</strong> — §3-2-4 의 <code>step fl 200 1000 once</code>: <code>target_mm_s</code> 열이 0 으로 바뀌는 행의 <code>t_ms</code> 를 적는다(체크포인트 <code>step-once-target-zeroed</code>). 집필 중 호스트 시뮬레이션(플랜트 모형)<sup class="fn"><a href="#fn-15" id="fnref-15">15</a></sup>에서는 <code>&gt;</code> 로 쓴 이 코드가 <strong>200 번 행</strong>(<code>200,0,…</code>)부터 0 을 냈다 — 보드에서는 내가 확인한다.</p>
         </div></details>
 
       <details class="hint" id="hint-t5"><summary>힌트 T5 — <code>control_step_1khz()</code> · 2..5 바퀴마다 측정 → PID → (보호) → 듀티</summary>
@@ -1039,7 +1072,7 @@ void control_set_target(int16_t vl_mm_s, int16_t vr_mm_s)   /* 어느 문맥에�
 
         <p><strong>할 일</strong> — 바퀴 하나에 대해: 1 ms 시간 구간의 카운트를 mm/s 로, 목표와의 오차를 PID 에, 그 출력을(실습 C 부터는 보호를 거쳐) 드라이버에. §2-10 의 단조 연쇄가 이 루프 안에서도 성립한다 — PID 가 만들고, 보호가 줄이고, <code>motor_set()</code> 이 벤치 상한으로 한 번 더 자른다.</p>
         <p>아래는 <strong>실습 C 까지 넣은 2차 모습</strong>이다. 실습 B 를 구울 때는 주석이 가리키는 <strong>여섯 줄</strong>(<code>const protect_in_t in</code> 부터 닫는 <code>}</code> 까지) 앞에 <code>//</code> 를 붙여 주석 처리한다(아직 <code>s_prot</code> 가 없다).
-        <code>/* … */</code> 로 감싸지 않는다. 세 줄의 끝에 이미 블록 주석이 있어 중첩되기 때문이다. 줄마다 감싸 보니 arm-gcc 가 <code>warning: "/*" within comment [-Wcomment]</code> 에 이어 <code>error: expected expression before '/' token</code> 으로 멈췄다(2026-10-03 확인).</p>
+        <code>/* … */</code> 로 감싸지 않는다. 세 줄의 끝에 이미 블록 주석이 있어 중첩되기 때문이다. 줄마다 감싸 보니 arm-gcc 가 다음 두 메시지를 내고 멈췄다. <code>warning: "/*" within comment [-Wcomment]</code> · <code>error: expected expression before '/' token</code>.<sup class="fn"><a href="#fn-16" id="fnref-16">16</a></sup></p>
         <p><strong>완결 코드</strong></p>
         <pre><code class="lang-c">/* 완결 코드 T5 - User/Src/Control/control.c 의 control_step_1khz() 안, 2..5 (2차까지 넣은 모습) */
   /* 2..5 바퀴마다: 측정 -&gt; 오차 -&gt; PID -&gt; (보호) -&gt; 부호 -&gt; 듀티 */
@@ -1063,7 +1096,8 @@ void control_set_target(int16_t vl_mm_s, int16_t vr_mm_s)   /* 어느 문맥에�
         <p><strong>코드 설명</strong></p>
         <ul>
           <li><code>int16_t duty[NW]; float meas[NW];</code> — 루프 <strong>밖</strong>의 배열 둘. 6. 의 포획(T6)이 <code>s_cap_wheel</code> 번째 값을 다시 읽어야 하므로 루프 안의 지역 변수로는 안 된다. 골격의 <code>int16_t duty[NW];</code> 한 줄이 이 두 줄이 됐다.</li>
-          <li><code>meas[i] = (float)encoder_delta(i) * TICK_TO_MM_S;</code> — 직전 호출 이후의 카운트(부호 적용, fw-09 실습 B) × "카운트 하나가 1 ms 에 몇 mm/s 인가"(<code>TICK_TO_MM_S</code>, 첫 블록의 매크로). <code>(float)</code> 캐스트가 없으면 <code>int32_t × float</code> 라 어차피 <code>float</code> 로 승격되지만, 뜻을 눈에 보이게 적는다.</li>
+          <li><code>meas[i] = (float)encoder_delta(i) * TICK_TO_MM_S;</code> — 측정 속도다. 직전 호출 이후의 카운트(부호 적용, fw-09 실습 B)에 <code>TICK_TO_MM_S</code>(첫 블록의 매크로)를 곱한다.
+          <code>TICK_TO_MM_S</code> 는 "카운트 하나가 1 ms 에 몇 mm/s 인가"다. <code>(float)</code> 캐스트가 없으면 <code>int32_t × float</code> 라 어차피 <code>float</code> 로 승격되지만, 뜻을 눈에 보이게 적는다.</li>
           <li><code>int16_t tgt = s_target_mm_s[i &amp; 1u];</code> — <code>i &amp; 1u</code> 는 "홀수인가": FL(0) · RL(2) 는 왼쪽 목표, FR(1) · RR(3) 는 오른쪽. <code>enum</code> 의 순서(<code>FL, FR, RL, RR</code>)가 이 한 비트를 가능하게 한다.</li>
           <li><code>float u = pid_step(&amp;s_pid[i], (float)tgt - meas[i]);</code> · <code>duty[i] = (int16_t)u;</code> — 오차는 목표 − 측정. 반환값은 이미 <code>±DUTY_LIMIT_BENCH_PERMILLE</code> 안이라(T10 이 그렇게 넣는다) <code>int16_t</code> 로 자르는 캐스트는 안전하다. <strong><code>duty[i]</code> 는 "전진 = +" 인 채로 둔다</strong>. 골격의 옛 주석은 여기서 <code>MOTOR_SIGN</code> 을 곱했다. 그러면 보호(<code>sgn(target) == sgn(duty)</code>)와 포획의 <code>duty</code> 열이 <code>MOTOR_SIGN = -1</code> 인 바퀴에서 거꾸로 읽힌다. 부호는 드라이버에 쓰는 마지막 줄에서만.</li>
           <li><code>const protect_in_t in = { tgt, (int32_t)meas[i], duty[i] };</code> — 보호에 넘길 셋을 구조체 하나로. 순서는 <code>protect.h</code> 의 필드 순서(목표 · 측정 · 듀티)다. <code>(int32_t)meas[i]</code> 는 소수를 버린다 — 보호의 문턱은 mm/s 정수라 충분하다.</li>
@@ -1120,7 +1154,7 @@ static const protect_cfg_t s_prot_cfg = {           /* 칸 이름 = 키 이름�
             <tr><td><code>s_prot_cfg</code> 를 순서대로 나열하다 한 칸 밀렸다</td><td>컴파일러 경고와 오류가 없다(전부 정수). 어느 보호가 엉뚱한 문턱으로 판정한다</td><td>지정 초기화로</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — 실습 B: §3-2-4 의 기준선(게인 0 → <code>meas</code> · <code>duty</code> 가 0 인 평평한 선), 그다음 게인을 올리며 곡선. 실습 C: §3-3-4 의 ① 에서 <code>prot</code> 열이 <code>2</code> 로 바뀌는 행부터 <code>duty</code> 가 0 이고 LD3 가 켜진다(체크포인트 <code>fblost-trips-on-unplug</code>). 집필 중 호스트 시뮬레이션(엔코더를 끊은 플랜트 모형, 시험용 문턱, 2026-10-03)에서 같은 모양을 확인했다 — <code>prot</code> 가 0 이 아니게 되는 행부터 <code>duty 0</code>, 요약 줄 <code>prot=2 trips=1</code>. 어느 비트가 <strong>먼저</strong> 1 이 되는가는 내 문턱(지속 시간 · 속도 게이트)에 달렸다 — ② 에서 <code>prot</code> 가 <code>4</code> 가 아니라 <code>2</code> 로 먼저 바뀌었다면 코드가 아니라 문턱을 본다.</p>
+        <p><strong>확인</strong> — 실습 B: §3-2-4 의 기준선(게인 0 → <code>meas</code> · <code>duty</code> 가 0 인 평평한 선), 그다음 게인을 올리며 곡선. 실습 C: §3-3-4 의 ① 에서 <code>prot</code> 열이 <code>2</code> 로 바뀌는 행부터 <code>duty</code> 가 0 이고 LD3 가 켜진다(체크포인트 <code>fblost-trips-on-unplug</code>). 집필 중 호스트 시뮬레이션(엔코더를 끊은 플랜트 모형, 시험용 문턱)<sup class="fn"><a href="#fn-17" id="fnref-17">17</a></sup>에서 같은 모양을 확인했다 — <code>prot</code> 가 0 이 아니게 되는 행부터 <code>duty 0</code>, 요약 줄 <code>prot=2 trips=1</code>. 어느 비트가 <strong>먼저</strong> 1 이 되는가는 내 문턱(지속 시간 · 속도 게이트)에 달렸다 — ② 에서 <code>prot</code> 가 <code>4</code> 가 아니라 <code>2</code> 로 먼저 바뀌었다면 코드가 아니라 문턱을 본다.</p>
         </div></details>
 
       <details class="hint" id="hint-t6"><summary>힌트 T6 — <code>control_step_1khz()</code> · 6. step 포획 한 행</summary>
@@ -1163,11 +1197,11 @@ static const protect_cfg_t s_prot_cfg = {           /* 칸 이름 = 키 이름�
           <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
           <tbody>
             <tr><td><code>--s_cap_left</code> 를 빼먹었다</td><td>빌드는 된다. <code>cmd_step()</code> 이 <strong>끝나지 않고</strong> 계속 돈다 — 그 안에서 <code>wdg_service_main()</code> 을 부르므로 IWDG 도 리셋하지 않고, 재주입이 목표를 계속 복구해 <strong>바퀴가 멈추지 않는다.</strong> 남는 수단은 STOP 리스트 5번의 물리적 차단뿐이다</td><td>이 줄. 그리고 첫 <code>step</code> 은 <strong>짧은 ms</strong> 로(§3-2-4 의 경고 상자)</td></tr>
-            <tr><td>자르지 않고 <code>(int16_t)m</code></td><td>컴파일러 경고와 오류가 없다. 같은 꼴을 호스트의 진단 빌드로 돌린 출력(2026-10-03): <code>runtime error: 40000 is outside the range of representable values of type 'short'</code> — 보드에서는 엉뚱한 수가 오류 표시 없이 찍힌다</td><td>범위를 먼저 자른다</td></tr>
+            <tr><td>자르지 않고 <code>(int16_t)m</code></td><td>컴파일러 경고와 오류가 없다. 같은 꼴을 호스트의 진단 빌드로 돌린 출력:<sup class="fn"><a href="#fn-18" id="fnref-18">18</a></sup> <code>runtime error: 40000 is outside the range of representable values of type 'short'</code>. 보드에서는 엉뚱한 수가 오류 표시 없이 찍힌다</td><td>범위를 먼저 자른다</td></tr>
             <tr><td><code>s_cap_n &lt; STEP_CAP_MAX</code> 가드를 뺐다</td><td>지금은 <code>cmd_step()</code> 이 막아 준다. 두 가드가 서로에 의존하는 구조는 한쪽이 바뀌면 깨진다</td><td>둘 다 둔다</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — §3-2-4 의 첫 CSV: 요청한 행 수만큼 나오고 <code>t_ms</code> 가 0 부터 행 번호와 같다(체크포인트 <code>step-csv-captured</code>). 집필 중 호스트 시뮬레이션(2026-10-03)에서 <code>step fl 200 5</code> 가 <code>0,200,0,0,0</code> ~ <code>4,200,0,0,0</code> 다섯 행과 <code>step n=5 prot=0 trips=0</code> 을 냈다.</p>
+        <p><strong>확인</strong> — §3-2-4 의 첫 CSV: 요청한 행 수만큼 나오고 <code>t_ms</code> 가 0 부터 행 번호와 같다(체크포인트 <code>step-csv-captured</code>). 집필 중 호스트 시뮬레이션<sup class="fn"><a href="#fn-19" id="fnref-19">19</a></sup>에서 <code>step fl 200 5</code> 가 <code>0,200,0,0,0</code> ~ <code>4,200,0,0,0</code> 다섯 행과 <code>step n=5 prot=0 trips=0</code> 을 냈다.</p>
         </div></details>
 
       <details class="hint" id="hint-t7"><summary>힌트 T7 — <code>control_get_state()</code> · 계약이 읽을 스냅샷 한 벌</summary>
@@ -1196,13 +1230,18 @@ void control_get_state(state_t *out)      /* 어느 문맥에서든. 실시간 �
           <li><code>out-&gt;tick_ms = tick_get_ms();</code> — 이 스냅샷의 시각.</li>
           <li>골격의 <code>(void)out;</code> 는 지웠다.</li>
         </ul>
-        <p><strong>쓰는 API</strong> — <code>int32_t encoder_count(int wheel);</code>(fw-09 실습 B, "<code>ENC_SIGN_*</code> 적용: 앞으로 돌면 커진다", 어느 문맥이든) · <code>control_fault_flags()</code>(이 파일) · <code>tick_get_ms()</code>(T3 과 같다).</p>
+        <p><strong>쓰는 API</strong> — 셋이다.</p>
+        <ul>
+          <li><code>int32_t encoder_count(int wheel);</code> — fw-09 실습 B. "<code>ENC_SIGN_*</code> 적용: 앞으로 돌면 커진다". 어느 문맥에서든 부를 수 있다.</li>
+          <li><code>control_fault_flags()</code> — 이 파일.</li>
+          <li><code>tick_get_ms()</code> — T3 과 같다.</li>
+        </ul>
         <p><strong>흔한 실수</strong></p>
-        <div class="tbl"><table class="compact fixed"><colgroup><col class="w16"><col class="w60"><col class="w24"></colgroup>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w20"><col class="w60"><col class="w20"></colgroup>
           <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
           <tbody>
-            <tr><td><code>(encoder_count(FL) + encoder_count(RL)) / 2</code> — <code>int32_t</code> 끼리</td><td>컴파일러 경고와 오류가 없다. 같은 꼴을 호스트 진단 빌드로 돌린 출력(2026-10-03): <code>runtime error: signed integer overflow: 2000000000 + 2000000000 cannot be represented in type 'int32_t' (aka 'int')</code>. 94 000 CPR 로 카운트가 2<sup>30</sup> 을 넘는 것은 약 1 만 바퀴(≈ 6 km) — 긴 주행에서 어느 날 부호가 뒤집힌다</td><td><code>(int64_t)</code> 로 올려서 더한다</td></tr>
-            <tr><td><code>NULL</code> 검사 없음</td><td>경고와 오류가 없다. <code>NULL</code> 이 오면 0 번지부터 쓴다. 0 번지는 ITCM 이고 MPU 리전 0 은 그 구간을 덮지 않는다(fw-07 §1 · §2-5). HardFault 가 날 수도, 오류 표시 없이 덮어쓸 수도 있다 [추정 — ITCM 의 ECC(DS13313 §3.3.2) 때문에 문서로는 정할 수 없다]. 검사를 뺀 빌드에서 gdb 로 <code>call control_get_state(0)</code> 뒤 <code>E hardfault:</code> 줄과 <code>x/8wx 0</code> 의 값을 본다</td><td>첫 줄</td></tr>
+            <tr><td><code>(encoder_count(FL) + encoder_count(RL)) / 2</code> — <code>int32_t</code> 끼리</td><td>컴파일러 경고와 오류가 없다. 같은 꼴을 호스트 진단 빌드로 돌린 출력은 다음과 같다. <code>runtime error: signed integer overflow: 2000000000 + 2000000000 cannot be represented in type 'int32_t' (aka 'int')</code>. 긴 주행에서 어느 날 부호가 뒤집힌다.<sup class="fn"><a href="#fn-20" id="fnref-20">20</a></sup></td><td><code>(int64_t)</code> 로 올려서 더한다</td></tr>
+            <tr><td><code>NULL</code> 검사 없음</td><td>경고와 오류가 없다. <code>NULL</code> 이 오면 0 번지부터 쓴다. 0 번지는 ITCM 이고 MPU 리전 0 은 그 구간을 덮지 않는다. HardFault 가 날 수도, 오류 표시 없이 덮어쓸 수도 있다 [추정 — ITCM 의 ECC 때문에 문서로는 정할 수 없다].<sup class="fn"><a href="#fn-21" id="fnref-21">21</a></sup> 검사를 뺀 빌드에서 gdb 로 <code>call control_get_state(0)</code> 뒤 <code>E hardfault:</code> 줄과 <code>x/8wx 0</code> 의 값을 본다</td><td>첫 줄</td></tr>
           </tbody>
         </table></div>
         <p><strong>확인</strong> — 이 쪽에서는 보이는 것이 없다(이 함수를 부르는 코드는 fw-17 에서 생긴다). 빌드가 되고 <code>control.h</code> 의 시그니처와 같으면 끝이다.</p>
@@ -1259,7 +1298,12 @@ static void cmd_pid(int argc, char *argv[])      /* main 문맥 */
           <li>골격의 <code>(void)argc; (void)argv;</code> 는 지웠다.</li>
           <li><strong>다르게 써도 되는 곳</strong> — ① 바퀴마다 다른 게인을 받는 꼴(<code>pid set fl kp 1200</code>)도 가능하다 — 명령 꼴이 달라지고 보고 줄이 넷이 된다. ② 보고를 <code>%d</code> 와 <code>(int)</code> 로 써도 된다 — 서식과 형의 짝만 맞으면.</li>
         </ul>
-        <p><strong>쓰는 API</strong> — <code>long strtol(const char *s, char **end, int base);</code>(<code>&lt;stdlib.h&gt;</code>) · <code>int strcmp(const char *a, const char *b);</code>(<code>&lt;string.h&gt;</code>, 같으면 0) · <code>printf()</code>. 전부 main 문맥에서만.</p>
+        <p><strong>쓰는 API</strong> — 전부 main 문맥에서만 부른다.</p>
+        <ul>
+          <li><code>long strtol(const char *s, char **end, int base);</code> — <code>&lt;stdlib.h&gt;</code>.</li>
+          <li><code>int strcmp(const char *a, const char *b);</code> — <code>&lt;string.h&gt;</code>, 같으면 0.</li>
+          <li><code>printf()</code>.</li>
+        </ul>
         <p><strong>흔한 실수</strong></p>
         <div class="tbl"><table class="compact">
           <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
@@ -1270,7 +1314,7 @@ static void cmd_pid(int argc, char *argv[])      /* main 문맥 */
             <tr><td><code>m / 1000</code></td><td>경고와 오류가 없다. 1200 → 1.0, 700 → 0.0</td><td><code>(float)m / 1000.0f</code></td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — §3-2-4 의 <code>pid</code> 가 <code>pid kp_milli=0 ki_milli=0 kd_milli=0</code> 을 찍고, <code>pid set kp 1200</code> → <code>OK pid</code> → <code>pid</code> 가 1200 을 돌려준다. 집필 중 호스트 시뮬레이션(2026-10-03)에서 <code>pid set kx 1</code> · <code>pid set kp 12x</code> 가 <code>ERR pid bad-arg</code> 로 거절됐다.</p>
+        <p><strong>확인</strong> — §3-2-4 의 <code>pid</code> 가 <code>pid kp_milli=0 ki_milli=0 kd_milli=0</code> 을 찍고, <code>pid set kp 1200</code> → <code>OK pid</code> → <code>pid</code> 가 1200 을 돌려준다. 집필 중 호스트 시뮬레이션<sup class="fn"><a href="#fn-22" id="fnref-22">22</a></sup>에서 <code>pid set kx 1</code> · <code>pid set kp 12x</code> 가 <code>ERR pid bad-arg</code> 로 거절됐다.</p>
         </div></details>
 
       <details class="hint" id="hint-t9"><summary>힌트 T9 — <code>cmd_step()</code> · 계단을 넣고 포획하고 덤프한다</summary>
@@ -1398,7 +1442,12 @@ static void cmd_step(int argc, char *argv[])     /* main 문맥. 이 함수는 �
           <li><code>once</code> 의 0 행(<code>step-once-target-zeroed</code>)</li>
           <li>두 번 연달아 돌린 앞 몇 행(<code>stop-resets-integrator</code>)</li>
         </ul>
-        <p>집필 중 호스트 시뮬레이션(2026-10-03)의 결과는 둘이다. 잘못된 다섯 꼴(<code>step xx 200 100</code> · <code>step fl 200 0</code> · <code>step fl 200 99999</code> · 범위 밖 목표 · <code>step fl 200 100 twice</code>)이 전부 <code>ERR step bad-arg</code> 를 냈다. <code>step fl 200 400 once</code> 의 <code>target_mm_s</code> 열은 200 번 행부터 0 이었다. 보드에서의 시간 · 리셋 · 전압은 내가 확인한다.</p>
+        <p>집필 중 호스트 시뮬레이션의 결과는 둘이다.<sup class="fn"><a href="#fn-23" id="fnref-23">23</a></sup></p>
+        <ul>
+          <li>잘못된 다섯 꼴이 전부 <code>ERR step bad-arg</code> 를 냈다. 다섯 꼴은 <code>step xx 200 100</code> · <code>step fl 200 0</code> · <code>step fl 200 99999</code> · 범위 밖 목표 · <code>step fl 200 100 twice</code> 다.</li>
+          <li><code>step fl 200 400 once</code> 의 <code>target_mm_s</code> 열은 200 번 행부터 0 이었다.</li>
+        </ul>
+        <p>보드에서의 시간 · 리셋 · 전압은 내가 확인한다.</p>
         </div></details>
 
       <details class="hint" id="hint-t10"><summary>힌트 T10 — <code>control_init()</code> · 게인 · 한계를 넣고, 명령 워치독을 "이미 만료" 로 시작한다</summary>
@@ -1434,7 +1483,7 @@ void control_init(void)      /* main 에서 한 번, motor_init() 과 encoder_in
         <div class="tbl"><table class="compact">
           <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
           <tbody>
-            <tr><td><code>PID_KP_MILLI / 1000</code></td><td>두 컴파일러 모두 경고와 오류가 없다(2026-10-03 확인). 1200 → 1.0, 700 → 0.0 — "게인을 올렸는데 곡선이 안 바뀐다"</td><td><code>(float)… / 1000.0f</code></td></tr>
+            <tr><td><code>PID_KP_MILLI / 1000</code></td><td>두 컴파일러 모두 경고와 오류가 없다.<sup class="fn"><a href="#fn-24" id="fnref-24">24</a></sup> 1200 → 1.0, 700 → 0.0 — "게인을 올렸는데 곡선이 안 바뀐다"</td><td><code>(float)… / 1000.0f</code></td></tr>
             <tr><td>한계를 <code>±1000.0f</code> 로</td><td>경고와 오류가 없다. <code>motor_set()</code> 이 자르니 바퀴는 같지만, PID 가 포화를 감지하지 못하는 구간이 생겨 와인드업 방지가 늦게 동작한다 — group 4 가 검사하는 와인드업이 벤치에서 재현된다</td><td><code>DUTY_LIMIT_BENCH_PERMILLE</code></td></tr>
             <tr><td><code>control_init()</code> 을 <code>tick_init()</code> 보다 먼저 불렀다</td><td>경고와 오류가 없다. <code>tick_get_ms()</code> 가 0 이라 결과는 같지만, 호출 순서에 의존하는 코드가 됐다</td><td><code>app_init()</code> 의 순서</td></tr>
           </tbody>
@@ -1648,7 +1697,7 @@ static uint32_t mag(int32_t v) { return (v &lt; 0) ? (uint32_t)0 - (uint32_t)v :
         <div class="tbl"><table class="compact">
           <thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead>
           <tbody>
-            <tr><td><code>(v &lt; 0) ? -v : v</code></td><td>두 컴파일러 모두 경고와 오류가 없다. 값 채점도 <code>PASS protect 24 cases</code>. 진단 줄만 오류를 보고한다: <code>runtime error: negation of -2147483648 cannot be represented in type 'int32_t' (aka 'int'); cast to an unsigned type to negate this value to itself</code>(벡터 8 에서, 2026-10-03 재확인)</td><td>부호 없는 뺄셈으로. 진단 줄의 합격 조건은 진단 메시지가 하나도 없는 것이다</td></tr>
+            <tr><td><code>(v &lt; 0) ? -v : v</code></td><td>두 컴파일러 모두 경고와 오류가 없다. 값 채점도 <code>PASS protect 24 cases</code>. 진단 줄만 오류를 보고한다: <code>runtime error: negation of -2147483648 cannot be represented in type 'int32_t' (aka 'int'); cast to an unsigned type to negate this value to itself</code>(벡터 8 에서)<sup class="fn"><a href="#fn-25" id="fnref-25">25</a></sup></td><td>부호 없는 뺄셈으로. 진단 줄의 합격 조건은 진단 메시지가 하나도 없는 것이다</td></tr>
             <tr><td><code>(uint32_t)(-v)</code></td><td>같다 — 캐스트가 부정 <strong>뒤</strong>라 부정은 여전히 <code>int32_t</code> 에서 일어난다</td><td>캐스트를 먼저</td></tr>
             <tr><td><code>abs(v)</code></td><td><code>&lt;stdlib.h&gt;</code> 가 필요하고, <code>abs(INT_MIN)</code> 도 같은 UB 다</td><td>위와 같다</td></tr>
           </tbody>
@@ -1672,7 +1721,7 @@ static int sgn(int32_t v)
         <ul>
           <li><code>if (v &gt; 0) { return 1; }</code> · <code>if (v &lt; 0) { return -1; }</code> · <code>return 0;</code> — 세 갈래를 순서대로. 반환형이 <code>int</code> 인 것은 −1 을 돌려줘야 하기 때문이다(<code>uint</code> 로는 못 한다).</li>
           <li>골격의 <code>(void)v; return 0;</code> 는 지웠다.</li>
-          <li><strong>다르게 써도 되는 곳</strong> — 한 줄 꼴 <code>return (v &gt; 0) - (v &lt; 0);</code> 도 같은 값이다(비교의 결과가 C 에서는 0 또는 1 인 <code>int</code> 라서). 집필 중 돌려 <code>PASS protect 24 cases</code> 를 확인했다(2026-10-03). 읽기 쉬운 쪽을 고른다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — 한 줄 꼴 <code>return (v &gt; 0) - (v &lt; 0);</code> 도 같은 값이다(비교의 결과가 C 에서는 0 또는 1 인 <code>int</code> 라서). 집필 중 돌려 <code>PASS protect 24 cases</code> 를 확인했다.<sup class="fn"><a href="#fn-26" id="fnref-26">26</a></sup> 읽기 쉬운 쪽을 고른다.</li>
         </ul>
         <p><strong>쓰는 API</strong> — 없다(순수 파일).</p>
         <p><strong>흔한 실수</strong></p>
@@ -1790,7 +1839,7 @@ uint8_t protect_step(protect_t *p, const protect_cfg_t *c, const protect_in_t *i
             <tr><td><code>mag()</code> 를 <code>-v</code> 로</td><td>T11 의 표 — 값 채점은 통과, 진단 줄만 오류를 보고한다</td><td>T11</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — 걸음대로 채우면 §3-3-3 의 첫 줄의 출력이 이렇게 바뀐다(완결 코드를 걸음 단위로 잘라 실제로 돌린 것, 2026-10-03):</p>
+        <p><strong>확인</strong> — 걸음대로 채우면 §3-3-3 의 첫 줄의 출력이 이렇게 바뀐다(완결 코드를 걸음 단위로 잘라 실제로 돌린 것):<sup class="fn"><a href="#fn-27" id="fnref-27">27</a></sup></p>
         <div class="tbl"><table class="compact">
           <thead><tr><th>여기까지 채우면</th><th><code>/tmp/test_protect</code> 가 멈추는 곳</th><th>뜻</th></tr></thead>
           <tbody>
@@ -1935,7 +1984,7 @@ cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_protect.c h723zg/Use
 cc -std=c11 -Wall -Wextra -fsanitize=undefined -Ih723zg/User/Inc host_tests/test_protect.c h723zg/User/Src/Control/protect.c -o /tmp/test_protect_ub &amp;&amp; /tmp/test_protect_ub</code></pre>
       <pre><code class="lang-text">PASS protect 24 cases</code></pre>
       <div class="callout why"><span class="ct">이 쪽에서 진단 줄이 실제로 하는 일 — 집필 중에 확인한 것</span>
-        <p><code>mag()</code> 를 <code>(uint32_t)((v &lt; 0) ? -v : v)</code> 로 쓴 구현을 만들어 두 줄을 다 돌려 봤다(2026-09-23, Mac <code>cc</code>). 결과:</p>
+        <p><code>mag()</code> 를 <code>(uint32_t)((v &lt; 0) ? -v : v)</code> 로 쓴 구현을 만들어 두 줄을 다 돌려 봤다.<sup class="fn"><a href="#fn-28" id="fnref-28">28</a></sup> 결과:</p>
         <pre><code class="lang-text">$ /tmp/test_protect          # 값 채점
 PASS protect 24 cases                                &lt;- 통과한다
 
@@ -1951,26 +2000,34 @@ PASS protect 24 cases                                &lt;- 그래도 PASS 는 �
       <h4 id="s3-3-4">3-3-4. 굽고 보기 — 보호를 연결하고, 일부러 고장을 만든다 <span class="tag power">모터 전원</span></h4>
       <p>연결하는 것은 세 곳이다.</p>
       <ol class="steps">
-        <li><code>control.c</code> 에 <code>#include "Control/protect.h"</code>, <code>static protect_t s_prot[NW];</code>, 그리고 <code>robot_params.h</code> 의 열 문턱으로 채운 <code>static const protect_cfg_t s_prot_cfg = { … };</code>.</li>
+        <li><code>control.c</code> 에 세 줄을 더한다.
+          <ul>
+            <li><code>#include "Control/protect.h"</code></li>
+            <li><code>static protect_t s_prot[NW];</code></li>
+            <li><code>static const protect_cfg_t s_prot_cfg = { … };</code> — <code>robot_params.h</code> 의 열 문턱으로 채운다.</li>
+          </ul></li>
         <li><strong>열 개의 <code>_Static_assert</code></strong> 를 <code>control.c</code> 첫머리에 더한다. 꼴은 <code>MOTOR_SIGN_*</code> 의 것과 같다: <code>_Static_assert((STALL_HOLD_MS) != 0, "robot_params.h: STALL_HOLD_MS is still EMPTY");</code>.
         <code>A &gt; B</code> 를 증명하는 한 줄도 같이 둔다(<code>STALL_TARGET_MIN_MM_S &gt; STALL_SPEED_MAX_MM_S</code>) — §2-7 표의 각주를 컴파일러가 검사하게 된다.</li>
         <li><p><code>control_step_1khz()</code> 의 for 루프에서 <strong>PID 와 <code>motor_set()</code> 사이</strong>에 <code>protect_step()</code> 을 넣는다(§2-10 의 단조 연쇄 — 뒤에 오는 것이 출력을 줄인다).
         트립하면 그 바퀴의 듀티를 0 으로, 적분을 0 으로(§2-5), 그리고 <strong>LD3 를 켠다</strong>(빨강 = fault 래치 — 이 가이드의 LED 역할). 포획 행의 <code>prot</code> 열에 <code>s_prot[wheel].tripped</code> 를 적는다.</p>
-        <p><strong>끊는 범위는 그 바퀴 하나다</strong> — 이 골격은 트립한 바퀴의 듀티만 0 으로 하고 나머지 셋과 EN 네 핀은 건드리지 않는다. 1세대는 같은 사고에 <strong>전 모터 정지 + 주 전원 릴레이 열기</strong>로 대응했다(2026-07-18 의 백스톱).
-        넷을 다 멈출 것인가, EN 까지 내릴 것인가(결정 z, 2026-10-14: 네 핀 전부 — 바퀴 하나가 지시를 수행하지 못하면 모든 바퀴를 세운다)는 안전 상태기계가 결정하고 <a href="fw-18-safety-fsm.html">fw-18</a> 에서 다룬다 — <strong>여기서 좁게 끊는 것이 최종 답이라고 읽지 않는다.</strong></p>
+        <p><strong>끊는 범위는 그 바퀴 하나다</strong> — 이 골격은 트립한 바퀴의 듀티만 0 으로 하고 나머지 셋과 EN 네 핀은 건드리지 않는다.
+        1세대는 같은 사고에 <strong>전 모터 정지 + 주 전원 릴레이 열기</strong>로 대응했다.<sup class="fn"><a href="#fn-29" id="fnref-29">29</a></sup></p>
+        <p>트립했을 때 네 바퀴를 다 멈출지, EN 까지 LOW 로 내릴지는 안전 상태기계가 결정하고 <a href="fw-18-safety-fsm.html">fw-18</a> 에서 다룬다.
+        정해진 범위는 "EN 네 핀 전부"다 — 바퀴 하나가 지시를 수행하지 못하면 모든 바퀴를 멈춘다.<sup class="fn"><a href="#fn-30" id="fnref-30">30</a></sup>
+        <strong>여기서 좁게 끊는 것이 최종 답이라고 읽지 않는다.</strong></p>
         <p>래치를 푸는 정책(자동으로 풀 것인가, 명령으로만 풀 것인가, 얼마나 유지할 것인가)도 <strong>내가 정한다</strong>. 여기서는 "<code>step</code> 을 새로 시작할 때 <code>protect_reset()</code>" 까지만 해 둔다. 계약의 fault 비트로 올리는 것과 해제 정책은 <a href="fw-18-safety-fsm.html">fw-18</a> 에서 정한다.</p></li>
       </ol>
       <p>이제 세 가지를 확인한다. <strong>선을 뽑고 꽂는 일은 전부 <code>pwr down</code> 상태에서</strong> 한다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>#</th><th>만드는 고장</th><th>절차</th><th>보이는 것</th></tr></thead>
         <tbody>
-          <tr><td>①</td><td><strong>FEEDBACK_LOST</strong> — 되먹임이 끊긴다(1세대 2026-07-18 의 재현)</td>
+          <tr><td>①</td><td><strong>FEEDBACK_LOST</strong> — 되먹임이 끊긴다(1세대 사고의 재현)<sup class="fn"><a href="#fn-31" id="fnref-31">31</a></sup></td>
               <td><code>pwr down</code> → 한 바퀴의 엔코더 커넥터를 <strong>뽑는다</strong> → <code>enc</code> 로 그 바퀴 카운트가 더 이상 변하지 않는 것을 손으로 돌려 확인 → <code>pwr up</code> → <code>step &lt;그 바퀴&gt; &lt;목표&gt; &lt;ms&gt;</code></td>
               <td><strong>LD3 가 켜진다.</strong> CSV 에서 <code>duty</code> 가 올라가다가 어느 행부터 0 이 되고, 그 행의 <code>prot</code> 열이 <code>2</code>(<code>PROT_FBLOST</code>) 다. 마지막 요약 줄의 <code>prot</code> 도 같다</td></tr>
-          <tr><td>②</td><td><strong>FEEDBACK_SIGN</strong> — 부호가 뒤집힌다(1세대 2026-07-17~18 의 재현)</td>
+          <tr><td>②</td><td><strong>FEEDBACK_SIGN</strong> — 부호가 뒤집힌다(1세대 사고의 재현)<sup class="fn"><a href="#fn-32" id="fnref-32">32</a></sup></td>
               <td><code>pwr down</code> → 그 바퀴 엔코더의 <strong>A 와 B 를 바꿔 꽂는다</strong> → <code>enc</code> 로 손으로 앞으로 돌렸을 때 카운트가 <strong>줄어드는</strong> 것을 확인 → <code>pwr up</code> → 같은 <code>step</code></td>
               <td>LD3 · <code>prot</code> 열이 <code>4</code>(<code>PROT_FBSIGN</code>). 뒤집힌 되먹임은 양의 되먹임이라 <strong>몇 ms 안에</strong> 듀티가 상한까지 간다 — 보호가 그 듀티를 끊는 데 걸린 시간이 CSV 에 있다</td></tr>
-          <tr><td>③</td><td><strong>오트립하지 않는가</strong> — 정상 급가속(1세대 2026-07-19 의 재현)</td>
+          <tr><td>③</td><td><strong>오트립하지 않는가</strong> — 정상 급가속(1세대 사고의 재현)<sup class="fn"><a href="#fn-33" id="fnref-33">33</a></sup></td>
               <td>선을 <strong>원래대로 돌려놓고</strong> 부호를 <code>enc</code> 로 다시 확인 → 목표를 0 에서 내가 쓰는 가장 큰 값까지 한 번에 주는 <code>step</code></td>
               <td>CSV 의 <code>prot</code> 열이 <strong>처음부터 끝까지 0</strong>. 트립하면 문턱이 잘못된 것이지 코드가 잘못된 것이 아니다 — §2-7 로 돌아가 기울기나 게이트를 다시 정한다</td></tr>
         </tbody>
@@ -2034,7 +2091,7 @@ grep -n "TIM6_DAC_IRQHandler" firmware/h723zg/Core/Src/stm32h7xx_it.c       # �
 grep -n "PeriodElapsedCallback(htim)" $HAL/Src/stm32h7xx_hal_tim.c          # 누가 언제 부르는가
 grep -n "__weak.*PeriodElapsedCallback" $HAL/Src/stm32h7xx_hal_tim.c        # 약한 기본 구현
 grep -rn "control_step_1khz" firmware/h723zg/User/Src                       # 내 정의와 내 호출 (-r: 하위 폴더까지)</code></pre>
-        <p>확인한 것(2026-09-23, FW_H7 V1.13.0): 벡터 테이블의 자리는 <code>startup_stm32h723xx.s:204</code> 의 <code>.word TIM6_DAC_IRQHandler</code> 이고,
+        <p>확인한 것:<sup class="fn"><a href="#fn-34" id="fnref-34">34</a></sup> 벡터 테이블의 자리는 <code>startup_stm32h723xx.s:204</code> 의 <code>.word TIM6_DAC_IRQHandler</code> 이고,
         같은 파일 <code>:509-510</code> 에 <strong>약한 별칭</strong>이 있다(<code>.weak</code> + <code>.thumb_set … , Default_Handler</code>) — 즉 <strong>내가 그 이름의 함수를 정의하지 않으면 무한 루프로 간다.</strong> 정의하는 것은 CubeMX 가 만든 <code>Core/Src/stm32h7xx_it.c</code> 이고 그 안에서 <code>HAL_TIM_IRQHandler(&amp;htim6)</code> 를 부른다(줄 번호는 생성 때마다 다르다).
         <code>HAL_TIM_IRQHandler</code> 는 <code>stm32h7xx_hal_tim.c:3834</code> 에서 시작해 플래그를 하나씩 본다. 업데이트 이벤트 가지는 <code>:3963</code>, 플래그를 지우는 곳이 <code>:3967</code>, 콜백을 부르는 곳이 <code>:3971</code> 이다.
         그 콜백의 약한 기본 구현은 <code>:5803</code>(<code>__weak</code>, 빈 함수)이고 선언은 <code>Inc/stm32h7xx_hal_tim.h:2375</code> 다. 내 <code>tick.c</code> 의 정의가 그 약한 구현을 덮고, 그 안에서 <code>control_step_1khz()</code> 가 불린다.</p>
@@ -2084,6 +2141,45 @@ grep -rn "control_step_1khz" firmware/h723zg/User/Src                       # �
           <code>control.c</code> 의 <code>STEP_CAP_MAX</code> 는 이 스크립트에 <strong>나오지 않는다</strong> — 스크립트가 세는 것은 <code>firmware/</code> 아래의 <code>*.h</code> 뿐이다. 그 하나는 빌드가 <code>_Static_assert</code> 로 막아 준다.</li>
         </ul>
       </div>
+
+      <h2 id="footnotes">각주</h2>
+      <p class="small">본문의 작은 번호를 누르면 여기로 온다. 근거 문서 · 핀 목록 · 1세대 기록 · 확인한 날짜를 모았다. ↩ 를 누르면 본문으로 돌아간다.</p>
+      <ol class="footnotes">
+          <li id="fn-1"><code>hardware/INVENTORY.md</code> 6절 "바퀴 지름" 행 — NOMINAL(gen1-record), 실측 지름 칸은 아직 <code>____</code>. <a class="fn-back" href="#fnref-1" aria-label="본문으로">↩</a></li>
+          <li id="fn-2">1세대 무부하 튜닝값(기록, 2026-07-19). 합격선이 아니다. 출처는 1세대 펌웨어 <code>FW/control/include/motor_ctrl.h:91,149-206</code>. <a class="fn-back" href="#fnref-2" aria-label="본문으로">↩</a></li>
+          <li id="fn-3">1세대 벤치 기록, 2026-07-18. <a class="fn-back" href="#fnref-3" aria-label="본문으로">↩</a></li>
+          <li id="fn-4">1세대 기록, 2026-07-18. <a class="fn-back" href="#fnref-4" aria-label="본문으로">↩</a></li>
+          <li id="fn-5">1세대 기록, 2026-07-19. <a class="fn-back" href="#fnref-5" aria-label="본문으로">↩</a></li>
+          <li id="fn-6">두 규칙이 생긴 경위: 계약 문서의 이전 판은 "200 ms 무프레임", 본편 06 §1-1 의 표는 "200 ms 무명령"이라 적어 두 쪽이 갈려 있었다. <a class="fn-back" href="#fnref-6" aria-label="본문으로">↩</a></li>
+          <li id="fn-7">매크로가 정의된 줄: <code>stm32h7xx_hal.h</code> 의 :865(TIM2) · :868(TIM5). <a class="fn-back" href="#fnref-7" aria-label="본문으로">↩</a></li>
+          <li id="fn-8">매크로가 정의된 줄: <code>stm32h7xx_hal.h</code> 의 :886(TIM23) · :889(TIM24). <a class="fn-back" href="#fnref-8" aria-label="본문으로">↩</a></li>
+          <li id="fn-9">완결 코드의 호스트 시험 · 펌웨어 빌드 확인일: 2026-10-03. <a class="fn-back" href="#fnref-9" aria-label="본문으로">↩</a></li>
+          <li id="fn-10">집필 중 확인, 2026-10-03. <a class="fn-back" href="#fnref-10" aria-label="본문으로">↩</a></li>
+          <li id="fn-11">집필 중 실행, 2026-10-03. <a class="fn-back" href="#fnref-11" aria-label="본문으로">↩</a></li>
+          <li id="fn-12">실행일 2026-10-03. <a class="fn-back" href="#fnref-12" aria-label="본문으로">↩</a></li>
+          <li id="fn-13">2026-09-23, Mac <code>cc</code> 로 컴파일해 실행했다. <a class="fn-back" href="#fnref-13" aria-label="본문으로">↩</a></li>
+          <li id="fn-14">두 컴파일러(Mac <code>cc</code> · arm-gcc)로 확인, 2026-10-03. <a class="fn-back" href="#fnref-14" aria-label="본문으로">↩</a></li>
+          <li id="fn-15">호스트 시뮬레이션 실행일 2026-10-03. <a class="fn-back" href="#fnref-15" aria-label="본문으로">↩</a></li>
+          <li id="fn-16">arm-gcc 로 확인, 2026-10-03. <a class="fn-back" href="#fnref-16" aria-label="본문으로">↩</a></li>
+          <li id="fn-17">호스트 시뮬레이션 실행일 2026-10-03. <a class="fn-back" href="#fnref-17" aria-label="본문으로">↩</a></li>
+          <li id="fn-18">호스트 진단 빌드 실행일 2026-10-03. <a class="fn-back" href="#fnref-18" aria-label="본문으로">↩</a></li>
+          <li id="fn-19">호스트 시뮬레이션 실행일 2026-10-03. <a class="fn-back" href="#fnref-19" aria-label="본문으로">↩</a></li>
+          <li id="fn-20">호스트 진단 빌드 실행일 2026-10-03. 94 000 CPR 로 카운트가 2<sup>30</sup> 을 넘는 것은 약 1 만 바퀴(≈ 6 km)다. <a class="fn-back" href="#fnref-20" aria-label="본문으로">↩</a></li>
+          <li id="fn-21">ITCM 의 위치와 MPU 리전 0 의 범위는 fw-07 §1 · §2-5. ITCM 의 ECC 는 DS13313 §3.3.2. <a class="fn-back" href="#fnref-21" aria-label="본문으로">↩</a></li>
+          <li id="fn-22">호스트 시뮬레이션 실행일 2026-10-03. <a class="fn-back" href="#fnref-22" aria-label="본문으로">↩</a></li>
+          <li id="fn-23">호스트 시뮬레이션 실행일 2026-10-03. <a class="fn-back" href="#fnref-23" aria-label="본문으로">↩</a></li>
+          <li id="fn-24">두 컴파일러(Mac <code>cc</code> · arm-gcc)로 확인, 2026-10-03. <a class="fn-back" href="#fnref-24" aria-label="본문으로">↩</a></li>
+          <li id="fn-25">진단 줄 재확인, 2026-10-03. <a class="fn-back" href="#fnref-25" aria-label="본문으로">↩</a></li>
+          <li id="fn-26">집필 중 실행, 2026-10-03. <a class="fn-back" href="#fnref-26" aria-label="본문으로">↩</a></li>
+          <li id="fn-27">실행일 2026-10-03. <a class="fn-back" href="#fnref-27" aria-label="본문으로">↩</a></li>
+          <li id="fn-28">2026-09-23, Mac <code>cc</code> 로 실행했다. <a class="fn-back" href="#fnref-28" aria-label="본문으로">↩</a></li>
+          <li id="fn-29">1세대 기록, 2026-07-18 의 백스톱. <a class="fn-back" href="#fnref-29" aria-label="본문으로">↩</a></li>
+          <li id="fn-30">결정 z(2026-10-14, <code>.restructure/DECISIONS.md</code>): 네 바퀴의 EN 전부를 LOW 로 한다. 사용자 결정의 문장은 "바퀴 동작을 지시했는데 수행하지 못하면 정지한다(모든 바퀴 정지)"다. <a class="fn-back" href="#fnref-30" aria-label="본문으로">↩</a></li>
+          <li id="fn-31">1세대 기록, 2026-07-18 의 엔코더 GND 단선. <a class="fn-back" href="#fnref-31" aria-label="본문으로">↩</a></li>
+          <li id="fn-32">1세대 기록, 2026-07-17~18 의 부호 뒤집힘. <a class="fn-back" href="#fnref-32" aria-label="본문으로">↩</a></li>
+          <li id="fn-33">1세대 기록, 2026-07-19 의 급가속 오판. <a class="fn-back" href="#fnref-33" aria-label="본문으로">↩</a></li>
+          <li id="fn-34">2026-09-23 에 FW_H7 V1.13.0 으로 확인했다. <a class="fn-back" href="#fnref-34" aria-label="본문으로">↩</a></li>
+      </ol>
 
       <div class="pager"></div>
     </div>

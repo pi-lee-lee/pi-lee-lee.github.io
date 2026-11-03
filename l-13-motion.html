@@ -16,7 +16,8 @@
       <p class="kicker">L13 · 무엇이 움직였나</p>
       <h1>무엇이 움직였나</h1>
       <p class="lead">여기까지 공간을 다룬 쪽들은 전부 <strong>한 장</strong> 위에서 끝났다 — 한 바퀴를 점으로, 점을 좌표로, 좌표를 덩어리와 선분으로.
-      이 쪽에서 처음으로 <strong>두 장</strong>을 나란히 놓는다. 이 쪽이 만드는 도구는 <code>diff.py</code> 이고, 이 도구가 답하는 물음은 하나다: <em>방금 전과 견주어 무엇이 가까워졌는가.</em>
+      이 쪽에서 처음으로 <strong>두 장</strong>을 나란히 놓는다. 이 쪽에서 만드는 것은 헤더 <code>diff.hpp</code> 와 도구 <code>lab_diff</code> 다. 이 도구가 답하는 물음은 하나다: <em>방금 전과 견주어 무엇이 가까워졌는가.</em>
+      헤더의 함수는 넷이다. <code>bin_min()</code> 은 칸마다 가장 가까운 거리를 고른다. <code>diff()</code> 는 가까워진 칸을 덩어리로 묶는다. <code>stationary_mask()</code> 는 가만히 있던 칸을 고르고, <code>bin_diff()</code> 는 칸마다 두 장의 차를 낸다.
       답은 놀랄 만큼 간단하지만, 그 답이 성립하는 <strong>조건</strong>이 이 쪽의 진짜 내용이다 — 센서가 가만히 있어야 한다는 것. 그 조건을 깨뜨리는 실습이 이 쪽의 마지막이고, 그 실패가 <span class="small"><a href="l-14-alignment.html">l-14</a></span> 를 필요하게 만든다.</p>
 
       <div class="goal">
@@ -25,28 +26,35 @@
         <ul>
           <li>아무도 지나가지 않는 방에서도 차분이 <strong>0 이 아니라는 것</strong>을 숫자로 재서 내 노트에 적는다.</li>
           <li>그 위에서 고른 문턱으로 <strong>지나가는 사람만</strong> 덩어리 하나로 남는 것을 본다.</li>
-          <li>센서를 손으로 5 cm 밀면 <strong>같은 도구가 방의 절반을 "움직였다"고 판정하는 것</strong>을 본다.</li>
-          <li><code>python3 tests/test_diff.py</code> 의 마지막 줄은 <code>PASS diff 36 cases</code> 다.</li>
+          <li>센서를 손으로 5 cm 밀면 <strong>같은 도구가 미는 쪽을 마주 본 면을 "움직였다"고 판정하는 것</strong>을 본다.</li>
+          <li><code>build/test_diff</code> 와 진단 빌드(ASan · UBSan 을 켠 빌드, l-01) <code>build/test_diff_ub</code> 가 둘 다 <code>PASS diff 44 cases</code> 한 줄만 찍는다.</li>
         </ul>
         <p><strong>이 쪽에 필요한 것</strong></p>
         <ul>
-          <li><strong>연속된 여러 바퀴</strong>가 든 <code>.scan.jsonl</code> 한 장(실습 A 는 이것만 있으면 끝낼 수 있다)</li>
-          <li><a href="l-10-clusters.html">l-10</a> 까지 끝낸 도구</li>
+          <li><strong>연속된 여러 바퀴</strong>가 든 <code>.scan.jsonl</code> 한 장(실습 A 는 이것만 있으면 끝낼 수 있다). <code>.scan.jsonl</code> 은 라이다의 스캔을 저장한 기록 파일이고, <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> 에서 만든다.</li>
+          <li><a href="l-10-clusters.html">l-10</a> 까지 끝낸 파일과 Pi 의 빌드 도구(<code>g++</code> · <code>cmake</code>) — 아래 <code>.meta</code> 의 "선행" 칸</li>
+          <li><code>diff.hpp</code> 는 포트도 ROS 도 쓰지 않는 순수 헤더라 시험 <code>test_diff</code> 를 Mac 의 <code>clang++</code> 로 연습할 수 있다. 통과의 기준은 Pi 빌드다(결정 L3). 결정 L3 은 라이다 가이드의 설계 결정 번호이고, Mac 에서 해도 되는 것을 정한다(<a href="l-00-map.html">l-00</a>). <a href="l-01-link.html">l-01</a> 의 안전 규칙 L3 · 사이드바의 쪽 번호 L3 과는 다른 번호다.</li>
           <li>실습 B·C 는 라이다 + Pi + 사람 한 명이 기본이다</li>
         </ul>
         <p><strong>없으면</strong></p>
         <ul>
           <li><strong>사람이 지나간 구간</strong>이 들어 있는 기록이 이미 있으면 실습 B 도 파일로 끝낼 수 있고, <strong>미는 순간</strong>이 들어 있는 기록이 있으면 실습 C 도 그렇다.</li>
-          <li>둘 다 없으면 실습 C 는 <strong>합성</strong>으로 대신할 수 있다(§3-3-3). 다만 케이블이 당기거나 센서가 살짝 돌아가는 진짜 사고는 합성으로 재현되지 않는다.</li>
+          <li>Pi 에 <code>g++</code> · <code>cmake</code> 가 없으면 <a href="l-00-map.html">l-00</a> 실습 A 의 체크포인트 <code>host-cpp-toolchain-ready</code> 로 돌아간다(<a href="l-00-map.html#s3-1">l-00 §3-1</a>).</li>
+          <li>둘 다 없으면 실습 C 는 <strong>합성</strong>(센서 없이 계산으로 만든 기록 파일)으로 대신할 수 있다(§3-3-3 의 <code>lab_diff_synth</code>). 다만 케이블이 당기거나 센서가 살짝 돌아가는 진짜 사고는 합성으로 재현되지 않는다.</li>
           <li>파일 자체가 없으면 <a href="l-00-map.html#s1-3">l-00 §1-3</a> 의 표에서 지금 할 수 있는 쪽을 고른다. 파일을 얻는 방법은 <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> 와 <a href="l-06-three-sources.html#s3-4">l-06 §3-4</a> 에 하나씩 있다.</li>
         </ul>
       </div>
 
       <div class="meta">
-        <div><span class="k">환경</span><span class="tag pi">Pi 호스트</span> <span class="tag py">Python</span> <span class="tag mac">Mac</span> <span class="small">(실습마다 붙은 배지가 정본이다 — B·C 만 센서를 만진다)</span></div>
-        <div><span class="k">선행</span><a href="l-10-clusters.html">l-10</a> (덩어리로 자르기) — 실제로 쓰는 것: <code>Cluster</code> / <a href="l-08-floor-plan.html">l-08</a> — <code>to_xy()</code> / <a href="l-04-one-turn.html">l-04</a> — <code>Scan</code> · <code>load_jsonl()</code></div>
+        <div><span class="k">환경</span><span class="tag sim">기록 파일</span> <span class="tag pi">Pi 호스트</span> <span class="tag cpp">C++</span> <span class="small">(실습마다 붙은 배지가 정본이다 — B·C 만 센서를 만진다. 확인 도구 <code>view/peek.py</code> · <code>view/floor_plan.py</code> 는 파이썬 — 전량 제공, 채울 자리 없이 완성된 코드를 준다)</span></div>
+        <div><span class="k">선행</span><a href="l-10-clusters.html">l-10</a> (덩어리로 자르기) — 실제로 쓰는 것: <code>Cluster</code>(<code>pts</code> · <code>idx</code> · <code>width()</code> · <code>centroid()</code>) · <code>gap_stats()</code> /
+          <a href="l-08-floor-plan.html">l-08</a> — <code>to_xy()</code> · <code>Point</code>(<code>geom.hpp</code>) · <code>record_stem()</code> · <code>xy_csv_path()</code> · <code>write_xy_csv()</code>(<code>dump.hpp</code>) /
+          <a href="l-06-three-sources.html">l-06</a> — <code>to_deg()</code>(<code>angles.hpp</code>) /
+          <a href="l-04-one-turn.html">l-04</a> — <code>Scan</code> · <code>load_jsonl()</code> · <code>save_jsonl()</code>(<code>scan_io.hpp</code>) · 도구 <code>lab_turn</code> · <code>lab_scancheck</code> /
+          <a href="l-02-device-id.html">l-02</a> — <code>repr_double()</code>(<code>repr.hpp</code>) · 시험 도구 <code>tests/check.hpp</code>.<br>
+          <strong>빌드에 먼저 있어야 하는 파일</strong> — <code>CMakeLists.txt</code> 의 l-01 ~ l-10 블록이 부르는 소스다. 하나라도 없으면 <code>cmake</code> 가 구성 단계에서 멈춘다. 목록은 <a href="l-10-clusters.html">l-10</a> 의 <code>.meta</code> "빌드에 먼저 있어야 하는 파일" 칸에 l-10 의 파일 셋(<code>cluster.hpp</code> · <code>cluster.cpp</code> · <code>test_cluster.cpp</code>)을 더한 것이다. 이 쪽은 l-09 · l-11 의 코드를 쓰지 않는다. 다만 <code>CMakeLists.txt</code> 에 그 쪽의 줄을 이미 붙였으면 그 쪽의 파일도 있어야 한다.</div>
         <div><span class="k">채우는 INVENTORY 칸</span>없음. 이 쪽의 문턱과 빈 크기는 <strong>내 방과 내 판단</strong>이라 장비 대장에 들어갈 값이 아니다 — 전부 내 노트에 적는다</div>
-        <div><span class="k">이 쪽이 요구하는 수학</span>최대·최소·중앙값과 분위수(<a href="l-10-clusters.html#s2-4">l-10 §2-4</a> 가 쓴 것과 같다), 그리고 코사인 하나 — <strong>센서가 <code>d</code> 만큼 밀리면 각 방향의 거리가 얼마나 바뀌는가</strong>의 식은 §2-4 가 준다. 그 식을 어디에 적용할지는 내가 쓴다</div>
+        <div><span class="k">이 쪽이 요구하는 수학</span>최대·최소·중앙값과 분위수(<a href="l-10-clusters.html#s2-4">l-10 §2-4</a> 가 쓴 것과 같다), 그리고 코사인 하나 — <strong>센서가 <code>d</code> 만큼 밀리면 각 방향의 거리가 얼마나 바뀌는가</strong>의 식은 §2-4 가 준다. 그 식을 어디에 적용할지는 내가 쓴다. 분위수는 <code>lab_diff</code> 가 l-10 의 <code>gap_stats()</code> 로 계산한다</div>
         <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
       </div>
 
@@ -56,23 +64,23 @@
       <p>그리고 "줄었으면"도 쉽지 않다. 아무도 움직이지 않은 방에서 두 장을 빼도 값은 <strong>0 이 아니다</strong> — 얼마나 0 이 아닌지를 먼저 재는 것이 이 쪽의 첫 실습이다.</p>
       <pre class="diagram"><code> 두 바퀴                    방향을 빈으로 묶는다              빈마다 가장 가까운 값
  ──────────────────        ──────────────────────          ─────────────────────
- scan_a  점 &lt;n&gt; 개          0~1°, 1~2°, 2~3° …              a: [1.98, 1.97, … ]
- scan_b  점 &lt;m&gt; 개    ─►    (폭은 내가 정한다)        ─►     b: [1.98, 1.42, … ]
+ 바퀴 a  점 &lt;n&gt; 개          0~1°, 1~2°, 2~3° …              a: [1.98, 1.97, … ]
+ 바퀴 b  점 &lt;m&gt; 개    ─►    (폭은 내가 정한다)        ─►     b: [1.98, 1.42, … ]
  각도도 개수도 다르다        각도가 달라도 같은 칸             차 = a − b
                                                                      │
                      문턱보다 크게 줄어든 칸을 이어 붙인다   ◄───────┘
                                      │
                                      ▼
-                        Cluster — 그 방향의 scan_b 점들</code></pre>
+                        Cluster — 그 방향의 b 점들</code></pre>
       <p>새로 나오는 용어를 먼저 정해 둔다. <strong>아래 둘째와 셋째 줄은 단위가 같은 m 이지만 재는 양이 다르고</strong>, 그 둘을 섞는 것이 이 쪽에서 가장 잦은 잘못이다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>용어</th><th>이 가이드에서의 뜻</th></tr></thead>
         <tbody>
           <tr><td><strong>빈(bin)</strong></td><td>각도를 잘라 놓은 칸. 폭이 <code>bin_deg</code>(도)이고, 한 칸에는 그 각도 범위에 들어온 점이 <strong>0개일 수도 여러 개일 수도</strong> 있다. 칸의 값은 그 안에서 <strong>가장 가까운</strong> 거리다(§2-2)</td></tr>
-          <tr><td><strong>차분 문턱</strong> <code>tol</code></td><td><strong>한쪽 방향</strong>의 양 — "이보다 더 줄었으면 무언가 다가온 것"이라고 내가 선언한 <strong>거리 차</strong>(m). <code>diff(scan_a, scan_b, tol, bin_deg)</code> 의 <code>tol</code> 이 이것이다</td></tr>
+          <tr><td><strong>차분 문턱</strong> <code>tol</code></td><td><strong>한쪽 방향</strong>의 양 — "이보다 더 줄었으면 무언가 다가온 것"이라고 내가 선언한 <strong>거리 차</strong>(m). <code>diff(a, b, tol, bin_deg)</code> 의 <code>tol</code> 이 이것이다</td></tr>
           <tr><td><strong>흔들림 폭</strong> <code>spread_max</code></td><td><strong>양쪽</strong>으로 재는 양 — 같은 빈을 여러 장에서 봤을 때 <code>최대 − 최소</code> 가 이보다 작으면 "가만히 있었다"고 보는 값(m). <code>stationary_mask()</code> 가 쓴다. <strong><code>tol</code> 과 같은 수가 아니다</strong> — 두 값의 관계는 §2-3 이 정한다</td></tr>
           <tr><td><strong>기준선</strong></td><td>아무것도 움직이지 않을 때 나오는 차분의 크기. <strong>재는 값</strong>이지 정하는 값이 아니다(§3-1-4). 문턱은 이 위에서 고른다</td></tr>
-          <tr><td><strong>차분 덩어리</strong></td><td><code>diff()</code> 가 돌려주는 <code>Cluster</code>. <a href="l-10-clusters.html">l-10</a> 의 그 <code>Cluster</code> 그대로이고, 점은 <strong>나중 장(scan_b)</strong> 에서 온다 — "지금 그 물체가 어디 있는가"를 알려야 하기 때문이다</td></tr>
+          <tr><td><strong>차분 덩어리</strong></td><td><code>diff()</code> 가 돌려주는 <code>Cluster</code>. <a href="l-10-clusters.html">l-10</a> 의 그 <code>Cluster</code> 그대로이고, 점은 <strong>나중 장(<code>b</code>)</strong> 에서 온다 — "지금 그 물체가 어디 있는가"를 알려야 하기 때문이다</td></tr>
         </tbody>
       </table></div>
       <p>이 쪽이 <strong>답하지 않는 것</strong>도 먼저 밝혀 둔다. <code>diff()</code> 는 <em>무엇이</em> 움직였는지 모른다 — 사람인지 문인지 커튼인지 모르고, 심지어 <strong>움직인 것이 방인지 센서인지도 모른다.</strong>
@@ -84,24 +92,24 @@
       <p>두 바퀴 <code>a</code>·<code>b</code> 의 같은 방향을 보고 <code>a − b</code> 가 양수면 그 방향의 면이 가까워진 것이다. 판정은 이 부호 하나로 끝난다 — 모델도, 속도 추정도, 학습된 무엇도 없다.</p>
       <p>왜 <strong>줄어든 쪽만</strong> 보는가. 이 도구가 쓰일 자리가 "내 앞을 막는 것이 생겼는가"이기 때문이다. 멀어진 방향은 <strong>비어 있던 곳이 더 비었다</strong>는 뜻이고, 멀어진 방향 때문에 멈출 일은 없다.
       대가는 분명하다 — <strong>지나간 뒤에 생기는 빈자리를 못 본다.</strong> 사람이 벽 앞에서 비켜서면 그 방향은 "멀어졌다"이므로 <code>diff()</code> 는 아무것도 내지 않고, 도구는 사람이 <strong>새로 선 자리</strong>만 안다.</p>
-      <p>절대값 <code>|a − b|</code> 로 바꾸면 양쪽을 다 검출한다. 대신 검출되는 양이 늘어난다 — 뒤의 §2-4 에서 센서를 5 cm 민 경우로 실제 계산해 보면 <strong>36.5 % 가 73.8 %</strong> 가 된다(같은 문턱 0.02 m, 2 m 벽). 무반사가 깜빡인 빈도 양쪽에서 들어온다.
-      <strong>어느 쪽이 옳은 것이 아니다.</strong> 골격은 "줄어든 쪽"으로 고정돼 있고 시험 벡터가 이 방향을 채점한다(벡터 8) — 바꾸고 싶으면 한 줄이고, <strong>그때는 내 벡터를 같이 고쳐야 한다</strong>는 것이 이 쪽에서 배울 것이다.</p>
+      <p>절대값 <code>|a − b|</code> 로 바꾸면 양쪽을 다 검출한다. 대신 검출되는 양이 늘어난다 — 센서를 5 cm 민 경우를 둥근 방(§2-4 의 마지막 열)으로 계산해 보면 <strong>36.5 % 가 73.8 %</strong> 가 된다(같은 문턱 0.02 m, 반지름 2 m — 각주 2). 무반사가 깜빡인 빈도 양쪽에서 들어온다.
+      <strong>어느 쪽이 옳은 것이 아니다.</strong> 골격(채울 자리를 비워 둔 코드)은 "줄어든 쪽"으로 고정돼 있고, 시험 벡터 8 이 이 방향을 채점한다. 시험 벡터는 입력과 기대 출력을 정해 둔 시험 한 건이다(§3-1-3 의 <code>test_diff</code>). 이 검출 방향을 바꾸고 싶으면 고칠 코드는 한 줄이고, <strong>그때는 내 벡터를 같이 고쳐야 한다</strong>는 것이 이 쪽에서 배울 것이다.</p>
       <div class="callout why"><span class="ct">왜 이것이 "가장 단순한 알고리즘"인가</span>
-        <p>정합(다음 쪽)도, 추적(08d)도, SLAM(09)도 전부 <strong>두 장을 견주는 일</strong>이다. 그중 이 쪽의 뺄셈은 <strong>아무것도 추정하지 않는 극단</strong>에 있다 — 두 장의 좌표계가 같다고 <strong>가정해 버리기</strong> 때문에 계산할 것이 없다.
+        <p>정합(다음 쪽)도, 추적(08d)도, SLAM(09)도 전부 <strong>두 장을 견주는 일</strong>이다. 08d 와 09 는 라이다 가이드와 따로 있는 본편의 쪽이다. 08d 는 카메라와 라이다를 합쳐 물체를 추적한다. 09 는 SLAM(지도를 만들면서 그 지도 안의 위치를 함께 추정하는 방법)으로 지도를 만들고 그 위에서 경로를 내는 쪽이다. 정합 · 추적 · SLAM 가운데 이 쪽의 뺄셈은 <strong>아무것도 추정하지 않는 극단</strong>에 있다 — 두 장의 좌표계가 같다고 <strong>가정해 버리기</strong> 때문에 계산할 것이 없다.
         그 가정이 성립하는 동안 이 도구는 계산 비용이 거의 없고, 가정이 성립하지 않는 순간 <strong>오류 없이 틀린 값을 낸다</strong>. 값이 이상해지는 것이 아니라 <strong>그럴듯한 덩어리가 잔뜩 나온다</strong>(§2-4). 이 가이드에서 되풀이되는 유형이다.</p>
       </div>
 
       <h3 id="s2-2">2-2. 각도가 정확히 맞는 두 장은 없다 — 그래서 방향을 칸으로 묶는다</h3>
-      <p><a href="l-04-one-turn.html#s2-2">l-04 §2-2</a> 가 이미 재 두었다 — 회전당 점 수는 센서가 정한 값이 아니라 <strong>결과</strong>이고, 매 바퀴 달라진다. 각도도 마찬가지다. <code>scan_a.a[17]</code> 과 <code>scan_b.a[17]</code> 은 <strong>같은 방향이 아니다.</strong></p>
+      <p><a href="l-04-one-turn.html#s2-2">l-04 §2-2</a> 가 이미 재 두었다 — 회전당 점 수는 센서가 정한 값이 아니라 <strong>결과</strong>이고, 매 바퀴 달라진다. 각도도 마찬가지다. <code>a.a[17]</code> 과 <code>b.a[17]</code> 은 <strong>같은 방향이 아니다.</strong></p>
       <p>그래서 인덱스로 빼는 것은 처음부터 성립하지 않는다. 대신 <strong>각도를 칸으로 자르고</strong>, 두 장을 각각 그 칸에 나눠 넣은 뒤 칸끼리 뺀다. 칸의 폭 <code>bin_deg</code> 는 내가 정하는데, 양쪽으로 대가가 있다.</p>
       <div class="tbl"><table>
         <thead><tr><th>빈을 좁게 설정하면</th><th>빈을 넓게 설정하면</th></tr></thead>
         <tbody>
           <tr><td>같은 면을 두 장이 <strong>다른 칸에서</strong> 보게 되는 일이 잦아진다 — 가만히 있는 벽이 "변했다"가 된다. 비스듬한 면일수록 심하다(<a href="l-10-clusters.html#s2-3-1">l-10 §2-3-1</a> 이 같은 이유로 점 간 거리가 벌어지는 것을 보였다)</td><td>한 칸 안에 <strong>벽과 사람이 같이</strong> 들어온다. 칸의 값은 가장 가까운 것이므로 사람은 보이지만, 사람이 <strong>어디에 있는지</strong>는 칸 폭만큼 불확실해진다</td></tr>
-          <tr><td>빈 칸(측정이 하나도 없는 칸)이 많아진다 — 그 칸은 <code>None</code> 이고 차분에서 빠진다</td><td>먼 거리에서 칸 하나가 덮는 폭이 커진다. 4 m 에서 5° 는 <strong>약 35 cm</strong> 다(<code>4 × 5π/180</code>)</td></tr>
+          <tr><td>빈 칸(측정이 하나도 없는 칸)이 많아진다 — 그 칸은 빈 값(비어 있는 <code>std::optional</code> — 값 하나를 담거나 비어 있는 C++ 형)이고 차분에서 빠진다</td><td>먼 거리에서 칸 하나가 덮는 폭이 커진다. 4 m 에서 5° 는 <strong>약 35 cm</strong> 다(<code>4 × 5π/180</code>)</td></tr>
         </tbody>
       </table></div>
-      <p>하한이 하나 있다 — <strong>빈은 내 각도 간격보다 좁을 이유가 없다.</strong> <a href="l-04-one-turn.html#s2-4">l-04 §2-4</a> 에서 잰 각도 간격의 중앙값이 그 하한이고, σ 가 큰 기기일수록 여유를 더 줘야 한다. 그 두 값은 <strong>내 노트에 이미 적혀 있다</strong>(없으면 l-04 로 돌아가 먼저 잰다).</p>
+      <p>하한이 하나 있다 — <strong>빈은 내 각도 간격보다 좁을 이유가 없다.</strong> <a href="l-04-one-turn.html#s2-4">l-04 §2-4</a> 에서 잰 각도 간격의 중앙값이 그 하한이고, σ(표준편차)가 큰 기기일수록 여유를 더 줘야 한다. 그 두 값은 <strong>내 노트에 이미 적혀 있다</strong>(없으면 l-04 로 돌아가 먼저 잰다).</p>
       <p>칸의 대표값을 <strong>가장 가까운 거리</strong>로 두는 것도 선택이다. 평균이나 중앙값을 쓸 수도 있는데, 무엇이 달라지는지는 숫자로 보인다 — 빈 폭 5° 안에 2.0 m 벽을 보는 점 넷과 1.5 m 사람을 보는 점 하나가 들어왔다고 하자.</p>
       <pre><code class="lang-text">최소 : 1.5 m          → 벽 2.0 m 과 견주면 0.5 m 가까워졌다
 평균 : (2.0×4 + 1.5)/5 = 1.9 m   → 0.1 m 가까워졌다 — 문턱 0.15 m 면 아무 일도 없다
@@ -112,8 +120,8 @@
       <p>아무도 지나가지 않는 방에서 두 바퀴를 빼면 0 이 나올 것 같지만 그렇지 않다. 셋이 겹쳐 있다.</p>
       <ol class="steps">
         <li><strong>칸 안에서 점이 바뀐다.</strong> 두 바퀴가 같은 칸의 <strong>다른 자리</strong>를 찍으므로, 비스듬한 면이면 그 차이가 그대로 거리 차가 된다. 빈 폭이 넓을수록·면이 비스듬할수록 커진다.</li>
-        <li><strong>거리 자체에 산포가 있다.</strong> 데이터시트가 사양으로 적어 둔 하한이 있다. <strong>Distance Resolution</strong> 은 <code>&lt;0.5 mm</code>(1.5 m 이내)이고 전 구간으로는 <strong>거리의 <code>&lt;1 %</code></strong> 다. 출처는 rev.2.2 p.8 Fig 2-1 · v3.0 p.8 Fig 2-1 이고, <strong>두 판이 이 행에서는 같다</strong>. 4 m 면 거리 산포만으로 <strong>4 cm</strong> 다.</li>
-        <li><strong>칸이 깜빡인다.</strong> 무반사 경계에 걸친 칸은 한 장에서 값이 있고 다음 장에서 <code>None</code> 이 된다. 뺄셈에서는 빠지지만, 그 칸은 <strong>내 문턱으로 판정되지 않는 칸</strong>이라는 것을 알아 둬야 한다.</li>
+        <li><strong>거리 자체에 산포가 있다.</strong> 데이터시트(제조사가 낸 RPLIDAR A1 사양 문서)가 사양으로 적어 둔 하한이 있다. <strong>Distance Resolution</strong> 은 <code>&lt;0.5 mm</code>(1.5 m 이내)이고 전 구간으로는 <strong>거리의 <code>&lt;1 %</code></strong> 다. 데이터시트의 <strong>두 판이 이 행에서는 같다</strong>.<sup class="fn"><a href="#fn-1" id="fnref-1">1</a></sup> 4 m 면 거리 산포만으로 <strong>4 cm</strong> 다.</li>
+        <li><strong>칸이 깜빡인다.</strong> 무반사 경계에 걸친 칸은 한 장에서 값이 있고 다음 장에서 빈 값이 된다. 뺄셈에서는 빠지지만, 그 칸은 <strong>내 문턱으로 판정되지 않는 칸</strong>이라는 것을 알아 둬야 한다.</li>
       </ol>
       <p>그래서 순서가 정해진다. <strong>먼저 재고, 그다음 정한다.</strong> 실습 A 가 정지 장면에서 빈마다의 차를 모아 분포를 내고(중앙값·75 %·90 %·최대), 문턱은 그 분포 위에서 고른다. 이 순서를 뒤집으면 — 문턱을 먼저 정하고 재면 — <strong>내 도구의 잡음이 내 방에서 얼마나 큰지를 계속 모른 채</strong> 결과만 보게 된다.</p>
       <div class="callout note"><span class="ct">두 숫자를 섞지 않는다 — <code>spread_max</code> 와 <code>tol</code></span>
@@ -122,26 +130,27 @@
         같은 수를 두 자리에 그냥 넣지 말고, <strong>왜 그 값인지 한 줄을 노트에 적는다.</strong> 두 인자에 기본값이 없는 이유가 이것이다.</p>
       </div>
 
-      <h3 id="s2-4">2-4. 센서가 5 cm 밀리면 방의 절반이 "가까워진다"</h3>
+      <h3 id="s2-4">2-4. 센서가 5 cm 밀리면 마주 본 벽이 통째로 "가까워진다"</h3>
       <p>이 절이 이 쪽의 핵심이다. 차분은 <strong>두 장의 좌표계가 같다</strong>는 가정에 의존하는데, 센서가 조금이라도 움직이면 그 가정이 성립하지 않는다. 얼마나 어긋나는지는 계산할 수 있다.</p>
-      <p>센서가 방향 <code>φ</code> 로 거리 <code>d</code> 만큼 옮겨졌다고 하자. 원래 거리 <code>r</code>, 방향 <code>θ</code> 에 있던 <strong>가만히 있는</strong> 면까지의 거리는 코사인 법칙으로</p>
-      <pre><code class="lang-text">r'(θ) = sqrt( r² + d² − 2·r·d·cos(θ − φ) )        (정확한 식)
-r − r'(θ) ≈ d·cos(θ − φ)                          (d 가 r 보다 훨씬 작을 때)</code></pre>
-      <p>가 된다. 뒷줄이 읽기 쉽다 — <strong>밀린 방향 정면은 정확히 <code>d</code> 만큼 가까워지고, 그 반대쪽은 <code>d</code> 만큼 멀어지며, 옆(±90°)은 거의 그대로다.</strong> 그래서 <code>diff()</code> 에 검출되는 것은 <strong>밀린 쪽 절반</strong>이다.</p>
-      <p>내 문턱으로 그중 얼마가 남는지는 <code>cos(θ − φ) &gt; tol / d</code> 를 푸는 일이고, 그 답은 <strong>거리에 거의 달려 있지 않다.</strong> 아래는 집필자가 위 정확한 식으로 전 방향을 훑어 실제로 센 값이다(<code>d</code> = 0.05 m, 2026-09-23, Mac 의 <code>python3</code>).</p>
+      <p>방의 벽은 평평하다. 센서가 벽 쪽으로 <code>d</code> 만큼 옮겨졌다고 하자. 재는 방향이 벽의 법선(벽에 수직인 방향)과 이루는 각을 <code>α</code> 라 하면, <strong>같은 방향</strong>에서 다시 잰 그 벽까지의 거리는</p>
+      <pre><code class="lang-text">줄어든 거리 = d / cos α        (α = 0 이면 d, 비스듬히 잴수록 d 보다 크다)</code></pre>
+      <p>만큼 줄어든다. 벽까지의 거리는 식에 없다.<sup class="fn"><a href="#fn-2" id="fnref-2">2</a></sup> 그래서 방의 면은 셋으로 갈린다 — <strong>미는 방향을 마주 본 면은 통째로 <code>d</code> 이상 가까워지고, 등진 면은 그만큼 멀어지며, 미는 방향과 나란한 면은 그대로다.</strong> <code>diff()</code> 는 가까워진 쪽만 보므로, 검출되는 것은 <strong>미는 쪽을 마주 본 면</strong>(벽 · 물체)이다. 비스듬히 밀면 <code>d</code> 자리에 벽마다 그 벽 쪽으로 민 성분이 들어간다.</p>
+      <p>아래는 4 m × 3 m 의 합성 방에서 센서를 5 cm 옮긴 바퀴를 <code>lab_diff_synth</code>(§3-3-3)로 만들어, 빈 폭 1° 로 견준 비율이다. 분모는 견준 칸(무반사 칸을 뺀 328 ~ 330 칸)이다.
+      마지막 열은 <strong>둥근 방</strong>(모든 방향의 면이 센서에서 같은 거리)의 근사식이다. 둥근 방에서는 줄어든 거리가 <code>d·cos(θ − φ)</code>(<code>θ</code> = 재는 방향, <code>φ</code> = 미는 방향)이라 문턱을 넘는 방향의 비율이 이 식이 된다. <code>lab_diff --nudge</code> 의 <code>predicted</code> 줄이 이 값을 찍는다.<sup class="fn"><a href="#fn-2">2</a></sup></p>
       <div class="tbl"><table class="compact">
-        <thead><tr><th>내 문턱 <code>tol</code></th><th>2 m 벽</th><th>1 m 벽</th><th>4 m 벽</th><th>근사식 <code>2·degrees(acos(tol/d))/360</code></th></tr></thead>
+        <thead><tr><th>내 문턱 <code>tol</code></th><th>앞으로 (0.05, 0)</th><th>옆으로 (0, 0.05)</th><th>비스듬히 (0.035, 0.035)</th><th>둥근 방 근사식 <code>2·degrees(acos(tol/d))/360</code></th></tr></thead>
         <tbody>
-          <tr><td>0.01 m</td><td><strong>43.2 %</strong></td><td>42.8 %</td><td>43.4 %</td><td>43.6 %</td></tr>
-          <tr><td>0.02 m</td><td><strong>36.5 %</strong></td><td>36.2 %</td><td>36.7 %</td><td>36.9 %</td></tr>
-          <tr><td>0.05 m</td><td><strong>0.0 %</strong></td><td>0.0 %</td><td>0.0 %</td><td>0.0 %</td></tr>
+          <tr><td>0.01 m</td><td><strong>19.1 %</strong></td><td>29.6 %</td><td>47.0 %</td><td>43.6 %</td></tr>
+          <tr><td>0.02 m</td><td><strong>18.8 %</strong></td><td>29.6 %</td><td>47.0 %</td><td>36.9 %</td></tr>
+          <tr><td>0.05 m (= <code>d</code>)</td><td><strong>11.8 %</strong></td><td>22.6 %</td><td>2.7 %</td><td>0.0 %</td></tr>
+          <tr><td>0.07 m</td><td><strong>0.3 %</strong></td><td>4.3 %</td><td>2.4 %</td><td>0.0 %</td></tr>
         </tbody>
       </table></div>
-      <p>세 줄이 보여 주는 것이 다 다르다.</p>
+      <p>네 줄이 보여 주는 것이 다 다르다.</p>
       <ul>
-        <li><strong>첫 줄·둘째 줄</strong>: 5 cm 를 민 것만으로 <strong>전 방향의 3분의 1 이상</strong>이 "무언가 다가왔다"로 판정된다. 방에서 실제로 움직인 것은 <strong>아무것도 없는데</strong>도 그렇다.</li>
-        <li><strong>거리 열 셋이 거의 같다</strong>: 가까운 벽이든 먼 벽이든 똑같이 틀린 판정이 나온다. "멀리 있는 것만 문제"라는 직관은 여기서는 틀린다.</li>
-        <li><strong>셋째 줄</strong>: 문턱을 밀린 거리만큼 키우면 아무것도 안 나온다. <strong>대신 5 cm 다가온 사람도 안 나온다.</strong> 문턱으로는 이 문제를 못 푼다 — <strong>못 푼다는 것</strong>이 이 표의 결론이다.</li>
+        <li><strong>첫 줄·둘째 줄</strong>: 5 cm 를 민 것만으로 견준 방향의 <strong>5분의 1 에서 절반 가까이</strong>가 "무언가 다가왔다"로 판정된다. 방에서 실제로 움직인 것은 <strong>아무것도 없는데</strong>도 그렇다. 두 줄이 거의 같다 — 비율을 정하는 것은 문턱이 아니라 <strong>마주 본 면이 차지하는 각도</strong>다. 앞으로 민 18.8 % 는 앞 벽 40 칸과 상자 22 칸이다(§3-3-3 의 견본).</li>
+        <li><strong>셋째 줄</strong>: 문턱을 민 거리만큼 키워도 마주 본 벽은 남는다. 비스듬히 잰 방향의 <code>d / cos α</code> 가 <code>d</code> 보다 크기 때문이다. 비스듬히 민 열만 거의 0 인 것은 두 벽이 받은 성분이 3.5 cm 씩이라서다. 둥근 방의 식은 이 줄을 0 으로 예측한다.</li>
+        <li><strong>넷째 줄</strong>: 문턱을 더 키우면 마주 본 벽은 사라진다. <strong>대신 그만큼 덜 다가온 사람도 안 나온다.</strong> 그리고 물체 가장자리처럼 가려지는 범위가 바뀌는 칸은 문턱 1 m 에서도 남았다. 문턱으로는 이 문제를 못 푼다 — <strong>못 푼다는 것</strong>이 이 표의 결론이다.</li>
       </ul>
       <div class="callout why"><span class="ct">그래서 다음 쪽이 있다</span>
         <p>센서가 움직였다면 <strong>먼저 얼마나 움직였는지 알아내 두 장을 포갠 뒤에</strong> 빼야 한다. 그 "얼마나"를 스캔만으로 추정하는 것이 정합(scan matching)이고 <span class="small"><a href="l-14-alignment.html">l-14</a></span> 의 내용이다.
@@ -150,19 +159,24 @@ r − r'(θ) ≈ d·cos(θ − φ)                          (d 가 r 보다 훨�
 
       <h3 id="s2-5">2-5. 두 장 사이가 얼마나 벌어져 있는가 — <code>scan_time</code> 은 사양이 아니라 잰 값이다</h3>
       <p>차분의 크기는 <strong>두 장 사이의 시간</strong>에 비례한다. 1 m/s 로 걷는 사람은 0.182 s 사이에 0.182 m 를 간다 — 그 정도면 덩어리 하나가 또렷하지만, 간격이 그 절반이면 차분도 절반이고 문턱을 넘지 못할 수 있다. <strong>그래서 Δt 를 모르면 문턱을 고를 수 없다.</strong></p>
-      <p>Δt 를 네 군데에서 물을 수 있고, 답이 서로 다르다.</p>
+      <p>Δt 를 네 군데에서 물을 수 있고, 답이 서로 다르다. 표에 나오는 이름은 다음과 같다.</p>
+      <ul>
+        <li><code>LaserScan</code> — ROS 2 가 라이다 스캔 한 장을 담는 표준 메시지.</li>
+        <li>07 — 라이다 가이드와 따로 있는 본편의 쪽. 컨테이너 안의 ROS 2 드라이버로 스캔 메시지를 받는다.</li>
+        <li><code>ros2$</code> — 그 컨테이너 안의 셸에서 친다는 표시.</li>
+      </ul>
       <div class="tbl"><table class="fixed"><colgroup><col class="w10"><col class="w35"><col class="w45"><col class="w10"></colgroup>
         <thead><tr><th>갈래</th><th>어디</th><th>무엇이라 하는가</th><th>내 값</th></tr></thead>
         <tbody>
-          <tr><td>① 정의</td><td><code>sensor_msgs/msg/LaserScan.msg</code>(ros2/common_interfaces, <code>humble</code> 가지 — 집필자가 <strong>2026-09-23 에 받아서</strong> 열었다)</td><td><code>float32 scan_time # time between scans [seconds]</code> — <strong>"스캔 사이의 시간"</strong> 이라고만 하고 <strong>무엇으로 재는지는 말하지 않는다.</strong> 내 컨테이너에서 보는 명령은 <code>ros2$ ros2 interface show sensor_msgs/msg/LaserScan</code></td><td>—</td></tr>
-          <tr><td>② 사양</td><td>데이터시트 rev.2.2 p.8 Fig 2-1 · v3.0 p.8 Fig 2-1(<strong>두 판 같다</strong>)</td><td>Scan Rate 는 최소 1 Hz(주기 1 000 ms) · 전형 <strong>5.5 Hz(주기 약 182 ms)</strong> · 최대 10 Hz(100 ms). ⚠ 전형값에는 <em>"360 samples per scan 일 때 측정"</em> 이라는 조건이 붙어 있다 — <strong>한 바퀴가 182 ms 라고 단정할 수 없다</strong></td><td>—</td></tr>
-          <tr><td>③ 구현</td><td>드라이버 <code>src/rplidar_node.cpp</code> (GitHub <code>Slamtec/rplidar_ros</code> <code>ros2</code> 가지, 집필자가 <strong>2026-09-23 에 받아서</strong> 열었다)</td><td><code>:467-470</code> 이 <code>grabScanDataHq()</code> 호출 <strong>전후의 시각을 기록해 그 차</strong>를 <code>scan_duration</code> 으로 두고, <code>:255</code> 가 <code>scan_duration</code> 을 <code>scan_time</code> 에 그대로 넣는다. <strong>사양값이 아니라 그 바퀴를 받는 데 실제로 걸린 시간</strong>이다</td><td>—</td></tr>
+          <tr><td>① 정의</td><td><code>sensor_msgs/msg/LaserScan.msg</code>(ROS 2 의 표준 메시지 정의 파일)<sup class="fn"><a href="#fn-3" id="fnref-3">3</a></sup></td><td><code>float32 scan_time # time between scans [seconds]</code> — <strong>"스캔 사이의 시간"</strong> 이라고만 하고 <strong>무엇으로 재는지는 말하지 않는다.</strong> 내 컨테이너에서 보는 명령은 <code>ros2$ ros2 interface show sensor_msgs/msg/LaserScan</code></td><td>—</td></tr>
+          <tr><td>② 사양</td><td>데이터시트의 성능 표(<strong>두 판 같다</strong>)<sup class="fn"><a href="#fn-4" id="fnref-4">4</a></sup></td><td>Scan Rate 는 최소 1 Hz(주기 1 000 ms) · 전형 <strong>5.5 Hz(주기 약 182 ms)</strong> · 최대 10 Hz(100 ms). ⚠ 전형값에는 <em>"360 samples per scan 일 때 측정"</em> 이라는 조건이 붙어 있다 — <strong>한 바퀴가 182 ms 라고 단정할 수 없다</strong></td><td>—</td></tr>
+          <tr><td>③ 구현</td><td>드라이버 소스 <code>src/rplidar_node.cpp</code>(제조사 Slamtec 의 ROS 2 드라이버)<sup class="fn"><a href="#fn-5" id="fnref-5">5</a></sup></td><td>이 파일이 <code>grabScanDataHq()</code> 호출 <strong>전후의 시각을 기록해 그 차</strong>를 <code>scan_duration</code> 으로 두고, <code>scan_duration</code> 을 <code>scan_time</code> 에 그대로 넣는다.<sup class="fn"><a href="#fn-6" id="fnref-6">6</a></sup> <strong>사양값이 아니라 그 바퀴를 받는 데 실제로 걸린 시간</strong>이다</td><td>—</td></tr>
           <tr><td>④ 실물</td><td>내 기록 파일(컨테이너가 있으면 07 §3-5 의 <code>ros2 topic echo /scan --field scan_time --once</code> 로 한 번 더)</td><td>이웃한 두 바퀴의 <code>t</code> 차 — <code>scans[i+1].t − scans[i].t</code></td><td><code>____</code> s</td></tr>
         </tbody>
       </table></div>
       <p class="small">⚠ ① 에 대해: 07 §1-1 은 같은 필드를 <em>"한 바퀴에 걸린 시간"</em> 으로 옮겨 적는다. <strong>같은 필드를 두 가지로 읽을 수 있다</strong>는 것이 ① 갈래의 수확이다.</p>
-      <p class="small">③ 에 대해: <code>:256</code> 의 <code>time_increment</code> 도 <code>scan_duration</code> 을 점 수로 나눈 값이다.</p>
-      <p class="small">넷이 다르면 <strong>④가 내 기기의 사실</strong>이고, 나머지는 각자 "무엇을 가정했는가"를 보여 준다. ⚠ ③의 <code>파일:줄</code> 은 <strong>GitHub 의 그 가지</strong>이고, 내 컨테이너에 설치된 <code>ros-humble-rplidar-ros</code> 2.1.4 와 같은 판인지는 <strong>확인되지 않았다</strong>. 내 설치본의 소스를 받아 여는 절차는 <a href="l-06-three-sources.html#s2-6">l-06 §2-6</a> 에 있다. <strong>확인 과제로 둔다.</strong></p>
+      <p class="small">③ 에 대해: 같은 파일의 <code>time_increment</code> 도 <code>scan_duration</code> 을 점 수로 나눈 값이다.<sup class="fn"><a href="#fn-7" id="fnref-7">7</a></sup></p>
+      <p class="small">넷이 다르면 <strong>④가 내 기기의 사실</strong>이고, 나머지는 각자 "무엇을 가정했는가"를 보여 준다. ⚠ ③ 의 소스와 줄 번호는 <strong>GitHub 의 드라이버 저장소(<code>ros2</code> 가지)</strong>에서 받은 것이고, 내 컨테이너에 설치된 <code>ros-humble-rplidar-ros</code> 2.1.4 와 같은 판인지는 <strong>확인되지 않았다</strong>. 내 설치본의 소스를 받아 여는 절차는 <a href="l-06-three-sources.html#s2-6">l-06 §2-6</a> 에 있다. <strong>확인 과제로 둔다.</strong></p>
       <p>④ 는 <strong>기록 파일 한 장으로 끝난다</strong> — ROS 도 컨테이너도 필요 없다. 기준 형식의 <code>t</code> 는 첫 바퀴가 0.0 인 초 단위 값이므로(l-04 가 고정했다) 이웃한 두 줄을 빼면 바로 나온다. 실습 A 의 첫 걸음이 이 뺄셈이다.</p>
       <div class="callout note"><span class="ct">여기서 멈추는 자리</span>
         <p><code>header.stamp</code> 와 <code>time_increment</code> 로 <strong>"한 바퀴는 순간이 아니다"</strong> 를 보는 일 — 한 바퀴 도는 동안 로봇이 움직여 생기는 모션 왜곡 — 은 <span class="small"><a href="l-15-illusions.html">l-15</a></span> 에서 다룬다. 그 절은 <strong>기록 파일로는 끝낼 수 없다</strong>(기준 형식의 <code>t</code> 는 도착 시각이라 <code>header.stamp</code> 를 담지 못한다).
@@ -170,7 +184,7 @@ r − r'(θ) ≈ d·cos(θ − φ)                          (d 가 r 보다 훨�
       </div>
 
       <h3 id="s2-6">2-6. 08d 와 무엇이 다른가 — 라이다 단독이 아는 것은 "움직였다"까지다</h3>
-      <p>본편 08d 는 <strong>카메라 박스의 프레임 간 연관</strong>을 소유한다(<a href="08d-tracking-fusion.html">08d</a> §2-1: 예측 → IoU 매칭 → 생애주기, 그리고 트랙마다 붙는 <code>id</code>). 이 쪽의 <code>diff()</code> 는 08d 의 연관과 <strong>겹치지 않는다.</strong></p>
+      <p>본편의 08d 는 <strong>카메라 박스의 프레임 간 연관</strong>을 소유한다(<a href="08d-tracking-fusion.html">08d</a> §2-1: 예측 → IoU 매칭 → 생애주기, 그리고 트랙마다 붙는 <code>id</code>). IoU 는 두 박스가 겹치는 비율이다. 이 쪽의 <code>diff()</code> 는 08d 의 연관과 <strong>겹치지 않는다.</strong></p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>물음</th><th>이 쪽(라이다 단독)</th><th>08d(카메라 + 라이다)</th></tr></thead>
         <tbody>
@@ -185,366 +199,1100 @@ r − r'(θ) ≈ d·cos(θ − φ)                          (d 가 r 보다 훨�
 
       <h2 id="lab">3. 실습</h2>
       <p>실습 셋의 순서에 뜻이 있다 — <strong>A 로 내 방의 기준선(가만히 있을 때의 차분 크기)을 재고, B 에서 기준선 위로 올라오는 것을 골라내고, C 에서 그 판정이 틀리게 만든다.</strong> A 를 건너뛰고 B 로 가면 문턱을 <strong>눈대중으로</strong> 고르게 되고, 그러면 결과가 좋든 나쁘든 이유를 댈 수 없다.</p>
-      <div class="callout warn"><span class="ct">실습 B·C 는 머리가 도는 센서 앞에 사람이 지나가고, 사람 손이 센서를 만진다</span>
+      <p>실습 셋은 같은 도구 하나(<code>build/lab_diff</code>)를 쓴다. 주는 값이 늘면 하는 일이 바뀐다 — 빈 폭만 주면 실습 A 의 분포, 문턱까지 주면 실습 B 의 덩어리, <code>--after</code> 로 두 번째 기록을 주면 실습 C 의 비교다.
+      A 에서 헤더 <code>diff.hpp</code> 를 채워 도구를 만든다. 빌드와 실행은 Pi 에서 한다. 명령 앞의 <code>pi$</code> 는 Pi 의 셸에서 친다는 표시다. Mac 에서는 시험 <code>test_diff</code> 만 연습할 수 있다(결정 L3).</p>
+      <div class="callout warn"><span class="ct">실습 B·C 는 머리가 도는 센서 앞에 사람이 지나가고, 사람이 손으로 센서를 옮긴다</span>
         <ul>
-          <li><strong>레이저는 눈에 보이지 않는다.</strong> Class I · 785 nm 는 적외선이라 켜졌는지 눈으로 알 수 없다 — 위험해서가 아니라 <strong>보이지 않아서 조심하는 습관이 안 생긴다.</strong> 실습 B 에서 지나가는 사람이 <strong>센서 높이에서 스캔 창을 들여다보지 않게</strong> 한다(무릎 높이에 둔 센서라면 더 쉽게 일어난다).</li>
-          <li><strong>도는 머리에 손·머리카락·천·케이블을 가까이 두지 않는다.</strong> 실습 B 는 사람이 센서 옆을 지나가는 실습이다 — <strong>지나가는 거리를 미리 정해 두고</strong>(예: 1 m 이상) 그 선을 지킨다. 실습 C 에서 센서를 옮길 때는 <strong>모터를 멈춘 뒤</strong>(<code>dtr=True</code>) 든다.</li>
+          <li><strong>레이저는 눈에 보이지 않는다.</strong> 광원은 785 nm 적외선이라 켜졌는지 눈으로 알 수 없다. 등급은 Class I 이다 — 데이터시트에 "정상 사용에서 안전하다"고 적힌 등급이다. 조심할 이유는 위험이 아니라 <strong>보이지 않아서 조심하는 습관이 안 생긴다는 것</strong>이다. 실습 B 에서 지나가는 사람이 <strong>센서 높이에서 스캔 창을 들여다보지 않게</strong> 한다(무릎 높이에 둔 센서라면 더 쉽게 일어난다).</li>
+          <li><strong>도는 머리에 손·머리카락·천·케이블을 가까이 두지 않는다.</strong> 실습 B 는 사람이 센서 옆을 지나가는 실습이다 — <strong>지나가는 거리를 미리 정해 두고</strong>(예: 1 m 이상) 그 선을 지킨다. 실습 C 에서 센서를 옮길 때는 <strong>모터를 멈춘 뒤</strong>(<code>motor(fd, false)</code> — <a href="l-01-link.html#s3-3">l-01 §3-3</a>. 기록을 끝낸 <code>lab_turn</code> 이 끝에서 부른다) 든다. 끝난 뒤에도 머리가 돌면 USB 케이블을 뽑는다(<a href="l-01-link.html">l-01</a> 의 L2 — 도는 머리 규칙).</li>
           <li><strong>케이블에 여유를 둔다.</strong> 실습 C 는 일부러 센서를 미는 실습이라 케이블이 당겨지기 가장 쉬운 자리다. <a href="l-01-link.html">l-01</a> 에서 만든 받침과 센서 자리 표시(l-01 의 기준선)가 여기서 쓸모가 있다 — <strong>케이블이 당겨서 센서가 돌아가면 그 뒤의 모든 쪽이 다른 기준으로 잰 값이 된다.</strong></li>
         </ul>
       </div>
+      <div class="callout note"><span class="ct">이 쪽의 도구는 모터를 부르지 않는다</span>
+        <p>이 쪽의 도구(<code>lab_diff</code> · <code>lab_diff_synth</code> · <code>peek.py</code> · <code>floor_plan.py</code>)는 포트를 열지 않고 모터를 부르지 않는다 — 라이다가 꽂혀 있고 머리가 돌고 있었다면 <strong>그대로 돈다. 돈다고 간주한다.</strong>
+        기록은 <a href="l-04-one-turn.html">l-04</a> 의 <code>lab_turn</code> 으로 한다. 그 도구는 끝에 <code>motor(fd, false)</code> 로 머리를 멈춘다 — 끝난 뒤에도 돌면 USB 케이블을 뽑는다(<a href="l-01-link.html">l-01</a> 의 L2). 레이저 규칙 L1 도 l-01 이 소유한다.</p>
+        <p>L1 · L2 는 l-01 이 정한 안전 규칙 번호다. L1 은 보이지 않는 785 nm 레이저에 관한 규칙이다 — 스캔 창을 렌즈 높이에서 정면으로 들여다보지 않는다. L2 는 도는 머리에 관한 규칙이다. 결정 L3 과는 다른 번호다.</p>
+      </div>
+      <div class="callout tip"><span class="ct">힌트 카드 읽는 법</span>
+        <p>골격의 빈 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 있다. 이 쪽은 T1 ~ T4 다 — <code>bin_min()</code> · <code>diff()</code> · <code>stationary_mask()</code> · <code>bin_diff()</code>. 카드는 넷 다 실습 A 의 §3-1-3 에 있다. 주석 안의 번호 걸음을 보고 먼저 직접 써 본다.</p>
+        <p>막히면 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와 <strong>줄마다의 설명</strong>이 있다. 칸은 늘 같다: 할 일 · 완결 코드 · 코드 설명 · 다르게 써도 되는 곳 · 쓰는 API · 흔한 실수 · 확인.</p>
+        <p>T1 ~ T4 는 시험 <code>test_diff</code> 가 채점한다. 완결 코드는 Pi 에서 실행해 본 것이 아니다. Pi 의 빌드와 내 기록 파일에서의 결과는 "돌리고 보기"(실습마다 마지막 걸음 — 명령을 실행해 출력을 보는 절, 예: <a href="#s3-1-4">§3-1-4</a>)에서 내가 확인한다.<sup class="fn"><a href="#fn-8" id="fnref-8">8</a></sup></p>
+        <p>붙여 넣고 끝내지 않는다. 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
+      </div>
 
       <h3 id="s3-1">3-1. 실습 A — 아무도 지나가지 않을 때, 차분의 잡음은 얼마나 큰가 <span class="tag sim">기록 파일</span></h3>
-      <p>이 실습은 <strong>연속된 여러 바퀴가 든 기록 파일 한 장</strong>이면 끝난다. 라이다도 Pi 도 필요 없고, ROS 를 <code>import</code> 하지 않으므로 Mac 에서 실행해도 된다.</p>
+      <p>이 실습은 <strong>연속된 여러 바퀴가 든 기록 파일 한 장</strong>이면 끝난다. 라이다는 필요 없다. 빌드와 실행은 Pi 에서 하고, 시험 <code>test_diff</code> 는 Mac 의 <code>clang++</code> 로도 연습할 수 있다(결정 L3).</p>
 
       <h4 id="s3-1-1">3-1-1. 확인 — 입력이 무엇이고, 앞 쪽이 무엇을 이미 정해 두었는가</h4>
       <p>먼저 <strong>이 실습이 전제하는 값</strong>을 한 표에 모은다. 오른쪽 열이 핵심이다 — <strong>내가 어떻게 그 값을 눈으로 보는가</strong>가 없는 값은 이 표에 넣지 않는다.</p>
+      <p>"출처 · 등급" 열의 등급은 다음과 같다.</p>
+      <ul>
+        <li><strong>확정</strong> — 근거 문서(데이터시트 등)에 값이 그대로 적혀 있다.</li>
+        <li><strong>MEASURED</strong> — 이 프로젝트에서 잰 값이다. 이 표에서는 앞 쪽에서 재서 내 노트에 적은 값이다.</li>
+        <li><strong>확인 과제</strong> — 이 가이드를 쓴 사람이 확인하지 못한 사실이다. 실물이나 뒤 쪽에서 확인한다.</li>
+      </ul>
       <div class="tbl"><table>
         <thead><tr><th>항목</th><th>값</th><th>출처 · 등급</th><th>내 장치에서 보는 법</th></tr></thead>
         <tbody>
-          <tr><td>기록 파일의 바퀴 수</td><td><code>____</code></td><td>내 파일 — <strong>확인 과제</strong></td><td><code>pi$ wc -l</code> 에서 <strong>1 을 뺀다</strong>(첫 줄은 머리 줄이다)</td></tr>
-          <tr><td>두 바퀴 사이의 Δt</td><td><code>____</code> s</td><td>내 파일의 <code>t</code> — <strong>확인 과제</strong>(§2-5 ④)</td><td>이웃한 두 줄의 <code>t</code> 를 뺀다. 아래 2번 명령</td></tr>
-          <tr><td>회전수 사양</td><td>1 / 5.5 / 10 Hz</td><td>데이터시트 rev.2.2 p.8 Fig 2-1 · v3.0 p.8 Fig 2-1 — <strong>확정</strong>(전형값에는 <code>360 samples per scan</code> 조건이 붙는다)</td><td>위의 Δt 와 견준다. 다르면 §2-5 ③ 이 이유를 준다</td></tr>
+          <tr><td>기록 파일의 바퀴 수</td><td><code>____</code></td><td>내 파일 — <strong>확인 과제</strong></td><td>아래 4번 <code>peek.py</code> 의 <code>turns</code> 칸</td></tr>
+          <tr><td>두 바퀴 사이의 Δt</td><td><code>____</code> s</td><td>내 파일의 <code>t</code> — <strong>확인 과제</strong>(§2-5 ④)</td><td>이웃한 두 바퀴의 <code>t</code> 를 뺀다. 아래 4번 명령이 바퀴마다 <code>t</code> 를 찍는다</td></tr>
+          <tr><td>회전수 사양</td><td>1 / 5.5 / 10 Hz</td><td>데이터시트의 성능 표 — <strong>확정</strong>(전형값에는 <code>360 samples per scan</code> 조건이 붙는다)<sup class="fn"><a href="#fn-9" id="fnref-9">9</a></sup></td><td>위의 Δt 와 견준다. 다르면 §2-5 ③ 이 이유를 준다</td></tr>
           <tr><td>각도 간격 중앙값</td><td><code>____</code>°</td><td><a href="l-04-one-turn.html#s2-4">l-04 §2-4</a> 에서 잰 값 — <strong>MEASURED(내 노트)</strong></td><td><code>turn_stats()</code> 의 <code>gap_median</code>. 노트에 없으면 l-04 로 돌아간다</td></tr>
-          <tr><td>거리 산포의 사양 하한</td><td><code>&lt;0.5 mm</code>(1.5 m 이내) · 전 구간 <strong>거리의 <code>&lt;1 %</code></strong></td><td>데이터시트 rev.2.2 p.8 Fig 2-1 · v3.0 p.8 Fig 2-1 — <strong>확정</strong></td><td>같은 벽을 여러 장에서 보고 흔들림 폭을 재서 이 값과 견준다(§3-1-4)</td></tr>
+          <tr><td>거리 산포의 사양 하한</td><td><code>&lt;0.5 mm</code>(1.5 m 이내) · 전 구간 <strong>거리의 <code>&lt;1 %</code></strong></td><td>데이터시트의 성능 표 — <strong>확정</strong><sup class="fn"><a href="#fn-10" id="fnref-10">10</a></sup></td><td>같은 벽을 여러 장에서 보고 흔들림 폭을 재서 이 값과 견준다(§3-1-4)</td></tr>
           <tr><td>빈 폭 <code>bin_deg</code></td><td><code>____</code>°</td><td><strong>내가 정한다</strong> — 근거는 위 각도 간격(§2-2)</td><td>§3-1-4 에서 두세 값으로 실행해 보고 정한다</td></tr>
           <tr><td>차분 문턱 <code>tol</code></td><td><code>____</code> m</td><td><strong>내가 정한다</strong> — 근거는 §3-1-4 의 분포</td><td>같은 자리</td></tr>
         </tbody>
       </table></div>
-      <p><strong>실행 확인:</strong> 미확인 — 집필자에게는 기록 파일이 없다(라이다는 Pi 에 있다). 아래는 출력의 <em>모양</em>이고 값 자리는 <code>&lt;n&gt;</code> 이다. ⚠ <strong>다만 이 쪽의 골격과 시험 벡터는 집필자가 Mac 의 <code>python3</code> 로 실제로 실행했다</strong>(2026-09-23 · 결정 L3 — ROS 를 <code>import</code> 하지 않는 순수 파이썬).</p>
-      <div class="tbl"><table class="fixed"><colgroup><col class="w5"><col class="w40"><col class="w25"><col class="w30"></colgroup>
+      <p><strong>실행 확인: 미확인</strong> — 이 가이드를 쓴 사람은 Pi 에 접속하지 못했고 라이다를 동작시키지 못했다. 아래는 출력의 <em>모양</em>이고 값 자리는 <code>&lt;n&gt;</code> 이다.</p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w5"><col class="w35"><col class="w25"><col class="w35"></colgroup>
         <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
         <tbody>
-          <tr><td>1</td><td><code>pi$ wc -l scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl</code></td><td><code>&lt;n&gt; scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl</code> — <strong>2 이하면 이 쪽을 못 한다</strong>(머리 줄 + 바퀴 하나)</td><td>여러 바퀴가 든 파일을 다시 기록한다 — <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a>(30초를 파일로) 또는 <a href="l-06-three-sources.html#s3-4">l-06 §3-4</a>(<code>/scan</code> 에서)</td></tr>
-          <tr><td>2</td><td><code>pi$ python3 -c "import sys; sys.path.insert(0,'scripts/lidar_lab'); from turn import load_jsonl; s=load_jsonl('scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl'); print(len(s), [round(x.t,3) for x in s[:4]])"</code></td><td><code>&lt;n&gt; [0.0, &lt;t1&gt;, &lt;t2&gt;, &lt;t3&gt;]</code> — <strong>첫 값이 0.0</strong> 이고 나머지가 오름차순이면 기준 형식대로다</td><td><code>ValueError: line &lt;n&gt;: …</code> 가 나면 <strong>로더가 거부한 것</strong>이다. 어느 조건을 어겼는지 메시지에 그대로 나온다 → <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a></td></tr>
-          <tr><td>3</td><td><code>pi$ ls scripts/lidar_lab/cluster.py scripts/lidar_lab/geom.py</code></td><td>두 줄 다 나온다 — 이 쪽은 <code>Cluster</code> 와 <code>to_xy()</code> 를 그대로 쓴다</td><td>없으면 <a href="l-10-clusters.html">l-10</a> · <a href="l-08-floor-plan.html">l-08</a> 을 먼저 끝낸다. <strong>이 쪽은 그 둘을 다시 만들지 않는다</strong></td></tr>
+          <tr><td>1</td><td><code>pi$ g++ --version</code> · <code>pi$ cmake --version</code></td><td><code>g++ … &lt;n&gt;.&lt;n&gt;.&lt;n&gt;</code> · <code>cmake version 3.&lt;n&gt;.&lt;n&gt;</code></td><td><a href="l-00-map.html#s3-1">l-00 §3-1</a> 로 돌아간다. Mac 의 <code>clang++</code> 는 시험 연습용이다(결정 L3)</td></tr>
+          <tr><td>2</td><td><code>pi$ ls scripts/lidar_lab/include/lidar_lab/ scripts/lidar_lab/build/CMakeCache.txt</code></td><td><code>cluster.hpp</code> · <code>geom.hpp</code> · <code>dump.hpp</code> · <code>scan_io.hpp</code> 가 보이고, 빌드 디렉터리 경로가 나온다</td><td>위 <code>.meta</code> 의 "선행" 칸의 파일을 먼저 만든다. 빌드 디렉터리가 없으면 저장소 루트에서 <code>pi$ cmake -S scripts/lidar_lab -B scripts/lidar_lab/build</code> 를 한 번 한다</td></tr>
+          <tr><td>3</td><td><code>pi$ ls scripts/lidar_lab/scans/</code></td><td><code>&lt;이름&gt;.scan.jsonl</code> 이 하나 이상</td><td>여러 바퀴가 든 파일을 기록한다 — <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a>(30초를 파일로) 또는 <a href="l-06-three-sources.html#s3-4">l-06 §3-4</a>(<code>/scan</code> 에서)</td></tr>
+          <tr><td>4</td><td><code>pi$ python3 scripts/lidar_lab/view/peek.py scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl</code></td><td><code>turns  &lt;n&gt; …</code> 다음에 바퀴마다 <code>turn   &lt;k&gt;  n=&lt;n&gt; … t=&lt;t&gt;</code> — <strong><code>turns</code> 가 2 이상</strong>이고 <code>t</code> 가 <code>0.0</code> 에서 시작해 오름차순</td><td><code>turns</code> 가 1 이면 이 쪽을 못 한다 — 3번의 방법으로 여러 바퀴를 다시 기록한다</td></tr>
+          <tr><td>5</td><td><code>pi$ scripts/lidar_lab/build/lab_scancheck scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl</code></td><td><code>ok &lt;n&gt; revolutions</code></td><td><code>error: line &lt;n&gt;: …</code> 이면 <strong>로더가 거부한 것</strong>이다. 어느 조건을 어겼는지 그대로 나온다 → <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a></td></tr>
+          <tr><td>6</td><td><code>pi$ scripts/lidar_lab/build/test_cluster</code></td><td><code>PASS cluster 43 cases</code></td><td><a href="l-10-clusters.html">l-10</a> 을 먼저 끝낸다 — 이 쪽은 <code>Cluster</code> 와 <code>gap_stats()</code> 를 그대로 쓰고, <strong>다시 만들지 않는다</strong></td></tr>
         </tbody>
       </table></div>
+      <p class="small">4 · 5번 보충: <code>peek.py</code> 는 확인용 편의 도구라 로더의 여섯 거부를 하지 않는다. 파일이 의심스러우면 5번의 <code>lab_scancheck</code>(l-04 의 로더)가 정본이다. 바퀴 번호는 <code>peek.py</code> · <code>lab_diff</code> 모두 1 부터 센다(l-06 의 도구 <code>lab_source</code> 는 0 부터).</p>
       <p>마지막으로 <strong>빈 폭</strong>이라는 값이 어디서 오는지를 네 갈래로 훑어 둔다. 실습이 끝나면 오른쪽 칸을 채운다.</p>
       <div class="tbl"><table>
         <thead><tr><th>갈래</th><th>어디</th><th>무엇이라 하는가</th><th>내 값</th></tr></thead>
         <tbody>
           <tr><td>① 정의</td><td><code>LaserScan</code></td><td><strong>없다.</strong> 표준 메시지에 "빈"이라는 개념이 없다 — 점 배열까지가 표준이다</td><td>—</td></tr>
-          <tr><td>② 사양</td><td>데이터시트 rev.2.2 p.8 Fig 2-1</td><td>Angular Resolution <code>≤1°</code> <strong>@ 5.5 Hz</strong>(같은 표가 <code>360 samples per scan</code> 을 조건으로 적는다). 값이 아니라 <strong>하한의 근거</strong>다</td><td>—</td></tr>
+          <tr><td>② 사양</td><td>데이터시트의 성능 표<sup class="fn"><a href="#fn-11" id="fnref-11">11</a></sup></td><td>Angular Resolution <code>≤1°</code> <strong>@ 5.5 Hz</strong>(같은 표가 <code>360 samples per scan</code> 을 조건으로 적는다). 값이 아니라 <strong>하한의 근거</strong>다</td><td>—</td></tr>
           <tr><td>③ 구현</td><td>드라이버 파라미터 <code>angle_compensate</code></td><td>"점을 균일 각도로 재배치한다"는 뜻이지만 <strong>내 설치본에서 무엇을 하는지는 미확인</strong> — 확인은 l-07 에서 한다</td><td>—</td></tr>
           <tr><td>④ 실물</td><td>내 기록의 각도 간격 중앙값(l-04)</td><td>—</td><td><code>____</code>°</td></tr>
         </tbody>
       </table></div>
-      <p class="small">넷이 다르면 <strong>④가 내 기기의 사실</strong>이다. ②는 조건부이고 ③은 아직 안 열어 본 갈래다 — 어느 것이 틀렸다고 쓰지 말고 <strong>조건이 무엇이었는지</strong>를 적는다.</p>
+      <p class="small">넷이 다르면 <strong>④가 내 기기의 사실</strong>이다. ②는 조건부이고 ③은 아직 확인하지 않은 갈래다 — 어느 것이 틀렸다고 쓰지 말고 <strong>조건이 무엇이었는지</strong>를 적는다.</p>
 
-      <h4 id="s3-1-2">3-1-2. 골격</h4>
-      <p>파일은 <code>scripts/lidar_lab/diff.py</code> 하나다. 공개 이름은 넷 — <code>bin_min()</code> · <code>diff()</code> · <code>stationary_mask()</code> · <code>main()</code>.</p>
-      <p>⚠ <strong>인자 둘에 기본값이 없는 것이 이 골격의 설계다.</strong> <code>bin_deg</code> 와 <code>tol</code> 은 <strong>내가 재서 정하는 값</strong>이고, 기본값을 주면 그 기본값이 내 결정을 대신하게 된다. 값을 안 주면 그 자리에서 <code>TypeError</code> 가 나고, <strong>그 오류가 "아직 안 정했다"를 알려 주는 장치</strong>다.</p>
-      <pre><code class="lang-python"># scripts/lidar_lab/diff.py -- what changed between two revolutions.
-# Every function here is PURE: no port, no clock, no file. That is why
-# tests/test_diff.py grades them with the lidar unplugged, and why this page
-# runs from a recorded .scan.jsonl on any machine.
-
-import math
-from turn import Scan             # l-04
-from geom import to_xy            # l-08
-from cluster import Cluster       # l-10
-
-
-def bin_min(scan, bin_deg):
-    """One revolution -&gt; [float | None], one entry per angular bin: the NEAREST
-    measured range in that bin, in METERS.
-
-    bin_deg is YOUR number in DEGREES (2-2) and there is no default: the bin
-    size decides what counts as "the same direction", and a procedure that
-    picks it for you has made that measurement for you.
-    Invariants -- each one is graded by a vector in tests/test_diff.py:
-      1. len(result) == ceil(360 / bin_deg). When bin_deg does not divide 360
-         the last bin is narrower; it still exists (vector 4).
-      2. A bin keeps the SMALLEST range in it -- not the last one written, not
-         the mean (2-2 says why the nearest surface is the one that counts).
-      3. r is None is skipped. A bin where everything was a no-return stays
-         None, which is NOT 0.0 -- l-04 2-6 spent a section separating
-         "nothing came back" from "something at 0 m".
-      4. r == 0.0 IS a measurement and must survive. `if not r` throws it away.
-    Pure. Called from diff() and stationary_mask() below, and from 3-1-4.
-    Verify with: python3 tests/test_diff.py
-    """
-    # TODO(you): one pass over scan.r with its index. For each line you write,
-    #   ask which of the four invariants above it is protecting.
-    return []</code></pre>
-      <p>다음이 이 쪽의 핵심 코드다. 주석의 불변식 다섯이 전부 §2-1 · §2-2 에서 도출된 것이고, <strong>한 구절만 빼고 전부 시험 벡터로 채점된다</strong>. 채점되지 않는 그 한 구절은 불변식 4 의 "측정된 점만" 이고, 이 구절이 왜 채점 밖에 남는지는 §3-1-3 에 적었다.</p>
-      <pre><code class="lang-python">def diff(scan_a, scan_b, tol, bin_deg):
-    """What came CLOSER between two revolutions -&gt; [Cluster], in ascending-angle
-    order, built from the points of scan_b.
-
-    tol is YOUR number in METERS -- the largest shrink you are still willing to
-    call noise (3-1-4 measures the floor it has to clear). No default, for the
-    same reason bin_deg has none.
-    Invariants -- graded by vectors 5..14:
-      1. A bin changed when (a - b) &gt; tol, STRICTLY. Exactly tol is not a
-         change (vector 7).
-      2. Either side None -&gt; that bin says nothing. You cannot subtract a
-         no-return (vector 9); filling it with 0 invents an object.
-      3. Neighbouring changed bins are ONE cluster and the ring closes -- the
-         last bin and bin 0 are neighbours (vector 11; l-10 2-2 is the same
-         seam, one page earlier).
-      4. The Cluster carries the points of SCAN_B, the later one that says
-         where the thing is NOW: pts from to_xy(scan_b), idx the index in
-         scan_b, and MEASURED points only -- to_xy() leaves a no-return as
-         None in that slot (l-08 invariant 1), and a None inside pts breaks
-         l-11 / l-12, not this page. That is the contract l-10 fixed.
-         The 'measured only' half is NOT graded by any vector; 3-1-3 says so.
-      5. The two scans may have different point counts, and normally do
-         (l-04 2-2). That is what the bins are for.
-    Pure. What it does NOT do: say WHAT moved, or that anything moved at all
-    (2-4). It reports directions whose nearest surface got nearer.
-    """
-    # TODO(you): bin both scans, decide which bins changed, then walk the ring
-    #   once to group neighbouring changed bins into clusters. Handle the seam
-    #   LAST and only once -- l-10 3-1-3 gave that advice for the same reason.
-    return []</code></pre>
-      <p>마지막 둘. <code>stationary_mask()</code> 는 실습 A 의 <strong>검산 도구</strong>이고, <code>main()</code> 은 파일을 여는 껍질이라 <strong>판단이 하나도 들어 있지 않다</strong> — 무엇을 몇 개나 출력할지는 내가 정한다.</p>
-      <pre><code class="lang-python">def stationary_mask(scans, spread_max, bin_deg):
-    """Which bins held still across a stack of revolutions -&gt; [bool].
-
-    spread_max is YOUR number in METERS and it is NOT diff()'s tol: this one is
-    a two-sided spread (max - min down the stack), tol is a one-sided shrink.
-    2-3 is the bridge between the two numbers; do not carry one over as the
-    other without it.
-    Invariants -- graded by vectors 15..18:
-      1. True means measured in EVERY scan AND (max - min) &lt;= spread_max.
-      2. A bin that is None in any one scan is False. Unknown is not still --
-         and a blinking bin is exactly what will flood diff() later.
-      3. Fewer than two scans -&gt; all False (one revolution cannot say anything
-         held still). An empty list -&gt; [].
-    Pure. This is the sweep tool of 3-1-4, not the measurement itself.
-    """
-    # TODO(you): bin every scan once, then look down the stack bin by bin.
-    return []
-
-
-def main(argv):
-    """Print how far apart two neighbouring revolutions of a recording are.
-
-        pi$ python3 scripts/lidar_lab/diff.py scans/&lt;name&gt;.scan.jsonl
-
-    Not pure -- it opens a file. Every choice in it is YOURS: the bin width, which
-    percentiles to print, whether to walk every pair or only the first few. It is
-    a shell around bin_min() and diff(); no judgement lives here.
-    Returns a process exit code (0 = printed something, 1 = nothing to do).
-    """
-    # TODO(you): turn.load_jsonl() (l-04 3-4) hands you the scans. For every
-    #   neighbouring pair, collect (a - b) over the bins where BOTH sides
-    #   measured, and print the distribution. 3-1-4 lists the numbers you need.
-    return 1
-
-
-if __name__ == "__main__":
-    import sys
-    sys.exit(main(sys.argv[1:]))</code></pre>
-      <p class="small">⚠ <code>Cluster</code> 를 만들 때 <strong>필드 이름은 <code>pts</code> 와 <code>idx</code></strong> 다(<a href="l-10-clusters.html#s3-1-2">l-10 §3-1-2</a> 가 고정했다). 그리고 <code>Cluster</code> 에는 <code>__iter__</code> 가 없다 — <code>for p in cluster:</code> 나 <code>list(cluster)</code> 는 <code>TypeError</code> 오류로 <strong>그 자리에서 종료된다.</strong> 점을 꺼낼 때는 언제나 <code>c.pts</code> 라고 쓴다.</p>
-
-      <h4 id="s3-1-3">3-1-3. 직접 채우기 — 그리고 벡터 서른여섯으로 채점한다</h4>
-      <p>순서는 앞 쪽들과 같다. <strong>2번을 먼저 하는 것이 요령이다</strong> — 실패 메시지가 곧 할 일 목록이 된다.</p>
-      <ol class="steps">
-        <li><strong>골격을 그대로 한 번 실행한다.</strong> <code>python3 scripts/lidar_lab/diff.py &lt;파일&gt;</code> 은 아무것도 출력하지 않고 <strong>종료 코드 1</strong> 로 끝난다. 트레이스백이 없는 것이 정상이다.</li>
-        <li><strong>시험 파일을 먼저 놓고 실행한다.</strong> 아래 블록을 <code>scripts/lidar_lab/tests/test_diff.py</code> 로 그대로 둔다. 지금 실행하면 <strong><code>FAIL 1a one bin per degree</code> · <code>got 0</code> · <code>want 360</code></strong> 에서 멈춘다(집필자가 골격 그대로 실행해 확인했다). 하나 통과시킬 때마다 다음 실패로 넘어가고, <strong>그 순서가 곧 채울 순서</strong>다.</li>
-        <li><strong><code>bin_min()</code> 을 먼저 채운다.</strong> <code>bin_min()</code> 이 다른 둘의 기반이다. 세 줄이면 되는데 <strong>그 세 줄 모두에 함정이 있다</strong> — 빈 수(올림), 무반사(<code>None</code> 건너뛰기), 거리 0(유지하기), 대표값(최소).</li>
-        <li><p><strong><code>diff()</code> 는 <code>bin_min()</code> 을 전제한다.</strong> ① 두 장을 빈으로 만들고 ② 변한 칸을 표시하고 ③ 이웃한 칸을 묶는다. <strong>이음매는 마지막에 한 번만</strong> 본다.</p>
-          <p>힌트: ③ 을 짜기 전에 <strong>모든 칸이 변한 경우</strong>를 손으로 따져 본다(벡터 12). "앞 칸이 안 변했으면 여기가 덩어리 시작"이라는 규칙만 쓰면 그때 <strong>시작점이 하나도 없어 덩어리가 0 개</strong>가 된다. 집필자가 그렇게 짜서 실행해 보니 <code>FAIL 12a the room is one cluster</code> · <code>got []</code> 였다. <strong>하필 실습 C 가 그 경우</strong>라, 이 한 줄이 없으면 센서를 밀었을 때 도구가 <strong>덩어리를 하나도 내지 않는다.</strong></p></li>
-        <li><strong><code>stationary_mask()</code> 는 마지막에.</strong> 벡터 15~18 이 정의를 채점한다 — 특히 "한 장에서라도 <code>None</code> 이면 False".</li>
-        <li><strong>서른여섯이 다 통과할 때까지 내 파일로 가지 않는다.</strong> 여기까지 라이다도 Pi 도 필요 없다.</li>
-      </ol>
-      <p class="small">이 블록은 전량 제공이다 — 이유: <strong>벡터가 곧 채점표</strong>이고 내 답을 내가 채점할 수 없다. 기댓값은 집필자가 독립 구현으로 <strong>실제로 계산·실행</strong>해 얻은 값이고(눈대중이 아니다), 계산에 쓴 세 줄을 파일 머리에 남겼다. <strong>집필자가 Mac 의 <code>python3</code> 로 서른여섯 개가 통과하는 것과, 아래 표의 열 가지 잘못이 실제로 검출되는 것까지 확인했다(2026-09-23).</strong></p>
-      <pre><code class="lang-python"># scripts/lidar_lab/tests/test_diff.py -- grading vectors for diff.py.
-# Standard library only. Runs with the lidar unplugged: everything here is pure.
-#   pi$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_diff.py
-#
-# Most vectors use bin_deg = 90.0 or 45.0 so the bin index is countable by hand
-# (360/90 = 4 bins, 360/45 = 8) and most expectations are INTEGERS -- bin indices,
-# point indices, cluster counts. The few float expectations were produced by an
-# independent implementation on 2026-09-23 and pasted as printed:
-#   cos(radians(90)) = 6.123233995736766e-17   (x of a point at 90 deg, NOT 0.0)
-#   sin(radians(90)) = 1.0
-#   360/7.0 -&gt; ceil = 52 bins, and int(359.0/7.0) = 51
-
-import os, sys, math
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from turn import Scan
-from geom import to_xy
-from diff import bin_min, diff, stationary_mask
-
-CASES = 0
-def check(name, got, want):
-    global CASES
-    CASES += 1
-    if got != want:
-        print("FAIL %s\n  got  %r\n  want %r" % (name, got, want))
-        sys.exit(1)
-
-def close(name, got, want, tol=1e-9):
-    global CASES
-    CASES += 1
-    if not isinstance(got, (int, float)) or abs(got - want) &gt; tol:
-        print("FAIL %s\n  got  %r\n  want %r (+-%g)" % (name, got, want, tol))
-        sys.exit(1)
-
-def S(a, r, t=0.0):
-    return Scan(a, r, None, t)
-
-def idx(clusters):
-    return [c.idx for c in clusters]
-
-# 1. THE REPRESENTATIVE OF A BIN IS ITS NEAREST POINT. Two points land in bin 0
-#    and the file lists 0.9 first, 1.0 second -- so "keep the last one" answers
-#    1.0 and "average them" answers 0.95. The bin keeps 0.9.
-V1 = S([0.2, 0.8, 90.5, 359.9], [0.9, 1.0, 2.0, 1.5])
-m1 = bin_min(V1, 1.0)
-check("1a one bin per degree", len(m1), 360)
-close("1b nearest of the two in bin 0", m1[0], 0.9)
-close("1c bin 90 keeps its only point", m1[90], 2.0)
-close("1d bin 359 keeps its only point", m1[359], 1.5)
-check("1e a bin nobody measured is None", m1[1], None)
-
-# 2. ZERO IS A MEASUREMENT. `if not r` throws it away and the bin reports 1.0.
-V2 = bin_min(S([10.0, 10.5], [0.0, 1.0]), 1.0)
-close("2a distance 0.0 survives as the nearest", V2[10], 0.0)
-
-# 3. NO-RETURN IS NOT A DISTANCE. It is skipped, and a bin that is all no-return
-#    stays None -- it must not become 0.0, which would read as "something at 0 m".
-V3 = bin_min(S([20.0, 20.5, 21.0], [None, 1.2, None]), 1.0)
-close("3a the measured one wins the bin", V3[20], 1.2)
-check("3b an all-no-return bin is None", V3[21], None)
-
-# 4. A BIN SIZE THAT DOES NOT DIVIDE 360. 360/7 is 51.43 -&gt; 52 bins, and the last
-#    one is only 3 deg wide. Nothing here rounds the count down and loses a wedge.
-V4 = bin_min(S([357.0, 359.0], [1.0, 2.0]), 7.0)
-check("4a ceil, not floor", len(V4), 52)
-close("4b both land in the narrow last bin", V4[51], 1.0)</code></pre>
-      <p>여기까지가 <code>bin_min()</code> 이다. 다음은 <code>diff()</code> — 빈 폭을 <strong>90°</strong> 로 설정해 네 칸만 쓰므로 <strong>칸 번호를 손으로 셀 수 있다</strong>(0°=칸 0, 90°=칸 1, …). 기댓값이 대부분 정수인 것도 그래서다.</p>
-      <pre><code class="lang-python"># --- diff: four bins of 90 deg, one point each, so bin k holds point k ---------
-A = S([0.0, 90.0, 180.0, 270.0], [1.0, 1.0, 1.0, 1.0])
-
-# 5. NOTHING MOVED. The same revolution twice is no clusters at all, not one
-#    empty cluster.
-check("5a a scan against itself", idx(diff(A, A, 0.1, 90.0)), [])
-
-# 6. ONE BIN CAME CLOSER. One cluster, and it carries the index the point had in
-#    scan_b -- that is the contract l-10 fixed for Cluster(pts, idx).
-B6 = S([0.0, 90.0, 180.0, 270.0], [1.0, 0.5, 1.0, 1.0])
-c6 = diff(A, B6, 0.1, 90.0)
-check("6a one cluster", len(c6), 1)
-check("6b it is the point at 90 deg", idx(c6), [[1]])
-check("6c pts and idx are the same length", len(c6[0].pts), len(c6[0].idx))
-close("6d y of that point is +0.5 (x forward, y left)", c6[0].pts[0][1], 0.5)
-close("6e and x is cos(90) * 0.5, not 0.0", c6[0].pts[0][0], 3.061616997868383e-17)
-
-# 7. THE BOUNDARY IS STRICT. A change of exactly tol is not a change; tol is the
-#    largest difference you are willing to call noise.
-check("7a change == tol is not a change", idx(diff(A, B6, 0.5, 90.0)), [])
-check("7b a hair below tol is", idx(diff(A, B6, 0.4999999, 90.0)), [[1]])
-
-# 8. FARTHER IS NOT CLOSER. diff() answers "what came toward me"; a bin that grew
-#    is silent here (2-1 says what that costs and what catches it instead).
-B8 = S([0.0, 90.0, 180.0, 270.0], [1.0, 1.5, 1.0, 1.0])
-check("8a a bin that got farther", idx(diff(A, B8, 0.1, 90.0)), [])
-
-# 9. YOU CANNOT SUBTRACT A NO-RETURN. Either side missing -&gt; that bin says nothing.
-A9 = S([0.0, 90.0, 180.0, 270.0], [1.0, None, 1.0, 1.0])
-check("9a no-return in scan_a", idx(diff(A9, B6, 0.1, 90.0)), [])
-B9 = S([0.0, 90.0, 180.0, 270.0], [1.0, None, 1.0, 1.0])
-check("9b no-return in scan_b", idx(diff(A, B9, 0.1, 90.0)), [])
-
-# 10. THE TWO SCANS HAVE DIFFERENT POINT COUNTS. That is the normal case (l-04
-#     2-2), and it is the whole reason for binning: eight points against four.
-A10 = S([0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0], [1.0] * 8)
-B10 = S([0.0, 90.0, 180.0, 270.0], [1.0, 0.5, 1.0, 1.0])
-check("10a no exception, and the bin still found", idx(diff(A10, B10, 0.1, 90.0)), [[1]])
-
-# 11. THE SEAM. Bin 7 (315 deg) and bin 0 (0 deg) are neighbours. A tool that
-#     walks the list front to back reports TWO clusters here, and the object in
-#     front of the sensor is counted twice (l-10 2-2 said the same thing).
-A11 = S([0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0], [1.0] * 8)
-B11 = S([0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0],
-        [0.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5])
-c11 = diff(A11, B11, 0.1, 45.0)
-check("11a one cluster, not two", len(c11), 1)
-check("11b it starts on the far side of the seam", idx(c11), [[7, 0]])
-
-# 12. EVERYTHING MOVED. This is what a nudged sensor looks like: one cluster that
-#     holds the whole revolution, in index order, with no seam to cut on.
-B12 = S([0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0], [0.5] * 8)
-check("12a the room is one cluster", idx(diff(A11, B12, 0.1, 45.0)), [[0, 1, 2, 3, 4, 5, 6, 7]])
-
-# 13. TWO OBJECTS, TWO CLUSTERS, in ascending angle order.
-B13 = S([0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0],
-        [1.0, 0.5, 1.0, 1.0, 0.5, 0.5, 1.0, 1.0])
-check("13a two runs", idx(diff(A11, B13, 0.1, 45.0)), [[1], [4, 5]])
-
-# 14. A BIN HOLDS MORE THAN ONE POINT. The bin decides, but the cluster carries
-#     every measured point of that bin -- including the far one at 1.0 m.
-A14 = S([0.0, 10.0, 20.0], [1.0, 1.0, 1.0])
-B14 = S([0.0, 10.0, 20.0], [1.0, 0.5, 1.0])
-c14 = diff(A14, B14, 0.1, 90.0)
-check("14a all three points of bin 0", idx(c14), [[0, 1, 2]])
-close("14b and the coordinates are scan_b's", c14[0].pts[1][0], to_xy(B14)[1][0])</code></pre>
-      <p>마지막은 <code>stationary_mask()</code> 다. <strong>16a·16b 의 숫자가 1.0 / 1.25 / 1.125 인 데는 이유가 있다</strong> — 주석에 적어 두었다.</p>
-      <pre><code class="lang-python"># --- stationary_mask: the sweep tool of 3-1-4 ---------------------------------
-# 15. THREE IDENTICAL REVOLUTIONS. Every measured bin is stationary; the bins
-#     nobody measured are False -- "unknown" is not "still".
-S15 = [S([0.0, 90.0], [1.0, 1.0]) for _ in range(3)]
-m15 = stationary_mask(S15, 0.01, 90.0)
-check("15a four bins came back", len(m15), 4)
-check("15b measured and unchanged", [m15[0], m15[1]], [True, True])
-check("15c never measured -&gt; False", [m15[2], m15[3]], [False, False])
-
-# 16. THE SPREAD IS max - min ACROSS ALL THE SCANS, and the comparison is &lt;=.
-#     The numbers are 1.0 / 1.25 / 1.125 on purpose: 1.25 - 1.0 is exactly 0.25 in
-#     binary, while 1.02 - 1.00 is 0.020000000000000018 and a &lt;= boundary written
-#     with it fails for a reason that has nothing to do with lidar.
-S16 = [S([0.0], [1.0]), S([0.0], [1.25]), S([0.0], [1.125])]
-check("16a spread 0.25 &lt;= 0.25", stationary_mask(S16, 0.25, 90.0)[0], True)
-check("16b spread 0.25 &gt; 0.2499", stationary_mask(S16, 0.2499, 90.0)[0], False)
-
-# 17. ONE NO-RETURN ANYWHERE IN THE STACK MAKES THE BIN UNUSABLE. A bin that
-#     blinks in and out is exactly the bin that will flood diff() later.
-S17 = [S([0.0], [1.0]), S([0.0], [None]), S([0.0], [1.0])]
-check("17a blinking bin is not stationary", stationary_mask(S17, 1.0, 90.0)[0], False)
-
-# 18. ONE REVOLUTION CANNOT SAY ANYTHING IS STILL. Not a crash, not all True.
-check("18a a single scan", stationary_mask([S([0.0], [1.0])], 1.0, 90.0), [False] * 4)
-check("18b no scans at all", stationary_mask([], 1.0, 90.0), [])
-
-print("PASS diff %d cases" % CASES)</code></pre>
-      <p>벡터가 무엇을 지키는지는 <strong>일부러 틀리게 만들어 보면</strong> 가장 빨리 보인다. 아래 열 가지는 집필자가 실제로 그렇게 고쳐 실행해 본 것이고, 오른쪽 칸이 그때 나온 줄이다.</p>
-      <div class="tbl"><table>
-        <thead><tr><th>이렇게 잘못 짜면</th><th>어느 벡터가 검출하는가 · 무엇이 출력되는가</th></tr></thead>
+      <h4 id="s3-1-2">3-1-2. 골격 — <code>diff.hpp</code> · <code>lab_diff</code></h4>
+      <p>실습 A 가 <code>scripts/lidar_lab/</code> 에 더하는 파일은 셋이다. 시험 파일은 §3-1-3 에 있고, 그 1번 걸음에서 먼저 붙인다. 실습 C 의 합성 도구는 §3-3-3 에서 더한다.</p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w35"><col class="w40"><col class="w25"></colgroup>
+        <thead><tr><th>파일</th><th>성질</th><th>채울 자리</th></tr></thead>
         <tbody>
-          <tr><td>이음매를 잇지 않는다(칸을 앞에서 뒤로만 훑는다)</td><td><code>FAIL 11a one cluster, not two</code> — <code>got 2 · want 1</code>. 정면의 물건이 <strong>둘로 세어진다</strong></td></tr>
-          <tr><td>무반사를 <code>if not r</code> 로 거른다</td><td><code>FAIL 2a distance 0.0 survives as the nearest</code> — <code>got 1.0 · want 0.0</code>. <strong>0 m 측정이 오류 없이 사라진다</strong></td></tr>
-          <tr><td>무반사 자리를 <code>0.0</code> 으로 채운다</td><td><code>FAIL 3a the measured one wins the bin</code> — <code>got 0.0 · want 1.2</code>. <strong>없는 물체가 바로 앞에 생긴다</strong></td></tr>
-          <tr><td>빈 대표를 <strong>마지막</strong> 점으로 쓴다</td><td><code>FAIL 1b nearest of the two in bin 0</code> — <code>got 1.0 · want 0.9</code></td></tr>
-          <tr><td>빈 대표를 <strong>평균</strong>으로 쓴다</td><td><code>FAIL 1b</code> — <code>got 0.95 · want 0.9</code>(§2-2 의 표가 보인 희석이다)</td></tr>
-          <tr><td>경계를 <code>&gt;= tol</code> 로 쓴다</td><td><code>FAIL 7a change == tol is not a change</code> — <code>got [[1]] · want []</code></td></tr>
-          <tr><td>절대값 <code>|a − b|</code> 로 비교한다</td><td><code>FAIL 8a a bin that got farther</code> — <code>got [[1]] · want []</code>. <strong>일부러 그러려면 벡터도 같이 고친다</strong>(§2-1)</td></tr>
-          <tr><td>빈 수를 <code>int(360/bin_deg)</code> 로 센다</td><td><code>FAIL 4a ceil, not floor</code> — <code>got 51 · want 52</code>. <strong>마지막 좁은 칸이 통째로 사라진다</strong></td></tr>
-          <tr><td><code>stationary_mask</code> 에서 <code>None</code> 을 빼고 계산한다</td><td><code>FAIL 17a blinking bin is not stationary</code> — <code>got True · want False</code>. <strong>깜빡이는 칸이 "가만히 있다"가 된다</strong></td></tr>
-          <tr><td>점을 <code>scan_a</code> 에서 꺼낸다</td><td><code>FAIL 6d y of that point is +0.5</code> — <code>got 1.0 · want 0.5</code>. 벡터 6 은 <strong>같은 각도에 다른 거리</strong>를 둔 장면이라, 점을 어느 장에서 꺼냈는지가 <strong>점 개수와 상관없이</strong> 벡터 10 보다 먼저 드러난다. ⚠ <strong>인덱스만</strong> <code>scan_a</code> 에서 가져오는 것은 <strong>다른 잘못</strong>이다. 그때 출력되는 줄은 <code>FAIL 10a no exception, and the bin still found</code> — <code>got [[2, 3]] · want [[1]]</code> 이다. 집필자가 세 해석을 모두 만들어 실행해 확인했다</td></tr>
+          <tr><td><code>include/lidar_lab/diff.hpp</code></td><td>순수 — 함수 넷</td><td>T1 <code>bin_min()</code> · T2 <code>diff()</code> · T3 <code>stationary_mask()</code> · T4 <code>bin_diff()</code></td></tr>
+          <tr><td><code>src/diff.cpp</code> → <code>build/lab_diff</code></td><td>진입점 — 분포 · 덩어리 표 · 두 기록 비교. 옵션 <code>--turn</code> · <code>--spread</code> · <code>--after</code> · <code>--nudge</code> · <code>--xy</code></td><td>없음(전량)</td></tr>
+          <tr><td><code>tests/test_diff.cpp</code></td><td>시험 — 벡터 44 개(§3-1-3)</td><td>없음(전량)</td></tr>
+          <tr><td><code>src/diff_synth.cpp</code> → <code>build/lab_diff_synth</code></td><td>실습 C 의 합성 바퀴(§3-3-3)</td><td>없음(전량)</td></tr>
+          <tr><td><code>CMakeLists.txt</code></td><td>맨 아래에 세 줄(도구 둘 · 시험 하나)</td><td>—</td></tr>
         </tbody>
       </table></div>
-      <p class="small">⚠ 벡터가 <strong>가르지 못하는 것</strong>도 적어 둔다. <strong>하나는 이름을 대 둔다 — <code>pts</code> 에 <code>None</code> 이 섞이는 것을 서른여섯 개 중 어느 벡터도 채점하지 않는다.</strong> 바뀐 칸 안에 무반사 점이 있으면 <code>to_xy()</code> 가 그 자리를 <code>None</code> 으로 남긴다(<a href="l-08-floor-plan.html">l-08</a> 불변식 1). 그래서 <code>None</code> 을 거르는 줄을 빼고 짜도 <code>PASS diff 36 cases</code> 가 그대로 나온다(집필자가 그 줄만 빼고 실행해 확인했다). 오류는 이 쪽이 아니라 <a href="l-11-lines.html">l-11</a> 이 <code>c.pts</code> 를 읽을 때 <code>TypeError</code> 로 나타난다. <strong>어떤 메시지가 나오는지는 내 <code>Cluster.width()</code> 를 어떻게 짰는지에 달렸다</strong>(<a href="l-10-clusters.html#s3-1-2">l-10</a> 이 <code>TODO(you)</code> 로 남긴 자리다). 그래서 <code>diff()</code> 불변식 4 의 <strong>마지막 구절만은 시험이 아니라 내가 지킨다.</strong></p>
-      <p class="small">그리고 이 서른여섯 개는 전부 <strong>합성 스캔</strong>이다 — 내 방의 산포도, 내 기기의 각도 흔들림도 들어 있지 않다. 통과했다는 것은 "이 서른여섯 가지에서 어긋나지 않았다"는 뜻이지 <strong>내 문턱이 옳다</strong>는 뜻이 아니다. 내 문턱이 옳은지는 §3-1-4 부터 판정한다.</p>
+      <p><code>diff.hpp</code> 는 <strong>순수</strong>하다 — 포트도 시계도 파일도 ROS 도 건드리지 않는다. 그래서 라이다 없이 채점되고, 시험은 Mac 의 <code>clang++</code> 로도 연습할 수 있다. 파일을 읽는 것은 <code>lab_diff</code> 이고, 읽는 함수는 l-04 의 <code>load_jsonl()</code> 하나다. 그 로더는 <strong>검사하는</strong> 로더라서 이 쪽이 다시 쓰지 않는다.</p>
+      <p>⚠ <strong>인자에 기본값이 없는 것이 이 헤더의 설계다.</strong> <code>bin_deg</code> · <code>tol</code> · <code>spread_max</code> 는 <strong>내가 재서 정하는 값</strong>이고, 기본값을 주면 그 기본값이 내 결정을 대신하게 된다. 값을 빠뜨린 호출은 <strong>컴파일되지 않는다</strong>. clang 은 <code>error: no matching function for call to 'diff'</code> 를, g++ 는 <code>error: too few arguments to function …</code> 를 낸다.<sup class="fn"><a href="#fn-8">8</a></sup> <strong>그 오류가 "아직 안 정했다"를 알려 주는 장치</strong>다. <code>lab_diff</code> 에 빈 폭을 주지 않으면 사용법을 찍고 종료 코드 2 로 끝난다.</p>
+      <p>주석의 <strong>불변식</strong>을 먼저 읽는다. 불변식은 함수의 결과가 늘 지켜야 하는 조건이고, 헤더 주석에 번호를 붙여 적는다. 전부 §2-1 · §2-2 · §2-3 에서 도출된 것이고, 전부 시험 벡터로 채점된다 — 벡터 번호가 주석에 적혀 있다. 첫 블록은 <code>diff.hpp</code> 의 머리와 <code>bin_min()</code> 이다(T1).</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/include/lidar_lab/diff.hpp -- what changed between two revolutions.  (l-13)
+// PURE: no port, no ROS, no clock, no file. That is why tests/test_diff.cpp grades it with
+// nothing plugged in (on the Pi host, or on the Mac with clang++), and why this page runs
+// from a recorded .scan.jsonl.
+// No function here has a default argument: bin_deg, tol and spread_max are YOUR numbers.
+// Leave one out and the call does not compile -- that error says "not decided yet".
+#pragma once
+
+#include &lt;cmath&gt;
+#include &lt;cstddef&gt;
+#include &lt;optional&gt;
+#include &lt;vector&gt;
+
+#include "lidar_lab/cluster.hpp"
+#include "lidar_lab/geom.hpp"
+#include "lidar_lab/scan_io.hpp"
+
+namespace lidar_lab {
+
+// One revolution -&gt; one entry per angular bin: the NEAREST measured range in that bin, in
+// METRES, or an EMPTY optional when nothing in that bin was measured.
+//   bin_deg  YOUR number in DEGREES (2-2), &gt; 0. lab_diff refuses 0 before it gets here.
+// Invariants -- each one is graded by a vector in tests/test_diff.cpp:
+//   1. result.size() == ceil(360 / bin_deg). When bin_deg does not divide 360 the last bin
+//      is narrower; it still exists (vector 4).
+//   2. A bin keeps the SMALLEST range in it -- not the last one written, not the mean
+//      (2-2 says why the nearest surface is the one that counts) (vector 1).
+//   3. An empty r is skipped. A bin where everything was a no-return stays EMPTY, which is
+//      NOT 0.0 -- l-04 2-6 spent a section separating "nothing came back" from
+//      "something at 0 m" (vector 3).
+//   4. r == 0.0 IS a measurement and must survive (vector 2).
+// Called from diff(), stationary_mask() and bin_diff() below, and from lab_diff (3-1-4).
+inline std::vector&lt;std::optional&lt;double&gt;&gt; bin_min(const Scan&amp; s, double bin_deg) {
+  // TODO(you) [T1]: one entry per bin, the nearest measured range in it - hint card T1
+  //   1) the bin count: ceil(360 / bin_deg) -- a narrow last bin is still a bin (invariant 1)
+  //   2) a vector of that many EMPTY optionals
+  //   3) for each point that HAS a range: its bin is floor(a / bin_deg) (guard: never past the
+  //      last bin); keep the range if the bin is empty or the range is smaller (invariants 2, 3)
+  //   4) 0.0 goes through step 3 like any other range -- do not test it (invariant 4)
+  //   Delete the placeholder lines below when you start.
+  (void)s;
+  (void)bin_deg;
+  return {};
+}
+
+}  // namespace lidar_lab</code></pre>
+      <p>다음이 이 쪽의 핵심 코드다(T2). 불변식 다섯이 전부 §2-1 · §2-2 에서 도출된 것이다. 불변식 4 의 "측정된 점만"은 벡터 14c · 14d 가 채점한다. 같은 파일의 아래에 붙인다.</p>
+      <pre><code class="lang-cpp">namespace lidar_lab {
+
+// What came CLOSER between two revolutions -&gt; clusters in ascending-angle order, built from
+// the points of scan b.
+//   tol  YOUR number in METRES -- the largest shrink you are still willing to call noise
+//        (3-1-4 measures the floor it has to clear).
+// Invariants -- graded by vectors 5 to 14:
+//   1. A bin changed when (a - b) &gt; tol, STRICTLY. Exactly tol is not a change (vector 7).
+//      A bin that got farther is not a change either (vector 8; 2-1 says what that costs).
+//   2. Either side empty -&gt; that bin says nothing. You cannot subtract a no-return
+//      (vector 9); filling it with 0.0 invents an object.
+//   3. Neighbouring changed bins are ONE cluster and the ring closes -- the last bin and
+//      bin 0 are neighbours (vector 11; l-10 2-2 is the same seam, one page earlier). A
+//      cluster across the seam comes out FIRST and starts on the far side of it, as l-10's
+//      split() does (11b, 11c). Every bin changed -&gt; one cluster, bins 0 .. n-1 (vector 12).
+//   4. The Cluster carries the points of B, the later revolution, which says where the thing
+//      is NOW: Cluster{pts, idx} (l-10), pts from to_xy(b), idx the index in b, every
+//      MEASURED point of every changed bin -- a no-return in that bin has no (x, y) and is
+//      left out of both vectors (14c, 14d).
+//   5. The two scans may have different point counts, and normally do (l-04 2-2). That is
+//      what the bins are for (vector 10).
+// What it does NOT do: say WHAT moved, or that anything moved at all (2-4). It reports
+// directions whose nearest surface got nearer.
+inline std::vector&lt;Cluster&gt; diff(const Scan&amp; a, const Scan&amp; b, double tol, double bin_deg) {
+  // TODO(you) [T2]: bin both, mark the changed bins, walk the ring once - hint card T2
+  //   1) bin_min() of a and of b (T1)
+  //   2) a bin changed when BOTH sides have a value and (a - b) &gt; tol (invariants 1, 2)
+  //   3) b's MEASURED indices, bin by bin (the same bin rule as T1) (invariant 4)
+  //   4) one pass over the bins: neighbouring changed bins make one run
+  //   5) AFTER the pass, once: more than one run, and bin 0 and the last bin both changed -&gt;
+  //      the last run, then the first run, become the first run (invariant 3)
+  //   6) each run -&gt; Cluster{pts, idx}: for every bin of the run, every measured index i of
+  //      b in it -- pts gets the (x, y) of to_xy(b)[i], idx gets i
+  //   Delete the placeholder lines below when you start.
+  (void)a;
+  (void)b;
+  (void)tol;
+  (void)bin_deg;
+  return {};
+}
+
+}  // namespace lidar_lab</code></pre>
+      <p>셋째 블록은 <code>stationary_mask()</code>(T3)와 <code>bin_diff()</code>(T4)다. <code>stationary_mask()</code> 는 실습 A 의 <strong>검산 도구</strong>이고, <code>bin_diff()</code> 는 <code>lab_diff</code> 가 분포를 낼 때 쓰는 칸마다의 차다.</p>
+      <pre><code class="lang-cpp">namespace lidar_lab {
+
+// Which bins held still across a stack of revolutions -&gt; one bool per bin.
+//   spread_max  YOUR number in METRES and it is NOT diff()'s tol: this one is a two-sided
+//               spread (max - min down the stack), tol is a one-sided shrink. 2-3 is the
+//               bridge between the two numbers; do not carry one over as the other without it.
+// Invariants -- graded by vectors 15 to 18:
+//   1. true means measured in EVERY scan AND (max - min) &lt;= spread_max.
+//   2. A bin that is empty in any one scan is false. Unknown is not still -- and a blinking
+//      bin is exactly what will flood diff() later.
+//   3. Fewer than two scans -&gt; all false (one revolution cannot say anything held still).
+//      An empty stack -&gt; an empty vector.
+// The sweep tool of 3-1-4 (lab_diff --spread), not the measurement itself.
+inline std::vector&lt;bool&gt; stationary_mask(const std::vector&lt;Scan&gt;&amp; scans, double spread_max,
+                                         double bin_deg) {
+  // TODO(you) [T3]: bin every scan once, then look down the stack bin by bin - hint card T3
+  //   1) no scans: return an empty vector
+  //   2) bin_min() of every scan (T1); n = the number of bins
+  //   3) fewer than two scans: n times false (invariant 3)
+  //   4) for each bin: false as soon as one scan has no value there (invariant 2); otherwise
+  //      the smallest and the largest value down the stack -&gt; true when max - min &lt;= spread_max
+  //   Delete the placeholder lines below when you start.
+  (void)scans;
+  (void)spread_max;
+  (void)bin_deg;
+  return {};
+}
+
+// The difference a - b, bin by bin -&gt; one entry per bin, in METRES, SIGNED: positive = the
+// nearest surface came closer, negative = it went away. What lab_diff collects in 3-1-4.
+// Invariants -- graded by vectors 19a to 19e:
+//   1. result.size() == the number of bins (bin_min's size), whatever the point counts.
+//   2. An entry is EMPTY unless BOTH sides measured that bin -- the same rule as diff()'s 2.
+//   3. a - b, not b - a, and not the absolute value: the sign is the information.
+//   4. 0.0 is a value (the bin did not change), not an empty entry.
+inline std::vector&lt;std::optional&lt;double&gt;&gt; bin_diff(const Scan&amp; a, const Scan&amp; b,
+                                                   double bin_deg) {
+  // TODO(you) [T4]: a - b, bin by bin - hint card T4
+  //   1) bin_min() of a and of b (T1)
+  //   2) a vector of EMPTY optionals, one per bin (invariant 1)
+  //   3) where BOTH have a value: a - b, sign kept (invariants 2, 3, 4)
+  //   Delete the placeholder lines below when you start.
+  (void)a;
+  (void)b;
+  (void)bin_deg;
+  return {};
+}
+
+}  // namespace lidar_lab</code></pre>
+      <p class="small">⚠ <code>Cluster</code> 는 <a href="l-10-clusters.html#s3-1-2">l-10 §3-1-2</a> 의 것 그대로다. 생성자가 없어 <code>Cluster{pts, idx}</code> 로 만들고, 필드 이름은 <code>pts</code> 와 <code>idx</code> 다. 이름을 다르게 쓰면 이 쪽을 빌드할 때 컴파일 오류가 난다.</p>
+      <p>진입점 <code>src/diff.cpp</code> 는 <strong>전량</strong>이다. 실습 셋이 <strong>전부 같은 도구 하나</strong>로 실행되게 한다.</p>
+      <ul>
+        <li>파일과 빈 폭 → 실습 A 의 분포: 이웃한 바퀴 쌍마다 <code>bin_diff()</code> 의 값을 l-10 의 <code>gap_stats()</code> 로 줄인 네 수. <code>--spread S</code> 를 주면 <code>stationary_mask()</code> 의 비율도 찍는다</li>
+        <li>문턱까지 → 실습 B 의 덩어리 표: 쌍마다 <code>diff()</code> 의 덩어리. <code>--xy</code> 면 변한 점을 평면도 파일로 쓴다</li>
+        <li><code>--after</code> 로 두 번째 기록 → 실습 C 의 비교: 첫 기록의 마지막 바퀴와 둘째 기록의 첫 바퀴. <code>--nudge d</code> 면 §2-4 의 예측도 찍는다</li>
+      </ul>
+      <p>계산은 모두 헤더의 내 함수가 한다. 이 파일은 인자를 읽어 그 함수를 부르고 결과를 찍기만 한다 — 무엇을 몇 개나 찍을지를 내가 정하는 자리는 없다.</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/src/diff.cpp -- one record -&gt; how far apart two neighbouring revolutions are,
+// or what came closer between them.  (l-13, given in full)
+//   pi$ scripts/lidar_lab/build/lab_diff &lt;file.scan.jsonl&gt; &lt;bin_deg&gt;          3-1  the noise floor
+//   pi$ scripts/lidar_lab/build/lab_diff &lt;file.scan.jsonl&gt; &lt;bin_deg&gt; &lt;tol&gt;    3-2  what came closer
+//   pi$ scripts/lidar_lab/build/lab_diff &lt;before.scan.jsonl&gt; &lt;bin_deg&gt; &lt;tol&gt; --after &lt;after.scan.jsonl&gt;
+//                                                                             3-3  across a push
+//   bin_deg       the bin width in degrees, 0 &lt; bin_deg &lt;= 360        your decision (3-1-4)
+//   tol           the threshold in metres, &gt;= 0                       your decision (3-1-4)
+//   --turn K      only the pair K-(K+1) (1 = the first revolution, as peek.py numbers them);
+//                 with --after: revolution K of the before file (default: its last)
+//   --spread S    no tol only, may be repeated: also print the stationary_mask() share for
+//                 spread_max = S metres, over every revolution of the file
+//   --after FILE  compare one revolution of the first file with the FIRST revolution of FILE --
+//                 the record made after the push, or what lab_diff_synth wrote
+//   --nudge D     with --after: also print the 2-4 prediction for a push of D metres
+//   --xy          with tol: write the CHANGED points of the later revolution of each printed pair
+//                 next to its record, for view/floor_plan.py: &lt;stem&gt;.t&lt;K&gt;.diff.xy.csv
+// Without tol it prints
+//   turns=10  dt_median=0.183 s  bin_deg=1.0  bins=360
+//   pair 1-2     compared=330/360  median=0.0000 m  p75=0.0020  p90=0.0030  max=0.0110 at 42.0 deg
+//   all pairs   compared=2970   median=0.0000 m  p75=0.0020  p90=0.0040  max=1.6340 at 41.0 deg, pair 4-5
+//   spread_max=0.01  stationary=283/360 (78.6 %)  measured in every turn=330
+// and with tol, per pair, a line and one line per cluster:
+//   pair 7-8  compared=330/360  changed=21 (6.4 %)  clusters=1
+//     #0  n=84  bins=21  width=0.279 m  centroid=(-0.63, -0.09)  idx 717..800
+// With --after the pair is named B&lt;K&gt;-A1 (before K, after 1), and --nudge adds the line
+//   predicted (2-4): tol/d=0.400  changed share=36.9 %  within +-66.42 deg of the push
+// The numbers are YOUR bin_diff(), diff() and stationary_mask() (l-13) and gap_stats() (l-10).
+// "at 57.0 deg" is the start of the bin that held the maximum; "bins" counts the bins the
+// cluster's points fall in; the idx ranges are runs, as lab_cluster prints them.
+// No port, no clock, no motor: it reads files, so it runs with the lidar unplugged.
+// Exit code: 0 = done; 1 = the loader refused a file, there is no such turn, fewer than two
+// revolutions, diff() broke invariant 4, or the csv could not be written; 2 = usage.
+#include &lt;cmath&gt;
+#include &lt;cstddef&gt;
+#include &lt;cstdio&gt;
+#include &lt;cstdlib&gt;
+#include &lt;cstring&gt;
+#include &lt;exception&gt;
+#include &lt;optional&gt;
+#include &lt;string&gt;
+#include &lt;vector&gt;
+
+#include "lidar_lab/angles.hpp"
+#include "lidar_lab/cluster.hpp"
+#include "lidar_lab/diff.hpp"
+#include "lidar_lab/dump.hpp"
+#include "lidar_lab/geom.hpp"
+#include "lidar_lab/scan_io.hpp"
+
+using namespace lidar_lab;
+
+namespace {
+
+// "0.05" -&gt; 0.05. The whole text must be a finite number; anything else is a usage error.
+bool parse_double(const char* text, double&amp; v) {
+  char* end = nullptr;
+  v = std::strtod(text, &amp;end);
+  return end != text &amp;&amp; *end == '\0' &amp;&amp; std::isfinite(v);
+}
+
+// "4" -&gt; 4, only lo .. hi.
+bool parse_int(const char* text, long lo, long hi, long&amp; v) {
+  char* end = nullptr;
+  v = std::strtol(text, &amp;end, 10);
+  return end != text &amp;&amp; *end == '\0' &amp;&amp; v &gt;= lo &amp;&amp; v &lt;= hi;
+}
+
+// The bin an angle falls in -- the same rule as bin_min(): floor(a / bin_deg), and the last bin
+// for anything that rounds past it. Used only to print "at ... deg" and "bins=".
+std::size_t bin_of(double a, double bin_deg, std::size_t n) {
+  std::size_t k = static_cast&lt;std::size_t&gt;(a / bin_deg);
+  return k &gt;= n ? n - 1 : k;
+}
+
+// "351..359, 0..31": the cluster's idx as runs (the same text as lab_cluster).
+std::string idx_text(const std::vector&lt;std::size_t&gt;&amp; idx) {
+  std::string t;
+  for (std::size_t j = 0; j &lt; idx.size();) {
+    std::size_t e = j;
+    while (e + 1 &lt; idx.size() &amp;&amp; idx[e + 1] == idx[e] + 1) ++e;
+    if (!t.empty()) t += ", ";
+    t += std::to_string(idx[j]);
+    if (e &gt; j) t += ".." + std::to_string(idx[e]);
+    j = e + 1;
+  }
+  return t;
+}
+
+// "median=0.0001 m  p75=0.0012  p90=0.0025  max=0.0101" -- gap_stats() of l-10, which takes
+// any list of numbers; here they are signed differences, so the median may be negative.
+void print_stats(const std::vector&lt;double&gt;&amp; v) {
+  const std::optional&lt;GapStats&gt; g = gap_stats(v);
+  if (g) {
+    std::printf("median=%.4f m  p75=%.4f  p90=%.4f  max=%.4f", g-&gt;median, g-&gt;p75, g-&gt;p90,
+                g-&gt;max);
+  } else {
+    std::printf("median=none");
+  }
+}
+
+// 3-2, 3-3: one pair -&gt; one line and one line per cluster. false = diff() broke invariant 4.
+bool print_pair(const std::string&amp; label, const Scan&amp; a, const Scan&amp; b, double tol,
+                double bin_deg, const std::string&amp; b_record, int b_turn, bool write_xy) {
+  const std::vector&lt;std::optional&lt;double&gt;&gt; d = bin_diff(a, b, bin_deg);
+  std::size_t compared = 0, changed = 0;
+  for (const std::optional&lt;double&gt;&amp; v : d) {
+    if (!v) continue;
+    ++compared;
+    if (*v &gt; tol) ++changed;
+  }
+  const std::vector&lt;Cluster&gt; cs = diff(a, b, tol, bin_deg);
+  std::printf("pair %s  compared=%zu/%zu  changed=%zu (%.1f %%)  clusters=%zu\n", label.c_str(),
+              compared, d.size(), changed,
+              compared ? 100.0 * static_cast&lt;double&gt;(changed) / static_cast&lt;double&gt;(compared) : 0.0,
+              cs.size());
+  std::vector&lt;std::optional&lt;Point&gt;&gt; xy(b.size());
+  for (std::size_t c = 0; c &lt; cs.size(); ++c) {
+    const Cluster&amp; cl = cs[c];
+    for (std::size_t i : cl.idx) {
+      if (i &gt;= b.size() || cl.pts.size() != cl.idx.size()) {
+        std::printf("error: diff() returned cluster #%zu with %zu points, %zu indices, for a"
+                    " revolution of %zu (invariant 4)\n", c, cl.pts.size(), cl.idx.size(),
+                    b.size());
+        return false;
+      }
+    }
+    std::vector&lt;bool&gt; seen(d.size(), false);
+    std::size_t bins = 0;
+    for (std::size_t j = 0; j &lt; cl.idx.size(); ++j) {
+      const std::size_t k = bin_of(b.a[cl.idx[j]], bin_deg, d.size());
+      if (!seen[k]) ++bins;
+      seen[k] = true;
+      xy[cl.idx[j]] = cl.pts[j];
+    }
+    if (cl.pts.empty()) {
+      std::printf("  #%zu  n=0\n", c);
+      continue;
+    }
+    const Point m = cl.centroid();
+    std::printf("  #%zu  n=%zu  bins=%zu  width=%.3f m  centroid=(%.2f, %.2f)  idx %s\n", c,
+                cl.size(), bins, cl.width(), m.first, m.second, idx_text(cl.idx).c_str());
+  }
+  if (write_xy) {
+    const std::string out = xy_csv_path(b_record, b_turn, "diff");
+    write_xy_csv(out, b_turn, b, xy, "diff");
+    std::printf("wrote %s\n", out.c_str());
+  }
+  return true;
+}
+
+int usage() {
+  std::printf(
+      "usage: lab_diff &lt;file.scan.jsonl&gt; &lt;bin_deg&gt; [tol] [--turn K] [--spread S]... [--after FILE]"
+      " [--nudge D] [--xy]\n"
+      "  no tol: the differences of neighbouring revolutions (3-1)   tol: what came closer (3-2)\n"
+      "  --after FILE: one revolution of the first file against the first of FILE (3-3)\n"
+      "  bin_deg: 0 &lt; deg &lt;= 360   tol: metres &gt;= 0   --spread: no tol only   --after, --xy: tol"
+      " only   --nudge: --after only\n");
+  return 2;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+  std::vector&lt;const char*&gt; pos;
+  std::vector&lt;double&gt; spreads;
+  long turn = 0;
+  const char* after = nullptr;
+  std::optional&lt;double&gt; nudge;
+  bool write_xy = false;
+  for (int i = 1; i &lt; argc; ++i) {
+    if (std::strcmp(argv[i], "--xy") == 0) {
+      write_xy = true;
+    } else if (std::strcmp(argv[i], "--turn") == 0 &amp;&amp; i + 1 &lt; argc) {
+      if (!parse_int(argv[++i], 1, 100000, turn)) return usage();
+    } else if (std::strcmp(argv[i], "--spread") == 0 &amp;&amp; i + 1 &lt; argc) {
+      double s = 0.0;
+      if (!parse_double(argv[++i], s) || s &lt; 0.0) return usage();
+      spreads.push_back(s);
+    } else if (std::strcmp(argv[i], "--after") == 0 &amp;&amp; i + 1 &lt; argc) {
+      after = argv[++i];
+    } else if (std::strcmp(argv[i], "--nudge") == 0 &amp;&amp; i + 1 &lt; argc) {
+      double v = 0.0;
+      if (!parse_double(argv[++i], v) || v &lt;= 0.0) return usage();
+      nudge = v;
+    } else if (argv[i][0] == '-' &amp;&amp; argv[i][1] == '-') {
+      return usage();
+    } else {
+      pos.push_back(argv[i]);
+    }
+  }
+  if (pos.size() &lt; 2 || pos.size() &gt; 3) return usage();
+  double bin_deg = 0.0;
+  if (!parse_double(pos[1], bin_deg) || bin_deg &lt;= 0.0 || bin_deg &gt; 360.0) return usage();
+  std::optional&lt;double&gt; tol;
+  if (pos.size() == 3) {
+    double v = 0.0;
+    if (!parse_double(pos[2], v) || v &lt; 0.0) return usage();
+    tol = v;
+  }
+  if (!tol &amp;&amp; (after || nudge || write_xy)) return usage();
+  if (tol &amp;&amp; !spreads.empty()) return usage();
+  if (nudge &amp;&amp; !after) return usage();
+
+  try {
+    const std::vector&lt;Scan&gt; scans = load_jsonl(pos[0]);
+    const std::size_t n = scans.size();
+    if (turn &gt; 0 &amp;&amp; static_cast&lt;std::size_t&gt;(turn) &gt; n) {
+      std::printf("no turn %ld: the file has %zu revolutions\n", turn, n);
+      return 1;
+    }
+    const std::size_t bins = bin_min(Scan{}, bin_deg).size();
+
+    if (after) {  // 3-3: one revolution of the first file, the first of the second
+      const std::vector&lt;Scan&gt; later = load_jsonl(after);
+      if (n == 0 || later.empty()) {
+        std::printf("error: both files need a revolution (before %zu, after %zu)\n", n,
+                    later.size());
+        return 1;
+      }
+      const std::size_t k = turn &gt; 0 ? static_cast&lt;std::size_t&gt;(turn) : n;
+      std::printf("before turn %zu of %zu  after turn 1 of %zu  bin_deg=%s  bins=%zu  tol=%s m\n",
+                  k, n, later.size(), repr_double(bin_deg).c_str(), bins,
+                  repr_double(*tol).c_str());
+      if (nudge) {
+        const double ratio = *tol / *nudge;
+        const double half = ratio &gt;= 1.0 ? 0.0 : to_deg(std::acos(ratio));
+        std::printf("predicted (2-4): tol/d=%.3f  changed share=%.1f %%  within +-%.2f deg of the"
+                    " push\n", ratio, 100.0 * 2.0 * half / 360.0, half);
+      }
+      const std::string label = "B" + std::to_string(k) + "-A1";
+      return print_pair(label, scans[k - 1], later[0], *tol, bin_deg, after, 1, write_xy) ? 0 : 1;
+    }
+
+    if (n &lt; 2) {
+      std::printf("error: the file has %zu revolution(s); a difference needs two\n", n);
+      return 1;
+    }
+    std::size_t first = 1, last = n - 1;  // pairs first-(first+1) .. last-(last+1)
+    if (turn &gt; 0) {
+      if (static_cast&lt;std::size_t&gt;(turn) &gt;= n) {
+        std::printf("no pair %ld-%ld: the file has %zu revolutions\n", turn, turn + 1, n);
+        return 1;
+      }
+      first = last = static_cast&lt;std::size_t&gt;(turn);
+    }
+
+    if (tol) {  // 3-2: what came closer, pair by pair
+      std::printf("turns=%zu  bin_deg=%s  bins=%zu  tol=%s m\n", n, repr_double(bin_deg).c_str(),
+                  bins, repr_double(*tol).c_str());
+      for (std::size_t p = first; p &lt;= last; ++p) {
+        const std::string label = std::to_string(p) + "-" + std::to_string(p + 1);
+        if (!print_pair(label, scans[p - 1], scans[p], *tol, bin_deg, pos[0],
+                        static_cast&lt;int&gt;(p + 1), write_xy)) {
+          return 1;
+        }
+      }
+      return 0;
+    }
+
+    // 3-1: the distribution of a - b over the bins both revolutions measured
+    std::vector&lt;double&gt; dts;
+    for (std::size_t p = 1; p &lt; n; ++p) {
+      if (scans[p - 1].t &amp;&amp; scans[p].t) dts.push_back(*scans[p].t - *scans[p - 1].t);
+    }
+    const std::optional&lt;GapStats&gt; dt = gap_stats(dts);
+    std::printf("turns=%zu  dt_median=", n);
+    if (dt) {
+      std::printf("%.3f s", dt-&gt;median);
+    } else {
+      std::printf("none");
+    }
+    std::printf("  bin_deg=%s  bins=%zu\n", repr_double(bin_deg).c_str(), bins);
+    std::vector&lt;double&gt; all;
+    double all_max = 0.0;
+    std::size_t all_bin = 0, all_pair = 0;
+    for (std::size_t p = first; p &lt;= last; ++p) {
+      const std::vector&lt;std::optional&lt;double&gt;&gt; d = bin_diff(scans[p - 1], scans[p], bin_deg);
+      std::vector&lt;double&gt; v;
+      std::size_t max_bin = 0;
+      for (std::size_t k = 0; k &lt; d.size(); ++k) {
+        if (!d[k]) continue;
+        if (v.empty() || *d[k] &gt; *d[max_bin]) max_bin = k;
+        v.push_back(*d[k]);
+      }
+      if (!v.empty() &amp;&amp; (all.empty() || *d[max_bin] &gt; all_max)) {
+        all_max = *d[max_bin];
+        all_bin = max_bin;
+        all_pair = p;
+      }
+      all.insert(all.end(), v.begin(), v.end());
+      std::printf("pair %-7s compared=%zu/%zu  ",
+                  (std::to_string(p) + "-" + std::to_string(p + 1)).c_str(), v.size(), d.size());
+      print_stats(v);
+      if (!v.empty()) std::printf(" at %s deg", repr_double(bin_deg * max_bin).c_str());
+      std::printf("\n");
+    }
+    std::printf("all pairs   compared=%-7zu", all.size());
+    print_stats(all);
+    if (!all.empty()) {
+      std::printf(" at %s deg, pair %zu-%zu", repr_double(bin_deg * all_bin).c_str(), all_pair,
+                  all_pair + 1);
+    }
+    std::printf("\n");
+    for (double s : spreads) {
+      const std::vector&lt;bool&gt; m = stationary_mask(scans, s, bin_deg);
+      std::size_t still = 0, measured = 0;
+      for (bool b : m) still += b ? 1 : 0;
+      // no spread limit at all: true = measured in every revolution (invariant 1's first half)
+      const std::vector&lt;bool&gt; every = stationary_mask(scans, 1e300, bin_deg);
+      for (bool b : every) measured += b ? 1 : 0;
+      std::printf("spread_max=%s  stationary=%zu/%zu (%.1f %%)  measured in every turn=%zu\n",
+                  repr_double(s).c_str(), still, m.size(),
+                  m.empty() ? 0.0 : 100.0 * static_cast&lt;double&gt;(still) / static_cast&lt;double&gt;(m.size()),
+                  measured);
+    }
+    return 0;
+  } catch (const std::exception&amp; e) {
+    std::printf("error: %s\n", e.what());
+    return 1;
+  }
+}</code></pre>
+      <p><code>CMakeLists.txt</code> 의 맨 아래에 붙인다.</p>
+      <pre><code class="lang-cmake"># ---- l-13 ----
+lab_tool(diff)                                     # 3-1-2: src/diff.cpp -&gt; build/lab_diff</code></pre>
+      <p>골격 그대로 빌드하면 <strong>경고 없이 빌드된다.</strong> <code>lab_diff</code> 에 파일과 빈 폭을 주면 <code>bins=0</code> 과 쌍마다 <code>compared=0/0  median=none</code> 을 찍고 0 으로 끝난다. 문턱을 주면 <code>clusters=0</code> 을 찍는다. 골격의 <code>bin_min()</code> 이 빈 목록을 돌려주기 때문이다. 그 결과가 골격의 정상이다.<sup class="fn"><a href="#fn-8">8</a></sup></p>
+      <p class="small">⚠ aarch64(Pi 5 의 CPU 가 쓰는 64비트 ARM 명령어 체계)의 <code>g++</code> 는 <code>cluster.hpp</code> 를 include 하는 파일마다 아래 묶음을 찍는다(시험 파일은 <code>from</code> 줄이 하나 더 붙는다). CMake 빌드에서는 <code>lab_diff</code> · <code>test_diff</code> · <code>test_diff_ub</code> 를 빌드할 때 한 번씩, 세 번 나온다. <code>lab_diff_synth</code> 는 <code>cluster.hpp</code> 를 쓰지 않아 나오지 않는다.</p>
+      <pre><code class="lang-text">In file included from &lt;파일&gt;:&lt;n&gt;:
+&lt;경로&gt;/include/lidar_lab/cluster.hpp: In member function 'lidar_lab::Point lidar_lab::Cluster::centroid() const':
+&lt;경로&gt;/include/lidar_lab/cluster.hpp:&lt;n&gt;:&lt;n&gt;: note: parameter passing for argument of type 'std::pair&lt;double, double&gt;' when C++17 is enabled changed to match C++14 in GCC 10.1
+   &lt;n&gt; |   Point centroid() const {
+      |                          ^</code></pre>
+      <p class="small"><strong>경고도 오류도 아닌 안내</strong>다. 읽는 법은 <a href="l-10-clusters.html#s3-1-2">l-10 §3-1-2</a> 끝과 같다 — <code>centroid()</code> 가 <code>Point</code> 를 값으로 돌려주기 때문에 나오고, 이 가이드처럼 한 컴파일러로 한 번에 빌드하면 해당하지 않는다. UTF-8 로케일에서는 작은따옴표가 <code>‘ ’</code> 로 찍힌다.<sup class="fn"><a href="#fn-8">8</a></sup></p>
+
+      <h4 id="s3-1-3">3-1-3. 직접 채우기 — 그리고 벡터 마흔넷으로 채점한다</h4>
+      <p>순서는 앞 쪽들과 같다. <strong>1번을 먼저 하는 것이 요령이다</strong> — 실패 줄의 목록이 곧 할 일 목록이 된다.</p>
+      <ol class="steps">
+        <li><p><strong>시험 파일을 먼저 만들어 두고 빌드 · 실행한다.</strong> 아래 전량을 <code>scripts/lidar_lab/tests/test_diff.cpp</code> 로 저장하고 그 아래 CMake 한 줄을 붙인 뒤 빌드한다. 지금 실행하면 <strong><code>38 of 44 cases failed</code></strong> 로 끝난다. 시험은 실패해도 멈추지 않고 끝까지 실행된다 — <strong>FAIL 줄이 0 개로 줄어드는 것이 이 걸음의 진도표</strong>다.</p>
+          <p>⚠ 44 개 중 나머지 여섯(5a · 7a · 8a · 9a · 9b · 18b)은 <strong>골격에서도 이미 통과한다</strong>. 기대값이 "덩어리 없음" · 빈 목록이라서, 골격이 돌려주는 빈 목록과 우연히 같기 때문이다. <strong>통과한 줄이 있다고 그만큼 된 것이 아니다</strong> — 진도는 남은 FAIL 로만 센다.</p></li>
+        <li><strong><code>bin_min()</code> 을 먼저 채운다</strong>(<code>38</code> → <code>28 of 44</code>). 나머지 셋이 모두 이 함수를 부른다. 몇 줄이면 되는데 <strong>함정이 넷</strong>이다 — 칸 수(올림), 무반사(빈 값 건너뛰기), 거리 0(그대로 두기), 대표값(최소). → T1</li>
+        <li><p><strong><code>diff()</code> 를 채운다</strong>(<code>28</code> → <code>12</code>). ① 두 장을 칸으로 나누고 ② 변한 칸을 표시하고 ③ 이웃한 칸을 묶는다. <strong>이음매는 마지막에 한 번만</strong> 본다. → T2</p>
+          <p>힌트: ③ 을 짜기 전에 <strong>모든 칸이 변한 경우</strong>를 손으로 따져 본다(벡터 12). "고리로 센 앞 칸이 안 변했으면 여기가 덩어리 시작"이라는 규칙만 쓰면 그때 <strong>시작점이 하나도 없어 덩어리가 0 개</strong>가 된다 (<code>FAIL 26 12a … got []</code>, T2 카드). 센서를 평행으로 밀어도 모든 칸이 변하지는 않는다(§3-3-3 견본은 330 칸 중 62 칸) — 그래도 칸이 전부 변한 기록에서는 덩어리가 사라지므로 시험이 이 경우를 따로 본다.</p></li>
+        <li><strong><code>stationary_mask()</code> 를 채운다</strong>(<code>12</code> → <code>5</code>). 벡터 15 ~ 18 이 정의를 채점한다 — 특히 "한 장에서라도 빈 값이면 <code>false</code>". → T3</li>
+        <li><strong><code>bin_diff()</code> 를 채운다</strong>(<code>5</code> → <code>PASS diff 44 cases</code>). 19 군이 부호와 빈 칸을 채점한다. 군은 같은 번호를 단 벡터의 묶음이다(19a ~ 19e 가 19 군). → T4</li>
+        <li><strong>44 개가 다 통과할 때까지 내 파일로 가지 않는다.</strong> 여기까지 라이다는 필요 없다.</li>
+      </ol>
+      <p class="small">걸음과 카드의 짝: 걸음 2 = T1, 3 = T2, 4 = T3, 5 = T4. 걸음 1 · 6 은 카드가 없다(빌드하고 실행해서 보는 일).</p>
+      <p>시험 파일은 <strong>전량</strong>이다 — 벡터가 곧 채점표이고, 내 답을 내가 채점할 수 없기 때문이다. 1 ~ 18 군의 기대값은 집필자가 <strong>독립 구현으로 실제로 계산 · 실행</strong>해 얻은 값이고(눈대중이 아니다), 계산에 쓴 세 줄을 파일 머리에 남겼다. 11c · 14c · 14d 와 19 군 다섯은 이 쪽에서 새로 더한 벡터다.<sup class="fn"><a href="#fn-8">8</a></sup> <code>diff.hpp</code> 와 <code>check.hpp</code>(l-02)만 include 한다.</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/tests/test_diff.cpp -- grading vectors for diff.hpp.  (l-13, in full)
+// Includes only diff.hpp and check.hpp: no port, no ROS, no file. It runs with nothing
+// plugged in -- on the Pi host, and on the Mac with clang++ for practice.
+//   pi$ scripts/lidar_lab/build/test_diff &amp;&amp; scripts/lidar_lab/build/test_diff_ub
+//
+// Most vectors use bin_deg = 90.0 or 45.0 so the bin index is countable by hand
+// (360/90 = 4 bins, 360/45 = 8) and most expectations are WHOLE NUMBERS -- bin indices,
+// point indices, cluster counts -- or differences that are exact in binary (1.0 - 0.5).
+// The few other numbers were computed by an independent implementation:
+//   cos(radians(90)) = 6.123233995736766e-17   (x of a point at 90 deg, NOT 0.0)
+//   sin(radians(90)) = 1.0
+//   360/7.0 -&gt; ceil = 52 bins, and floor(359.0/7.0) = 51
+#include &lt;cstddef&gt;
+#include &lt;limits&gt;
+#include &lt;optional&gt;
+#include &lt;string&gt;
+#include &lt;utility&gt;
+#include &lt;vector&gt;
+
+#include "lidar_lab/diff.hpp"
+#include "check.hpp"
+
+using namespace lidar_lab;
+
+namespace {
+
+using Idx = std::vector&lt;std::vector&lt;std::size_t&gt;&gt;;
+
+// An entry that is not there reads as nan -- and nan never passes near().
+const double kMissing = std::numeric_limits&lt;double&gt;::quiet_NaN();
+
+Scan S(std::vector&lt;double&gt; a, std::vector&lt;std::optional&lt;double&gt;&gt; r) {
+  Scan s;
+  s.a = std::move(a);
+  s.r = std::move(r);
+  s.t = 0.0;
+  return s;
+}
+
+Idx idx(const std::vector&lt;Cluster&gt;&amp; cs) {
+  Idx out;
+  for (const Cluster&amp; c : cs) out.push_back(c.idx);
+  return out;
+}
+
+template &lt;class T&gt;
+void same(const std::string&amp; name, const T&amp; got, const T&amp; want) {
+  check(name, got == want, str(got), str(want));
+}
+
+// Read through the size: a skeleton that returns nothing reports FAIL, not a crash.
+double num_at(const std::vector&lt;std::optional&lt;double&gt;&gt;&amp; v, std::size_t i) {
+  return i &lt; v.size() &amp;&amp; v[i] ? *v[i] : kMissing;
+}
+std::string opt_at(const std::vector&lt;std::optional&lt;double&gt;&gt;&amp; v, std::size_t i) {
+  return i &lt; v.size() ? str(v[i]) : std::string("missing");
+}
+std::string mask_at(const std::vector&lt;bool&gt;&amp; v, std::size_t i) {
+  return i &lt; v.size() ? str(static_cast&lt;bool&gt;(v[i])) : std::string("missing");
+}
+Point pt_at(const std::vector&lt;Cluster&gt;&amp; cs, std::size_t c, std::size_t p) {
+  return c &lt; cs.size() &amp;&amp; p &lt; cs[c].pts.size() ? cs[c].pts[p] : Point{kMissing, kMissing};
+}
+// "&lt;pts&gt;/&lt;idx&gt;" of cluster c, so the two lengths are compared without reading past either.
+std::string lengths(const std::vector&lt;Cluster&gt;&amp; cs, std::size_t c) {
+  if (c &gt;= cs.size()) return "missing";
+  return str(cs[c].pts.size()) + "/" + str(cs[c].idx.size());
+}
+
+}  // namespace
+
+int main() {
+  // 1. THE REPRESENTATIVE OF A BIN IS ITS NEAREST POINT. Two points land in bin 0 and the
+  //    file lists 0.9 first, 1.0 second -- so "keep the last one" answers 1.0 and "average
+  //    them" answers 0.95. The bin keeps 0.9.
+  const std::vector&lt;std::optional&lt;double&gt;&gt; m1 =
+      bin_min(S({0.2, 0.8, 90.5, 359.9}, {0.9, 1.0, 2.0, 1.5}), 1.0);
+  eq_int("1a one bin per degree", static_cast&lt;long long&gt;(m1.size()), 360);
+  near("1b nearest of the two in bin 0", num_at(m1, 0), 0.9);
+  near("1c bin 90 keeps its only point", num_at(m1, 90), 2.0);
+  near("1d bin 359 keeps its only point", num_at(m1, 359), 1.5);
+  same("1e a bin nobody measured is none", opt_at(m1, 1), std::string("none"));
+
+  // 2. ZERO IS A MEASUREMENT. Use 0.0 as "nothing here yet" and the bin reports 1.0.
+  const std::vector&lt;std::optional&lt;double&gt;&gt; m2 = bin_min(S({10.0, 10.5}, {0.0, 1.0}), 1.0);
+  near("2a distance 0.0 survives as the nearest", num_at(m2, 10), 0.0);
+
+  // 3. NO-RETURN IS NOT A DISTANCE. It is skipped, and a bin that is all no-return stays
+  //    none -- it must not become 0.0, which would read as "something at 0 m".
+  const std::vector&lt;std::optional&lt;double&gt;&gt; m3 =
+      bin_min(S({20.0, 20.5, 21.0}, {std::nullopt, 1.2, std::nullopt}), 1.0);
+  near("3a the measured one wins the bin", num_at(m3, 20), 1.2);
+  same("3b an all-no-return bin is none", opt_at(m3, 21), std::string("none"));
+
+  // 4. A BIN SIZE THAT DOES NOT DIVIDE 360. 360/7 is 51.43 -&gt; 52 bins, and the last one is
+  //    only 3 deg wide. Nothing here rounds the count down and loses a wedge.
+  const std::vector&lt;std::optional&lt;double&gt;&gt; m4 = bin_min(S({357.0, 359.0}, {1.0, 2.0}), 7.0);
+  eq_int("4a ceil, not floor", static_cast&lt;long long&gt;(m4.size()), 52);
+  near("4b both land in the narrow last bin", num_at(m4, 51), 1.0);</code></pre>
+      <p>여기까지가 <code>bin_min()</code> 이다. 다음은 <code>diff()</code> — 빈 폭을 <strong>90°</strong> 로 설정해 네 칸만 쓰므로 <strong>칸 번호를 손으로 셀 수 있다</strong>(0° = 칸 0, 90° = 칸 1, …). 기댓값이 대부분 정수인 것도 그래서다. 같은 파일에 이어 붙인다.</p>
+      <pre><code class="lang-cpp">  // --- diff: four bins of 90 deg, one point each, so bin k holds point k --------------------
+  const Scan A = S({0.0, 90.0, 180.0, 270.0}, {1.0, 1.0, 1.0, 1.0});
+
+  // 5. NOTHING MOVED. The same revolution twice is no clusters at all, not one empty cluster.
+  same("5a a scan against itself", idx(diff(A, A, 0.1, 90.0)), Idx{});
+
+  // 6. ONE BIN CAME CLOSER. One cluster, and it carries the index the point had in scan b --
+  //    that is the contract l-10 fixed for Cluster{pts, idx}.
+  const Scan B6 = S({0.0, 90.0, 180.0, 270.0}, {1.0, 0.5, 1.0, 1.0});
+  const std::vector&lt;Cluster&gt; c6 = diff(A, B6, 0.1, 90.0);
+  eq_int("6a one cluster", static_cast&lt;long long&gt;(c6.size()), 1);
+  same("6b it is the point at 90 deg", idx(c6), Idx{{1}});
+  same("6c pts and idx are the same length", lengths(c6, 0), std::string("1/1"));
+  near("6d y of that point is +0.5 (x forward, y left)", pt_at(c6, 0, 0).second, 0.5);
+  near("6e and x is cos(90) * 0.5, not 0.0", pt_at(c6, 0, 0).first, 3.061616997868383e-17,
+       1e-25);
+
+  // 7. THE BOUNDARY IS STRICT. A change of exactly tol is not a change; tol is the largest
+  //    difference you are willing to call noise.
+  same("7a change == tol is not a change", idx(diff(A, B6, 0.5, 90.0)), Idx{});
+  same("7b a hair below tol is", idx(diff(A, B6, 0.4999999, 90.0)), Idx{{1}});
+
+  // 8. FARTHER IS NOT CLOSER. diff() answers "what came toward me"; a bin that grew is
+  //    silent here (2-1 says what that costs).
+  const Scan B8 = S({0.0, 90.0, 180.0, 270.0}, {1.0, 1.5, 1.0, 1.0});
+  same("8a a bin that got farther", idx(diff(A, B8, 0.1, 90.0)), Idx{});
+
+  // 9. YOU CANNOT SUBTRACT A NO-RETURN. Either side missing -&gt; that bin says nothing.
+  const Scan A9 = S({0.0, 90.0, 180.0, 270.0}, {1.0, std::nullopt, 1.0, 1.0});
+  same("9a no-return in scan a", idx(diff(A9, B6, 0.1, 90.0)), Idx{});
+  const Scan B9 = S({0.0, 90.0, 180.0, 270.0}, {1.0, std::nullopt, 1.0, 1.0});
+  same("9b no-return in scan b", idx(diff(A, B9, 0.1, 90.0)), Idx{});
+
+  // 10. THE TWO SCANS HAVE DIFFERENT POINT COUNTS. That is the normal case (l-04 2-2), and it
+  //     is the whole reason for binning: eight points against four.
+  const Scan A10 = S({0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0},
+                     {1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0});
+  const Scan B10 = S({0.0, 90.0, 180.0, 270.0}, {1.0, 0.5, 1.0, 1.0});
+  same("10a different counts, and the bin still found", idx(diff(A10, B10, 0.1, 90.0)),
+       Idx{{1}});
+
+  // 11. THE SEAM. Bin 7 (315 deg) and bin 0 (0 deg) are neighbours. A tool that walks the
+  //     list front to back reports TWO clusters here, and the object in front of the sensor
+  //     is counted twice (l-10 2-2 said the same thing). The seam cluster comes out FIRST.
+  const Scan A11 = A10;
+  const Scan B11 = S({0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0},
+                     {0.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5});
+  const std::vector&lt;Cluster&gt; c11 = diff(A11, B11, 0.1, 45.0);
+  eq_int("11a one cluster, not two", static_cast&lt;long long&gt;(c11.size()), 1);
+  same("11b it starts on the far side of the seam", idx(c11), Idx{{7, 0}});
+  const Scan B11c = S({0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0},
+                      {0.5, 1.0, 0.5, 1.0, 1.0, 1.0, 1.0, 0.5});
+  same("11c the seam cluster first, then the others", idx(diff(A11, B11c, 0.1, 45.0)),
+       Idx{{7, 0}, {2}});
+
+  // 12. EVERYTHING MOVED. This is what a nudged sensor looks like: one cluster that holds the
+  //     whole revolution, in index order, with no seam to cut on.
+  const Scan B12 = S({0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0},
+                     {0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5});
+  same("12a the room is one cluster", idx(diff(A11, B12, 0.1, 45.0)),
+       Idx{{0, 1, 2, 3, 4, 5, 6, 7}});
+
+  // 13. TWO OBJECTS, TWO CLUSTERS, in ascending angle order.
+  const Scan B13 = S({0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0},
+                     {1.0, 0.5, 1.0, 1.0, 0.5, 0.5, 1.0, 1.0});
+  same("13a two runs", idx(diff(A11, B13, 0.1, 45.0)), Idx{{1}, {4, 5}});
+
+  // 14. A BIN HOLDS MORE THAN ONE POINT. The bin decides, but the cluster carries every
+  //     MEASURED point of that bin -- including the far one at 1.0 m. A no-return in the
+  //     same bin has no (x, y), so it is in neither pts nor idx (14c, 14d).
+  const Scan A14 = S({0.0, 10.0, 20.0}, {1.0, 1.0, 1.0});
+  const Scan B14 = S({0.0, 10.0, 20.0}, {1.0, 0.5, 1.0});
+  const std::vector&lt;Cluster&gt; c14 = diff(A14, B14, 0.1, 90.0);
+  same("14a all three points of bin 0", idx(c14), Idx{{0, 1, 2}});
+  near("14b and the coordinates are scan b's", pt_at(c14, 0, 1).first, to_xy(B14)[1]-&gt;first);
+  const Scan B14c = S({0.0, 10.0, 20.0}, {0.5, std::nullopt, 1.0});
+  const std::vector&lt;Cluster&gt; c14c = diff(A14, B14c, 0.1, 90.0);
+  same("14c the no-return of a changed bin is left out", idx(c14c), Idx{{0, 2}});
+  same("14d so pts and idx stay the same length", lengths(c14c, 0), std::string("2/2"));</code></pre>
+      <p>마지막은 <code>stationary_mask()</code> 와 <code>bin_diff()</code> 다. <strong>16a · 16b 의 숫자가 1.0 / 1.25 / 1.125 인 데는 이유가 있다</strong> — 주석에 적어 두었다.</p>
+      <pre><code class="lang-cpp">  // --- stationary_mask: the sweep tool of 3-1-4 -------------------------------------------
+  // 15. THREE IDENTICAL REVOLUTIONS. Every measured bin is stationary; the bins nobody
+  //     measured are false -- "unknown" is not "still".
+  const std::vector&lt;Scan&gt; S15(3, S({0.0, 90.0}, {1.0, 1.0}));
+  const std::vector&lt;bool&gt; m15 = stationary_mask(S15, 0.01, 90.0);
+  eq_int("15a four bins came back", static_cast&lt;long long&gt;(m15.size()), 4);
+  same("15b measured and unchanged", mask_at(m15, 0) + " " + mask_at(m15, 1),
+       std::string("true true"));
+  same("15c never measured -&gt; false", mask_at(m15, 2) + " " + mask_at(m15, 3),
+       std::string("false false"));
+
+  // 16. THE SPREAD IS max - min ACROSS ALL THE SCANS, and the comparison is &lt;=.
+  //     The numbers are 1.0 / 1.25 / 1.125 on purpose: 1.25 - 1.0 is exactly 0.25 in binary,
+  //     while 1.02 - 1.00 is 0.020000000000000018 and a &lt;= boundary written with it fails
+  //     for a reason that has nothing to do with lidar.
+  const std::vector&lt;Scan&gt; S16 = {S({0.0}, {1.0}), S({0.0}, {1.25}), S({0.0}, {1.125})};
+  same("16a spread 0.25 &lt;= 0.25", mask_at(stationary_mask(S16, 0.25, 90.0), 0),
+       std::string("true"));
+  same("16b spread 0.25 &gt; 0.2499", mask_at(stationary_mask(S16, 0.2499, 90.0), 0),
+       std::string("false"));
+
+  // 17. ONE NO-RETURN ANYWHERE IN THE STACK MAKES THE BIN UNUSABLE. A bin that blinks in and
+  //     out is exactly the bin that will flood diff() later.
+  const std::vector&lt;Scan&gt; S17 = {S({0.0}, {1.0}), S({0.0}, {std::nullopt}), S({0.0}, {1.0})};
+  same("17a blinking bin is not stationary", mask_at(stationary_mask(S17, 1.0, 90.0), 0),
+       std::string("false"));
+
+  // 18. ONE REVOLUTION CANNOT SAY ANYTHING IS STILL. Not a crash, not all true.
+  same("18a a single scan", str(stationary_mask({S({0.0}, {1.0})}, 1.0, 90.0)),
+       std::string("[false, false, false, false]"));
+  same("18b no scans at all", str(stationary_mask({}, 1.0, 90.0)), std::string("[]"));
+
+  // --- bin_diff: the numbers lab_diff collects in 3-1-4 ------------------------------------
+  // 19. a - b PER BIN, SIGNED, and only where both sides measured. One entry per bin, so the
+  //     list is as long as bin_min's whatever the point counts (19e).
+  same("19a one bin came 0.5 m closer", str(bin_diff(A, B6, 90.0)),
+       std::string("[0.0, 0.5, 0.0, 0.0]"));
+  same("19b farther is negative, not dropped and not made positive", str(bin_diff(A, B8, 90.0)),
+       std::string("[0.0, -0.5, 0.0, 0.0]"));
+  same("19c a no-return on one side is none", str(bin_diff(A9, B6, 90.0)),
+       std::string("[0.0, none, 0.0, 0.0]"));
+  same("19d 0.0 against 0.0 is 0.0; nobody measured is none",
+       str(bin_diff(S({0.0}, {0.0}), S({0.0}, {0.0}), 90.0)),
+       std::string("[0.0, none, none, none]"));
+  same("19e eight points against four, four bins", str(bin_diff(A10, B10, 90.0)),
+       std::string("[0.0, 0.5, 0.0, 0.0]"));
+
+  return finish("diff");
+}</code></pre>
+      <p><code>CMakeLists.txt</code> 의 맨 아래에 한 줄을 붙이고 빌드한다.</p>
+      <pre><code class="lang-cmake">lab_test(diff)                                     # 3-1-3: tests/test_diff.cpp</code></pre>
+      <pre><code class="lang-bash">pi$ cmake --build scripts/lidar_lab/build -j2 --target test_diff test_diff_ub
+pi$ scripts/lidar_lab/build/test_diff
+FAIL 1 1a one bin per degree: got 0, want 360
+FAIL 2 1b nearest of the two in bin 0: got nan, want 0.9
+...
+FAIL 26 12a the room is one cluster: got [], want [[0, 1, 2, 3, 4, 5, 6, 7]]
+...
+FAIL 40 19a one bin came 0.5 m closer: got [], want [0.0, 0.5, 0.0, 0.0]
+...
+38 of 44 cases failed
+pi$ scripts/lidar_lab/build/test_diff_ub      # 진단 빌드(ASan · UBSan) — 같은 줄만 나와야 한다</code></pre>
+      <p class="small">위 출력은 골격 그대로의 결과다.<sup class="fn"><a href="#fn-8">8</a></sup> 없는 원소는 <code>nan</code> 이나 <code>missing</code> 으로 찍힌다 — 시험이 크기를 확인하고 읽기 때문이다(<code>check.hpp</code> 의 <code>at_or()</code> 와 같은 방식, l-02). 빈 목록에서 <code>[0]</code> 을 읽어 멈추는 대신 FAIL 줄을 낸다.</p>
+      <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>bin_min()</code> · 칸 수는 올림, 칸마다 가장 가까운 값</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 한 바퀴를 폭 <code>bin_deg</code> 의 칸으로 나눠, 칸마다 <strong>가장 가까운 측정 거리</strong>(m)를 담은 목록을 돌려준다. 목록 길이는 <code>ceil(360 / bin_deg)</code> 이고, 측정이 하나도 없는 칸은 빈 값이다.</p>
+        <p>채점은 1 ~ 4 군(1a ~ 4b)이 직접 한다. <code>diff()</code> · <code>stationary_mask()</code> · <code>bin_diff()</code> 가 이 함수를 부르므로 5 ~ 19 군도 이 함수에 기댄다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T1 - scripts/lidar_lab/include/lidar_lab/diff.hpp (bin_min) */
+inline std::vector&lt;std::optional&lt;double&gt;&gt; bin_min(const Scan&amp; s, double bin_deg) {
+  const std::size_t n = static_cast&lt;std::size_t&gt;(std::ceil(360.0 / bin_deg));
+  std::vector&lt;std::optional&lt;double&gt;&gt; out(n);
+  for (std::size_t i = 0; i &lt; s.size(); ++i) {
+    if (!s.r[i]) continue;
+    std::size_t k = static_cast&lt;std::size_t&gt;(s.a[i] / bin_deg);
+    if (k &gt;= n) k = n - 1;  // a rounding guard: a &lt; 360 always lands in the last bin
+    if (!out[k] || *s.r[i] &lt; *out[k]) out[k] = s.r[i];
+  }
+  return out;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>std::ceil(360.0 / bin_deg)</code> — 칸 수는 <strong>올림</strong>이다. 360 을 나누어떨어지게 하지 못하는 폭이면 마지막 칸이 좁아도 남는다(불변식 1, 4a).</li>
+          <li><code>std::vector&lt;std::optional&lt;double&gt;&gt; out(n);</code> — n 개의 빈 값으로 시작한다. 빈 값이 "아직 측정 없음"이다. <code>0.0</code> 을 그 표시로 쓰면 0 m 측정을 잃는다(2a, 아래 표).</li>
+          <li><code>if (!s.r[i]) continue;</code> — 무반사는 건너뛴다(불변식 3). <code>!s.r[i]</code> 는 "값이 없는가"를 본다. 값이 <code>0.0</code> 이어도 참이 되지 않는다(불변식 4).</li>
+          <li><code>static_cast&lt;std::size_t&gt;(s.a[i] / bin_deg)</code> — 칸 번호. 각도가 0 이상이라 정수로 바꾸면 버림(floor)과 같다. 358° 를 폭 7° 로 나누면 51.1 → 칸 51 이다.</li>
+          <li><code>if (k &gt;= n) k = n - 1;</code> — 마지막 칸을 넘지 않게 지키는 줄이다. 359.99…° 를 0.01° ~ 360° 의 폭(0.01° 간격)과 무작위 폭 1 000 만 개로 나눠 봤을 때 넘친 적은 없었다 — 보험이다.</li>
+          <li><code>if (!out[k] || *s.r[i] &lt; *out[k]) out[k] = s.r[i];</code> — 칸이 비었거나 이 점이 더 가까우면 바꾼다(불변식 2). <code>||</code> 는 왼쪽이 참이면 오른쪽을 계산하지 않으므로 빈 칸에서 <code>*out[k]</code> 를 읽지 않는다.</li>
+          <li>골격의 자리표시 셋(<code>(void)s;</code> · <code>(void)bin_deg;</code> · <code>return {};</code>)은 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 둘이다.<sup class="fn"><a href="#fn-12" id="fnref-12">12</a></sup></p><p>지키는 줄(<code>k &gt;= n</code>)을 빼도, 칸 번호를 <code>std::floor(s.a[i] / bin_deg)</code> 로 명시해도 44 개를 통과한다.</p></li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>std::ceil</code> · <code>std::optional</code> 의 <code>!r</code> · <code>*r</code> · <code>static_cast&lt;std::size_t&gt;</code>.</p>
+        <p><strong>흔한 실수</strong> — 그 잘못을 저지른 판을 실제로 만들어 잰 결과다. 진단 빌드도 같은 줄을 찍는다. 진단 빌드가 다른 줄을 찍는 행은 그 행 안에 적었다.<sup class="fn"><a href="#fn-12">12</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w50"><col class="w20"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_diff</code> · <code>test_diff_ub</code> 가 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>칸 수를 내림 <code>static_cast&lt;std::size_t&gt;(360.0 / bin_deg)</code> 으로 셌다(지키는 줄은 남김)</td><td><code>2 of 44</code> — 4a · 4b. <code>FAIL 9 4a ceil, not floor: got 51, want 52</code>. 마지막 좁은 칸이 통째로 사라진다</td><td>올림</td></tr>
+            <tr><td>칸 수를 내림으로 세고 지키는 줄도 없다</td><td>g++: <code>Assertion '__n &lt; this-&gt;size()' failed.</code> 뒤 중단(134, 4 군 — 칸 51 에 쓴다). clang: <code>2 of 44</code>(4a · 4b — 멈추지 않는다). clang 진단 빌드: <code>AddressSanitizer: heap-buffer-overflow</code> 뒤 중단(134)</td><td>올림</td></tr>
+            <tr><td>대표를 <strong>마지막</strong> 점으로 썼다(<code>out[k] = s.r[i];</code>)</td><td><code>7 of 44</code> — 1b · 2a · 4b · 14a ~ 14d. <code>FAIL 2 1b nearest of the two in bin 0: got 1.0, want 0.9</code></td><td>더 가까울 때만</td></tr>
+            <tr><td>대표를 <strong>평균</strong>으로 썼다</td><td><code>3 of 44</code> — 1b · 2a · 4b. <code>FAIL 2 1b …: got 0.95, want 0.9</code>(§2-2 의 표가 보인 희석)</td><td>최소</td></tr>
+            <tr><td><code>0.0</code> 을 "아직 없음" 표시로 썼다(<code>std::vector&lt;double&gt; best(n, 0.0)</code> 에 모으고 0 이 아닌 칸만 옮김)</td><td><code>2 of 44</code> — 2a · 19d. <code>FAIL 6 2a distance 0.0 survives as the nearest: got 1.0, want 0.0</code>. 0 m 측정이 오류 없이 사라진다</td><td>빈 값으로 표시</td></tr>
+            <tr><td>무반사를 <code>s.r[i].value_or(0.0)</code> 로 꺼냈다</td><td><code>5 of 44</code> — 3a · 3b · 9b · 17a · 19c. <code>FAIL 7 3a the measured one wins the bin: got 0.0, want 1.2</code>. 없는 물체가 바로 앞에 생긴다</td><td><code>!s.r[i]</code> 면 건너뛴다</td></tr>
+            <tr><td>건너뛰는 줄을 빼고 <code>*s.r[i]</code> 를 꺼냈다</td><td>g++: <code>Assertion 'this-&gt;_M_is_engaged()' failed.</code> 뒤 중단(134, 3 군). clang: <code>5 of 44</code> — 위 행과 같은 다섯(멈추지 않는다)</td><td>건너뛰는 줄 먼저</td></tr>
+          </tbody>
+        </table></div>
+        <p class="small">종료 코드 134 는 중단(abort)이다. 139 는 segmentation fault 다 — 허용되지 않은 메모리 주소에 접근해 운영체제가 프로그램을 끝낸 것이다.</p>
+        <p class="small">g++ 의 중단 문구는 터미널에서 실행했을 때 보이는 것이다. 파이프로 받으면 문구가 남지 않을 수 있다.<sup class="fn"><a href="#fn-13" id="fnref-13">13</a></sup> clang(Mac)은 빈 <code>optional</code> 의 <code>*</code> 를 검사하지 않아 멈추지 않는다 — 판정은 Pi 의 g++ 빌드로 한다.</p>
+        <p><strong>확인</strong> — 골격 그대로는 <code>38 of 44 cases failed</code> 다. T1 을 채우면 <code>28 of 44</code> 이다.</p>
+        </div></details>
+      <details class="hint" id="hint-t2"><summary>힌트 T2 — <code>diff()</code> · 칸을 고르고, 한 번 훑어 묶고, 이음매는 끝난 뒤에</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 두 바퀴를 같은 폭의 칸으로 나눠 <code>(a − b) &gt; tol</code> 인 칸을 "변했다"로 표시하고, 이웃한 변한 칸을 덩어리로 묶는다. 덩어리는 <strong>b 의 측정된 점</strong>(좌표와 인덱스)을 담는다. 마지막 칸과 칸 0 이 둘 다 변했으면 하나로 이어 맨 앞에 둔다.</p>
+        <p>채점은 5 ~ 14 군이 한다. T1 이 먼저 통과해야 한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T2 - scripts/lidar_lab/include/lidar_lab/diff.hpp (diff) */
+inline std::vector&lt;Cluster&gt; diff(const Scan&amp; a, const Scan&amp; b, double tol, double bin_deg) {
+  const std::vector&lt;std::optional&lt;double&gt;&gt; ma = bin_min(a, bin_deg);
+  const std::vector&lt;std::optional&lt;double&gt;&gt; mb = bin_min(b, bin_deg);
+  const std::size_t n = mb.size();
+  std::vector&lt;bool&gt; changed(n, false);
+  for (std::size_t k = 0; k &lt; n; ++k) {
+    changed[k] = ma[k] &amp;&amp; mb[k] &amp;&amp; *ma[k] - *mb[k] &gt; tol;
+  }
+  std::vector&lt;std::vector&lt;std::size_t&gt;&gt; in_bin(n);  // b's measured indices, bin by bin
+  for (std::size_t i = 0; i &lt; b.size(); ++i) {
+    if (!b.r[i]) continue;
+    std::size_t k = static_cast&lt;std::size_t&gt;(b.a[i] / bin_deg);
+    if (k &gt;= n) k = n - 1;
+    in_bin[k].push_back(i);
+  }
+  std::vector&lt;std::vector&lt;std::size_t&gt;&gt; runs;  // each run = neighbouring changed bins
+  for (std::size_t k = 0; k &lt; n; ++k) {
+    if (!changed[k]) continue;
+    if (k == 0 || !changed[k - 1]) runs.emplace_back();
+    runs.back().push_back(k);
+  }
+  if (runs.size() &gt; 1 &amp;&amp; changed[0] &amp;&amp; changed[n - 1]) {  // the seam: decided once, after the pass
+    std::vector&lt;std::size_t&gt; tail = runs.back();
+    runs.pop_back();
+    tail.insert(tail.end(), runs.front().begin(), runs.front().end());
+    runs.front() = tail;
+  }
+  const std::vector&lt;std::optional&lt;Point&gt;&gt; xy = to_xy(b);
+  std::vector&lt;Cluster&gt; out;
+  for (const std::vector&lt;std::size_t&gt;&amp; run : runs) {
+    Cluster c;
+    for (std::size_t k : run) {
+      for (std::size_t i : in_bin[k]) {
+        c.pts.push_back(*xy[i]);
+        c.idx.push_back(i);
+      }
+    }
+    out.push_back(c);
+  }
+  return out;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>ma</code> · <code>mb</code> — 두 장의 <code>bin_min()</code>(T1). 점 수가 달라도 칸 수는 같다(불변식 5, 10a).</li>
+          <li><code>changed[k] = ma[k] &amp;&amp; mb[k] &amp;&amp; *ma[k] - *mb[k] &gt; tol;</code> — 둘 다 값이 있어야 뺀다(불변식 2, 9a · 9b). <code>&amp;&amp;</code> 는 왼쪽부터 보고 거짓이면 멈추므로 빈 값을 꺼내지 않는다. <code>&gt;</code> 는 엄격하다(7a). 부호를 그대로 두므로 멀어진 칸은 변하지 않은 칸이다(8a).</li>
+          <li><code>in_bin</code> — b 의 <strong>측정된</strong> 인덱스를 칸별로 한 번에 나눠 둔다. <code>if (!b.r[i]) continue;</code> 가 불변식 4 의 "측정된 점만"이다(14c · 14d). 칸 번호는 T1 과 같은 규칙이다.</li>
+          <li><code>runs</code> — 칸을 앞에서 뒤로 한 번 훑는다. 칸 0 이거나 앞 칸이 변하지 않았으면 새 덩어리를 연다.</li>
+          <li><code>if (runs.size() &gt; 1 &amp;&amp; changed[0] &amp;&amp; changed[n - 1])</code> — 이음매 판정. 훑기가 끝난 뒤 <strong>한 번</strong>만 한다. 마지막 덩어리 뒤에 첫 덩어리를 붙여 맨 앞에 둔다(11b · 11c). 모든 칸이 변했으면 덩어리는 처음부터 하나다(12a) — <code>runs.size() &gt; 1</code> 이 그 하나를 자기 자신과 합치지 않게 막는다.</li>
+          <li><code>to_xy(b)</code> — 좌표는 나중 장(b)의 것이다(14b). <code>*xy[i]</code> 는 안전하다 — <code>in_bin</code> 에 측정된 인덱스만 넣었기 때문이다.</li>
+          <li><code>c.pts.push_back(…); c.idx.push_back(i);</code> — <code>Cluster{pts, idx}</code>(l-10)의 두 벡터에 늘 함께 넣어 길이를 맞춘다.</li>
+          <li>골격의 자리표시 다섯(<code>(void)</code> 넷 · <code>return {};</code>)은 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 하나다.<sup class="fn"><a href="#fn-12">12</a></sup></p><p><code>in_bin</code> 없이, 변한 칸마다 b 를 처음부터 다시 훑어 그 칸의 측정점을 모아도 44 개를 통과한다. 대신 변한 칸 수 × 점 수만큼 되풀이한다 — 최악의 경우(모든 칸이 변하면) 1° 칸 360 개 · 점 1 450 개로 한 쌍에 52 만 번이다. §3-3-3 견본(변한 칸 62 개)이면 약 9 만 번이다.</p></li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>bin_min()</code>(T1) · <code>to_xy()</code>(l-08) · <code>Cluster</code>(l-10) · <code>std::vector&lt;bool&gt;</code> · <code>emplace_back</code> · <code>insert</code> · <code>pop_back</code>.</p>
+        <p><strong>흔한 실수</strong> — 그 잘못을 저지른 판을 실제로 만들어 잰 결과다. 진단 빌드도 같은 줄을 찍는다. 진단 빌드가 다른 줄을 찍는 행은 그 행 안에 적었다.<sup class="fn"><a href="#fn-12">12</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w50"><col class="w20"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_diff</code> · <code>test_diff_ub</code> 가 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>이음매를 잇지 않았다(칸을 앞에서 뒤로만 훑었다)</td><td><code>3 of 44</code> — 11a · 11b · 11c. <code>FAIL 23 11a one cluster, not two: got 2, want 1</code>. 정면의 물건이 둘로 세어진다</td><td>훑은 뒤 한 번</td></tr>
+            <tr><td>"고리로 센 앞 칸이 변하지 않았으면 여기가 시작" 규칙만 썼다</td><td><code>2 of 44</code> — 11c · 12a. <code>FAIL 26 12a the room is one cluster: got [], …</code>. 모든 칸이 변하면 시작점이 없어 덩어리가 0 개다. 이음매 덩어리는 맨 뒤로 간다(11c <code>got [[2], [7, 0]]</code>)</td><td>모든 칸이 변한 경우를 따로</td></tr>
+            <tr><td>경계를 <code>&gt;= tol</code> 로 썼다</td><td><code>1 of 44</code> — 7a. <code>got [[1]], want []</code></td><td><code>&gt; tol</code></td></tr>
+            <tr><td>절대값 <code>std::fabs(*ma[k] - *mb[k])</code> 로 비교했다</td><td><code>1 of 44</code> — 8a. <code>got [[1]], want []</code>. 일부러 그러려면 벡터도 같이 고친다(§2-1)</td><td>부호 그대로</td></tr>
+            <tr><td>좌표를 <code>to_xy(a)</code> 에서 꺼냈다</td><td><code>3 of 44</code> — 6d · 6e · 14b. <code>FAIL 15 6d y of that point is +0.5 (x forward, y left): got 1.0, want 0.5</code></td><td><code>to_xy(b)</code></td></tr>
+            <tr><td>인덱스를 a 에서 모았다(<code>in_bin</code> 이 a 를 훑었다)</td><td>g++: <code>FAIL 22 10a … got [[2, 3]], want [[1]]</code> 뒤 <code>_M_is_engaged</code> 중단(134, 14 군). clang: <code>3 of 44</code> — 10a · 14c · 14d</td><td>b 를 훑는다</td></tr>
+            <tr><td>측정되지 않은 점까지 담았다(건너뛰는 줄을 빼고 <code>xy[i].value_or(Point{0.0, 0.0})</code>)</td><td><code>2 of 44</code> — 14c · 14d. <code>FAIL 30 14c the no-return of a changed bin is left out: got [[0, 1, 2]], want [[0, 2]]</code>. 원점 (0, 0) 의 가짜 점이 덩어리에 들어간다</td><td><code>!b.r[i]</code> 면 건너뛴다</td></tr>
+            <tr><td>건너뛰는 줄만 뺐다(<code>*xy[i]</code> 그대로)</td><td>g++: <code>_M_is_engaged</code> 중단(134, 14c). clang: <code>2 of 44</code> — 14c · 14d(멈추지 않는다)</td><td>건너뛰는 줄 먼저</td></tr>
+          </tbody>
+        </table></div>
+        <p class="small">g++ 의 중단 문구를 읽는 법은 T1 카드의 작은 글씨와 같다.</p>
+        <p><strong>확인</strong> — T1 을 채운 상태는 <code>28 of 44</code> 이다. T2 까지 채우면 <code>12 of 44</code> 이다(남는 것은 15 ~ 19 군).</p>
+        </div></details>
+      <details class="hint" id="hint-t3"><summary>힌트 T3 — <code>stationary_mask()</code> · 바퀴 더미를 칸마다 위에서 아래로</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 여러 바퀴를 같은 폭으로 나눠, 칸마다 "<strong>모든 바퀴에서 측정됐고</strong> 최대 − 최소 ≤ <code>spread_max</code>" 이면 <code>true</code> 를 담는다. 바퀴가 둘 미만이면 전부 <code>false</code>, 바퀴가 없으면 빈 목록이다.</p>
+        <p>채점은 15 ~ 18 군이 한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T3 - scripts/lidar_lab/include/lidar_lab/diff.hpp (stationary_mask) */
+inline std::vector&lt;bool&gt; stationary_mask(const std::vector&lt;Scan&gt;&amp; scans, double spread_max,
+                                         double bin_deg) {
+  if (scans.empty()) return {};
+  std::vector&lt;std::vector&lt;std::optional&lt;double&gt;&gt;&gt; m;
+  for (const Scan&amp; s : scans) m.push_back(bin_min(s, bin_deg));
+  const std::size_t n = m[0].size();
+  std::vector&lt;bool&gt; out(n, false);
+  if (scans.size() &lt; 2) return out;
+  for (std::size_t k = 0; k &lt; n; ++k) {
+    bool all = true;
+    double lo = 0.0, hi = 0.0;
+    for (std::size_t j = 0; j &lt; m.size(); ++j) {
+      if (!m[j][k]) {
+        all = false;
+        break;
+      }
+      if (j == 0 || *m[j][k] &lt; lo) lo = *m[j][k];
+      if (j == 0 || *m[j][k] &gt; hi) hi = *m[j][k];
+    }
+    out[k] = all &amp;&amp; hi - lo &lt;= spread_max;
+  }
+  return out;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>if (scans.empty()) return {};</code> — 바퀴가 없으면 칸 수도 모른다(18b). 이 줄이 없으면 아래 <code>m[0]</code> 이 없는 원소를 읽는다.</li>
+          <li><code>m.push_back(bin_min(s, bin_deg));</code> — 바퀴마다 한 번씩 칸으로 나눈다(T1).</li>
+          <li><code>std::vector&lt;bool&gt; out(n, false); if (scans.size() &lt; 2) return out;</code> — 한 바퀴로는 "가만히 있었다"를 말할 수 없다(불변식 3, 18a).</li>
+          <li>안쪽 반복 — 한 바퀴라도 빈 값이면 <code>all = false</code> 로 두고 멈춘다(불변식 2, 17a). 값이 있으면 가장 작은 값 <code>lo</code> 와 가장 큰 값 <code>hi</code> 를 갱신한다. <code>j == 0</code> 일 때 첫 값으로 둘을 정한다.</li>
+          <li><code>out[k] = all &amp;&amp; hi - lo &lt;= spread_max;</code> — 비교는 <code>&lt;=</code> 다(16a).</li>
+          <li>골격의 자리표시 넷(<code>(void)</code> 셋 · <code>return {};</code>)은 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 하나다.<sup class="fn"><a href="#fn-12">12</a></sup></p><p>칸마다 값을 모아 <code>std::minmax_element</code> 로 최소 · 최대를 한 번에 구해도 44 개를 통과한다(모은 값의 수가 바퀴 수보다 적으면 그 칸은 <code>false</code>).</p></li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>bin_min()</code>(T1) · <code>std::vector&lt;bool&gt;</code> · <code>break</code>.</p>
+        <p><strong>흔한 실수</strong> — 그 잘못을 저지른 판을 실제로 만들어 잰 결과다. 진단 빌드도 같은 줄을 찍는다. 진단 빌드가 다른 줄을 찍는 행은 그 행 안에 적었다.<sup class="fn"><a href="#fn-12">12</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w50"><col class="w20"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_diff</code> · <code>test_diff_ub</code> 가 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>빈 값을 건너뛰고 측정된 것끼리만 폭을 쟀다</td><td><code>2 of 44</code> — 15c · 17a. <code>FAIL 37 17a blinking bin is not stationary: got true, want false</code>. 깜빡이는 칸이 "가만히 있다"가 된다</td><td>빈 값이면 <code>false</code></td></tr>
+            <tr><td>비교를 <code>&lt; spread_max</code> 로 썼다</td><td><code>1 of 44</code> — 16a. <code>got false, want true</code></td><td><code>&lt;=</code></td></tr>
+            <tr><td>"둘 미만이면 전부 false" 를 뺐다</td><td><code>1 of 44</code> — 18a. <code>got [true, false, false, false]</code></td><td><code>scans.size() &lt; 2</code></td></tr>
+            <tr><td>"바퀴가 없으면 빈 목록" 을 뺐다</td><td>g++: <code>Assertion '__n &lt; this-&gt;size()' failed.</code> 뒤 중단(134, 18b). clang: 종료 코드 139 — 셸이 segmentation fault 를 알린다(문구는 셸마다 다르다). clang 진단 빌드: <code>runtime error: reference binding to null pointer …</code> 뒤 중단(134)</td><td><code>scans.empty()</code> 먼저</td></tr>
+          </tbody>
+        </table></div>
+
+        <p><strong>확인</strong> — T2 까지 채운 상태는 <code>12 of 44</code> 이다. T3 까지 채우면 <code>5 of 44</code> 이다(남는 것은 19 군).</p>
+        </div></details>
+      <details class="hint" id="hint-t4"><summary>힌트 T4 — <code>bin_diff()</code> · 칸마다 a − b, 부호 그대로</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 두 바퀴의 칸마다 <code>a − b</code>(m)를 담는다. 둘 다 측정된 칸에만 값이 있고 나머지는 빈 값이다. 목록 길이는 칸 수다. <code>lab_diff</code> 가 실습 A 의 분포를 이 목록으로 낸다.</p>
+        <p>채점은 19a ~ 19e 가 한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T4 - scripts/lidar_lab/include/lidar_lab/diff.hpp (bin_diff) */
+inline std::vector&lt;std::optional&lt;double&gt;&gt; bin_diff(const Scan&amp; a, const Scan&amp; b,
+                                                   double bin_deg) {
+  const std::vector&lt;std::optional&lt;double&gt;&gt; ma = bin_min(a, bin_deg);
+  const std::vector&lt;std::optional&lt;double&gt;&gt; mb = bin_min(b, bin_deg);
+  std::vector&lt;std::optional&lt;double&gt;&gt; out(ma.size());
+  for (std::size_t k = 0; k &lt; out.size(); ++k) {
+    if (ma[k] &amp;&amp; mb[k]) out[k] = *ma[k] - *mb[k];
+  }
+  return out;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>std::vector&lt;std::optional&lt;double&gt;&gt; out(ma.size());</code> — 칸 수만큼의 빈 값으로 시작한다(불변식 1). 그래서 <code>out[k]</code> 가 언제나 칸 k 다 — <code>lab_diff</code> 의 <code>at … deg</code> 가 이 번호로 각도를 찍는다.</li>
+          <li><code>if (ma[k] &amp;&amp; mb[k]) out[k] = *ma[k] - *mb[k];</code> — 둘 다 값이 있을 때만 뺀다(불변식 2). 가까워지면 양수, 멀어지면 음수다(불변식 3, 19b). 두 값이 같으면 <code>0.0</code> 이고, <code>0.0</code> 도 값이다(불변식 4, 19d).</li>
+          <li>골격의 자리표시 넷(<code>(void)</code> 셋 · <code>return {};</code>)은 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 하나다.<sup class="fn"><a href="#fn-12">12</a></sup></p><p>빈 목록에서 시작해 칸마다 값 또는 <code>std::nullopt</code> 를 <code>push_back</code> 해도 44 개를 통과한다.</p></li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>bin_min()</code>(T1) · <code>std::optional</code> · <code>std::nullopt</code>.</p>
+        <p><strong>흔한 실수</strong> — 그 잘못을 저지른 판을 실제로 만들어 잰 결과다. 진단 빌드도 같은 줄을 찍는다. 진단 빌드가 다른 줄을 찍는 행은 그 행 안에 적었다.<sup class="fn"><a href="#fn-12">12</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w50"><col class="w20"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_diff</code> · <code>test_diff_ub</code> 가 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>절대값 <code>std::fabs(…)</code> 를 담았다</td><td><code>1 of 44</code> — 19b. <code>got [0.0, 0.5, 0.0, 0.0]</code>. 멀어진 칸이 가까워진 칸으로 보인다</td><td>부호 그대로</td></tr>
+            <tr><td><code>b − a</code> 로 뺐다</td><td><code>3 of 44</code> — 19a · 19b · 19e</td><td><code>a − b</code></td></tr>
+            <tr><td>둘 다 측정된 칸만 <code>push_back</code> 했다(빈 값 자리를 남기지 않음)</td><td><code>2 of 44</code> — 19c · 19d. <code>FAIL 42 19c a no-return on one side is none: got [0.0, 0.0, 0.0], …</code>. 칸 번호가 밀려 <code>at … deg</code> 가 엉뚱한 각도를 가리킨다</td><td>칸 수만큼 먼저</td></tr>
+            <tr><td><code>value_or(0.0)</code> 으로 뺐다</td><td><code>2 of 44</code> — 19c · 19d. <code>got [0.0, -0.5, 0.0, 0.0]</code>. 무반사가 0 m 측정이 된다</td><td>둘 다 값이 있을 때만</td></tr>
+          </tbody>
+        </table></div>
+
+        <p><strong>확인</strong> — T3 까지 채운 상태는 <code>5 of 44</code> 이다. T4 까지 채우면 <code>PASS diff 44 cases</code> 이고, <code>test_diff_ub</code> 도 같은 한 줄이다.</p>
+        </div></details>
+      <p>네 카드의 표를 한곳에 모으면 아래와 같다. 행마다 완결 코드에서 그 한 군데만 바꾼 판을 만들어 잰 것이다.<sup class="fn"><a href="#fn-12">12</a></sup></p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w35"><col class="w65"></colgroup>
+        <thead><tr><th>이렇게 잘못 짜면</th><th>어느 벡터가 검출하는가 · 무엇이 출력되는가</th></tr></thead>
+        <tbody>
+          <tr><td>이음매를 잇지 않는다(칸을 앞에서 뒤로만 훑는다)</td><td><code>FAIL 23 11a one cluster, not two</code> — <code>got 2, want 1</code>. 정면의 물건이 <strong>둘로 세어진다</strong></td></tr>
+          <tr><td><code>0.0</code> 을 "아직 없음" 표시로 쓴다</td><td><code>FAIL 6 2a distance 0.0 survives as the nearest</code> — <code>got 1.0, want 0.0</code>. <strong>0 m 측정이 오류 없이 사라진다</strong></td></tr>
+          <tr><td>무반사를 <code>value_or(0.0)</code> 으로 채운다</td><td><code>FAIL 7 3a the measured one wins the bin</code> — <code>got 0.0, want 1.2</code>. <strong>없는 물체가 바로 앞에 생긴다</strong></td></tr>
+          <tr><td>빈 대표를 <strong>마지막</strong> 점으로 쓴다</td><td><code>FAIL 2 1b nearest of the two in bin 0</code> — <code>got 1.0, want 0.9</code></td></tr>
+          <tr><td>빈 대표를 <strong>평균</strong>으로 쓴다</td><td><code>FAIL 2 1b</code> — <code>got 0.95, want 0.9</code>(§2-2 의 표가 보인 희석이다)</td></tr>
+          <tr><td>경계를 <code>&gt;= tol</code> 로 쓴다</td><td><code>FAIL 17 7a change == tol is not a change</code> — <code>got [[1]], want []</code></td></tr>
+          <tr><td>절대값 <code>|a − b|</code> 로 비교한다</td><td><code>FAIL 19 8a a bin that got farther</code> — <code>got [[1]], want []</code>. <strong>일부러 그러려면 벡터도 같이 고친다</strong>(§2-1)</td></tr>
+          <tr><td>칸 수를 내림으로 센다</td><td><code>FAIL 9 4a ceil, not floor</code> — <code>got 51, want 52</code>. 지키는 줄(<code>k &gt;= n</code>)이 없으면 g++ 빌드는 4 군에서 <strong>중단</strong>한다(<code>__n &lt; this-&gt;size()</code>)</td></tr>
+          <tr><td><code>stationary_mask</code> 에서 빈 값을 빼고 계산한다</td><td><code>FAIL 37 17a blinking bin is not stationary</code> — <code>got true, want false</code>. <strong>깜빡이는 칸이 "가만히 있다"가 된다</strong></td></tr>
+          <tr><td>점을 a 에서 꺼낸다</td><td>좌표: <code>FAIL 15 6d y of that point is +0.5</code> — <code>got 1.0, want 0.5</code>. 인덱스: <code>FAIL 22 10a different counts, and the bin still found</code> — <code>got [[2, 3]], want [[1]]</code>(g++ 는 그 뒤 14 군에서 중단)</td></tr>
+          <tr><td>변한 칸의 무반사 점까지 덩어리에 담는다</td><td><code>FAIL 30 14c the no-return of a changed bin is left out</code> — <code>got [[0, 1, 2]], want [[0, 2]]</code>. 확인 없이 <code>*xy[i]</code> 로 꺼내면 g++ 빌드는 중단한다</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">이 마흔네 개는 전부 <strong>합성 스캔</strong>이다 — 내 방의 산포도, 내 기기의 각도 흔들림도 들어 있지 않다. 통과했다는 것은 "이 마흔네 가지에서 어긋나지 않았다"는 뜻이지 <strong>내 문턱이 옳다</strong>는 뜻이 아니다. 내 문턱이 옳은지는 §3-1-4 부터 판정한다.</p>
 
       <h4 id="s3-1-4">3-1-4. 돌리고 보기 — 내 방의 "아무 일도 없을 때"</h4>
       <p>세 걸음이다. <strong>Δt 를 재고 → 차의 분포를 내고 → 그 위에서 두 숫자를 정한다.</strong></p>
       <ol class="steps">
-        <li><strong>두 장 사이의 간격을 먼저 적는다</strong>(§2-5 ④). 위 3-1-1 의 2번 명령이 <code>t</code> 를 출력한다. 이웃한 값의 차가 Δt 이고, 이 Δt 가 <strong>이 파일에서 "움직임"이라는 말이 뜻하는 시간</strong>이다. 1 m/s 로 걷는 사람은 그 사이에 <code>Δt × 1</code> m 를 간다.</li>
-        <li><strong>정지 장면의 차를 모은다.</strong> 빈 폭 하나를 골라(각도 간격 중앙값 근처에서 시작한다) 이웃한 모든 바퀴 쌍에 대해 <strong>양쪽이 다 측정된 칸</strong>의 <code>a − b</code> 를 모으고 분포를 출력한다. 내 <code>main()</code> 이 하는 일이 이것이다.</li>
+        <li><strong>두 장 사이의 간격을 먼저 적는다</strong>(§2-5 ④). 위 3-1-1 의 4번 명령(<code>peek.py</code>)이 바퀴마다 <code>t</code> 를 찍고, <code>lab_diff</code> 의 첫 줄 <code>dt_median</code> 이 이웃한 차의 중앙값이다. 이웃한 값의 차가 Δt 이고, 이 Δt 가 <strong>이 파일에서 "움직임"이라는 말이 뜻하는 시간</strong>이다. 1 m/s 로 걷는 사람은 그 사이에 <code>Δt × 1</code> m 를 간다.</li>
+        <li><strong>정지 장면의 차를 모은다.</strong> 빈 폭 하나를 골라(각도 간격 중앙값 근처에서 시작한다) 이웃한 모든 바퀴 쌍에 대해 <strong>양쪽이 다 측정된 칸</strong>의 <code>a − b</code> 를 모으고 분포를 출력한다. <code>lab_diff</code> 에 빈 폭을 주면 이 일을 한다 — 칸마다의 차는 내 <code>bin_diff()</code>(T4)가, 분포의 네 수는 l-10 의 <code>gap_stats()</code> 가 낸다.</li>
         <li><strong>빈 폭을 두세 값으로 바꿔 같은 것을 다시 본다.</strong> 넓히면 차가 작아지고 좁히면 커진다 — <strong>얼마나</strong> 그런지는 내 방에서 재야 알 수 있다.</li>
       </ol>
       <pre><code class="lang-bash">pi$ cd ~/ros2_rpi5
-pi$ python3 scripts/lidar_lab/diff.py scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl
+pi$ cmake --build scripts/lidar_lab/build -j2 --target lab_diff test_diff test_diff_ub
+pi$ scripts/lidar_lab/build/test_diff &amp;&amp; scripts/lidar_lab/build/test_diff_ub
+PASS diff 44 cases
+PASS diff 44 cases
+pi$ scripts/lidar_lab/build/lab_diff scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl &lt;빈 폭&gt;
 turns=&lt;n&gt;  dt_median=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt; s  bin_deg=&lt;n&gt;.&lt;n&gt;  bins=&lt;n&gt;
-pair 0-1    compared=&lt;n&gt;/&lt;n&gt;  median=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt; m  p75=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;  p90=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;  max=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;
-pair 1-2    compared=&lt;n&gt;/&lt;n&gt;  median=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt; m  p75=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;  p90=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;  max=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;
+pair 1-2     compared=&lt;n&gt;/&lt;n&gt;  median=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;&lt;n&gt; m  p75=…  p90=…  max=… at &lt;n&gt;.&lt;n&gt; deg
+pair 2-3     compared=&lt;n&gt;/&lt;n&gt;  median=…
 …
-all pairs   compared=&lt;n&gt;      median=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt; m  p75=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;  p90=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;  max=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;</code></pre>
-      <p>⚠ 도구를 실행하는 꼴은 저장소 뿌리에서 <code>python3 scripts/lidar_lab/&lt;모듈&gt;.py</code> 하나다. <code>python3 -m lidar_lab.diff</code> 로 실행하지 않는다 — 형제 모듈 <code>cmd.py</code> 대신 표준 라이브러리의 <code>cmd</code> 가 import 되고 <strong>오류 없이</strong> 엉뚱하게 실행된다(이유는 <a href="l-01-link.html#s3-3">l-01 §3-3</a>).</p>
+all pairs   compared=&lt;n&gt;   median=… m  p75=…  p90=…  max=… at &lt;n&gt;.&lt;n&gt; deg, pair &lt;i&gt;-&lt;j&gt;</code></pre>
+      <p>Mac 에서는 시험만 연습할 수 있다. 저장소 루트에서 아래 한 줄이다. Mac 에서 통과한 것은 Mac 의 표준 라이브러리 libc++ 로 통과한 것이다 — Pi 의 빌드로 다시 통과시키기 전에는 체크포인트를 통과시키지 않는다(결정 L3).</p>
+      <pre><code class="lang-bash">mac$ clang++ -std=c++17 -Wall -Wextra -D_GLIBCXX_ASSERTIONS -Iscripts/lidar_lab/include scripts/lidar_lab/tests/test_diff.cpp -o /tmp/test_diff &amp;&amp; /tmp/test_diff</code></pre>
+      <p>출력 읽는 법은 다음과 같다.</p>
+      <ul>
+        <li><code>pair i-j</code> — 바퀴 i 와 그다음 바퀴 j. 바퀴 번호는 1 부터다. <code>--turn K</code> 를 주면 쌍 K-(K+1) 만 찍는다.</li>
+        <li><code>compared=&lt;견준 칸&gt;/&lt;전체 칸&gt;</code> — 두 바퀴가 모두 측정한 칸의 수. 빠진 칸은 한쪽이 무반사였던 칸이다.</li>
+        <li><code>median</code> · <code>p75</code> · <code>p90</code> · <code>max</code> — 칸마다의 <code>a − b</code>(m)의 분포다. 정의는 <a href="l-10-clusters.html#s2-4">l-10 §2-4</a> 와 같다(중앙값은 개수가 짝수면 가운데 둘의 평균, 분위수는 최근접 순위). 부호가 있으므로 중앙값이 음수일 수도 있다.</li>
+        <li><code>at &lt;각도&gt; deg</code> — 최대가 나온 칸의 시작 각도. 아래 표의 "최대 — 어느 각도였는지"가 이 값이다.</li>
+      </ul>
+      <p><strong>무엇이 보이면 된 것인지</strong>는 아래와 같다. 집필자가 <strong>합성 기록 파일</strong>로 완결 코드를 실행한 결과다. l-10 과 같은 4 m × 3 m 방(상자 하나 · 30° 폭의 무반사 구간)을 10 바퀴 기록한 것으로 꾸몄다. 바퀴마다 시작 각도와 점 수가 조금씩 다르고, 거리에 2 mm 의 잡음이 있다.<sup class="fn"><a href="#fn-14" id="fnref-14">14</a></sup> <strong>내 방은 수가 다르다</strong> — 볼 것은 줄 사이의 관계다.</p>
+      <pre><code class="lang-text">turns=10  dt_median=0.183 s  bin_deg=1.0  bins=360
+pair 1-2     compared=330/360  median=0.0000 m  p75=0.0020  p90=0.0030  max=0.0110 at 42.0 deg
+pair 2-3     compared=330/360  median=0.0000 m  p75=0.0020  p90=0.0040  max=1.6310 at 41.0 deg
+pair 3-4     compared=330/360  median=0.0000 m  p75=0.0020  p90=0.0040  max=0.0130 at 333.0 deg
+…
+all pairs   compared=2970   median=0.0000 m  p75=0.0020  p90=0.0040  max=1.6340 at 41.0 deg, pair 4-5</code></pre>
+      <ul>
+        <li><code>compared=330/360</code> — 30 칸이 빠졌다. 200° ~ 230° 의 무반사 구간이다.</li>
+        <li><code>p90=0.0040</code> — 두 바퀴의 거리 잡음(2 mm)이 만드는 차의 크기다. 문턱은 이 위에서 고른다(§2-3).</li>
+        <li><code>max=1.6340 at 41.0 deg</code> — 상자 모서리에 걸친 칸 하나가 만든 값이다. 바퀴마다 시작 각도가 달라, 그 칸에 상자 점이 들어온 바퀴와 상자 너머의 옆 벽(y = 1.8 m) 점만 들어온 바퀴가 번갈아 나왔다(§2-3 ①). 같은 파일을 빈 폭 2.0 으로 실행하면 전체 최대가 <code>0.0180 at 330.0 deg</code> 로 내려간다 — 40° ~ 42° 칸에는 상자 점이 매번 들어오기 때문이다.</li>
+      </ul>
       <p>노트에 이 표를 그려 채운다. <strong>이 표가 실습 A 의 산출물</strong>이고, 실습 B·C 의 문턱이 전부 여기서 나온다.</p>
       <div class="tbl"><table>
         <thead><tr><th>무엇</th><th>빈 폭 <code>____</code>°</th><th>빈 폭 <code>____</code>°</th><th>읽는 법</th></tr></thead>
@@ -554,20 +1302,28 @@ all pairs   compared=&lt;n&gt;      median=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;
           <tr><td>차의 중앙값</td><td><code>____</code> m</td><td><code>____</code> m</td><td>0 에 가깝게 나오는 것이 보통이다 — <strong>치우쳐 있으면</strong> 방이 아니라 센서가 조금씩 밀리고 있다는 뜻일 수 있다(§2-4)</td></tr>
           <tr><td>75 % 분위수</td><td><code>____</code> m</td><td><code>____</code> m</td><td rowspan="2">문턱은 이 둘 사이 어딘가에서 고르게 된다. <strong>어디를 고를지는 실습 B 가 판정하게 한다</strong></td></tr>
           <tr><td>90 % 분위수</td><td><code>____</code> m</td><td><code>____</code> m</td></tr>
-          <tr><td>최대</td><td><code>____</code> m</td><td><code>____</code> m</td><td>최대는 거의 언제나 <strong>한 칸</strong>이 만든다 — 무반사 경계이거나 아주 비스듬한 면이다. <strong>어느 각도였는지 적어 둔다</strong></td></tr>
+          <tr><td>최대</td><td><code>____</code> m</td><td><code>____</code> m</td><td>최대는 거의 언제나 <strong>한 칸</strong>이 만든다 — 무반사 경계이거나 아주 비스듬한 면이거나 물체의 모서리다. <strong>어느 각도였는지 적어 둔다</strong></td></tr>
           <tr><td>4 m 에서의 사양 하한</td><td colspan="2">거리의 1 % = 0.04 m</td><td>내 최대가 이보다 훨씬 크면 원인은 산포가 아니라 <strong>칸 안에서 점이 바뀐 것</strong>(§2-3 ①)이다</td></tr>
         </tbody>
       </table></div>
-      <p>그다음 <strong>검산</strong>이다. <code>stationary_mask()</code> 에 흔들림 폭을 여러 값으로 넣어 보면, "가만히 있다"고 인정되는 칸의 비율이 어떻게 오르는지 보인다. <strong>급히 오르다 완만해지는 자리</strong>가 있으면 그 언저리가 내 방에 맞는 흔들림 폭이다.</p>
-      <pre><code class="lang-text">spread_max=0.005   stationary=&lt;n&gt;/&lt;n&gt;  (&lt;n&gt; %)
-spread_max=0.010   stationary=&lt;n&gt;/&lt;n&gt;  (&lt;n&gt; %)
-spread_max=0.020   stationary=&lt;n&gt;/&lt;n&gt;  (&lt;n&gt; %)
-spread_max=0.050   stationary=&lt;n&gt;/&lt;n&gt;  (&lt;n&gt; %)</code></pre>
-      <p>⚠ 이 비율은 <strong>100 %가 되지 않는다.</strong> 무반사 칸은 어떤 폭을 줘도 <code>False</code> 이기 때문이다(불변식 2) — 그래서 표의 <strong>분모를 "측정된 칸"으로 볼지 "전체 칸"으로 볼지</strong>를 내가 정하고, 노트에 그렇게 적는다. 두 수는 꽤 다를 수 있다.</p>
+      <p>그다음 <strong>검산</strong>이다. <code>stationary_mask()</code> 에 흔들림 폭을 여러 값으로 넣어 보면, "가만히 있다"고 인정되는 칸의 비율이 어떻게 오르는지 보인다. <strong>급히 오르다 완만해지는 자리</strong>가 있으면 그 언저리가 내 방에 맞는 흔들림 폭이다. <code>lab_diff</code> 에 <code>--spread S</code> 를 여러 번 주면 분포 줄 뒤에 폭마다 한 줄씩 찍는다(파일의 모든 바퀴를 쓴다).</p>
+      <pre><code class="lang-bash">pi$ scripts/lidar_lab/build/lab_diff scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl &lt;빈 폭&gt; --spread 0.005 --spread 0.01 --spread 0.02 --spread 0.05
+…
+spread_max=0.005  stationary=&lt;n&gt;/&lt;n&gt; (&lt;n&gt;.&lt;n&gt; %)  measured in every turn=&lt;n&gt;
+spread_max=0.01  stationary=&lt;n&gt;/&lt;n&gt; (&lt;n&gt;.&lt;n&gt; %)  measured in every turn=&lt;n&gt;
+spread_max=0.02  stationary=&lt;n&gt;/&lt;n&gt; (&lt;n&gt;.&lt;n&gt; %)  measured in every turn=&lt;n&gt;
+spread_max=0.05  stationary=&lt;n&gt;/&lt;n&gt; (&lt;n&gt;.&lt;n&gt; %)  measured in every turn=&lt;n&gt;</code></pre>
+      <p>⚠ 이 비율은 <strong>100 %가 되지 않는다.</strong> 무반사 칸은 어떤 폭을 줘도 <code>false</code> 이기 때문이다(불변식 2) — 그래서 표의 <strong>분모를 "측정된 칸"으로 볼지 "전체 칸"으로 볼지</strong>를 내가 정하고, 노트에 그렇게 적는다. 두 수는 꽤 다를 수 있다. <code>lab_diff</code> 는 둘 다 찍는다 — <code>stationary=&lt;k&gt;/&lt;전체 칸&gt;</code> 의 분모가 전체 칸이고, <code>measured in every turn</code> 이 모든 바퀴에서 측정된 칸의 수다.</p>
+      <p>위 합성 기록의 견본이다.<sup class="fn"><a href="#fn-14">14</a></sup></p>
+      <pre><code class="lang-text">spread_max=0.005  stationary=117/360 (32.5 %)  measured in every turn=330
+spread_max=0.01  stationary=283/360 (78.6 %)  measured in every turn=330
+spread_max=0.02  stationary=326/360 (90.6 %)  measured in every turn=330
+spread_max=0.05  stationary=329/360 (91.4 %)  measured in every turn=330</code></pre>
+      <p class="small">0.005 와 0.01 사이에서 급히 오르고 0.02 부터 완만해진다 — 이 합성 방의 흔들림 폭은 0.01 ~ 0.02 m 언저리다. 0.05 에서도 330 이 아니라 329 인 것은 41° 칸 하나 때문이다(위 분포 견본의 최대).</p>
       <p>마지막으로 두 줄을 노트에 적는다. <strong>이것이 이 실습의 판정이다</strong> — 값이 얼마든 상관없고, <strong>근거를 댔는가</strong>가 판정이다.</p>
       <pre><code class="lang-text">내 빈 폭 bin_deg = ____ °   근거: ____
 내 차분 문턱 tol = ____ m   근거: ____   (§2-3 의 다리: 내가 인정한 흔들림 폭 ____ m 이상)</code></pre>
-      <p class="small">합격선은 없다. 이 숫자들은 내 방의 크기·가구·내 센서 모드에 달렸고, 다른 값이 나왔다고 틀린 것이 아니다. <strong>적었는가</strong>가 이 실습의 판정이다.</p>
+      <p class="small">합격선은 없다. 이 숫자들은 내 방의 크기·가구·내 센서의 스캔 모드(점을 어떤 형식으로 담아 보낼지 정하는 센서 설정, l-05)에 달렸고, 다른 값이 나왔다고 틀린 것이 아니다. <strong>적었는가</strong>가 이 실습의 판정이다.</p>
 
       <h3 id="s3-2">3-2. 실습 B — 지나가는 사람만 남는가 <span class="tag bench">벤치</span></h3>
       <p>기본은 라이다를 켜 두고 사람이 지나가는 것이다. <strong>이미 사람이 지나간 구간이 든 기록 파일이 있으면 이 실습도 파일로 끝낼 수 있다</strong> — 그때는 "언제 지나갔는지"를 기록에서 찾아 적는 것이 관찰이 된다.</p>
@@ -579,7 +1335,7 @@ spread_max=0.050   stationary=&lt;n&gt;/&lt;n&gt;  (&lt;n&gt; %)</code></pre>
         <li><strong>지나갈 자리와 거리를 정한다</strong> — 센서에서 <code>____</code> m 떨어진 곳을 <code>____</code> 방향으로 가로지른다. 안전 상자에서 정한 최소 거리를 지킨다.</li>
         <li><strong>몇 바퀴짜리를 기록할지 정한다.</strong> Δt 가 <code>____</code> s 이므로 사람이 무대를 가로지르는 데 걸리는 시간이면 대략 <code>____</code> 장이 필요하다 — 곱셈 한 번이다.</li>
       </ul>
-      <p>그리고 <strong>기대치를 먼저 적는다.</strong> 사람 한 명(폭 약 0.4 m)이 2 m 앞에 서면 각도로 약 <code>2 × atan(0.2 / 2)</code> = <strong>11.4°</strong> 를 덮는다. 4 m 면 절반인 5.7° 다. 내 빈 폭이 <code>____</code>° 이므로 덩어리 하나는 <strong>대략 <code>____</code> 칸</strong>이어야 한다 — 훨씬 적게 나오면 문턱이 크고, 훨씬 많으면 사람 말고 다른 것이 같이 검출된 것이다.</p>
+      <p>그리고 <strong>기대치를 먼저 적는다.</strong> 사람 한 명(폭 약 0.4 m)이 2 m 앞에 있으면 각도로 약 <code>2 × atan(0.2 / 2)</code> = <strong>11.4°</strong> 를 덮는다. 4 m 면 절반인 5.7° 다. 내 빈 폭이 <code>____</code>° 이므로 덩어리 하나는 <strong>대략 <code>____</code> 칸</strong>이어야 한다 — 훨씬 적게 나오면 문턱이 크고, 훨씬 많으면 사람 말고 다른 것이 같이 검출된 것이다.</p>
 
       <h4 id="s3-2-2">3-2-2. 빈 표 — 내가 적는 정답지</h4>
       <p>실행하기 전에 채운다. <strong>실행한 뒤에 채우면 결과에 맞춰 기억이 바뀐다.</strong></p>
@@ -599,12 +1355,35 @@ spread_max=0.050   stationary=&lt;n&gt;/&lt;n&gt;  (&lt;n&gt; %)</code></pre>
       <ol class="steps">
         <li><strong>기록한다.</strong> <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> 의 절차 그대로다 — 사람이 지나가는 동안 이어서 기록한다. <strong>파일 이름에 무대를 적어 둔다</strong>(예: <code>walk-2m.scan.jsonl</code>). 이 쪽은 새 저장 절차를 만들지 않는다.</li>
         <li><strong>먼저 정지 구간만으로 실습 A 를 다시 실행한다.</strong> 같은 방·같은 자리라도 조명·문 열림이 달라졌을 수 있다. <strong>기준선이 아까와 다르면 그 차이부터 적는다.</strong></li>
-        <li><strong>이웃한 바퀴 쌍마다 <code>diff()</code> 를 실행해 덩어리 수와 각 덩어리의 칸 수·중심을 출력한다.</strong> 중심은 <code>Cluster.centroid()</code>, 폭은 <code>Cluster.width()</code> 가 준다 — <a href="l-10-clusters.html">l-10</a> 에서 이미 채운 것이다.</li>
+        <li><strong>이웃한 바퀴 쌍마다 <code>diff()</code> 를 실행해 덩어리 수와 각 덩어리의 칸 수·중심을 출력한다.</strong> <code>lab_diff</code> 에 문턱까지 주면 이 일을 한다. 중심은 <code>Cluster</code> 의 <code>centroid()</code>, 폭은 <code>width()</code> 가 준다 — <a href="l-10-clusters.html">l-10</a> 에서 이미 채운 것이다.</li>
         <li><strong>사람이 지나간 구간의 결과와 정지 구간의 결과를 나란히 적는다.</strong> 이 둘의 차이가 이 실습의 관찰이다.</li>
       </ol>
-      <pre><code class="lang-bash">pi$ python3 scripts/lidar_lab/diff.py scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl --pairs
-pair &lt;i&gt;-&lt;j&gt;   clusters=&lt;n&gt;   sizes=[&lt;n&gt;, …]   centroids=[(&lt;x&gt;, &lt;y&gt;), …]</code></pre>
-      <p class="small">인자 이름(<code>--pairs</code> 든 다른 무엇이든)과 무엇을 출력할지는 <strong>내 <code>main()</code> 의 <code>TODO</code> 안</strong>이다. 위는 출력의 모양일 뿐이다.</p>
+      <pre><code class="lang-bash">pi$ scripts/lidar_lab/build/lab_diff scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl &lt;빈 폭&gt; &lt;문턱&gt;
+turns=&lt;n&gt;  bin_deg=&lt;n&gt;.&lt;n&gt;  bins=&lt;n&gt;  tol=&lt;n&gt;.&lt;n&gt;&lt;n&gt; m
+pair &lt;i&gt;-&lt;j&gt;  compared=&lt;n&gt;/&lt;n&gt;  changed=&lt;n&gt; (&lt;n&gt;.&lt;n&gt; %)  clusters=&lt;n&gt;
+  #0  n=&lt;n&gt;  bins=&lt;n&gt;  width=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt; m  centroid=(&lt;x&gt;, &lt;y&gt;)  idx &lt;a&gt;..&lt;b&gt;</code></pre>
+      <ul>
+        <li><code>changed</code> — 문턱을 넘어 가까워진 칸의 수와, 견준 칸 가운데의 비율. 실습 C 의 "비율"이 이 값이다.</li>
+        <li><code>n</code> — 덩어리의 점 수. <code>bins</code> — 덩어리가 걸친 칸 수. §3-2-2 표의 "칸 수"는 <code>bins</code> 다.</li>
+        <li><code>idx</code> — 나중 바퀴(j)의 점 번호 구간. <code>351..359, 0..31</code> 처럼 둘이면 0° 이음매를 걸친 덩어리다(l-10 의 <code>lab_cluster</code> 와 같은 꼴).</li>
+        <li><code>--turn K</code> 면 쌍 K-(K+1) 만 찍는다. <code>--xy</code> 면 쌍마다 변한 점을 <code>&lt;이름&gt;.t&lt;j&gt;.diff.xy.csv</code> 에 써서 <code>view/floor_plan.py</code> 로 그릴 수 있다.</li>
+      </ul>
+      <p class="small">출력의 꼴은 전량으로 주어진 <code>src/diff.cpp</code> 가 정한다. 무엇을 보고 판정할지는 §3-2-4 의 표가 정한다.</p>
+      <p>견본은 §3-1-4 의 합성 방에 <strong>사람 하나</strong>(지름 0.4 m 의 원)를 더한 기록이다. 넷째 바퀴부터 x = −0.8 m 에서 +y 쪽으로 1 m/s 로 걷는다. 빈 폭 1.0°, 문턱 0.05 m 다.<sup class="fn"><a href="#fn-14">14</a></sup></p>
+      <pre><code class="lang-text">turns=10  bin_deg=1.0  bins=360  tol=0.05 m
+pair 1-2  compared=330/360  changed=1 (0.3 %)  clusters=1
+  #0  n=4  bins=1  width=1.629 m  centroid=(1.72, 1.52)  idx 165..168
+pair 2-3  compared=330/360  changed=0 (0.0 %)  clusters=0
+pair 3-4  compared=330/360  changed=8 (2.4 %)  clusters=1
+  #0  n=32  bins=8  width=0.217 m  centroid=(-0.62, -0.85)  idx 925..956
+…
+pair 7-8  compared=330/360  changed=21 (6.4 %)  clusters=1
+  #0  n=84  bins=21  width=0.279 m  centroid=(-0.63, -0.09)  idx 717..800</code></pre>
+      <ul>
+        <li><code>pair 1-2</code> — 아무도 없는 구간인데 덩어리가 하나 나왔다. §3-1-4 견본의 41° 칸이다. 한 칸 안의 점이 상자와 그 너머의 옆 벽(y = 1.8 m)에 걸쳐 있어 폭이 1.629 m 다. 이 칸의 차(약 1.6 m)는 문턱으로 거를 수 없다 — 빈 폭을 넓혀야 사라진다(§3-1-4 견본의 2.0°).</li>
+        <li><code>pair 3-4</code> — 사람이 처음 들어온 바퀴다. 중심 (−0.62, −0.85) 는 사람의 앞면이다(원의 중심은 (−0.8, −0.9)). 센서는 가까운 면만 보기 때문이다(l-10 의 <code>centroid()</code> 설명).</li>
+        <li>뒤 쌍으로 갈수록 중심의 y 가 커진다(6-7 −0.20 → 7-8 −0.09 → 8-9 0.08 → 9-10 0.25) — 사람이 +y 로 걷는다. 사람이 <strong>떠난 자리</strong>는 나오지 않는다(§2-1 의 "줄어든 쪽만").</li>
+      </ul>
 
       <h4 id="s3-2-4">3-2-4. 보고 판정하기</h4>
       <div class="tbl"><table>
@@ -627,20 +1406,23 @@ pair &lt;i&gt;-&lt;j&gt;   clusters=&lt;n&gt;   sizes=[&lt;n&gt;, …]   centroi
       <ol class="steps">
         <li><strong>얼마나 밀지 정한다</strong>: <code>d</code> = <code>____</code> m(5 cm 정도면 충분하다. 손으로 밀 수 있고, 눈으로는 "거의 안 움직였다"로 보이는 크기다).</li>
         <li><p><strong>내 문턱으로 몇 %가 검출될지 계산한다</strong>: <code>cos(θ − φ) &gt; tol / d</code> 이므로 검출되는 방향의 비율은 <code>2 × degrees(acos(tol / d)) / 360</code> 이다. <strong>쐐기가 미는 방향 양쪽으로 열리므로 2배 하고, 그 각을 한 바퀴(360°)로 나눈다.</strong></p>
-          <p>⚠ <code>acos</code> 는 <strong>라디안</strong>을 돌려준다. <code>degrees()</code> 를 빼먹으면 답이 <strong>57.3배 작게</strong> 나오고, 그 예측을 들고 §3-3-4 로 가면 실측과 안 맞는 원인을 엉뚱한 데서 찾게 된다. 파이썬 한 줄은 <code>math.degrees(math.acos(tol / d)) * 2 / 360</code> 이다.</p>
-          <p><strong>검산</strong> — <code>tol / d</code> 가 0.2 면 이 식은 <code>0.4359057831510251</code>, 곧 <strong>43.6 %</strong> 다(§2-4 표 첫 줄의 마지막 칸과 같은 수다). 내 수가 이것과 자릿수부터 다르면 단위를 먼저 의심한다.</p>
+          <p>⚠ <code>acos</code> 는 <strong>라디안</strong>을 돌려준다. <code>degrees()</code> 를 빼먹으면 답이 <strong>57.3배 작게</strong> 나오고, 그 예측을 들고 §3-3-4 로 가면 실측과 안 맞는 원인을 엉뚱한 데서 찾게 된다. <code>lab_diff</code> 에 <code>--nudge d</code> 를 주면 이 계산을 찍어 준다(§3-3-3) — 손으로 계산할 때 이 함정을 조심한다.</p>
+          <p><strong>검산</strong> — <code>tol / d</code> 가 0.2 면 이 식은 <strong>43.6 %</strong> 다(§2-4 표 첫 줄의 마지막 칸과 같은 수다. <code>lab_diff</code> 는 <code>changed share=43.6 %</code> 로 찍는다). 내 수가 이것과 자릿수부터 다르면 단위를 먼저 의심한다.</p>
           <p>내 <code>tol</code> = <code>____</code> m, <code>d</code> = <code>____</code> m → <strong><code>____</code> %</strong>.</p>
-          <p>⚠ <code>tol / d</code> 가 1 보다 크면 <code>acos</code> 가 <strong>정의되지 않는다</strong>. 이 경우가 "아무것도 검출되지 않는다"(0 %)는 뜻이다(§2-4 셋째 줄).</p></li>
-        <li><strong>어느 쪽이 검출될지도 적는다</strong>: 미는 방향 <code>φ</code> 를 중심으로 <strong>±<code>____</code>°</strong> 안이다. 그 반각이 <code>degrees(acos(tol / d))</code> 이고 <strong>2번에서 이미 구한 수</strong>다(<code>tol / d</code> 가 0.2 면 <code>78.46304096718451</code>°). 반대쪽 절반은 멀어지므로 아무것도 검출되지 않는다.</li>
+          <p>⚠ <code>tol / d</code> 가 1 보다 크면 <code>acos</code> 가 <strong>정의되지 않는다</strong>. 둥근 방에서는 이 경우가 "아무것도 검출되지 않는다"(0 %)는 뜻이다(§2-4 표의 마지막 열). 평평한 벽은 그래도 남는다(§2-4 셋째 줄).</p></li>
+        <li><strong>어느 쪽이 검출될지도 적는다</strong>: 미는 방향 <code>φ</code> 를 중심으로 <strong>±<code>____</code>°</strong> 안이다. 그 반각이 <code>degrees(acos(tol / d))</code> 이고 <strong>2번에서 이미 구한 수</strong>다(<code>tol / d</code> 가 0.2 면 78.46° — <code>lab_diff</code> 는 <code>within +-78.46 deg</code> 로 찍는다). 반대쪽 절반은 멀어지므로 아무것도 검출되지 않는다.</li>
+        <li><strong>평평한 벽으로 다시 예측한다</strong>: 2 · 3번은 둥근 방의 값이다(<code>lab_diff</code> 의 <code>predicted</code> 줄). 내 방의 평면도(<a href="l-08-floor-plan.html">l-08</a>)에서 <strong>미는 쪽을 마주 본 면</strong>(벽 · 물체)이 센서에서 차지하는 각도를 읽는다. 문턱이 <code>d</code> 보다 작으면 그 각도의 칸 수 ÷ 견준 칸 수가 실제 비율에 가깝다(§2-4). 합성 방에서 앞으로 밀면 앞 벽 40 칸 + 상자 22 칸 = 62 칸, 견준 칸 330 으로 나누면 18.8 % 다.</li>
       </ol>
-      <p>이 실습은 <strong>기록 파일만으로도 대신할 수 있다</strong>(§3-3-3 의 합성). 다만 합성으로는 <strong>케이블이 당기거나 센서가 살짝 돌아가는</strong> 진짜 사고가 재현되지 않는다 — 실제로 밀 수 있으면 미는 쪽이 낫다.</p>
+      <p class="small">⚠ 두 예측이 실제와 다르면 그 차이를 적는다. 평평한 벽의 방에서는 4번이 실제에 가깝고, 2번(둥근 방)과는 다른 것이 보통이다.</p>
+      <p>이 실습은 <strong>기록 파일만으로도 대신할 수 있다</strong>(§3-3-3 의 <code>lab_diff_synth</code>). 다만 합성으로는 <strong>케이블이 당기거나 센서가 살짝 돌아가는</strong> 진짜 사고가 재현되지 않는다 — 실제로 밀 수 있으면 미는 쪽이 낫다.</p>
 
       <h4 id="s3-3-2">3-3-2. 빈 표 — 예측을 먼저 적는다</h4>
       <div class="tbl"><table>
         <thead><tr><th>무엇</th><th>밀기 전에 적은 예측</th><th>밀고 난 뒤 실제</th></tr></thead>
         <tbody>
           <tr><td>민 거리 <code>d</code> · 방향 <code>φ</code></td><td><code>____</code> m · <code>____</code>°</td><td><code>____</code> m · <code>____</code>°</td></tr>
-          <tr><td>"가까워졌다"로 판정되는 방향의 비율</td><td><code>____</code> %</td><td><code>____</code> %</td></tr>
+          <tr><td>"가까워졌다"로 판정되는 방향의 비율 — 둥근 방 식(§3-3-1 2번) / 마주 본 면이 차지하는 비율(4번)</td><td><code>____</code> % / <code>____</code> %</td><td><code>____</code> %</td></tr>
+          <tr><td>미는 쪽을 마주 본 면(벽 · 물체)</td><td><code>____</code></td><td><code>____</code></td></tr>
           <tr><td>덩어리 수</td><td><code>____</code> 개</td><td><code>____</code> 개</td></tr>
           <tr><td>가장 큰 덩어리의 칸 수</td><td><code>____</code> 칸</td><td><code>____</code> 칸</td></tr>
           <tr><td>실제로 방에서 움직인 물건</td><td colspan="2"><strong>없음</strong></td></tr>
@@ -649,21 +1431,193 @@ pair &lt;i&gt;-&lt;j&gt;   clusters=&lt;n&gt;   sizes=[&lt;n&gt;, …]   centroi
 
       <h4 id="s3-3-3">3-3-3. 채우기 — 밀고, 다시 기록한다</h4>
       <ol class="steps">
-        <li><strong>모터를 멈추고</strong>(<code>dtr=True</code>) 센서를 <code>d</code> 만큼 옮긴 뒤 다시 기록한다. <strong>바닥의 센서 자리 표시에서 얼마나 옮겼는지를 자로 재서 적는다</strong> — 이것이 다음 쪽에서 추정값과 견줄 정답이 된다.</li>
-        <li><strong>민 뒤의 첫 바퀴</strong>와 <strong>밀기 전의 마지막 바퀴</strong>를 <code>diff()</code> 에 넣는다. 같은 문턱, 같은 빈 폭이다 — <strong>아무것도 바꾸지 않는 것</strong>이 이 실습의 핵심이다.</li>
+        <li><strong>모터를 멈추고</strong> 센서를 <code>d</code> 만큼 옮긴 뒤 <strong>새 파일로</strong> 다시 기록한다. 모터는 기록을 끝낸 <code>lab_turn</code> 이 <code>motor(fd, false)</code> 로 멈춘다 — 멈췄는지 눈으로 보고 든다. 끝난 뒤에도 돌면 USB 케이블을 뽑는다(<a href="l-01-link.html">l-01</a> 의 L2). <strong>바닥의 센서 자리 표시에서 얼마나 옮겼는지를 자로 재서 적는다</strong> — 이것이 다음 쪽에서 추정값과 견줄 정답이 된다.</li>
+        <li><p><strong>민 뒤의 첫 바퀴</strong>와 <strong>밀기 전의 마지막 바퀴</strong>를 <code>diff()</code> 에 넣는다. <code>lab_diff</code> 의 <code>--after</code> 가 이 일을 한다. 같은 문턱, 같은 빈 폭이다 — <strong>아무것도 바꾸지 않는 것</strong>이 이 실습의 핵심이다.</p>
+          <pre><code class="lang-bash">pi$ scripts/lidar_lab/build/lab_diff scripts/lidar_lab/scans/&lt;밀기 전&gt;.scan.jsonl &lt;빈 폭&gt; &lt;문턱&gt; --after scripts/lidar_lab/scans/&lt;민 뒤&gt;.scan.jsonl --nudge &lt;d&gt; --xy
+before turn &lt;n&gt; of &lt;n&gt;  after turn 1 of &lt;n&gt;  bin_deg=&lt;n&gt;.&lt;n&gt;  bins=&lt;n&gt;  tol=&lt;n&gt;.&lt;n&gt;&lt;n&gt; m
+predicted (2-4): tol/d=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;  changed share=&lt;n&gt;.&lt;n&gt; %  within +-&lt;n&gt;.&lt;n&gt;&lt;n&gt; deg of the push
+pair B&lt;n&gt;-A1  compared=&lt;n&gt;/&lt;n&gt;  changed=&lt;n&gt; (&lt;n&gt;.&lt;n&gt; %)  clusters=&lt;n&gt;
+  #0  n=&lt;n&gt;  bins=&lt;n&gt;  width=…  centroid=(&lt;x&gt;, &lt;y&gt;)  idx …
+wrote scripts/lidar_lab/scans/&lt;민 뒤&gt;.t1.diff.xy.csv
+pi$ python3 scripts/lidar_lab/view/floor_plan.py scripts/lidar_lab/scans/&lt;민 뒤&gt;.t1.diff.xy.csv --cell 0.2 --size 31</code></pre>
+          <p class="small"><code>predicted</code> 줄은 §3-3-1 의 계산(둥근 방)이다 — 내 예측과 같은지 견준다. <code>B&lt;k&gt;-A1</code> 은 밀기 전 기록의 바퀴 k(기본은 마지막, <code>--turn K</code> 로 바꾼다)와 민 뒤 기록의 첫 바퀴다. <code>--xy</code> 가 쓴 파일을 <code>floor_plan.py</code> 로 그리면 변한 점만 보인다 — §3-3-4 의 "그림"이 이것이다.</p></li>
         <li><strong>덩어리 수·칸 수·비율을 적고 3-3-2 의 예측과 견준다.</strong></li>
-        <li><p><strong>밀 수 없으면 합성으로 대신한다.</strong> 기록 파일의 한 바퀴를 골라 <strong>모든 점을 같은 벡터만큼 옮긴</strong> 가짜 바퀴를 만들면 된다. <code>to_xy()</code> 로 좌표를 얻어 <code>(x + dx, y + dy)</code> 를 만들고, 그 좌표를 다시 각도·거리로 되돌려(<code>hypot</code> 과 <code>atan2</code>) <strong>각도 오름차순으로 정렬해</strong> <code>Scan</code> 을 만든다. 열 줄 안쪽이다.</p>
-          <p>⚠ 되돌릴 때 <strong>각도를 <code>[0, 360)</code> 으로 정규화하고 정렬하는 것</strong>을 빠뜨리면 <code>load_jsonl()</code> 이 거부하는 것과 같은 형식 위반이 된다(<a href="l-04-one-turn.html#s3-4">l-04 §3-4</a>). <strong>합성이라고 표시해 두고</strong>, 실물로 민 결과와 섞지 않는다.</p></li>
+        <li><p><strong>밀 수 없으면 합성으로 대신한다.</strong> <code>lab_diff_synth</code>(전량, 아래)가 기록의 한 바퀴를 골라, <strong>같은 방을 (dx, dy) 만큼 옮긴 센서가 봤을 바퀴</strong>를 만든다. <code>to_xy()</code> 로 좌표를 얻어 <code>(x − dx, y − dy)</code> 로 옮기고, <code>std::hypot</code> 과 <code>std::atan2</code> 로 거리 · 각도로 되돌린 뒤 각도 순으로 정렬한다. 결과 파일 <code>&lt;이름&gt;.nudge.scan.jsonl</code> 을 2번의 <code>--after</code> 에 준다.</p>
+          <p>⚠ 되돌릴 때 각도를 <code>[0, 360)</code> 으로 접고 정렬하지 않으면 <code>load_jsonl()</code> 이 거부하는 형식 위반이 된다(<a href="l-04-one-turn.html#s3-4">l-04 §3-4</a>). 이 도구는 l-08 의 <code>angle_of()</code> 와 같은 세 줄로 접고 정렬한다. 결과 파일의 머리 줄은 <code>source</code> 가 <code>synthetic</code> 이고, <code>note</code> 에 무엇을 했는지 적힌다 — <strong>실물로 민 결과와 섞지 않는다.</strong></p></li>
       </ol>
+      <p>합성 도구 <code>src/diff_synth.cpp</code> 는 <strong>전량</strong>이다 — 실험의 입력을 만드는 도구라 채울 자리가 없다.</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/src/diff_synth.cpp -- one revolution of a record, as the sensor would have
+// seen the same STILL room after a push of (dx, dy).  (l-13, given in full)
+//   pi$ scripts/lidar_lab/build/lab_diff_synth &lt;file.scan.jsonl&gt; &lt;dx&gt; &lt;dy&gt; [--turn K]
+//   dx, dy    how far the SENSOR moved, in metres, x forward and y left (l-08's frame);
+//             each -0.5 .. 0.5 -- a push, not a walk across the room
+//   --turn K  which revolution (1 = the first); default: the LAST, the one lab_diff --after
+//             compares with
+// It writes ONE revolution next to the record -- &lt;stem&gt;.nudge.scan.jsonl, overwritten on every
+// run -- and prints
+//   wrote scans/room.nudge.scan.jsonl  turn 12 of 12  points=360  measured=352  sensor moved by (0.05, 0.0) m
+// How: every measured point (x, y) of to_xy() becomes (x - dx, y - dy) -- the room stays where it
+// is, the sensor moves -- and goes back to a range and an angle with std::hypot and std::atan2.
+// The angle is folded into [0, 360) with the three lines of l-08's angle_of(), and the revolution
+// is sorted by angle: the loader refuses anything else (l-04 3-4-2). A no-return stays a
+// no-return at its own angle -- there is no surface to move. q is dropped (an EMPTY q means "no
+// intensities"), t is kept. The head line says source "synthetic" and what was done, in note.
+// What it does NOT reproduce: surfaces the move uncovers or hides, a sensor that also turned, a
+// cable that pulled -- that is why 3-3 still prefers a real push.
+// Exit code: 0 = written; 1 = the loader refused the file, there is no such turn, or the file
+// could not be written; 2 = usage.
+#include &lt;algorithm&gt;
+#include &lt;cmath&gt;
+#include &lt;cstddef&gt;
+#include &lt;cstdio&gt;
+#include &lt;cstdlib&gt;
+#include &lt;cstring&gt;
+#include &lt;exception&gt;
+#include &lt;optional&gt;
+#include &lt;string&gt;
+#include &lt;utility&gt;
+#include &lt;vector&gt;
+
+#include "lidar_lab/angles.hpp"
+#include "lidar_lab/dump.hpp"
+#include "lidar_lab/geom.hpp"
+#include "lidar_lab/scan_io.hpp"
+
+using namespace lidar_lab;
+
+namespace {
+
+// "0.05" -&gt; 0.05. The whole text must be a finite number; anything else is a usage error.
+bool parse_double(const char* text, double&amp; v) {
+  char* end = nullptr;
+  v = std::strtod(text, &amp;end);
+  return end != text &amp;&amp; *end == '\0' &amp;&amp; std::isfinite(v);
+}
+
+// "4" -&gt; 4, only lo .. hi.
+bool parse_int(const char* text, long lo, long hi, long&amp; v) {
+  char* end = nullptr;
+  v = std::strtol(text, &amp;end, 10);
+  return end != text &amp;&amp; *end == '\0' &amp;&amp; v &gt;= lo &amp;&amp; v &lt;= hi;
+}
+
+// The same revolution seen from (dx, dy): a new Scan, sorted by angle, inside [0, 360).
+Scan moved(const Scan&amp; s, double dx, double dy) {
+  const std::vector&lt;std::optional&lt;Point&gt;&gt; xy = to_xy(s);
+  std::vector&lt;std::pair&lt;double, std::optional&lt;double&gt;&gt;&gt; pts;  // (angle in degrees, range)
+  for (std::size_t i = 0; i &lt; s.size(); ++i) {
+    if (!xy[i]) {
+      pts.emplace_back(s.a[i], std::nullopt);
+      continue;
+    }
+    const double x = xy[i]-&gt;first - dx, y = xy[i]-&gt;second - dy;
+    double deg = to_deg(std::atan2(y, x));  // -180 .. 180
+    deg = std::fmod(deg, 360.0);
+    if (deg &lt; 0.0) deg += 360.0;
+    if (deg &gt;= 360.0) deg -= 360.0;
+    pts.emplace_back(deg, std::hypot(x, y));
+  }
+  std::stable_sort(pts.begin(), pts.end(),
+                   [](const auto&amp; p, const auto&amp; q) { return p.first &lt; q.first; });
+  Scan out;
+  for (const auto&amp; p : pts) {
+    out.a.push_back(p.first);
+    out.r.push_back(p.second);
+  }
+  out.t = s.t;
+  return out;
+}
+
+int usage() {
+  std::printf(
+      "usage: lab_diff_synth &lt;file.scan.jsonl&gt; &lt;dx&gt; &lt;dy&gt; [--turn K]\n"
+      "  dx, dy: how far the sensor moved, metres, x forward y left, each -0.5 .. 0.5\n"
+      "  K: 1 = the first revolution (default: the last)\n");
+  return 2;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+  std::vector&lt;const char*&gt; pos;
+  long turn = 0;
+  for (int i = 1; i &lt; argc; ++i) {
+    if (std::strcmp(argv[i], "--turn") == 0 &amp;&amp; i + 1 &lt; argc) {
+      if (!parse_int(argv[++i], 1, 100000, turn)) return usage();
+    } else if (argv[i][0] == '-' &amp;&amp; argv[i][1] == '-') {
+      return usage();
+    } else {
+      pos.push_back(argv[i]);
+    }
+  }
+  if (pos.size() != 3) return usage();
+  double dx = 0.0, dy = 0.0;
+  if (!parse_double(pos[1], dx) || !parse_double(pos[2], dy) || std::fabs(dx) &gt; 0.5 ||
+      std::fabs(dy) &gt; 0.5) {
+    return usage();
+  }
+  try {
+    Meta meta;
+    const std::vector&lt;Scan&gt; scans = load_jsonl(pos[0], &amp;meta);
+    if (scans.empty() || (turn &gt; 0 &amp;&amp; static_cast&lt;std::size_t&gt;(turn) &gt; scans.size())) {
+      std::printf("no turn %ld: the file has %zu revolutions\n", turn, scans.size());
+      return 1;
+    }
+    const std::size_t k = turn &gt; 0 ? static_cast&lt;std::size_t&gt;(turn) : scans.size();
+    const Scan out = moved(scans[k - 1], dx, dy);
+    std::size_t measured = 0;
+    for (const std::optional&lt;double&gt;&amp; r : out.r) measured += r ? 1 : 0;
+    meta["source"] = "synthetic";
+    meta["note"] = "lab_diff_synth: turn " + std::to_string(k) + " of " + pos[0] +
+                   ", sensor moved by (" + repr_double(dx) + ", " + repr_double(dy) + ") m";
+    const std::string path = record_stem(pos[0]) + ".nudge.scan.jsonl";
+    save_jsonl(path, {out}, meta);
+    std::printf("wrote %s  turn %zu of %zu  points=%zu  measured=%zu  sensor moved by (%s, %s) m\n",
+                path.c_str(), k, scans.size(), out.size(), measured, repr_double(dx).c_str(),
+                repr_double(dy).c_str());
+  } catch (const std::exception&amp; e) {
+    std::printf("error: %s\n", e.what());
+    return 1;
+  }
+  return 0;
+}</code></pre>
+      <p><code>CMakeLists.txt</code> 의 맨 아래에 한 줄을 붙이고 빌드한다.</p>
+      <pre><code class="lang-cmake">lab_tool(diff_synth)                               # 3-3-3: src/diff_synth.cpp -&gt; build/lab_diff_synth</code></pre>
+      <pre><code class="lang-bash">pi$ cmake --build scripts/lidar_lab/build -j2 --target lab_diff_synth
+pi$ scripts/lidar_lab/build/lab_diff_synth scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl 0.05 0
+wrote scripts/lidar_lab/scans/&lt;이름&gt;.nudge.scan.jsonl  turn &lt;n&gt; of &lt;n&gt;  points=&lt;n&gt;  measured=&lt;n&gt;  sensor moved by (0.05, 0.0) m
+pi$ scripts/lidar_lab/build/lab_diff scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl &lt;빈 폭&gt; &lt;문턱&gt; --after scripts/lidar_lab/scans/&lt;이름&gt;.nudge.scan.jsonl --nudge 0.05 --xy</code></pre>
+      <p>견본은 §3-1-4 의 합성 방(정지 기록)의 마지막 바퀴를 앞으로 5 cm 옮긴 것이다. 빈 폭 1.0°, 문턱 0.02 m 다.<sup class="fn"><a href="#fn-2">2</a></sup></p>
+      <pre><code class="lang-text">before turn 10 of 10  after turn 1 of 1  bin_deg=1.0  bins=360  tol=0.02 m
+predicted (2-4): tol/d=0.400  changed share=36.9 %  within +-66.42 deg of the push
+pair B10-A1  compared=330/360  changed=62 (18.8 %)  clusters=2
+  #0  n=159  bins=40  width=1.799 m  centroid=(2.45, -0.27)  idx 1350..1453, 0..54
+  #1  n=90  bins=22  width=0.397 m  centroid=(0.80, 0.54)  idx 80..169</code></pre>
+      <pre><code class="lang-text">lidar_lab xy v1 turn=1 tag=diff  points=249  none=1205  outside=0  cell=0.2 m  row=0.4 m  size=31x16
+
+
+            ##########
+      #
+
+
+            ###
+
+               +</code></pre>
+      <ul>
+        <li><code>predicted</code> 줄(둥근 방) 36.9 % ↔ 실제 18.8 %. 실제는 §3-3-1 4번의 예측(62 / 330 칸)과 같다. 덩어리는 둘이다. #0 은 <strong>마주 본 앞 벽</strong>(x = 2.5 m 가 2.45 m 로 보인다, 40 칸), #1 은 상자(22 칸)다.</li>
+        <li>옆 벽 둘(y = −1.2 · 1.8 m)은 나오지 않았다 — 미는 방향과 나란한 벽이다. 뒤 벽은 멀어졌으므로 나오지 않는다. §2-4 가 말한 그대로다.</li>
+        <li>평면도에서 변한 점은 센서(<code>+</code>)의 위쪽, 곧 앞쪽에만 있다 — 미는 방향이다. 왼쪽 위의 <code>#</code> 하나는 상자 모서리 칸에 함께 든, 상자 너머의 옆 벽(y = 1.8 m) 점이다.</li>
+        <li>문턱을 0.05 m(= <code>d</code>)로 올려 다시 실행하면 예측은 <code>0.0 %</code> 인데 실제는 <code>changed=39 (11.8 %)</code> 다 — 상자(21 칸)와, 1 ~ 4 칸짜리 아홉 조각으로 쪼개진 앞 벽이 남는다. §2-4 표의 셋째 줄이 이 실행이다.</li>
+      </ul>
 
       <h4 id="s3-3-4">3-3-4. 보고 판정하기 — 그리고 반드시 되돌려 놓는다</h4>
-      <p>여기서 볼 것은 숫자 하나가 아니라 <strong>그림</strong>이다. 덩어리가 <strong>한쪽 절반에 몰려 있는가</strong> — 몰려 있다면 그 방향이 바로 미는 방향이고, 도구는 "방의 절반이 다가왔다"고 판정하고 있는 것이다.</p>
+      <p>여기서 볼 것은 숫자 하나가 아니라 <strong>그림</strong>이다(§3-3-3 2번의 <code>--xy</code> 와 <code>floor_plan.py</code>). 덩어리가 <strong>미는 쪽을 마주 본 면에 몰려 있는가</strong> — 몰려 있다면 그 방향이 바로 미는 방향이고, 도구는 "마주 본 벽이 통째로 다가왔다"고 판정하고 있는 것이다.</p>
       <div class="tbl"><table>
         <thead><tr><th>물음</th><th>내 답</th><th>읽는 법</th></tr></thead>
         <tbody>
-          <tr><td>예측 비율 ↔ 실제 비율</td><td><code>____</code> % ↔ <code>____</code> %</td><td>가까우면 §2-4 의 식이 내 방에서도 맞는다는 것이다. 실제가 훨씬 크면 밀면서 <strong>돌리기까지</strong> 했을 수 있다(회전은 그 식에 없다)</td></tr>
+          <tr><td>마주 본 면이 차지하는 비율(§3-3-1 4번) ↔ 실제 비율</td><td><code>____</code> % ↔ <code>____</code> %</td><td>가까우면 §2-4 의 식이 내 방에서도 맞는다는 것이다. 실제가 훨씬 크면 밀면서 <strong>돌리기까지</strong> 했을 수 있다(회전은 그 식에 없다)</td></tr>
           <tr><td>덩어리가 몰린 방향</td><td><code>____</code>°</td><td>미는 방향 <code>φ</code> 와 맞는가. 정반대라면 각도 규약을 의심한다(<a href="l-08-floor-plan.html#s2-4">l-08 §2-4</a>)</td></tr>
-          <tr><td>문턱을 올려 없앨 수 있었는가</td><td><code>____</code></td><td><code>tol</code> 을 <code>d</code> 까지 올리면 0 개가 된다. <strong>그런데 그 문턱으로 실습 B 를 다시 실행하면 사람도 안 나온다</strong> — 직접 해 보고 적는다. <strong>이것이 이 실습의 결론이다</strong></td></tr>
+          <tr><td>문턱을 올려 없앨 수 있었는가</td><td><code>____</code></td><td><code>tol</code> 을 <code>d</code> 까지 올려도 마주 본 벽은 남는다(§2-4 셋째 줄). 더 올리면 벽은 사라지지만 <strong>그 문턱보다 덜 다가온 사람도 안 나온다</strong> — 그 문턱으로 실습 B 를 다시 실행해 보고 적는다. <strong>이것이 이 실습의 결론이다</strong></td></tr>
           <tr><td>내가 민 거리(자로 잰 값)</td><td><code>____</code> m</td><td>다음 쪽이 스캔만으로 이 값을 맞히려 한다. <strong>적어 두지 않으면 채점할 것이 없다</strong></td></tr>
         </tbody>
       </table></div>
@@ -675,39 +1629,46 @@ pair &lt;i&gt;-&lt;j&gt;   clusters=&lt;n&gt;   sizes=[&lt;n&gt;, …]   centroi
       <h2 id="checkpoints">✅ 검증 체크포인트</h2>
       <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.
       <strong>이 쪽의 항목은 "예상한 것을 봤는가"가 아니라 "무엇이 일어났는지 적었는가"</strong> 다 — 방마다·기기마다 다른 값이 나오는 것이 정상이기 때문이다.</p>
+      <p>머리말의 <strong>경로 통과</strong>는 정상 절차를 끝까지 했다는 뜻이고, <strong>발동 확인</strong>은 일부러 만든 이상 상황의 출력을 봤다는 뜻이다. 이 "경로"는 <a href="l-00-map.html">l-00</a> 의 경로 A / B 와 관계없다.</p>
       <ul class="checklist">
         <li><label><input type="checkbox" data-key="diff-noise-floor-measured"><span><strong>경로 통과</strong> — 아무도 지나가지 않는 구간에서 차의 분포(중앙값 · 75 % · 90 % · 최대)와 두 바퀴 사이의 Δt 를 적고, 그 위에서 고른 <strong>빈 폭과 문턱의 근거를 한 줄씩</strong> 적었다
-          <span class="sub">판정 수단: 내 도구의 출력 · §3-1-4 의 표와 두 줄 · 합격선 없음(방과 모드에 따라 달라진다 — 이유는 §2-3)</span></span></label></li>
-        <li><label><input type="checkbox" data-key="diff-selftest-pass"><span><strong>경로 통과</strong> — <code>python3 tests/test_diff.py</code> 가 <code>PASS diff 36 cases</code> 로 끝났다
-          <span class="sub">판정 수단: 자기시험 출력 · §3-1-3 · 라이다 없이 실행된다(Mac 에서도)</span></span></label></li>
+          <span class="sub">판정 수단: <code>lab_diff</code> 의 출력 · §3-1-4 의 표와 두 줄 · 합격선 없음(방과 모드에 따라 달라진다 — 이유는 §2-3)</span></span></label></li>
+        <li><label><input type="checkbox" data-key="diff-selftest-pass"><span><strong>경로 통과</strong> — Pi 에서 <code>build/test_diff</code> 와 <code>build/test_diff_ub</code> 가 둘 다 <code>PASS diff 44 cases</code> 한 줄만 찍었다
+          <span class="sub">판정 수단: Pi 빌드의 두 시험 출력 · §3-1-3 · 라이다 없이 실행된다. Mac 의 <code>clang++</code> 통과는 연습이다 — 이 항목의 판정으로 쓰지 않는다(결정 L3)</span></span></label></li>
         <li><label><input type="checkbox" data-key="moving-only-extracted"><span><strong>경로 통과</strong> — 사람이 지나갈 때와 정지 구간의 결과(덩어리 수 · 칸 수 · 중심)를 <strong>나란히</strong> 적었다. 사람이 검출되지 않았다면 그때의 문턱·빈 폭·기준선을 적어 <strong>왜 검출하지 못했는지</strong>까지 적었다
           <span class="sub">판정 수단: §3-2-2 의 정답지 ↔ §3-2-4 의 대조 표 · <strong>검출됐는가가 아니라 적었는가로 판정한다</strong> · 내 기록(그 사건이 든 옛 기록도 된다)</span></span></label></li>
-        <li><label><input type="checkbox" data-key="sensor-nudge-floods-diff"><span><strong>발동 확인</strong> — 센서를 밀어(또는 §3-3-3 의 합성으로) <strong>아무것도 움직이지 않은 방</strong>이 "움직였다"로 나오게 만들었다. 검출된 방향의 비율·몰린 방향을 §3-3-2 의 예측과 견주고, <strong>왜 문턱으로는 못 고치는지</strong> 한 줄 적었다. 그리고 <strong>센서를 원래 자리로 되돌려 기준선을 다시 쟀다</strong>
-          <span class="sub">판정 수단: §3-3-4 의 표 · 그림(덩어리가 한쪽 절반에 몰리는가) · 자로 잰 민 거리 · 되돌린 뒤의 기준선</span></span></label></li>
+        <li><label><input type="checkbox" data-key="sensor-nudge-floods-diff"><span><strong>발동 확인</strong> — 센서를 밀어(또는 §3-3-3 의 <code>lab_diff_synth</code> 로) <strong>아무것도 움직이지 않은 방</strong>이 "움직였다"로 나오게 만들었다. 검출된 방향의 비율·몰린 방향을 §3-3-2 의 예측과 견주고, <strong>왜 문턱으로는 못 고치는지</strong> 한 줄 적었다. 그리고 <strong>센서를 원래 자리로 되돌려 기준선을 다시 쟀다</strong>
+          <span class="sub">판정 수단: §3-3-4 의 표 · 그림(덩어리가 미는 쪽을 마주 본 면에 몰리는가) · 자로 잰 민 거리 · 되돌린 뒤의 기준선</span></span></label></li>
       </ul>
       <p class="progress-line"></p>
       <div class="progress-bar"><span></span></div>
 
       <h2 id="symptoms">증상 ↔ 원인</h2>
-      <div class="tbl"><table>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w25"><col class="w30"><col class="w25"><col class="w20"></colgroup>
         <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
         <tbody>
-          <tr><td>아무도 없는데 차분 덩어리가 가득</td><td>문턱이 기준선보다 낮다 / 센서가 조금씩 밀리고 있다(케이블이 당긴다)</td><td>덩어리가 <strong>한쪽 절반에 몰려 있으면</strong> 센서가 밀린 것이다(§2-4). 고루 흩어져 있으면 문턱이다</td><td>§3-1-4 / <a href="l-01-link.html">l-01</a> 의 받침·케이블 여유</td></tr>
-          <tr><td>사람이 지나가는데 아무것도 안 나온다</td><td>문턱이 크다 / Δt 가 짧아 이동량이 작다 / 사람이 무반사에 가까운 옷을 입었다</td><td>같은 구간을 문턱을 낮춰 다시 실행한다. 그래도 없으면 그 방향의 칸이 <code>None</code> 인지 본다(<code>bin_min</code> 출력)</td><td>§3-1-4 · §2-5(Δt) · 재질은 <span class="small"><a href="l-15-illusions.html">l-15</a></span></td></tr>
-          <tr><td><code>TypeError: 'Cluster' object is not iterable</code></td><td><code>list(cluster)</code> 나 <code>for p in cluster:</code> 로 점을 꺼냈다 — <code>Cluster</code> 에는 <code>__iter__</code> 가 없다</td><td>트레이스백의 줄을 본다. 그 자리에서 종료되므로 원인 줄이 바로 보인다</td><td><code>c.pts</code> 로 쓴다 — <a href="l-10-clusters.html#s3-1-2">l-10 §3-1-2</a></td></tr>
-          <tr><td><code>TypeError: diff() missing 1 required positional argument: 'bin_deg'</code></td><td>빈 폭(또는 문턱)을 아직 안 정했다. <strong>설계된 오류다</strong> — 기본값을 일부러 두지 않았다</td><td>메시지에 어느 인자인지 그대로 나온다</td><td>§3-1-1 의 값 표 · §3-1-4 에서 정한다</td></tr>
-          <tr><td>정면에 있는 것만 <strong>언제나 덩어리 둘</strong>로 나온다</td><td>이음매(마지막 칸 ↔ 칸 0)를 잇지 않았다 — <strong>오류는 나지 않는다</strong></td><td>두 덩어리의 <code>idx</code> 가 하나는 큰 수, 하나는 작은 수로 갈려 있는가. 벡터 11a 가 같은 것을 채점한다</td><td>§3-1-2 골격의 불변식 3</td></tr>
-          <tr><td>견준 칸 수(<code>compared</code>)가 거의 0</td><td>두 장을 <strong>다른 빈 폭</strong>으로 만들었다(목록 길이가 다르다) / 무반사가 많은 방향만 봤다</td><td>두 <code>bin_min</code> 의 길이를 출력해 본다. 다르면 같은 <code>bin_deg</code> 를 넘기지 않은 것이다</td><td>§3-1-2 · §3-1-4</td></tr>
-          <tr><td>덩어리 좌표가 사람이 있던 쪽과 <strong>좌우 반대</strong></td><td>각도 규약이 뒤집혔다. 이 쪽의 잘못이 아니다</td><td>같은 파일로 평면도를 다시 그려 본다</td><td><a href="l-08-floor-plan.html#s2-4">l-08 §2-4</a>(여기서 고친다 — 이 쪽에서 부호를 뒤집지 않는다)</td></tr>
-          <tr><td>시작하자마자 <code>ValueError: line &lt;n&gt;: …</code></td><td>기록 파일이 기준 형식을 어겼다 — <strong>로더가 거부한 것이지 이 쪽의 잘못이 아니다</strong>(합성 스캔을 만들었다면 각도 정렬·범위를 먼저 의심한다)</td><td>메시지에 줄 번호와 어긋난 조건이 그대로 나온다</td><td><a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> · §3-3-3 ④</td></tr>
+          <tr><td>아무도 없는데 차분 덩어리가 가득</td><td>문턱이 기준선보다 낮다 / 센서가 조금씩 밀리고 있다(케이블이 당긴다)</td><td>덩어리가 <strong>한쪽에 몰려 있으면</strong> 센서가 밀린 것이다(§2-4, <code>--xy</code> 평면도). 고루 흩어져 있으면 문턱이다</td><td>§3-1-4 / <a href="l-01-link.html">l-01</a> 의 받침·케이블 여유</td></tr>
+          <tr><td>사람이 지나가는데 아무것도 안 나온다</td><td>문턱이 크다 / Δt 가 짧아 이동량이 작다 / 사람이 무반사에 가까운 옷을 입었다</td><td>같은 구간을 문턱을 낮춰 다시 실행한다. 그래도 없으면 그 쌍의 <code>compared</code> 가 줄었는지 본다(그 방향이 빈 값)</td><td>§3-1-4 · §2-5(Δt) · 재질은 <span class="small"><a href="l-15-illusions.html">l-15</a></span></td></tr>
+          <tr><td>정지 구간에서 늘 <strong>같은 칸 하나</strong>가 덩어리로 나온다</td><td>물체 모서리에 걸친 칸 — 바퀴마다 그 칸에 다른 면이 잡힌다(§2-3 ①)</td><td>실습 A 의 <code>max … at … deg</code> 와 같은 각도인가</td><td>빈 폭을 넓힌다(§3-1-4 견본). 문턱으로는 거르지 못한다</td></tr>
+          <tr><td><code>error: no matching function for call to 'diff'</code>(clang) · <code>error: too few arguments to function …</code>(g++)</td><td>빈 폭(또는 문턱)을 넘기지 않았다. <strong>설계된 오류다</strong> — 기본값을 일부러 두지 않았다</td><td>오류 아래의 <code>note:</code> 가 선언을 가리킨다(clang 은 <code>requires 4 arguments, but 3 were provided</code>)</td><td>§3-1-1 의 값 표 · §3-1-4 에서 정한다</td></tr>
+          <tr><td><code>lab_diff</code> 가 <code>usage: …</code> 를 찍고 끝난다(종료 코드 2)</td><td>빈 폭을 주지 않았거나, 옵션을 맞지 않게 섞었다(문턱과 <code>--spread</code> 를 같이 · 문턱 없이 <code>--after</code>)</td><td>사용법의 마지막 줄이 허용되는 조합을 적는다</td><td>§3-1-2 의 <code>src/diff.cpp</code> 머리 주석</td></tr>
+          <tr><td>정면에 있는 것만 <strong>언제나 덩어리 둘</strong>로 나온다</td><td>이음매(마지막 칸 ↔ 칸 0)를 잇지 않았다 — <strong>오류는 나지 않는다</strong></td><td>두 덩어리의 <code>idx</code> 가 하나는 큰 수, 하나는 작은 수로 갈려 있는가. 벡터 11a 가 같은 것을 채점한다</td><td>§3-1-3 의 T2</td></tr>
+          <tr><td><code>bins=0</code> · <code>compared=0/0</code></td><td>골격의 <code>bin_min()</code>(T1)이 빈 목록을 돌려준다</td><td><code>test_diff</code> 의 1 군이 FAIL 인가</td><td>§3-1-3 의 T1</td></tr>
+          <tr><td>덩어리 좌표가 사람이 있던 쪽과 <strong>좌우 반대</strong></td><td>각도 규약이 뒤집혔다. 이 쪽의 잘못이 아니다</td><td>같은 파일로 평면도를 다시 그려 본다(<code>lab_geom --xy</code> · <code>floor_plan.py</code>)</td><td><a href="l-08-floor-plan.html#s2-4">l-08 §2-4</a>(여기서 고친다 — 이 쪽에서 부호를 뒤집지 않는다)</td></tr>
+          <tr><td>시작하자마자 <code>error: line &lt;n&gt;: …</code></td><td>기록 파일이 기준 형식을 어겼다 — <strong>로더가 거부한 것이지 이 쪽의 잘못이 아니다</strong>(손으로 만든 합성 파일이면 각도 정렬·범위를 먼저 의심한다)</td><td>메시지에 줄 번호와 어긋난 조건이 그대로 나온다</td><td><a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> · §3-3-3 ④</td></tr>
+          <tr><td><code>Assertion 'this-&gt;_M_is_engaged()' failed.</code> 뒤 중단(g++)</td><td>빈 <code>optional</code> 을 확인 없이 꺼냈다(<code>*s.r[i]</code> · <code>*xy[i]</code>)</td><td>터미널에서 실행한다 — 파이프로 받으면 문구가 남지 않을 수 있다<sup class="fn"><a href="#fn-15" id="fnref-15">15</a></sup></td><td>T1 · T2 카드</td></tr>
+          <tr><td><code>Assertion '__n &lt; this-&gt;size()' failed.</code> 뒤 중단(g++)</td><td>칸 수를 내림으로 세고 마지막 칸에 썼다 / 바퀴가 없는데 첫 바퀴를 읽었다</td><td>마지막 FAIL 줄 다음 군이 멈춘 자리다</td><td>T1 · T3 카드</td></tr>
+          <tr><td>Mac 에서는 FAIL 줄인데 Pi 에서는 중단</td><td>Mac 의 clang(libc++)은 빈 <code>optional</code> 의 <code>*</code> 를 검사하지 않는다</td><td>같은 시험을 Pi 의 g++ 빌드로 실행한다</td><td>판정은 Pi 빌드(결정 L3)</td></tr>
+          <tr><td>빌드 중 <code>note: parameter passing …</code> 묶음</td><td>경고 아님 — <code>centroid()</code> 가 <code>Point</code> 를 값으로 돌려준다</td><td><code>-Werror</code> 로도 빌드가 끝난다</td><td>없음(<a href="l-10-clusters.html#s3-1-2">l-10 §3-1-2</a>)</td></tr>
+          <tr><td>민 결과의 비율이 <code>predicted</code> 줄과 다르다 · 문턱을 <code>d</code> 로 올려도 남는다</td><td><code>predicted</code> 줄은 둥근 방의 근사식이다. 평평한 벽은 마주 보면 <code>d / cos α</code>(<code>d</code> 이상) 가까워지고, 나란하면 안 변한다</td><td>덩어리가 마주 본 벽과 물체에만 있는가(<code>--xy</code> 평면도)</td><td>고칠 것이 아니라 기록할 것 — §2-4</td></tr>
         </tbody>
       </table></div>
 
       <h2 id="quiz">🤔 이해 확인</h2>
       <details class="quiz"><summary>1. (네 갈래 검색) 두 스캔 사이의 시간 <code>scan_time</code> 을 네 군데에서 찾아 적어 보라 — 정의 → 사양 → 구현 → 내 장치</summary>
-        <div class="ans"><p><strong>① 정의</strong>: <code>sensor_msgs/msg/LaserScan.msg</code> 의 주석은 <code>float32 scan_time # time between scans [seconds]</code> 한 줄뿐이다. 집필자가 ros2/common_interfaces <code>humble</code> 가지를 2026-09-23 에 받아 확인했다. <strong>"무엇으로 잰 시간인가"는 정의하지 않는다.</strong> 07 §1-1 은 이 필드를 <em>"한 바퀴에 걸린 시간"</em> 으로 옮겨 적는다. <strong>같은 필드를 두 가지로 읽을 수 있다</strong>는 것이 이 갈래의 첫 수확이다.</p>
-        <p><strong>② 사양</strong>은 값을 하나로 주지 않는다. 데이터시트 rev.2.2 p.8 Fig 2-1 의 Scan Rate 는 <strong>최소 1 · 전형 5.5 · 최대 10 Hz</strong> 다(v3.0 도 p.8 Fig 2-1, <strong>이 행은 두 판이 같다</strong>). 전형값에는 <code>360 samples per scan</code> 이라는 조건이 붙어 있다. 즉 사양이 주는 것은 <strong>범위</strong>이지 내 값이 아니다.</p>
-        <p><strong>③ 구현</strong>이 가장 많은 정보를 준다. 집필자는 드라이버 <code>src/rplidar_node.cpp</code> 를 GitHub <code>Slamtec/rplidar_ros</code> 의 <code>ros2</code> 가지에서 2026-09-23 에 받았다. 이 파일은 <code>:467-470</code> 에서 <code>grabScanDataHq()</code> 호출 <strong>직전·직후의 시각을 기록해 그 차</strong>를 낸다. <code>:255</code> 에서 그 차를 <code>scan_time</code> 에 넣는다. <strong>사양값도 아니고 모터 회전 주기도 아니라, 그 바퀴를 받아 오는 데 실제로 걸린 시간</strong>이다 — 그래서 호스트가 바쁘면 이 값도 길어진다. ⚠ 이 소스는 GitHub 의 그 가지이고 <strong>내 설치본 2.1.4 와 같은지는 확인하지 않았다</strong>(받는 절차는 <a href="l-06-three-sources.html#s2-6">l-06 §2-6</a>).</p>
+        <div class="ans"><p><strong>① 정의</strong>: <code>sensor_msgs/msg/LaserScan.msg</code> 의 주석은 <code>float32 scan_time # time between scans [seconds]</code> 한 줄뿐이다.<sup class="fn"><a href="#fn-16" id="fnref-16">16</a></sup> <strong>"무엇으로 잰 시간인가"는 정의하지 않는다.</strong> 07 §1-1 은 이 필드를 <em>"한 바퀴에 걸린 시간"</em> 으로 옮겨 적는다. <strong>같은 필드를 두 가지로 읽을 수 있다</strong>는 것이 이 갈래의 첫 수확이다.</p>
+        <p><strong>② 사양</strong>은 값을 하나로 주지 않는다. 데이터시트 성능 표의 Scan Rate 는 <strong>최소 1 · 전형 5.5 · 최대 10 Hz</strong> 다(<strong>이 행은 데이터시트의 두 판이 같다</strong>).<sup class="fn"><a href="#fn-17" id="fnref-17">17</a></sup> 전형값에는 <code>360 samples per scan</code> 이라는 조건이 붙어 있다. 즉 사양이 주는 것은 <strong>범위</strong>이지 내 값이 아니다.</p>
+        <p><strong>③ 구현</strong>이 가장 많은 정보를 준다. 드라이버 소스 <code>src/rplidar_node.cpp</code> 는 <code>grabScanDataHq()</code> 호출 <strong>직전·직후의 시각을 기록해 그 차</strong>를 낸다. 그리고 그 차를 <code>scan_time</code> 에 넣는다.<sup class="fn"><a href="#fn-18" id="fnref-18">18</a></sup> <strong>사양값도 아니고 모터 회전 주기도 아니라, 그 바퀴를 받아 오는 데 실제로 걸린 시간</strong>이다 — 그래서 호스트가 바쁘면 이 값도 길어진다. ⚠ 이 소스는 GitHub 의 드라이버 저장소(<code>ros2</code> 가지)에서 받은 것이고 <strong>내 설치본 2.1.4 와 같은지는 확인하지 않았다</strong>(받는 절차는 <a href="l-06-three-sources.html#s2-6">l-06 §2-6</a>).</p>
         <p><strong>④ 내 장치</strong>는 기록 파일 한 장으로 끝난다 — 이웃한 두 바퀴의 <code>t</code> 차(§3-1-4 ①). 넷을 나란히 놓으면 <strong>①은 모호하고 ②는 범위이며 ③은 "받는 데 걸린 시간"이고 ④만 내 값</strong>이다. 어느 것이 틀린 것이 아니라 <strong>서로 다른 것을 재고 있다</strong>는 것이 답이다.</p></div></details>
       <details class="quiz"><summary>2. 한 빈에 점이 여러 개면 왜 <strong>가장 가까운</strong> 것을 대표로 삼는가. 평균은 무엇이 문제인가</summary>
         <div class="ans"><p>이 값이 쓰일 자리가 "내 앞을 막는 것이 있는가"이기 때문이다. 막는 것은 <strong>가장 가까운 면</strong>이고, 그 뒤에 무엇이 얼마나 있는지는 판단을 바꾸지 않는다.</p>
@@ -719,22 +1680,22 @@ pair &lt;i&gt;-&lt;j&gt;   clusters=&lt;n&gt;   sizes=[&lt;n&gt;, …]   centroi
         <ul>
           <li>① 문턱을 고른 <strong>이유</strong>가 노트에 남는다.</li>
           <li>② 나중에 결과가 이상할 때 "기준선이 달라졌나"를 먼저 물을 수 있다(조명·문 열림·센서 자리).</li>
-          <li>③ <strong>사양과 견줄 수 있다</strong>. 4 m 에서 거리의 1 %는 0.04 m 다(rev.2.2 p.8 Fig 2-1). 내 최대가 그보다 훨씬 크다면 원인은 거리 산포가 아니라 §2-3 ①(칸 안에서 점이 바뀌는 것)이다.</li>
+          <li>③ <strong>사양과 견줄 수 있다</strong>. 4 m 에서 거리의 1 %는 0.04 m 다(§2-3 ②).<sup class="fn"><a href="#fn-19" id="fnref-19">19</a></sup> 내 최대가 그보다 훨씬 크다면 원인은 거리 산포가 아니라 §2-3 ①(칸 안에서 점이 바뀌는 것)이다.</li>
         </ul>
         <p><strong>③ 의 비교가 <a href="l-07-cross-verify.html">l-07</a> 이 물은 "센서가 나쁜가, 내 도구가 나쁜가"를 이 쪽에서 다시 묻는 방법</strong>이다.</p></div></details>
-      <details class="quiz"><summary>4. 센서를 5 cm 밀었는데 왜 "온 방"이 아니라 <strong>절반</strong> 인가. 그리고 왜 문턱을 키워 해결할 수 없는가</summary>
-        <div class="ans"><p>거리 변화가 <code>d·cos(θ − φ)</code> 꼴이기 때문이다(§2-4). 미는 방향 정면은 <code>d</code> 만큼 가까워지지만 <strong>반대쪽 절반은 그만큼 멀어지고</strong>, <code>diff()</code> 는 가까워진 쪽만 본다. 옆(±90°)은 거의 변하지 않는다. 그래서 문턱 0.02 m · <code>d</code> = 0.05 m 에서 실제로 세어 보면 <strong>36.5 %</strong> 다 — "온 방"은 과장이고 <strong>"밀린 쪽 절반"</strong>이 정확한 말이다. (절대값으로 비교하면 73.8 % 가 되어 그때는 "온 방"에 가까워진다.)</p>
-        <p>문턱으로 못 고치는 이유는 <strong>사람과 밀림이 같은 양을 만들기 때문</strong>이다. <code>tol</code> 을 <code>d</code> 까지 올리면 밀림은 0 개가 되지만, 그 문턱은 "5 cm 다가온 사람"도 걸러 낸다. 하나의 숫자로 두 가지를 가르려는 시도가 원리적으로 안 되는 것이고, <strong>가르려면 정보를 더해야 한다</strong> — 센서가 얼마나 움직였는지를 따로 추정하거나(다음 쪽), 엔코더·IMU 같은 다른 출처에서 가져오거나.</p></div></details>
+      <details class="quiz"><summary>4. 센서를 5 cm 밀었는데 왜 "온 방"이 아니라 <strong>마주 본 벽</strong>만 나오는가. 그리고 왜 문턱을 키워 해결할 수 없는가</summary>
+        <div class="ans"><p>평평한 벽을 같은 방향에서 다시 재면 거리가 <code>d / cos α</code> 만큼 줄기 때문이다(§2-4). 미는 방향을 마주 본 면은 통째로 <code>d</code> 이상 가까워지지만, <strong>등진 면은 그만큼 멀어지고 나란한 면은 그대로다</strong>. <code>diff()</code> 는 가까워진 쪽만 본다. 그래서 합성 방에서 앞으로 5 cm 밀고 문턱 0.02 m 로 세면 <strong>18.8 %</strong>(앞 벽과 상자)다 — "온 방"은 과장이고 <strong>"미는 쪽을 마주 본 면"</strong>이 정확한 말이다.</p>
+        <p>문턱으로 못 고치는 이유는 <strong>사람과 밀림이 같은 양을 만들기 때문</strong>이다. <code>tol</code> 을 <code>d</code> 까지 올려도 마주 본 벽은 남는다(<code>d / cos α</code> 는 <code>d</code> 보다 크다). 더 올려 벽을 지우면 그 문턱보다 덜 다가온 사람도 걸러 내고, 물체 가장자리처럼 가려지는 범위가 바뀌는 칸은 그래도 남는다. 하나의 숫자로 두 가지를 가르려는 시도가 원리적으로 안 되는 것이고, <strong>가르려면 정보를 더해야 한다</strong> — 센서가 얼마나 움직였는지를 따로 추정하거나(다음 쪽), 엔코더·IMU 같은 다른 출처에서 가져오거나.</p></div></details>
       <details class="quiz"><summary>5. (일부러 틀리기) 비교를 <code>|a − b| &gt; tol</code> 로 바꾸면 무엇이 보이고 무엇이 늘어나는가</summary>
         <div class="ans"><p>보이는 것: <strong>떠난 것</strong>이 보인다. 사람이 비켜선 자리는 "멀어졌다"이므로 지금 골격은 아무것도 내지 않지만, 절대값이면 <strong>사람이 있던 자리와 새로 선 자리가 둘 다</strong> 덩어리로 나온다 — 그래서 덩어리 수가 대략 두 배가 된다.</p>
         <p>늘어나는 것: 센서가 밀렸을 때 검출되는 비율이 36.5 %에서 <strong>73.8 %</strong> 로 오르고(같은 조건), <strong>무반사 경계의 깜빡임</strong>도 양방향으로 들어온다. 즉 <strong>기준선 자체가 올라가므로 문턱도 다시 골라야 한다.</strong></p>
-        <p>배울 것은 어느 쪽이 옳은가가 아니다. 이 한 줄을 바꾸면 <strong>시험 벡터 8이 즉시 실패하고</strong>(<code>FAIL 8a</code>), 이 실패가 정상이다 — <strong>규약을 바꾸면 채점표도 같이 바꿔야 한다.</strong> 벡터를 안 고치고 코드만 고치면, 다음에 그 벡터가 실패했을 때 무엇이 의도였는지 아무도 모른다.</p></div></details>
+        <p>배울 것은 어느 쪽이 옳은가가 아니다. 이 한 줄을 바꾸면 <strong>시험 벡터 8이 즉시 실패하고</strong>(<code>FAIL 19 8a a bin that got farther</code>), 이 실패가 정상이다 — <strong>규약을 바꾸면 채점표도 같이 바꿔야 한다.</strong> 벡터를 안 고치고 코드만 고치면, 다음에 그 벡터가 실패했을 때 무엇이 의도였는지 아무도 모른다.</p></div></details>
       <details class="quiz"><summary>6. <code>stationary_mask</code> 에서 쓴 흔들림 폭을 그대로 <code>diff</code> 의 문턱으로 넣으면 무엇이 일어나는가</summary>
         <div class="ans"><p>두 값이 <strong>다른 양</strong>이라 어긋난다. 흔들림 폭은 <code>최대 − 최소</code> 로 <strong>양쪽</strong>을 합친 폭이고, 문턱은 <strong>한쪽</strong>으로 줄어든 양이다.</p>
         <p>폭 <code>s</code> 안에서 흔들리는 칸은 한쪽으로 최대 <code>s</code> 까지 줄어 보일 수 있으므로, 문턱을 <code>s</code> 보다 작게 두면 <strong>가만히 있는 칸이 계속 검출된다.</strong> 반대로 <code>s</code> 를 훨씬 넘겨 두면 검출되는 칸은 거의 없지만 작은 움직임을 놓친다. 그래서 §2-3 은 <strong>"문턱은 내가 인정한 흔들림 폭 이상에서 고른다"</strong> 까지만 말하고, 얼마나 위인지는 내가 정하게 둔다 — <strong>그 한 줄을 노트에 적는 것이 이 쪽의 산출물</strong>이다.</p></div></details>
       <details class="quiz"><summary>7. (안전) 실습 B 와 C 에서 지켜야 할 것을 각각 하나씩 말해 보라</summary>
         <div class="ans"><p><strong>B</strong>: 지나가는 사람이 <strong>센서 높이에서 스캔 창을 정면으로 들여다보지 않게</strong> 한다. 785 nm 는 적외선이라 켜졌는지 눈으로 알 수 없고 — Class I 은 정상 사용에서 안전으로 분류된 등급이지만 — <strong>보이지 않으면 조심하는 습관이 안 생긴다</strong>는 것이 진짜 이유다. 그리고 도는 머리에 손·머리카락·옷자락이 닿지 않도록 <strong>지나갈 거리를 미리 정해</strong> 두고 그 선을 지킨다.</p>
-        <p><strong>C</strong>: 센서를 들거나 옮길 때는 <strong>모터를 멈춘 뒤</strong>(<code>dtr=True</code>) 하고, <strong>케이블에 여유가 있는지 먼저 본다.</strong> 이 실습은 일부러 미는 실습이라 케이블이 당기기 가장 쉽다. 그리고 끝나면 <strong>원래 자리로 되돌리고 기준선을 다시 잰다</strong> — 되돌리지 않으면 그 뒤의 모든 측정이 다른 기준에서 이뤄진다.</p></div></details>
+        <p><strong>C</strong>: 센서를 들거나 옮길 때는 <strong>모터를 멈춘 뒤</strong>(<code>motor(fd, false)</code> — 기록을 끝낸 <code>lab_turn</code> 이 부른다. 끝난 뒤에도 돌면 USB 케이블을 뽑는다, l-01 의 L2) 하고, <strong>케이블에 여유가 있는지 먼저 본다.</strong> 이 실습은 일부러 미는 실습이라 케이블이 당기기 가장 쉽다. 그리고 끝나면 <strong>원래 자리로 되돌리고 기준선을 다시 잰다</strong> — 되돌리지 않으면 그 뒤의 모든 측정이 다른 기준에서 이뤄진다.</p></div></details>
 
       <h2 id="next">다음 행선지</h2>
       <div class="callout tip"><span class="ct">여기까지 했으면</span>
@@ -742,7 +1703,7 @@ pair &lt;i&gt;-&lt;j&gt;   clusters=&lt;n&gt;   sizes=[&lt;n&gt;, …]   centroi
           <li><strong>번호순 다음은</strong> → <span class="small"><a href="l-14-alignment.html">l-14</a></span> — <strong>"내가 돌았나, 세상이 돌았나"</strong>. 실습 C 에서 자로 잰 "내가 민 거리"가 그 쪽의 정답지가 된다. 이 쪽이 못 한 일(두 장의 좌표계를 맞추는 일)을 l-14 에서 한다.</li>
           <li><strong>기록 파일 한 장만 있으면</strong> → <a href="l-09-occupancy.html">l-09</a> · <a href="l-11-lines.html">l-11</a> 과 이 쪽은 서로를 선행으로 갖지 않는다. 연속된 바퀴가 없는 파일뿐이라면 그 두 쪽을 먼저 하고, 여러 바퀴짜리를 기록한 날 이리로 돌아온다.</li>
           <li><p><strong>이 쪽을 못 끝냈어도</strong> — 경우가 셋이다.</p>
-            <p>① <code>PASS diff 36 cases</code> 까지 갔으면 <strong>실습 B·C 의 관찰이 아직 없어도 다음 쪽으로 갈 수 있다.</strong> 다음 쪽이 요구하는 것은 "차분으로는 안 된다"는 이해이고, §2-4 의 표가 그 이해를 이미 준다.</p>
+            <p>① Pi 빌드에서 <code>PASS diff 44 cases</code> 까지 갔으면 <strong>실습 B·C 의 관찰이 아직 없어도 다음 쪽으로 갈 수 있다.</strong> 다음 쪽이 요구하는 것은 "차분으로는 안 된다"는 이해이고, §2-4 의 표가 그 이해를 이미 준다.</p>
             <p>② 반대로 <strong>실습 A 를 못 했으면 여기서 멈춘다</strong> — 기준선 없이 고른 문턱 위에 올린 판정은 뒤에서 이상한 값이 나왔을 때 되짚을 곳이 없다.</p>
             <p>③ 사람이 검출되지 않았어도 된다. <strong>"검출 안 됨"과 그때의 문턱·기준선을 적은 것</strong>이 이 쪽의 산출물이고, 검출되는 조건은 방마다 다르다.</p></li>
           <li><strong>컨테이너가 있으면</strong> — 07 §3-5 의 <code>ros2 topic echo /scan --field scan_time --once</code> 로 §2-5 ④ 를 한 번 더 확인해 둔다. 그러면 내 파일의 Δt 와 드라이버가 내는 값이 같은지 알 수 있다. <strong>다르면 그 차이도 기록이다</strong>(§2-5 ③ 이 이유의 후보를 준다).</li>
@@ -756,6 +1717,30 @@ pair &lt;i&gt;-&lt;j&gt;   clusters=&lt;n&gt;   sizes=[&lt;n&gt;, …]   centroi
             <p><code>hardware/INVENTORY.md</code> 에 <strong>이 쪽이 채우는 칸은 없다</strong> — 문턱과 빈 폭은 내 방과 내 판단이지 장비의 사양이 아니기 때문이다.</p></li>
         </ul>
       </div>
+
+      <h2 id="footnotes">각주</h2>
+      <p class="small">본문의 작은 번호를 누르면 여기로 온다. 근거 문서 · 측정하거나 확인한 날짜와 기계를 모았다. ↩ 를 누르면 본문으로 돌아간다.</p>
+      <ol class="footnotes">
+          <li id="fn-1">데이터시트 rev.2.2 p.8 Fig 2-1 · v3.0 p.8 Fig 2-1 — Distance Resolution 행. 두 판이 이 행에서는 같다. <a class="fn-back" href="#fnref-1" aria-label="본문으로">↩</a></li>
+          <li id="fn-2">2026-11-01, 집필자가 각주 14 의 정지 기록(4 m × 3 m 의 합성 방)을 <code>lab_diff_synth</code> 로 옮겨 쟀다. 옮긴 양은 앞 <code>0.05 0</code> · 옆 <code>0 0.05</code> · 비스듬히 <code>0.035355 0.035355</code> 이고, 각각을 <code>lab_diff … 1.0 &lt;tol&gt; --after</code> 로 정지 기록의 마지막 바퀴와 견줬다. 견준 칸은 330 · 328 · 330 이다. 세 컴파일러(각주 8)의 출력이 글자 단위로 같았다. 앞으로 민 0.02 m 의 덩어리는 마주 본 벽 x = 2.5 m(40 칸)와 상자(22 칸) 둘이고, 옆 벽 둘과 뒤 벽은 나오지 않았다. 0.05 m 의 덩어리는 열이다 — 상자 하나(21 칸)와 앞 벽 조각 아홉(1 ~ 4 칸)이다. 0.07 m 에서 남은 한 칸은 41° 칸이다. 정지 기록끼리도 1.6 m 의 차를 내는 칸이다(각주 14). 옆으로 · 비스듬히 민 0.07 m 의 남은 칸 가운데 여덟은 상자 아래 면(y = 0.3 m) 쪽의 칸이다. 센서가 옆으로 움직이면 상자가 가리는 벽의 범위가 바뀐다. 문턱 1.0 m 에서도 앞 1 · 옆 3 · 비스듬히 2 칸이 남았다. 식 <code>d / cos α</code> 의 근거는 이렇다. 벽까지의 수직 거리가 <code>D</code> 면, 법선과 <code>α</code> 를 이루는 방향의 거리는 <code>D / cos α</code> 다. 센서가 벽 쪽으로 <code>d</code> 다가가면 <code>D − d</code> 가 되어 같은 방향의 거리가 <code>d / cos α</code> 줄어든다. 미는 방향이 법선과 <code>β</code> 를 이루면 <code>D</code> 가 <code>d·cos β</code> 만큼 줄어 <code>d·cos β / cos α</code> 가 된다. 나란한 벽은 <code>D</code> 가 그대로라 같은 방향의 거리도 그대로다. 둥근 방의 수(이전 판의 표)는 정확한 식 <code>r − sqrt(r² + d² − 2·r·d·cos α)</code> 로 다시 셌다. α 는 0° ~ 359.9° 의 0.1° 간격 3 600 방향이고 <code>d</code> = 0.05 m 다. Apple clang 21.0 과 g++ 16.1 의 값이 같았다. 반지름 2 m · 1 m · 4 m 의 비율은 <code>tol</code> 0.01 m 에서 43.2 · 42.8 · 43.4 %, 0.02 m 에서 36.5 · 36.2 · 36.7 %, 0.05 m 에서 0.0 % 였다. 근사식은 43.6 · 36.9 · 0.0 % 다. 이전 판(파이썬, 2026-09-23)의 표와 같다. 절대값으로 비교하면 세 반지름 모두 73.8 %(0.02 m)였다. 1° 간격 360 방향으로 세면 소수 첫째 자리가 달라진다(2 m · 0.02 m 가 36.4 %). 이 식은 원래 자리의 <strong>같은 점</strong>까지의 거리다. 같은 방향에서 다시 재는 거리로 세면 2 m · 0.02 m 가 37.2 % 로 조금 다르다. <code>--nudge</code> 의 예측 줄은 <code>%.1f</code> · <code>%.2f</code> 로 찍는다. <code>std::acos(0.2)</code> 를 상수로 쓴 탐침에서 g++ 16.1 은 끝자리가 다른 값(<code>0.43590578315102513</code>)을 냈기 때문이다 — 마지막 자리는 컴파일러와 수학 라이브러리에 따라 달라질 수 있다. 실제 방 · 실제 센서로는 재지 않았다(확인 과제). <a class="fn-back" href="#fnref-2" aria-label="본문으로">↩</a></li>
+          <li id="fn-3">ros2/common_interfaces 의 <code>humble</code> 가지 — 집필자가 2026-09-23 에 받아서 열었다. <a class="fn-back" href="#fnref-3" aria-label="본문으로">↩</a></li>
+          <li id="fn-4">데이터시트 rev.2.2 p.8 Fig 2-1 · v3.0 p.8 Fig 2-1 — Scan Rate 행. <a class="fn-back" href="#fnref-4" aria-label="본문으로">↩</a></li>
+          <li id="fn-5">GitHub <code>Slamtec/rplidar_ros</code> 의 <code>ros2</code> 가지 — 집필자가 2026-09-23 에 받아서 열었다. <a class="fn-back" href="#fnref-5" aria-label="본문으로">↩</a></li>
+          <li id="fn-6"><code>파일:줄</code> 로 적으면 시각의 차는 <code>rplidar_node.cpp</code> <code>:467-470</code>, <code>scan_time</code> 에 넣는 줄은 <code>:255</code> 다. <a class="fn-back" href="#fnref-6" aria-label="본문으로">↩</a></li>
+          <li id="fn-7"><code>rplidar_node.cpp</code> <code>:256</code>. <a class="fn-back" href="#fnref-7" aria-label="본문으로">↩</a></li>
+          <li id="fn-8">2026-11-01, 집필자가 이 쪽의 코드 블록을 다시 뽑아 골격 상태와 완결 상태 두 벌로 빌드했다. 앞 쪽(l-01 ~ l-11)의 파일과 함께다. 컴파일러는 Apple clang 21.0(libc++) · g++ 16.1(libstdc++, <code>-O0</code> · <code>-O2</code>) · g++ 11.4(l-06 의 컨테이너와 같은 판)다. 마지막은 CMake 3.22.1 과 이 쪽의 <code>CMakeLists.txt</code> 로 빌드했다(<code>lab_diff</code> · <code>lab_diff_synth</code> 링크 포함). 플래그는 <code>-std=c++17 -Wall -Wextra -Wpedantic -Werror -D_GLIBCXX_ASSERTIONS</code> 다. 골격은 경고 없이 빌드되고 <code>test_diff</code> 가 <code>38 of 44 cases failed</code> 로 끝났다. 진단 빌드도 같은 줄이고 중단은 없었다. 앞에서부터 채운 상태는 T1 <code>28</code> · T1 ~ T2 <code>12</code> · T1 ~ T3 <code>5 of 44</code> 였다(세 컴파일러가 같았다). 완결은 <code>PASS diff 44 cases</code>(진단 빌드도 같은 한 줄)였다. 골격의 <code>lab_diff</code> 를 각주 14 의 기록에 돌리면 <code>bins=0</code> · <code>compared=0/0  median=none</code>, 문턱을 주면 <code>clusters=0</code> 이었다. 1 ~ 18 군의 벡터 36 개와 기대값은 이전 판(파이썬, 2026-09-23)의 시험 파일에서 옮겼고, 완결 C++ 가 같은 값을 냈다. 그중 6e 는 허용 폭을 <code>1e-9</code> 에서 <code>1e-25</code> 로 좁혔다 — <code>1e-9</code> 로는 <code>0.0</code> 도 통과해 이름("not 0.0")과 맞지 않았다. 90° 의 각도 변환을 <code>to_rad()</code> · <code>a * kPi / 180.0</code> · <code>a / 180.0 * kPi</code> 로 바꿔 써도 그 값은 같은 <code>double</code>(<code>3.061616997868383e-17</code>)이었다. 그래서 l-08 의 <code>to_xy()</code> 를 어느 꼴로 썼든 6e 는 이 쪽의 코드만 본다. 이전 판이 채점하지 않던 "측정된 점만"(14c · 14d), 이음매 덩어리의 순서(11c), <code>bin_diff()</code>(19 군 다섯)는 새로 더했다. <code>note: parameter passing …</code> 묶음은 CMake 빌드의 <code>lab_diff</code> · <code>test_diff</code> · <code>test_diff_ub</code> 에서 한 번씩 나왔다. <code>lab_diff_synth</code> 에서는 나오지 않았고, clang 은 찍지 않았다. 기본값 없는 인자를 빠뜨린 호출 <code>diff(a, a, 0.1)</code> 의 오류도 쟀다. clang 의 오류 줄은 <code>error: no matching function for call to 'diff'</code> 다. 그 아래 note 는 <code>requires 4 arguments, but 3 were provided</code> 라고 적는다. g++ 16.1 · 11.4 의 오류 줄은 <code>error: too few arguments to function '…lidar_lab::diff(…)'</code> 이고, 그 아래 note 는 <code>declared here</code> 다. §3-1-4 의 Mac 연습 명령을 헤더 여섯과 시험 폴더만 둔 디렉터리에서 실행했다 — <code>PASS diff 44 cases</code> 였다. 헤더 여섯은 <code>diff.hpp</code> · <code>cluster.hpp</code> · <code>geom.hpp</code> · <code>scan_io.hpp</code> · <code>repr.hpp</code> · <code>angles.hpp</code> 다. 시험 폴더에는 <code>check.hpp</code> · <code>test_diff.cpp</code> 를 두었다. Pi 의 g++(gcc 14 계열)로는 빌드해 보지 않았다 — <code>note</code> 가 나오는지도 확인 과제다. <a class="fn-back" href="#fnref-8" aria-label="본문으로">↩</a></li>
+          <li id="fn-9">데이터시트 rev.2.2 p.8 Fig 2-1 · v3.0 p.8 Fig 2-1 — Scan Rate 행. <a class="fn-back" href="#fnref-9" aria-label="본문으로">↩</a></li>
+          <li id="fn-10">데이터시트 rev.2.2 p.8 Fig 2-1 · v3.0 p.8 Fig 2-1 — Distance Resolution 행. <a class="fn-back" href="#fnref-10" aria-label="본문으로">↩</a></li>
+          <li id="fn-11">데이터시트 rev.2.2 p.8 Fig 2-1 — Angular Resolution 행. <a class="fn-back" href="#fnref-11" aria-label="본문으로">↩</a></li>
+          <li id="fn-12">2026-11-01, 집필자가 완결 코드에서 한 군데만 바꾼 판을 만들었다. 틀린 판은 스물셋이다. T1 일곱은 내림 · 내림에 지키는 줄 없음 · 마지막 점 · 평균 · <code>0.0</code> 을 "없음"으로 · <code>value_or(0.0)</code> · 확인 없는 <code>*s.r[i]</code> 다. T2 여덟은 이음매 없음 · 시작점 규칙 · <code>&gt;=</code> · 절대값 · 좌표를 a 에서 · 인덱스를 a 에서 · <code>value_or(Point{0.0, 0.0})</code> · 확인 없는 <code>*xy[i]</code> 다. T3 넷은 빈 값 건너뜀 · <code>&lt;</code> · 둘 미만 확인 없음 · 빈 목록 확인 없음이다. T4 넷은 절대값 · <code>b − a</code> · 빈 자리 없이 <code>push_back</code> · <code>value_or(0.0)</code> 이다. 다르게 쓴 판은 다섯(지키는 줄 없음 · <code>std::floor</code> · 칸마다 다시 훑기 · <code>std::minmax_element</code> · <code>push_back</code> 과 <code>std::nullopt</code>)이고 세 컴파일러 모두 44 개를 통과했다. 골격의 자리표시가 없는 꼴로 <code>-Werror</code> 없이 컴파일해 경고를 읽었다 — 경고는 하나도 없었다(<code>note</code> 는 각주 8). 세 컴파일러(Apple clang 21.0 · g++ 16.1 <code>-O0</code> · g++ 11.4 <code>-O2</code>)로 시험과 진단 빌드를 의사 터미널에서 실행했다. 의사 터미널은 운영체제가 만드는 가짜 터미널 장치다 — 프로그램에는 진짜 터미널로 보인다. 중단하지 않는 판의 FAIL 번호는 세 컴파일러가 같았다. 갈린 것은 g++ 에서 중단하는 판 다섯(확인 없는 <code>*s.r[i]</code> · 내림에 지키는 줄 없음 · 확인 없는 <code>*xy[i]</code> · 인덱스를 a 에서 · 빈 목록 확인 없음)이다. g++ 둘은 문구 뒤 중단(134)했고(진단 빌드도 같은 문구), g++ 11.4 의 그 중단은 파이프로 받으면 아무 줄도 남지 않았다. clang 은 앞의 넷에서 FAIL 줄로 끝났다(내림에 지키는 줄이 없는 판은 진단 빌드가 <code>heap-buffer-overflow</code> 뒤 134). 빈 목록 확인이 없는 판은 clang 이 종료 코드 139, 진단 빌드가 UBSan 의 <code>runtime error: reference binding to null pointer …</code> 뒤 134 였다. 셸이 찍는 문구는 셸마다 달라 적지 않는다. 지키는 줄(<code>k &gt;= n</code>)이 실제로 쓰이는지도 쟀다. 360 바로 아래의 <code>double</code> 을 폭 36 000 개(0.01° ~ 360°, 0.01° 간격)와 무작위 폭 1 000 만 개로 나눠 봤다. 칸 번호가 칸 수에 닿은 적은 없었다(Apple clang · g++ 16.1). Pi 의 g++(gcc 14 계열)로는 재지 않았다(확인 과제). <a class="fn-back" href="#fnref-12" aria-label="본문으로">↩</a></li>
+          <li id="fn-13">g++ 11.4(l-06 의 컨테이너와 같은 판)는 그 문구를 표준 출력으로 낸다. 그래서 파이프로 받으면 아무 줄도 남지 않는다(<a href="l-04-one-turn.html#s2-6-2">l-04 §2-6-2</a>). 측정은 각주 12 에 있다. <a class="fn-back" href="#fnref-13" aria-label="본문으로">↩</a></li>
+          <li id="fn-14">2026-11-01, 집필자의 합성 기록 두 벌이다. 방은 <a href="l-09-occupancy.html">l-09</a> · <a href="l-10-clusters.html">l-10</a> 과 같다(l-09 §2-3 의 합성 기록 각주). 4.0 m × 3.0 m(벽 x = −1.5 · 2.5 m, y = −1.2 · 1.8 m)이고 센서는 (0, 0) 이다. 한 변 0.4 m 의 상자가 (1.0, 0.5) 에 있고, 200° ~ 230° 는 무반사다. 10 바퀴이고, 바퀴마다 점 1 446 ~ 1 454 개를 같은 간격으로 두되 시작 각도를 그 간격 안에서 무작위로 옮겼다. 거리에는 표준편차 2 mm 의 잡음을 더하고 mm 자리에서 반올림했다. 바퀴 사이 시각은 0.182 s ± 2 ms 다. 둘째 기록은 넷째 바퀴부터 지름 0.4 m 의 원(사람)이 x = −0.8 m 에서 +y 쪽으로 바퀴마다 0.182 m 씩 걷는다(1 m/s). 완결 코드의 <code>lab_diff</code> · <code>lab_diff_synth</code> 를 세 컴파일러로 빌드해 돌린 출력이 글자 단위로 같았다. 정지 기록을 빈 폭 1.0 으로 돌린 쌍별 최대는 41.0° 칸이 만든 셋(1.6310 · 1.6340 · 1.6260 m)을 빼면 0.0080 ~ 0.0190 m 였다. 같은 기록을 문턱 0.01 m 로 돌리면 아홉 쌍 중 일곱 쌍에서 덩어리가 1 ~ 4 개 나왔다. 걷는 기록을 문턱 0.05 m 로 돌리면 쌍 3-4 부터 9-10 까지 사람 쪽 덩어리가 쌍마다 하나였고(쌍 5-6 은 0 개), 쌍 1-2 의 덩어리는 41° 칸 하나였다. <code>lab_diff_synth</code> 의 결과 파일은 <code>lab_scancheck</code> 가 <code>ok 1 revolutions</code> 로 받았고, <code>peek.py</code> 는 <code>null 121</code> 로 읽었다. 이 쪽의 이전 판(파이썬)에는 견본 출력이 없었다. 내 방의 기록으로는 돌려 보지 않았다 — 실제 센서의 분포 · 덩어리 · 민 결과는 확인 과제다. <a class="fn-back" href="#fnref-14" aria-label="본문으로">↩</a></li>
+          <li id="fn-15">g++ 11.4 의 경우다(각주 13). <a class="fn-back" href="#fnref-15" aria-label="본문으로">↩</a></li>
+          <li id="fn-16">집필자가 ros2/common_interfaces <code>humble</code> 가지를 2026-09-23 에 받아 확인했다. <a class="fn-back" href="#fnref-16" aria-label="본문으로">↩</a></li>
+          <li id="fn-17">데이터시트 rev.2.2 p.8 Fig 2-1 — v3.0 도 p.8 Fig 2-1 이고, 이 행은 두 판이 같다. <a class="fn-back" href="#fnref-17" aria-label="본문으로">↩</a></li>
+          <li id="fn-18">집필자는 이 파일을 GitHub <code>Slamtec/rplidar_ros</code> 의 <code>ros2</code> 가지에서 2026-09-23 에 받았다. 시각의 차는 <code>:467-470</code>, <code>scan_time</code> 에 넣는 줄은 <code>:255</code> 다. <a class="fn-back" href="#fnref-18" aria-label="본문으로">↩</a></li>
+          <li id="fn-19">데이터시트 rev.2.2 p.8 Fig 2-1 — Distance Resolution 행. <a class="fn-back" href="#fnref-19" aria-label="본문으로">↩</a></li>
+      </ol>
 
       <div class="pager"></div>
     </div>

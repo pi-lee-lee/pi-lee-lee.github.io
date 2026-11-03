@@ -16,8 +16,14 @@
       <p class="kicker">F0 · 지도와 준비</p>
       <h1>펌웨어 21쪽의 지도 — 지금 끝낼 수 있는 쪽부터 짚는다</h1>
       <p class="lead">본편 <a href="06a-mcu-protocol.html">06a</a> 에서 정한 것은 두 가지였다 — MCU 가 제어와 안전의 전권을 갖는다는 것, 그리고 Pi 와는 계약 v2 로만 통신한다는 것.
+      계약 v2 는 Pi 와 MCU 가 주고받는 이진 프레임의 사양이다.
       이 펌웨어 가이드(fw-00 ~ fw-20)는 그 MCU 쪽을 NUCLEO-H723ZG 위에 <strong>빈 프로젝트에서 시작해 내 손으로</strong> 만드는 21쪽이다.
-      이 쪽은 코드를 한 줄도 쓰지 않는다. 대신 뒤의 20쪽이 전제하는 세 가지 — 도구가 설치된 Mac, "무엇이 있어야 어느 쪽을 시작할 수 있는가"를 적은 부품표, 부품보다 먼저 읽어 둘 안전 규칙 — 을 한 장으로 만든다.</p>
+      이 쪽은 코드를 한 줄도 쓰지 않는다. 대신 뒤의 20쪽이 전제하는 세 가지를 한 장으로 만든다.</p>
+      <ul>
+        <li>도구가 설치된 Mac</li>
+        <li>"무엇이 있어야 어느 쪽을 시작할 수 있는가"를 적은 부품표</li>
+        <li>부품보다 먼저 읽어 둘 안전 규칙</li>
+      </ul>
 
       <div class="goal">
         <span class="label">이 쪽이 끝나면 보이는 것</span>
@@ -124,6 +130,8 @@
 
       <h3 id="s1-3">1-3. 가진 것 × 끝낼 수 있는 쪽</h3>
       <p>위에서 아래로 "하나씩 더 가질 때마다" 무엇을 시작할 수 있는지를 적은 표다. 실습 B(§3-2)에서 부품표를 채운 뒤 이 표로 돌아와 <strong>내가 지금 해당하는 행</strong>을 찾는다.</p>
+      <p class="small">표의 <strong>1세대</strong>는 이 프로젝트보다 앞서 만든 첫 차체다. 다른 STM32 + ESP32 의 2칩 구성이었고, 기록은 <code>~/ros2</code> 에 있다.
+      모터 · 엔코더 · IBT-2 · 전원/안전 부품은 그때의 바로 그 개체를 지금도 쓴다. 그래서 "1세대 실물"이라 부른다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>가진 것 (위 행에 더해)</th><th>이것만으로 끝낼 수 있는 쪽</th><th>이것이 없으면 막히는 쪽</th></tr></thead>
         <tbody>
@@ -133,50 +141,64 @@
           <tr><td>+ IBT-2 1장 + 점퍼선 (+ 약한 풀업 저항 수백 kΩ ~ 1 MΩ 1개)</td><td>fw-08 의 "리셋 중 EN = LOW" 판정 — 두 판정법 모두 <strong>모듈의 풀다운이 달린 상태</strong>가 전제다(§2-3 의 S4)</td><td>fw-08 의 그 판정 · fw-11. IBT-2 가 없으면 풀다운 자체가 없어 EN 네트는 LOW 가 될 수 없다 — 약한 풀업으로 재는 법은 그 대체 수단이 아니다</td></tr>
           <tr><td>+ 모터(엔코더 내장) 1개 이상</td><td>fw-09</td><td>fw-09 · fw-11 · fw-13</td></tr>
           <tr><td>+ INA226 × 2</td><td>fw-10</td><td>fw-10 · fw-11(사전충전 완료 판정) · fw-18(저전압의 출처)</td></tr>
-          <tr><td>+ 배터리 + 사전충전 회로(1세대 실물 — <code>hardware/INVENTORY.md</code> 7절)</td><td>fw-11, fw-13 (→ fw-17 의 나머지 실습, fw-18, fw-19 를 시작할 수 있다)</td><td>fw-11 · fw-13 · fw-12 의 전류 관찰 · fw-17(둘째 실습부터) · fw-18 · fw-19</td></tr>
+          <tr><td>+ 배터리 + 사전충전 회로(1세대 실물)<sup class="fn"><a href="#fn-1" id="fnref-1">1</a></sup></td><td>fw-11, fw-13 (→ fw-17 의 나머지 실습, fw-18, fw-19 를 시작할 수 있다)</td><td>fw-11 · fw-13 · fw-12 의 전류 관찰 · fw-17(둘째 실습부터) · fw-18 · fw-19</td></tr>
           <tr><td>+ ACS758 모듈</td><td>fw-12</td><td>fw-12 의 영점 보정(트리거·DMA 부분은 부품 없이 된다)</td></tr>
           <tr><td>+ WT901</td><td>fw-14</td><td>fw-14 (fw-18 의 기울기 판정은 BNO055 로도 된다)</td></tr>
-          <tr><td>+ BNO055 + I2C 외부 풀업 4.7 kΩ × 2 (SDA · SCL → Nucleo 3V3)</td><td>fw-15</td><td>fw-15. BNO055 모듈에는 풀업이 없다(<code>hardware/pinmap-h723.md</code> §2-C, INVENTORY 2절 IMU 표 — 1세대 모듈을 잰 기록). INA226 없이 BNO055 만 버스에 달면 이 외부 풀업이 <strong>유일한</strong> 풀업이다 — 없으면 버스가 동작하지 않는다</td></tr>
+          <tr><td>+ BNO055 + I2C 외부 풀업 4.7 kΩ × 2 (SDA · SCL → Nucleo 3V3)</td><td>fw-15</td><td>fw-15. BNO055 모듈에는 풀업이 없다.<sup class="fn"><a href="#fn-2" id="fnref-2">2</a></sup> INA226 없이 BNO055 만 버스에 달면 이 외부 풀업이 <strong>유일한</strong> 풀업이다 — 없으면 버스가 동작하지 않는다</td></tr>
           <tr><td>조립된 차체</td><td>fw-20</td><td>fw-20</td></tr>
         </tbody>
       </table></div>
       <div class="callout note"><span class="ct">3V3 레일에는 전류 상한이 있다</span>
-        <p>이 가이드는 센서·엔코더·IBT-2 의 로직 전원을 전부 Nucleo 의 3V3 핀에서 딴다(§2-3 의 S2). 그 레일의 상한은 둘이다. 보드와 실드의 합계가 <strong>300 mA</strong> 를 넘으면 외부 전원(E5V · VIN · 3V3)이 필수다(UM2407 Rev 6 §7.4.1 Warning, p.22).
-        ST-LINK USB 급전의 전원 스위치는 <strong>500 mA</strong> 를 넘으면 끊고 LD6(빨강)를 켠다(같은 절, p.22).</p>
-        <p>엔코더와 IBT-2 의 3.3 V 소비 전류는 1세대에도 기록이 없다(INVENTORY 2절 필수 조건 ①: <code>____</code>).
-        그래서 <strong>부품을 하나 더할 때마다</strong> <a href="fw-01-pinmap.html">fw-01</a> 의 DMM 절차로 되돌아가 3V3 분기 전류를 다시 잰다 — 등급: 예산 미확인(<code>hardware/pinmap-h723.md</code> §7-2 U3).</p>
+        <p>이 가이드는 센서·엔코더·IBT-2 의 로직 전원을 전부 Nucleo 의 3V3 핀에서 딴다(§2-3 의 S2). 그 레일의 상한은 둘이다.</p>
+        <ul>
+          <li>보드와 실드의 합계가 <strong>300 mA</strong> 를 넘으면 외부 전원(E5V · VIN · 3V3)이 필수다.<sup class="fn"><a href="#fn-3" id="fnref-3">3</a></sup></li>
+          <li>ST-LINK USB 급전의 전원 스위치는 <strong>500 mA</strong> 를 넘으면 끊고 LD6(빨강)를 켠다.<sup class="fn"><a href="#fn-4" id="fnref-4">4</a></sup></li>
+        </ul>
+        <p>엔코더와 IBT-2 의 3.3 V 소비 전류는 1세대에도 기록이 없다.<sup class="fn"><a href="#fn-5" id="fnref-5">5</a></sup>
+        그래서 <strong>부품을 하나 더할 때마다</strong> <a href="fw-01-pinmap.html">fw-01</a> 의 DMM 절차로 되돌아가 3V3 분기 전류를 다시 잰다.<sup class="fn"><a href="#fn-6" id="fnref-6">6</a></sup></p>
       </div>
       <p>fw-19 의 벤치 완료 기준은 미보유 부품의 행을 "나중에"로 넘기지 못한다. 넘길 수 있는 행은 <a href="fw-19-bench-acceptance.html">fw-19</a> 가 명시한 것뿐이다 — 그래서 이 표에서 막히는 쪽이 보이면, 그 부품은 언젠가는 있어야 한다는 뜻이다.</p>
 
       <h2 id="why">2. 원리 — 왜 이 순서이고, 왜 이렇게 갈랐는가</h2>
 
       <h3 id="s2-1">2-1. 왜 벤치와 조립을 갈랐는가 — 임시값의 오류는 어디서 드러나는가</h3>
-      <p>지금의 실물 상태는 이렇다 — 모터는 섀시에 고정돼 있고, 센서와 보드는 차체에서 떼어져 있다(<code>hardware/INVENTORY.md</code> 머리말, 2026-09-22). 이 상태에서 할 수 있는 일과 없는 일이 갈린다.
-      바퀴를 공중에 띄우고 하는 일(엔코더 카운트, 개루프 구동, 무부하 PID)은 지금 된다. 차체가 바닥에서 굴러야 하는 일(부하 PID, 유효 트랙 폭, 회전 부호, 안전 임계값의 확정)은 조립 뒤에만 된다.
-      그래서 가이드를 <strong>벤치(fw-00 ~ fw-19)</strong>와 <strong>조립 후(관문 09a 와 그 안의 fw-20)</strong>로 가르고, 완료 기준도 둘로 나눴다 — 벤치 완료 기준은 <a href="fw-19-bench-acceptance.html">fw-19</a>, 조립 완료 기준은 관문 <a href="09a-assembly-gate.html">09a</a>.</p>
+      <p>지금의 실물 상태는 이렇다 — 모터는 섀시에 고정돼 있고, 센서와 보드는 차체에서 떼어져 있다.<sup class="fn"><a href="#fn-7" id="fnref-7">7</a></sup> 이 상태에서 할 수 있는 일과 없는 일이 갈린다.</p>
+      <ul>
+        <li>바퀴를 공중에 띄우고 하는 일(엔코더 카운트, 개루프 구동, 무부하 PID)은 지금 된다.</li>
+        <li>차체가 바닥에서 굴러야 하는 일(부하 PID, 유효 트랙 폭, 회전 부호, 안전 임계값의 확정)은 조립 뒤에만 된다.</li>
+      </ul>
+      <p>그래서 가이드를 <strong>벤치(fw-00 ~ fw-19)</strong>와 <strong>조립 후(관문 09a 와 그 안의 fw-20)</strong>로 가르고, 완료 기준도 둘로 나눴다 — 벤치 완료 기준은 <a href="fw-19-bench-acceptance.html">fw-19</a>, 조립 완료 기준은 관문 <a href="09a-assembly-gate.html">09a</a>.</p>
       <p>가르지 않으면 어떻게 되는가. 벤치에서는 조립해야 알 수 있는 값을 <strong>임시값</strong>으로 두고 진행할 수밖에 없다. 문제는 임시값이 "오류"를 내지 않는다는 점이다 — 코드는 그 숫자를 그대로 계산에 쓴다.
       틀린 값의 증상은 그 값을 적은 자리에서가 아니라 <strong>멀리 떨어진 곳</strong>에서 나타난다.</p>
-      <div class="tbl"><table class="fixed"><colgroup><col class="w14"><col class="w20"><col class="w18"><col class="w48"></colgroup>
+      <div class="tbl"><table class="fixed"><colgroup><col class="w14"><col class="w25"><col class="w18"><col class="w43"></colgroup>
         <thead><tr><th>값</th><th>벤치에서 얻을 수 있는 것</th><th>조립해야만 얻는 것</th><th>임시값인 채로 가면 증상이 어디서 나타나는가</th></tr></thead>
         <tbody>
-          <tr><td>엔코더 counts/rev</td><td>손으로 N 회전 돌려 잰 값(fw-09). 계산값 94,000 = 500 PPR × 4 × 47 은 산술이지 잰 값이 아니다(INVENTORY 6절)</td><td>—</td><td>속도·거리가 전부 같은 비율로 틀린다 → 본편 09 의 지도 축척</td></tr>
-          <tr><td>바퀴별 부호(엔코더 · 모터)</td><td>바퀴 하나씩 돌려서(fw-09 · fw-11)</td><td><strong>좌/우 묶음과 회전 방향</strong> — 차체가 실제로 돌아야 보인다</td><td>1세대 기록(2026-07-25): 직진은 20회 넘게 정상이었는데 <strong>제자리 회전에서만 과전류</strong>가 났다. 좌/우 그룹 배정이 틀려 같은 쪽 두 바퀴가 반대로 돌았고, 직진은 전 바퀴가 같은 지령이라 드러나지 않았다. 출처: <code>H/BOM.md:245-249</code> · <code>MEM/project_wheel_mapping_fix.md:11</code>(경로 약칭은 INVENTORY 머리말)</td></tr>
+          <tr><td>엔코더 counts/rev</td><td>손으로 N 회전 돌려 잰 값(fw-09). 계산값 94,000 = 500 PPR × 4 × 47 은 산술이지 잰 값이 아니다<sup class="fn"><a href="#fn-8" id="fnref-8">8</a></sup></td><td>—</td><td>속도·거리가 전부 같은 비율로 틀린다 → 본편 09 의 지도 축척</td></tr>
+          <tr><td>바퀴별 부호(엔코더 · 모터)</td><td>바퀴 하나씩 돌려서(fw-09 · fw-11)</td><td><strong>좌/우 묶음과 회전 방향</strong> — 차체가 실제로 돌아야 보인다</td><td>1세대 기록: 직진은 20회 넘게 정상이었는데 <strong>제자리 회전에서만 과전류</strong>가 났다.<sup class="fn"><a href="#fn-9" id="fnref-9">9</a></sup> 좌/우 그룹 배정이 틀려 같은 쪽 두 바퀴가 반대로 돌았고, 직진은 전 바퀴가 같은 지령이라 드러나지 않았다</td></tr>
           <tr><td>PID 게인</td><td>무부하(바퀴 공중) 게인(fw-13)</td><td>부하 게인(fw-20)</td><td>무부하 게인은 부하에서의 합격선이 아니다. 1세대도 부하 시험은 끝내 하지 못했다 — 그래서 1세대 게인은 이 가이드에서 "기록"으로만 인용된다</td></tr>
-          <tr><td>보호 문턱(스톨 · 피드백 상실 · 부호 이상)</td><td>판정식의 경로가 도는 것, 엔코더 선을 뽑았을 때의 발동(fw-13)</td><td>문턱 숫자의 확정(fw-20)</td><td>1세대 기록(2026-07-18): 엔코더 GND 가 끊겨 전속 회전했는데 폴트 0건이었다. 무부하라 전류가 작아 전류 기반 판정은 검출하지 못했다(<code>D/bench/motor_bench_findings_2026-07-17.md:41-42</code>)</td></tr>
-          <tr><td>바퀴 반지름 · 트랙 폭</td><td>공칭값 · 자로 잰 값(임시)</td><td>굴림 거리 · 실제 회전에서 역산한 <strong>유효</strong> 값</td><td>스키드 스티어에서는 둘의 차이가 크다. 1세대 기록에는 외곽 폭 688 mm 와 제자리 회전에서 역산한 유효 폭 1,070 mm(추정)가 나란히 있다 — 둘 다 "트랙 폭" 칸의 값이 아니다(INVENTORY 6절 "바퀴 간 거리" 행). 틀린 폭은 오도메트리의 회전을 틀리게 하고, 증상은 SLAM 지도가 휘는 것으로 나온다</td></tr>
+          <tr><td>보호 문턱(스톨 · 피드백 상실 · 부호 이상)</td><td>판정식의 경로가 도는 것, 엔코더 선을 뽑았을 때의 발동(fw-13)</td><td>문턱 숫자의 확정(fw-20)</td><td>1세대 기록: 엔코더 GND 가 끊겨 전속 회전했는데 폴트 0건이었다. 무부하라 전류가 작아 전류 기반 판정은 검출하지 못했다<sup class="fn"><a href="#fn-10" id="fnref-10">10</a></sup></td></tr>
+          <tr><td>바퀴 반지름 · 트랙 폭</td><td>공칭값 · 자로 잰 값(임시)</td><td>굴림 거리 · 실제 회전에서 역산한 <strong>유효</strong> 값</td><td>스키드 스티어에서는 둘의 차이가 크다. 1세대 기록에는 외곽 폭 688 mm 와 제자리 회전에서 역산한 유효 폭 1,070 mm(추정)가 나란히 있다 — 둘 다 "트랙 폭" 칸의 값이 아니다.<sup class="fn"><a href="#fn-11" id="fnref-11">11</a></sup> 틀린 폭은 오도메트리의 회전을 틀리게 하고, 증상은 SLAM 지도가 휘는 것으로 나온다</td></tr>
           <tr><td>안전 임계값(저전압 · 과전류 · 과경사 …)</td><td>상태기계의 경로와 이벤트가 도는 것(fw-18)</td><td>숫자의 확정(fw-20)</td><td>자리표시 0 이 "절대 트립하지 않음"으로 동작하는 키가 있다(예: 최저 전압 0 mV) — 그래서 빈칸인 채로는 <strong>빌드가 멈추게</strong> 해 둔다(§2-4)</td></tr>
         </tbody>
       </table></div>
       <p>관문은 이 "멀리서 증상이 나타나는 값"을 <strong>한 곳에 모아 확정하는 자리</strong>다. 벤치에서 임시값으로 앞 단계를 진행하는 것은 허용되지만, 관문을 지나면 주행에 쓰이는 값은 전부 실측값이어야 한다.
       그 사이에 값이 어떤 상태인지 헷갈리지 않게 하는 표기가 §2-4 의 세 상태다.</p>
       <div class="callout why"><span class="ct">벤치에서 "된다"는 것의 한계</span>
-        <p>벤치의 합격은 <strong>경로가 돈다</strong>는 뜻이지 숫자가 맞다는 뜻이 아니다. 그래서 이 가이드의 체크포인트는 두 축으로 적혀 있다 — <strong>경로 통과</strong>(정상 경로가 끝까지 돈다)와 <strong>발동 확인</strong>(보호·오류 경로를 일부러 일으켜 실제로 발동하는 것을 봤다).
-        벤치에서 안전하게 일으킬 수 없는 것(바퀴를 붙잡아 스톨을 내는 것 — §2-3 의 S8)은 "경로 통과, 발동은 fw-20" 처럼 미룬 곳을 밝혀 둔다.</p>
+        <p>벤치의 합격은 <strong>경로가 돈다</strong>는 뜻이지 숫자가 맞다는 뜻이 아니다. 그래서 이 가이드의 체크포인트는 두 축으로 적혀 있다.</p>
+        <ul>
+          <li><strong>경로 통과</strong>: 정상 경로가 끝까지 돈다.</li>
+          <li><strong>발동 확인</strong>: 보호·오류 경로를 일부러 일으켜 실제로 발동하는 것을 봤다.</li>
+        </ul>
+        <p>벤치에서 안전하게 일으킬 수 없는 것(바퀴를 붙잡아 스톨을 내는 것 — §2-3 의 S8)은 "경로 통과, 발동은 fw-20" 처럼 미룬 곳을 밝혀 둔다.</p>
       </div>
 
       <h3 id="s2-2">2-2. 왜 글자 명령 창이 먼저이고 계약 v2 가 뒤인가</h3>
-      <p>최종 제품에서 MCU 가 Pi 와 통신하는 방법은 계약 v2 하나다. 그런데 그 계약의 상태 프레임(<code>0x81</code>)에 실리는 것은 다음뿐이다(<a href="06a-mcu-protocol.html">06a</a> §4-2):
-      좌·우 <strong>좌 · 우 각각의 평균</strong> 누적 틱 <code>l_tick</code> · <code>r_tick</code>, 배터리 전압, 전류, fault 비트, MCU 시각. 06a 의 표는 "바퀴별 값은 MCU 안에서만 쓴다"고 적었다.</p>
+      <p>최종 제품에서 MCU 가 Pi 와 통신하는 방법은 계약 v2 하나다. 그런데 그 계약의 상태 프레임(<code>0x81</code>)에 실리는 것은 다음뿐이다(<a href="06a-mcu-protocol.html">06a</a> §4-2).</p>
+      <ul>
+        <li><strong>좌 · 우 각각의 평균</strong> 누적 틱 <code>l_tick</code> · <code>r_tick</code></li>
+        <li>배터리 전압, 전류, fault 비트, MCU 시각</li>
+      </ul>
+      <p>06a 의 표는 "바퀴별 값은 MCU 안에서만 쓴다"고 적었다.</p>
       <p>벤치에서 내가 봐야 하는 것은 정확히 그 "MCU 안에서만 쓰는" 값들이다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>벤치에서 확인하려는 것</th><th>필요한 관측</th><th>계약 v2 에 있는가</th></tr></thead>
@@ -188,8 +210,12 @@
           <tr><td>계단 응답에서 PID 가 어떻게 움직였는가 (fw-13)</td><td>1 ms 간격의 목표·측정·듀티 수백 행</td><td>없다 — 상태는 50 Hz(20 ms)로만 온다</td></tr>
         </tbody>
       </table></div>
-      <p>방법은 둘이었다. 계약에 진단용 TYPE 을 더하거나, 계약은 그대로 두고 <strong>별도의 명령 창</strong>을 하나 두거나. 앞의 방법은 Pi 쪽 브리지(C++) · Python probe · 펌웨어(C) 세 구현을 함께 고쳐야 한다. 무엇보다 계약을 넓히는 일은 06a 가 하는 일이지 펌웨어 쪽이 임의로 전제할 일이 아니다.
-      그래서 이 가이드는 뒤의 방법을 택한다(사용자 결정, 2026-09-22): <strong>같은 VCP 를 두 모드로 번갈아 쓴다.</strong> 처음에는 모드를 빌드 스위치(재플래시)로 바꿨고, 2026-10-12 에 <strong>실행 중 전환</strong>으로 바꿨다. 전원을 넣으면 TEXT 로 시작한다. 전환 수단은 <a href="fw-17-link-v2.html">fw-17</a> 에서 정한다.</p>
+      <p>방법은 둘이었다.</p>
+      <ul>
+        <li>계약에 진단용 TYPE 을 더한다. 이 방법은 Pi 쪽 브리지(C++) · Python probe · 펌웨어(C) 세 구현을 함께 고쳐야 한다. 무엇보다 계약을 넓히는 일은 06a 가 하는 일이지 펌웨어 쪽이 임의로 전제할 일이 아니다.</li>
+        <li>계약은 그대로 두고 <strong>별도의 명령 창</strong>을 하나 둔다.</li>
+      </ul>
+      <p>이 가이드는 뒤의 방법을 택한다:<sup class="fn"><a href="#fn-12" id="fnref-12">12</a></sup> <strong>같은 VCP 를 두 모드로 번갈아 쓴다.</strong> 모드는 실행 중에 전환하고,<sup class="fn"><a href="#fn-13" id="fnref-13">13</a></sup> 전원을 넣으면 TEXT 로 시작한다. 전환 수단은 <a href="fw-17-link-v2.html">fw-17</a> 에서 정한다.</p>
       <pre class="diagram"><code>                           ┌─ TEXT 모드 ────────► cli.c + LOG_*   명령 창 — 사람이 치고 읽는다
                            │                                      fw-05 ~ fw-16, fw-18 의 논리 검증
  Mac ─ USB ─ VCP ─ USART3 ─┤
@@ -214,32 +240,38 @@
       <p class="small">1 kHz 데이터(계단 응답 등)는 실시간으로 출력하지 않는다 — 출력하는 동작이 재려는 지터를 만든다. RAM 에 저장해 둔 뒤 끝나고 덤프한다. 이 규칙도 전 쪽이 같다.</p>
 
       <h3 id="s2-3">2-3. 왜 안전 규칙이 부품보다 먼저인가</h3>
-      <p>1세대 기록에서 가장 큰 손실은 코드가 한 줄도 없을 때 났다. 2026-06-12, 6S LiPo 를 IBT-2 모듈에 <strong>직결하는 순간</strong> 모듈이 고장 났다. 구매 기록은 "4 사망", 결과 문서는 "5개 사망 + 3개 측정"으로 수량 표기가 어긋나지만 사고 자체는 같다(<code>D/bts_stage1_results.md:6,65-83</code>, <code>H/BOM.md:28</code>).
-      고장 난 모듈 3장의 측정 결과는 같았다: B+ 와 한쪽 칩의 VS 사이 단선, M+ ↔ GND 0 Ω(하단 MOSFET 단락), 다른 칩의 상단 MOSFET 단락. 이 상태에서 주 릴레이를 넣으면 모터가 <strong>풀 역회전하고 신호로는 정지시킬 수 없다</strong> — 배터리 분리만이 정지 수단이었다.</p>
+      <p>1세대 기록에서 가장 큰 손실은 코드가 한 줄도 없을 때 났다. 6S LiPo 배터리를 IBT-2 모듈에 <strong>직결하는 순간</strong> 모듈이 고장 났다.<sup class="fn"><a href="#fn-14" id="fnref-14">14</a></sup></p>
+      <p>고장 난 모듈 3장의 측정 결과는 같았다.</p>
+      <ul>
+        <li>B+ 와 한쪽 칩의 VS 사이 단선</li>
+        <li>M+ ↔ GND 0 Ω(하단 MOSFET 단락)</li>
+        <li>다른 칩의 상단 MOSFET 단락</li>
+      </ul>
+      <p>이 상태에서 주 릴레이를 넣으면 모터가 <strong>풀 역회전하고 신호로는 정지시킬 수 없다</strong> — 배터리 분리만이 정지 수단이었다.</p>
       <div class="callout note"><span class="ct">등급 — 원인은 추정, 대책은 실측</span>
         <p>1세대 문서의 원인 서술은 이렇다: 전원 인가 순간 제어 입력이 떠 있었고, 내부저항이 낮은 배터리의 급한 dV/dt 가 게이트를 의도치 않게 켜 슛스루가 났다. 1세대 문서는 이것을 "95 %+ 확정"이라 적었지만 <strong>파형을 잰 적은 없다</strong> — 토폴로지 논증이다.</p>
         <p>대책 쪽은 실측이다. 새 모듈 1장에 0 → 24 V 를 <strong>점진 인가</strong>했을 때 정·역·가감속이 정상이었다. 이후의 운용 규칙(배터리 직결 금지 = 사전충전 회로, 제어 입력 풀다운, GND 공통)으로 벤치와 주행까지 진행했다.</p>
       </div>
-      <p>이 사고에서 가져오는 것은 순서다. 안전 규칙은 "전원을 넣는 절"의 앞이 아니라 <strong>부품을 책상에 올리기 전</strong>에 읽는다 — 어긴 결과가 코드 버그가 아니라 부품 소손과 되돌릴 수 없는 작업이기 때문이다.
-      아래 15개가 이 가이드 전체의 안전 규칙이다. 여기서는 <strong>무엇을 · 왜</strong>만 소개하고, 절차와 판정법은 "상세" 열의 쪽이 다룬다. <strong>F0 ~ F20 이 전부 나와 있으므로</strong> 상세 열의 쪽으로 바로 갈 수 있다. 실습 B(§3-2)에서 내 부품에 해당하는 규칙을 부품표 옆에 옮겨 적는다.</p>
-      <div class="tbl"><table class="compact fixed"><colgroup><col class="w5"><col class="w30"><col class="w50"><col class="w15"></colgroup>
+      <p>이 사고에서 가져오는 것은 순서다. 안전 규칙은 "전원을 넣는 절"의 앞이 아니라 <strong>부품을 책상에 올리기 전</strong>에 읽는다 — 어긴 결과가 코드 버그가 아니라 부품 소손과 되돌릴 수 없는 작업이기 때문이다.</p>
+      <p>아래 15개가 이 가이드 전체의 안전 규칙이다. 여기서는 <strong>무엇을 · 왜</strong>만 소개하고, 절차와 판정법은 "상세" 열의 쪽이 다룬다. <strong>F0 ~ F20 이 전부 나와 있으므로</strong> 상세 열의 쪽으로 바로 갈 수 있다. 실습 B(§3-2)에서 내 부품에 해당하는 규칙을 부품표 옆에 옮겨 적는다.</p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w5"><col class="w35"><col class="w45"><col class="w15"></colgroup>
         <thead><tr><th>#</th><th>규칙</th><th>왜 (근거)</th><th>상세</th></tr></thead>
         <tbody>
           <tr><td>S1</td><td>모터 전원(24 V 계)을 넣는 절은 <span class="tag power">모터 전원</span> 배지를 달고, <strong>STOP 리스트가 실습보다 앞</strong>에 온다. 하나라도 "아니오"면 전원을 넣지 않는다</td><td>위의 모듈 소손</td><td>fw-11 · fw-12 · fw-13 · fw-18 · fw-19 · fw-20</td></tr>
-          <tr><td>S2</td><td>센서 · 엔코더 · IBT-2 VCC · INA226 · ACS758 의 전원은 <strong>Nucleo 3V3 에서만</strong> 딴다(별도 레일 금지). 3V3 · 5V · GND 는 전원을 끈 채 꽂고, 켠 뒤 3V3–GND 부터 잰다</td><td>5 V 허용(FT) 핀의 입력 한도는 고정 5 V 가 아니라 VDD + 4.0 V 다(DS13313 Rev 5 표 9, p.88) — Nucleo 가 꺼져 있으면 4.0 V. 3V3 인출 핀의 바로 아래가 5 V 다(<code>hardware/pinmap-h723.md</code> §5-4 · 5-5, INVENTORY 2절 필수 조건 ① · ④)</td><td>fw-01 · fw-08 ~ fw-12 · fw-14 · fw-15</td></tr>
-          <tr><td>S3</td><td><strong>EN 네 핀은 사전충전이 끝날 때까지 LOW.</strong> 올릴 때 EN 네 핀 LOW → 사전충전 완료 판정 → RELAY_EN → 정착 → EN 네 핀 HIGH, 내릴 때 <strong>EN 네 핀 LOW 먼저</strong> → RELAY_EN LOW</td><td>EN 이 HIGH 면 드라이버가 버스에서 전류를 소비해 사전충전이 약 5 V 에서 멈춘다. 1세대 실측이다(2026-07-17, <code>D/bench/motor_bench_findings_2026-07-17.md:63-65</code>, INVENTORY 6절 · 7절)</td><td>fw-08(원리) · fw-11(절차) · fw-18</td></tr>
-          <tr><td>S4</td><td><strong>DMM 으로 떠 있는(Hi-Z) 핀을 재면 0 V 로 보인다</strong> — 풀다운된 핀도, 그냥 떠 있는 핀도. 그래서 "리셋 중 EN = LOW"는 전압 한 번이 아니라 <strong>풀다운이 실재하는가</strong>로 판정한다. 전제는 IBT-2 가 결선된 상태다</td><td>DMM 의 입력 임피던스가 풀다운 역할을 한다. 리셋 중의 LOW 는 MCU 가 아니라 모듈 내장 풀다운(1세대 실측 30 kΩ)이 만든다. 모듈 VCC · GND 에 전원이 있을 때만 그렇다(<code>hardware/pinmap-h723.md</code> §2-D, INVENTORY 6절)</td><td>fw-08 · fw-11 · fw-18 · fw-19</td></tr>
-          <tr><td>S5</td><td><strong>USB 분리 시험은 워치독 시험이 아니다.</strong> 명령 워치독(200 ms)은 송신만 멈추는 probe 로, MCU 의 tick 으로 판정한다</td><td>Nucleo 의 기본 급전은 ST-LINK USB 다(UM2407 Rev 6 §7.4.1, JP2 [1-2]). 케이블을 뽑으면 MCU 가 꺼진다 — 시험되는 것은 "전원 상실 시 EN 이 LOW 가 되는가"다</td><td>fw-06 · fw-11 · fw-18 · fw-19</td></tr>
-          <tr><td>S6</td><td><strong>PD8/PD9 에 루프백 점퍼를 꽂지 않는다.</strong> Morpho 의 CN12-10 · CN11-69 에도 아무것도 꽂지 않는다</td><td>그 두 핀은 솔더 브리지로 ST-LINK 의 VCP 에 이어져 있다 — 점퍼를 꽂으면 ST-LINK 의 출력과 서로 반대 레벨로 구동돼 충돌한다(<code>hardware/pinmap-h723.md</code> §2-C · 7-3)</td><td>fw-01 · fw-03 · fw-05 · fw-07 · fw-17</td></tr>
-          <tr><td>S7</td><td><strong>옵션 바이트 쓰기</strong>: 쓰기 전 전문을 파일로 저장 → <strong>한 번에 한 비트만</strong> → 다시 읽어 그 비트만 바뀌었는지 비교. RDP 는 건드리지 않는다. 펌웨어가 매 부팅마다 옵션 바이트를 쓰게 하지 않는다</td><td>이 프로젝트는 옵션 바이트를 <strong>읽기만</strong> 한다 — <code>CPU_FREQ_BOOST</code> 가 공장 기본값 0 인지 확인해 기록한다(INVENTORY 2절 "클럭" 행). 쓰는 일은 fw-03 에서 그 비트가 1 로 읽혔을 때 0 으로 되돌리는 경우 하나뿐이고, 다른 쪽은 옵션 바이트를 쓰지 않는다. 같은 도구로 RDP 도 쓸 수 있는데, Level 2 는 되돌릴 수 없고 Level 1 → 0 은 플래시 전체를 지운다(RM0468 Rev 3 §4.5.3)</td><td>fw-03</td></tr>
-          <tr><td>S8</td><td><strong>바퀴 붙잡기 시험 금지.</strong> 스톨 보호는 벤치에서 경로 통과만, 발동 시험은 조립 후에 저속 · 짧은 시간 · 듀티 상한을 두고</td><td>기어드 모터다 — 기어비 1 : 47, 출력축 토크가 크다(INVENTORY 6절)</td><td>fw-13 · fw-19 · fw-20</td></tr>
-          <tr><td>S9</td><td><strong>SB57 제거는 되돌리기 어렵다</strong>(다시 잇기 = 납땜). 잃는 것 = 이더넷. 제거 전·후 확인을 단계로 밟는다</td><td>PA1 을 엔코더에 쓰려면 이더넷 PHY 의 50 MHz 클록 출력을 떼야 한다(INVENTORY 2절 "이더넷" 행, <code>hardware/pinmap-h723.md</code> §4-1)</td><td>fw-01 (fw-09 가 입구에서 다시 확인)</td></tr>
-          <tr><td>S10</td><td>디버거로 멈추면 <strong>PWM 출력이 마지막 듀티로 계속 나갈 수 있다</strong> → TIM1 · TIM8 의 디버그 동결 + 출력 idle LOW. 모터 전원이 들어간 상태에서 중단점을 쓰기 전에 돼 있어야 한다</td><td>코어가 멈췄을 때 타이머가 계속 도는지 멈추는지는 DBG 모듈의 <code>DBG_TIMx_STOP</code> 비트가 정하고, 멈춰야만 출력이 꺼진다(RM0468 Rev 3 §43.3.29, p.1614)</td><td>fw-04(예고) · fw-08(설정) · 모터 전원 절이 있는 모든 쪽</td></tr>
-          <tr><td>S11</td><td>디버그 구성에서 <strong>SWV(SWO 트레이스)를 켜지 않는다.</strong> CubeMX 의 Debug = Serial Wire + PB3 잠금 해제</td><td>PB3 는 FL 엔코더의 B 상이다. SWV 가 켜지면 MCU 가 그 핀을 출력으로 구동해 엔코더 출력과 서로 반대 레벨로 구동돼 충돌한다 — 등급: 추정, 그래서 끄는 쪽으로 정했다(INVENTORY 2절 필수 조건 ②)</td><td>fw-02 · fw-04 · fw-09</td></tr>
-          <tr><td>S12</td><td>차단 뒤에도 <strong>벌크 커패시터에 전하가 남는다</strong> — 배선을 만지기 전에 DMM 으로 버스 전압을 본다. 주 접촉기의 접점은 DMM 도통 모드로 판정할 수 없다</td><td>블리더 저항이 없다 · 접촉기에 보조 접점이 없다(INVENTORY 7절 "벌크 커패시터" · "주 접촉기 K1" 행)</td><td>fw-11</td></tr>
-          <tr><td>S13</td><td>플래시 지우기 · 쓰기는 <strong>EN 네 핀이 모두 LOW 일 때만</strong></td><td>128 KB 섹터 지우기 한 번이 초 단위다 — typ 1.1 ~ 2 s, max 2.2 ~ 4 s(DS13313 Rev 5 표 44, p.122). 그동안 1 kHz 루프가 제 박자로 돈다고 가정할 수 없다</td><td>fw-16</td></tr>
-          <tr><td>S14</td><td>24 V 계에서 오는 아날로그 신호(전류 감지 IS · 버스 전압 분압)에는 <strong>GND 기준 클램프</strong>. 핀에 꽂기 전에 DMM 으로 전압부터</td><td>아날로그 주변장치가 쓰는 핀의 입력 최대는 4 V 다(DS13313 Rev 5 표 9 각주 5, p.89). 분압은 하단 저항이 연결돼 있을 때만 분압이다(INVENTORY 2절 필수 조건 ③)</td><td>fw-12</td></tr>
-          <tr><td>S15</td><td>CN13(사용자 USB)에 케이블을 꽂지 않는다. 배터리 ON 상태에서 BOOT0 점퍼 금지</td><td>USB 관련 7핀이 솔더 브리지로 CN13 쪽에 연결돼 있다 · 부트로더가 어느 핀을 구동하는지 확인하지 못했다(<code>hardware/pinmap-h723.md</code> §2-E · 5-2)</td><td>fw-01</td></tr>
+          <tr><td>S2</td><td>센서 · 엔코더 · IBT-2 VCC · INA226 · ACS758 의 전원은 <strong>Nucleo 3V3 에서만</strong> 딴다(별도 레일 금지). 3V3 · 5V · GND 는 전원을 끈 채 꽂고, 켠 뒤 3V3–GND 부터 잰다</td><td>FT 핀(5 V 허용 핀)의 입력 한도는 고정 5 V 가 아니라 VDD + 4.0 V 다<sup class="fn"><a href="#fn-15" id="fnref-15">15</a></sup> — Nucleo 가 꺼져 있으면 4.0 V. 3V3 인출 핀의 바로 아래가 5 V 다<sup class="fn"><a href="#fn-16" id="fnref-16">16</a></sup></td><td>fw-01 · fw-08 ~ fw-12 · fw-14 · fw-15</td></tr>
+          <tr><td>S3</td><td><strong>EN 네 핀은 사전충전이 끝날 때까지 LOW.</strong> 올릴 때 EN 네 핀 LOW → 사전충전 완료 판정 → RELAY_EN → 정착 → EN 네 핀 HIGH, 내릴 때 <strong>EN 네 핀 LOW 먼저</strong> → RELAY_EN LOW</td><td>EN 이 HIGH 면 드라이버가 버스에서 전류를 소비해 사전충전이 약 5 V 에서 멈춘다. 1세대 실측이다<sup class="fn"><a href="#fn-17" id="fnref-17">17</a></sup></td><td>fw-08(원리) · fw-11(절차) · fw-18</td></tr>
+          <tr><td>S4</td><td><strong>DMM 으로 떠 있는(Hi-Z) 핀을 재면 0 V 로 보인다</strong> — 풀다운된 핀도, 그냥 떠 있는 핀도. 그래서 "리셋 중 EN = LOW"는 전압 한 번이 아니라 <strong>풀다운이 실재하는가</strong>로 판정한다. 전제는 IBT-2 가 결선된 상태다</td><td>DMM 의 입력 임피던스가 풀다운 역할을 한다. 리셋 중의 LOW 는 MCU 가 아니라 모듈 내장 풀다운(1세대 실측 30 kΩ)이 만든다. 모듈 VCC · GND 에 전원이 있을 때만 그렇다<sup class="fn"><a href="#fn-18" id="fnref-18">18</a></sup></td><td>fw-08 · fw-11 · fw-18 · fw-19</td></tr>
+          <tr><td>S5</td><td><strong>USB 분리 시험은 워치독 시험이 아니다.</strong> 명령 워치독(200 ms)은 송신만 멈추는 probe 로, MCU 의 tick 으로 판정한다</td><td>Nucleo 의 기본 급전은 ST-LINK USB 다.<sup class="fn"><a href="#fn-19" id="fnref-19">19</a></sup> 케이블을 뽑으면 MCU 가 꺼진다 — 시험되는 것은 "전원 상실 시 EN 이 LOW 가 되는가"다</td><td>fw-06 · fw-11 · fw-18 · fw-19</td></tr>
+          <tr><td>S6</td><td><strong>PD8/PD9 에 루프백 점퍼를 꽂지 않는다.</strong> Morpho 의 CN12-10 · CN11-69 에도 아무것도 꽂지 않는다</td><td>그 두 핀은 솔더 브리지로 ST-LINK 의 VCP 에 이어져 있다 — 점퍼를 꽂으면 ST-LINK 의 출력과 서로 반대 레벨로 구동돼 충돌한다<sup class="fn"><a href="#fn-20" id="fnref-20">20</a></sup></td><td>fw-01 · fw-03 · fw-05 · fw-07 · fw-17</td></tr>
+          <tr><td>S7</td><td><strong>옵션 바이트 쓰기</strong>: 쓰기 전 전문을 파일로 저장 → <strong>한 번에 한 비트만</strong> → 다시 읽어 그 비트만 바뀌었는지 비교. RDP 는 건드리지 않는다. 펌웨어가 매 부팅마다 옵션 바이트를 쓰게 하지 않는다</td><td>이 프로젝트는 옵션 바이트를 <strong>읽기만</strong> 한다.<sup class="fn"><a href="#fn-21" id="fnref-21">21</a></sup> 쓰는 일은 fw-03 에서 <code>CPU_FREQ_BOOST</code> 가 1 로 읽혔을 때 0 으로 되돌리는 경우 하나뿐이고, 다른 쪽은 쓰지 않는다. 같은 도구로 RDP 도 쓸 수 있는데, Level 2 는 되돌릴 수 없고 Level 1 → 0 은 플래시 전체를 지운다<sup class="fn"><a href="#fn-22" id="fnref-22">22</a></sup></td><td>fw-03</td></tr>
+          <tr><td>S8</td><td><strong>바퀴 붙잡기 시험 금지.</strong> 스톨 보호는 벤치에서 경로 통과만, 발동 시험은 조립 후에 저속 · 짧은 시간 · 듀티 상한을 두고</td><td>기어드 모터다 — 기어비 1 : 47, 출력축 토크가 크다<sup class="fn"><a href="#fn-23" id="fnref-23">23</a></sup></td><td>fw-13 · fw-19 · fw-20</td></tr>
+          <tr><td>S9</td><td><strong>SB57 제거는 되돌리기 어렵다</strong>(다시 잇기 = 납땜). 잃는 것 = 이더넷. 제거 전·후 확인을 단계로 밟는다</td><td>PA1 을 엔코더에 쓰려면 이더넷 PHY 의 50 MHz 클록 출력을 떼야 한다<sup class="fn"><a href="#fn-24" id="fnref-24">24</a></sup></td><td>fw-01 (fw-09 가 입구에서 다시 확인)</td></tr>
+          <tr><td>S10</td><td>디버거로 멈추면 <strong>PWM 출력이 마지막 듀티로 계속 나갈 수 있다</strong> → TIM1 · TIM8 의 디버그 동결 + 출력 idle LOW. 모터 전원이 들어간 상태에서 중단점을 쓰기 전에 돼 있어야 한다</td><td>코어가 멈췄을 때 타이머가 계속 도는지 멈추는지는 DBG 모듈의 <code>DBG_TIMx_STOP</code> 비트가 정하고, 멈춰야만 출력이 꺼진다<sup class="fn"><a href="#fn-25" id="fnref-25">25</a></sup></td><td>fw-04(예고) · fw-08(설정) · 모터 전원 절이 있는 모든 쪽</td></tr>
+          <tr><td>S11</td><td>디버그 구성에서 <strong>SWV(SWO 트레이스)를 켜지 않는다.</strong> CubeMX 의 Debug = Serial Wire + PB3 잠금 해제</td><td>PB3 는 FL 엔코더의 B 상이다. SWV 가 켜지면 MCU 가 그 핀을 출력으로 구동해 엔코더 출력과 서로 반대 레벨로 구동돼 충돌한다 — 등급: 추정, 그래서 끄는 쪽으로 정했다<sup class="fn"><a href="#fn-26" id="fnref-26">26</a></sup></td><td>fw-02 · fw-04 · fw-09</td></tr>
+          <tr><td>S12</td><td>차단 뒤에도 <strong>벌크 커패시터에 전하가 남는다</strong> — 배선을 만지기 전에 DMM 으로 버스 전압을 본다. 주 접촉기의 접점은 DMM 도통 모드로 판정할 수 없다</td><td>블리더 저항이 없다 · 접촉기에 보조 접점이 없다<sup class="fn"><a href="#fn-27" id="fnref-27">27</a></sup></td><td>fw-11</td></tr>
+          <tr><td>S13</td><td>플래시 지우기 · 쓰기는 <strong>EN 네 핀이 모두 LOW 일 때만</strong></td><td>128 KB 섹터 지우기 한 번이 초 단위다 — typ 1.1 ~ 2 s, max 2.2 ~ 4 s.<sup class="fn"><a href="#fn-28" id="fnref-28">28</a></sup> 그동안 1 kHz 루프가 제 박자로 돈다고 가정할 수 없다</td><td>fw-16</td></tr>
+          <tr><td>S14</td><td>24 V 계에서 오는 아날로그 신호(전류 감지 IS · 버스 전압 분압)에는 <strong>GND 기준 클램프</strong>. 핀에 꽂기 전에 DMM 으로 전압부터. 지금은 해당 입력이 없다 — IS 는 배선하지 않고(결정 (b)), 버스 전압은 INA226 으로 읽는다(결정 (a))</td><td>아날로그 주변장치가 쓰는 핀의 입력 최대는 4 V 다.<sup class="fn"><a href="#fn-29" id="fnref-29">29</a></sup> 분압은 하단 저항이 연결돼 있을 때만 분압이다<sup class="fn"><a href="#fn-30" id="fnref-30">30</a></sup></td><td>fw-12</td></tr>
+          <tr><td>S15</td><td>CN13(사용자 USB)에 케이블을 꽂지 않는다. 배터리 ON 상태에서 BOOT0 점퍼 금지</td><td>USB 관련 7핀이 솔더 브리지로 CN13 쪽에 연결돼 있다 · 부트로더가 어느 핀을 구동하는지 확인하지 못했다<sup class="fn"><a href="#fn-31" id="fnref-31">31</a></sup></td><td>fw-01</td></tr>
         </tbody>
       </table></div>
       <p>STOP 리스트는 체크박스가 아니라 <strong>예/아니오로 답하는 관찰의 번호 목록</strong>이다. 공통 항목은 어느 쪽에서나 같다.</p>
@@ -253,7 +285,7 @@
       <p>이 쪽은 전원을 넣지 않으므로 STOP 리스트가 없다. STOP 리스트가 처음 나오는 쪽은 <a href="fw-11-power-sequence.html">fw-11</a> 이다.</p>
 
       <h3 id="s2-4">2-4. 값의 세 상태와 관문 09a</h3>
-      <p>앞 소절(§2-1)의 문제는 임시값이 오류 표시 없이 계산에 쓰인다는 것이었다. 이것을 막는 장치는 단순하다. <strong>모든 값 옆에 그 값의 상태를 적는다.</strong> 같은 규약을 <code>hardware/INVENTORY.md</code>(머리의 "값의 상태 표기"), Pi 쪽 파라미터 파일, 그리고 펌웨어의 헤더가 같이 쓴다(<code>firmware/README.md</code> 규칙 3).</p>
+      <p>앞 소절(§2-1)의 문제는 임시값이 오류 표시 없이 계산에 쓰인다는 것이었다. 이것을 막는 장치는 단순하다. <strong>모든 값 옆에 그 값의 상태를 적는다.</strong> 같은 규약을 <code>hardware/INVENTORY.md</code>, Pi 쪽 파라미터 파일, 그리고 펌웨어의 헤더가 같이 쓴다.<sup class="fn"><a href="#fn-32" id="fnref-32">32</a></sup></p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>표기</th><th>상태</th><th>뜻</th><th>이 값으로 할 수 있는 일</th></tr></thead>
         <tbody>
@@ -268,7 +300,7 @@
 #define ENCODER_CPR       &lt;n&gt;L       /* MEASURED(&lt;날짜&gt;, 손으로 &lt;N&gt;바퀴 돌린 평균) [바퀴 1회전당 카운트] */</code></pre>
       <p>첫 줄이 핵심이다. 자리표시 0 이 <strong>위험한 쪽으로 동작하는</strong> 키가 있다 — 최저 전압 0 mV 는 "절대 트립하지 않음"이다. 그래서 EMPTY 키를 쓰는 <code>.c</code> 는 첫머리에 <code>_Static_assert</code> 가드를 두어, 빈칸인 채로는 <strong>그 모듈의 빌드가 멈추게</strong> 한다.
       "모르는 값이 있으면 돌지 않는다"가 "모르는 값이 0 으로 돈다"보다 안전하다. 남은 빈칸과 임시값의 수는 눈으로 세지 않는다 — 저장소의 <code>scripts/check_nominal.sh</code> 가 센다(§3-1-4 에서 한 번 돌려 본다).</p>
-      <p><strong>1세대 기록을 쓰는 법</strong>도 이 표기에서 나온다. 모터 · 엔코더 · IBT-2 · 전원/안전 부품은 1세대에서 쓰던 <strong>바로 그 개체</strong>다(INVENTORY 머리말, 사용자 확인 2026-09-22). 그래서:</p>
+      <p><strong>1세대 기록을 쓰는 법</strong>도 이 표기에서 나온다. 모터 · 엔코더 · IBT-2 · 전원/안전 부품은 1세대에서 쓰던 <strong>바로 그 개체</strong>다.<sup class="fn"><a href="#fn-33" id="fnref-33">33</a></sup> 그래서:</p>
       <ul>
         <li><strong>부품에 속한 값</strong>(엔코더 PPR, 기어비, 모듈 풀다운 30 kΩ, INA226 주소, 릴레이 동작 시간)은 <code>NOMINAL(gen1-record)</code> 로 쓴다 — 관문에서 다시 재서 <code>MEASURED</code> 로 바꾼다. 남이 잰 값이 아니라 "다른 조립 상태 · 다른 MCU 에서 잰 값"이다.</li>
         <li><strong>벤치 제어 상수</strong>(PID 게인, 보호 문턱, 가감속 한도)는 값으로 쓰지 않는다. 인용할 때는 "1세대 무부하 튜닝값(기록)"이라는 꼬리표가 붙고, <strong>합격선이 아니다.</strong> 1세대의 게인은 단위부터 다르다.</li>
@@ -276,18 +308,22 @@
       </ul>
       <p><strong>합격 수치도 같은 원리로 빈칸이다.</strong> 이 가이드의 체크포인트에 "지터 ____ µs 이내" 같은 빈칸이 나오면 그 빈칸은 빠뜨린 것이 아니다 — 근거 없는 숫자를 합격선으로 정하지 않으려는 것이다. 순서는 <strong>측정 → 기록 → 그 기록을 보고 내가 합격선을 정한다</strong>이다. 출처가 있는 값(데이터시트 한계, 계약의 200 ms)만 숫자로 적혀 있다.</p>
       <div class="callout note"><span class="ct">결정 대기 — 이 가이드에서 아직 정하지 않은 것들</span>
-        <p>사용자(나)가 아직 정하지 않은 것은 본문이 대신 정하지 않는다. 선택지와 사실만 적고, 막히지 않도록 <strong>기본 진행</strong>을 하나 둔다 — 대개 "1세대 실물 그대로"이고 <strong>권고가 아니다.</strong> 다른 선택은 해당 쪽의 "(선택)" 절에 실린다. 지금 정하지 않은 것과 확정되는 곳:</p>
+        <p><strong>결정 대기</strong>는 사용자(나)가 아직 정하지 않은 설계 선택이다. 본문은 그 선택을 대신 정하지 않고 선택지와 사실만 적는다.</p>
+        <p>막히지 않도록 <strong>기본 진행</strong>을 하나 둔다 — 대개 "1세대 실물 그대로"이고 <strong>권고가 아니다.</strong> 다른 선택은 해당 쪽의 "(선택)" 절에 실린다. 지금 정하지 않은 것과 확정되는 곳:</p>
         <ul>
-          <li>버스 전압을 INA226(I2C)으로 읽는가, 저항 분압 → ADC 로 읽는가 — 기본 진행 INA226 · fw-10 · fw-12</li>
-          <li>BTS7960 의 IS 를 배선하는가 — 기본 진행 미결선 · fw-12 → fw-18</li>
-          <li>E-STOP 감지 입력의 전기 구성 — fw-11 · fw-18 · 관문 09a. 위 셋의 선택지는 INVENTORY 2절 "결정 대기"에 적혀 있다</li>
+          <li>E-STOP 감지 입력의 전기 구성 — fw-11 · fw-18 · 관문 09a. 선택지는 INVENTORY 2절 "결정 대기" (c)에 적혀 있다</li>
           <li>CubeMX 출발점 · 프로젝트 이름(이 프로젝트는 <code>h723zg</code>) · <code>Drivers/</code> 커밋 여부 — <a href="fw-02-toolchain.html">fw-02</a></li>
           <li>TIM1 → TIM8 동기의 필요 — fw-08 · fw-12</li>
           <li>I2C 를 IT 로 / DMA 로 — fw-15 (기본 진행 없음 — 그 쪽에서 인터럽트 수를 계산해 보고 내가 정한다)</li>
           <li>PID 를 ISR 에서 / 주 루프에서 — fw-13 (기본 진행 없음 — 그 쪽의 측정을 보고 내가 정한다)</li>
-          <li>이벤트 · IMU 샘플이 통신 모듈에 전달되는 경로(와이어 계약은 어느 경로든 동일) — fw-13 · fw-17 ~ fw-19</li>
           <li>TEXT 의 <code>step</code> 과 200 ms 명령 워치독의 공존 — fw-13 · fw-18</li>
           <li>조립 후 Nucleo 급전 방식 · 재플래시 동선 · Pi 5 급전 — 관문 09a · fw-20</li>
+        </ul>
+        <p>이 목록에 있다가 <strong>결정된 것</strong>은 셋이다. 고르지 않은 선택지의 사실은 INVENTORY 2절 표와 해당 쪽에 남아 있다.</p>
+        <ul>
+          <li>결정됨 — 버스 전압: (a) INA226(I2C)으로 읽는다(사용자, 2026-10-12). BATT_V 분압은 쓰지 않고 PC0 는 예비 · fw-10 · fw-12</li>
+          <li>결정됨 — BTS7960 의 IS: (b) 배선하지 않는다(사용자, 2026-10-14). ADC3 에서 쓰는 채널은 BATT_I 하나 · fw-12 → fw-18</li>
+          <li>결정됨 — 이벤트 · IMU 샘플이 통신 모듈에 전달되는 경로: (가) 끌어가기(2026-09-23, fw-17 이 구현) · fw-13 · fw-17 ~ fw-19</li>
         </ul>
       </div>
 
@@ -307,7 +343,7 @@
       반대로 ① 만 읽으면 칩은 알 수 있지만 <strong>내 보드</strong>는 알 수 없다. PB0 이 LED 에 이어진 것도, PD8/PD9 가 ST-LINK 에 연결된 것도 칩 데이터시트에는 없다.</p>
       <ul>
         <li>이 가이드의 표 · 절 · 쪽 번호는 <strong>위에 적은 판(Rev)</strong> 기준이다. 판이 다르면 번호가 어긋날 수 있다 — 그때는 표 제목의 글자로 찾는다. 내 PDF 의 판은 §3-1-4 에서 확인한다.</li>
-        <li>원본끼리 어긋나는 곳이 실제로 있다(예: UM2407 의 표 10 과 표 14 가 VCP 쪽 솔더 브리지 SB81 · SB82 의 기본 상태를 다르게 적는다 — <code>hardware/pinmap-h723.md</code> §7-3). 이 가이드는 모순을 숨기지 않고 "어느 쪽을 채택했고 왜인지, 무엇으로 확인하는지"를 적는다.</li>
+        <li>원본끼리 어긋나는 곳이 실제로 있다.<sup class="fn"><a href="#fn-34" id="fnref-34">34</a></sup> 이 가이드는 모순을 숨기지 않고 "어느 쪽을 채택했고 왜인지, 무엇으로 확인하는지"를 적는다.</li>
         <li>문장 옆의 <strong>등급</strong>은 세 가지다 — 확정(원문에서 직접 확인) · 추정(간접 근거나 계산) · 확인불가(기록 없음). 확인불가는 값으로 쓰지 않고 "내가 실측해 적는 실습"으로 바뀐다.</li>
         <li>HAL 을 읽는 법은 쪽마다 1번 이해 확인 문항으로 되풀이된다 — 콜백 하나를 <strong>헤더 → <code>__weak</code> 기본 구현 → 호출 시점 → ST 예제</strong>의 네 군데에서 찾는 것이다. 이 쪽의 1번 문항은 그 연습으로 위의 표를 직접 따라가 본다.</li>
       </ul>
@@ -333,8 +369,15 @@
           <tr><td>7</td><td><code>cc</code> (호스트 단위시험용)</td><td>이 Mac: Xcode Command Line Tools — <code>xcode-select -p</code> 가 <code>/Library/Developer/CommandLineTools</code> 를 낸다. 없을 때는 <code>xcode-select --install</code> 이 설치 창을 연다(<code>xcode-select --help</code> 의 설명)</td><td>설치했는가 ____</td></tr>
         </tbody>
       </table></div>
-      <p>6행의 Python 은 PEP 668 외부 관리다(<code>EXTERNALLY-MANAGED</code> 파일). 그래서 맨 <code>python3 -m pip install</code> 은 <code>externally-managed-environment</code> 오류로 거부된다(<code>--dry-run</code> 으로 확인). 그 오류문 자체가 venv 세 줄을 알려 준다: <code>python3 -m venv &lt;자리&gt;</code> → <code>source &lt;자리&gt;/bin/activate</code> → <code>python3 -m pip install pyserial matplotlib</code>. venv 를 쓰면 뒤 쪽의 <code>python3</code> 명령은 그 venv 를 켠 터미널에서 친다.</p>
-      <p>STM32CubeIDE 는 목록에 없다. 이 가이드는 CubeMX + CubeCLT 기준으로 쓰였다 — 개발 머신에 CubeIDE 가 설치돼 있지 않기 때문이고, 쓰지 않기로 <strong>정한 기록은 없다</strong>(INVENTORY 2절 "툴체인" 행). CubeIDE 를 쓰는 방법은 이 가이드가 다루지 않는다.</p>
+      <p>6행의 Python 은 PEP 668 의 외부 관리 환경이다. 이 규칙은 Homebrew 같은 패키지 관리자가 관리하는 Python 에 pip 가 직접 설치하지 못하게 하는 규칙이고, 그 표시가 <code>EXTERNALLY-MANAGED</code> 파일이다.
+      그래서 맨 <code>python3 -m pip install</code> 은 <code>externally-managed-environment</code> 오류로 거부된다(<code>--dry-run</code> 으로 확인). 그 오류문 자체가 venv 세 줄을 알려 준다.</p>
+      <ol>
+        <li><code>python3 -m venv &lt;자리&gt;</code></li>
+        <li><code>source &lt;자리&gt;/bin/activate</code></li>
+        <li><code>python3 -m pip install pyserial matplotlib</code></li>
+      </ol>
+      <p>venv 를 쓰면 뒤 쪽의 <code>python3</code> 명령은 그 venv 를 켠 터미널에서 친다.</p>
+      <p>STM32CubeIDE 는 목록에 없다. 이 가이드는 CubeMX + CubeCLT 기준으로 쓰였다 — 개발 머신에 CubeIDE 가 설치돼 있지 않기 때문이고, 쓰지 않기로 <strong>정한 기록은 없다</strong>.<sup class="fn"><a href="#fn-35" id="fnref-35">35</a></sup> CubeIDE 를 쓰는 방법은 이 가이드가 다루지 않는다.</p>
 
       <h4 id="s3-1-4">3-1-4. 돌려 보기 — 명령 · 기대 출력 · 없으면</h4>
       <p>터미널을 하나 열고 위에서 아래로 친다. 기대 출력은 <strong>이 가이드를 쓴 Mac 의 실제 출력</strong>(2026-09-22)이다 — 내 출력과 버전이 다르면 그 차이를 노트에 적는다(틀린 것이 아니라 기록할 것이다).</p>
@@ -426,7 +469,7 @@ MISSING /opt/ST/STM32CubeCLT_9.99.0/GNU-tools-for-STM32/bin/arm-none-eabi-gcc
       <div class="tbl"><table class="compact">
         <thead><tr><th>품목</th><th>쓰는 쪽</th><th>없으면</th><th>안전 규칙</th><th>보유</th></tr></thead>
         <tbody>
-          <tr><td>NUCLEO-H723ZG + USB 케이블(Type-A 또는 Type-C ↔ <strong>Micro-B</strong> — UM2407 §3.1)</td><td>fw-02 부터 전부</td><td>fw-02 의 빌드(ELF 생성)까지</td><td>S6 · S15</td><td>____</td></tr>
+          <tr><td>NUCLEO-H723ZG + USB 케이블(Type-A 또는 Type-C ↔ <strong>Micro-B</strong>)<sup class="fn"><a href="#fn-36" id="fnref-36">36</a></sup></td><td>fw-02 부터 전부</td><td>fw-02 의 빌드(ELF 생성)까지</td><td>S6 · S15</td><td>____</td></tr>
           <tr><td>DMM</td><td>fw-01 · fw-08 · fw-11 · fw-12 의 판정, 통전 전 확인 전부</td><td>fw-01 은 서류 재확인까지. 보드 점검과 SB57 확인을 통과시킬 수 없다 → fw-09 가 막힌다</td><td>S4 · S12</td><td>____</td></tr>
           <tr><td>점퍼선(암-수 · 암-암), 브레드보드</td><td>fw-08 부터의 모든 결선. Nucleo 의 헤더는 2.54 mm 2열이다</td><td>결선이 필요한 쪽 전부</td><td>S2(이웃 핀)</td><td>____</td></tr>
           <tr><td>SB57 을 떼는 도구</td><td>fw-01</td><td>fw-09(PA1 을 엔코더에 쓸 수 없다)</td><td>S9</td><td>도구 · 방법 ____ (fw-01 에서 실물을 보고)</td></tr>
@@ -439,7 +482,7 @@ MISSING /opt/ST/STM32CubeCLT_9.99.0/GNU-tools-for-STM32/bin/arm-none-eabi-gcc
           <tr><td>ACS758 모듈</td><td>fw-12</td><td>핀에 3V3 분압을 연결해 트리거 · DMA · 환산까지</td><td>S2 · S14</td><td>____</td></tr>
           <tr><td>WT901</td><td>fw-14</td><td>fw-14</td><td>S2</td><td>형태(핀헤더 / 맨 모듈) ____ (INVENTORY 2절 IMU 표)</td></tr>
           <tr><td>BNO055 + 4.7 kΩ × 2</td><td>fw-15 · fw-16 의 오프셋 저장</td><td>fw-15</td><td>S2</td><td>____ / 저항 ____</td></tr>
-          <tr><td>(결정 대기에서 다른 방법을 고르면) 분압 저항 · GND 기준 클램프 부품 · 커패시터</td><td>fw-12 의 선택 절</td><td>기본 진행에는 필요 없다</td><td>S14</td><td>____</td></tr>
+          <tr><td>(24 V 계 아날로그 입력을 더하게 되면) 분압 저항 · GND 기준 클램프 부품 · 커패시터</td><td>fw-12 의 선택 절</td><td>지금은 필요 없다 — 해당 입력이 없다(결정 (a) · (b))</td><td>S14</td><td>____</td></tr>
         </tbody>
       </table></div>
       <ol class="steps">
@@ -559,6 +602,47 @@ grep -n "LED1_PIN\|LED1_GPIO_PORT" $FW_H7/Drivers/BSP/STM32H7xx_Nucleo/stm32h7xx
           <li>INVENTORY 2절 "툴체인" 행과 내 Mac 의 버전이 같은지 확인했는가. 다르면 그 행 옆에 내 버전과 날짜를 적는다.</li>
         </ul>
       </div>
+
+      <h2 id="footnotes">각주</h2>
+      <p class="small">본문의 작은 번호를 누르면 여기로 온다. 근거 문서 · 핀 목록 · 1세대 기록 · 확인한 날짜를 모았다. ↩ 를 누르면 본문으로 돌아간다.</p>
+      <ol class="footnotes">
+          <li id="fn-1"><code>hardware/INVENTORY.md</code> 7절. <a class="fn-back" href="#fnref-1" aria-label="본문으로">↩</a></li>
+          <li id="fn-2"><code>hardware/pinmap-h723.md</code> §2-C, INVENTORY 2절 IMU 표 — 1세대 모듈을 잰 기록. <a class="fn-back" href="#fnref-2" aria-label="본문으로">↩</a></li>
+          <li id="fn-3">UM2407 Rev 6 §7.4.1 Warning, p.22. <a class="fn-back" href="#fnref-3" aria-label="본문으로">↩</a></li>
+          <li id="fn-4">같은 절, p.22. <a class="fn-back" href="#fnref-4" aria-label="본문으로">↩</a></li>
+          <li id="fn-5">INVENTORY 2절 필수 조건 ①: <code>____</code>. <a class="fn-back" href="#fnref-5" aria-label="본문으로">↩</a></li>
+          <li id="fn-6">등급: 예산 미확인(<code>hardware/pinmap-h723.md</code> §7-2 U3). <a class="fn-back" href="#fnref-6" aria-label="본문으로">↩</a></li>
+          <li id="fn-7"><code>hardware/INVENTORY.md</code> 머리말, 2026-09-22. <a class="fn-back" href="#fnref-7" aria-label="본문으로">↩</a></li>
+          <li id="fn-8">INVENTORY 6절. <a class="fn-back" href="#fnref-8" aria-label="본문으로">↩</a></li>
+          <li id="fn-9">1세대 기록 2026-07-25. 출처: <code>H/BOM.md:245-249</code> · <code>MEM/project_wheel_mapping_fix.md:11</code>(경로 약칭은 INVENTORY 머리말). <a class="fn-back" href="#fnref-9" aria-label="본문으로">↩</a></li>
+          <li id="fn-10">1세대 기록 2026-07-18. <code>D/bench/motor_bench_findings_2026-07-17.md:41-42</code>. <a class="fn-back" href="#fnref-10" aria-label="본문으로">↩</a></li>
+          <li id="fn-11">INVENTORY 6절 "바퀴 간 거리" 행. <a class="fn-back" href="#fnref-11" aria-label="본문으로">↩</a></li>
+          <li id="fn-12">사용자 결정, 2026-09-22. <a class="fn-back" href="#fnref-12" aria-label="본문으로">↩</a></li>
+          <li id="fn-13">처음에는 모드를 빌드 스위치(재플래시)로 바꿨고, 2026-10-12 에 <strong>실행 중 전환</strong>으로 바꿨다. <a class="fn-back" href="#fnref-13" aria-label="본문으로">↩</a></li>
+          <li id="fn-14">사고 날짜 2026-06-12. 구매 기록은 "4 사망", 결과 문서는 "5개 사망 + 3개 측정"으로 수량 표기가 어긋나지만 사고 자체는 같다(<code>D/bts_stage1_results.md:6,65-83</code>, <code>H/BOM.md:28</code>). <a class="fn-back" href="#fnref-14" aria-label="본문으로">↩</a></li>
+          <li id="fn-15">DS13313 Rev 5 표 9, p.88. <a class="fn-back" href="#fnref-15" aria-label="본문으로">↩</a></li>
+          <li id="fn-16"><code>hardware/pinmap-h723.md</code> §5-4 · 5-5, INVENTORY 2절 필수 조건 ① · ④. <a class="fn-back" href="#fnref-16" aria-label="본문으로">↩</a></li>
+          <li id="fn-17">2026-07-17, <code>D/bench/motor_bench_findings_2026-07-17.md:63-65</code>, INVENTORY 6절 · 7절. <a class="fn-back" href="#fnref-17" aria-label="본문으로">↩</a></li>
+          <li id="fn-18"><code>hardware/pinmap-h723.md</code> §2-D, INVENTORY 6절. <a class="fn-back" href="#fnref-18" aria-label="본문으로">↩</a></li>
+          <li id="fn-19">UM2407 Rev 6 §7.4.1, JP2 [1-2]. <a class="fn-back" href="#fnref-19" aria-label="본문으로">↩</a></li>
+          <li id="fn-20"><code>hardware/pinmap-h723.md</code> §2-C · 7-3. <a class="fn-back" href="#fnref-20" aria-label="본문으로">↩</a></li>
+          <li id="fn-21">읽는 목적은 <code>CPU_FREQ_BOOST</code> 가 공장 기본값 0 인지 확인해 기록하는 것이다(INVENTORY 2절 "클럭" 행). <a class="fn-back" href="#fnref-21" aria-label="본문으로">↩</a></li>
+          <li id="fn-22">RM0468 Rev 3 §4.5.3. <a class="fn-back" href="#fnref-22" aria-label="본문으로">↩</a></li>
+          <li id="fn-23">INVENTORY 6절. <a class="fn-back" href="#fnref-23" aria-label="본문으로">↩</a></li>
+          <li id="fn-24">INVENTORY 2절 "이더넷" 행, <code>hardware/pinmap-h723.md</code> §4-1. <a class="fn-back" href="#fnref-24" aria-label="본문으로">↩</a></li>
+          <li id="fn-25">RM0468 Rev 3 §43.3.29, p.1614. <a class="fn-back" href="#fnref-25" aria-label="본문으로">↩</a></li>
+          <li id="fn-26">INVENTORY 2절 필수 조건 ②. <a class="fn-back" href="#fnref-26" aria-label="본문으로">↩</a></li>
+          <li id="fn-27">INVENTORY 7절 "벌크 커패시터" · "주 접촉기 K1" 행. <a class="fn-back" href="#fnref-27" aria-label="본문으로">↩</a></li>
+          <li id="fn-28">DS13313 Rev 5 표 44, p.122. <a class="fn-back" href="#fnref-28" aria-label="본문으로">↩</a></li>
+          <li id="fn-29">DS13313 Rev 5 표 9 각주 5, p.89. <a class="fn-back" href="#fnref-29" aria-label="본문으로">↩</a></li>
+          <li id="fn-30">INVENTORY 2절 필수 조건 ③. <a class="fn-back" href="#fnref-30" aria-label="본문으로">↩</a></li>
+          <li id="fn-31"><code>hardware/pinmap-h723.md</code> §2-E · 5-2. <a class="fn-back" href="#fnref-31" aria-label="본문으로">↩</a></li>
+          <li id="fn-32">INVENTORY 는 머리의 "값의 상태 표기", 펌웨어는 <code>firmware/README.md</code> 규칙 3. <a class="fn-back" href="#fnref-32" aria-label="본문으로">↩</a></li>
+          <li id="fn-33">INVENTORY 머리말, 사용자 확인 2026-09-22. <a class="fn-back" href="#fnref-33" aria-label="본문으로">↩</a></li>
+          <li id="fn-34">예: UM2407 의 표 10 과 표 14 가 VCP 쪽 솔더 브리지 SB81 · SB82 의 기본 상태를 다르게 적는다 — <code>hardware/pinmap-h723.md</code> §7-3. <a class="fn-back" href="#fnref-34" aria-label="본문으로">↩</a></li>
+          <li id="fn-35">INVENTORY 2절 "툴체인" 행. <a class="fn-back" href="#fnref-35" aria-label="본문으로">↩</a></li>
+          <li id="fn-36">UM2407 §3.1. <a class="fn-back" href="#fnref-36" aria-label="본문으로">↩</a></li>
+      </ol>
 
       <div class="pager"></div>
     </div>

@@ -15,36 +15,37 @@
 
       <p class="kicker">L3 · 이 바이트가 거리라는 걸 어떻게 아는가</p>
       <h1>이 바이트가 거리라는 걸 어떻게 아는가</h1>
-      <p class="lead"><a href="l-02-device-id.html">l-02</a> 에서 기기에게 한 번 물었고, 기기가 <code>A5 5A</code> 로 시작하는 기술자를 돌려주며 "내가 이 프로토콜을 옳게 이해했다"는 것을 확인해 주었다.
-      이제 <code>SCAN</code> 을 보내고 <strong>끝없이 흘러나오는 바이트</strong>를 마주한다. 이 쪽에서 만드는 도구는 <code>point.py</code> 다. 5바이트 하나를 (각도, 거리, 품질)로 푸는 <code>parse_point()</code> 와, 그 해석을 바이트 흐름 위에서 되풀이하는 <code>stream()</code> 이 들어 있다.
+      <p class="lead"><a href="l-02-device-id.html">l-02</a> 에서 기기에 한 번 요청을 보냈다. 기기는 <code>A5 5A</code> 로 시작하는 기술자(응답 본문보다 먼저 오는 7바이트)를 돌려주었고, 그 응답으로 "내가 이 프로토콜을 옳게 이해했다"는 것을 확인했다.
+      이제 <code>SCAN</code> 을 보내고 <strong>끝없이 흘러나오는 바이트</strong>를 마주한다. 이 쪽에서 만드는 것은 헤더 셋(<code>point.hpp</code> · <code>point_port.hpp</code> · <code>point_run.hpp</code>)과 실행 파일 <code>lab_point</code> 다. <code>point.hpp</code> 에는 5바이트 하나를 (각도, 거리, 품질)로 푸는 <code>parse_point()</code> 와, 그 해석을 바이트 흐름 위에서 되풀이하는 <code>NodeStream</code> 이 들어 있다.
       여기서 나온 점의 흐름을 l-04 가 한 바퀴씩 자르고, 그 첫 기록 파일 위에 공간 인식 여덟 쪽이 이어진다.</p>
 
       <div class="goal">
         <span class="label">이 쪽이 끝나면 보이는 것</span>
         <p>이 쪽이 끝나면 다음 셋을 확인할 수 있다.</p>
         <ul>
-          <li>화면에 <code>(90.00 deg, 1000.0 mm, q=47)</code> 같은 줄이 쉴 새 없이 흐른다. 손을 센서 앞 30 cm 에 대면 <strong>그 방향의 거리만</strong> 300 근처로 바뀌고, 손을 치우면 원래 값으로 돌아온다.</li>
+          <li>화면에 <code>point       ( 90.0 deg, 1000.0 mm, q=47, start=true)</code> 같은 줄이 찍힌다. 손을 센서 앞 30 cm 에 대면 <strong>그 방향의 거리만</strong> 300 근처로 바뀌고, 손을 치우면 원래 값으로 돌아온다.</li>
           <li>내 손으로 푼 5바이트와 코드가 푼 값이 같다.</li>
-          <li><code>python3 tests/test_point.py</code> 의 마지막 줄이 <code>PASS point 10 cases</code> 다.</li>
+          <li><code>build/test_point</code> 와 진단 빌드(ASan · UBSan 을 켠 빌드, l-01) <code>build/test_point_ub</code> 가 둘 다 <code>PASS point 10 cases</code> 를 찍는다. <code>test_stream</code> 은 <code>PASS stream 8 cases</code>, <code>test_point_run</code> 은 <code>PASS point_run 13 cases</code> 를 찍는다(각 <code>_ub</code> 도 같다).</li>
         </ul>
         <p><strong>이 쪽에 필요한 것</strong></p>
         <ul>
           <li>라이다</li>
           <li>Pi</li>
-          <li>l-02 까지 끝낸 도구(<code>link.py</code> · <code>cmd.py</code>)</li>
+          <li>l-02 까지 끝낸 것 — 헤더 넷(<code>serial.hpp</code> · <code>cmd.hpp</code> · <code>cmd_port.hpp</code> · <code>repr.hpp</code>)과 <code>tests/check.hpp</code>, 빌드 디렉터리 <code>scripts/lidar_lab/build</code></li>
           <li>30 cm 가 재지는 자(줄자·30 cm 자 아무거나)</li>
         </ul>
         <p><strong>없으면</strong></p>
         <ul>
-          <li>라이다가 없어도 <strong>실습 A 의 골격과 자기시험(§3-1-2 · §3-1-3)까지는 전부 할 수 있다</strong>. <code>parse_point</code> 는 포트를 열지 않는 순수 함수다.</li>
-          <li>동작 중인 센서가 필요한 것은 §3-1-4 · 실습 B · 실습 C 이고, 그 셋의 체크 항목은 미통과로 둔다.</li>
+          <li>라이다가 없어도 <strong>실습 A 의 골격과 자기시험(§3-1-2 · §3-1-3)까지는 전부 할 수 있다</strong>. <code>parse_point()</code> 와 <code>NodeStream</code> 은 포트를 열지 않고, 이 두 절의 시험(<code>test_point</code> · <code>test_stream</code>)은 이 둘이 든 <code>point.hpp</code> 만 include 하기 때문이다. §3-1-4 의 시험 <code>test_point_run</code> 도 라이다 없이 실행된다. 라이다 자리에 가짜 기기를 연결해 채점한다. Mac 에서는 <code>test_point</code> · <code>test_stream</code> 만 <code>clang++</code> 로 연습할 수 있다. <code>test_point_run</code> 은 포트 헤더의 시험이라 Pi 에서만 실행한다(<a href="l-00-map.html#s2-1">l-00 §2-1</a> 의 상자). 통과의 기준은 Pi 빌드다.</li>
+          <li>동작 중인 센서가 필요한 것은 §3-1-4 의 <code>lab_point</code> 실행 · 실습 B · 실습 C 이고, 그 셋의 체크 항목은 미통과로 둔다.</li>
           <li>Pi 자체가 없으면 이 쪽은 시작하지 못한다. <a href="l-00-map.html">l-00</a> 의 표에서 지금 할 수 있는 쪽을 고른다.</li>
         </ul>
       </div>
 
       <div class="meta">
-        <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag pi">Pi 호스트</span> <span class="tag py">Python</span></div>
-        <div><span class="k">선행</span><a href="l-02-device-id.html">l-02</a> (기기에게 묻는다) — 실제로 쓰는 것: <code>send()</code> · <code>descriptor()</code> · <code>drain()</code> / <a href="l-01-link.html">l-01</a> — <code>open_port()</code> 와 모터를 돌리는 <code>dtr=False</code></div>
+        <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag pi">Pi 호스트</span> <span class="tag cpp">C++</span></div>
+        <div><span class="k">선행</span><a href="l-02-device-id.html">l-02</a> (기기에게 묻는다) — 실제로 쓰는 함수는 <code>send()</code> · <code>read_exact()</code> · <code>parse_descriptor()</code> · <code>drain()</code> · <code>stop()</code> 이다. 상수 <code>CMD_SCAN</code> · <code>kDescriptorLen</code>(기술자 길이 7)과 시험 도구 <code>tests/check.hpp</code> 도 쓴다 /<br>
+        <a href="l-01-link.html">l-01</a> — 함수는 <code>open_port()</code> · <code>motor(fd, on)</code> · <code>read_some()</code> · <code>install_stop_handler()</code> · <code>stop_requested()</code>, 상수는 <code>kReadTimeoutMs</code> 다</div>
         <div><span class="k">채우는 INVENTORY 칸</span>없음. 이 쪽의 값은 전부 내 노트에 적는다</div>
         <div><span class="k">이 쪽이 요구하는 수학</span>비트 시프트와 마스크, 고정소수점 나눗셈 — <strong>식은 §2-2 에서 도출 과정까지 보인다.</strong> 처음 보는 연산이어도 이 쪽 안에서 해결된다</div>
         <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
@@ -53,38 +54,40 @@
       <h2 id="overview">1. 개요 — 프레임이 없는 흐름에서 점 하나를 건져 낸다</h2>
       <p>l-02 까지의 통신은 <strong>한 번 묻고 한 번 받는</strong> 꼴이었다. 명령을 보내면 기기가 "이제 이만큼 보낸다"고 기술자로 예고하고, 그만큼 오면 끝이었다.
       <code>SCAN</code> 은 다르다. 기술자가 한 번 온 뒤로는 <strong>끝도 구분자도 없는 바이트가 계속</strong> 흐른다. 이 흐름 안에서 "여기부터 5바이트가 점 하나"라는 경계를 찾아내는 일이 이 쪽의 절반이고, 그 5바이트를 숫자로 바꾸는 일이 나머지 절반이다.</p>
-      <p>이 센서는 샘플 주기가 0.125 ms(공칭 샘플 주파수 ≥8000 Hz)이고 회전은 5.5 Hz(주기 약 182 ms) 근처다(데이터시트 Figure 2-1, rev.2.2 · v3.0 둘 다 8쪽).
+      <p>데이터시트는 이 라이다(Slamtec RPLIDAR A1M8)의 제조사 문서이고, 이 가이드는 rev.2.2 와 v3.0 두 판을 함께 읽는다.
+      데이터시트의 성능 표에 따르면 이 센서는 샘플 주기가 0.125 ms(공칭 샘플 주파수 ≥8000 Hz)이고 회전은 5.5 Hz(주기 약 182 ms) 근처다.<sup class="fn"><a href="#fn-1" id="fnref-1">1</a></sup>
       다만 <strong>사양의 샘플 주파수가 곧 선 위의 점 수는 아니다</strong>. 선이 그만큼 나르지 못한다.
       점 하나가 5바이트이고 이 회선의 상한이 11 520 B/s 이므로(<a href="l-01-link.html#s2-2">l-01 §2-2</a>) 이 명령에서 나올 수 있는 최대는 <code>11 520 ÷ 5</code> 다. 사양의 ≥8000 에 한참 못 미친다.
       왜 그렇게 다른지는 <a href="l-05-bandwidth-modes.html">l-05</a> 가 도출한다.
       그래도 바이트는 쉬지 않고 흐른다. 점 하나를 놓쳐도 다음 점이 오지만, 경계를 한 번 잃으면 <strong>그 뒤의 점이 전부 어긋난 채로 계속 그럴듯한 숫자로 나온다.</strong> 이 쪽이 검사 비트에 이만큼 지면을 쓰는 이유다.</p>
       <pre class="diagram"><code> l-02 가 남긴 자리                이 쪽이 만드는 것                          l-04 가 받는 것
  ────────────────────            ──────────────────────────────            ────────────────────
- SCAN(A5 20) 을 보냈다           stream(ser)                               (deg, mm, q, S) 의 흐름
- 기술자 7바이트를 봤다      ─►    버퍼를 이어 붙이며 경계를 찾는다    ─►     split_turns() 가
- 그 뒤로 바이트가 끝없이          parse_point(b5)                           한 바퀴씩 자른다
+ SCAN(A5 20) 을 보냈다           NodeStream::feed()                        Node{deg,mm,q,start}
+ 기술자 7바이트를 봤다      ─►    버퍼를 이어 붙이며 경계를 찾는다    ─►     TurnSplitter::push()
+ 그 뒤로 바이트가 끝없이          parse_point(b, 5)                         가 한 바퀴씩 자른다
  흐르고 있다                     5바이트 하나 ─► (각도, 거리, 품질)</code></pre>
       <p>새로 나오는 용어를 먼저 한 줄씩 정해 둔다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>용어</th><th>이 가이드에서의 뜻</th></tr></thead>
         <tbody>
-          <tr><td>노드(측정점)</td><td>이 센서가 내보내는 <strong>5바이트 한 덩어리</strong>. SDK 헤더의 이름은 <code>sl_lidar_response_measurement_node_t</code> 다. 이 가이드는 우리말로 "점"이라 부른다</td></tr>
+          <tr><td>노드(측정점)</td><td>이 센서가 내보내는 <strong>5바이트 한 덩어리</strong>. SDK(Slamtec 이 공개한 라이다 통신 소스 코드) 헤더의 이름은 <code>sl_lidar_response_measurement_node_t</code> 다. 이 가이드는 우리말로 "점"이라 부른다</td></tr>
           <tr><td>프레이밍</td><td>바이트의 흐름에서 "한 덩어리가 어디서 시작하는가"를 정하는 규칙. 이 센서에는 시작 바이트가 <strong>없고</strong>, 대신 <strong>검사 비트 두 개</strong>가 있다(§2-1)</td></tr>
           <tr><td>S · ~S · C</td><td>b0 의 비트0 = S(새 바퀴의 첫 점), b0 의 비트1 = ~S(S 를 뒤집은 것), b1 의 비트0 = C(항상 1). <strong>S ≠ ~S 이고 C == 1</strong> 이 아니면 그 자리는 점의 시작이 아니다</td></tr>
           <tr><td>q6 · q2 (고정소수점)</td><td>소수를 정수로 나르는 방법. <code>q6</code> = 실제 값의 64배가 정수로 들어 있다(2의 6제곱), <code>q2</code> = 4배(2의 2제곱). 읽을 때 나눈다(§2-2)</td></tr>
           <tr><td>재동기</td><td>검사가 틀렸을 때 <strong>어디서부터 다시 볼 것인가</strong>. 방법에 따라 남는 점 수가 달라진다(§2-4)</td></tr>
           <tr><td>수율</td><td>흐른 바이트 대비 <strong>남아서 쓸 수 있게 된 점의 수</strong>. 실습 C 가 재는 값이다</td></tr>
-          <tr><td>순수 함수</td><td>포트도 ROS 도 건드리지 않는 함수. <code>parse_point</code> 가 그렇다 — <strong>그래서 라이다 없이 자기시험이 실행된다</strong></td></tr>
+          <tr><td>순수 함수 · 순수 헤더</td><td>포트도 시간도 ROS 도 건드리지 않는 함수, 그런 함수만 든 헤더. <code>point.hpp</code> 가 그렇다 — <strong>그래서 라이다 없이 자기시험이 실행된다</strong></td></tr>
         </tbody>
       </table></div>
-      <p>⚠ 이 쪽의 <code>stream()</code> 이 내보내는 한 원소의 모양은 <strong><code>(deg, mm, quality, start)</code> 네 칸</strong>이다.
-      <code>parse_point()</code> 는 앞의 세 칸만 돌려주고(세 칸 반환이 이 도구의 고정된 시그니처다), <strong>네 번째 칸 <code>start</code> 는 <code>stream()</code> 이 같은 b0 에서 따로 읽어 붙인다.</strong>
-      S 비트가 <strong>두 가지 역할을 함께 하기</strong> 때문이다. S 비트는 프레이밍 검사의 한쪽이면서 동시에 "새 바퀴가 여기서 시작한다"는 표시다(§2-1). 그 네 번째 칸은 l-04 의 <code>split_turns()</code> 가 사용한다.</p>
+      <p>⚠ 이 쪽의 <code>NodeStream</code> 이 내보내는 점 하나(<code>Node</code>)는 <strong><code>deg</code> · <code>mm</code> · <code>quality</code> · <code>start</code> 네 칸</strong>이다.
+      <code>parse_point()</code> 는 앞의 세 칸만 <code>Sample</code> 로 돌려주고(세 칸 반환이 이 도구의 고정된 시그니처다), <strong>네 번째 칸 <code>start</code> 는 <code>NodeStream::feed()</code> 가 같은 b0 에서 따로 읽어 붙인다.</strong>
+      S 비트가 <strong>두 가지 역할을 함께 하기</strong> 때문이다. S 비트는 프레이밍 검사의 한쪽이면서 동시에 "새 바퀴가 여기서 시작한다"는 표시다(§2-1). 그 네 번째 칸은 l-04 의 <code>TurnSplitter::push()</code> 가 사용한다.</p>
 
       <h2 id="why">2. 원리 — 왜 이 다섯 바이트를 점으로 간주할 수 있는가</h2>
 
       <h3 id="s2-1">2-1. 시작 바이트가 없는 흐름에서 경계를 찾는 법</h3>
-      <p>06a 의 MCU 계약 v2 는 <strong>우리가 설계한 프레임</strong>이다. 그래서 머리 바이트를 붙이고 길이를 넣고 CRC 를 달았다. 형식을 우리가 정했으니 경계도 우리가 찾을 수 있다.
+      <p>본편 <a href="06a-mcu-protocol.html">06a</a>(MCU 아키텍처와 통신 프로토콜 쪽)의 계약 v2 는 펌웨어와 ROS 쪽이 함께 보는 MCU 통신 사양서다.
+      이 계약은 <strong>우리가 설계한 프레임</strong>이다. 그래서 머리 바이트를 붙이고 길이를 넣고 CRC 를 달았다. 형식을 우리가 정했으니 경계도 우리가 찾을 수 있다.
       라이다는 반대다. <strong>남이 정한 프레임을 우리가 찾아내야 한다.</strong> 그리고 이 센서의 점에는 머리 바이트가 없다. 있는 것은 <strong>덩어리 안에 섞여 있는 검사 비트 두 개</strong>뿐이다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>비트</th><th>어디</th><th>규칙</th><th>왜 이것으로 경계를 찾을 수 있는가</th></tr></thead>
@@ -97,16 +100,16 @@
       <p>따라서 <strong>한 자리를 보고 "여기가 점의 시작이다"라고 단정할 수는 없다.</strong> 1/4 은 꽤 큰 확률이다.
       할 수 있는 것은 "<strong>여기가 시작이라면 다음 5바이트도, 그 다음 5바이트도 규칙을 지켜야 한다</strong>"를 따라가 확인하는 것이고, 어긋나는 순간 시작 자리를 한 칸 옮겨 다시 보는 것이다(§2-4).
       경계를 한 번 맞히면 어긋나기 전까지는 그 뒤로도 계속 맞는다.</p>
-      <div class="callout why"><span class="ct">왜 이 두 비트가 "기기가 답해 주는" 자기검증인가</span>
+      <div class="callout why"><span class="ct">왜 이 두 비트가 "기기의 응답으로 하는" 자기검증인가</span>
         <p>l-02 의 <code>A5 5A</code> 와 같은 종류의 장치다. 내가 <strong>이해한 대로 읽었더니 규칙이 정한 값이 그 자리에 있었다</strong>. 이 일치가 내 이해가 맞았다는 증거다.
         반대로 S 와 ~S 가 같거나 C 가 0 이면, 틀린 것은 센서가 아니라 <strong>내가 고른 시작 자리</strong>다. 이 쪽에서 학습자가 세는 "걸러진 자리의 수"는 내 도구가 실제로 경계를 얼마나 자주 잃는지를 나타내는 양이다.</p>
       </div>
       <div class="callout note"><span class="ct">등급 — 이 5바이트 배치의 출처</span>
-        <p>데이터시트는 이 배치를 싣지 않았다. 두 판 <strong>모두</strong> 6쪽에서 <em>"If you need detailed data format and communication protocol, please contact SLAMTEC."</em> 라 적는다. 9쪽에서도 다시 <em>"Please contact SLAMTEC if you want detailed communication protocol"</em> 이라 적는다. 목차에도 프로토콜 장이 없다.
+        <p>데이터시트는 이 배치를 싣지 않았다. 두 판 <strong>모두</strong> 한 자리에서 <em>"If you need detailed data format and communication protocol, please contact SLAMTEC."</em> 라 적는다.<sup class="fn"><a href="#fn-2" id="fnref-2">2</a></sup> 다른 자리에서도 다시 <em>"Please contact SLAMTEC if you want detailed communication protocol"</em> 이라 적는다.<sup class="fn"><a href="#fn-3" id="fnref-3">3</a></sup> 목차에도 프로토콜 장이 없다.
         <strong>그래서 "데이터시트에 따르면 b0 의 비트0 이 S 다"라고 쓸 수 없다.</strong> 이 쪽이 쓰는 출처는 셋이다:</p>
         <ul>
-          <li><strong>① Slamtec SDK 의 <code>sl_lidar_cmd.h</code></strong> — 집필자가 2026-09-23 에 웹에서 열어 확인했다. 경로는 <code>raw.githubusercontent.com/Slamtec/rplidar_sdk</code> 의 <code>sdk/include/sl_lidar_cmd.h</code> 다. 구조체 <code>_sl_lidar_response_measurement_node_t</code> 의 필드 주석은 <code>syncbit:1;syncbit_inverse:1;quality:6;</code> 와 <code>check_bit:1;angle_q6:15;</code> 이다. 매크로는 <code>SL_LIDAR_RESP_MEASUREMENT_SYNCBIT (0x1&lt;&lt;0)</code> · <code>..._QUALITY_SHIFT 2</code> · <code>..._CHECKBIT (0x1&lt;&lt;0)</code> · <code>..._ANGLE_SHIFT 1</code> 이다. <strong>등급 확정</strong>. 다만 집필자가 파일을 내려받아 바이트를 본 것이 아니라 웹으로 읽어 옮긴 것이다. 그래서 원문을 <code>git clone</code> 해 대조하는 것은 §3-1-1 의 확인 과제로 남긴다.</li>
-          <li><strong>② 같은 모델을 쓴 1세대 기록</strong> — <code>NOMINAL(gen1-record, 2026-07-14)</code>. <code>~/ros2/docs/camera_lidar/rplidar_ctl.py:16-19,102-116</code> 와 <code>~/ros2/docs/lidar/lidar_scan.py:3-8,32-37</code> 이 ① 과 같은 배치를 쓰고 실제로 점을 받았다. ⚠ <strong>그 코드의 주석은 이 배치의 출처를 "datasheet" 라고 적었지만 위에서 보았듯 데이터시트에는 없다</strong>. 남의 주석이 붙인 출처를 그대로 옮기지 않는 것이 이 가이드의 규칙이다.</li>
+          <li><strong>① Slamtec SDK 의 <code>sl_lidar_cmd.h</code></strong> — 집필자가 웹에서 열어 확인했다.<sup class="fn"><a href="#fn-4" id="fnref-4">4</a></sup> 구조체 <code>_sl_lidar_response_measurement_node_t</code> 의 필드 주석은 <code>syncbit:1;syncbit_inverse:1;quality:6;</code> 와 <code>check_bit:1;angle_q6:15;</code> 이다. 매크로는 <code>SL_LIDAR_RESP_MEASUREMENT_SYNCBIT (0x1&lt;&lt;0)</code> · <code>..._QUALITY_SHIFT 2</code> · <code>..._CHECKBIT (0x1&lt;&lt;0)</code> · <code>..._ANGLE_SHIFT 1</code> 이다. <strong>등급 확정</strong>. 다만 집필자가 파일을 내려받아 바이트를 본 것이 아니라 웹으로 읽어 옮긴 것이다. 그래서 원문을 <code>git clone</code> 해 대조하는 것은 §3-1-1 의 확인 과제로 남긴다.</li>
+          <li><strong>② 같은 모델을 쓴 1세대 기록</strong> — 1세대는 이 프로젝트 이전에 같은 부품 일부로 만든 첫 로봇이고, 같은 모델의 라이다를 썼다. 등급은 <code>NOMINAL(gen1-record)</code> 이다. 출처는 있지만 이 프로젝트에서 잰 값은 아닌 임시값이라는 뜻이다(<a href="l-00-map.html">l-00</a> 의 "값의 세 상태"). 1세대의 두 도구가 ① 과 같은 배치를 쓰고 실제로 점을 받았다.<sup class="fn"><a href="#fn-5" id="fnref-5">5</a></sup> ⚠ <strong>1세대 코드의 주석은 이 배치의 출처를 "datasheet" 라고 적었지만 위에서 보았듯 데이터시트에는 없다</strong>. 남의 주석이 붙인 출처를 그대로 옮기지 않는 것이 이 가이드의 규칙이다.</li>
           <li><strong>③ 내 기기</strong> — 위 둘이 다 틀렸더라도, <strong>내 센서가 낸 바이트에서 S ≠ ~S 와 C == 1 이 5바이트 간격으로 계속 성립하면</strong> 그 일치가 이 배치가 내 기기에서 참이라는 증거다. ①② 는 가설이고 <strong>③ 이 판정</strong>이다.</li>
         </ul>
       </div>
@@ -136,17 +139,17 @@ quality   =   b0 &gt;&gt; 2                            (위 6비트. 마스크�
         <tbody>
           <tr><td>각도</td><td>511.984375°</td><td>15비트 → 32767 ÷ 64</td><td><strong>360° 를 넘는 수가 들어갈 자리가 있다.</strong> 14비트로 마스크하면 360° 근처가 오류 표시 없이 접힌다. 실습 A 의 벡터 2·5 가 이 잘못을 검출한다</td></tr>
           <tr><td>거리</td><td>16383.75 mm</td><td>16비트 → 65535 ÷ 4</td><td>필드가 담을 수 있는 폭이 사양의 측정 범위보다 넓다. <strong>필드가 허용한다고 센서가 잰다는 뜻이 아니다</strong></td></tr>
-          <tr><td>품질</td><td>63</td><td>6비트 → 2의 6제곱 − 1</td><td>단위·의미는 <code>____</code> — 데이터시트 Figure 1-4(6쪽)는 <em>"Quality / level / Quality of the measurement"</em> 라고만 적는다. <strong>확인 과제</strong></td></tr>
+          <tr><td>품질</td><td>63</td><td>6비트 → 2의 6제곱 − 1</td><td>단위·의미는 <code>____</code> — 데이터시트의 점 형식 그림은 <em>"Quality / level / Quality of the measurement"</em> 라고만 적는다.<sup class="fn"><a href="#fn-6" id="fnref-6">6</a></sup> <strong>확인 과제</strong></td></tr>
         </tbody>
       </table></div>
 
       <h3 id="s2-3">2-3. 거리 0 은 "아무것도 없다"가 아니라 "못 쟀다"</h3>
       <p>점을 풀다 보면 거리가 정확히 <code>0</code> 인 점이 섞여 나온다. 거리 0 을 어떻게 읽느냐에 따라 뒤의 다섯 쪽의 결과가 달라진다.</p>
-      <p>먼저 사실부터. 데이터시트 Figure 1-4(rev.2.2 · v3.0 둘 다 6쪽)는 Distance 를 <em>"Current measured distance value between the rotating core of the RPLIDAR A1 and the sampling point"</em>, 단위 mm 라고만 적는다. <strong>0 이 무엇을 뜻하는지는 적지 않았다.</strong></p>
+      <p>먼저 사실부터. 데이터시트의 점 형식 그림이 Distance 에 대해 적은 것은 설명과 단위 둘뿐이다.<sup class="fn"><a href="#fn-7" id="fnref-7">7</a></sup> 설명은 <em>"Current measured distance value between the rotating core of the RPLIDAR A1 and the sampling point"</em> 이다. 단위는 mm 다. <strong>0 이 무엇을 뜻하는지는 적지 않았다.</strong></p>
       <p>0 을 "잴 수 없었음"으로 읽는 근거는 둘이다.</p>
       <ul>
         <li>① <strong>물리</strong> — 측정 기준점이 <em>rotating core</em> 이므로 0 mm 는 회전축 한가운데를 뜻한다. 그런데 사양의 최소 거리가 0.15 m 다. 따라서 0 은 물체의 위치일 수 없다.</li>
-        <li>② <strong>같은 모델의 기록</strong> — <code>NOMINAL(gen1-record, 2026-07-14)</code>. <code>rplidar_ctl.py:19</code> 가 <code>dist_mm = ... (0 = invalid / no return)</code> 이라 적었다.</li>
+        <li>② <strong>같은 모델의 기록</strong> — <code>NOMINAL(gen1-record)</code>. 1세대 도구의 주석이 <code>dist_mm = ... (0 = invalid / no return)</code> 이라 적었다.<sup class="fn"><a href="#fn-8" id="fnref-8">8</a></sup></li>
       </ul>
       <p><strong>내 기기에서 확인하는 법은 §3-2-4 에 있다</strong>. 아무것도 없는 방향(허공·천장 쪽)에서 0 이 나오고, 손을 대면 그 방향만 0 이 아닌 값으로 바뀌는지 본다.</p>
       <div class="callout why"><span class="ct">왜 이 한 줄이 중요한가</span>
@@ -161,15 +164,16 @@ quality   =   b0 &gt;&gt; 2                            (위 6비트. 마스크�
       <div class="tbl"><table>
         <thead><tr><th></th><th>(가) 5바이트를 읽고 실패하면 1바이트를 더 읽어 버린다</th><th>(나) 버퍼를 이어 붙이고 그 안에서 1칸씩 민다</th></tr></thead>
         <tbody>
-          <tr><td>생김새</td><td><code>b = ser.read(5)</code> → 검사 실패 → <code>ser.read(1)</code> → 다시 <code>read(5)</code></td><td><code>buf += ser.read(2048)</code> → <code>i</code> 를 1씩 밀며 <code>buf[i:i+5]</code> 를 본다</td></tr>
+          <tr><td>생김새</td><td><code>read_exact(fd, b, 5, …)</code> → 검사 실패 → <code>read_exact(fd, b, 1, …)</code> → 다시 5바이트</td><td><code>read_some()</code> 이 돌려준 만큼 <code>ns.feed(buf, n, out)</code> 로 넣는다 → <code>feed()</code> 가 <code>i</code> 를 1씩 밀며 <code>buf_.data() + i</code> 의 5바이트를 본다</td></tr>
           <tr><td>실패 한 번의 대가</td><td><strong>이미 읽은 5바이트가 통째로 사라진다.</strong> 그 안에 있던 진짜 경계도 같이 사라진다</td><td>버린 것은 1바이트뿐. 나머지 4바이트는 다음 자리에서 다시 검사된다</td></tr>
-          <tr><td>코드의 길이</td><td>짧다</td><td>길다(버퍼를 직접 관리해야 한다)</td></tr>
+          <tr><td>코드의 길이</td><td>짧다</td><td>길다(버퍼를 직접 관리해야 한다 — 다 못 쓴 꼬리를 다음 <code>feed()</code> 까지 남겨 둔다)</td></tr>
           <tr><td>같은 시간에 얻는 점</td><td><code>____</code> (내 값 — §3-3-4)</td><td><code>____</code> (내 값 — §3-3-4)</td></tr>
         </tbody>
       </table></div>
-      <p>같은 모델을 쓴 1세대의 기록은 (가)에 대해 이렇게 적었다 — <code>NOMINAL(gen1-record, 2026-07-14)</code>, <code>~/ros2/docs/camera_lidar/rplidar_ctl.py:88-90</code>:
+      <p>같은 모델을 쓴 1세대의 기록은 (가)에 대해 아래와 같이 적었다(등급 <code>NOMINAL(gen1-record)</code>).<sup class="fn"><a href="#fn-9" id="fnref-9">9</a></sup>
       <em>"A stream buffer is used rather than 1-byte resync: resyncing byte-by-byte discards valid points and silently halves the yield."</em>
-      그 저장소에는 두 방식이 모두 남아 있다. <code>~/ros2/docs/lidar/lidar_scan.py:29-34</code> 가 (가), <code>~/ros2/docs/lidar/lidar_scan2.py:18-40</code> 이 (나)다.</p>
+      1세대 저장소에는 두 방식이 모두 남아 있다 — 한 도구는 (가), 다른 도구는 (나)다.<sup class="fn"><a href="#fn-10" id="fnref-10">10</a></sup></p>
+      <p>C++ 에서 (가) 를 쓰려면 <code>read_exact()</code>(l-02 §2-2)가 필요하다. <code>read()</code> 는 요청한 바이트 수가 아니라 <strong>그때 와 있는 만큼</strong> 돌려주기 때문이다. (나) 는 그 성질을 그대로 받는다 — 얼마가 오든 버퍼 뒤에 붙이고, 5바이트가 다 모인 자리까지만 본다.</p>
       <p>⚠ <strong>"절반"은 내 기기의 값이 아니다.</strong> 같은 모델(A1M8)에서 그런 결과가 나왔다는 기록이고, 그 개체가 내 개체인지는 아직 확인되지 않았다. 게다가 이 값은 센서가 아니라 <strong>내 코드와 내 Pi 의 읽기 타이밍</strong>에 달려 있다. 몇 배가 되는지는 §3-3-4 에서 내가 잰다.
       <strong>1배에 가깝게 나와도 그 값이 내 관찰이다.</strong> 왜 그럴 수 있는지는 §3-3-4 에 한 줄 적어 두었다.</p>
       <p>⚠ 이 절의 낱말 중 <em>"silently"</em> 를 흘려 읽지 말 것. (가)는 <strong>오류를 내지 않는다.</strong> 점이 나오고 각도도 거리도 정상이다. 점이 <strong>적게</strong> 나올 뿐이다. 라이다에서 이 꼴의 고장이 가장 대가가 크다.</p>
@@ -196,20 +200,27 @@ quality   =   b0 &gt;&gt; 2                            (위 6비트. 마스크�
       <h2 id="lab">3. 실습</h2>
       <div class="callout warn"><span class="ct">이 쪽을 하는 동안 지키는 것</span>
         <ul>
-          <li><strong>레이저는 눈에 보이지 않는다.</strong> 이 센서는 Class I 로 분류된 &lt;5 mW 적외선 레이저를 쓰고 파장은 785 nm(775~795)다. 출처는 데이터시트 5쪽(Class I 표기)과 Figure 2-3 "Optical Specification"(9쪽, 두 판 동일)이다. <strong>적외선이라 켜졌는지 눈으로 알 수 없다.</strong> 위험해서가 아니라 <strong>보이지 않아서 조심하는 습관이 안 생기기 때문에</strong> 규칙으로 적는다: 스캔 창을 렌즈 높이에서 정면으로 들여다보지 않는다.</li>
+          <li><strong>레이저는 눈에 보이지 않는다.</strong> 이 센서는 Class I 로 분류된 &lt;5 mW 적외선 레이저를 쓰고 파장은 785 nm(775~795)다. 출처는 데이터시트의 Class I 표기와 광학 사양 표다.<sup class="fn"><a href="#fn-11" id="fnref-11">11</a></sup> Class I 은 데이터시트가 "정상적인 사용에서 사람과 동물에게 안전하다"고 적은 레이저 안전 등급이다. <strong>적외선이라 켜졌는지 눈으로 알 수 없다.</strong> 위험해서가 아니라 <strong>보이지 않아서 조심하는 습관이 안 생기기 때문에</strong> 규칙으로 적는다: 스캔 창을 렌즈 높이에서 정면으로 들여다보지 않는다.</li>
           <li><strong>도는 머리에 손·머리카락·천·케이블을 가까이 두지 않는다.</strong> ⚠ <strong>이 쪽에는 손을 센서 앞 30 cm 에 대는 실습이 있다(실습 B).</strong> 대는 것은 <strong>손이고, 내 얼굴·머리는 대지 않는다.</strong> 30 cm 는 회전 머리에서 충분히 먼 거리다. 손을 더 가까이 가져가지 않는다.</li>
-          <li>센서를 들어 올리거나 옮길 때는 <strong>모터를 멈춘 뒤</strong>(<code>dtr=True</code>) 든다. 실습 중에 자리가 바뀌면 실습 B 의 관찰이 무효가 된다. l-01 에서 정해 둔 받침과 기준선을 그대로 쓴다.</li>
+          <li>센서를 들어 올리거나 옮길 때는 <strong>모터가 멈춘 것을 확인한 뒤</strong> 든다. <code>lab_point</code> 는 끝날 때 <code>motor(fd, false)</code> 를 부른다(<a href="l-01-link.html#s3-3">l-01 §3-3</a>). 머리가 계속 돌면 허브 쪽에서 라이다의 USB 케이블을 뽑는다(<a href="l-01-link.html#overview">l-01 §1 의 L2</a> — l-01 이 정한 안전 규칙 중 도는 머리에 관한 규칙). 실습 중에 자리가 바뀌면 실습 B 의 관찰이 무효가 된다. l-01 에서 정해 둔 받침과 기준선을 그대로 쓴다.</li>
         </ul>
+      </div>
+      <div class="callout tip"><span class="ct">힌트 카드 읽는 법</span>
+        <p>골격의 빈 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 있다(이 쪽은 T1 ~ T4). 주석 안의 번호 걸음을 보고 먼저 직접 써 본다.</p>
+        <p>막히면 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와 <strong>줄마다의 설명</strong>이 있다. 칸은 늘 같다: 할 일 · 완결 코드 · 코드 설명 · 다르게 써도 되는 곳 · 쓰는 API · 흔한 실수 · 확인. T1 · T2 는 §3-1-3, T3 는 §3-1-4, T4 는 §3-3-3 에 있다. 번호는 카드가 쪽에 나오는 차례이고, 코드 안의 차례와도 같다 — <code>point.hpp</code> 에 T1 · T2, <code>point_run.hpp</code> 에 T3 · T4.</p>
+        <p>완결 코드는 Pi 에서 실행해 본 것이 아니다. Pi 의 빌드와 실제 센서에서의 동작은 "돌리고 보기"에서 내가 확인한다.<sup class="fn"><a href="#fn-12" id="fnref-12">12</a></sup></p>
+        <p>붙여 넣고 끝내지 않는다. 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
       </div>
 
       <h3 id="s3-1">3-1. 실습 A — 첫 5바이트를 손으로 푼다</h3>
 
       <h4 id="s3-1-1">3-1-1. 확인</h4>
       <p>이 실습이 전제하는 값부터 한 표에 모은다. <strong>출처와 "내 장치에서 보는 법"이 같은 줄에 있다</strong>. 어느 값도 확인 없이 그대로 받아들이지 않는다.</p>
+      <p>"출처 · 등급" 열의 등급 낱말은 셋이다. <strong>확정</strong>은 근거 문서(데이터시트 · SDK 소스 등)에 값이 그대로 적혀 있다는 뜻이다. <strong>산술</strong>은 확정된 값에서 계산한 값이다. <strong>미확인 1차</strong>는 1차 출처(데이터시트)에 없고 다른 기록(1세대 코드 등)만 그렇게 적은 값이다 — 내 기기에서는 아직 확인하지 않았다.</p>
       <div class="tbl"><table>
         <thead><tr><th>항목</th><th>값</th><th>출처 · 등급</th><th>내 장치에서 보는 법</th></tr></thead>
         <tbody>
-          <tr><td><code>SCAN</code> 명령</td><td><code>A5 20</code></td><td><code>sl_lidar_cmd.h</code> <code>SL_LIDAR_CMD_SCAN 0x20</code> + <code>sl_lidar_protocol.h</code> <code>SL_LIDAR_CMD_SYNC_BYTE 0xA5</code> (2026-09-23 열어 확인) — <strong>확정</strong></td><td>보내면 기술자가 온다. 안 오면 §3-1-1 아래 확인 표 5번</td></tr>
+          <tr><td><code>SCAN</code> 명령</td><td><code>A5 20</code></td><td><code>sl_lidar_cmd.h</code> <code>SL_LIDAR_CMD_SCAN 0x20</code> + <code>sl_lidar_protocol.h</code> <code>SL_LIDAR_CMD_SYNC_BYTE 0xA5</code> (2026-09-23 열어 확인) — <strong>확정</strong></td><td>보내면 기술자가 온다. 안 오면 §3-1-1 아래 확인 표 4번</td></tr>
           <tr><td>응답 기술자</td><td>7바이트, 앞 둘이 <code>A5 5A</code></td><td><code>sl_lidar_protocol.h</code> <code>sl_lidar_ans_header_t</code>(sync 2 + size:30/subType:2 + type) — <strong>확정</strong></td><td>l-02 에서 이미 한 번 봤다. 여기서 다시 본다</td></tr>
           <tr><td>기술자의 응답형</td><td><code>0x81</code></td><td><code>sl_lidar_cmd.h</code> <code>SL_LIDAR_ANS_TYPE_MEASUREMENT 0x81</code> — <strong>확정</strong></td><td>기술자의 마지막(7번째) 바이트</td></tr>
           <tr><td>점 하나의 크기</td><td>5바이트</td><td>구조체 <code>u8 + u16 + u16</code>, <code>__attribute__((packed))</code> — <strong>산술</strong>(1+2+2 = 5)</td><td>기술자의 size 필드(하위 30비트, <code>&amp; 0x3FFFFFFF</code>)가 <code>5</code> 다</td></tr>
@@ -225,14 +236,13 @@ quality   =   b0 &gt;&gt; 2                            (위 6비트. 마스크�
         <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
         <tbody>
           <tr><td>1</td><td><code>pi$ ls -l /dev/lidar</code></td><td><code>lrwxrwxrwx … /dev/lidar -&gt; ttyUSB&lt;n&gt;</code></td><td>udev 규칙이 아직 없다 → <strong>01 §3-8</strong>. 임시로 <code>/dev/ttyUSB&lt;n&gt;</code> 를 쓰되 <strong>부팅마다 바뀔 수 있다</strong></td></tr>
-          <tr><td>2</td><td><code>pi$ python3 -c 'import serial; print(serial.VERSION)'</code></td><td><code>3.&lt;n&gt;</code> 한 줄</td><td>l-00 의 설치 절로. 호스트에 설치하지 못하면 <strong>차선은 컨테이너 안에서 같은 스크립트를 실행하는 것</strong>이다(이미지에 <code>pyserial</code> 이 들어 있다)</td></tr>
-          <tr><td>3</td><td><code>pi$ ls scripts/lidar_lab/link.py scripts/lidar_lab/cmd.py</code></td><td>두 줄이 그대로 나온다</td><td>l-01 · l-02 를 안 끝냈다. <code>parse_point</code> 만 쓰는 §3-1-2 · §3-1-3 은 그래도 할 수 있다</td></tr>
-          <tr><td>4</td><td><code>pi$ fuser -v /dev/lidar</code></td><td><strong>아무 줄도 안 나온다</strong>(포트를 연 프로세스가 없다)</td><td>줄이 나오면 그 PID 가 포트를 열고 있다. 드라이버 컨테이너가 실행 중인 경우가 가장 흔하다. 두 주인 문제 전체는 l-06 이 다룬다</td></tr>
-          <tr><td>5</td><td>l-02 의 절차로 <code>drain</code> 뒤 <code>SCAN</code> 을 보내고 7바이트를 읽는다</td><td><code>a55a0500004081</code> 꼴(앞 둘 <code>a5 5a</code>, 마지막 <code>81</code>)</td><td>⚠ <strong>기술자가 안 와도 그 결과가 관찰이다.</strong> ① 포트를 열었을 때 이미 스캔이 흐르고 있었다면 기술자는 지나간 뒤다. ② <code>drain</code> 을 다시 하고 <code>STOP</code> → <code>SCAN</code> 순서로 보낸다(l-02 의 <code>drain</code> 절). ③ 그래도 없으면 <strong>기술자 없이 §3-1-4 로 간다</strong></td></tr>
-          <tr><td>6</td><td>(확인 과제) <code>pi$ grep -n 'ANGLE_SHIFT\|measurement_node_t' sdk/include/sl_lidar_cmd.h</code> — Slamtec SDK 를 받아 원문 대조</td><td>§2-1 ① 에 적은 매크로·주석 줄</td><td>못 받아도 <strong>막히지 않는다.</strong> 이 쪽의 판정은 ③ 기기 자기검증이다(§2-1). 대조했으면 결과를 노트에 적고, 다르면 조율자 항목으로 올린다</td></tr>
+          <tr><td>2</td><td><code>pi$ ls scripts/lidar_lab/src/{link,cmd}.cpp scripts/lidar_lab/build/{lab_cmd,test_cmd}</code></td><td>네 경로가 그대로 찍힌다 — l-01 · l-02 의 소스와 빌드가 있다</td><td>소스가 없으면 Mac 에서 편집한 파일이 아직 Pi 로 복사되지 않았다 → <code>scripts/sync-to-pi.sh</code>. 빌드만 없으면 <a href="l-02-device-id.html#s3-1-3">l-02 §3-1-3</a> · §3-1-4 의 빌드 명령부터. <code>point.hpp</code> 만 쓰는 §3-1-2 · §3-1-3 은 그래도 할 수 있다</td></tr>
+          <tr><td>3</td><td><code>pi$ fuser -v /dev/lidar</code></td><td><strong>아무 줄도 안 나온다</strong>(포트를 연 프로세스가 없다)</td><td>줄이 나오면 그 PID 가 포트를 열고 있다. 드라이버 컨테이너가 실행 중인 경우가 가장 흔하다. 두 주인 문제 전체는 l-06 이 다룬다</td></tr>
+          <tr><td>4</td><td>l-02 의 절차로 <code>drain</code> 뒤 <code>SCAN</code> 을 보내고 7바이트를 읽는다 — §3-1-4 의 <code>lab_point</code> 가 이 일을 한다</td><td><code>a55a0500004081</code> 꼴(앞 둘 <code>a5 5a</code>, 마지막 <code>81</code>)</td><td>⚠ <strong>기술자가 안 와도 그 결과가 관찰이다.</strong> ① 포트를 열었을 때 이미 스캔이 흐르고 있었다면 기술자는 지나간 뒤다. ② <code>drain</code> 을 다시 하고 <code>STOP</code> → <code>SCAN</code> 순서로 보낸다(l-02 의 <code>drain</code> 절). ③ 그래도 없으면 <strong>기술자 없이 §3-1-4 로 간다</strong></td></tr>
+          <tr><td>5</td><td>(확인 과제) <code>pi$ grep -n 'ANGLE_SHIFT\|measurement_node_t' sdk/include/sl_lidar_cmd.h</code> — Slamtec SDK 를 받아 원문 대조</td><td>§2-1 ① 에 적은 매크로·주석 줄</td><td>못 받아도 <strong>막히지 않는다.</strong> 이 쪽의 판정은 ③ 기기 자기검증이다(§2-1). 대조했으면 결과를 노트에 적고, 다르면 조율자(이 저장소의 문서와 INVENTORY 의 행을 관리하는 사람) 항목으로 올린다</td></tr>
         </tbody>
       </table></div>
-      <p class="small">5번에 대해: 포트를 열었을 때 이미 스캔이 흐르고 있었다면 l-01 의 바이트 세기 실습에서 센 수가 이미 그 신호였다. 기술자 없이도 5바이트 검사만으로 경계를 찾을 수 있다. 드라이버가 실제로 무슨 명령을 보내는지 소스에서 확인하는 것은 l-06 에서 다룬다.</p>
+      <p class="small">4번에 대해: 포트를 열었을 때 이미 스캔이 흐르고 있었다면 l-01 의 바이트 세기 실습에서 센 수가 이미 그 신호였다. 기술자 없이도 5바이트 검사만으로 경계를 찾을 수 있다. 드라이버가 실제로 무슨 명령을 보내는지 소스에서 확인하는 것은 l-06 에서 다룬다.</p>
       <p>마지막으로 <strong>같은 값(거리의 단위와 기준점)을 네 갈래가 무엇이라 하는지</strong> 표로 정리해 둔다. §3-2-4 와 이해 확인 1번이 이 표를 다시 쓴다.</p>
       <div class="tbl"><table>
         <thead><tr><th>갈래</th><th>어디</th><th>무엇이라 하는가</th><th>내 값</th></tr></thead>
@@ -246,120 +256,293 @@ quality   =   b0 &gt;&gt; 2                            (위 6비트. 마스크�
       <p class="small">넷이 다르면 <strong>④ 가 내 기기의 사실</strong>이고 나머지는 "무엇을 가정했는가"를 보여 준다. 어느 것이 틀렸다고 쓰지 말고 <strong>조건이 무엇이었는지</strong>를 적는다. 특히 <strong>자를 어디서부터 쟀는가</strong>가 ② 와 ④ 의 차이를 대부분 설명한다.</p>
 
       <h4 id="s3-1-2">3-1-2. 골격</h4>
-      <p>파일은 <code>scripts/lidar_lab/point.py</code> 하나다. 공개 함수는 <code>parse_point(b5)</code> 와 <code>stream(ser)</code> 둘이다.
-      ⚠ <strong>둘의 성질이 다르다.</strong> <code>parse_point</code> 는 <strong>순수</strong>하다(포트도 시간도 건드리지 않는다). 그래서 라이다가 없어도 채우고 채점할 수 있다. <code>stream</code> 은 포트를 읽으므로 순수하지 않다.
-      이 경계를 흐리지 않는 것이 이 파일의 설계 전부다. 나중에 l-16 에서 같은 로직을 C++ 로 옮길 때 <strong>옮길 수 있는 것은 순수한 쪽뿐</strong>이다.</p>
-      <p>맨 위의 네 상수는 <strong>SDK 헤더의 매크로 이름을 그대로 달아 둔 것</strong>이다. 값을 외우지 말고 <strong>주석의 출처를 따라갈 수 있게</strong> 두는 것이 목적이다.</p>
-      <pre><code class="lang-python"># scripts/lidar_lab/point.py -- decode one 5-byte measurement node.
-# parse_point() is PURE: it opens no port and imports nothing. That is why the
-# self-test in tests/test_point.py runs with the lidar unplugged.
-#
-# Byte layout -- Slamtec SDK sl_lidar_cmd.h, struct _sl_lidar_response_measurement_node_t:
-#   u8  sync_quality       // syncbit:1; syncbit_inverse:1; quality:6;
-#   u16 angle_q6_checkbit  // check_bit:1; angle_q6:15;        (little endian)
-#   u16 distance_q2                                            (little endian)
+      <p>이 쪽이 <code>scripts/lidar_lab/</code> 에 더하는 파일과, 각 파일을 어디서 붙이는지는 아래와 같다.</p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w35"><col class="w40"><col class="w25"></colgroup>
+        <thead><tr><th>파일</th><th>어디서 붙이는가</th><th>채울 자리</th></tr></thead>
+        <tbody>
+          <tr><td><code>include/lidar_lab/point.hpp</code></td><td>§3-1-2</td><td>T1 <code>parse_point()</code> · T2 <code>NodeStream::feed()</code></td></tr>
+          <tr><td><code>include/lidar_lab/point_port.hpp</code></td><td>§3-1-2</td><td>없음(전량 — 채울 자리 없이 완성된 코드)</td></tr>
+          <tr><td><code>tests/test_point.cpp</code></td><td>§3-1-3</td><td>없음(T1 의 채점표)</td></tr>
+          <tr><td><code>tests/test_stream.cpp</code></td><td>§3-1-3</td><td>없음(T2 의 채점표)</td></tr>
+          <tr><td><code>include/lidar_lab/point_run.hpp</code></td><td>§3-1-4</td><td>T3 <code>start_scan()</code> · <code>first_points()</code>, T4 <code>resync_run()</code>(§3-3)</td></tr>
+          <tr><td><code>tests/test_point_run.cpp</code></td><td>§3-1-4</td><td>없음(T3 · T4 의 채점표)</td></tr>
+          <tr><td><code>src/point.cpp</code> → <code>build/lab_point</code></td><td>§3-1-4</td><td>없음(전량)</td></tr>
+          <tr><td><code>CMakeLists.txt</code></td><td>§3-1-3 에서 두 번, §3-1-4 에서 한 번 — 맨 아래에</td><td>—</td></tr>
+        </tbody>
+      </table></div>
+      <p>⚠ <strong>헤더 셋의 성질이 다르다.</strong> <code>point.hpp</code> 는 <strong>순수</strong>하다(포트도 시간도 건드리지 않는다). 그래서 라이다가 없어도 채우고 채점할 수 있다. <code>point_port.hpp</code> 와 §3-1-4 의 <code>point_run.hpp</code> 는 포트를 읽으므로 순수하지 않다.
+      이 경계를 <strong>파일로</strong> 가른다. <code>test_point</code> · <code>test_stream</code> 은 <code>point.hpp</code> 만 include 하므로 라이다 없이 빌드되고 실행된다. <code>test_point_run</code> 은 포트 쪽 헤더를 include 하므로 Pi 에서만 실행한다. 그래도 라이다 자리에 가짜 기기를 연결해 라이다 없이 실행된다(§3-1-4). 뒤 쪽이 점을 다시 쓸 때도 같은 경계를 지킨다 — l-04 의 바퀴 자르기와 l-06 의 입구가 <code>point.hpp</code> 를 include 한다.</p>
+      <p>맨 위의 네 상수는 <strong>SDK 헤더의 매크로 이름을 그대로 달아 둔 것</strong>이다. 값을 외우지 말고 <strong>주석의 출처를 따라갈 수 있게</strong> 두는 것이 목적이다.
+      그 아래 <code>kResyncStep</code> 은 검사에 실패한 자리에서 나아갈 칸 수의 기본값(1)이다. 실습 C(§3-3)는 이 줄을 고치지 않는다. 1 과 5 를 실행 인자 <code>--step</code> 으로 견준다.</p>
+      <p>이 쪽에서 처음 나오는 C++ 이름을 먼저 한 줄씩 정의한다.</p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w40"><col class="w60"></colgroup>
+        <thead><tr><th>이름</th><th>뜻 (이 쪽에서 쓰는 만큼)</th></tr></thead>
+        <tbody>
+          <tr><td><code>class NodeStream { public: … private: … };</code></td><td><code>struct</code> 처럼 칸과 함수를 묶은 타입이다. <code>private:</code> 아래 칸은 그 클래스의 함수만 읽고 쓴다 — 버퍼와 두 수를 밖에서 고치지 못하게 한다</td></tr>
+          <tr><td><code>explicit NodeStream(std::size_t resync_step = kResyncStep)</code></td><td>생성자(만들 때 한 번 부르는 함수). <code>= kResyncStep</code> 은 인자를 안 주면 쓰는 기본값이다. <code>explicit</code> 은 수 하나가 저절로 <code>NodeStream</code> 으로 바뀌는 것을 막는다</td></tr>
+          <tr><td><code>std::size_t accepted() const</code></td><td>멤버 함수. 뒤의 <code>const</code> 는 "이 함수는 상태를 바꾸지 않는다"는 약속이다</td></tr>
+          <tr><td><code>std::function&lt;void(const Node&amp;)&gt;</code></td><td>"<code>Node</code> 하나를 받고 아무것도 돌려주지 않는, 부를 수 있는 것"의 타입. 보통 함수도 람다도 여기에 들어간다</td></tr>
+          <tr><td><code>std::function&lt;bool(const Node&amp;)&gt;</code></td><td>같은 꼴에서 <code>bool</code> 을 돌려주는 것. <code>stream()</code> 의 <code>on_node</code> 가 이 타입이다 — <code>false</code> 를 돌려주면 <code>stream()</code> 이 멈춘다</td></tr>
+          <tr><td><code>[&amp;](const Node&amp; n) { … }</code></td><td>람다 — 이름 없는 함수를 그 자리에서 만든다. <code>[&amp;]</code> 는 바깥의 변수를 참조로 쓴다는 표시다</td></tr>
+          <tr><td><code>buf_.begin()</code> · <code>buf_.end()</code></td><td>반복자 — 벡터 안의 자리를 가리키는 값. <code>begin()</code> 은 첫 칸, <code>end()</code> 는 마지막 칸 바로 뒤다. <code>buf_.begin() + i</code> 는 첫 칸에서 <code>i</code> 칸 뒤의 자리다</td></tr>
+          <tr><td><code>buf_.insert(buf_.end(), p, p + n)</code> · <code>buf_.erase(처음, 끝)</code></td><td><code>std::vector</code> 끝에 <code>p</code> 부터 <code>n</code> 바이트를 이어 붙인다 · <code>[처음, 끝)</code> 의 원소를 지우고 뒤를 당긴다</td></tr>
+          <tr><td><code>buf_.data() + i</code></td><td>벡터 첫 칸의 주소에서 <code>i</code> 칸 뒤의 주소. <code>parse_point()</code> 의 <code>const u8* b</code> 로 넘긴다</td></tr>
+        </tbody>
+      </table></div>
+      <p>첫 파일은 순수한 헤더 <code>point.hpp</code> 다. 채울 곳은 <code>TODO(you)</code> 두 자리(T1 · T2)뿐이고, 함수 위 주석에 불변식이, 빈 자리 주석에 번호 걸음이 적혀 있다.</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/include/lidar_lab/point.hpp -- decode 5-byte measurement nodes.  (l-03)
+// PURE: no port, no time. tests/test_point.cpp includes only this file, so it runs with
+// the lidar unplugged (and on the Mac with clang++).
+//
+// Byte layout -- Slamtec SDK sl_lidar_cmd.h, struct _sl_lidar_response_measurement_node_t:
+//   u8  sync_quality       // syncbit:1; syncbit_inverse:1; quality:6;
+//   u16 angle_q6_checkbit  // check_bit:1; angle_q6:15;        (little endian)
+//   u16 distance_q2                                            (little endian)
+#pragma once
 
-SYNC_MASK     = 0x01   # b0 bit0 = S                  (SL_LIDAR_RESP_MEASUREMENT_SYNCBIT)
-QUALITY_SHIFT = 2      # b0 &gt;&gt; 2 = quality, 6 bits    (..._QUALITY_SHIFT)
-CHECK_MASK    = 0x01   # b1 bit0 = C, always 1        (..._CHECKBIT)
-ANGLE_SHIFT   = 1      # angle_q6 = u16(b1, b2) &gt;&gt; 1  (..._ANGLE_SHIFT)
+#include &lt;cstddef&gt;
+#include &lt;cstdint&gt;
+#include &lt;functional&gt;
+#include &lt;optional&gt;
+#include &lt;vector&gt;
 
+namespace lidar_lab {
 
-def parse_point(b5):
-    """One measurement node -&gt; (deg, mm, quality), or None if this is not a node boundary.
+using u8 = std::uint8_t;
 
-    Units and ranges:
-      deg      float, 0.0 .. 511.984375  (the field is 15 bits; a healthy sensor stays under 360)
-      mm       float, 0.0 .. 16383.75    (0.0 means COULD NOT MEASURE, not "nothing is there")
-      quality  int,   0 .. 63            (raw level; the datasheet does not define the unit)
-    Invariants -- this is the entire framing check, there is no start byte:
-      - S (b0 bit0) and ~S (b0 bit1) must differ
-      - C (b1 bit0) must be 1
-      - len(b5) must be 5. A short buffer is not an error, it means "not yet".
-    Pure: no serial I/O, no globals, no time. Called from stream() in this module.
-    Verify with: python3 tests/test_point.py
-    """
-    # TODO(you): 1) length, 2) the two framing bits, 3) undo the little-endian packing
-    #   and the fixed-point scaling. The derivation is in 2-2 -- do not copy a formula
-    #   you cannot re-derive from the struct comment above.
-    return None</code></pre>
-      <p><code>stream</code> 쪽은 이렇다. <code>chunk</code> 를 한꺼번에 읽어 버퍼에 이어 붙이는 것은 취향이 아니라 <strong>§2-4 의 (나) 방식이 성립하는 조건</strong>이다. 버퍼가 있어야 1칸씩 밀 수 있다.</p>
-      <pre><code class="lang-python">def stream(ser, chunk=2048):
-    """Yield (deg, mm, quality, start) for every node that passes the framing check.
+inline constexpr u8 SYNC_MASK = 0x01;    // b0 bit0 = S                  (SL_LIDAR_RESP_MEASUREMENT_SYNCBIT)
+inline constexpr int QUALITY_SHIFT = 2;  // b0 &gt;&gt; 2 = quality, 6 bits    (..._QUALITY_SHIFT)
+inline constexpr u8 CHECK_MASK = 0x01;   // b1 bit0 = C, always 1        (..._CHECKBIT)
+inline constexpr int ANGLE_SHIFT = 1;    // angle_q6 = u16(b1, b2) &gt;&gt; 1  (..._ANGLE_SHIFT)
+inline constexpr std::size_t kNodeLen = 5;
 
-    start is True on the first point of a new revolution. It is the SAME S bit that
-    parse_point() checks for framing, read a second time here for a different purpose --
-    l-04's split_turns() cuts revolutions on it.
-    Not pure: reads from ser. Runs until the caller stops iterating.
-    Resync policy is what 3-3 measures: when the check fails at position i, how far do
-    you advance? Write that step as a named constant so you can change it in one place.
-    """
-    buf = bytearray()
-    # TODO(you): loop forever:
-    #   buf += ser.read(chunk)
-    #   walk i from 0 while i + 5 &lt;= len(buf):
-    #     p = parse_point(buf[i:i+5])
-    #     on success -&gt; yield p + (start,) and advance i by 5
-    #     on failure -&gt; advance i by your resync step
-    #   then drop what you consumed: del buf[:i]
-    yield from ()   # empty for now, so "for p in stream(ser):" ends at once instead of hanging</code></pre>
+// Bytes to advance when the framing check fails (1 .. 5): NodeStream's default.
+// 3-3 compares 1 and 5 with lab_point --resync --step &lt;n&gt;, without editing this line.
+inline constexpr std::size_t kResyncStep = 1;
+
+// One decoded node, as parse_point() returns it.
+//   deg      0.0 .. 511.984375  (the field is 15 bits; a healthy sensor stays under 360)
+//   mm       0.0 .. 16383.75    (0.0 means COULD NOT MEASURE, not "nothing is there")
+//   quality  0 .. 63            (raw level; the datasheet does not define the unit)
+struct Sample {
+  double deg;
+  double mm;
+  int quality;
+};
+
+// n bytes at b -&gt; Sample, or nullopt if this is not a node boundary.
+// Invariants -- this is the entire framing check, there is no start byte:
+//   - n must be 5. A short buffer is not an error, it means "not yet". Check n FIRST:
+//     reading b[4] of a 4-byte buffer is a read past the end.
+//   - S (b0 bit0) and ~S (b0 bit1) must differ
+//   - C (b1 bit0) must be 1
+inline std::optional&lt;Sample&gt; parse_point(const u8* b, std::size_t n) {
+  // TODO(you) [T1]: the length, the two framing checks, then the three numbers - hint card T1
+  //   1) n != kNodeLen -&gt; nullopt. Do this BEFORE reading any b[i].
+  //   2) S (b[0] bit0) equal to ~S (b[0] bit1) -&gt; nullopt
+  //   3) C (b[1] bit0) is 0 -&gt; nullopt
+  //   4) quality = b[0] &gt;&gt; QUALITY_SHIFT
+  //   5) angle_q6 = (the u16 of b[1], b[2]) &gt;&gt; ANGLE_SHIFT, dist_q2 = the u16 of b[3], b[4].
+  //      Little endian: the first byte is the LOW one. Build each u16 with shifts.
+  //   6) Sample{angle_q6 / 64.0, dist_q2 / 4.0, quality}
+  //   The derivation is in 2-2 -- do not copy a formula you cannot re-derive from the struct.
+  //   Delete the placeholder lines below when you start.
+  (void)b;
+  (void)n;
+  return std::nullopt;
+}
+
+// A node that passed the framing check. start is the SAME S bit parse_point() checks
+// for framing, read a second time for a different purpose: true on the first point of
+// a new revolution (l-04 cuts revolutions on it).
+struct Node {
+  double deg;
+  double mm;
+  int quality;
+  bool start;
+};
+
+// Bytes in, nodes out. Keeps the bytes that do not yet make a whole node for the next
+// feed(), so the result does not depend on how the bytes were chunked.
+class NodeStream {
+ public:
+  // resync_step: bytes to advance when the check fails at a position. Clamped to 1..5.
+  explicit NodeStream(std::size_t resync_step = kResyncStep)
+      : step_(resync_step &lt; 1 ? 1 : (resync_step &gt; kNodeLen ? kNodeLen : resync_step)) {}
+
+  // Append n bytes, then call out() once for every node that passes the framing check,
+  // in stream order. Counts: accepted() = nodes handed out, rejected() = positions where
+  // the check failed.
+  void feed(const u8* p, std::size_t n, const std::function&lt;void(const Node&amp;)&gt;&amp; out) {
+    // TODO(you) [T2]: append, walk the buffer, hand nodes out, keep the tail - hint card T2
+    //   1) append the n bytes at p to buf_
+    //   2) i = 0; while a whole node fits (i + kNodeLen &lt;= buf_.size()):
+    //        parse_point(buf_.data() + i, kNodeLen)
+    //        a Sample -&gt; out(Node{deg, mm, quality, start}); start = the S bit of buf_[i]
+    //                    (SYNC_MASK). ++accepted_, i += kNodeLen
+    //        nullopt  -&gt; ++rejected_, i += step_ (step_, not a number: 3-3 changes it)
+    //   3) erase the first i bytes of buf_. What is left is a node that is not complete yet.
+    //   Delete the placeholder lines below when you start.
+    (void)p;
+    (void)n;
+    (void)out;
+  }
+
+  std::size_t accepted() const { return accepted_; }
+  std::size_t rejected() const { return rejected_; }
+  std::size_t resync_step() const { return step_; }  // after clamping; also keeps the
+                                                     // skeleton free of an unused field
+
+ private:
+  std::size_t step_;
+  std::vector&lt;u8&gt; buf_;
+  std::size_t accepted_ = 0;
+  std::size_t rejected_ = 0;
+};
+
+}  // namespace lidar_lab</code></pre>
+      <p>빈 본문은 기본값(<code>return std::nullopt;</code>)을 돌려주고 인자는 <code>(void)</code> 로 표시했으므로 <strong>골격 그대로도 경고 없이 빌드된다</strong>. 다만 자기시험은 통과하지 못하고 <code>6 of 10 cases failed</code> 로 끝난다.<sup class="fn"><a href="#fn-12">12</a></sup> 남은 4건이 통과하는 이유는 §3-1-3 의 표에 있다. 골격 <code>feed()</code>(T2)는 받은 바이트를 버리고 점을 하나도 내지 않는다. 그래서 T2 를 비워 두면 §3-1-4 의 <code>lab_point</code> 는 <code>point</code> 줄 없이 <code>accepted 0 nodes, rejected 0 boundaries</code> 로 끝난다. §3-1-3 의 시험 <code>test_stream</code> 은 골격 <code>feed()</code> 에서 <code>8 of 8 cases failed</code> 다.</p>
+      <p>골격의 <code>resync_step()</code> 은 상태 칸 <code>step_</code> 을 읽는 접근자다. 골격 <code>feed()</code> 가 <code>step_</code> 을 쓰지 않아도 clang 이 "쓰이지 않는 private 칸" 경고(<code>-Wunused-private-field</code>)를 내지 않게 한다. 실습 C 의 출력이 이 값을 찍는 데도 쓴다.<sup class="fn"><a href="#fn-12">12</a></sup></p>
+      <p>둘째 파일 <code>point_port.hpp</code> 는 전량이다. 포트를 <code>read_some()</code>(l-01)으로 읽어 덩이마다 <code>feed()</code> 에 넣고, 나온 점마다 <code>on_node</code> 를 부른다. 덩이를 한꺼번에 읽어 버퍼에 이어 붙이는 것은 취향이 아니라 <strong>§2-4 의 (나) 방식이 성립하는 조건</strong>이다. 버퍼가 있어야 1칸씩 밀 수 있다.</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/include/lidar_lab/point_port.hpp -- read the port into a NodeStream.
+// (l-03, given in full)
+// NOT pure: reads the tty. The pure half is point.hpp.
+#pragma once
+
+#include &lt;chrono&gt;
+#include &lt;cstddef&gt;
+#include &lt;functional&gt;
+
+#include "lidar_lab/point.hpp"
+#include "lidar_lab/serial.hpp"
+
+namespace lidar_lab {
+
+inline constexpr std::size_t kChunk = 2048;  // bytes per read
+
+// Read for `seconds`, feeding every chunk to ns and every node to on_node.
+// Stops when the time is up, on a stop signal, or when on_node returns false.
+// After false, the REST OF THAT CHUNK still goes through ns (accepted() counts it) but
+// is not handed to on_node -- ns is left at a chunk boundary, not at a node boundary.
+// ns comes from the caller, so ns.accepted() / ns.rejected() are readable afterwards.
+inline void stream(int fd, double seconds, NodeStream&amp; ns,
+                   const std::function&lt;bool(const Node&amp;)&gt;&amp; on_node) {
+  using clock = std::chrono::steady_clock;
+  if (!(seconds &gt; 0.0)) return;
+  const auto deadline =
+      clock::now() + std::chrono::duration_cast&lt;clock::duration&gt;(std::chrono::duration&lt;double&gt;(seconds));
+  u8 buf[kChunk];
+  bool go = true;
+  while (go &amp;&amp; !stop_requested()) {
+    auto left = std::chrono::duration_cast&lt;std::chrono::milliseconds&gt;(deadline - clock::now());
+    if (left.count() &lt;= 0) break;
+    const int wait = left.count() &lt; kReadTimeoutMs ? static_cast&lt;int&gt;(left.count()) : kReadTimeoutMs;
+    const std::size_t n = read_some(fd, buf, sizeof buf, wait);
+    if (n == 0) continue;
+    ns.feed(buf, n, [&amp;](const Node&amp; node) {
+      if (go &amp;&amp; !on_node(node)) go = false;
+    });
+  }
+}
+
+}  // namespace lidar_lab</code></pre>
+      <p><code>stream()</code> 은 세 경우에 돌아온다. <code>seconds</code> 가 지났을 때 · 정지 신호(Ctrl-C)를 받았을 때 · <code>on_node</code> 가 <code>false</code> 를 돌려줬을 때다.
+      <code>false</code> 를 받은 뒤에도 <strong>그 덩이의 남은 바이트는 <code>feed()</code> 를 지나</strong> <code>accepted()</code> 에 세어진다. <code>on_node</code> 에는 넘기지 않는다. 그래서 §3-1-4 의 <code>accepted</code> 는 찍힌 점의 수보다 클 수 있다.
+      <code>NodeStream</code> 은 부르는 쪽이 만들어 넘기므로, <code>stream()</code> 이 돌아온 뒤 <code>ns.accepted()</code> · <code>ns.rejected()</code> 를 읽을 수 있다.</p>
+      <p class="small">남은 자리를 센다: <code>pi$ grep -c 'TODO(you)' scripts/lidar_lab/include/lidar_lab/point*.hpp</code>. <code>point.hpp</code> 에 둘, <code>point_port.hpp</code> 에 0 이다. §3-1-4 의 <code>point_run.hpp</code> 에 둘(T3 · T4)이 더 있다. 그 파일을 놓은 뒤 같은 명령을 치면 세 파일에서 <strong>넷</strong>이 된다.</p>
 
       <h4 id="s3-1-3">3-1-3. 직접 채우기</h4>
-      <p>순서는 이렇다. <strong>2번까지 하고 3번에서 한 번 채점받은 뒤</strong> 4번으로 간다. 흐름을 붙이기 전에 점 하나가 옳아야 한다.</p>
+      <p>순서는 이렇다. <strong><code>parse_point()</code> 를 채워 한 번 채점받은 뒤</strong> <code>feed()</code> 로 간다. 흐름을 붙이기 전에 점 하나가 옳아야 한다.</p>
       <ol class="steps">
         <li><strong>손으로 먼저 푼다.</strong> 코드를 열기 전에 <code>BD 01 2D A0 0F</code> 를 §2-2 의 세 걸음으로 종이에 푼다. 각도와 거리와 품질 세 값을 적는다. <strong>여기서 막히면 코드에서도 막힌다</strong>. §2-2 로 돌아간다.</li>
-        <li><strong><code>parse_point</code> 를 채운다.</strong> 길이 → 프레이밍 두 비트 → 산술 순서로. 힌트: 리틀엔디안 16비트를 만드는 방법은 <code>b1 | (b2 &lt;&lt; 8)</code> 이고, 파이썬에는 <code>int.from_bytes(b5[1:3], "little")</code> 도 있다. <strong>어느 쪽을 쓰든 좋지만 왜 두 방법이 같은 값을 내는지 설명할 수 있어야 한다.</strong></li>
-        <li><strong>채점받는다.</strong> 아래 시험 파일을 <code>scripts/lidar_lab/tests/test_point.py</code> 로 그대로 두고 실행한다. 열 개가 다 통과할 때까지 <code>stream</code> 으로 넘어가지 않는다.</li>
-        <li><strong><code>stream</code> 을 채운다.</strong> 재동기 한 걸음을 <strong>이름 있는 상수</strong>로 뽑아 둔다(예: <code>RESYNC_STEP</code>). 실습 C 는 그 상수 하나만 바꿔서 실행할 수 있어야 한다. <strong>몇으로 둘지는 지금 정하지 않아도 된다</strong>. 그 값은 실습 C 에서 잰다.</li>
+        <li><p><strong>시험 파일과 CMake 줄을 놓고, 골격 그대로 빌드해 실행한다.</strong> 아래 시험 블록은 첫 줄의 경로(<code>tests/test_point.cpp</code>)에 그대로 저장한다. CMake 블록(<code># ---- l-03 ----</code>)은 <code>CMakeLists.txt</code> 맨 아래에 붙인다.</p>
+          <p>경고 없이 빌드되고, <code>test_point</code> 는 FAIL 줄 여섯 개와 마지막 줄 <code>6 of 10 cases failed</code> 를 찍고 끝난다(종료 코드 1). 진단 빌드 <code>test_point_ub</code> 도 같은 줄만 찍어야 한다.</p></li>
+        <li><p><strong><code>parse_point()</code> 를 채운다</strong>(T1). 길이 → 프레이밍 두 비트 → 산술 순서로. 리틀엔디안 16비트는 바이트 둘을 시프트로 조립한다 — <code>static_cast&lt;unsigned&gt;(b[2]) &lt;&lt; 8 | b[1]</code>. <code>b[1]</code> 이 낮은 자리다.</p>
+          <p>받은 바이트 위에 <code>std::uint16_t</code> 를 포개 읽지 않는다. 그 방법은 기계의 바이트 순서와 주소 정렬을 함께 가정한다(T1 의 흔한 실수). <strong>왜 시프트 조립이 §2-2 의 식과 같은 값을 내는지 설명할 수 있어야 한다.</strong></p></li>
+        <li><strong>채점받는다.</strong> 열 개가 다 통과할 때까지 <code>feed()</code> 로 넘어가지 않는다. 진단 빌드도 같은 한 줄(<code>PASS point 10 cases</code>)만 찍어야 한다.</li>
+        <li><strong><code>NodeStream::feed()</code> 를 채운다</strong>(T2). 실패했을 때의 걸음은 숫자로 박지 말고 상태 칸 <code>step_</code> 을 쓴다. 실습 C 는 <code>lab_point --resync --step &lt;n&gt;</code> 으로 이 값을 바꿔 실행한다. 숫자로 박으면 인자를 바꿔도 결과가 같다. <strong>몇이 좋은지는 지금 정하지 않아도 된다</strong>. 그 값은 실습 C 에서 잰다.</li>
+        <li><strong><code>test_stream</code> 으로 채점받는다.</strong> T2 카드 앞의 시험 블록을 <code>tests/test_stream.cpp</code> 에 저장하고, CMake 줄(<code>lab_test(stream)</code>)을 맨 아래에 붙인다. 여덟 개가 다 통과하고 진단 빌드도 <code>PASS stream 8 cases</code> 한 줄이면 §3-1-4 로 간다.</li>
       </ol>
-      <p class="small">이 블록은 전량 제공이다. 이유는 둘이다. <strong>시험 벡터가 곧 채점표</strong>이고(내 답을 내가 채점할 수 없다), 벡터가 조금이라도 다르면 무엇이 통과했는지가 달라져 §2-5 의 논지가 성립하지 않는다. 벡터의 바이트는 집필자가 <strong>손이 아니라 한 줄짜리 인코더로 계산</strong>했고 그 줄을 파일 머리에 남겼다.</p>
-      <pre><code class="lang-python"># scripts/lidar_lab/tests/test_point.py -- grading vectors for parse_point().
-# Standard library only. Runs with the lidar unplugged: parse_point() is pure.
-#   pi$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_point.py
-#
-# Vector provenance. The BYTE LAYOUT is from Slamtec SDK sl_lidar_cmd.h
-# (struct _sl_lidar_response_measurement_node_t, opened 2026-09-23). The BYTES
-# themselves were generated by the guide author with this encoder, not by hand:
-#   b0 = (q &lt;&lt; 2) | (1 if S else 2)
-#   u  = (round(deg * 64) &lt;&lt; 1) | 1 ; b1, b2 = u &amp; 0xFF, (u &gt;&gt; 8) &amp; 0xFF
-#   d  =  round(mm * 4)             ; b3, b4 = d &amp; 0xFF, (d &gt;&gt; 8) &amp; 0xFF
-import os
-import sys
+      <p class="small">이 블록은 전량 제공이다. 이유는 둘이다. <strong>시험 벡터가 곧 채점표</strong>이고(내 답을 내가 채점할 수 없다), 벡터가 조금이라도 다르면 무엇이 통과했는지가 달라져 §2-5 의 논지가 성립하지 않는다. 벡터의 바이트는 집필자가 <strong>손이 아니라 한 줄짜리 인코더로 계산</strong>했고 그 줄을 파일 머리에 남겼다. 기대값은 모두 2진 분수(÷64 · ÷4)라 <code>double</code> 에 정확히 들어간다. 그래서 시험은 허용 오차 없이 <code>==</code> 로 비교한다.</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/tests/test_point.cpp -- grading vectors for parse_point().
+// Includes only point.hpp (pure) and check.hpp: runs with the lidar unplugged.
+//   pi$ scripts/lidar_lab/build/test_point &amp;&amp; scripts/lidar_lab/build/test_point_ub
+//
+// Vector provenance. The BYTE LAYOUT is from Slamtec SDK sl_lidar_cmd.h
+// (struct _sl_lidar_response_measurement_node_t, opened 2026-09-23). The BYTES
+// themselves were generated by the guide author with this encoder, not by hand:
+//   b0 = (q &lt;&lt; 2) | (1 if S else 2)
+//   u  = (round(deg * 64) &lt;&lt; 1) | 1 ; b1, b2 = u &amp; 0xFF, (u &gt;&gt; 8) &amp; 0xFF
+//   d  =  round(mm * 4)             ; b3, b4 = d &amp; 0xFF, (d &gt;&gt; 8) &amp; 0xFF
+// Every expected value is a binary fraction (/64, /4), so == is exact here.
+#include &lt;optional&gt;
+#include &lt;string&gt;
+#include &lt;vector&gt;
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from point import parse_point            # noqa: E402  (path must be set first)
+#include "lidar_lab/point.hpp"
+#include "check.hpp"
 
-CASES = [
-    # bytes (hex)          expected                        what this vector grades
-    ("BD 01 2D A0 0F", (90.0, 1000.0, 47)),       # 1 normal point, S = 1 (start of a revolution)
-    ("3E FF B3 D0 07", (359.984375, 500.0, 15)),  # 2 just below the 360 deg wrap-around
-    ("02 01 00 58 02", (0.0, 150.0, 0)),          # 3 angle 0.0, quality 0, near the spec minimum
-    ("02 41 5A 00 00", (180.5, 0.0, 0)),          # 4 distance 0 -&gt; a VALID point meaning "could not measure"
-    ("FE FF FF FF FF", (511.984375, 16383.75, 63)),  # 5 every field at its maximum (15 / 16 / 6 bits)
-    ("BD 2D 01 0F A0", (2.34375, 10243.75, 47)),  # 6 vector 1 with b1&lt;-&gt;b2 and b3&lt;-&gt;b4 swapped:
-                                                  #   the framing bits still pass, the numbers do not
-    ("03 01 2D A0 0F", None),                     # 7 S == ~S == 1  -&gt; not a node boundary
-    ("00 01 2D A0 0F", None),                     # 8 S == ~S == 0  -&gt; not a node boundary
-    ("BD 00 2D A0 0F", None),                     # 9 C == 0        -&gt; not a node boundary
-    ("BD 01 2D A0", None),                        # 10 only 4 bytes -&gt; None, NOT an IndexError
-]
+using namespace lidar_lab;
 
+namespace {
 
-def run():
-    bad = 0
-    for hexs, want in CASES:
-        got = parse_point(bytes.fromhex(hexs))
-        if got != want:
-            print("FAIL  %-14s -&gt; %r   (expected %r)" % (hexs, got, want))
-            bad += 1
-    if bad:
-        print("FAIL point %d of %d cases" % (bad, len(CASES)))
-        sys.exit(1)
-    print("PASS point %d cases" % len(CASES))
+struct Case {
+  const char* name;
+  const char* hex;               // bytes as hex
+  std::optional&lt;Sample&gt; want;    // nullopt = not a node boundary
+};
 
+std::string show(const std::optional&lt;Sample&gt;&amp; s) {
+  if (!s) return "none";
+  return "(" + str(s-&gt;deg) + ", " + str(s-&gt;mm) + ", " + str(s-&gt;quality) + ")";
+}
 
-run()</code></pre>
-      <p><strong>어느 벡터가 어느 잘못을 검출하는가.</strong> 아래 표는 짐작이 아니다. 집필자가 <strong>그 잘못을 저지른 구현을 실제로 만들어 같은 열 개 벡터로 실행해 보고</strong> 실패한 번호를 적은 것이다.</p>
+bool same(const std::optional&lt;Sample&gt;&amp; a, const std::optional&lt;Sample&gt;&amp; b) {
+  if (a.has_value() != b.has_value()) return false;
+  if (!a) return true;
+  return a-&gt;deg == b-&gt;deg &amp;&amp; a-&gt;mm == b-&gt;mm &amp;&amp; a-&gt;quality == b-&gt;quality;
+}
+
+}  // namespace
+
+int main() {
+  const std::vector&lt;Case&gt; cases = {
+      {"1 normal point, S = 1 (start of a revolution)", "BD 01 2D A0 0F", Sample{90.0, 1000.0, 47}},
+      {"2 just below the 360 deg wrap-around", "3E FF B3 D0 07", Sample{359.984375, 500.0, 15}},
+      {"3 angle 0.0, quality 0, near the spec minimum", "02 01 00 58 02", Sample{0.0, 150.0, 0}},
+      {"4 distance 0 -&gt; a VALID point meaning \"could not measure\"", "02 41 5A 00 00", Sample{180.5, 0.0, 0}},
+      {"5 every field at its maximum (15 / 16 / 6 bits)", "FE FF FF FF FF", Sample{511.984375, 16383.75, 63}},
+      {"6 vector 1 with b1&lt;-&gt;b2 and b3&lt;-&gt;b4 swapped", "BD 2D 01 0F A0", Sample{2.34375, 10243.75, 47}},
+      {"7 S == ~S == 1 -&gt; not a node boundary", "03 01 2D A0 0F", std::nullopt},
+      {"8 S == ~S == 0 -&gt; not a node boundary", "00 01 2D A0 0F", std::nullopt},
+      {"9 C == 0 -&gt; not a node boundary", "BD 00 2D A0 0F", std::nullopt},
+      // 10: a 4-byte std::vector, so its data() ends after 4 bytes. A parse_point() that
+      // reads b[4] without checking n goes past the end: test_point_ub stops there.
+      {"10 only 4 bytes -&gt; none, not a read past the end", "BD 01 2D A0", std::nullopt},
+  };
+  for (const Case&amp; c : cases) {
+    const std::vector&lt;u8&gt; bytes = from_hex(c.hex);
+    const auto got = parse_point(bytes.data(), bytes.size());
+    check(c.name, same(got, c.want), show(got), show(c.want));
+  }
+  return finish("point");
+}</code></pre>
+      <pre><code class="lang-cmake"># ---- l-03 ----
+lab_test(point)                                    # 3-1-3: tests/test_point.cpp</code></pre>
+      <p class="small">CMake 블록은 이 쪽에서 셋으로 나뉜다. 이 줄(<code>lab_test(point)</code>)은 시험 파일이 생긴 지금 붙인다. <code>lab_test(stream)</code> 은 걸음 6 에서 붙인다. <code>lab_test(point_run)</code> · <code>lab_tool(point)</code> 는 그 소스가 생기는 §3-1-4 에서 붙인다. 소스가 없는 대상을 먼저 적으면 CMake 가 구성 단계에서 멈춘다(증상표).</p>
+      <pre><code class="lang-bash">pi$ cmake --build scripts/lidar_lab/build -j2 --target test_point test_point_ub
+pi$ scripts/lidar_lab/build/test_point
+FAIL 1 1 normal point, S = 1 (start of a revolution): got none, want (90.0, 1000.0, 47)
+FAIL 2 2 just below the 360 deg wrap-around: got none, want (359.984375, 500.0, 15)
+...
+FAIL 6 6 vector 1 with b1&lt;-&gt;b2 and b3&lt;-&gt;b4 swapped: got none, want (2.34375, 10243.75, 47)
+6 of 10 cases failed
+pi$ scripts/lidar_lab/build/test_point_ub        # 진단 빌드(ASan · UBSan) — 같은 줄만 나와야 한다</code></pre>
+      <p class="small">위 출력은 골격 그대로의 결과다.<sup class="fn"><a href="#fn-12">12</a></sup> Pi 의 g++ 결과는 내가 확인한다. 실패 줄의 꼴은 <code>FAIL &lt;몇 번째 시험&gt; &lt;이름&gt;: got &lt;…&gt;, want &lt;…&gt;</code> 다. 이름이 벡터 번호로 시작하므로 번호가 두 번 찍힌다. 다 채운 뒤에는 이렇게 끝난다.</p>
+      <pre><code class="lang-bash">pi$ scripts/lidar_lab/build/test_point &amp;&amp; scripts/lidar_lab/build/test_point_ub
+PASS point 10 cases
+PASS point 10 cases</code></pre>
+      <p><strong>어느 벡터가 어느 잘못을 검출하는가.</strong> 아래 표는 짐작이 아니다. 집필자가 <strong>그 잘못을 저지른 구현을 실제로 만들어 같은 열 개 벡터로 실행해 보고</strong> 실패한 번호를 적은 것이다.<sup class="fn"><a href="#fn-13" id="fnref-13">13</a></sup></p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>흔한 잘못</th><th>실패하는 벡터</th><th>읽는 법</th></tr></thead>
         <tbody>
@@ -367,53 +550,944 @@ run()</code></pre>
           <tr><td>거리를 빅엔디안으로 읽는다 <code>(b3 &lt;&lt; 8 | b4)</code></td><td>1 · 2 · 3 · 6</td><td>벡터 4·5 는 <strong>두 바이트가 같거나 대칭</strong>이라 검출하지 못한다. 그래서 벡터 1 이 반드시 있어야 한다</td></tr>
           <tr><td><code>q2</code>(÷4)를 잊는다 — 거리를 정수 그대로 쓴다</td><td>1 · 2 · 3 · 5 · 6</td><td>거리가 정확히 4배가 된다. 벡터 4(거리 0)는 <strong>0 의 4배도 0 이라 검출하지 못한다</strong></td></tr>
           <tr><td>각도를 14비트로 마스크한다 <code>&amp; 0x3FFF</code></td><td><strong>2 · 5 뿐</strong></td><td>⚠ <strong>정상 점만으로는 절대 검출되지 않는다.</strong> 360° 근처와 최대값 벡터는 이 잘못 하나 때문에 있다. 실물에서는 <strong>한 바퀴에 한 번</strong> 각도가 접혀 l-04 의 회전 자르기가 오류 표시 없이 어긋난다</td></tr>
+          <tr><td>정수로 나눈다 — <code>angle_q6 / 64</code> 를 <code>double</code> 변수에 담는다</td><td>2 · 4 · 5 · 6</td><td>소수부가 잘린다(359.984375 → 359.0). 벡터 1 · 3 은 나누어떨어져 검출하지 못한다. 같은 나눗셈을 <code>Sample{…}</code> 안에 바로 쓰면 clang 은 빌드 오류, g++ 는 경고(<code>-Wnarrowing</code>)를 낸다</td></tr>
           <tr><td>프레이밍 검사를 아예 안 한다</td><td>7 · 8 · 9</td><td>깨진 자리에서 그럴듯한 점이 나온다</td></tr>
           <tr><td>S ≠ ~S 만 보고 C 를 안 본다</td><td>9 뿐</td><td>절반만 검사하는 잘못은 절반의 벡터에서만 드러난다</td></tr>
           <tr><td>C 만 보고 S ≠ ~S 를 안 본다</td><td>7 · 8</td><td>위와 짝</td></tr>
           <tr><td>품질을 <code>b0 &amp; 0x3F</code> 로 읽는다(시프트 대신 마스크)</td><td>1 · 2 · 3 · 4 · 5 · 6</td><td>프레이밍 비트가 품질 값에 섞여 들어간다</td></tr>
-          <tr><td>길이를 확인하지 않는다</td><td>10 뿐</td><td>벡터 10 이 없으면 짧은 버퍼에서 <code>IndexError</code> 로 종료된다 — <strong>버퍼 끝에서 매번 일어나는 일</strong>이다</td></tr>
+          <tr><td>길이를 확인하지 않는다</td><td>10 — 진단 빌드가 판정한다</td><td>4바이트 버퍼의 끝 너머를 읽는다 — <strong>버퍼 끝에서 매번 일어나는 일</strong>이다. 값 빌드의 결과는 끝 너머의 바이트에 달려 있다. 진단 빌드 <code>test_point_ub</code> 는 그 자리에서 <code>heap-buffer-overflow</code> 로 멈춘다(T1 카드)</td></tr>
+          <tr><td>골격 그대로(아무것도 안 채움)</td><td>1 ~ 6</td><td>나머지 4건(7 ~ 10)은 "<code>nullopt</code> 가 정답"인 벡터라 골격에서도 통과한다. <strong>통과한 건수가 "맞다"는 뜻이 아니다</strong></td></tr>
         </tbody>
       </table></div>
-      <pre><code class="lang-bash">pi$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_point.py
-PASS point 10 cases</code></pre>
       <p>실패하면 <code>FAIL</code> 줄이 <strong>어느 벡터가 무엇을 냈는지</strong>까지 찍는다. 그 벡터를 위 표에서 찾으면 어느 줄을 고칠지가 좁혀진다.</p>
+      <p class="small">걸음과 카드의 짝: 걸음 3 = T1, 걸음 5 = T2. 걸음 1 · 2 · 4 · 6 은 카드가 없다(손 계산 · 블록을 놓는 일 · 채점 둘). T3 는 §3-1-4, T4 는 §3-3-3 에 있다.</p>
+      <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>parse_point()</code> · 길이 먼저, 검사 비트 둘, 시프트로 조립, 나눌 때는 <code>.0</code></summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 바이트 <code>n</code> 개(주소 <code>b</code>)를 받아, 점의 경계이면 각도 · 거리 · 품질을 담은 <code>Sample</code> 을, 아니면 <code>std::nullopt</code> 를 돌려준다. 거리 0 도 정상인 점으로 돌려준다(§2-3).</p>
+        <p>채점은 <code>test_point.cpp</code> 의 벡터 열 개가 한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T1 - scripts/lidar_lab/include/lidar_lab/point.hpp (parse_point) */
+inline std::optional&lt;Sample&gt; parse_point(const u8* b, std::size_t n) {
+  if (n != kNodeLen) return std::nullopt;           // short buffer: "not yet", not an error
+  if ((b[0] &amp; SYNC_MASK) == ((b[0] &gt;&gt; 1) &amp; SYNC_MASK)) return std::nullopt;  // S == ~S
+  if (!(b[1] &amp; CHECK_MASK)) return std::nullopt;    // C must be 1
+  const int quality = b[0] &gt;&gt; QUALITY_SHIFT;        // top 6 bits
+  const unsigned angle_q6 = ((static_cast&lt;unsigned&gt;(b[2]) &lt;&lt; 8) | b[1]) &gt;&gt; ANGLE_SHIFT;
+  const unsigned dist_q2 = (static_cast&lt;unsigned&gt;(b[4]) &lt;&lt; 8) | b[3];
+  return Sample{angle_q6 / 64.0, dist_q2 / 4.0, quality};
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>if (n != kNodeLen) return std::nullopt;</code> — 길이를 <strong>가장 먼저</strong> 본다. 짧은 버퍼는 오류가 아니라 "아직"이다. 이 검사보다 앞에서 <code>b[4]</code> 를 읽으면 4바이트 버퍼의 끝 너머를 읽는다(흔한 실수 첫 행).</li>
+          <li><code>if ((b[0] &amp; SYNC_MASK) == ((b[0] &gt;&gt; 1) &amp; SYNC_MASK)) return std::nullopt;</code> — S(비트0)와 ~S(비트1)가 같으면 경계가 아니다. <code>b[0] &gt;&gt; 1</code> 이 비트1 을 비트0 자리로 내리므로 같은 마스크로 견줄 수 있다.</li>
+          <li><code>if (!(b[1] &amp; CHECK_MASK)) return std::nullopt;</code> — C 가 0 이면 경계가 아니다.</li>
+          <li><code>const int quality = b[0] &gt;&gt; QUALITY_SHIFT;</code> — 위 6비트다. 마스크가 아니라 시프트로, 아래 두 비트(S · ~S)를 밀어낸다.</li>
+          <li><p><code>const unsigned angle_q6 = … &gt;&gt; ANGLE_SHIFT;</code> — 리틀엔디안이다. <code>b[1]</code> 이 낮은 8비트, <code>b[2]</code> 가 높은 8비트다. 16비트를 만든 뒤 검사 비트 한 칸을 버린다(§2-2 둘째 걸음).</p><p><code>static_cast&lt;unsigned&gt;</code> 는 계산하는 타입을 밝힌다.</p></li>
+          <li><code>const unsigned dist_q2 = (static_cast&lt;unsigned&gt;(b[4]) &lt;&lt; 8) | b[3];</code> — 거리 칸에는 검사 비트가 없다.</li>
+          <li><code>return Sample{angle_q6 / 64.0, dist_q2 / 4.0, quality};</code> — <code>64.0</code> 의 <code>.0</code> 때문에 나눗셈이 <code>double</code> 로 된다. <code>/ 64</code> 로 쓰면 정수 나눗셈이라 소수부가 잘린다(흔한 실수). 반환형이 <code>std::optional&lt;Sample&gt;</code> 이므로 값이 든 <code>optional</code> 이 된다.</li>
+          <li>골격의 자리표시 세 줄(<code>(void)b;</code> · <code>(void)n;</code> · <code>return std::nullopt;</code>)은 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 넷이다.<sup class="fn"><a href="#fn-13">13</a></sup></p><p>① 캐스트를 빼고 <code>(b[2] &lt;&lt; 8) | b[1]</code> 로 써도 시험을 통과한다. 이때 계산은 <code>int</code> 로 된다. 이 가이드는 계산하는 타입을 밝혀 쓴다.</p><p>② <code>std::memcpy(&amp;a16, b + 1, 2);</code> 로 두 바이트를 복사해도 통과한다. 다만 기계가 리틀엔디안일 때만 같은 값을 낸다(Pi 와 Mac 은 둘 다 리틀엔디안이다). 시프트 조립은 기계의 바이트 순서와 상관없다.</p><p>③ 길이 검사를 <code>if (n &lt; kNodeLen)</code> 로 써도 통과한다. <code>feed()</code> 는 늘 5를 넘긴다. 이 가이드는 "정확히 5"로 쓴다.</p><p>④ 반환의 꼴. 여기는 <code>std::nullopt</code> 하나로 "경계가 아니다"를 나타낸다. 예외를 던지거나 <code>bool</code> 과 출력 인자로 돌려주는 설계도 있다. <code>std::optional</code> 은 예외가 아니라 값이라, <code>feed()</code> 가 초당 수천 번 불러도 비용이 작다.</p></li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>std::optional&lt;T&gt;</code> · <code>std::nullopt</code>(<a href="l-02-device-id.html#s3-1-2">l-02 §3-1-2</a> 의 이름 표). 비트 연산 <code>&amp;</code> · <code>&gt;&gt;</code> · <code>&lt;&lt;</code> · <code>|</code>.</p>
+        <p><strong>흔한 실수</strong> — 값의 잘못(엔디안 · ÷4 · 마스크)은 위 표에 있다. 아래는 C++ 에서 새로 생기는 넷이다.<sup class="fn"><a href="#fn-13">13</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w25"><col class="w55"><col class="w20"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_point</code> · <code>test_point_ub</code> 가 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>길이 검사를 뺐다</td><td>빌드 경고 <code>unused parameter 'n'</code> 이 첫 단서다. <code>test_point</code> 는 이번 실행에서 <code>1 of 10</code> 이었다. FAIL 줄은 <code>FAIL 10 10 only 4 bytes …: got (90.0, 40.0, 47), want none</code> 이다. <code>test_point_ub</code>: <code>heap-buffer-overflow</code> 로 멈춘다</td><td>길이 검사를 맨 앞에</td></tr>
+            <tr><td>각도에서 <code>&gt;&gt; ANGLE_SHIFT</code> 를 뺐다</td><td><code>6 of 10</code> — FAIL 1 ~ 6. 예: <code>FAIL 1 1 normal point, S = 1 (start of a revolution): got (180.015625, 1000.0, 47), want (90.0, 1000.0, 47)</code></td><td>검사 비트 한 칸을 버린다</td></tr>
+            <tr><td><code>Sample{angle_q6 / 64, dist_q2 / 4, quality}</code>(정수 나눗셈)</td><td>clang: 빌드 오류 <code>non-constant-expression cannot be narrowed from type 'unsigned int' to 'double' …</code>. g++: 경고 <code>narrowing conversion of … [-Wnarrowing]</code> 만 내고 빌드되며 <code>4 of 10</code>(2 · 4 · 5 · 6)</td><td><code>64.0</code> · <code>4.0</code></td></tr>
+            <tr><td><code>*reinterpret_cast&lt;const std::uint16_t*&gt;(b + 1)</code>(받은 바이트 위에 포개 읽기)</td><td><code>test_point</code> 는 <code>PASS point 10 cases</code>. <code>test_point_ub</code> 가 <code>runtime error: load of misaligned address … which requires 2 byte alignment</code> 를 찍고 멈춘다</td><td>시프트로 조립한다</td></tr>
+          </tbody>
+        </table></div>
+        <p class="small">첫 행: 끝 너머를 읽는 것은 정의되지 않은 동작이라, 위 값(<code>40.0</code>)은 이번 실행에서 본 것이다. 다른 컴파일러에서는 다른 값이 찍혔다. Pi 에서는 또 다를 수 있다 — 판정은 진단 빌드의 보고로 한다.</p>
+        <p class="small">마지막 행: <code>b + 1</code> 은 2의 배수 주소가 아니다. 정렬이 맞지 않는 주소에서 <code>std::uint16_t</code> 를 읽는 것은 정의되지 않은 동작이다. 값 빌드에서는 맞는 값이 나와 숨어 있다가 진단 빌드에서 드러난다. SDK 는 점을 구조체 <code>sl_lidar_response_measurement_node_t</code>(§2-2)로 적는다. 이 가이드는 그 구조체를 바이트 배치의 출처로만 쓰고, 읽기는 바이트마다 한다.</p>
+        <p><strong>확인</strong> — 골격 그대로는 <code>6 of 10 cases failed</code>, T1 을 채우면 <code>PASS point 10 cases</code> 다. 이 시험은 <code>parse_point()</code> 만 부르므로 T2 는 결과를 바꾸지 않는다. 진단 빌드 <code>test_point_ub</code> 까지 <code>PASS point 10 cases</code> 한 줄이면 끝이다.</p>
+        </div></details>
+      <p><code>feed()</code>(T2)는 <code>test_stream</code> 이 채점한다(걸음 6). 다섯 점(A ~ E)의 바이트를 여러 꼴로 나눠 넣고, 나온 점 · 두 수 · <code>start</code> 를 견준다. <code>feed()</code> 는 <code>parse_point()</code> 를 부르므로 T1 이 먼저 통과해야 한다. T1 이 골격이면 T2 를 맞게 써도 이 시험은 <code>8 of 8</code> 로 실패한다.<sup class="fn"><a href="#fn-14" id="fnref-14">14</a></sup></p>
+      <p class="small">이 블록도 전량이다(채점표). 다섯 점의 바이트는 <code>test_point.cpp</code> 머리의 인코더로 만들었고 파일 머리에 값을 적었다. A B C D E 안에는 경계가 아닌데 검사를 통과하는 자리가 둘 있다. A 와 B 의 둘째 바이트에서 시작하는 5바이트다. 바른 <code>feed()</code> 는 그 자리를 보지 않고, 걸음을 잘못 미는 <code>feed()</code> 는 볼 수 있다. <code>77</code> 은 S = ~S = 1 이라 늘 경계가 아닌 떠돌이 바이트다.</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/tests/test_stream.cpp -- grading vectors for NodeStream::feed().
+// Includes only point.hpp (pure) and check.hpp: runs with the lidar unplugged.
+// feed() calls parse_point(): fill T1 first, or every case here fails with it.
+//   pi$ scripts/lidar_lab/build/test_stream &amp;&amp; scripts/lidar_lab/build/test_stream_ub
+//
+// Five nodes, made with the encoder at the top of tests/test_point.cpp (q 47, mm = 1000 + k):
+//   A  BD 01 2D A0 0F   90.0 deg  S = 1        D  BE 81 2E AC 0F   93.0 deg  S = 0
+//   B  BE 81 2D A4 0F   91.0 deg  S = 0        E  BD 01 2F B0 0F   94.0 deg  S = 1
+//   C  BE 01 2E A8 0F   92.0 deg  S = 0
+// In A B C D E, two windows that do not start on a node also pass the check: the ones that
+// start on the 2nd byte of A and of B (01 2D ... and 81 2D ...). A right feed() never looks
+// there; a feed() that steps wrongly can. 77 is a stray byte: S = ~S = 1, never a boundary.
+#include &lt;cstddef&gt;
+#include &lt;initializer_list&gt;
+#include &lt;string&gt;
+#include &lt;vector&gt;
+
+#include "lidar_lab/point.hpp"
+#include "check.hpp"
+
+using namespace lidar_lab;
+
+namespace {
+
+const char* const A = "BD 01 2D A0 0F";
+const char* const B = "BE 81 2D A4 0F";
+const char* const C = "BE 01 2E A8 0F";
+const char* const D = "BE 81 2E AC 0F";
+const char* const E = "BD 01 2F B0 0F";
+
+struct Run {
+  std::vector&lt;Node&gt; nodes;
+  std::size_t accepted = 0;
+  std::size_t rejected = 0;
+};
+
+// Feed `hex` to a NodeStream(step) in pieces of the given sizes (the last piece takes the
+// rest). Each piece is its own exactly-sized vector, so a read past it is a read past the
+// allocation and the _ub build reports it.
+Run feed_in(const std::string&amp; hex, const std::vector&lt;std::size_t&gt;&amp; pieces, std::size_t step) {
+  const std::vector&lt;u8&gt; all = from_hex(hex);
+  NodeStream ns(step);
+  Run r;
+  std::size_t at = 0;
+  for (std::size_t k = 0; at &lt; all.size(); ++k) {
+    std::size_t n = k &lt; pieces.size() ? pieces[k] : all.size() - at;
+    if (n &gt; all.size() - at) n = all.size() - at;
+    const std::vector&lt;u8&gt; piece(all.begin() + static_cast&lt;std::ptrdiff_t&gt;(at),
+                                all.begin() + static_cast&lt;std::ptrdiff_t&gt;(at + n));
+    ns.feed(piece.data(), piece.size(), [&amp;](const Node&amp; x) { r.nodes.push_back(x); });
+    at += n;
+  }
+  r.accepted = ns.accepted();
+  r.rejected = ns.rejected();
+  return r;
+}
+
+std::vector&lt;std::size_t&gt; ones(std::size_t n) { return std::vector&lt;std::size_t&gt;(n, 1); }
+
+// "4 nodes [90.0, 91.0, 92.0, 93.0], accepted 4, rejected 0" (at most 6 angles, then "...")
+std::string show(const Run&amp; r) {
+  std::string deg = "[";
+  for (std::size_t i = 0; i &lt; r.nodes.size() &amp;&amp; i &lt; 6; ++i)
+    deg += (i ? ", " : "") + str(r.nodes[i].deg);
+  deg += r.nodes.size() &gt; 6 ? ", ...]" : "]";
+  return str(r.nodes.size()) + " nodes " + deg + ", accepted " + str(r.accepted) +
+         ", rejected " + str(r.rejected);
+}
+
+std::string show_node(const Run&amp; r) {
+  if (r.nodes.empty()) return "none";
+  const Node&amp; n = r.nodes[0];
+  return "(" + str(n.deg) + ", " + str(n.mm) + ", " + str(n.quality) + ", " + str(n.start) + ")";
+}
+
+// The positions (0 = first node out) of the nodes whose start is true.
+std::string starts(const Run&amp; r) {
+  std::vector&lt;std::size_t&gt; at;
+  for (std::size_t i = 0; i &lt; r.nodes.size(); ++i)
+    if (r.nodes[i].start) at.push_back(i);
+  return str(r.nodes.size()) + " nodes, start at " + str(at);
+}
+
+std::string cat(std::initializer_list&lt;const char*&gt; parts) {
+  std::string s;
+  for (const char* p : parts) s += std::string(p) + " ";
+  return s;
+}
+
+}  // namespace
+
+int main() {
+  const std::string abcd = cat({A, B, C, D});
+  const std::string four = "4 nodes [90.0, 91.0, 92.0, 93.0], accepted 4, rejected 0";
+
+  Run r = feed_in(A, {}, 1);
+  check("1 one node, one feed -&gt; the Node", show_node(r) == "(90.0, 1000.0, 47, true)",
+        show_node(r), "(90.0, 1000.0, 47, true)");
+
+  r = feed_in(abcd, {}, 1);
+  check("2 A B C D in one feed", show(r) == four, show(r), four);
+
+  r = feed_in(abcd, ones(20), 1);
+  check("3 A B C D one byte per feed", show(r) == four, show(r), four);
+
+  r = feed_in(abcd, {7, 13}, 1);
+  check("4 A B C D in feeds of 7 and 13 bytes (B cut 2 | 3)", show(r) == four, show(r), four);
+
+  {  // 5: the first 4 bytes of A, then its 5th byte -- the node comes out with the 5th
+    const std::vector&lt;u8&gt; a = from_hex(A);
+    const std::vector&lt;u8&gt; head(a.begin(), a.begin() + 4);
+    const std::vector&lt;u8&gt; tail(a.begin() + 4, a.end());
+    NodeStream ns;
+    std::size_t out = 0;
+    ns.feed(head.data(), head.size(), [&amp;](const Node&amp;) { ++out; });
+    const std::string after4 = str(out);
+    ns.feed(tail.data(), tail.size(), [&amp;](const Node&amp;) { ++out; });
+    const std::string got = after4 + " then " + str(out);
+    check("5 4 bytes, then the 5th -&gt; 0 nodes, then 1", got == "0 then 1", got, "0 then 1");
+  }
+
+  r = feed_in(cat({A, B, C, D, E}), {}, 1);
+  const std::string two = "5 nodes, start at [0, 4]";
+  check("6 A B C D E -&gt; start on A and E only (the S bit)", starts(r) == two, starts(r), two);
+
+  const std::string stray = cat({A, B, "77", C, D});
+  r = feed_in(stray, {}, 1);
+  const std::string back = "4 nodes [90.0, 91.0, 92.0, 93.0], accepted 4, rejected 1";
+  check("7 A B 77 C D, step 1 -&gt; back on C", show(r) == back, show(r), back);
+
+  r = feed_in(stray, {}, 5);
+  const std::string lost = "2 nodes [90.0, 91.0], accepted 2, rejected 2";
+  check("8 A B 77 C D, step 5 -&gt; never back", show(r) == lost, show(r), lost);
+
+  return finish("stream");
+}</code></pre>
+      <pre><code class="lang-cmake">lab_test(stream)                                   # 3-1-3: tests/test_stream.cpp</code></pre>
+      <p class="small">CMake 줄은 맨 아래, 걸음 2 에서 붙인 블록 다음에 붙인다.</p>
+      <pre><code class="lang-bash">pi$ cmake --build scripts/lidar_lab/build -j2 --target test_stream test_stream_ub
+pi$ scripts/lidar_lab/build/test_stream
+FAIL 1 1 one node, one feed -&gt; the Node: got none, want (90.0, 1000.0, 47, true)
+FAIL 2 2 A B C D in one feed: got 0 nodes [], accepted 0, rejected 0, want 4 nodes [90.0, 91.0, 92.0, 93.0], accepted 4, rejected 0
+...
+FAIL 8 8 A B 77 C D, step 5 -&gt; never back: got 0 nodes [], accepted 0, rejected 0, want 2 nodes [90.0, 91.0], accepted 2, rejected 2
+8 of 8 cases failed
+pi$ scripts/lidar_lab/build/test_stream_ub       # 진단 빌드 — 같은 줄만 나와야 한다</code></pre>
+      <p class="small">위 출력은 T1 을 채우고 <code>feed()</code> 는 골격 그대로일 때의 결과다.<sup class="fn"><a href="#fn-12">12</a></sup> 다 채운 뒤에는 이렇게 끝난다.</p>
+      <pre><code class="lang-bash">pi$ scripts/lidar_lab/build/test_stream &amp;&amp; scripts/lidar_lab/build/test_stream_ub
+PASS stream 8 cases
+PASS stream 8 cases</code></pre>
+      <p>벡터마다 보는 것은 아래와 같다. 틀린 판이 실제로 찍는 FAIL 줄은 T2 카드의 흔한 실수 표에 있다.</p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w20"><col class="w80"></colgroup>
+        <thead><tr><th>벡터</th><th>보는 것</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>점 하나의 네 칸 — 넷째 칸 <code>start</code> 가 S 비트인가</td></tr>
+          <tr><td>2 · 3 · 4</td><td>같은 바이트를 한 번에 · 1바이트씩 · 7 + 13 바이트로 넣는다 — 나눠 넣어도 결과가 같은가</td></tr>
+          <tr><td>5</td><td>4바이트를 넣고 다섯째를 넣는다 — 꼬리를 남겼다가 다음 <code>feed()</code> 에서 잇는가</td></tr>
+          <tr><td>6</td><td>바퀴 둘(A ~ E) — <code>start</code> 가 A 와 E 에서만 참인가</td></tr>
+          <tr><td>7 · 8</td><td>떠돌이 바이트 하나 — 걸음 1 은 C 에서 경계를 되찾고 걸음 5 는 못 되찾는가(<code>step_</code> 을 쓰는가)</td></tr>
+        </tbody>
+      </table></div>
+      <details class="hint" id="hint-t2"><summary>힌트 T2 — <code>NodeStream::feed()</code> · 붙이고, 5바이트씩 보고, 쓴 만큼만 지운다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 받은 <code>n</code> 바이트를 버퍼 뒤에 붙인다. 5바이트가 다 든 자리마다 <code>parse_point()</code> 로 보고, 점이면 <code>out</code> 으로 넘기고 다섯 칸 나아간다. 아니면 <code>step_</code> 칸만 나아간다. 끝나면 본 자리까지 지우고, 아직 다 오지 않은 점의 앞부분은 다음 <code>feed()</code> 까지 남긴다.</p>
+        <p>이 함수의 약속은 하나다 — <strong>바이트를 어떻게 나눠 넣어도 나오는 점과 두 수가 같다.</strong> <code>read_some()</code> 이 한 번에 몇 바이트를 돌려줄지는 정할 수 없기 때문이다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T2 - scripts/lidar_lab/include/lidar_lab/point.hpp (NodeStream::feed) */
+void feed(const u8* p, std::size_t n, const std::function&lt;void(const Node&amp;)&gt;&amp; out) {
+  buf_.insert(buf_.end(), p, p + n);
+  std::size_t i = 0;
+  while (i + kNodeLen &lt;= buf_.size()) {
+    auto s = parse_point(buf_.data() + i, kNodeLen);
+    if (s) {
+      out(Node{s-&gt;deg, s-&gt;mm, s-&gt;quality, (buf_[i] &amp; SYNC_MASK) != 0});
+      ++accepted_;
+      i += kNodeLen;
+    } else {
+      ++rejected_;
+      i += step_;
+    }
+  }
+  buf_.erase(buf_.begin(), buf_.begin() + static_cast&lt;std::ptrdiff_t&gt;(i));
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>buf_.insert(buf_.end(), p, p + n);</code> — 받은 바이트를 버퍼 끝에 붙인다. <code>p + n</code> 은 마지막 바이트 다음 주소다.</li>
+          <li><code>while (i + kNodeLen &lt;= buf_.size())</code> — 5바이트가 다 들어 있는 자리까지만 본다. <code>i &lt; buf_.size()</code> 로 쓰면 마지막 네 자리에서 버퍼 끝 너머를 읽는다(흔한 실수 마지막 행).</li>
+          <li><code>auto s = parse_point(buf_.data() + i, kNodeLen);</code> — <code>i</code> 번째 칸의 주소와 길이 5를 넘긴다. <code>auto</code> 는 오른쪽의 타입(<code>std::optional&lt;Sample&gt;</code>)을 그대로 받는다.</li>
+          <li><p><code>out(Node{s-&gt;deg, s-&gt;mm, s-&gt;quality, (buf_[i] &amp; SYNC_MASK) != 0});</code> — 넷째 칸 <code>start</code> 는 같은 b0 의 S 비트다. <code>!= 0</code> 이 그 비트를 <code>bool</code> 로 바꾼다.</p><p>l-04 는 <code>grep -n 'SYNC_MASK'</code> 로 이 줄이 있는지 본다.</p></li>
+          <li><code>++accepted_; i += kNodeLen;</code> — 점 하나를 썼으니 다섯 칸 나아간다.</li>
+          <li><code>++rejected_; i += step_;</code> — 경계가 아니면 <code>step_</code> 칸 나아간다. 숫자를 박지 않는다 — 실습 C 가 <code>--step</code> 으로 이 값을 바꾼다. <code>test_stream</code> 의 8번이 이것을 본다.</li>
+          <li><p><code>buf_.erase(buf_.begin(), buf_.begin() + static_cast&lt;std::ptrdiff_t&gt;(i));</code> — 본 자리까지 지운다. 남는 것은 최대 4바이트, 아직 다 오지 않은 점의 앞부분이다. 다음 <code>feed()</code> 가 그 뒤에 붙인다.</p><p>반복자에 더하는 수는 부호 있는 거리라 <code>std::ptrdiff_t</code> 로 밝혀 바꾼다.</p></li>
+          <li>골격의 자리표시 세 줄(<code>(void)p;</code> · <code>(void)n;</code> · <code>(void)out;</code>)은 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 점을 찾을 때마다 그 다섯 바이트를 바로 지우는 꼴도 같은 점을 낸다. 다만 지울 때마다 뒤의 바이트를 당기므로 버퍼가 클수록 느리다. 버퍼 대신 고정 크기 배열과 읽기 위치 둘을 쓰는 꼴(링 버퍼)도 있다.</p></li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>std::vector</code> 의 <code>insert(위치, 처음, 끝)</code> · <code>erase(처음, 끝)</code> · <code>data()</code> · <code>size()</code>. <code>out(x)</code> 는 <code>std::function</code> 에 든 것을 부른다. <code>s-&gt;deg</code> 는 <code>optional</code> 안의 칸을 꺼낸다.</p>
+        <p><strong>흔한 실수</strong> — 가운데 열은 그 판의 <code>test_stream</code> 이 찍는 것이다. 집필자가 시험한 세 컴파일러가 같은 FAIL 줄을 냈다. 넷째 칸을 빠뜨린 행만 경고가 있고, 마지막 행만 중단된다. 나머지는 경고도 중단도 없다.<sup class="fn"><a href="#fn-14">14</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w45"><col class="w25"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_stream</code> 이 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>erase</code> 를 빠뜨렸다</td><td><code>2 of 8</code> — <code>FAIL 3 … one byte per feed: got 34 nodes [90.0, 90.0, 90.0, …], accepted 34, …</code>. <code>FAIL 4</code> 는 <code>got 5 nodes [90.0, 90.0, 91.0, …]</code> 다. 같은 점이 되풀이해 나온다. §3-1-4 의 <code>lab_point</code> 에서는 첫 점이 두 번 찍힌다</td><td>본 자리까지 지운다</td></tr>
+            <tr><td>끝에 <code>buf_.clear()</code>(다 지운다)</td><td><code>3 of 8</code> — <code>FAIL 3 …: got 0 nodes []</code> · <code>FAIL 5 …: got 0 then 0</code>. <code>FAIL 4</code> 는 <code>got 3 nodes [90.0, 92.0, 93.0], accepted 3, rejected 3</code> 이다. 덩이 끝에 걸친 점이 사라진다. §2-4 의 <em>silently</em> 와 같은 꼴이다</td><td>본 자리까지만 지운다</td></tr>
+            <tr><td>실패할 때 <code>i += 1;</code> 로 박았다</td><td><code>1 of 8</code> — <code>FAIL 8 A B 77 C D, step 5 -&gt; never back: got 4 nodes [90.0, 91.0, 92.0, 93.0], accepted 4, rejected 1</code>. 걸음 5 가 걸음 1 처럼 동작한다 — 실습 C 가 성립하지 않는다</td><td><code>i += step_;</code></td></tr>
+            <tr><td>실패할 때 <code>i += kNodeLen;</code></td><td><code>1 of 8</code> — <code>FAIL 7 A B 77 C D, step 1 -&gt; back on C: got 2 nodes [90.0, 91.0], accepted 2, rejected 2</code>. 떠돌이 바이트 하나 뒤로 경계를 되찾지 못한다. 앞의 점은 정상이라 처음 몇 줄로는 드러나지 않는다</td><td><code>i += step_;</code></td></tr>
+            <tr><td><code>start</code> 를 비트1(~S)에서 읽었다</td><td><code>2 of 8</code> — <code>FAIL 1 …: got (90.0, 1000.0, 47, false)</code> · <code>FAIL 6 …: got 5 nodes, start at [1, 2, 3]</code>. l-04 에서 바퀴가 점 하나짜리가 된다</td><td><code>buf_[i] &amp; SYNC_MASK</code></td></tr>
+            <tr><td><code>Node{s-&gt;deg, s-&gt;mm, s-&gt;quality}</code>(넷째 칸 빠뜨림)</td><td>경고 <code>missing field 'start' initializer</code>(clang, g++ 는 <code>missing initializer for member …</code>). <code>2 of 8</code> — <code>FAIL 1</code> · <code>FAIL 6 …: start at []</code>. l-04 의 바퀴가 0 개다</td><td>넷째 칸을 채운다</td></tr>
+            <tr><td><code>while (i &lt; buf_.size())</code></td><td>끝 너머를 읽는다. 터미널에서 실행하면 <code>FAIL 3 …: got 0 nodes [], accepted 0, rejected 20, …</code> 한 줄 뒤에 중단된다. 중단의 꼴은 컴파일러마다 달랐다. 진단 빌드는 셋 다 <code>heap-buffer-overflow</code> 를 찍고 멈췄다</td><td><code>i + kNodeLen &lt;= buf_.size()</code></td></tr>
+          </tbody>
+        </table></div>
+        <p class="small">마지막 행: 정의되지 않은 동작이라 값 빌드의 결과는 믿을 수 없다. 판정은 <code>test_stream_ub</code> 의 보고로 한다. 값 빌드가 중단되면 출력을 파이프나 파일로 받았을 때 FAIL 줄까지 사라졌다 — 터미널에서 실행한다.<sup class="fn"><a href="#fn-14">14</a></sup></p>
+        <p><strong>확인</strong> — <code>test_stream</code> 과 <code>test_stream_ub</code> 가 <code>PASS stream 8 cases</code> 한 줄씩이면 끝이다. §3-1-4 의 출력(첫 점 · <code>start</code> · 두 수)에서 실제 바이트로 같은 것을 다시 본다. <code>point</code> 줄이 하나도 없고 <code>accepted 0</code> 이면 T2 가 골격 그대로다.</p>
+        </div></details>
 
       <h4 id="s3-1-4">3-1-4. 돌리고 보기</h4>
-      <p>골격에 일부러 넣지 않은 것이 하나 있다. <strong>실행 진입점</strong>이다. l-01 의 <code>open_port</code> 와 l-02 의 <code>drain</code> · <code>send</code> · <code>descriptor</code> · <code>stop</code> 을 어떤 순서로 호출할지가 이미 배운 것의 복습이다. 모양만 둔다.</p>
-      <pre><code class="lang-python">if __name__ == "__main__":          # pi$ python3 scripts/lidar_lab/point.py
-    from link import open_port      # l-01
-    from cmd import CMD_SCAN, drain, send, descriptor, stop   # l-02
+      <p>순수한 두 함수가 끝났으면 이제 포트를 연다. 채울 곳은 새 헤더 <code>point_run.hpp</code> 의 T3 — <code>start_scan()</code> 과 <code>first_points()</code> 두 함수다.
+      l-01 의 <code>open_port()</code> · <code>motor()</code> 와 l-02 의 <code>stop()</code> · <code>drain()</code> · <code>send()</code> 를 어떤 순서로 부를지가 이미 배운 것의 복습이다. 같은 헤더의 T4 <code>resync_run()</code> 은 실습 C(§3-3-3)에서 채운다.</p>
+      <p>세 함수를 진입점 파일이 아니라 헤더에 둔 이유는 시험이다. <code>main()</code> 이 든 <code>.cpp</code> 를 시험이 include 하면 <code>main()</code> 이 둘이 되어 빌드가 멈춘다. 헤더에 두면 <code>test_point_run</code> 이 include 해서 채점한다. 세 함수는 fd 하나만 받으므로, 시험은 라이다 자리에 가짜 기기를 연결한다.</p>
+      <p>이 헤더의 함수는 이름공간 <code>lidar_lab::point_run</code> 안에 있다. <a href="l-04-one-turn.html">l-04</a> 의 <code>src/turn.cpp</code> 가 같은 이름의 <code>start_scan()</code> 을 따로 갖기 때문이다. 두 정의가 한 파일에서 함께 보이면 <code>start_scan(fd)</code> 를 부르는 줄이 모호하다는 오류로 빌드가 멈춘다. 그래서 이 헤더를 쓰는 <code>src/point.cpp</code> 와 <code>test_point_run</code> 은 <code>using namespace lidar_lab::point_run;</code> 한 줄을 더 둔다.</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/include/lidar_lab/point_run.hpp -- the three runs of lab_point.  (l-03)
+// NOT pure: writes and reads the port. Only an fd comes in, so tests/test_point_run.cpp
+// can grade these with a fake device on a socket pair (no lidar, no motor).
+// Keep this output shape stable -- 3-1-4 compares it with the hand decoding:
+//   descriptor  &lt;7 bytes in hex&gt;
+//   first raw   &lt;the first 5 bytes after the descriptor&gt;
+//   point       ( &lt;deg&gt; deg, &lt;mm&gt; mm, q=&lt;quality&gt;, start=&lt;true/false&gt;)
+//   accepted &lt;n&gt; nodes, rejected &lt;n&gt; boundaries
+#pragma once
 
-    ser = open_port("/dev/lidar")   # dtr=False inside -&gt; the head starts spinning
-    try:
-        # TODO(you): stop(ser) -&gt; drain(ser) -&gt; send(ser, CMD_SCAN) -&gt; descriptor(ser);
-        #   print the 7 bytes as hex.
-        #   Then print the first N items of stream(ser). For the FIRST one, print the raw
-        #   5 bytes as well -- 3-1-4 asks you to compare them with your hand decoding.
-        #   Count two things while you loop: nodes accepted, and boundaries rejected.
-        pass
-    finally:
-        stop(ser)                   # laser off (the head keeps spinning -- that is expected)
-        ser.dtr = True              # motor off
-        ser.close()</code></pre>
-      <p>실행한다. 출력의 <strong>모양</strong>은 아래와 같다. 값 자리에는 내 기기의 값이 들어간다.</p>
-      <pre><code class="lang-bash">pi$ python3 scripts/lidar_lab/point.py
+#include &lt;cstddef&gt;
+#include &lt;cstdio&gt;
+#include &lt;vector&gt;
+
+#include "lidar_lab/cmd.hpp"
+#include "lidar_lab/cmd_port.hpp"
+#include "lidar_lab/point.hpp"
+#include "lidar_lab/point_port.hpp"
+#include "lidar_lab/repr.hpp"
+#include "lidar_lab/serial.hpp"
+
+// lidar_lab::point_run, not lidar_lab: src/turn.cpp (l-04) has a start_scan() of its own, and
+// a file that saw both would stop at an ambiguous call. Callers add one using-directive.
+namespace lidar_lab::point_run {
+
+inline void print_node(const Node&amp; n) {
+  std::printf("point       ( %s deg, %s mm, q=%d, start=%s)\n", repr_double(n.deg).c_str(),
+              repr_double(n.mm).c_str(), n.quality, n.start ? "true" : "false");
+}
+
+// stop -&gt; drain -&gt; SCAN -&gt; descriptor. -&gt; true if a descriptor came back.
+inline bool start_scan(int fd) {
+  // TODO(you) [T3]: start the scan, then show the first nodes - hint card T3
+  //   start_scan():
+  //   1) stop(fd) -&gt; drain(fd) -&gt; send(fd, CMD_SCAN)    (l-02 -- the order is the point)
+  //   2) read_exact() the 7 descriptor bytes, print them in hex after "descriptor  "
+  //   3) return whether parse_descriptor() found a descriptor in them
+  //   first_points() below (the same card):
+  //   4) read_exact() the next 5 bytes, print them after "first raw  ", then feed them to a
+  //      NodeStream ns -- they are the first node, do not lose it
+  //   5) stream(fd, &lt;seconds&gt;, ns, on_node) with an on_node that calls print_node() and
+  //      returns false after `count` nodes. Name the seconds as a constant.
+  //   6) print ns.accepted() and ns.rejected() in the shape at the top of this file
+  //   Delete the placeholder lines below (here and in first_points) when you start.
+  std::printf("start_scan() and first_points() are not written yet (T3, 3-1-4).\n");
+  (void)fd;
+  return false;
+}
+
+// First run: the first raw 5 bytes (to compare with the hand decoding, 3-1-4), the first
+// `count` nodes, then the two counters.
+inline void first_points(int fd, int count) {
+  // (T3, steps 4 - 6 above)
+  (void)fd;
+  (void)count;
+}
+
+// 3-3: drop `skip` bytes on purpose, count for `seconds` with resync step `step`, print
+// accepted, rejected and the first 20 angles (one decimal) -- the angles tell real points
+// from noise.
+inline void resync_run(int fd, std::size_t step, std::size_t skip, double seconds) {
+  // TODO(you) [T4]: misalign on purpose, then count - hint card T4
+  //   1) read_exact() `skip` bytes into a small buffer and throw them away
+  //   2) a NodeStream ns(step); stream() for `seconds` and keep the angles of the first
+  //      20 nodes -- on_node returns true to the end, so the whole window is counted
+  //   3) print "step=&lt;n&gt; skip=&lt;n&gt; accepted=&lt;n&gt; rejected=&lt;n&gt;" (ns.resync_step() is the step)
+  //   4) print "angles" and those angles with one decimal
+  //   Delete the placeholder lines below when you start.
+  (void)fd;
+  (void)step;
+  (void)skip;
+  (void)seconds;
+}
+
+}  // namespace lidar_lab::point_run</code></pre>
+      <p>골격의 <code>start_scan()</code> 은 "아직 안 썼다"는 한 줄을 찍고 <code>false</code> 를 돌려준다. 그래서 골격 그대로 실행하면 <code>main()</code> 이 기술자가 없었다고 찍는다.</p>
+      <p>진입점 <code>src/point.cpp</code> 는 전량이다. 머리를 돌리는 줄(<code>motor(fd, true)</code>)과 끝에서 멈추는 줄(<code>stop(fd)</code> · <code>motor(fd, false)</code>)을 내가 쓰는 함수 밖에 두었다. 그래서 T3 · T4 가 어디서 일찍 돌아와도 <code>main()</code> 의 끝을 지나 머리가 멈춘다(안전 규칙 L2).</p>
+      <p>실행마다 바꾸는 수는 <strong>실행 인자</strong>로 받는다. 찍을 점의 수 · 실습 C 의 걸음 · 버릴 바이트 수 · 세는 시간이다. 회차마다 소스를 고치고 다시 빌드하고 되돌리는 일이 없다.</p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w25"><col class="w50"><col class="w25"></colgroup>
+        <thead><tr><th>인자</th><th>뜻</th><th>범위 · 기본값</th></tr></thead>
+        <tbody>
+          <tr><td><code>[dev]</code></td><td>장치 경로 — 예: <code>lab_point /dev/ttyUSB0</code></td><td>기본 <code>/dev/lidar</code></td></tr>
+          <tr><td><code>--count &lt;n&gt;</code></td><td>첫 실행이 찍을 점의 수. <code>first_points(fd, n)</code> 으로 넘어간다</td><td>1 ~ 100000 · 10</td></tr>
+          <tr><td><code>--resync</code></td><td>실습 C 의 한 회차 — <code>resync_run()</code> 을 부른다</td><td>—</td></tr>
+          <tr><td><code>--step &lt;n&gt;</code></td><td>검사에 실패한 자리에서 나아갈 칸 수</td><td>1 ~ 5 · <code>kResyncStep</code>(1)</td></tr>
+          <tr><td><code>--skip &lt;n&gt;</code></td><td>기술자 뒤에서 일부러 버릴 바이트 수</td><td>0 ~ 16 · 0</td></tr>
+          <tr><td><code>--seconds &lt;s&gt;</code></td><td>실습 C 가 세는 시간</td><td>0.1 ~ 60 · 4.0</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small">뒤의 셋은 <code>--resync</code> 와 함께만 쓴다. 범위 밖의 값이나 모르는 인자를 주면 <code>usage:</code> 두 줄을 찍고 종료 코드 2 로 끝난다. 포트를 열기 전에 끝난다.<sup class="fn"><a href="#fn-15" id="fnref-15">15</a></sup></p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/src/point.cpp -- start a scan and print the first nodes.  (l-03, given in full)
+//   pi$ scripts/lidar_lab/build/lab_point [dev] [--count &lt;n&gt;]      first n nodes (default 10)
+//   pi$ scripts/lidar_lab/build/lab_point [dev] --resync [--step &lt;1..5&gt;] [--skip &lt;0..16&gt;]
+//                                         [--seconds &lt;s&gt;]          3-3: one of the four runs
+// The runs are your T3 / T4 in point_run.hpp. Nothing here is changed between runs: the
+// numbers come in as arguments. dev defaults to /dev/lidar.
+// It spins the head (motor(fd, true)). Every way out of T3 / T4 passes the stop(fd) and
+// motor(fd, false) at the end of main() (L2).
+// Exit code: 0 = ran, 1 = the port did not open / --resync without a descriptor, 2 = usage.
+#include &lt;chrono&gt;
+#include &lt;cstddef&gt;
+#include &lt;cstdio&gt;
+#include &lt;cstdlib&gt;
+#include &lt;cstring&gt;
+#include &lt;thread&gt;
+
+#include &lt;unistd.h&gt;
+
+#include "lidar_lab/cmd_port.hpp"
+#include "lidar_lab/point.hpp"
+#include "lidar_lab/point_run.hpp"
+#include "lidar_lab/serial.hpp"
+
+using namespace lidar_lab;
+using namespace lidar_lab::point_run;  // start_scan, first_points, resync_run
+
+namespace {
+
+int usage() {
+  std::printf("usage: lab_point [dev] [--count &lt;1..100000&gt;]\n"
+              "       lab_point [dev] --resync [--step &lt;1..5&gt;] [--skip &lt;0..16&gt;]"
+              " [--seconds &lt;0.1..60&gt;]\n");
+  return 2;
+}
+
+// "123" -&gt; 123 if it is a whole number in [lo, hi]; otherwise false.
+bool to_long(const char* s, long lo, long hi, long&amp; out) {
+  char* end = nullptr;
+  const long v = std::strtol(s, &amp;end, 10);
+  if (end == s || *end != '\0' || v &lt; lo || v &gt; hi) return false;
+  out = v;
+  return true;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+  const char* dev = kDev;
+  bool resync = false;
+  bool resync_opt = false;  // --step / --skip / --seconds given
+  long count = 10;
+  long step = static_cast&lt;long&gt;(kResyncStep);
+  long skip = 0;
+  double seconds = 4.0;  // the same window for all four runs (3-3-3)
+  for (int i = 1; i &lt; argc; ++i) {
+    const char* a = argv[i];
+    if (std::strcmp(a, "--resync") == 0) {
+      resync = true;
+    } else if (a[0] == '-') {
+      if (i + 1 &gt;= argc) return usage();
+      const char* v = argv[++i];
+      if (std::strcmp(a, "--count") == 0) {
+        if (!to_long(v, 1, 100000, count)) return usage();
+      } else if (std::strcmp(a, "--step") == 0) {
+        if (!to_long(v, 1, 5, step)) return usage();
+        resync_opt = true;
+      } else if (std::strcmp(a, "--skip") == 0) {
+        if (!to_long(v, 0, 16, skip)) return usage();
+        resync_opt = true;
+      } else if (std::strcmp(a, "--seconds") == 0) {
+        char* end = nullptr;
+        seconds = std::strtod(v, &amp;end);
+        if (end == v || *end != '\0' || !(seconds &gt;= 0.1 &amp;&amp; seconds &lt;= 60.0)) return usage();
+        resync_opt = true;
+      } else {
+        return usage();
+      }
+    } else {
+      dev = a;
+    }
+  }
+  if (resync_opt &amp;&amp; !resync) return usage();  // those three belong to --resync
+  install_stop_handler();
+  const int fd = open_port(dev);
+  if (fd &lt; 0) return 1;
+  motor(fd, true);
+  for (int i = 0; i &lt; 40 &amp;&amp; !stop_requested(); ++i)  // spin-up 2 s as in l-01, Ctrl-C seen in 50 ms
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  const bool described = start_scan(fd);
+  int rc = 0;
+  if (resync) {
+    if (described) {
+      resync_run(fd, static_cast&lt;std::size_t&gt;(step), static_cast&lt;std::size_t&gt;(skip), seconds);
+    } else {  // 3-3 needs a known start: without the descriptor the misalignment is unknown
+      std::printf("no descriptor -- not running 3-3\n");
+      rc = 1;
+    }
+  } else {
+    if (!described) std::printf("no descriptor -- reading points anyway (2-1)\n");
+    first_points(fd, static_cast&lt;int&gt;(count));  // the framing check finds boundaries anyway
+  }
+  stop(fd);          // stop scanning (laser state: l-02 2-3)
+  motor(fd, false);  // motor off (L2)
+  ::close(fd);
+  return rc;
+}</code></pre>
+      <p>셋째 파일 <code>tests/test_point_run.cpp</code> 는 T3 · T4 의 채점표다(전량). 시험은 <code>fork()</code> 로 자기를 복제한 <strong>자식 프로세스</strong>를 하나 만들고, 두 프로세스를 <strong>소켓 쌍</strong>(<code>socketpair()</code> 가 만드는, 양 끝이 이어진 통로 하나)으로 잇는다. 자식이 맞은편 끝에서 기기 노릇을 한다. 함수가 찍은 줄을 임시 파일로 받아 기대한 줄과 견준다. 이 시험은 라이다의 포트를 열지 않는다.</p>
+      <p class="small">가짜 기기의 점 k 는 각도 90 + k × 58/64°, 거리 1000 + k mm, 품질 47 이고, 점 0 만 S = 1 이다. 그래서 점 0 의 바이트는 손 계산에 쓴 <code>BD 01 2D A0 0F</code> 와 같다. 10 ms 마다 23 점(115 B)을 보낸다. 9 ~ 12 의 수는 이 바이트에서 정해지므로 실행마다 같다.</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/tests/test_point_run.cpp -- grading vectors for start_scan(),
+// first_points() and resync_run() (point_run.hpp). A fake device on a socket pair stands in
+// for the tty: no lidar, no port, no motor.
+//   pi$ scripts/lidar_lab/build/test_point_run &amp;&amp; scripts/lidar_lab/build/test_point_run_ub
+//
+// How a vector works
+//   - a child process (fork) plays the device. Node k of its flow: q 47, deg 90 + k * 58/64,
+//     mm 1000 + k, S = 1 on node 0 only (the encoder of tests/test_point.cpp), so node 0 is
+//     BD 01 2D A0 0F. It writes 23 nodes (115 B) every 10 ms, about the real line rate.
+//       raw     the flow from the start, `nodes` nodes, then silence. It ignores what we send.
+//       busy    a scan already running: the flow until it reads STOP (A5 25), silence 5 ms
+//               later; on SCAN (A5 20) the descriptor A5 5A 05 00 00 40 81, then the flow.
+//       silent  never writes.
+//     It reports what it read when we close our end.
+//   - the function's printf output goes to a temporary file (dup2 on stdout) and is compared
+//     line by line. tcflush() / tcdrain() fail on a socket; the functions ignore that.
+//   - a timer (setitimer -&gt; SIGALRM -&gt; on_stop_signal of serial.hpp) is a watchdog: a loop
+//     that never ends sees stop_requested() there.
+#include &lt;cerrno&gt;
+#include &lt;chrono&gt;
+#include &lt;cstddef&gt;
+#include &lt;cstdio&gt;
+#include &lt;string&gt;
+#include &lt;thread&gt;
+#include &lt;vector&gt;
+
+#include &lt;fcntl.h&gt;
+#include &lt;poll.h&gt;
+#include &lt;signal.h&gt;
+#include &lt;sys/socket.h&gt;
+#include &lt;sys/time.h&gt;
+#include &lt;sys/wait.h&gt;
+#include &lt;unistd.h&gt;
+
+#include "lidar_lab/point_run.hpp"
+#include "check.hpp"
+
+using namespace lidar_lab;
+using namespace lidar_lab::point_run;  // start_scan, first_points, resync_run
+
+namespace {
+
+using clock_type = std::chrono::steady_clock;
+
+double since(clock_type::time_point t0) {
+  return std::chrono::duration&lt;double&gt;(clock_type::now() - t0).count();
+}
+
+void alarm_after(double s) {  // 0 = cancel
+  itimerval t{};
+  t.it_value.tv_sec = static_cast&lt;long&gt;(s);
+  t.it_value.tv_usec = static_cast&lt;long&gt;((s - static_cast&lt;long&gt;(s)) * 1e6);
+  setitimer(ITIMER_REAL, &amp;t, nullptr);
+}
+
+// ---- the child: only system calls, ends with _exit ----
+
+enum class Mode { raw, busy, silent };
+
+void node_bytes(long k, u8* b) {
+  const unsigned u = (static_cast&lt;unsigned&gt;(k * 58 + 90 * 64) &lt;&lt; 1) | 1u;  // deg * 64 = 5760 + 58 k
+  const unsigned d = static_cast&lt;unsigned&gt;((1000 + k) * 4);
+  b[0] = static_cast&lt;u8&gt;((47 &lt;&lt; 2) | (k == 0 ? 1 : 2));
+  b[1] = static_cast&lt;u8&gt;(u &amp; 0xFF);
+  b[2] = static_cast&lt;u8&gt;(u &gt;&gt; 8);
+  b[3] = static_cast&lt;u8&gt;(d &amp; 0xFF);
+  b[4] = static_cast&lt;u8&gt;(d &gt;&gt; 8);
+}
+
+// Blocks (polls) while the socket is full; false once the other side has closed.
+bool write_all(int fd, const u8* b, std::size_t n) {
+  while (n &gt; 0) {
+    ssize_t w = ::write(fd, b, n);
+    if (w &lt; 0) {
+      if (errno != EAGAIN &amp;&amp; errno != EWOULDBLOCK &amp;&amp; errno != EINTR) return false;
+      pollfd p{};
+      p.fd = fd;
+      p.events = POLLOUT;
+      if (::poll(&amp;p, 1, 100) &lt; 0) return false;
+      continue;
+    }
+    b += w;
+    n -= static_cast&lt;std::size_t&gt;(w);
+  }
+  return true;
+}
+
+pid_t spawn_device(int sfd, int report, int ours, int ours_report, Mode mode, long nodes) {
+  pid_t pid = fork();
+  if (pid != 0) return pid;
+  close(ours);
+  close(ours_report);
+  signal(SIGPIPE, SIG_IGN);
+  fcntl(sfd, F_SETFL, fcntl(sfd, F_GETFL) | O_NONBLOCK);
+  u8 got[64];
+  std::size_t n = 0;
+  std::size_t seen = 0;  // bytes of got[] already looked at for a command
+  bool flowing = mode != Mode::silent;
+  long k = 0;            // next node of the flow
+  long limit = mode == Mode::raw ? nodes : -1;
+  clock_type::time_point quiet_at{};
+  bool quiet_due = false;
+  bool open = true;
+  const auto t0 = clock_type::now();
+  while (open &amp;&amp; since(t0) &lt; 8.0) {
+    pollfd p{};
+    p.fd = sfd;
+    p.events = POLLIN;
+    if (::poll(&amp;p, 1, 10) &gt; 0) {
+      ssize_t r = ::read(sfd, got + n, sizeof got - n);
+      if (r == 0) break;  // the other side closed: report
+      if (r &gt; 0) n += static_cast&lt;std::size_t&gt;(r);
+    }
+    for (; mode == Mode::busy &amp;&amp; seen + 1 &lt; n; ++seen) {
+      if (got[seen] != 0xA5) continue;
+      if (got[seen + 1] == 0x25) {  // STOP: the flow ends 5 ms later
+        quiet_due = true;
+        quiet_at = clock_type::now();
+      } else if (got[seen + 1] == 0x20) {  // SCAN: descriptor, then a new flow from node 0
+        const u8 desc[] = {0xA5, 0x5A, 0x05, 0x00, 0x00, 0x40, 0x81};
+        open = write_all(sfd, desc, sizeof desc);
+        flowing = true;
+        quiet_due = false;
+        k = 0;
+      }
+    }
+    if (quiet_due &amp;&amp; since(quiet_at) &gt;= 0.005) {
+      flowing = false;
+      quiet_due = false;
+    }
+    if (flowing) {
+      u8 burst[23 * 5];
+      std::size_t len = 0;
+      for (int j = 0; j &lt; 23 &amp;&amp; (limit &lt; 0 || k &lt; limit); ++j, ++k, len += 5)
+        node_bytes(k, burst + len);
+      if (len == 0) flowing = false;
+      else if (open) open = write_all(sfd, burst, len);
+    }
+    if (n == sizeof got) break;
+  }
+  if (::write(report, got, n) &lt; 0) _exit(1);
+  _exit(0);
+}
+
+struct Rig {
+  int fd = -1;        // our end: what the function gets
+  int report = -1;
+  pid_t pid = -1;
+};
+
+Rig start(Mode mode, long nodes = 0) {
+  Rig g;
+  int s[2];
+  int r[2];
+  if (socketpair(AF_UNIX, SOCK_STREAM, 0, s) != 0 || pipe(r) != 0) {
+    std::printf("socketpair / pipe failed\n");
+    return g;
+  }
+  g.pid = spawn_device(s[1], r[1], s[0], r[0], mode, nodes);
+  close(s[1]);
+  close(r[1]);
+  g.fd = s[0];
+  g.report = r[0];
+  return g;
+}
+
+// Close our end, collect what the device read (hex), end the child.
+std::string finish_rig(Rig&amp; g) {
+  close(g.fd);
+  std::string sent = "(no report)";
+  pollfd p{};
+  p.fd = g.report;
+  p.events = POLLIN;
+  if (::poll(&amp;p, 1, 2000) &gt; 0) {
+    u8 b[64];
+    ssize_t r = ::read(g.report, b, sizeof b);
+    sent = r &gt; 0 ? hex(Bytes(b, b + r)) : "(nothing)";
+  }
+  kill(g.pid, SIGKILL);
+  waitpid(g.pid, nullptr, 0);
+  close(g.report);
+  return sent;
+}
+
+// Run f() with stdout going to a temporary file; -&gt; what it printed.
+template &lt;class F&gt;
+std::string captured(F f) {
+  std::fflush(stdout);
+  std::FILE* tmp = std::tmpfile();
+  if (!tmp) return "(no tmpfile)";
+  const int saved = dup(1);
+  dup2(fileno(tmp), 1);
+  g_stop = 0;
+  alarm_after(6.0);  // watchdog
+  f();
+  alarm_after(0.0);
+  g_stop = 0;
+  std::fflush(stdout);
+  dup2(saved, 1);
+  close(saved);
+  std::string out;
+  std::rewind(tmp);
+  char buf[4096];
+  std::size_t r;
+  while ((r = std::fread(buf, 1, sizeof buf, tmp)) &gt; 0) out.append(buf, r);
+  std::fclose(tmp);
+  return out;
+}
+
+std::vector&lt;std::string&gt; lines(const std::string&amp; s) {
+  std::vector&lt;std::string&gt; v;
+  std::string cur;
+  for (char c : s) {
+    if (c == '\n') {
+      v.push_back(cur);
+      cur.clear();
+    } else {
+      cur += c;
+    }
+  }
+  if (!cur.empty()) v.push_back(cur);
+  return v;
+}
+
+// The lines that start with `prefix`.
+std::vector&lt;std::string&gt; with(const std::vector&lt;std::string&gt;&amp; v, const std::string&amp; prefix) {
+  std::vector&lt;std::string&gt; out;
+  for (const std::string&amp; l : v)
+    if (l.compare(0, prefix.size(), prefix) == 0) out.push_back(l);
+  return out;
+}
+
+// "first raw   bd 01 2d a0 0f -&gt; 90.0 90.90625 91.8125": the first raw line, then the deg of
+// the point lines, at most 6 (the rest of a point line is print_node(), given in full).
+std::string raw_and_degs(const std::vector&lt;std::string&gt;&amp; v) {
+  const std::vector&lt;std::string&gt; raw = with(v, "first raw");
+  const std::vector&lt;std::string&gt; pts = with(v, "point       ( ");
+  std::string s = raw.empty() ? "(no first raw line)" : raw[0];
+  s += " -&gt;";
+  for (std::size_t i = 0; i &lt; pts.size() &amp;&amp; i &lt; 6; ++i)  // 14 = the length of "point       ( "
+    s += " " + pts[i].substr(14, pts[i].find(" deg") - 14);
+  if (pts.size() &gt; 6) s += " ... (" + str(pts.size()) + " point lines)";
+  return s;
+}
+
+std::string first_or_none(const std::vector&lt;std::string&gt;&amp; v) { return v.empty() ? "none" : v[0]; }
+
+// "accepted 23 nodes, rejected 0 boundaries" -&gt; 23, or -1 if the line is not in that shape.
+long accepted_of(const std::string&amp; l) {
+  unsigned long a = 0;
+  unsigned long r = 0;
+  char tail[2];
+  if (std::sscanf(l.c_str(), "accepted %lu nodes, rejected %lu boundarie%1s", &amp;a, &amp;r, tail) != 3 ||
+      r != 0)
+    return -1;
+  return static_cast&lt;long&gt;(a);
+}
+
+}  // namespace
+
+int main() {
+  struct sigaction sa {};
+  sa.sa_handler = on_stop_signal;  // serial.hpp: only sets g_stop
+  sigemptyset(&amp;sa.sa_mask);
+  sa.sa_flags = 0;
+  sigaction(SIGALRM, &amp;sa, nullptr);
+  signal(SIGPIPE, SIG_IGN);
+
+  // start_scan(fd) -- T3
+  // 1-3. a scan already running (0.15 s of points wait on the line): STOP, the drain, then
+  //      SCAN -&gt; the descriptor
+  Rig g = start(Mode::busy);
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  bool ok = false;
+  std::string out = captured([&amp;] { ok = start_scan(g.fd); });
+  std::string sent = finish_rig(g);
+  eq_bool("1 start_scan, scan already running: returns true", ok, true);
+  const std::string desc = "descriptor  a55a0500004081";
+  check("2 start_scan, scan already running: the descriptor line",
+        first_or_none(lines(out)) == desc, first_or_none(lines(out)), desc);
+  check("3 start_scan, scan already running: bytes sent (STOP, then SCAN)", sent == "A525A520",
+        sent, "A525A520");
+
+  // 4. a device that never answers -&gt; an empty descriptor line, false
+  g = start(Mode::silent);
+  out = captured([&amp;] { ok = start_scan(g.fd); });
+  finish_rig(g);
+  const std::string got4 = first_or_none(lines(out)) + " | " + str(ok);
+  check("4 start_scan, no answer: empty line, returns false", got4 == "descriptor   | false", got4,
+        "descriptor   | false");
+
+  // first_points(fd, count) -- T3. The raw flow: node 0 is the first thing on the line.
+  // 5-6. count 3 -&gt; the raw 5 bytes, nodes 0, 1, 2, then the counters
+  g = start(Mode::raw, 200);
+  std::vector&lt;std::string&gt; v = lines(captured([&amp;] { first_points(g.fd, 3); }));
+  finish_rig(g);
+  const std::string want5 = "first raw   bd 01 2d a0 0f -&gt; 90.0 90.90625 91.8125";
+  const std::string got5 = raw_and_degs(v);
+  check("5 first_points 3: first raw, then nodes 0 1 2", got5 == want5, got5, want5);
+  const long acc = accepted_of(v.empty() ? "" : v.back());
+  check("6 first_points 3: last line accepted &gt;= 3, rejected 0", acc &gt;= 3,
+        v.empty() ? "none" : v.back(), "accepted &lt;n &gt;= 3&gt; nodes, rejected 0 boundaries");
+
+  // 7. count 1 -&gt; exactly one point line
+  g = start(Mode::raw, 200);
+  v = lines(captured([&amp;] { first_points(g.fd, 1); }));
+  finish_rig(g);
+  eq_int("7 first_points 1: point lines", static_cast&lt;long long&gt;(with(v, "point").size()), 1);
+
+  // 8. nothing on the line -&gt; an empty first raw line and zero counters (after about 2 s)
+  g = start(Mode::silent);
+  out = captured([&amp;] { first_points(g.fd, 3); });
+  finish_rig(g);
+  const std::string want8 = "first raw   | accepted 0 nodes, rejected 0 boundaries";
+  std::string got8;
+  v = lines(out);
+  for (std::size_t i = 0; i &lt; v.size() &amp;&amp; i &lt; 3; ++i) got8 += (i ? " | " : "") + v[i];
+  if (got8.empty()) got8 = "(nothing)";
+  check("8 first_points, no points: two lines", got8 == want8, got8, want8);
+
+  // resync_run(fd, step, skip, seconds) -- T4. The raw flow, 200 nodes, counted for 0.4 s.
+  // The counts follow from the bytes (2-4): skip 1 starts on the 2nd byte of node 0.
+  //   step 1: 3 windows pass by chance (320.3 328.3 336.3 deg), then node 4 on -&gt; 199 / 4
+  //   step 5: the phase never comes back -&gt; 100 / 99
+  double secs = 0.0;
+  auto resync = [&amp;](std::size_t step, std::size_t skip) {
+    Rig rg = start(Mode::raw, 200);
+    const auto t0 = clock_type::now();
+    std::vector&lt;std::string&gt; l = lines(captured([&amp;] { resync_run(rg.fd, step, skip, 0.4); }));
+    secs = since(t0);
+    finish_rig(rg);
+    return l;
+  };
+  // 9-10, 13. step 1, skip 0: every node, the angles a little apart, about 0.4 s
+  v = resync(1, 0);
+  const double secs9 = secs;
+  std::string got = first_or_none(with(v, "step="));
+  std::string want = "step=1 skip=0 accepted=200 rejected=0";
+  check("9 resync_run step 1 skip 0", got == want, got, want);
+  got = first_or_none(with(v, "angles"));
+  want = "angles 90.0 90.9 91.8 92.7 93.6 94.5 95.4 96.3 97.2 98.2 99.1 100.0 100.9 101.8 102.7 "
+         "103.6 104.5 105.4 106.3 107.2";
+  check("10 resync_run step 1 skip 0: the angles line", got == want, got, want);
+  // 11. skip 1, step 1
+  v = resync(1, 1);
+  got = first_or_none(with(v, "step="));
+  want = "step=1 skip=1 accepted=199 rejected=4";
+  check("11 resync_run step 1 skip 1", got == want, got, want);
+  // 12. skip 1, step 5
+  v = resync(5, 1);
+  got = first_or_none(with(v, "step="));
+  want = "step=5 skip=1 accepted=100 rejected=99";
+  check("12 resync_run step 5 skip 1", got == want, got, want);
+  char t[32];
+  std::snprintf(t, sizeof t, "%.3f s", secs9);
+  check("13 resync_run seconds 0.4: counts 0.4 s, not longer", secs9 &gt;= 0.3 &amp;&amp; secs9 &lt; 2.0, t,
+        "0.300 ~ 2.000 s");
+
+  return finish("point_run");
+}</code></pre>
+      <pre><code class="lang-cmake">lab_test(point_run)                                # 3-1-4: tests/test_point_run.cpp
+
+lab_tool(point)                                    # 3-1-4: src/point.cpp -&gt; build/lab_point</code></pre>
+      <p class="small">CMake 블록은 맨 아래, §3-1-3 에서 붙인 줄들 다음에 붙인다.</p>
+      <pre><code class="lang-bash">pi$ cmake --build scripts/lidar_lab/build -j2 --target test_point_run test_point_run_ub lab_point
+pi$ scripts/lidar_lab/build/test_point_run
+FAIL 1 1 start_scan, scan already running: returns true: got false, want true
+FAIL 2 2 start_scan, scan already running: the descriptor line: got start_scan() and first_points() are not written yet (T3, 3-1-4)., want descriptor  a55a0500004081
+...
+FAIL 13 13 resync_run seconds 0.4: counts 0.4 s, not longer: got 0.001 s, want 0.300 ~ 2.000 s
+13 of 13 cases failed
+pi$ scripts/lidar_lab/build/test_point_run_ub   # 진단 빌드 — 같은 줄만 나와야 한다</code></pre>
+      <p class="small">위 출력은 T3 · T4 가 골격 그대로일 때다(13번의 시각은 실행마다 조금 다르다).<sup class="fn"><a href="#fn-12">12</a></sup> T3 만 채우면 <code>5 of 13 cases failed</code>(9 ~ 13 — T4 를 채점하는 벡터)가 된다. 둘 다 채우면 <code>PASS point_run 13 cases</code> 다. 다 채운 판은 한 번에 5 초쯤 걸린다 — 8번이 점이 오지 않는 2 초를 기다린다.</p>
+      <div class="callout warn"><span class="ct">실행하기 전에 — 손을 치운다 (L1 · L2)</span>
+        <p>제목의 L1 · L2 는 <a href="l-01-link.html">l-01</a> 이 정한 안전 규칙이다(L1 = 보이지 않는 레이저, L2 = 도는 머리).</p>
+        <p>이 명령은 머리를 돌린다(<code>motor(fd, true)</code> 뒤 2초를 기다린다). 센서를 <strong>l-01 에서 만든 자리에 놓은 채</strong> 실행한다. 손으로 들고 실행하지 않는다.
+        정상으로 끝나거나 Ctrl-C 로 끊으면 <code>main()</code> 끝의 <code>stop(fd)</code> · <code>motor(fd, false)</code> 를 지난다(<a href="l-01-link.html#s3-3">l-01 §3-3</a>).
+        프로그램이 중단(abort)되거나 신호로 비정상 종료되면 그 두 줄을 지나지 않는다. 그때는 <strong>머리가 도는지 먼저 보고, 멈춘 것을 확인한 뒤</strong> 센서를 만진다. 돌면 허브 쪽에서 라이다의 USB 케이블을 뽑는다(<a href="l-01-link.html#overview">l-01 §1 의 L2</a>).</p>
+      </div>
+      <pre><code class="lang-bash">pi$ scripts/lidar_lab/build/lab_point
+start_scan() and first_points() are not written yet (T3, 3-1-4).
+no descriptor -- reading points anyway (2-1)</code></pre>
+      <p class="small">위 출력은 골격 그대로의 결과다(종료 코드 0).<sup class="fn"><a href="#fn-15">15</a></sup> 코드대로라면 골격도 <code>motor(fd, true)</code> 뒤 2초를 기다렸다가 머리를 멈춘다. 실제 머리의 동작은 확인 과제다(<a href="l-01-link.html#s2-4">l-01 §2-4</a> ③). T3 를 채우고 <code>test_point_run</code> 의 1 ~ 8 이 통과한 뒤 같은 명령을 다시 친다.</p>
+      <p>출력의 <strong>모양</strong>은 아래와 같다. 값 자리에는 내 기기의 값이 들어간다(집필자는 실제 기기의 이 출력을 본 적이 없다).<sup class="fn"><a href="#fn-15">15</a></sup></p>
+      <pre><code class="lang-bash">pi$ scripts/lidar_lab/build/lab_point
 descriptor  a55a0500004081
 first raw   bd 01 2d a0 0f
-point       ( &lt;n&gt; deg, &lt;n&gt; mm, q=&lt;n&gt;, start=&lt;True/False&gt;)
-point       ( &lt;n&gt; deg, &lt;n&gt; mm, q=&lt;n&gt;, start=&lt;True/False&gt;)
+point       ( &lt;n&gt; deg, &lt;n&gt; mm, q=&lt;n&gt;, start=&lt;true/false&gt;)
+point       ( &lt;n&gt; deg, &lt;n&gt; mm, q=&lt;n&gt;, start=&lt;true/false&gt;)
 ...
 accepted &lt;n&gt; nodes, rejected &lt;n&gt; boundaries</code></pre>
+      <p class="small"><code>accepted</code> 는 찍힌 <code>point</code> 줄 수보다 클 수 있다. 마지막 덩이의 남은 점도 세어지기 때문이다(§3-1-2 의 <code>stream()</code> 문단). 수는 <code>repr_double()</code>(l-02)로 찍으므로 <code>90.0</code> · <code>90.90625</code> 처럼 다시 읽었을 때 같은 값이 되는 가장 짧은 자릿수로 나온다.</p>
       <p>여기서 <strong>세 가지를 보고 노트에 적는다.</strong> 예상과 다르게 나와도 적는 것이 이 걸음의 일이다. 라이다는 예상대로 안 나오는 일이 잦다.</p>
       <div class="tbl"><table>
         <thead><tr><th>보는 것</th><th>무엇을 적는가</th><th>어떻게 읽는가</th></tr></thead>
         <tbody>
-          <tr><td>손으로 푼 값 ↔ 코드가 푼 값</td><td>첫 점의 5바이트 16진 <code>____</code> · 손 계산 <code>____</code> 도 <code>____</code> mm · 코드 <code>____</code> 도 <code>____</code> mm</td><td>같아야 한다. 다르면 <strong>손이 틀렸는지 코드가 틀렸는지</strong>를 §2-2 의 세 걸음으로 되짚는다. 시험 벡터를 통과한 코드라면 손 쪽을 먼저 의심한다</td></tr>
-          <tr><td>걸러진 자리의 수</td><td>accepted <code>____</code> · rejected <code>____</code> · 비율 <code>____</code> %</td><td><strong>0 이 아닌 것이 정상이다</strong>(버퍼 이음매마다 한 번씩 난다). 이 값이 크면 실습 C 로 이어진다. <strong>합격선은 없다. 내가 본 값을 적는 것이 이 항목이다</strong></td></tr>
-          <tr><td><code>start=True</code> 가 나오는 간격</td><td>연속된 두 <code>True</code> 사이의 점 수 <code>____</code></td><td>한 바퀴의 점 수다. l-04 가 이 값을 정면으로 잰다. 여기서는 "<strong>한 바퀴에 한 번만 나온다</strong>"만 확인한다. 여러 번 나오거나 아예 안 나오면 그 결과도 적어 두고 l-04 로 가져간다</td></tr>
+          <tr><td>손으로 푼 값 ↔ 코드가 푼 값</td><td>첫 점의 5바이트 16진 <code>____</code> · 손 계산 <code>____</code> 도 <code>____</code> mm · 코드 <code>____</code> 도 <code>____</code> mm</td><td>같아야 한다. <code>first raw</code> 다음의 첫 <code>point</code> 줄이 그 5바이트를 푼 값이다. 다르면 <strong>손이 틀렸는지 코드가 틀렸는지</strong>를 §2-2 의 세 걸음으로 되짚는다. 시험 벡터를 통과한 코드라면 손 쪽을 먼저 의심한다. 첫 <code>point</code> 가 둘째 점의 값이면 T3 의 4번 걸음(첫 5바이트를 <code>ns</code> 에 넣기)을 본다</td></tr>
+          <tr><td>걸러진 자리의 수</td><td>accepted <code>____</code> · rejected <code>____</code> · 비율 <code>____</code> %</td><td><strong>0 이어도, 0 이 아니어도 그 값이 관찰이다.</strong> 바른 <code>feed()</code> 는 덩이의 이음매에서 경계를 잃지 않는다. 거절은 바이트가 빠지거나 섞였을 때, 그리고 흐름이 어긋나게 시작했을 때 생긴다.<sup class="fn"><a href="#fn-14">14</a></sup> 이 값이 크면 실습 C 로 이어진다. <strong>합격선은 없다. 내가 본 값을 적는 것이 이 항목이다</strong></td></tr>
+          <tr><td><code>start=true</code> 가 나오는 간격</td><td>연속된 두 <code>true</code> 사이의 점 수 <code>____</code></td><td>한 바퀴의 점 수다. l-04 가 이 값을 정면으로 잰다. 여기서는 "<strong>한 바퀴에 한 번만 나온다</strong>"만 확인한다. 찍는 수(<code>--count</code>, 기본 10)가 한 바퀴보다 적으면 <code>true</code> 가 한 번도 안 보일 수 있다 — <code>lab_point --count 1000</code> 으로 다시 본다. 여러 번 나오거나 아예 안 나오면 그 결과도 적어 두고 l-04 로 가져간다</td></tr>
         </tbody>
       </table></div>
-      <p>⚠ 기술자(<code>a55a…</code>)가 끝내 안 왔더라도 <strong>여기서 멈추지 않는다.</strong> 5바이트 검사만으로 경계를 찾는 것이 §2-1 의 요지이고, 점이 흐르면 이 실습은 끝난다. 기술자가 안 온 사실 자체를 노트에 적어 l-06 으로 가져간다.</p>
+      <p>⚠ 기술자(<code>a55a…</code>)가 끝내 안 왔더라도 <strong>여기서 멈추지 않는다.</strong> 그때 <code>lab_point</code> 는 <code>no descriptor -- reading points anyway (2-1)</code> 를 찍고 점을 계속 읽는다. 5바이트 검사만으로 경계를 찾는 것이 §2-1 의 요지이고, 점이 흐르면 이 실습은 끝난다.
+      기술자가 안 온 사실 자체를 노트에 적어 l-06 으로 가져간다. 기술자 자리에서 읽힌 7바이트는 점의 바이트다(l-02 §3-3).</p>
+      <details class="hint" id="hint-t3"><summary>힌트 T3 — <code>start_scan()</code> · <code>first_points()</code> · 멈추고 비우고 묻고, 첫 5바이트를 버리지 않는다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — <code>start_scan()</code>: 흐름을 멈추고 비운 뒤 <code>SCAN</code> 을 보내고, 기술자 7바이트를 16진으로 찍고, 기술자였는지를 돌려준다. <code>first_points()</code>: 다음 5바이트를 원본 그대로 찍고 <code>NodeStream</code> 에 넣는다. 그 뒤 <code>stream()</code> 으로 앞 <code>count</code> 점을 찍고 멈춘 다음, 두 수를 찍는다.</p>
+        <p>채점은 <code>test_point_run</code> 의 1 ~ 8 이 한다(1 ~ 4 = <code>start_scan()</code>, 5 ~ 8 = <code>first_points()</code>).</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T3 - scripts/lidar_lab/include/lidar_lab/point_run.hpp (start_scan · first_points) */
+inline bool start_scan(int fd) {
+  stop(fd);
+  drain(fd);
+  send(fd, CMD_SCAN);
+  u8 raw[kDescriptorLen];
+  const std::size_t got = read_exact(fd, raw, kDescriptorLen, kReadTimeoutMs);
+  std::printf("descriptor  ");
+  for (std::size_t i = 0; i &lt; got; ++i) std::printf("%02x", raw[i]);
+  std::printf("\n");
+  return parse_descriptor(raw, got).has_value();
+}
+
+inline void first_points(int fd, int count) {
+  constexpr double kSeconds = 2.0;  // upper bound on the time spent looking for them
+  NodeStream ns;
+  int printed = 0;
+  auto on_node = [&amp;](const Node&amp; n) {
+    print_node(n);
+    return ++printed &lt; count;
+  };
+  u8 first[kNodeLen];
+  const std::size_t got = read_exact(fd, first, kNodeLen, kReadTimeoutMs);
+  std::printf("first raw  ");
+  for (std::size_t i = 0; i &lt; got; ++i) std::printf(" %02x", first[i]);
+  std::printf("\n");
+  bool more = true;
+  ns.feed(first, got, [&amp;](const Node&amp; n) { more = on_node(n); });  // those bytes go in too
+  if (more) stream(fd, kSeconds, ns, on_node);
+  std::printf("accepted %zu nodes, rejected %zu boundaries\n", ns.accepted(), ns.rejected());
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>stop(fd); drain(fd); send(fd, CMD_SCAN);</code> — 차례가 요점이다. 포트를 열 때 이미 스캔이 흐르고 있었다면, 멈추고 비우지 않은 채 읽은 첫 7바이트는 기술자가 아니라 점이다(l-02 §2-4).</li>
+          <li><code>read_exact(fd, raw, kDescriptorLen, kReadTimeoutMs)</code> — 7바이트를 모은다. 모은 수(<code>got</code>)가 7 보다 적을 수 있다. 찍는 반복문도 <code>got</code> 까지만 반복한다.</li>
+          <li><code>std::printf("%02x", raw[i]);</code> — 한 바이트를 두 자리 16진으로 찍는다. 이 쪽의 꼴은 소문자 붙여 쓰기다(<code>a55a…</code>).</li>
+          <li><code>return parse_descriptor(raw, got).has_value();</code> — 판정은 l-02 의 순수 함수에 맡긴다. 여기서는 기술자였는지만 돌려준다.</li>
+          <li><code>constexpr double kSeconds = 2.0;</code> — 점을 얼마 동안 찾을지. 숫자에 이름을 붙여 한 곳에서 바꾼다. 몇 점을 찍을지는 인자 <code>count</code> 로 받는다. <code>main()</code> 이 <code>--count</code> 의 값(기본 10)을 넘긴다.</li>
+          <li><p><code>auto on_node = [&amp;](const Node&amp; n) { … };</code> — 점마다 <code>print_node()</code> 로 한 줄 찍는다. <code>count</code> 개를 찍었으면 <code>false</code> 를 돌려준다.</p><p><code>[&amp;]</code> 라서 바깥의 <code>printed</code> 를 고칠 수 있다. <code>false</code> 를 받은 <code>stream()</code> 은 그 덩이를 마치고 돌아온다.</p></li>
+          <li><code>read_exact(fd, first, kNodeLen, kReadTimeoutMs)</code> 와 그 뒤 두 줄 — 기술자 다음 5바이트를 원본 그대로 찍는다. §3-1-4 의 손 계산이 이 줄과 견준다.</li>
+          <li><p><code>ns.feed(first, got, [&amp;](const Node&amp; n) { more = on_node(n); });</code> — 찍은 5바이트도 <code>NodeStream</code> 에 넣는다. 넣지 않으면 첫 점이 사라져, 첫 <code>point</code> 줄이 <code>first raw</code> 가 아닌 다음 점을 푼 값이 된다(흔한 실수 둘째 행).</p><p><code>more</code> 는 첫 점에서 이미 멈추라는 답이 왔는지를 담는다.</p></li>
+          <li><code>if (more) stream(fd, kSeconds, ns, on_node);</code> — 나머지는 <code>point_port.hpp</code> 의 전량 함수가 읽는다. 같은 <code>ns</code> 를 넘기므로 두 수가 이어서 세어진다.</li>
+          <li><code>std::printf("accepted %zu nodes, rejected %zu boundaries\n", …);</code> — <code>%zu</code> 는 <code>std::size_t</code> 를 찍는 서식이다.</li>
+          <li>골격의 자리표시(안내 <code>printf</code> · <code>(void)fd;</code> · <code>return false;</code>, <code>first_points()</code> 의 <code>(void)fd;</code> · <code>(void)count;</code>)는 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 기술자를 <code>descriptor(fd)</code>(l-02)로 받아도 판정은 같다. 다만 그 함수는 해석된 값만 돌려주고 원본 7바이트는 돌려주지 않는다 — 이 쪽은 그 7바이트를 노트에 적으므로 직접 읽는다.</p></li>
+        </ul>
+        <p><strong>쓰는 API</strong> — l-02 의 <code>stop(fd)</code> · <code>drain(fd)</code> · <code>send(fd, cmd)</code> · <code>read_exact(fd, buf, n, timeout_ms)</code> · <code>parse_descriptor(b, n)</code>. 상수는 l-02 의 <code>kDescriptorLen</code>(기술자 길이 7)이다. 이 쪽의 <code>stream()</code> · <code>NodeStream::feed()</code>(§3-1-2)와 <code>print_node()</code>(이 파일, 전량).</p>
+        <p><strong>흔한 실수</strong> — 가운데 열은 그 판의 <code>test_point_run</code> 이 찍는 것이다. 집필자가 시험한 세 컴파일러가 같은 FAIL 줄을 냈다.<sup class="fn"><a href="#fn-15">15</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w45"><col class="w25"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_point_run</code> 이 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>stop(fd)</code> · <code>drain(fd)</code> 없이 <code>SCAN</code> 만 보냈다</td><td><code>3 of 13</code> — <code>FAIL 1 …: got false</code> · <code>FAIL 2 …: got descriptor  bd012da00fbe75</code> · <code>FAIL 3 …: got A520, want A525A520</code>. 흐르던 스캔에서 기술자 자리에 점이 읽혔다. <code>stop(fd)</code> 만 빼면 <code>FAIL 3</code> 하나다</td><td>멈추고 비운 뒤 보낸다</td></tr>
+            <tr><td>첫 5바이트를 찍기만 하고 <code>ns</code> 에 넣지 않았다</td><td><code>1 of 13</code> — <code>FAIL 5 …: got first raw   bd 01 2d a0 0f -&gt; 90.90625 91.8125 92.71875</code>. 첫 점이 <code>bd 01 2d a0 0f</code> 를 푼 <code>90.0</code> 이 아니다</td><td>그 5바이트도 <code>feed()</code> 에 넣는다</td></tr>
+            <tr><td><code>on_node</code> 가 늘 <code>true</code> 를 돌려준다(<code>print_node(n); return true;</code>)</td><td>빌드 경고 <code>unused variable 'printed'</code> · <code>unused parameter 'count'</code>(<code>++printed;</code> 를 남긴 꼴은 <code>'count'</code> 하나). <code>2 of 13</code> — <code>FAIL 5 …: … (200 point lines)</code> · <code>FAIL 7 …: got 200, want 1</code></td><td>찍은 수가 차면 <code>false</code></td></tr>
+            <tr><td><code>return printed++ &lt; count;</code></td><td><code>2 of 13</code> — <code>FAIL 5 …: … 90.0 90.90625 91.8125 92.71875</code> · <code>FAIL 7 …: got 2, want 1</code>. 늘 한 점을 더 찍는다</td><td><code>++printed</code> — 더한 뒤 견준다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — <code>test_point_run</code> 이 <code>5 of 13 cases failed</code>(9 ~ 13 만 — T4 를 채점하는 벡터)면 T3 은 끝났다. 그다음 <code>lab_point</code> 로 위 "세 가지" 표를 채운다. 첫 <code>point</code> 줄이 <code>first raw</code> 의 손 계산과 같으면 T1 · T2 · T3 이 함께 맞은 것이다. <code>first raw</code> 는 찍히는데 <code>point</code> 줄이 없고 <code>accepted 0</code> 이면 T3 이 아니라 T2(§3-1-3 5번)를 본다.</p>
+        </div></details>
 
       <h3 id="s3-2">3-2. 실습 B — 손을 30 cm 앞에 댄다</h3>
       <p>점이 흐르는 것과 <strong>그 점이 내 방의 실제 물체와 맞는 것</strong>은 다른 일이다. 이 실습은 그 둘을 잇는 가장 간단한 관찰이다. 자와 손 하나면 된다.</p>
@@ -441,8 +1515,8 @@ accepted &lt;n&gt; nodes, rejected &lt;n&gt; boundaries</code></pre>
 
       <h4 id="s3-2-3">3-2-3. 채우기 — 관찰의 순서</h4>
       <ol class="steps">
-        <li><strong>기준을 먼저 기록한다.</strong> 손 없이 한 번 실행해 출력을 파일로 받아 둔다. 이것이 없으면 "바뀌었다"를 말할 수 없다.</li>
-        <li><strong>손을 정면 30 cm 에 두고</strong> 다시 실행한다. 300 근처의 거리가 나오는 <strong>각도 구간</strong>을 찾는다. 한 점이 아니라 여러 점이 같이 바뀐다(손은 폭이 있다).</li>
+        <li><strong>기준을 먼저 기록한다.</strong> 점을 한 바퀴보다 넉넉하게 찍는다 — <code>--count 1000</code>. 손 없이 한 번 실행해 출력을 파일로 받아 둔다(<code>pi$ scripts/lidar_lab/build/lab_point --count 1000 &gt; /tmp/l03_base.txt</code>). 다시 빌드할 것은 없다. 이것이 없으면 "바뀌었다"를 말할 수 없다.</li>
+        <li><strong>손을 정면 30 cm 에 두고</strong> 같은 명령(<code>--count 1000</code>)으로 다시 실행한다. 300 근처의 거리가 나오는 <strong>각도 구간</strong>을 찾는다. 한 점이 아니라 여러 점이 같이 바뀐다(손은 폭이 있다).</li>
         <li><strong>치운다.</strong> 그 구간이 원래 값으로 돌아오는지 본다. <strong>안 돌아오면 센서가 움직인 것</strong>이다. §3-2-1 로 돌아간다.</li>
         <li><strong>손을 옆으로 옮긴다.</strong> 각도 구간이 <strong>어느 쪽으로</strong> 움직이는가. ⚠ 여기서 "시계 방향이면 각도가 커진다" 같은 결론을 <strong>아직 내리지 않는다</strong>. 어느 쪽이 0° 인지를 아직 정하지 않았기 때문이다. <strong>지금 적을 것은 "왼쪽으로 옮기니 각도가 커졌다/작아졌다" 한 줄</strong>이다. l-08 이 이 한 줄을 입력으로 써서 방향 규약을 확정한다.</li>
         <li><strong>허공을 본다.</strong> 아무것도 없는 방향(천장 쪽·창밖)에서 거리가 어떻게 나오는가. <code>0</code> 인가, 큰 값인가, 점이 아예 안 오는가. <strong>셋 다 있을 수 있다</strong>. 무엇이 나왔는지 적는다(§2-3).</li>
@@ -461,35 +1535,44 @@ accepted &lt;n&gt; nodes, rejected &lt;n&gt; boundaries</code></pre>
       <p class="small">⚠ <strong>이 실습이 확인하는 것은 "거리"까지다.</strong> 각도의 <strong>방향 규약</strong>(0° 가 어디이고 어느 쪽으로 커지는가)은 여기서 확정하지 않는다. 방향 규약은 실물의 기준선과 함께 l-08 이 다룬다. 지금 적어 둔 "왼쪽으로 옮기니 각도가 ____" 한 줄이 그때의 입력이다.</p>
 
       <h3 id="s3-3">3-3. 실습 C — 재동기를 일부러 나쁘게 만들어 본다</h3>
-      <p>§2-4 는 "방식에 따라 수율이 달라진다"고 말했다. <strong>설명만으로 받아들이지 않고 내 기기에서 직접 만들어 본다.</strong> 바꿀 수 있는 값은 둘이고, 둘 다 §3-1-3 에서 이미 이름을 붙여 둔 상수다.</p>
+      <p>§2-4 는 "방식에 따라 수율이 달라진다"고 말했다. <strong>설명만으로 받아들이지 않고 내 기기에서 직접 만들어 본다.</strong> 바꾸는 값은 둘이고, 둘 다 <code>lab_point --resync</code> 의 실행 인자다 — 걸음 <code>--step</code> 과 버릴 바이트 수 <code>--skip</code>. 채울 곳은 T4 <code>resync_run()</code> 하나다. 소스는 회차마다 고치지 않는다.</p>
 
       <h4 id="s3-3-1">3-3-1. 확인</h4>
       <p><strong>실행 확인:</strong> 미확인 — 집필자는 Pi 에 접속하지 못했다.</p>
       <div class="tbl"><table>
         <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
         <tbody>
-          <tr><td>1</td><td><code>pi$ grep -n 'RESYNC_STEP' scripts/lidar_lab/point.py</code></td><td>정의 한 줄 + <code>stream</code> 안에서 쓰는 한 줄, <strong>합쳐 두 줄</strong></td><td>재동기 걸음이 코드 안에 숫자로 직접 적혀 있다 → §3-1-3 4번으로 돌아가 상수로 분리한다. <strong>두 곳 이상에서 쓰이면 이 실습이 성립하지 않는다</strong></td></tr>
-          <tr><td>2</td><td><code>pi$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_point.py</code></td><td><code>PASS point 10 cases</code></td><td>실습 A 를 먼저 끝낸다. <strong>해독이 틀린 채로 이 실습을 하면 두 원인이 섞인다</strong></td></tr>
+          <tr><td>1</td><td><code>pi$ grep -n 'step_' scripts/lidar_lab/include/lidar_lab/point.hpp</code></td><td>네 줄 — 생성자 · <code>feed()</code> 안의 <code>i += step_;</code> · 접근자 · 칸 선언. 골격의 주석을 남겼으면 그 줄도 나온다</td><td><code>feed()</code> 안에 <code>step_</code> 이 없으면 재동기 걸음이 숫자로 박혀 있다 → §3-1-3 5번으로 돌아가 <code>step_</code> 을 쓴다. <strong>그대로 두면 <code>--step</code> 을 바꿔도 결과가 바뀌지 않아 이 실습이 성립하지 않는다</strong>(T2 의 흔한 실수 · <code>test_stream</code> 8번)</td></tr>
+          <tr><td>2</td><td><code>pi$ scripts/lidar_lab/build/test_point &amp;&amp; scripts/lidar_lab/build/test_stream</code></td><td><code>PASS point 10 cases</code> · <code>PASS stream 8 cases</code></td><td>실습 A 를 먼저 끝낸다. <strong>해독이 틀린 채로 이 실습을 하면 두 원인이 섞인다</strong></td></tr>
           <tr><td>3</td><td>실습 A 의 <code>accepted</code> · <code>rejected</code> 값을 노트에서 찾는다</td><td>두 숫자</td><td>§3-1-4 로 돌아가 기준을 먼저 만든다</td></tr>
         </tbody>
       </table></div>
 
       <h4 id="s3-3-2">3-3-2. 골격</h4>
-      <p>조절할 상수 둘을 파일 맨 위에 둔다. <strong>이 실습이 끝나면 <code>SKIP_BYTES</code> 는 지우고 <code>RESYNC_STEP</code> 은 내가 고른 값으로 되돌린다</strong>. 일부러 망가뜨린 설정을 그대로 두고 다음 쪽으로 가지 않는다.</p>
-      <pre><code class="lang-python"># 3-3 only. Two knobs, nothing else changes between runs.
-RESYNC_STEP = 1   # bytes to advance when the framing check fails. 1 or 5 in this experiment.
-SKIP_BYTES  = 0   # 0 = normal. 1 = throw away one byte right after the descriptor, on purpose,
-                  #     so the stream starts out MISALIGNED. This is the whole point of 3-3.
-
-# TODO(you): in the runner, after descriptor() returns and before the first stream() item,
-#   read and discard SKIP_BYTES bytes. Then run for RUN_SECONDS and print three things:
-#     accepted, rejected, and the first 20 angles (rounded to 1 decimal).
-#   The angles are what tell you whether the points are real or noise.</code></pre>
+      <p>조절할 값 둘은 <code>lab_point</code> 의 실행 인자다(§3-1-4 의 인자 표). 회차마다 소스를 고치거나 다시 빌드하지 않는다. 그래서 실습이 끝난 뒤 되돌릴 것도 없다.</p>
+      <p>두 인자는 이렇게 쓰인다.</p>
+      <ul>
+        <li><code>--skip &lt;n&gt;</code> — <code>resync_run()</code>(T4)이 기술자 뒤에서 이만큼 바이트를 읽어 버린다. <code>1</code> 이면 흐름이 1바이트 어긋난 채로 시작한다. 이것이 이 실습의 요점이다.</li>
+        <li><code>--step &lt;n&gt;</code> — <code>resync_run()</code> 이 <code>NodeStream ns(step)</code> 으로 넘긴다. 생성자가 1 ~ 5 로 잘라 <code>step_</code> 에 담고, <code>feed()</code>(T2)가 검사에 실패한 자리에서 이만큼 나아간다.</li>
+      </ul>
+      <p>T4 의 골격은 §3-1-4 의 <code>point_run.hpp</code> 안에 있다. <code>lab_point --resync</code> 는 기술자를 받은 뒤 <code>resync_run()</code> 을 부른다. 기술자가 오지 않으면 <code>no descriptor -- not running 3-3</code> 을 찍고 1 을 돌려준다 — 어긋남의 출발점을 알 수 없기 때문이다.</p>
 
       <h4 id="s3-3-3">3-3-3. 직접 채우기 — 네 번 실행한다</h4>
-      <p>한 번에 상수 하나만 바꾼다. 매번 <strong>같은 장면</strong>(센서 앞에 아무도 없고 방이 그대로)에서 <strong>같은 시간</strong> 동안 실행한다. 시간은 내가 정하고(4초를 권한다) 네 번 모두 같게 한다.</p>
+      <p>먼저 T4 <code>resync_run()</code> 을 채운다(아래 카드). 그다음 한 번에 인자 하나만 바꾼다. 매번 <strong>같은 장면</strong>(센서 앞에 아무도 없고 방이 그대로)에서 <strong>같은 시간</strong> 동안 실행한다. 시간은 내가 정하고(4초를 권한다 — <code>--seconds</code> 의 기본값) 네 번 모두 같게 한다.</p>
+      <p>T4 를 채웠으면 한 번 빌드하고 채점받는다. 그 뒤 네 회차는 인자만 다른 네 명령이다.</p>
+      <pre><code class="lang-bash">pi$ cmake --build scripts/lidar_lab/build -j2 --target lab_point test_point_run test_point_run_ub
+pi$ scripts/lidar_lab/build/test_point_run &amp;&amp; scripts/lidar_lab/build/test_point_run_ub
+PASS point_run 13 cases
+PASS point_run 13 cases
+pi$ scripts/lidar_lab/build/lab_point --resync --skip 0 --step 1        # ①
+descriptor  a55a0500004081
+step=&lt;n&gt; skip=&lt;n&gt; accepted=&lt;n&gt; rejected=&lt;n&gt;
+angles &lt;각도 20 개&gt;
+pi$ scripts/lidar_lab/build/lab_point --resync --skip 0 --step 5        # ②
+pi$ scripts/lidar_lab/build/lab_point --resync --skip 1 --step 1        # ③
+pi$ scripts/lidar_lab/build/lab_point --resync --skip 1 --step 5        # ④</code></pre>
       <div class="tbl"><table>
-        <thead><tr><th>회차</th><th><code>SKIP_BYTES</code></th><th><code>RESYNC_STEP</code></th><th>accepted</th><th>rejected</th><th>첫 20개 각도가 <strong>이웃끼리 조금씩</strong> 달라지는가</th></tr></thead>
+        <thead><tr><th>회차</th><th><code>--skip</code></th><th><code>--step</code></th><th>accepted</th><th>rejected</th><th>첫 20개 각도가 <strong>이웃끼리 조금씩</strong> 달라지는가</th></tr></thead>
         <tbody>
           <tr><td>①</td><td>0</td><td>1</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
           <tr><td>②</td><td>0</td><td>5</td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td></tr>
@@ -498,6 +1581,54 @@ SKIP_BYTES  = 0   # 0 = normal. 1 = throw away one byte right after the descript
         </tbody>
       </table></div>
       <p>마지막 열이 이 실습의 핵심 관찰이다. 경계를 제대로 찾고 있으면 이웃한 점의 각도는 <strong>조금씩 커진다</strong>(센서가 도는 중이므로). 경계를 잃은 채 그럴듯한 5바이트만 통과시키고 있으면 각도는 <strong>불규칙하게 튄다</strong>. 점의 개수만 세면 이 둘이 구별되지 않는다.</p>
+      <details class="hint" id="hint-t4"><summary>힌트 T4 — <code>resync_run()</code> · 일부러 어긋나게 하고, 같은 시간 동안 끝까지 센다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 기술자 다음에서 <code>skip</code> 바이트를 읽어 버린다. 그다음 <code>NodeStream ns(step)</code> 으로 <code>seconds</code> 동안 세면서 앞 20 점의 각도를 모으고, 두 줄(<code>step= skip= accepted= rejected=</code> · <code>angles …</code>)을 찍는다.</p>
+        <p>채점은 <code>test_point_run</code> 의 9 ~ 13 이 한다. 가짜 기기는 점 200 개를 보내고, 시험은 0.4 초 동안 세게 한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T4 - scripts/lidar_lab/include/lidar_lab/point_run.hpp (resync_run) */
+inline void resync_run(int fd, std::size_t step, std::size_t skip, double seconds) {
+  constexpr int kPrintAngles = 20;
+  u8 junk[16];
+  const std::size_t n_skip = skip &lt; sizeof junk ? skip : sizeof junk;
+  read_exact(fd, junk, n_skip, kReadTimeoutMs);
+  NodeStream ns(step);
+  std::vector&lt;double&gt; angles;
+  stream(fd, seconds, ns, [&amp;](const Node&amp; n) {
+    if (angles.size() &lt; static_cast&lt;std::size_t&gt;(kPrintAngles)) angles.push_back(n.deg);
+    return true;
+  });
+  std::printf("step=%zu skip=%zu accepted=%zu rejected=%zu\n", ns.resync_step(), n_skip,
+              ns.accepted(), ns.rejected());
+  std::printf("angles");
+  for (double a : angles) std::printf(" %.1f", a);
+  std::printf("\n");
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>constexpr int kPrintAngles = 20;</code> — 찍을 각도의 수다. 세는 시간은 인자 <code>seconds</code> 로 받는다. <code>main()</code> 이 <code>--seconds</code> 의 값(기본 4.0)을 넘기므로 네 회차가 같은 시간 동안 센다.</li>
+          <li><code>u8 junk[16];</code> 과 다음 줄 — 버릴 바이트를 담을 작은 배열이다. <code>skip</code> 이 배열보다 크면 배열 크기로 자른다(<code>main()</code> 은 16 까지만 받는다). 배열 끝 너머에 쓰지 않게 하기 위해서다.</li>
+          <li><code>read_exact(fd, junk, n_skip, kReadTimeoutMs);</code> — 읽어서 버린다. 이 한 줄이 흐름을 어긋나게 한다. <code>n_skip</code> 이 0 이면 아무것도 읽지 않는다.</li>
+          <li><code>NodeStream ns(step);</code> — 실패한 자리에서 나아갈 칸 수를 넘긴다. <code>feed()</code>(T2)가 이 값을 <code>step_</code> 으로 쓴다.</li>
+          <li><p><code>stream(fd, seconds, ns, [&amp;](const Node&amp; n) { … return true; });</code> — 각도는 앞 20 개만 모으고, 람다는 끝까지 <code>true</code> 를 돌려준다. 그래야 시간 내내 센다.</p><p>20 개를 모은 뒤 <code>false</code> 를 돌려주면 첫 덩이만 세고 끝난다(흔한 실수 둘째 행).</p></li>
+          <li><code>std::printf("step=%zu …", ns.resync_step(), n_skip, …);</code> — <code>ns.resync_step()</code> 은 1 ~ 5 로 자른 뒤의 값, 곧 실제로 쓴 걸음이다. <code>n_skip</code> 은 실제로 버린 바이트 수다.</li>
+          <li><code>std::printf(" %.1f", a);</code> — 각도를 소수 한 자리로 찍는다. 이웃끼리 조금씩 커지는지만 보면 되기 때문이다.</li>
+          <li>골격의 자리표시 넷(<code>(void)fd;</code> · <code>(void)step;</code> · <code>(void)skip;</code> · <code>(void)seconds;</code>)은 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 버릴 바이트를 <code>std::vector&lt;u8&gt; junk(skip);</code> 에 읽어도 같다(상한도 필요 없다). 이 가이드는 크기가 정해진 작은 배열과 상한으로 쓴다.<sup class="fn"><a href="#fn-15">15</a></sup></p></li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>read_exact()</code>(l-02) · <code>stream()</code> · <code>NodeStream</code>(§3-1-2) · <code>std::vector</code> 의 <code>push_back(x)</code>.</p>
+        <p><strong>흔한 실수</strong> — 가운데 열은 그 판의 <code>test_point_run</code> 이 찍는 것이다. 집필자가 시험한 세 컴파일러가 같았다. 뒤의 두 행은 경고가 첫 단서다.<sup class="fn"><a href="#fn-15">15</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w45"><col class="w25"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_point_run</code> 이 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>skip</code> 만큼 읽어 버리지 않았다</td><td><code>2 of 13</code> — <code>FAIL 11 …: got step=1 skip=1 accepted=200 rejected=0</code> · <code>FAIL 12 …: got step=5 skip=1 accepted=200 rejected=0</code>. 줄에는 <code>skip=1</code> 이 찍히지만 버리지는 않았다</td><td><code>read_exact()</code> 로 읽어 버린다</td></tr>
+            <tr><td>각도 20 개를 모은 뒤 <code>false</code> 를 돌려준다</td><td><code>4 of 13</code> — <code>FAIL 9 …: got step=1 skip=0 accepted=23 rejected=0</code> · <code>FAIL 11</code> · <code>FAIL 12</code> · <code>FAIL 13</code>(0.01 초 남짓에 돌아왔다). 첫 덩이 하나만 세었다</td><td>람다는 늘 <code>true</code></td></tr>
+            <tr><td><code>NodeStream ns;</code>(인자를 넘기지 않음)</td><td>빌드 경고 <code>unused parameter 'step'</code>. <code>1 of 13</code> — <code>FAIL 12 …: got step=1 skip=1 accepted=199 rejected=4</code>. <code>--step 5</code> 를 줘도 걸음 1 로 동작한다</td><td><code>NodeStream ns(step);</code></td></tr>
+            <tr><td><code>stream(fd, 4.0, ns, …)</code>(시간을 박았다)</td><td>빌드 경고 <code>unused parameter 'seconds'</code>. <code>1 of 13</code> — <code>FAIL 13 …: got 4.002 s, want 0.300 ~ 2.000 s</code>(시각은 실행마다 조금 다르다)</td><td><code>seconds</code> 를 넘긴다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — <code>test_point_run</code> 과 <code>_ub</code> 가 <code>PASS point_run 13 cases</code> 한 줄씩이면 T4 는 끝났다. 그다음 위 네 회차 표를 채운다. 시험의 가짜 흐름에서는 ③ 의 첫 세 각도(320.3 · 328.3 · 336.3)만 튀고 93.6 부터 이어졌다. ④ 는 끝까지 튀었고 360° 를 넘는 각도도 섞였다.<sup class="fn"><a href="#fn-15">15</a></sup> 합성 입력이라 내 기기의 수와 모양은 다를 수 있다.</p>
+        </div></details>
 
       <h4 id="s3-3-4">3-3-4. 돌리고 보기</h4>
       <p>네 줄을 놓고 판정한다. <strong>예상과 다르게 나와도 그대로 적는다</strong>. 아래 "읽는 법"은 예상이지 합격선이 아니다.</p>
@@ -505,31 +1636,32 @@ SKIP_BYTES  = 0   # 0 = normal. 1 = throw away one byte right after the descript
         <thead><tr><th>비교</th><th>읽는 법</th></tr></thead>
         <tbody>
           <tr><td>① ↔ ②<br>(어긋남 없음, 걸음만 다름)</td><td><strong>거의 같게 나올 수 있다.</strong> 어긋난 적이 없으면 재동기 자체가 거의 발동하지 않기 때문이다. 거의 같게 나왔다면 그대로 적는다. 이 현상이 바로 <strong>"평소에는 드러나지 않는 고장"</strong> 의 정의다(§2-4 의 <em>silently</em>)</td></tr>
-          <tr><td>③ (어긋남, 걸음 1)</td><td>1바이트 어긋난 채로 시작해도 <strong>몇 바이트 안에 다시 경계를 찾는다</strong>. 1칸씩 밀면 늦어도 5칸 안에 진짜 경계를 만난다. 각도가 조금씩 커지는 줄이 이어지면 회복한 것이다. 처음 몇 개만 이상하고 나머지가 정상인 꼴</td></tr>
+          <tr><td>③ (어긋남, 걸음 1)</td><td>1바이트 어긋난 채로 시작해도 <strong>거절 네 번 안에 다시 경계를 찾는다</strong>. 거절마다 1칸씩 밀리기 때문이다. 그 전에 검사를 우연히 통과한 몇 점이 섞일 수 있다 — 통과한 자리는 5칸 건너뛰어 어긋남을 그대로 잇는다. 각도가 조금씩 커지는 줄이 이어지면 회복한 것이다. 처음 몇 개만 이상하고 나머지가 정상인 꼴</td></tr>
           <tr><td>④ (어긋남, 걸음 5)</td><td>⚠ <strong>계속 회복하지 못할 수 있다.</strong> 5칸씩 건너뛰면 어긋난 <em>위상</em>이 유지되기 때문이다. 진짜 경계는 언제나 5의 배수만큼 떨어진 자리에 있는데, 내 코드는 잘못된 자리에서 5칸씩 건너뛰고 있다. 통과하는 점은 <strong>우연히 검사 비트가 맞은 무의미한 값</strong>이다. 개수는 줄고 각도는 튄다. <strong>360° 를 넘는 값</strong>이 섞여 나올 수도 있다(15비트 필드가 511.98° 까지 담는다 — §2-2). 이 회차의 통과 비율은 표 아래에 적는다</td></tr>
-          <tr><td>①·③ ↔ ②·④ 의 비</td><td><code>____</code> 배. <strong>내 값을 적는다.</strong> 같은 모델의 1세대 기록은 (버퍼 없이 1바이트씩 다시 읽는 방식에 대해) <em>"silently halves the yield"</em> 라 적었다(<code>NOMINAL(gen1-record, 2026-07-14)</code>). <strong>내 수는 1세대 기록과 다를 수 있다</strong>. 1세대가 비교한 두 방식은 이 실습의 두 방식과 정확히 같지 않다(그쪽은 이미 읽어 낸 5바이트까지 버린다). 또 이 값은 센서가 아니라 <strong>내 코드와 내 Pi 의 읽기 타이밍</strong>에 달려 있다</td></tr>
+          <tr><td>①·③ ↔ ②·④ 의 비</td><td><code>____</code> 배. <strong>내 값을 적는다.</strong> 같은 모델의 1세대 기록은 (버퍼 없이 1바이트씩 다시 읽는 방식에 대해) <em>"silently halves the yield"</em> 라 적었다(<code>NOMINAL(gen1-record)</code>).<sup class="fn"><a href="#fn-16" id="fnref-16">16</a></sup> <strong>내 수는 1세대 기록과 다를 수 있다</strong>. 1세대가 비교한 두 방식은 이 실습의 두 방식과 정확히 같지 않다(그쪽은 이미 읽어 낸 5바이트까지 버린다). 또 이 값은 센서가 아니라 <strong>내 코드와 내 Pi 의 읽기 타이밍</strong>에 달려 있다</td></tr>
         </tbody>
       </table></div>
       <p class="small">④ 회차에서 한 가지를 더 적는다. 이 회차의 <strong>통과 비율</strong> <code>accepted ÷ (accepted + rejected)</code> = <code>____</code> % 가 §2-1 에서 산수로 낸 <strong>1/4</strong> 과 얼마나 가까운가. 가까우면 <strong>§2-1 의 확률 계산이 내 기기에서 확인된 것</strong>이다. 다만 <strong>1/4 은 바이트가 고르게 섞여 있다고 볼 때의 수다.</strong> 내 값이 그보다 크거나 작아도 그 값이 관찰이고, 이 회차에서 정말 봐야 하는 것은 비율이 아니라 <strong>각도가 이어지지 않는다는 것</strong>이다.</p>
-      <div class="callout warn"><span class="ct">끝내기 전에 되돌린다</span>
-        <p><code>SKIP_BYTES</code> 를 지우거나 <code>0</code> 으로 되돌리고, <code>RESYNC_STEP</code> 을 <strong>내가 고른 값</strong>으로 둔다. 일부러 망가뜨린 설정을 남긴 채 l-04 로 가면 <strong>l-04 에서 나는 이상한 결과의 원인을 라이다에서 찾게 된다.</strong>
-        어느 값을 골랐는지와 <strong>왜</strong>를 노트에 한 줄 적는다. 이 가이드는 그 값을 대신 정하지 않는다.</p>
+      <div class="callout tip"><span class="ct">끝낸 뒤 — 되돌릴 것이 없다</span>
+        <p>네 회차는 인자만 바꿨고 소스는 그대로다. 다음 쪽의 <code>NodeStream</code> 은 <code>point.hpp</code> 의 기본값 <code>kResyncStep</code>(1)을 쓴다.
+        어느 걸음이 나은지와 <strong>왜</strong>를 노트에 한 줄 적는다. 이 가이드는 그 값을 대신 정하지 않는다. 1 이 아닌 값을 골랐다면 그때만 그 한 줄을 고치고, 고친 것도 노트에 적는다.</p>
       </div>
 
       <h2 id="checkpoints">✅ 검증 체크포인트</h2>
       <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.
       ⚠ 이 쪽의 항목은 "<strong>예상한 것을 봤는가</strong>"가 아니라 "<strong>무엇이 일어났는지 적었는가</strong>"로 쓰여 있다. 예상과 다른 관찰을 적어도 이 항목은 통과다.</p>
+      <p>머리말의 <strong>경로 통과</strong>는 정상 절차를 끝까지 했다는 뜻이고, <strong>발동 확인</strong>은 일부러 만든 이상 상황의 출력을 봤다는 뜻이다. 이 "경로"는 <a href="l-00-map.html">l-00</a> 의 경로 A / B 와 관계없다.</p>
       <ul class="checklist">
         <li><label><input type="checkbox" data-key="point-decoded-by-hand"><span><strong>경로 통과</strong> — 5바이트 하나의 16진과, 내가 <strong>손으로</strong> 푼 각도·거리·품질과, 코드가 푼 세 값을 나란히 적었다. 같았는지 달랐는지, 달랐으면 어느 걸음이 틀렸는지까지 적었다
           <span class="sub">판정 수단: 종이 계산 + 내 도구의 출력 · §3-1-3 1번 · §3-1-4 첫 행</span></span></label></li>
-        <li><label><input type="checkbox" data-key="point-selftest-pass"><span><strong>경로 통과</strong> — <code>python3 tests/test_point.py</code> 의 마지막 줄이 <code>PASS point 10 cases</code> 다. 도중에 실패한 벡터가 있었다면 <strong>몇 번이 무엇을 냈는지</strong>도 노트에 남겼다
-          <span class="sub">판정 수단: 자기시험 출력 · §3-1-3 · 이 열 벡터는 산술까지 채점한다. 프레이밍만 맞는 구현은 벡터 1·6 에서 실패한다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="point-selftest-pass"><span><strong>경로 통과</strong> — Pi 에서 빌드한 <code>build/test_point</code> 와 <code>build/test_point_ub</code> 가 둘 다 <code>PASS point 10 cases</code> 한 줄만 찍는다. <code>test_stream</code> 과 <code>test_stream_ub</code> 도 <code>PASS stream 8 cases</code> 한 줄씩이다. 도중에 실패한 벡터가 있었다면 <strong>몇 번이 무엇을 냈는지</strong>도 노트에 남겼다
+          <span class="sub">판정 수단: 자기시험 출력 · §3-1-3 걸음 4 · 6 · 이 열 벡터는 산술까지 채점한다. 프레이밍만 맞는 구현은 벡터 1·6 에서 실패한다. Mac 의 <code>clang++</code> 통과는 이 항목의 통과가 아니다</span></span></label></li>
         <li><label><input type="checkbox" data-key="sync-bits-checked"><span><strong>경로 통과</strong> — S ≠ ~S 와 C == 1 을 확인하는 줄이 내 코드에 있고, 실제로 실행했을 때 <strong>걸러진 자리의 수</strong>(accepted <code>____</code> · rejected <code>____</code>)를 적었다. 0 이었는지 아니었는지 그대로 적었다
-          <span class="sub">판정 수단: 내 도구의 출력 · §3-1-4 둘째 행 · 합격선 없음(내 버퍼 크기와 읽기 타이밍에 달렸다)</span></span></label></li>
+          <span class="sub">판정 수단: <code>lab_point</code> 의 출력 · §3-1-4 둘째 행 · 합격선 없음(바이트가 빠지거나 섞인 횟수와 흐름의 시작 자리에 달렸다)</span></span></label></li>
         <li><label><input type="checkbox" data-key="hand-at-30cm-tracked"><span><strong>경로 통과</strong> — 손을 30 cm 앞에 댔을 때 <strong>어느 각도 구간</strong>의 거리가 <strong>얼마로</strong> 바뀌었는지, 치웠을 때 돌아왔는지, <strong>자를 어디서부터 쟀는지</strong>를 §3-2-2 의 표에 적었다. 아무 각도도 안 바뀌었다면 그 사실과 그때 확인한 것을 적었다
           <span class="sub">판정 수단: 자·줄자 + 내 도구의 출력 · §3-2-4 · 각도의 방향 규약은 여기서 확정하지 않는다(l-08 에서 다룬다)</span></span></label></li>
-        <li><label><input type="checkbox" data-key="resync-yield-measured"><span><strong>발동 확인</strong> — <code>SKIP_BYTES</code> 로 스트림을 일부러 1바이트 어긋나게 하고 <code>RESYNC_STEP</code> 을 1 과 5 로 바꿔 <strong>네 회차</strong>의 accepted · rejected · 첫 20개 각도의 모양을 적었다. 회복했는지 못 했는지, 비가 몇 배였는지 <strong>내 숫자로</strong> 적었다
-          <span class="sub">판정 수단: 내 도구의 출력 · §3-3-3 의 표 · §3-3-4 · 끝나고 두 상수를 되돌린 것도 확인했다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="resync-yield-measured"><span><strong>발동 확인</strong> — <code>--skip 1</code> 로 스트림을 일부러 1바이트 어긋나게 하고 <code>--step</code> 을 1 과 5 로 바꿔 <strong>네 회차</strong>의 accepted · rejected · 첫 20개 각도의 모양을 적었다. 회복했는지 못 했는지, 비가 몇 배였는지 <strong>내 숫자로</strong> 적었다
+          <span class="sub">판정 수단: <code>lab_point --resync</code> 의 출력 · §3-3-3 의 표 · §3-3-4 · 그 전에 <code>test_point_run</code> 이 <code>PASS point_run 13 cases</code> 였다</span></span></label></li>
       </ul>
       <p class="progress-line"></p>
       <div class="progress-bar"><span></span></div>
@@ -538,14 +1670,19 @@ SKIP_BYTES  = 0   # 0 = normal. 1 = throw away one byte right after the descript
       <div class="tbl"><table>
         <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
         <tbody>
-          <tr><td>각도가 0~360 을 크게 벗어난다(500 대가 섞인다)</td><td>바이트 순서나 시프트 방향이 틀렸다. 15비트 필드는 511.98° 까지 담을 수 있으므로 <strong>값 자체는 "정상"으로 보인다</strong></td><td><code>python3 tests/test_point.py</code> — 벡터 1·2·3 이 실패한다</td><td>§2-2 · §3-1-3 2번</td></tr>
+          <tr><td>각도가 0~360 을 크게 벗어난다(500 대가 섞인다)</td><td>바이트 순서나 시프트 방향이 틀렸다. 15비트 필드는 511.98° 까지 담을 수 있으므로 <strong>값 자체는 "정상"으로 보인다</strong></td><td><code>scripts/lidar_lab/build/test_point</code> — 벡터 1·2·3 이 실패한다</td><td>§2-2 · §3-1-3 3번(T1)</td></tr>
           <tr><td>각도가 360° 근처에서 0 으로 접힌다</td><td>각도를 14비트로 마스크했다(<code>&amp; 0x3FFF</code>)</td><td>벡터 2·5 만 실패한다. <strong>정상 점만 보면 절대 드러나지 않는다</strong></td><td>§2-2 의 한계값 표 · §3-1-3</td></tr>
           <tr><td>거리가 실제의 4배 또는 1/4</td><td><code>q2</code>(÷4)를 빠뜨렸거나 두 번 나눴다</td><td>벡터 1 과 자로 잰 30 cm(§3-2-4)</td><td>§2-2</td></tr>
           <tr><td>점은 흐르는데 <strong>손을 대도 어느 각도도 안 바뀐다</strong></td><td>각도 해독이 틀렸다. 거리만 보는 판정으로는 드러나지 않는다. 거리는 맞고 각도만 뒤섞인다</td><td>§3-2-4 둘째 행. 그 전에 자기시험부터</td><td>§2-5 · §3-1-3</td></tr>
-          <tr><td>점이 드문드문하고 각도가 이웃끼리 튄다</td><td>경계를 잃었고 재동기가 회복하지 못한다(걸음이 5의 배수)</td><td>§3-3-3 의 마지막 열 — <strong>개수가 아니라 각도의 이어짐</strong>을 본다</td><td>§3-3-4 · <code>RESYNC_STEP</code></td></tr>
+          <tr><td>점이 드문드문하고 각도가 이웃끼리 튄다</td><td>경계를 잃었고 재동기가 회복하지 못한다(걸음이 5의 배수)</td><td>§3-3-3 의 마지막 열 — <strong>개수가 아니라 각도의 이어짐</strong>을 본다</td><td>§3-3-4 · <code>--step</code></td></tr>
           <tr><td>거리 0 인 점이 많다</td><td>그 방향에서 못 쟀다(무반사·측정 범위 밖·기울기). <strong>고장이 아닐 수 있다</strong></td><td>§3-2-4 셋째 행 — 허공과 손 앞을 견준다</td><td>고치는 것이 아니라 §2-3 으로 읽는다. 재질별 실패율은 l-15 가 다룬다</td></tr>
-          <tr><td>기술자(<code>a55a…</code>)가 안 온다</td><td>포트를 열었을 때 이미 스캔이 흐르고 있었다 / <code>drain</code> 을 건너뛰었다</td><td>§3-1-1 확인 표 5번</td><td>l-02 의 <code>drain</code> 절 · <strong>기술자가 안 와도 §3-1-4 는 실행된다</strong></td></tr>
-          <tr><td><code>from cmd import …</code> 가 엉뚱한 것을 가져온다(<code>ImportError</code> 나 빈 모듈)</td><td>파이썬 표준 라이브러리에 <code>cmd</code> 모듈이 있다. 스크립트를 어디서 실행하느냐에 따라 <strong>둘 중 무엇이 import 될지가 달라진다</strong></td><td><code>pi$ python3 -c 'import cmd; print(cmd.__file__)'</code> 를 <strong>스크립트와 같은 디렉터리에서</strong> 친다</td><td>§3-1-4 의 실행 방식(<code>python3 scripts/lidar_lab/point.py</code>)을 지킨다</td></tr>
+          <tr><td>기술자(<code>a55a…</code>)가 안 온다</td><td>포트를 열었을 때 이미 스캔이 흐르고 있었다 / <code>drain</code> 을 건너뛰었다</td><td>§3-1-1 확인 표 4번</td><td>l-02 의 <code>drain</code> 절 · <strong>기술자가 안 와도 §3-1-4 는 실행된다</strong></td></tr>
+          <tr><td><code>test_point</code> 는 <code>1 of 10</code>(벡터 10) 또는 통과인데 <code>test_point_ub</code> 가 <code>heap-buffer-overflow</code></td><td><code>parse_point()</code> 가 길이를 보기 전에 <code>b[i]</code> 를 읽었다 — 4바이트 버퍼의 끝 너머다</td><td><code>_ub</code> 의 보고에서 <code>point.hpp</code> 의 줄 번호를 본다. 빌드의 <code>unused parameter 'n'</code> 경고도 같은 원인이다</td><td>§3-1-3 의 T1 — 길이 검사를 맨 앞에</td></tr>
+          <tr><td><code>first raw</code> 는 찍히는데 <code>point</code> 줄이 하나도 없다 · <code>accepted 0 nodes, rejected 0 boundaries</code></td><td><code>feed()</code>(T2)가 골격 그대로다 — 골격은 바이트를 버리고 점을 내지 않는다. 기술자 · 모터 · 포트의 문제가 아니다(<code>first raw</code> 가 왔다)</td><td><code>build/test_stream</code> 이 <code>8 of 8</code> 이면 골격 그대로다. <code>feed()</code> 에 <code>(void)</code> 자리표시가 남아 있는가</td><td>§3-1-3 5번(T2)</td></tr>
+          <tr><td>첫 <code>point</code> 줄이 두 번 찍힌다</td><td><code>feed()</code> 가 본 자리를 지우지 않았다 — 같은 바이트를 다음 덩이에서 다시 본다</td><td><code>build/test_stream</code> 의 <code>FAIL 3</code> · <code>FAIL 4</code> 에 같은 각도가 되풀이되는가</td><td>§3-1-3 의 T2</td></tr>
+          <tr><td><code>start=true</code> 가 거의 모든 줄에 찍힌다 · 한 번도 안 찍힌다</td><td><code>start</code> 를 다른 비트에서 읽었다 / 넷째 칸을 채우지 않았다(경고 <code>missing … initializer</code>)</td><td><code>pi$ grep -n 'SYNC_MASK' scripts/lidar_lab/include/lidar_lab/point.hpp</code> — <code>Node</code> 를 만드는 줄에 나오는가. 한 번도 안 찍히면 <code>--count</code> 가 한 바퀴보다 작은지도 본다. <code>test_stream</code> 의 <code>FAIL 1</code> · <code>FAIL 6</code> 이 같은 원인이다</td><td>§3-1-3 의 T2</td></tr>
+          <tr><td>CMake 구성이 <code>Cannot find source file:</code> 로 멈춘다</td><td>CMake 줄을 그 소스보다 먼저 붙였다(<code>lab_test(stream)</code> · <code>lab_test(point_run)</code> · <code>lab_tool(point)</code>)</td><td>오류 줄의 파일 이름</td><td>§3-1-3 · §3-1-4 의 CMake 블록 차례</td></tr>
+          <tr><td><code>lab_point</code> 가 <code>usage:</code> 두 줄만 찍고 끝난다(종료 코드 2)</td><td>인자가 틀렸다 — 범위 밖의 값, 모르는 인자, <code>--resync</code> 없이 준 <code>--step</code> · <code>--skip</code> · <code>--seconds</code></td><td><code>usage:</code> 줄과 §3-1-4 의 인자 표</td><td>명령 줄</td></tr>
           <tr><td>장치가 안 보인다 · 권한이 없다 · 바이트가 아예 0</td><td>전 쪽 공통 증상이다</td><td>—</td><td><a href="l-01-link.html">l-01</a> 의 증상표에서 다룬다. 저장소 전체 공통은 <a href="99-troubleshooting.html">99</a></td></tr>
         </tbody>
       </table></div>
@@ -571,53 +1708,25 @@ SKIP_BYTES  = 0   # 0 = normal. 1 = throw away one byte right after the descript
         <p>남는 것이 15비트이므로 담을 수 있는 최대는 32767 ÷ 64 = 511.984375° 다. <strong>360° 를 넘는 자리가 남아 있다</strong>는 것이 중요하다. 14비트로 마스크하면 360° 근처가 오류 표시 없이 접히고, 그 점은 한 바퀴에 한 번 나타나 l-04 의 회전 자르기를 어긋나게 한다. 시험 벡터 2·5 는 오직 이 잘못을 검출하려고 있다.</p></div></details>
       <details class="quiz"><summary>4. 거리 <code>0</code> 을 "그 방향은 비어 있다"로 읽으면 무엇이 잘못되는가? 그리고 그 판단의 근거는 어느 등급인가</summary>
         <div class="ans"><p>"비었다"는 <strong>지나가도 된다</strong>는 뜻이고 "못 쟀다"는 <strong>그 방향의 상태를 알 수 없다</strong>는 뜻이다. 유리문·검은 천·측정 범위 밖은 전부 "못 쟀다"인데, 이 점들을 "비었다"로 읽으면 로봇이 그쪽으로 주행한다. 반대로 <code>0</code> 을 "거리 0 m 에 물체"로 읽으면 로봇 바로 앞에 없는 벽이 생긴다. 이 셋을 분리하는 것이 l-09 의 <strong>점유 · 자유 · 미지</strong> 세 상태다.</p>
-        <p>근거의 등급은 <strong>미확인 1차</strong>다. 데이터시트는 0 의 뜻을 적지 않았다. 같은 모델(A1M8)을 쓴 1세대 코드가 <code>0 = invalid / no return</code> 이라 적었을 뿐이다(<code>NOMINAL(gen1-record, 2026-07-14)</code>). 그 개체가 내 개체인지는 아직 확인되지 않았다. 내 기기에서 확인하는 절차가 §3-2-4 셋째 행이다.</p></div></details>
+        <p>근거의 등급은 <strong>미확인 1차</strong>다. 데이터시트는 0 의 뜻을 적지 않았다. 같은 모델(A1M8)을 쓴 1세대 코드가 <code>0 = invalid / no return</code> 이라 적었을 뿐이다(<code>NOMINAL(gen1-record)</code>).<sup class="fn"><a href="#fn-17" id="fnref-17">17</a></sup> 그 개체가 내 개체인지는 아직 확인되지 않았다. 내 기기에서 확인하는 절차가 §3-2-4 셋째 행이다.</p></div></details>
       <details class="quiz"><summary>5. (일부러 틀리면) <code>parse_point</code> 에서 b3 과 b4 를 맞바꿔 읽으면 무엇이 보이는가? 검사 비트는 왜 이 잘못을 검출하지 못하는가</summary>
         <div class="ans"><p>아무 오류도 나지 않고 점이 계속 흐른다. 검사 비트 S · ~S · C 는 전부 b0 과 b1 에 있어서 <strong>b3 · b4 를 어떻게 읽든 관여하지 않는다.</strong> 그래서 프레이밍은 통과하고 거리만 엉뚱해진다. 예를 들어 <code>A0 0F</code> 를 뒤집어 읽으면 1000.0 mm 가 10243.75 mm 가 된다(§2-5).</p>
         <p>이것이 이 쪽이 시험 벡터를 두는 이유다. 벡터 1·2·3·6 이 거리 바이트 순서의 잘못을 검출한다. 반대로 벡터 4(거리 0)와 5(양쪽이 <code>FF</code>)는 <strong>두 바이트가 같거나 대칭이라 검출하지 못한다</strong>. 벡터를 고르는 일 자체가 설계다.</p></div></details>
       <details class="quiz"><summary>6. 재동기 걸음을 5로 두면 점의 <strong>개수</strong>만으로는 무엇이 잘못됐는지 알 수 없다. 무엇을 봐야 하는가</summary>
         <div class="ans"><p><strong>이웃한 점들의 각도가 조금씩 커지는가</strong>를 봐야 한다. 경계를 제대로 찾고 있으면 센서가 도는 대로 각도가 순서대로 늘어난다. 경계를 잃은 채 우연히 검사 비트가 맞은 5바이트만 통과시키고 있으면 각도가 불규칙하게 튄다.</p>
-        <p>걸음이 5면 한 번 어긋난 <strong>위상</strong>이 유지된다. 진짜 경계는 언제나 5의 배수만큼 떨어진 자리에 있는데, 잘못된 자리에서 5칸씩 건너뛰고 있으므로 계속 만나지 못한다. 걸음이 1이면 늦어도 5칸 안에 진짜 경계를 찾는다. <strong>개수는 줄어든 정도로만 보이고, 진짜 증상은 각도의 이어짐에서 보인다.</strong></p></div></details>
+        <p>걸음이 5면 한 번 어긋난 <strong>위상</strong>이 유지된다. 진짜 경계는 언제나 5의 배수만큼 떨어진 자리에 있는데, 잘못된 자리에서 5칸씩 건너뛰고 있으므로 계속 만나지 못한다. 걸음이 1이면 거절마다 1칸씩 밀리므로 거절 네 번 안에 진짜 경계를 찾는다. 그 전에 우연히 통과한 몇 점이 섞일 수 있다. <strong>개수는 줄어든 정도로만 보이고, 진짜 증상은 각도의 이어짐에서 보인다.</strong></p></div></details>
       <details class="quiz"><summary>7. (안전) 이 쪽의 실습 B 는 손을 센서 앞 30 cm 에 댄다. 그때 지키는 것 둘과, 그 이유</summary>
-        <div class="ans"><p><strong>① 대는 것은 손이고 머리·얼굴은 센서 높이에 두지 않는다.</strong> 이 센서의 광원은 &lt;5 mW 785 nm 적외선이고 Class I 로 분류돼 정상 사용에서 안전하다고 표시돼 있다(데이터시트 5쪽 · Figure 2-3, 9쪽). 문제는 위험의 크기가 아니라 <strong>보이지 않는다는 것</strong>이다. 켜졌는지 눈으로 알 수 없으니 조심하는 습관이 저절로 생기지 않고, "지금은 꺼져 있겠지"라고 여기기 쉽다. 그래서 규칙으로 적는다.</p>
-        <p><strong>② 도는 머리에 손가락·머리카락·천·케이블을 가까이 두지 않는다.</strong> 30 cm 는 회전부에서 충분히 먼 거리이고, 더 가까이 가져갈 이유가 이 실습에는 없다. 옮기거나 들어 올릴 일이 생기면 <strong>모터를 멈춘 뒤</strong>(<code>dtr=True</code>) 든다. 또한 센서가 실습 중에 움직이면 §3-2 의 관찰 자체가 무효가 된다.</p></div></details>
-
-      <h2 id="compare">비교본</h2>
-      <p>체크포인트를 <strong>통과한 뒤에</strong> 내 코드와 견주어 보는 용도다. 먼저 열면 이 쪽에서 얻을 것이 줄어든다.</p>
-      <details class="quiz"><summary>비교본 — <code>parse_point()</code> 한 함수</summary>
-        <div class="ans">
-          <pre><code class="lang-python">def parse_point(b5):
-    """One measurement node -&gt; (deg, mm, quality), or None if this is not a node boundary."""
-    if len(b5) != 5:
-        return None                                   # short buffer: "not yet", not an error
-    b0, b1, b2, b3, b4 = b5
-
-    if (b0 &amp; SYNC_MASK) == ((b0 &gt;&gt; 1) &amp; SYNC_MASK):   # S and ~S must differ
-        return None
-    if not (b1 &amp; CHECK_MASK):                         # C must be 1
-        return None
-
-    quality = b0 &gt;&gt; QUALITY_SHIFT                     # top 6 bits
-    angle_q6 = ((b2 &lt;&lt; 8) | b1) &gt;&gt; ANGLE_SHIFT        # little endian u16, then drop the check bit
-    dist_q2 = (b4 &lt;&lt; 8) | b3                          # little endian u16, no flag bits here
-    return (angle_q6 / 64.0, dist_q2 / 4.0, quality)</code></pre>
-          <p><strong>내 것과 다를 수 있는 곳</strong> — 어느 쪽이 맞고 틀린 문제가 아니다.</p>
-          <ul>
-            <li><strong>반환값의 모양.</strong> 여기는 <code>None</code> 하나로 "경계가 아니다"를 나타낸다. 예외를 던지거나 (<code>ok</code>, 값) 꼴로 돌려주는 설계도 있다. 다만 <code>stream()</code> 이 초당 수천 번 호출하는 자리라 <strong>예외 처리 비용이 크다</strong>는 것은 사실이다.</li>
-            <li><strong>16비트를 만드는 방법.</strong> <code>(b2 &lt;&lt; 8) | b1</code> 대신 <code>int.from_bytes(b5[1:3], "little")</code> 를 써도 같다. 전자는 헤더의 비트 배치가 그대로 보이고, 후자는 엔디안을 낱말로 적어 둔다.</li>
-            <li><strong>길이 검사를 어디서 하는가.</strong> 여기는 <code>parse_point</code> 안에서 한다. 그래서 <code>stream()</code> 의 버퍼 끝 처리가 단순해진다. 반대로 호출자가 항상 5바이트를 보장하게 하고 여기서는 안 보는 설계도 있다. <strong>그 경우 시험 벡터 10 을 지워야 하고</strong>, 그러면 짧은 버퍼에서 오류로 종료될 가능성이 생긴다.</li>
-            <li><strong>거리 0 을 여기서 버리는가.</strong> 이 비교본은 <strong>버리지 않는다</strong>(§2-3). 버리는 설계도 동작하지만, 그러면 "못 쟀다"라는 정보가 이 단계에서 사라져 l-09 의 <strong>미지</strong> 칸을 만들 수 없게 된다.</li>
-          </ul>
-        </div></details>
+        <div class="ans"><p><strong>① 대는 것은 손이고 머리·얼굴은 센서 높이에 두지 않는다.</strong> 이 센서의 광원은 &lt;5 mW 785 nm 적외선이고 Class I 로 분류돼 정상 사용에서 안전하다고 표시돼 있다.<sup class="fn"><a href="#fn-18" id="fnref-18">18</a></sup> 문제는 위험의 크기가 아니라 <strong>보이지 않는다는 것</strong>이다. 켜졌는지 눈으로 알 수 없으니 조심하는 습관이 저절로 생기지 않고, "지금은 꺼져 있겠지"라고 여기기 쉽다. 그래서 규칙으로 적는다.</p>
+        <p><strong>② 도는 머리에 손가락·머리카락·천·케이블을 가까이 두지 않는다.</strong> 30 cm 는 회전부에서 충분히 먼 거리이고, 더 가까이 가져갈 이유가 이 실습에는 없다. 옮기거나 들어 올릴 일이 생기면 <strong>모터가 멈춘 것을 확인한 뒤</strong> 든다. <code>lab_point</code> 는 끝날 때 <code>motor(fd, false)</code> 를 부른다. 끝난 뒤에도 머리가 돌면 허브 쪽에서 라이다의 USB 케이블을 뽑는다(<a href="l-01-link.html#overview">l-01 §1 의 L2</a>). 또한 센서가 실습 중에 움직이면 §3-2 의 관찰 자체가 무효가 된다.</p></div></details>
 
       <h2 id="next">다음 행선지</h2>
       <div class="callout tip"><span class="ct">여기까지 했으면</span>
         <ul>
-          <li><strong>번호순 다음은</strong> → <a href="l-04-one-turn.html">l-04</a> — 한 바퀴는 어디서 끝나는가. 이 쪽의 <code>stream()</code> 이 내는 <code>(deg, mm, q, start)</code> 네 칸을 그대로 받아 회전 단위로 자르고, <strong>첫 <code>.scan.jsonl</code> 기록 파일</strong>을 만든다. 그 파일 한 장이 생기면 공간 인식 쪽들을 라이다 없이도 실행할 수 있다.</li>
-          <li><strong>라이다를 당분간 못 쓰게 됐으면</strong> — 기록 파일이 아직 없으므로 공간 인식 쪽으로 건너뛸 수 없다. 대신 <a href="08-camera.html">08</a>(카메라)이나 <a href="fw-00-map.html">fw-00</a>(MCU 펌웨어)은 라이다를 기다리지 않는다. <code>parse_point</code> 는 순수 함수라 <strong>라이다 없이도 시험 벡터로 계속 다듬을 수 있다.</strong></li>
+          <li><strong>번호순 다음은</strong> → <a href="l-04-one-turn.html">l-04</a> — 한 바퀴는 어디서 끝나는가. 이 쪽의 <code>NodeStream</code> 이 내는 <code>Node</code> 네 칸(<code>deg</code> · <code>mm</code> · <code>quality</code> · <code>start</code>)을 그대로 받아 회전 단위로 자르고, <strong>첫 <code>.scan.jsonl</code> 기록 파일</strong>을 만든다. 그 파일 한 장이 생기면 공간 인식 쪽들을 라이다 없이도 실행할 수 있다.</li>
+          <li><strong>라이다를 당분간 못 쓰게 됐으면</strong> — 기록 파일이 아직 없으므로 공간 인식 쪽으로 건너뛸 수 없다. 대신 <a href="08-camera.html">08</a>(카메라)이나 <a href="fw-00-map.html">fw-00</a>(MCU 펌웨어)은 라이다를 기다리지 않는다. <code>point.hpp</code> 는 순수 헤더라 <strong>라이다 없이도 시험 벡터로 계속 다듬을 수 있다.</strong> Mac 에서는 <code>clang++</code> 로 연습할 수 있지만, 통과의 기준은 Pi 빌드다(결정 L3). 결정 L3 은 라이다 가이드의 설계 결정 번호이고, Mac 에서 해도 되는 것을 정한다(<a href="l-00-map.html">l-00</a>). 이 쪽의 번호 L3 · <a href="l-01-link.html">l-01</a> 의 안전 규칙 L3 과는 다른 번호다.</li>
           <li><strong>이 쪽을 끝내지 못했어도</strong> 경우에 따라 다음과 같이 한다.
             <ul>
-              <li>① <code>PASS point 10 cases</code> 까지 갔다면 <strong>실물 관찰(§3-2 · §3-3)이 안 됐어도 l-04 로 갈 수 있다.</strong> 해독이 옳다는 것은 이미 벡터가 채점했다.</li>
+              <li>① <code>PASS point 10 cases</code> 와 <code>PASS stream 8 cases</code> 까지 갔다면 <strong>실물 관찰(§3-2 · §3-3)이 안 됐어도 l-04 로 갈 수 있다.</strong> 해독이 옳다는 것은 이미 벡터가 채점했다.</li>
               <li>② 반대로 <strong>자기시험이 통과하지 못했으면 여기서 멈춘다</strong>. 각도나 거리가 틀린 채로 l-04 에 가면 회전 자르기도 각도 간격도 전부 틀리고, <strong>그 원인을 라이다에서 찾게 된다.</strong></li>
               <li>③ 기술자가 안 오는 것, 걸러진 자리가 많은 것, 허공에서 0 이 안 나오는 것은 <strong>전부 적어 두고 넘어가도 된다</strong>. l-05 · l-06 · l-15 가 각각 다룬다.</li>
             </ul></li>
@@ -628,11 +1737,34 @@ SKIP_BYTES  = 0   # 0 = normal. 1 = throw away one byte right after the descript
               <li>손을 댄 각도 구간과 거리, <strong>자를 어디서부터 쟀는지</strong></li>
               <li>허공에서 나온 값</li>
               <li>네 회차 재동기 표</li>
-              <li>내가 고른 <code>RESYNC_STEP</code> 과 그 이유</li>
+              <li>내가 고른 걸음(<code>--step</code>)과 그 이유</li>
             </ul>
             <p><code>hardware/INVENTORY.md</code> 에 이 쪽이 채우는 칸은 <strong>없다</strong>. 전부 내 노트에 적는다.</p></li>
         </ul>
       </div>
+
+      <h2 id="footnotes">각주</h2>
+      <p class="small">본문의 작은 번호를 누르면 여기로 온다. 근거 문서 · 1세대 기록 · 측정하거나 확인한 날짜와 기계를 모았다. ↩ 를 누르면 본문으로 돌아간다.</p>
+      <ol class="footnotes">
+          <li id="fn-1">데이터시트 Figure 2-1(성능 표) — rev.2.2 · v3.0 둘 다 8쪽. <a class="fn-back" href="#fnref-1" aria-label="본문으로">↩</a></li>
+          <li id="fn-2">데이터시트 rev.2.2 · v3.0 두 판 모두 6쪽. <a class="fn-back" href="#fnref-2" aria-label="본문으로">↩</a></li>
+          <li id="fn-3">같은 두 판의 9쪽. <a class="fn-back" href="#fnref-3" aria-label="본문으로">↩</a></li>
+          <li id="fn-4">2026-09-23 에 확인했다. 경로는 <code>raw.githubusercontent.com/Slamtec/rplidar_sdk</code> 의 <code>sdk/include/sl_lidar_cmd.h</code> 다. <a class="fn-back" href="#fnref-4" aria-label="본문으로">↩</a></li>
+          <li id="fn-5">1세대 기록은 <code>~/ros2</code> 에 있다. 두 도구는 <code>~/ros2/docs/camera_lidar/rplidar_ctl.py:16-19,102-116</code> 와 <code>~/ros2/docs/lidar/lidar_scan.py:3-8,32-37</code> 이다. 기록일은 2026-07-14 다. <a class="fn-back" href="#fnref-5" aria-label="본문으로">↩</a></li>
+          <li id="fn-6">데이터시트 Figure 1-4 — 6쪽. <a class="fn-back" href="#fnref-6" aria-label="본문으로">↩</a></li>
+          <li id="fn-7">데이터시트 Figure 1-4 — rev.2.2 · v3.0 둘 다 6쪽. <a class="fn-back" href="#fnref-7" aria-label="본문으로">↩</a></li>
+          <li id="fn-8">1세대 도구 <code>rplidar_ctl.py:19</code>(<code>~/ros2/docs/camera_lidar/</code> 아래) — 기록일 2026-07-14. <a class="fn-back" href="#fnref-8" aria-label="본문으로">↩</a></li>
+          <li id="fn-9"><code>~/ros2/docs/camera_lidar/rplidar_ctl.py:88-90</code> — 기록일 2026-07-14. <a class="fn-back" href="#fnref-9" aria-label="본문으로">↩</a></li>
+          <li id="fn-10"><code>~/ros2/docs/lidar/lidar_scan.py:29-34</code> 가 (가), <code>~/ros2/docs/lidar/lidar_scan2.py:18-40</code> 이 (나)다. <a class="fn-back" href="#fnref-10" aria-label="본문으로">↩</a></li>
+          <li id="fn-11">데이터시트 5쪽(Class I 표기)과 Figure 2-3 "Optical Specification"(9쪽, 두 판 동일). <a class="fn-back" href="#fnref-11" aria-label="본문으로">↩</a></li>
+          <li id="fn-12">2026-10-30, 집필자가 이 쪽의 코드 블록을 다시 뽑아 골격 상태와 완결 상태 두 벌로 빌드했다. 컴파일러는 Apple clang 21.0(libc++) · g++ 16.1(libstdc++, <code>-O0</code> · <code>-O2</code>) · g++ 11.4(l-06 의 컨테이너와 같은 판, CMake 3.22.1)다. 플래그는 <code>-std=c++17 -Wall -Wextra -Wpedantic -Werror -D_GLIBCXX_ASSERTIONS</code> 다. 골격은 경고 없이 빌드됐다. 시험은 <code>test_point</code> <code>6 of 10 cases failed</code>(벡터 1 ~ 6 FAIL) · <code>test_stream</code> <code>8 of 8</code> · <code>test_point_run</code> <code>13 of 13</code> 으로 끝났다. T1 만 골격이고 T2 를 채운 판도 <code>test_stream</code> 이 <code>8 of 8</code> 이었다. T3 만 채운 판은 <code>test_point_run</code> 이 <code>5 of 13</code>(9 ~ 13)이었다. 완결은 <code>PASS point 10 cases</code> · <code>PASS stream 8 cases</code> · <code>PASS point_run 13 cases</code> 이고, 진단 빌드(ASan · UBSan)도 같은 한 줄씩만 찍었다. <code>test_point_run</code> 의 진단 빌드는 12 개를 동시에 돌려도 모두 통과했다. 시리얼을 쓰는 <code>src/point.cpp</code> 는 g++ 11.4 에서 링크까지 했다. <code>resync_step()</code> 을 뺀 골격 헤더는 clang 에서 <code>private field 'step_' is not used</code> 경고를 냈고, g++ 16.1 · 11.4 는 경고가 없었다(2026-10-29). Pi 의 g++ 와 실제 센서로는 실행하지 못했다(확인 과제). <a class="fn-back" href="#fnref-12" aria-label="본문으로">↩</a></li>
+          <li id="fn-13">2026-10-29, 집필자가 <code>parse_point()</code> 의 틀린 판을 하나씩 만들어 세 컴파일러(Apple clang 21.0 · g++ 16.1 · g++ 11.4)로 빌드해 실행했다. 틀린 판은 골격의 <code>(void)</code> 자리표시가 없는 꼴로 만들고 <code>-Werror</code> 없이 컴파일해 경고를 읽었다. FAIL 번호는 세 컴파일러가 같았고, 파이썬판 표의 번호와도 같았다. 길이 검사를 뺀 판만 결과가 갈렸다. 값 빌드의 벡터 10 은 clang · g++ 16.1 이 <code>(90.0, 40.0, 47)</code>, g++ 11.4 가 <code>(90.0, 680.0, 47)</code> 을 냈다. 진단 빌드는 셋 다 <code>heap-buffer-overflow</code> 로 멈췄다. 이 판만 세 컴파일러 모두 <code>unused parameter 'n'</code> 경고를 냈다. 정수 나눗셈을 <code>Sample{…}</code> 안에 쓴 판은 clang 이 빌드 오류, g++ 16.1 · 11.4 가 경고였다. 캐스트를 뺀 판 · <code>memcpy</code> 판 · <code>n &lt; 5</code> 판은 세 컴파일러 모두 <code>PASS</code> 였다. Pi 의 g++ 로는 아직 실행하지 못했다(확인 과제). <a class="fn-back" href="#fnref-13" aria-label="본문으로">↩</a></li>
+          <li id="fn-14">2026-10-30, 집필자가 <code>feed()</code> 의 틀린 판 일곱을 하나씩 만들어 <code>test_stream</code> 으로 실행했다. 틀린 판은 골격의 <code>(void)</code> 자리표시가 없는 꼴로 만들고 <code>-Werror</code> 없이 컴파일해 경고를 읽었다. 실행은 의사 터미널(운영체제가 만드는 가짜 터미널 장치 — 프로그램에는 진짜 터미널로 보인다)에서 했다 — 학습자의 터미널이 보여 주는 꼴이다. 컴파일러는 Apple clang 21.0 · g++ 16.1(<code>-O0</code> · <code>-O2</code>) · g++ 11.4 이고, FAIL 줄은 모두 같았다. 경고는 넷째 칸을 빠뜨린 판에만 났고, g++ 둘의 문구는 <code>missing initializer for member 'lidar_lab::Node::start'</code> 였다. 끝 너머를 읽는 판(<code>i &lt; buf_.size()</code>)만 값 빌드의 중단이 갈렸다. <code>FAIL 3</code> 한 줄 뒤에 clang 은 <code>SIGBUS</code>, g++ 16.1 은 <code>std::bad_alloc</code> 중단, g++ 11.4 는 <code>Segmentation fault</code> 였다. clang 판을 파이프로 받으면 아무 줄도 남지 않았고, 파일로 받아도 비어 있었다. 진단 빌드는 셋 다 <code>heap-buffer-overflow</code> 였다. 바른 <code>feed()</code> 는 벡터 2 ~ 4(한 번에 · 1바이트씩 · 7 + 13)에서 같은 네 점과 <code>accepted 4, rejected 0</code> 을 냈다. 벡터 7 · 8 에서는 떠돌이 바이트 하나가 거절을 만들었다(걸음 1 은 <code>rejected 1</code>, 걸음 5 는 <code>rejected 2</code>). 바른 <code>feed()</code> 와 골격 <code>parse_point()</code> 의 짝은 <code>8 of 8</code> 이었다. 실제 기기의 바이트가 몇 번에 나뉘어 오는지는 재지 않았다(확인 과제). <a class="fn-back" href="#fnref-14" aria-label="본문으로">↩</a></li>
+          <li id="fn-15">2026-10-30, 가짜 기기 두 가지로 쟀다. 둘 다 실제 기기의 값이 아니다. ① <code>test_point_run</code> 안의 기기 — 소켓 쌍의 맞은편에서 도는 자식 프로세스다(§3-1-4 의 시험 파일 머리). T3 · T4 의 틀린 판 열은 이 기기로 세 컴파일러(Apple clang 21.0 · g++ 16.1 · g++ 11.4)에서 쟀고, FAIL 줄과 경고가 같았다. <code>on_node</code> 가 늘 <code>true</code> 인 판은 두 꼴로 쟀다. <code>int printed = 0;</code> 만 남긴 꼴은 경고 둘(<code>printed</code> · <code>count</code>), <code>++printed;</code> 를 남긴 꼴은 <code>count</code> 하나였다. FAIL 5 · 7 은 두 꼴이 같았다. <code>std::vector</code> 에 버리는 판도 <code>PASS</code> 였다. ② <code>lab_point</code> 의 출력 — g++ 11.4 로 빌드해 의사 터미널(각주 14)에 붙인 가짜 기기에 실행했다. 의사 터미널은 시리얼 포트처럼 열고 읽고 쓸 수 있다. 이 기기는 <code>SCAN</code> 에 기술자 <code>A5 5A 05 00 00 40 81</code> 을 답하고, 합성 점을 10 ms 마다 23 개(약 11.5 kB/s)씩 보낸다. 첫 점은 <code>BD 01 2D A0 0F</code> 이고 한 바퀴는 400 점이다. <code>STOP</code> 을 받으면 5 ms 뒤 흐름을 멈춘다. 골격은 안내 줄과 <code>no descriptor -- reading points anyway (2-1)</code> 를 찍고 0 으로 끝났다. 완결은 기술자 · <code>first raw</code> · <code>point</code> 열 줄 · <code>accepted 23 nodes, rejected 0 boundaries</code> 였고, <code>--count 1000</code> 은 <code>point</code> 줄 1000 개였다. <code>erase</code> 를 뺀 <code>feed()</code> 로는 첫 점이 두 번 찍혔다. 틀린 인자 일곱 가지는 모두 <code>usage:</code> 두 줄과 종료 코드 2 였다. 의사 터미널은 DTR 을 다루지 않아 <code>motor()</code> 가 <code>ioctl DTR: Inappropriate ioctl for device</code> 를 찍었다. 위 출력에서는 그 줄을 뺐다. Pi 의 g++ 와 실제 센서로는 실행하지 못했다(확인 과제). <a class="fn-back" href="#fnref-15" aria-label="본문으로">↩</a></li>
+          <li id="fn-16">이 1세대 기록의 기록일은 2026-07-14 다. <a class="fn-back" href="#fnref-16" aria-label="본문으로">↩</a></li>
+          <li id="fn-17">이 1세대 기록의 기록일은 2026-07-14 다. <a class="fn-back" href="#fnref-17" aria-label="본문으로">↩</a></li>
+          <li id="fn-18">데이터시트 5쪽 · Figure 2-3, 9쪽. <a class="fn-back" href="#fnref-18" aria-label="본문으로">↩</a></li>
+      </ol>
 
       <div class="pager"></div>
     </div>

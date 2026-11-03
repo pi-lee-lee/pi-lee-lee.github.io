@@ -16,8 +16,8 @@
       <p class="kicker">L12 · 여기를 지나갈 수 있나</p>
       <h1>여기를 지나갈 수 있나</h1>
       <p class="lead">l-11 까지 오면 벽이 <strong>선분</strong>으로, 물건이 <strong>덩어리</strong>로 줄어 있다. 그런데 도형이 있어도 아직 아무 <strong>판정</strong>도 하지 않았다 — "지나갈 수 있나"는 도형이 아니라 <strong>수 세 개</strong>와 그 세 수를 견주는 <strong>부등호 하나</strong>로 답하는 물음이다.
-      이 쪽이 만드는 도구는 <code>clear.py</code> 이고 함수 넷이 들어간다. <code>perp_distance()</code> 는 면까지의 수직 거리를, <code>heading_to()</code> 는 그 면을 정면으로 마주 보려면 돌아야 하는 각을 낸다. <code>passage_width()</code> 는 두 덩어리 사이의 폭을 내고, <code>fits()</code> 는 통과 여부를 판정하는 한 줄짜리 함수다.
-      여기서 나오는 <strong>거리와 방향</strong> 두 수가 벽 따라가기 제어기의 입력이고, 그 제어는 <a href="10-autonomy.html">10</a> 에서 다룬다. <strong>L 의 공간 인식은 이 쪽에서 끝난다.</strong></p>
+      이 쪽에서 만드는 것은 헤더 <code>clear.hpp</code> 와 도구 <code>lab_clear</code> 다. <code>perp_distance()</code> 는 면까지의 수직 거리를, <code>heading_to()</code> 는 그 면을 정면으로 마주 보려면 돌아야 하는 각을 낸다. <code>foot_inside()</code> 는 그 수직 거리가 실제 벽 조각 위에 떨어지는지를 확인한다. <code>passage_width()</code> 는 두 덩어리 사이의 폭을 내고, <code>fits()</code> 는 통과 여부를 판정하는 두 줄짜리 함수다.
+      여기서 나오는 <strong>거리와 방향</strong> 두 수가 벽 따라가기 제어기의 입력이고, 그 제어는 <a href="10-autonomy.html">10</a>(본편의 자율주행 노드 쪽. 본편은 로봇 전체를 순서대로 만드는 가이드다)에서 다룬다. <strong>L(이 라이다 가이드, l-00 ~ l-17)의 공간 인식은 이 쪽에서 끝난다.</strong></p>
 
       <div class="goal">
         <span class="label">이 쪽이 끝나면 보이는 것</span>
@@ -26,29 +26,37 @@
           <li>스캔 한 장에서 <strong>"앞의 벽까지 <code>____</code> m, 그 벽을 마주 보려면 <code>____</code>° 돌아야 한다"</strong> 가 내 숫자로 나오고, 줄자·각도기와 몇 cm·몇 도 차이인지 적힌다.</li>
           <li>같은 장면에서 <strong>"벽까지의 거리"라고 부르던 세 값이 서로 다르게 나오는 것</strong>을 내 눈으로 보고, 왜 다른지 한 줄로 적는다.</li>
           <li>통로 하나에 대해 <strong>폭 · 내 로봇 폭 · 내가 정한 여유</strong> 세 수로 통과 여부를 판정하고, 그 판정이 <strong>틀리는 두 가지 방법</strong>을 직접 만든다.</li>
-          <li><code>python3 tests/test_clear.py</code> 의 마지막 줄은 <code>PASS clear 24 cases</code> 다.</li>
+          <li><code>build/test_clear</code> 와 진단 빌드(ASan · UBSan 을 켠 빌드, l-01) <code>build/test_clear_ub</code> 가 둘 다 <code>PASS clear 31 cases</code> 한 줄만 찍는다.</li>
         </ul>
         <p><strong>이 쪽에 필요한 것</strong></p>
         <ul>
-          <li><code>.scan.jsonl</code> 기록 파일 한 장</li>
+          <li><code>.scan.jsonl</code> 기록 파일 한 장 — 라이다의 스캔을 저장한 파일이고, <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> 에서 만든다</li>
           <li>줄자</li>
           <li>각도기(없으면 A4 종이를 반으로 두 번 접으면 90°가 나온다)</li>
-          <li>l-11 까지 끝낸 도구(<code>geom.py</code> · <code>cluster.py</code> · <code>lines.py</code>)</li>
+          <li>Pi 의 빌드 도구(<code>g++</code> · <code>cmake</code>)와 l-11 까지 끝낸 앞 쪽의 파일(아래 <code>.meta</code> 의 "선행" 칸)</li>
+          <li><code>clear.hpp</code> 는 포트도 ROS 도 쓰지 않는 순수 헤더라 시험 <code>test_clear</code> 를 Mac 의 <code>clang++</code> 로 연습할 수 있다. 통과의 기준은 Pi 빌드다(결정 L3). 결정 L3 은 라이다 가이드의 설계 결정 번호이고, Mac 에서 해도 되는 것을 정한다(<a href="l-00-map.html">l-00</a>). <a href="l-01-link.html">l-01</a> 의 안전 규칙 L3 · 사이드바의 쪽 번호 L3 과는 다른 번호다.</li>
         </ul>
-        <p><strong>라이다도 컨테이너도 07 도 필요 없다.</strong></p>
+        <p><strong>라이다도 컨테이너도 07 도 필요 없다.</strong> 07 은 라이다 가이드와 따로 있는 본편의 쪽이고, 컨테이너 안의 ROS 2 드라이버로 스캔 메시지를 받는다.</p>
         <p><strong>없으면</strong></p>
         <ul>
           <li>줄자·각도기가 없으면 실습 A 의 검산과 실습 C 의 로봇 폭 측정을 끝낼 수 없다. 그래도 <strong>실습 B · E 는 전부 할 수 있고</strong>, A · C 도 "내 도구가 낸 수"까지는 나온다(견줄 상대가 없을 뿐이다).</li>
           <li>기록 파일이 <strong>내가 걸어 들어갈 수 있는 방</strong>의 것이 아니면(빌려 온 파일이면) 실습 C 의 판지 확인과 실습 D 의 현물 확인을 할 수 없다. 이때 실습 D 는 종이 위에서 끝내고 두 체크 항목은 미통과로 둔다(그 방법은 §3-3-4 · §3-4-1 에 적어 두었다).</li>
           <li>파일이 아직 없으면 <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> 로 한 장 기록하거나 <a href="l-00-map.html#s1-3">l-00 §1-3</a> 의 표에서 지금 할 수 있는 쪽을 고른다.</li>
+          <li>Pi 에 <code>g++</code> · <code>cmake</code> 가 없으면 <a href="l-00-map.html">l-00</a> 실습 A 의 체크포인트 <code>host-cpp-toolchain-ready</code> 로 돌아간다(<a href="l-00-map.html#s3-1">l-00 §3-1</a>).</li>
         </ul>
       </div>
 
       <div class="meta">
-        <div><span class="k">환경</span><span class="tag sim">기록 파일</span> <span class="tag py">Python</span> <span class="tag pi">Pi 호스트</span> <span class="tag mac">Mac</span></div>
-        <div><span class="k">선행</span><a href="l-11-lines.html">l-11</a> (선분) — 실제로 쓰는 것: <code>Segment</code> · <code>Segment.normal()</code> · <code>point_line_distance()</code> / <a href="l-10-clusters.html">l-10</a> — <code>Cluster</code>(<code>pts</code> · <code>centroid()</code>) / <a href="l-08-floor-plan.html#s2-5">l-08 §2-5</a> — <code>normalize()</code> 와 좌표 계약</div>
-        <div><span class="k">채우는 INVENTORY 칸</span>없음. ⚠ 로봇 폭은 <code>hardware/INVENTORY.md</code> 6절이 소유하고 아직 <code>NOMINAL</code> 이다 — <strong>이 쪽은 손으로 잰 임시값을 쓰고 그렇다고 밝힌다</strong>(§2-4). 그 칸을 이 쪽에서 채우지 않는다</div>
-        <div><span class="k">이 쪽이 요구하는 수학</span><strong>점–직선 수직 거리</strong>(l-11 §2-2 의 식을 그대로 재사용한다) · <strong>내적의 부호</strong>와 <strong>atan2</strong> — <strong>셋 다 §2-2 가 식으로 준다.</strong> 새로 배울 것은 없고, <strong>부호를 어느 쪽으로 정할 것인가</strong>가 이 쪽의 실제 어려움이다</div>
+        <div><span class="k">환경</span><span class="tag sim">기록 파일</span> <span class="tag pi">Pi 호스트</span> <span class="tag cpp">C++</span></div>
+        <div><span class="k">선행</span><a href="l-11-lines.html">l-11</a> (선분) — <code>Segment</code>(<code>p0</code> · <code>p1</code> · <code>n</code>) · <code>normal()</code> · <code>point_line_distance()</code> · <code>fit_lines()</code>(<code>lines.hpp</code>) · 도구 <code>lab_lines</code> /
+          <a href="l-10-clusters.html">l-10</a> — <code>Cluster</code> 구조체의 <code>pts</code> · <code>split()</code>(<code>cluster.hpp</code>). l-10 이 채우는 <code>centroid()</code> 는 부르지 않는다 /
+          <a href="l-08-floor-plan.html#s2-5">l-08 §2-5</a> — <code>normalize()</code> · <code>Point</code>(<code>geom.hpp</code>)와 좌표 계약 /
+          <a href="l-06-three-sources.html">l-06</a> — <code>kPi</code> · <code>to_deg()</code> · <code>to_rad()</code>(<code>angles.hpp</code>) /
+          <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> — <code>Scan</code> · <code>load_jsonl()</code>(<code>scan_io.hpp</code>) /
+          <a href="l-02-device-id.html">l-02</a> — <code>repr_double()</code>(<code>repr.hpp</code>) · 시험 도구 <code>tests/check.hpp</code>.<br>
+          <strong>빌드에 먼저 있어야 하는 파일</strong> — <code>CMakeLists.txt</code> 의 l-01 ~ l-08 블록과 l-10 · l-11 블록이 부르는 소스다. 하나라도 없으면 <code>cmake</code> 가 구성 단계에서 멈춘다. l-01 ~ l-08 의 목록은 <a href="l-09-occupancy.html">l-09</a> 의 <code>.meta</code> "빌드에 먼저 있어야 하는 파일" 칸과 같다. l-10 은 <code>cluster.hpp</code> · <code>cluster.cpp</code> · <code>test_cluster.cpp</code>, l-11 은 <code>lines.hpp</code> · <code>lines.cpp</code> · <code>test_lines.cpp</code> 셋이다. 이 쪽은 l-09 의 코드를 쓰지 않는다. 다만 <code>CMakeLists.txt</code> 에 l-09 의 두 줄을 붙였으면 l-09 의 파일 넷도 있어야 한다 — <code>grid.hpp</code> · <code>grid.cpp</code> · <code>test_grid.cpp</code> · <code>pgm.py</code></div>
+        <div><span class="k">채우는 INVENTORY 칸</span>없음. ⚠ 로봇 폭은 <code>hardware/INVENTORY.md</code> 6절이 소유하고 아직 <code>NOMINAL</code>(출처는 있지만 이 프로젝트에서 잰 값은 아닌 임시값)이다 — <strong>이 쪽은 손으로 잰 임시값을 쓰고 그렇다고 밝힌다</strong>(§2-4). 그 칸을 이 쪽에서 채우지 않는다</div>
+        <div><span class="k">이 쪽이 요구하는 수학</span><strong>점–직선 수직 거리</strong>(l-11 §2-2 의 식을 그대로 재사용한다) · <strong>내적의 부호</strong>와 <strong>atan2</strong>(두 성분 y · x 로 방향각을 내는 함수) — <strong>셋 다 §2-2 가 식으로 준다.</strong> 새로 배울 것은 없고, <strong>부호를 어느 쪽으로 정할 것인가</strong>가 이 쪽의 실제 어려움이다</div>
         <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
       </div>
 
@@ -81,6 +89,7 @@
 
       <h3 id="s2-1">2-1. "벽까지의 거리"가 셋이다 — 같은 장면에서 세 값이 다르게 나온다</h3>
       <p>이 저장소 안에는 "벽까지 얼마"를 내는 자리가 이미 둘 있고, 이 쪽이 셋째를 만든다. <strong>세 값은 같은 장면에서 다르게 나온다.</strong> 어느 것도 틀리지 않았다 — <strong>세 개가 서로 다른 물음에 답하기 때문</strong>이다.</p>
+      <p>표의 <code>scan_watch</code> 는 07 §3-10 의 노드다. 08d 는 본편의 쪽이고, 카메라와 라이다를 합쳐 물체를 추적하고 거리를 낸다.</p>
       <div class="tbl"><table>
         <thead><tr><th>어디</th><th>무엇을 재는가</th><th>답하는 물음</th><th>이 쪽의 태도</th></tr></thead>
         <tbody>
@@ -101,8 +110,8 @@
       <p>⚠ <strong>새 식이 아니다.</strong> <a href="l-11-lines.html#s2-2">l-11 §2-2</a> 의 식에 점 자리로 <strong>원점을 넣은 것</strong>이 전부다. 그래서 이 함수는 한 줄이고, §3-1-2 가 그 한 줄을 전량으로 준다 — <strong>그 한 줄이 l-11 을 왜 했는지의 답</strong>이다. 점이었다면 "센서에서 벽까지"는 점마다 다른 수백 개의 수였지만, 면이 되었으므로 <strong>수 하나</strong>가 된다.</p>
       <p>인자가 <code>seg</code> 하나뿐인 것도 우연이 아니다. <strong>센서는 언제나 원점</strong>이라고 <a href="l-08-floor-plan.html#s2-2">l-08 §2-2</a> 가 좌표 계약에 적어 두었다. 계약이 없었다면 이 함수는 센서 위치를 인자로 받아야 했고, 그 인자를 빼먹은 호출이 <strong>오류 없이 틀린 거리</strong>를 냈을 것이다.</p>
       <div class="callout warn"><span class="ct">직선까지다 — 선분까지가 아니다</span>
-        <p><code>perp_distance</code> 는 선분을 <strong>무한한 직선으로 늘려</strong> 거리를 잰다. 그래서 <strong>수직선의 발이 선분 밖으로 떨어질 수 있다</strong> — 옆으로 비껴 있는 짧은 벽 조각 하나가 "<code>1.0</code> m 앞"이라고 보고되는데 정작 그 방향에는 <strong>아무것도 없다.</strong> 시험 벡터 5·12 가 정확히 이 경우이고, 값은 <strong>버그가 아니라 정의</strong>다.</p>
-        <p>왜 잘라서(선분 안으로 제한해서) 재지 않는가 — 벽을 <strong>따라가려면</strong> 벽이 놓인 <strong>면</strong>이 필요하지 지금 보이는 조각의 끝이 필요한 것이 아니기 때문이다. 대신 <strong>발이 선분 안에 있는지는 호출하는 쪽이 확인한다</strong>(§3-1-3 4번). 함수를 늘리는 대신 <strong>확인을 눈에 보이게</strong> 두었다.</p>
+        <p><code>perp_distance</code> 는 선분을 <strong>무한한 직선으로 늘려</strong> 거리를 잰다. 그래서 <strong>수직선의 발이 선분 밖으로 떨어질 수 있다</strong> — 옆으로 비껴 있는 짧은 벽 조각 하나가 "<code>1.0</code> m 앞"이라고 보고되는데 정작 그 방향에는 <strong>아무것도 없다.</strong> 시험 벡터 5·12 가 정확히 이 경우이고, 값은 <strong>버그가 아니라 정의</strong>다. 시험 벡터는 입력과 기대 출력을 정해 둔 시험 한 건이다(§3-5-2).</p>
+        <p>왜 잘라서(선분 안으로 제한해서) 재지 않는가 — 벽을 <strong>따라가려면</strong> 벽이 놓인 <strong>면</strong>이 필요하지 지금 보이는 조각의 끝이 필요한 것이 아니기 때문이다. 대신 <strong>발이 선분 안에 있는지는 따로 확인한다</strong> — 그 확인이 <code>foot_inside()</code>(§3-1-3, T2)다. <code>perp_distance()</code> 에 조건을 넣어 늘리는 대신 <strong>확인을 이름 있는 함수로 따로</strong> 두었다. 그래서 도구 <code>lab_clear</code> 는 선분마다 거리와 함께 <code>foot in</code> / <code>foot out</code> 을 찍는다.</p>
       </div>
 
       <h4 id="s2-2-1">2-2-1. 이 쪽의 첫 일 — 법선에 <strong>뜻</strong>을 붙인다</h4>
@@ -112,7 +121,7 @@
         <p>선분의 법선 <code>n</code> 둘 중, <strong>센서에서 벽으로 가는 쪽</strong>을 <strong>바깥 법선</strong>이라 부르고 이 쪽의 모든 계산은 바깥 법선을 쓴다. 고르는 규칙은 부등호 하나다 — 센서가 원점이므로 <strong>센서에서 벽 위의 한 점으로 가는 벡터는 <code>p0</code> 자신</strong>이고,</p>
         <pre><code class="lang-text">n · p0  &gt; 0   이면  n 이 이미 바깥 법선이다
 n · p0  &lt; 0   이면  -n 이 바깥 법선이다          (n · p0 = nx*p0x + ny*p0y)</code></pre>
-        <p>이 한 줄을 통과하면 <strong>점의 순서가 뒤집혀도 답이 같아진다.</strong> 시험 벡터 9 가 정확히 이 성질을 채점한다 — 같은 벽을 <code>Segment(p1, p0)</code> 로 뒤집어 넣어도 방위가 같아야 한다.</p>
+        <p>이 한 줄을 통과하면 <strong>점의 순서가 뒤집혀도 답이 같아진다.</strong> 시험 벡터 9 가 정확히 이 성질을 채점한다 — 같은 벽을 <code>Segment{p1, p0, n}</code> 으로 뒤집어 넣어도 방위가 같아야 한다.</p>
         <p>⚠ <code>n · p0 == 0</code> 인 경우는 <strong>벽이 센서를 지나간다</strong>는 뜻이다(수직 거리 0). 실물에서는 일어나지 않고, 일어났다면 값이 아니라 <strong>입력이 틀린 것</strong>이다.</p>
       </div>
       <p>그 다음은 짧다. 바깥 법선의 방향이 곧 <strong>그 면을 마주 보려면 돌아야 하는 각</strong>이다.</p>
@@ -120,9 +129,9 @@ n · p0  &lt; 0   이면  -n 이 바깥 법선이다          (n · p0 = nx*p0x 
       <p>0 이면 벽이 이미 정면이고, <code>+</code> 면 <strong>왼쪽</strong>으로 그만큼 돌면 마주 본다(l-08 의 좌표 계약: <code>+y</code> 가 왼쪽, 각은 반시계 +). 그리고 <strong>이 값이야말로 최소 거리가 결코 줄 수 없는 것</strong>이다 — 최소 거리는 스칼라 하나라 방향이라는 정보 자체가 들어 있지 않다.</p>
 
       <h4 id="s2-2-2">2-2-2. 라디안이다, 그리고 <code>[-π, π]</code> 는 <strong>양 끝이 다 나온다</strong></h4>
-      <p>단위부터 정한다. <strong><code>heading_to</code> 는 라디안을 돌려준다.</strong> 이유는 둘이다 — <code>normalize()</code>(<a href="l-08-floor-plan.html#s2-5">l-08 §2-5</a>)가 라디안이고, ROS 의 각도 규약이 라디안이다. 사람이 읽는 자리(화면·노트)에서만 <code>math.degrees()</code> 로 바꾼다.</p>
+      <p>단위부터 정한다. <strong><code>heading_to</code> 는 라디안을 돌려준다.</strong> 이유는 둘이다 — <code>normalize()</code>(<a href="l-08-floor-plan.html#s2-5">l-08 §2-5</a>)가 라디안이고, ROS 의 각도 규약이 라디안이다. 사람이 읽는 자리(화면·노트)에서만 <code>to_deg()</code>(<a href="l-06-three-sources.html">l-06</a> 의 <code>angles.hpp</code>)로 바꾼다.</p>
       <p class="small">⚠ 같은 도구 상자 안에서 <strong>l-11 의 <code>corners(segments, min_angle_deg)</code> 는 도(度)</strong>다. 섞으면 <strong>57.3배</strong> 틀린 값이 오류 없이 지나간다(<code>1 rad = 57.29577951308232°</code>). 이름 끝에 <code>_deg</code> 가 붙었는지가 유일한 표시이고, 증상 표에 그 행이 있다.</p>
-      <p>범위는 <code>normalize()</code> 가 정한다. 그 함수의 실제 치역은 <code>[-π, π]</code> 이고 — <strong>여기가 중요하다</strong> — <strong>양 끝이 다 나온다.</strong> l-08 이 자기 파일 머리에 실측으로 적어 두었다: <code>normalize(-π)</code> 는 <code>+π</code> 가 아니라 <code>-3.141592653589793</code> 으로 돌아온다.</p>
+      <p>범위는 <code>normalize()</code> 가 정한다. 그 함수의 실제 치역은 <code>[-π, π]</code> 이고 — <strong>여기가 중요하다</strong> — <strong>양 끝이 다 나온다.</strong> l-08 이 <code>geom.hpp</code> 의 <code>normalize()</code> 위 주석에 실측으로 적어 두었다(<code>normalize(-kPi) comes back as -kPi</code>). <code>normalize(-π)</code> 는 <code>+π</code> 가 아니라 <code>-3.141592653589793</code> 으로 돌아온다.</p>
       <div class="callout warn"><span class="ct">π 근처에서 생기는 문제 — 그리고 이 쪽이 그 문제를 피하는 방법</span>
         <p><strong>센서 바로 뒤의 벽</strong>은 방위가 <code>+π</code> 일 수도 <code>-π</code> 일 수도 있다. 기하는 똑같은데 <strong>부호가 뒤집힌다</strong> — 점의 순서, 반올림, 덩어리가 이음매를 걸쳤는지 같은 것에 따라 갈린다. 그래서 이 쪽은 세 가지를 한다.</p>
         <ul>
@@ -130,38 +139,40 @@ n · p0  &lt; 0   이면  -n 이 바깥 법선이다          (n · p0 = nx*p0x 
           <li><strong>방위를 평균 내지 않는다.</strong> <code>+179°</code> 와 <code>-179°</code> 의 산술 평균은 <code>0°</code>, 곧 <strong>정반대 방향</strong>이다. 두 벽의 "가운데 방향"이 필요하면 각이 아니라 <strong>단위 벡터를 더해서</strong> 낸다.</li>
           <li><strong>통로를 가를 때는 뒤쪽을 아예 잘라 낸다</strong> — 다음 절이 그 규칙이다.</li>
         </ul>
-        <p>시험 벡터 11 은 이 성질 때문에 <strong>부호를 채점하지 않는다</strong>(<code>abs()</code> 를 씌워 π 와만 견준다). 채점할 수 없는 것을 채점하는 시험은 <strong>맞는 구현도 통과시키지 못한다.</strong></p>
+        <p>시험 벡터 11 은 이 성질 때문에 <strong>부호를 채점하지 않는다</strong>(<code>std::fabs()</code> 를 씌워 π 와만 견준다). 채점할 수 없는 것을 채점하는 시험은 <strong>맞는 구현도 통과시키지 못한다.</strong></p>
       </div>
 
       <h3 id="s2-3">2-3. 통로 폭은 <strong>두 덩어리 사이의 틈</strong>이지 가장 가까운 점까지의 거리가 아니다</h3>
-      <p>문을 지나갈 수 있는지를 정하는 것은 <strong>문설주 두 개 사이의 간격</strong>이다. 그런데 초보의 도구는 거의 언제나 <strong>센서에서 가장 가까운 점까지의 거리</strong>를 재고 그 거리를 폭이라 부른다. 두 수는 <strong>아무 관계가 없다</strong> — 문 한가운데 서 있으면 양쪽 설주까지 각각 0.4 m 인데 <strong>문 폭은 0.8 m</strong> 이고, 문 한쪽에 바짝 붙어 서면 가장 가까운 점은 0.05 m 인데 <strong>문 폭은 그대로 0.8 m</strong> 다.</p>
+      <p>문을 지나갈 수 있는지를 정하는 것은 <strong>문설주 두 개 사이의 간격</strong>이다. 그런데 초보의 도구는 거의 언제나 <strong>센서에서 가장 가까운 점까지의 거리</strong>를 재고 그 거리를 폭이라 부른다. 두 수는 <strong>아무 관계가 없다</strong>. 센서가 문 한가운데에 있으면 양쪽 설주까지 각각 0.4 m 인데 <strong>문 폭은 0.8 m</strong> 다. 센서가 한쪽 설주 가까이 있으면 가장 가까운 점은 0.05 m 인데 <strong>문 폭은 그대로 0.8 m</strong> 다.</p>
       <p>그래서 <code>passage_width(clusters, direction)</code> 는 이렇게 센다.</p>
       <ol class="steps">
         <li><strong>가려는 방향</strong> <code>direction</code>(라디안)을 받는다. 가려는 방향이 없으면 통로도 없다 — 같은 두 덩어리가 <strong>어느 방향으로 가느냐에 따라</strong> 문설주가 되기도 하고 그냥 벽이 되기도 한다.</li>
         <li>그 방향 <strong>앞쪽</strong>(±90° 안)에 있는 덩어리만 본다. 뒤쪽 것은 문설주가 아니다.</li>
         <li>남은 것을 <strong>왼쪽 / 오른쪽</strong>으로 가르고, 각 쪽에서 <strong>가려는 방향에 가장 가까운</strong> 덩어리 하나씩을 고른다.</li>
-        <li>고른 두 덩어리의 <strong>점 대 점 최단 거리</strong>가 폭이다. <strong>중심끼리의 거리가 아니다</strong> — 시험 벡터 13 이 그 둘을 가른다(같은 입력에서 <code>0.8</code> 과 <code>1.5999999999999999</code> 로 갈린다).</li>
+        <li>고른 두 덩어리의 <strong>점 대 점 최단 거리</strong>가 폭이다. <strong>중심끼리의 거리가 아니다</strong> — 시험 벡터 13 이 그 둘을 가른다(같은 입력에서 <code>0.8</code> 과 <code>1.6000000000000003</code> 으로 갈린다).<sup class="fn"><a href="#fn-1" id="fnref-1">1</a></sup></li>
       </ol>
-      <p>⚠ 한쪽에 덩어리가 없으면 이 함수는 <strong>수를 내지 않는다</strong>. 이 가이드는 그 경우에 <code>None</code> 을 돌려주고, <strong><code>0.0</code> 을 쓰지 않는다</strong> — 이유는 l-04 가 기준 형식에서 무반사를 <code>null</code> 로 정한 것과 <strong>똑같다</strong>(<a href="l-04-one-turn.html#s3-4-2">l-04 §3-4-2</a>). <code>0.0</code> 은 "폭이 0 이다(못 지나간다)"와 구별되지 않고, <code>inf</code> 는 "막는 것이 없다(마음껏 지나가라)"처럼 읽힌다. <strong><code>None</code> 은 "못 쟀다" 하나만 뜻한다.</strong></p>
-      <p>그리고 그 <code>None</code> 이 <code>fits()</code> 에 들어가면 <strong><code>False</code></strong> 다. "모른다"를 통과로 답하지 않는다. 이 규칙은 판정 함수가 가질 수 있는 가장 간단한 안전장치이고, 시험 벡터 24 가 이 규칙을 채점한다.</p>
+      <p>⚠ 한쪽에 덩어리가 없으면 이 함수는 <strong>수를 내지 않는다</strong>. 그래서 반환 타입이 <code>std::optional&lt;double&gt;</code> 이고, 그 경우에 <strong>빈 값</strong>(<code>std::nullopt</code>)을 돌려준다. 도구는 빈 값을 <code>none</code> 으로 찍는다. <strong><code>0.0</code> 을 쓰지 않는다</strong> — 이유는 l-04 가 기준 형식에서 무반사를 <code>null</code> 로 정한 것과 <strong>똑같다</strong>(<a href="l-04-one-turn.html#s3-4-2">l-04 §3-4-2</a>). 기준 형식은 l-04 가 정한 기록 파일 <code>.scan.jsonl</code> 의 형식이고, 무반사는 레이저가 돌아오지 않아 거리를 못 잰 방향이다. <code>0.0</code> 은 "폭이 0 이다(못 지나간다)"와 구별되지 않고, <code>inf</code> 는 "막는 것이 없다(마음껏 지나가라)"처럼 읽힌다. <strong>빈 값은 "못 쟀다" 하나만 뜻한다.</strong></p>
+      <p class="small">C++ 의 <code>double</code> 에는 <code>inf</code> 와 NaN 이 <strong>값으로</strong> 들어 있다. 그래서 "없음"을 <code>double</code> 하나로 나타내면 계산이 만든 <code>inf</code> · NaN 과 섞인다. 빈 값을 따로 두는 까닭과 그 꺼내는 법은 <a href="l-04-one-turn.html#s2-6-2">l-04 §2-6-2</a> 에 있다.</p>
+      <p>그리고 그 빈 값이 <code>fits()</code> 에 들어가면 <strong><code>false</code></strong> 다. "모른다"를 통과로 답하지 않는다. 이 규칙은 판정 함수가 가질 수 있는 가장 간단한 안전장치이고, 시험 벡터 24 · 25 가 이 규칙을 채점한다.</p>
 
       <h4 id="s2-3-1">2-3-1. 왼쪽·오른쪽을 무엇으로 가르는가 — 그리고 <strong>왜 뒤를 잘라 내는가</strong></h4>
       <p>덩어리 하나가 가려는 방향의 어느 쪽인지는 <strong>부호가 있는 각</strong>으로 정한다. 덩어리 중심의 방위에서 가려는 방향을 빼고, <strong>반드시 감는다</strong>(§2-2-2).</p>
-      <pre><code class="lang-text">s = normalize( atan2(cy, cx) - direction )        (cx, cy) = 덩어리의 중심
+      <pre><code class="lang-text">s = normalize( atan2(cy, cx) - direction )        (cx, cy) = 덩어리의 중심(점들의 평균)
 
 s &gt; 0  왼쪽        s &lt; 0  오른쪽        |s| ≥ π/2  앞쪽이 아니다 — 아예 보지 않는다</code></pre>
       <p>마지막 조건이 없으면 무슨 일이 생기는지가 이 절의 요점이다. <strong>뒤쪽 180° 부근에서는 <code>s</code> 의 부호를 그대로 받아들일 수 없다</strong> — 정확히 뒤에 있는 덩어리는 <code>+π</code> 와 <code>-π</code> 중 아무 쪽으로나 나오고(§2-2-2), 그러면 <strong>같은 덩어리가 어떤 날은 왼쪽, 어떤 날은 오른쪽</strong>이 된다.</p>
-      <p>더 나쁜 것은 이 문제가 <strong>오류 표시 없이</strong> 지나간다는 점이다. 한쪽 설주가 없는 장면(벽 하나에 붙은 모서리 같은 것)에서 뒤에 있던 아무 물건이 <strong>반대쪽 설주로 선택되고</strong>, 도구는 <code>None</code> 대신 <strong>그럴듯한 수</strong>를 낸다. 시험 벡터 17 이 그 장면이다 — 앞쪽 조건을 빼면 <code>None</code> 이어야 할 자리에서 <code>2.08806130178211</code> 이 나온다.</p>
+      <p>더 나쁜 것은 이 문제가 <strong>오류 표시 없이</strong> 지나간다는 점이다. 한쪽 설주가 없는 장면(벽 하나에 붙은 모서리 같은 것)에서 뒤에 있던 아무 물건이 <strong>반대쪽 설주로 선택되고</strong>, 도구는 <code>none</code> 대신 <strong>그럴듯한 수</strong>를 낸다. 시험 벡터 17 이 그 장면이다 — 앞쪽 조건을 빼면 빈 값이어야 할 자리에서 <code>2.08806130178211</code> 이 나온다.<sup class="fn"><a href="#fn-1">1</a></sup></p>
       <p>그래서 뒤를 자르는 것은 <strong>π 근처를 피해 가는 요령</strong>이면서 동시에 <strong>물리적으로 맞는 규칙</strong>이다. 문설주는 <strong>가려는 방향의 옆</strong>에 있지 뒤에 있지 않다. 두 이유가 같은 한 줄의 조건으로 해결된다는 것이 이 규칙이 안전한 이유다. 요령일 뿐이었다면 언젠가 그 줄을 지우고 싶어졌을 것이다.</p>
       <p class="small">⚠ <code>s</code> 가 <strong>정확히 0</strong> 인 덩어리(중심이 가려는 방향 위에 있다)는 <strong>어느 쪽에도 넣지 않는다.</strong> 그 덩어리는 문설주가 아니라 <strong>문 한가운데를 막고 있는 것</strong>이고, 통로 폭이 아니라 다른 판정(정면 최소 거리, §3-2)이 다룰 장면이다.</p>
 
       <h3 id="s2-4">2-4. 로봇 폭은 어디서 오는가 — 지금은 <strong>임시값</strong>이라고 적는다</h3>
       <p>판정에 들어가는 셋 중 둘(<strong>로봇 폭</strong>·<strong>여유</strong>)은 센서가 주지 않는다. 그런데 이 프로젝트에서 로봇 폭은 <strong>아직 확정된 수가 아니다.</strong> 있는 것을 정직하게 늘어놓으면 이렇다.</p>
+      <p>표의 1세대는 이 프로젝트 이전에 같은 부품 일부로 만든 첫 로봇이다. <code>gen1-record</code> 는 값의 출처가 1세대의 기록이라는 뜻이다.</p>
       <div class="tbl"><table>
         <thead><tr><th>어디</th><th>값</th><th>출처 · 등급</th><th>이 쪽에서 쓸 수 있는가</th></tr></thead>
         <tbody>
-          <tr><td><code>hardware/INVENTORY.md</code> 6절 "외곽(footprint)"</td><td>폭 <strong>688 mm</strong> · 길이 691 mm</td><td>NOMINAL(gen1-record, 2026-07-25) — <strong>1세대가 라이다로 읽은 바깥 엣지 폭</strong></td><td>⚠ 조심해서. <strong>트랙 폭이 아니라 바깥 엣지 폭</strong>이라고 같은 줄이 명시하고 있고, 길이는 줄자 기록(650 mm)과 <strong>41 mm 어긋난다</strong>고 적혀 있다</td></tr>
-          <tr><td>같은 6절 "몸통 상자"</td><td><code>____</code> × <code>____</code> × <code>____</code> m</td><td><strong>빈칸</strong> — 05 에서 자로 재 채우기로 돼 있다</td><td>아직 없다</td></tr>
+          <tr><td><code>hardware/INVENTORY.md</code> 6절 "외곽(footprint)"</td><td>폭 <strong>688 mm</strong> · 길이 691 mm</td><td>NOMINAL(gen1-record) — <strong>1세대가 라이다로 읽은 바깥 엣지 폭</strong><sup class="fn"><a href="#fn-2" id="fnref-2">2</a></sup></td><td>⚠ 조심해서. <strong>트랙 폭이 아니라 바깥 엣지 폭</strong>이라고 같은 줄이 명시하고 있다. 길이는 다른 기록과 어긋난다<sup class="fn"><a href="#fn-3" id="fnref-3">3</a></sup></td></tr>
+          <tr><td>같은 6절 "몸통 상자"</td><td><code>____</code> × <code>____</code> × <code>____</code> m</td><td><strong>빈칸</strong> — 05(본편의 TF2 · URDF 쪽)에서 자로 재 채우기로 돼 있다</td><td>아직 없다</td></tr>
           <tr><td><strong>내 줄자</strong></td><td><code>____</code> m</td><td><strong>내가 지금 잰다</strong> — NOMINAL(ruler, 오늘 날짜)</td><td><strong>이 쪽이 쓰는 값</strong>(§3-3-1)</td></tr>
         </tbody>
       </table></div>
@@ -191,23 +202,24 @@ s &gt; 0  왼쪽        s &lt; 0  오른쪽        |s| ≥ π/2  앞쪽이 아�
    ═════════════════════════════════     바닥
 
    도구가 내는 답: "폭 0.8 m, 통과 가능"      실제로 가면: 턱에 걸린다</code></pre>
-      <p>이것이 <strong>이 쪽의 판정이 틀리는 가장 흔한 방법</strong>이고, 실습 D 가 이 오판을 일부러 만든다. 그리고 이 한계는 두 개의 <strong>수</strong>로 더 정확해진다 — 둘 다 데이터시트에 있다.</p>
+      <p>이것이 <strong>이 쪽의 판정이 틀리는 가장 흔한 방법</strong>이고, 실습 D 가 이 오판을 일부러 만든다. 그리고 이 한계는 두 개의 <strong>수</strong>로 더 정확해진다 — 둘 다 데이터시트(제조사가 낸 RPLIDAR A1 사양 문서)에 있다.</p>
+      <p>표의 등급 "확정"은 근거 문서로 정해진 값이고, "산술"은 그 값에서 계산한 값이다.</p>
       <div class="tbl"><table>
         <thead><tr><th>항목</th><th>값</th><th>출처 · 등급</th><th>내 장치에서 보는 법</th></tr></thead>
         <tbody>
-          <tr><td>Scan Field Flatness</td><td><strong>−1.5 ~ +1.5°</strong></td><td>rev.2.2 p.8 Fig 2-1 · v3.0 p.8 Fig 2-1 — <strong>확정</strong>(두 판이 이 줄에서 같다. 집필자가 두 PDF 를 직접 열어 대조했다, 2026-09-23)</td><td>먼 벽에 <strong>가로 종이띠</strong>를 붙이고 거리를 바꿔 가며 스캔 면이 띠의 어디를 지나는지 본다(l-15 에서 한다)</td></tr>
-          <tr><td>Distance Range 하한</td><td><strong>0.15 m</strong></td><td>rev.2.2 p.8 · v3.0 p.8 Fig 2-1 — <strong>확정</strong>. <code>hardware/INVENTORY.md</code> §3 "최소 거리"와 같다</td><td>손을 천천히 가까이 대며 점이 사라지는 거리를 잰다(l-03 에서 이미 한 실습)</td></tr>
-          <tr><td>스캔 면이 벗어날 수 있는 높이</td><td><code>d × tan(1.5°)</code></td><td><strong>산술</strong> — 위 두 줄에서. 아래 표가 집필자가 <code>python3</code> 로 낸 값이다</td><td>내 <code>d</code> 를 넣어 계산한다(§3-4-2 의 표)</td></tr>
+          <tr><td>Scan Field Flatness</td><td><strong>−1.5 ~ +1.5°</strong></td><td>데이터시트 성능 표 — <strong>확정</strong>. 데이터시트의 두 판이 이 줄에서 같다<sup class="fn"><a href="#fn-4" id="fnref-4">4</a></sup></td><td>먼 벽에 <strong>가로 종이띠</strong>를 붙이고 거리를 바꿔 가며 스캔 면이 띠의 어디를 지나는지 본다(l-15 에서 한다)</td></tr>
+          <tr><td>Distance Range 하한</td><td><strong>0.15 m</strong></td><td>데이터시트 성능 표 — <strong>확정</strong>. <code>hardware/INVENTORY.md</code> §3 "최소 거리"와 같다<sup class="fn"><a href="#fn-5" id="fnref-5">5</a></sup></td><td>손을 천천히 가까이 대며 점이 사라지는 거리를 잰다(l-03 에서 이미 한 실습)</td></tr>
+          <tr><td>스캔 면이 벗어날 수 있는 높이</td><td><code>d × tan(1.5°)</code></td><td><strong>산술</strong> — 위 두 줄에서. 아래 표가 집필자가 C++ 로 낸 값이다</td><td>내 <code>d</code> 를 넣어 계산한다(§3-4-2 의 표)</td></tr>
         </tbody>
       </table></div>
       <p><strong>Scan Field Flatness 가 뜻하는 것</strong>은 "스캔 면이 완전한 평면이 아니다"이다 — 몸체를 수평으로 놓아도 면이 최대 1.5° 까지 기울거나 물결질 수 있다. 그래서 <strong>거리가 멀수록 "그 방향에서 실제로 잰 높이"의 불확실함이 커진다.</strong> 같은 각도라도 거리가 곱해지기 때문이다.</p>
       <pre><code class="lang-text">거리 d 에서 스캔 면이 공칭 평면에서 벗어날 수 있는 높이 = d × tan(1.5°)
 
-  d = 1.0 m  -&gt;  0.026185921569186928 m       (약 2.6 cm)
-  d = 2.0 m  -&gt;  0.052371843138373855 m       (약 5.2 cm)
-  d = 5.0 m  -&gt;  0.13092960784593463  m       (약 13.1 cm)</code></pre>
-      <p class="small">집필자가 <code>python3</code> 로 실제 계산했다(2026-09-23, 결정 L3 — ROS 를 import 하지 않는 순수 파이썬은 Mac 에서 실행한다). <strong>찍힌 그대로 적었다</strong> — 반올림한 수를 시험 벡터나 표에 적으면 정확히 구현한 사람이 없는 버그를 찾으러 간다.</p>
-      <p>그래서 "5 m 앞의 장애물이 스캔 면에 걸리는가"는 <strong>13 cm 폭의 물음</strong>이다. 그리고 <strong>스캔 면 자체의 높이 <code>h_L</code>(바닥에서 레이저 창까지)은 이 프로젝트가 아직 모른다.</strong> 데이터시트의 Figure 5-2(rev.2.2 p.16)는 기구 치수도이지만 <strong>그 단일 치수를 주지 않는다</strong>(집필자가 열어 확인했다). <code>h_L</code> 을 재는 것은 센서를 차체에 다는 <strong><a href="09a-assembly-gate.html">09a</a></strong> 의 일이다. <strong>이 쪽은 그 수 없이 끝낼 수 있게 설계돼 있다</strong> — 여기서 필요한 것은 "면이 하나뿐이다"라는 사실이지 그 면의 높이가 아니기 때문이다.</p>
+  d = 1.0 m  -&gt;  0.02618592156918693 m       (약 2.6 cm)
+  d = 2.0 m  -&gt;  0.05237184313837386 m       (약 5.2 cm)
+  d = 5.0 m  -&gt;  0.13092960784593466 m       (약 13.1 cm)</code></pre>
+      <p class="small">집필자가 <code>d * std::tan(to_rad(1.5))</code> 를 C++ 로 계산해 <code>repr_double()</code> 로 찍었다. <strong>찍힌 그대로 적었다</strong> — 반올림한 수를 시험 벡터나 표에 적으면 정확히 구현한 사람이 없는 버그를 찾으러 간다. 마지막 자리는 수학 라이브러리에 따라 달라진다 — Mac 에서 계산하면 셋 다 마지막 자리가 다르게 찍힌다.<sup class="fn"><a href="#fn-1">1</a></sup></p>
+      <p>그래서 "5 m 앞의 장애물이 스캔 면에 걸리는가"는 <strong>13 cm 폭의 물음</strong>이다. 그리고 <strong>스캔 면 자체의 높이 <code>h_L</code>(바닥에서 레이저 창까지)은 이 프로젝트가 아직 모른다.</strong> 데이터시트의 기구 치수도는 <strong>그 단일 치수를 주지 않는다</strong>.<sup class="fn"><a href="#fn-6" id="fnref-6">6</a></sup> <code>h_L</code> 을 재는 것은 센서를 차체에 다는 <strong><a href="09a-assembly-gate.html">09a</a></strong> 의 일이다. 09a 는 본편의 조립 · 실측 관문 쪽이다. <strong>이 쪽은 그 수 없이 끝낼 수 있게 설계돼 있다</strong> — 여기서 필요한 것은 "면이 하나뿐이다"라는 사실이지 그 면의 높이가 아니기 때문이다.</p>
       <div class="callout note"><span class="ct">왜 이 한계가 09a 의 장착 높이 실측을 정당화하는가</span>
         <p>장착 높이를 바꾸면 <strong>무엇이 보이지 않는가가 통째로 바뀐다.</strong> 낮게 달면 바닥의 턱·문지방·전선은 보이지만 책상 상판·손잡이가 사라지고, 높게 달면 그 반대다. <strong>어느 높이도 전부를 보지 못한다</strong> — 그래서 장착 높이는 취향이 아니라 <strong>"무엇을 포기할 것인가"의 선언</strong>이고, 그 선언을 하려면 먼저 이 쪽에서 <strong>못 보는 것이 실제로 어떤 오판을 만드는지</strong>를 봐야 한다. 실습 D 가 그 순서대로 진행한다.</p>
       </div>
@@ -215,7 +227,7 @@ s &gt; 0  왼쪽        s &lt; 0  오른쪽        |s| ≥ π/2  앞쪽이 아�
       <h3 id="s2-6">2-6. 여기까지가 L 이다 — 이 두 수가 어디로 가는가</h3>
       <p>이 쪽이 내는 <strong>거리와 방위</strong>는 그대로 제어기의 입력이다. "벽에서 0.5 m 를 유지하며 따라간다"는 <strong>수직 거리를 목표값으로 하는 제어</strong>이고, "벽을 마주 보고 정렬한다"는 <strong>방위를 0 으로 몰아가는 제어</strong>다. <strong>그 제어는 <a href="10-autonomy.html">10</a> 에서 다루고 L 은 여기서 멈춘다</strong> — 멈추는 이유는 제어가 어려워서가 아니라 <strong>제어에는 모터가 필요하고, 이 가이드는 센서 한 대로 끝나는 것만 다루기 때문</strong>이다.</p>
       <p>시간의 예산도 여기서 한 번 생각해 둔다. 한 바퀴가 <strong>5.5 Hz(주기 약 182 ms)</strong> 라면, 판정 한 번은 그 안에 끝나야 "매 스캔마다 판정한다"가 성립한다. 이 쪽의 계산은 전부 선분 몇 개·덩어리 몇 개에 대한 것이라 <strong>격자(l-09)보다 계산량이 훨씬 적다</strong>. 이것이 점을 도형으로 줄인 세 번째 이득이다(<a href="l-11-lines.html#s2-1">l-11 §2-1</a>).</p>
-      <p>그리고 같은 판정이 <strong>이미 한 번 더</strong> 이 저장소에 있다. <a href="09-slam-nav2.html">09</a> §2-6 의 <code>inflation_radius</code> 는 "장애물을 이만큼 부풀려 놓고 경로를 찾는다"는 값이고, <strong>부풀리는 양이 곧 로봇 반지름 + 여유</strong>다. 이 쪽에서 내가 손으로 하는 판정을 Nav2 는 <strong>지도 전체에 대해 미리</strong> 해 둔다.</p>
+      <p>그리고 같은 판정이 <strong>이미 한 번 더</strong> 이 저장소에 있다. 09 는 본편의 SLAM · Nav2 쪽이고, Nav2 는 지도 위에서 경로를 찾아 주행하게 하는 ROS 2 의 패키지다. <a href="09-slam-nav2.html">09</a> §2-6 의 <code>inflation_radius</code> 는 "장애물을 이만큼 부풀려 놓고 경로를 찾는다"는 값이고, <strong>부풀리는 양이 곧 로봇 반지름 + 여유</strong>다. 이 쪽에서 내가 손으로 하는 판정을 Nav2 는 <strong>지도 전체에 대해 미리</strong> 해 둔다.</p>
       <div class="callout tip"><span class="ct">여기서 적어 두면 09 에서 쓴다</span>
         <p>09 §2-6 은 <code>inflation_radius: 0.25</code> 를 예로 싣고, 같은 쪽의 파라미터 표는 그 값을 <strong><code>robot_radius</code> + 5~10 cm</strong> 로 설정하라고 적는다. <strong>내가 §3-3-1 에서 잰 폭</strong>으로 그 규칙을 따르면 얼마가 되는지 계산해 노트에 적어 두라.</p>
         <p>두 수가 다르게 나와도 <strong>여기서는 고치지 않는다</strong> — 09 의 값은 09 가 소유하고, 그때 쓸 근거를 <strong>지금 만들어 두는 것</strong>이 이 쪽의 일이다. 다르다면 무엇이 달랐는지만 적는다.</p>
@@ -225,17 +237,25 @@ s &gt; 0  왼쪽        s &lt; 0  오른쪽        |s| ≥ π/2  앞쪽이 아�
       <p>실습 다섯이다.</p>
       <ul>
         <li><strong>A</strong> 벽 하나의 거리와 방위를 내어 줄자·각도기와 견준다.</li>
-        <li><strong>B</strong> "벽까지의 거리" 세 값을 같은 장면에서 나란히 적는다(코드 거의 없음).</li>
+        <li><strong>B</strong> "벽까지의 거리" 세 값을 같은 장면에서 나란히 적는다(코드 없음 — 전량으로 주는 확인 도구 <code>lab_clear_try</code>).</li>
         <li><strong>C</strong> 통로 폭을 재고 판정한다.</li>
         <li><strong>D</strong> 스캔 면 밖의 것을 두고 판정을 틀리게 만든다(코드 없음).</li>
-        <li><strong>E</strong> 벡터 스물넷으로 채점한다.</li>
+        <li><strong>E</strong> 벡터 서른한 개로 채점한다.</li>
       </ul>
-      <p><strong>시험 파일은 §3-5-2 에 전량으로 있다.</strong> A 를 시작하자마자 그 파일을 먼저 자리에 놓고 실행하는 것이 요령이다 — 실패 순서가 곧 채울 순서가 된다.</p>
-      <p>실행하는 꼴은 하나다 — 저장소 뿌리(<code>~/ros2_rpi5</code>)에서 <code>pi$ python3 scripts/lidar_lab/clear.py &lt;파일&gt;</code>. Mac 에서 편집하면 <code>scripts/</code> 아래는 <code>sync-to-pi.sh</code> 가 Pi 로 보낸다(<a href="l-00-map.html#s3-4">l-00 §3-4</a>). 이 쪽은 ROS 를 <code>import</code> 하지 않으므로 <strong>Mac 에서 그대로 실행해도 된다.</strong></p>
+      <p><strong>시험 파일은 §3-5-2 에 전량으로 있다.</strong> A 를 시작하자마자 그 파일을 먼저 자리에 두고 빌드 · 실행하는 것이 요령이다 — 실패 줄의 목록이 곧 채울 순서가 된다.</p>
+      <p>A 에서 헤더 <code>clear.hpp</code> 를 채워 도구 <code>build/lab_clear</code> 를 만들고, C 는 같은 도구에 수 셋을 더 준다. <strong>도구에 주는 수의 개수가 곧 실습이다</strong> — 파일 뒤에 수 둘(덩어리 문턱 · 선분 문턱)을 주면 선분마다 거리와 방위를 찍고, 수 셋(가려는 방향 · 로봇 폭 · 여유)을 더 주면 통로 폭과 판정까지 찍는다. B 는 전량으로 주는 확인 도구 <code>build/lab_clear_try</code> 로 한다.
+      빌드와 실행은 Pi 의 저장소 루트(<code>~/ros2_rpi5</code>)에서 한다. 명령 앞의 <code>pi$</code> 는 Pi 의 셸에서 친다는 표시다. Mac 에서 편집하면 <code>scripts/</code> 아래는 <code>sync-to-pi.sh</code> 가 Pi 로 보낸다(<a href="l-00-map.html#s3-4">l-00 §3-4</a>). Mac 에서는 시험 <code>test_clear</code> 만 연습할 수 있다(결정 L3). 라이다도 컨테이너도 쓰지 않는다.</p>
       <div class="callout warn"><span class="ct">안전 — 이 쪽은 <strong>일부러 틀리게 만드는</strong> 실습이 둘이다</span>
-        <p>§3-3 은 <strong>여유를 0 으로</strong> 두어 실제로는 못 지나갈 통로를 "통과 가능"으로 판정하게 만들고, §3-4 는 <strong>스캔 면 밖의 물건</strong>을 두어 같은 오판을 다른 방법으로 만든다. <strong>둘 다 끝나면 되돌려 놓는다.</strong></p>
-        <p>특히 <strong>여유 0 설정을 그대로 두고 다음 쪽으로 가지 않는다.</strong> 이 값은 오류 표시 없이 남는 종류다. 통로 판정이 늘 "통과"로 나오는데 그 이유가 라이다에 있다고 생각하게 된다. 파일에 <code>margin = 0.0</code> 이 남아 있는지 §3-3-4 의 마지막 줄과 "다음 행선지"에서 두 번 확인한다.</p>
-        <p>⚠ 이 쪽은 <strong>기록 파일 한 장으로 끝난다.</strong> 다만 상자나 턱을 놓고 <strong>새로 한 장 기록하기로 했다면</strong> 그때는 라이다가 돌아간다 — 보이지 않는 레이저와 도는 머리에 대한 규칙은 <a href="l-01-link.html">l-01</a> 이 소유한다(§2-1 · §2-2). <strong>머리 가까이에 손을 두지 않고, 얼굴을 센서 높이에 두지 않는다.</strong></p>
+        <p>§3-3 은 <strong>여유를 0 으로</strong> 두어 실제로는 못 지나갈 통로를 "통과 가능"으로 판정하게 만들고, §3-4 는 <strong>스캔 면 밖의 물건</strong>을 두어 같은 오판을 다른 방법으로 만든다. <strong>둘 다 끝나면 되돌려 놓는다</strong> — 놓은 턱·상자는 치우고, 여유는 내가 고른 값을 노트에 적는다.</p>
+        <p>특히 <strong>일부러 0 으로 친 여유를 내 여유로 쓰지 않는다.</strong> 여유는 명령줄의 마지막 수라 파일에는 남지 않는다. 대신 셸 기록과 노트에 남는다. 다음 쪽에서 그 명령을 되풀이할 때 0 이 따라가면 통로 판정이 늘 "통과"로 나오는데, 그 이유가 라이다에 있다고 생각하게 된다. §3-3-4 의 마지막 걸음과 "다음 행선지"에서 두 번 확인한다.</p>
+        <p>⚠ 이 쪽의 도구(<code>lab_clear</code> · <code>lab_clear_try</code> · <code>lab_lines</code>)는 포트를 열지 않고 모터를 부르지 않는다 — 라이다가 꽂혀 있고 머리가 돌고 있었다면 <strong>그대로 돈다. 돈다고 간주한다.</strong> 상자나 턱을 놓고 <strong>새로 한 장 기록하기로 했다면</strong> <a href="l-04-one-turn.html">l-04</a> 의 <code>lab_turn</code> 으로 한다. 그 도구는 끝에 <code>motor(fd, false)</code> 로 머리를 멈춘다 — 끝난 뒤에도 돌면 USB 케이블을 뽑는다(<a href="l-01-link.html">l-01</a> 의 L2). 보이지 않는 레이저 규칙 L1 도 l-01 이 소유한다. <strong>머리 가까이에 손을 두지 않고, 얼굴을 센서 높이에 두지 않는다.</strong></p>
+        <p>L1 · L2 는 l-01 이 정한 안전 규칙 번호다. L1 은 보이지 않는 785 nm 레이저에 관한 규칙이다 — 스캔 창을 렌즈 높이에서 정면으로 들여다보지 않는다. L2 는 도는 머리에 관한 규칙이다. 결정 L3 과는 다른 번호다.</p>
+      </div>
+      <div class="callout tip"><span class="ct">힌트 카드 읽는 법</span>
+        <p>골격(채울 자리를 비워 둔 코드)의 빈 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 있다. 이 쪽은 T1 ~ T4 다. 차례로 <code>heading_to()</code> · <code>foot_inside()</code> · <code>passage_width()</code> · <code>fits()</code> 이다. T1 · T2 카드는 실습 A 의 §3-1-3 에, T3 · T4 카드는 실습 C 의 §3-3-3 에 있다. 주석 안의 번호 걸음을 보고 먼저 직접 써 본다.</p>
+        <p>막히면 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와 <strong>줄마다의 설명</strong>이 있다. 칸은 늘 같다: 할 일 · 완결 코드 · 코드 설명 · 다르게 써도 되는 곳 · 쓰는 API · 흔한 실수 · 확인.</p>
+        <p>T1 ~ T4 는 시험 <code>test_clear</code> 가 채점한다. 완결 코드는 Pi 에서 실행해 본 것이 아니다. Pi 의 빌드와 내 기록 파일에서의 결과는 "돌리고 보기"(실습 A · C 의 마지막 걸음 — 명령을 실행해 출력을 보는 절, <a href="#s3-1-4">§3-1-4</a> · <a href="#s3-3-4">§3-3-4</a>)에서 내가 확인한다.<sup class="fn"><a href="#fn-7" id="fnref-7">7</a></sup></p>
+        <p>붙여 넣고 끝내지 않는다. 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
       </div>
 
       <h3 id="s3-1">3-1. 실습 A — 벽 하나의 거리와 방위 <span class="tag sim">기록 파일</span></h3>
@@ -243,92 +263,396 @@ s &gt; 0  왼쪽        s &lt; 0  오른쪽        |s| ≥ π/2  앞쪽이 아�
 
       <h4 id="s3-1-1">3-1-1. 확인 — 입력이 손에 있는가</h4>
       <p>이 쪽은 <strong>l-11 이 낸 선분</strong>을 전제한다. 선분이 안 나오면 여기서 할 수 있는 일이 없으므로 먼저 확인한다. <strong>이미 한 확인은 되풀이하지 않는다</strong> — 파일이 기준 형식인지는 로더가 판정하고(<a href="l-04-one-turn.html#s3-4-2">l-04 §3-4-2</a>), 덩어리가 방의 물건과 맞는지는 <a href="l-10-clusters.html#s3-2">l-10 §3-2</a> 가 이미 확인했다.</p>
-      <p><strong>실행 확인:</strong> 미확인 — 집필자는 내 기록 파일도, 내가 채운 앞 쪽 도구도 갖고 있지 않다. 아래는 <strong>출력의 모양</strong>이고 값 자리는 <code>&lt;n&gt;</code> 이다. <strong>가짜 수치를 넣지 않았다.</strong></p>
-      <div class="tbl"><table>
+      <p><strong>실행 확인:</strong> 미확인 — 집필자는 내 기록 파일도, 내가 채운 앞 쪽 코드도 갖고 있지 않다. 아래는 <strong>출력의 모양</strong>이고 값 자리는 <code>&lt;n&gt;</code> 이다. <strong>가짜 수치를 넣지 않았다.</strong></p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w5"><col class="w35"><col class="w25"><col class="w35"></colgroup>
         <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
         <tbody>
-          <tr><td>1</td><td><code>pi$ python3 scripts/lidar_lab/lines.py &lt;파일&gt;</code></td><td>선분마다 한 줄: 번호 · 양 끝점 · 길이 · <code>n</code> · 가장 큰 잔차</td><td>선분이 0 개면 이 쪽이 아니라 l-11 의 문제다 → <a href="l-11-lines.html#s3-1-4">l-11 §3-1-4</a> 로 돌아간다</td></tr>
-          <tr><td>2</td><td>그 출력에서 <strong>벽이라고 확신하는 선분 하나</strong>를 고른다</td><td>길이가 <strong>0.5 m 이상</strong>이고 <code>n</code> 이 수십 이상인 줄 하나</td><td>그런 줄이 없으면 <code>tol</code> 을 키워 한 번 더 실행한다(<a href="l-11-lines.html#s2-4">l-11 §2-4</a>). 그래도 없으면 그 방의 벽이 라이다 높이에서 <strong>가려져 있다</strong> — 다른 방향의 벽을 고른다</td></tr>
-          <tr><td>3</td><td>그 선분이 <strong>줄자를 댈 수 있는 실제 벽</strong>인가를 눈으로 확인</td><td>내 방의 어느 벽인지 말할 수 있다</td><td>말할 수 없으면 §3-1-4 의 검산이 성립하지 않는다. 빌려 온 파일이면 <strong>검산 없이 수만 내고</strong> 체크 항목에 그렇게 적는다</td></tr>
-          <tr><td>4</td><td><code>pi$ ls scripts/lidar_lab/tests/</code></td><td><code>test_point.py … test_lines.py</code> 가 보인다</td><td>앞 쪽의 시험 파일이 없으면 이 쪽 것만 놓아도 된다(서로 독립이다)</td></tr>
+          <tr><td>1</td><td><code>pi$ g++ --version</code> · <code>pi$ cmake --version</code></td><td><code>g++ … &lt;n&gt;.&lt;n&gt;.&lt;n&gt;</code> · <code>cmake version 3.&lt;n&gt;.&lt;n&gt;</code></td><td><a href="l-00-map.html#s3-1">l-00 §3-1</a> 로 돌아간다. Mac 의 <code>clang++</code> 는 시험 연습용이다(결정 L3)</td></tr>
+          <tr><td>2</td><td><code>pi$ ls scripts/lidar_lab/include/lidar_lab/ scripts/lidar_lab/build/CMakeCache.txt</code></td><td><code>cluster.hpp</code> · <code>geom.hpp</code> · <code>lines.hpp</code> 가 보이고, 빌드 디렉터리 경로가 나온다</td><td><code>lines.hpp</code> 가 없으면 l-11 로, <code>cluster.hpp</code> 가 없으면 l-10 으로 돌아간다. 빌드 디렉터리가 없으면 아래 작은 글씨</td></tr>
+          <tr><td>3</td><td><code>pi$ scripts/lidar_lab/build/lab_lines scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl 0.__ 0.__</code></td><td>덩어리마다 <code>cluster</code> 줄, 그 아래 선분마다 <code>seg</code> 줄(<a href="l-11-lines.html#s3-1-4">l-11 §3-1-4</a> 의 꼴)</td><td>선분이 0 개면 이 쪽이 아니라 l-11 의 문제다 → l-11 §3-1-4 로 돌아간다</td></tr>
+          <tr><td>4</td><td>그 출력에서 <strong>벽이라고 확신하는 선분 하나</strong>를 고른다</td><td>길이가 <strong>0.5 m 이상</strong>이고 <code>n</code> 이 수십 이상인 줄 하나. 그 줄의 <strong>덩어리 번호 <code>k</code> 와 선분 번호 <code>j</code></strong> 를 적는다</td><td>그런 줄이 없으면 <code>tol</code> 을 키워 한 번 더 실행한다(<a href="l-11-lines.html#s2-4">l-11 §2-4</a>). 그래도 없으면 그 방의 벽이 라이다 높이에서 <strong>가려져 있다</strong> — 다른 방향의 벽을 고른다</td></tr>
+          <tr><td>5</td><td>그 선분이 <strong>줄자를 댈 수 있는 실제 벽</strong>인가를 눈으로 확인</td><td>내 방의 어느 벽인지 말할 수 있다</td><td>말할 수 없으면 §3-1-4 의 검산이 성립하지 않는다. 빌려 온 파일이면 <strong>검산 없이 수만 내고</strong> 체크 항목에 그렇게 적는다</td></tr>
+          <tr><td>6</td><td><code>pi$ ls scripts/lidar_lab/tests/</code></td><td><code>check.hpp  test_cluster.cpp  test_geom.cpp  …  test_lines.cpp</code></td><td><strong><a href="l-11-lines.html">l-11</a> 의 <code>test_lines</code> 를 먼저 통과시킨다</strong> — 이 쪽의 <code>heading_to()</code> 가 l-11 의 <code>normal()</code> 을 부른다</td></tr>
         </tbody>
       </table></div>
+      <p class="small">2번 보충: 빌드 디렉터리가 없으면 저장소 루트에서 <code>pi$ cmake -S scripts/lidar_lab -B scripts/lidar_lab/build</code> 를 한 번 한다.</p>
+      <p class="small">3번 보충: 두 <code>0.__</code> 는 l-10 · l-11 에서 <strong>내가 고른</strong> 덩어리 문턱과 선분 문턱이다. <code>lab_clear</code> 에도 같은 두 수를 준다 — 그래야 선분 번호가 맞는다.</p>
 
-      <h4 id="s3-1-2">3-1-2. 골격</h4>
-      <p>파일은 <code>scripts/lidar_lab/clear.py</code> 하나다. 이 쪽이 끝나면 공개 이름이 넷 생긴다 — <code>perp_distance()</code> · <code>heading_to()</code> · <code>passage_width()</code> · <code>fits()</code>. <strong>넷 다 순수하다</strong>(포트도 시계도 파일도 ROS 도 건드리지 않는다). 실습 A 는 앞의 둘이고, 뒤의 둘은 §3-3-2 에서 다룬다.</p>
-      <p class="small">⚠ <strong>골격은 두 번에 나눠 펼치지만 파일은 하나다.</strong> 시험 파일이 네 이름을 <strong>모두</strong> <code>import</code> 하므로, §3-3-2 의 두 골격(<code>passage_width</code> · <code>fits</code>)까지 <strong>먼저 붙여 넣고</strong> 시작하는 것이 편하다. 그러지 않으면 시험이 채점이 아니라 <code>ImportError</code> 로 멈춘다.</p>
-      <pre><code class="lang-python"># scripts/lidar_lab/clear.py -- turn geometry into a decision: can we go through?
-# Everything here is PURE: no port, no ROS, no file. tests/test_clear.py grades it
-# with the lidar unplugged, which is also why it runs on a Mac (decision L3).
-# Units: x, y, distances and widths are METERS. Headings are RADIANS in [-pi, pi].
-#        (lines.py's corners() takes DEGREES -- 1 rad = 57.29577951308232 deg.)
+      <h4 id="s3-1-2">3-1-2. 골격 — <code>clear.hpp</code> · <code>lab_clear</code></h4>
+      <p>이 쪽이 <code>scripts/lidar_lab/</code> 에 더하는 파일은 넷이다. 시험 파일은 §3-5-2 에 있고, §3-1-3 의 1번 걸음에서 먼저 붙인다.</p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w35"><col class="w35"></colgroup>
+        <thead><tr><th>파일</th><th>성질</th><th>채울 자리</th></tr></thead>
+        <tbody>
+          <tr><td><code>include/lidar_lab/clear.hpp</code></td><td>순수 — 수직 거리 · 방위 · 발 · 통로 폭 · 판정. 두 블록으로 나눠 싣는다(여기 · §3-3-2)</td><td>T1 <code>heading_to()</code> · T2 <code>foot_inside()</code> · T3 <code>passage_width()</code> · T4 <code>fits()</code></td></tr>
+          <tr><td><code>src/clear.cpp</code> → <code>build/lab_clear</code></td><td>진입점 — 선분마다 거리 · 방위 · 발, 수 셋을 더 주면 통로 폭과 판정. 옵션 <code>--turn</code></td><td>없음(전량)</td></tr>
+          <tr><td><code>src/clear_try.cpp</code> → <code>build/lab_clear_try</code></td><td>확인 도구 — 실습 B 의 세 값(§3-2-3)</td><td>없음(전량)</td></tr>
+          <tr><td><code>tests/test_clear.cpp</code></td><td>시험 — 벡터 31 개(§3-5-2)</td><td>없음(전량)</td></tr>
+          <tr><td><code>CMakeLists.txt</code></td><td>맨 아래에 세 줄(도구 둘 · 시험)</td><td>—</td></tr>
+        </tbody>
+      </table></div>
+      <p><code>clear.hpp</code> 는 <strong>순수</strong>하다 — 포트도 시계도 파일도 ROS 도 건드리지 않는다. 그래서 라이다 없이 채점되고, 시험은 Mac 의 <code>clang++</code> 로도 연습할 수 있다. include 하는 앞 쪽 헤더는 셋이다 — l-11 의 <code>lines.hpp</code>(<code>Segment</code>), l-10 의 <code>cluster.hpp</code>(<code>Cluster</code>), l-08 의 <code>geom.hpp</code>(<code>normalize()</code> · <code>Point</code>).</p>
+      <p class="small">⚠ <strong>헤더는 두 블록으로 나눠 싣지만 파일은 하나다.</strong> 시험과 <code>lab_clear</code> 가 이름 다섯을 <strong>모두</strong> 부르므로, §3-3-2 의 둘째 블록(<code>passage_width()</code> · <code>fits()</code>)까지 <strong>먼저 붙여 넣고</strong> 빌드한다. 그러지 않으면 채점이 시작되기 전에 빌드가 컴파일 오류로 멈춘다. 문구는 clang 이 <code>use of undeclared identifier 'passage_width'</code>, g++ 가 <code>'passage_width' was not declared in this scope</code> 다.</p>
+      <p>첫 블록은 머리 · 상수 · 수직 거리와 실습 A 의 두 자리(T1 · T2)다. 주석의 불변식은 전부 §2-2 · §2-2-1 · §2-2-2 에서 도출됐고 <strong>전부 시험 벡터로 채점된다</strong> — 벡터 번호가 주석에 적혀 있다. 불변식은 함수의 결과가 늘 지켜야 하는 조건이고, 헤더 주석에 번호를 붙여 적는다.</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/include/lidar_lab/clear.hpp -- geometry -&gt; a decision: can we go through?  (l-12)
+// PURE: no port, no ROS, no clock, no file. That is why tests/test_clear.cpp grades it with
+// nothing plugged in (on the Pi host, or on the Mac with clang++).
+// Units: x, y, distances and widths are METRES. Headings are RADIANS in [-pi, pi].
+//        (lines.hpp's corners() takes DEGREES -- 1 rad = 57.29577951308232 deg.)
+#pragma once
 
-import math
+#include &lt;cmath&gt;
+#include &lt;optional&gt;
+#include &lt;vector&gt;
 
-from geom import normalize                       # l-08
-from lines import point_line_distance            # l-11
+#include "lidar_lab/angles.hpp"
+#include "lidar_lab/cluster.hpp"
+#include "lidar_lab/geom.hpp"
+#include "lidar_lab/lines.hpp"
 
-# l-08's coordinate contract: the sensor sits at the origin, x forward, y left.
-# Every function in this file leans on it -- that is why none of them takes a
-# sensor position argument.
-SENSOR = (0.0, 0.0)
+namespace lidar_lab {
 
+// l-08's coordinate contract: the sensor sits at the origin, x forward, y left.
+// Every function in this file leans on it -- that is why none of them takes a sensor
+// position argument.
+inline constexpr Point kSensor{0.0, 0.0};
 
-def perp_distance(seg):
-    """Perpendicular distance from the sensor to the LINE the segment lies on.
-    -&gt; float, meters, never negative.
+// Perpendicular distance from the sensor to the LINE the segment lies on -&gt; metres, never
+// negative.
+// This is l-11's point_line_distance() with the origin as the point, and nothing else. The
+// foot of the perpendicular may fall OUTSIDE the segment (2-2, vectors 5, 12): that is the
+// definition, not a bug -- foot_inside() below is the separate check.
+inline double perp_distance(const Segment&amp; seg) {
+  return point_line_distance(kSensor, seg.p0, seg.p1);
+}
 
-    This is l-11's formula with the origin as the point, and nothing else. The
-    foot of the perpendicular may fall OUTSIDE the segment (2-2, vectors 5, 12):
-    that is the definition, not a bug -- checking it is the caller's job.
-    """
-    return point_line_distance(SENSOR, seg.p0, seg.p1)</code></pre>
-      <p class="small">이 블록의 <code>perp_distance</code> 는 <strong>전량 제공이다</strong> — 이유: 판단이 전부 l-11 의 <code>point_line_distance()</code> 안에 있고, 여기에 <code>TODO(you)</code> 를 두면 <strong>이미 푼 문제를 다시 풀게 된다.</strong> 이 함수가 한 줄이라는 사실 자체가 §2-2 의 논점이다 — 앞 쪽에서 점을 면으로 줄여 놓았기 때문에 여기가 한 줄이다.</p>
-      <p>다음이 이 실습의 <code>TODO(you)</code> 다. 주석의 불변식은 전부 §2-2-1 · §2-2-2 에서 도출됐고 <strong>전부 시험 벡터로 채점된다.</strong></p>
-      <pre><code class="lang-python">def heading_to(seg):
-    """How far to turn to face this wall square on. -&gt; float, RADIANS in [-pi, pi].
+// How far to turn to face this wall square on -&gt; RADIANS in [-pi, pi].
+// 0.0 means the wall is already straight ahead; + means turn LEFT (l-08's contract: +y is
+// left, angles grow counter-clockwise).
+// Invariants -- each one is graded by a vector in tests/test_clear.cpp:
+//   1. the OUTWARD normal is used: of the two normals, the one pointing from the sensor
+//      TOWARD the wall. Pick it with the sign of n . p0 (2-2-1).
+//   2. therefore swapping p0 and p1 must NOT change the answer (vector 9).
+//      l-11's normal() flips with the point order; this function must not.
+//   3. the result goes through normalize(), so it is in [-pi, pi] -- and BOTH ends occur.
+//      A wall directly behind may come back as +pi or -pi and both are correct (vector 11
+//      grades the size, not the sign).
+//   4. it says WHERE the wall plane is, not whether the wall reaches that far: a short
+//      segment off to the side can report 0.0 (vector 12, and 2-2).
+//   5. n . p0 == 0 means the wall runs through the sensor (2-2-1). There is no "toward"
+//      then; it does not happen with real input, and if it does the input is wrong, not
+//      the answer. Do not add a branch for it.
+inline double heading_to(const Segment&amp; seg) {
+  // TODO(you) [T1]: the outward normal, then its angle - hint card T1
+  //   1) n = seg.normal() -- l-11's normal, which flips with the point order
+  //   2) one dot product: if n . p0 &lt; 0, flip n to -n (invariant 1, 2-2-1)
+  //   3) std::atan2(ny, nx) -- y FIRST -- and fold it with normalize() (invariant 3)
+  //   Delete the placeholder lines below when you start.
+  (void)seg;
+  return 0.0;
+}
 
-    0.0 means the wall is already straight ahead; + means turn LEFT (l-08's
-    contract: +y is left, angles grow counter-clockwise).
-    Invariants -- each is graded by a vector in tests/test_clear.py:
-      1. the OUTWARD normal is used: of the two normals, the one pointing from
-         the sensor TOWARD the wall. Pick it with the sign of n . p0 (2-2-1).
-      2. therefore swapping p0 and p1 must NOT change the answer (vector 9).
-         l-11's normal() flips with the point order; this function must not.
-      3. the result goes through normalize(), so it is in [-pi, pi] -- and BOTH
-         ends occur. A wall directly behind may come back as +pi or -pi and both
-         are correct (vector 11 grades abs(), not the sign).
-      4. it says WHERE the wall plane is, not whether the wall reaches that far:
-         a short segment off to the side can report 0.0 (vector 12, and 2-2).
-      5. n . p0 == 0 means the wall runs through the sensor (2-2-1). There is no
-         "toward" then; it does not happen with real input, and if it does the
-         input is wrong, not the answer. Do not add a branch for it.
-    Verify with: python3 tests/test_clear.py
-    """
-    # TODO(you): take l-11's normal(), decide whether to flip it with one dot
-    #   product, then turn the vector into an angle with atan2 and normalize().
-    return 0.0</code></pre>
+// Does the foot of the perpendicular from the sensor land ON the segment? -&gt; bool.
+// perp_distance() measures to the infinite line; this is the check the caller makes before
+// reading that number as "there is a wall in that direction" (2-2, 3-1-3).
+// With d = p1 - p0, the foot is p0 + t * d where t = -(p0 . d) / (d . d).
+// Invariants -- each one is graded by a vector in tests/test_clear.cpp:
+//   1. inside means 0 &lt;= t &lt;= 1, BOTH ends included: a foot exactly on an endpoint is on the
+//      segment (vector 29).
+//   2. t is a fraction of the WHOLE length, so divide by d . d (the length squared), not by
+//      the length (vector 31 is 4 m long).
+//   3. a wall behind the sensor is no different: its foot can be on it (vector 30).
+//   4. a zero-length segment (d . d == 0) has no line: false, and no division.
+//      fit_lines() never makes one (l-11, invariant 5).
+inline bool foot_inside(const Segment&amp; seg) {
+  // TODO(you) [T2]: where along the segment the foot lands - hint card T2
+  //   1) d = p1 - p0 as two numbers, and d . d (the length SQUARED)
+  //   2) d . d == 0.0: return false before any division (invariant 4)
+  //   3) t = -(p0 . d) / (d . d); inside when 0 &lt;= t &lt;= 1, both ends included (invariant 1)
+  //   Delete the placeholder lines below when you start.
+  (void)seg;
+  return false;
+}
+
+}  // namespace lidar_lab</code></pre>
+      <p class="small">이 블록의 <code>perp_distance()</code> 는 <strong>전량 제공이다</strong> — 이유: 판단이 전부 l-11 의 <code>point_line_distance()</code> 안에 있고, 여기에 <code>TODO(you)</code> 를 두면 <strong>이미 푼 문제를 다시 풀게 된다.</strong> 이 함수가 한 줄이라는 사실 자체가 §2-2 의 논점이다 — 앞 쪽에서 점을 면으로 줄여 놓았기 때문에 여기가 한 줄이다. 센서 위치 <code>kSensor</code> 는 l-08 의 좌표 계약을 상수 하나로 적은 것이다.</p>
+      <p>다음은 도구 <code>lab_clear</code> 의 <code>main</code> 이다. <strong>전량 제공이다</strong> — 이유: 인자를 읽고 l-04 · l-10 · l-11 의 함수를 차례로 부른 뒤 <strong>내 함수가 낸 값을 찍을 뿐</strong>이고, 판단은 하나도 들어 있지 않다. 파일은 l-04 의 <code>load_jsonl()</code> 로 읽는다 — 기준 형식을 검사하는 로더이고, 이 쪽은 읽는 코드를 새로 쓰지 않는다. 수 셋을 더 주는 실습 C 의 꼴(§3-3-4)도 이 파일에 이미 들어 있다.</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/src/clear.cpp -- one record -&gt; segments with distance and heading, and a
+// passage verdict.  (l-12, in full)
+// How many numbers you give IS the lab:
+//   pi$ scripts/lidar_lab/build/lab_clear &lt;file.scan.jsonl&gt; &lt;gap&gt; &lt;tol&gt;                         3-1
+//   pi$ scripts/lidar_lab/build/lab_clear &lt;file.scan.jsonl&gt; &lt;gap&gt; &lt;tol&gt; &lt;dir&gt; &lt;robot&gt; &lt;margin&gt;  3-3
+//   gap      l-10's cluster threshold in metres, &gt; 0              your l-10 decision
+//   tol      l-11's line threshold in metres, &gt;= 0                your l-11 decision
+//   dir      the way you want to go, DEGREES (+ = left); turned into radians before
+//            passage_width() sees it
+//   robot    your robot's width in metres, &gt; 0                    measured by you (2-4)
+//   margin   clearance ON EACH SIDE in metres, &gt;= 0               decided by you (2-4).
+//            No default, like fits() itself
+//   --turn K revolution K (1 = the first, as peek.py numbers them); default 1
+// It prints one header line, then per cluster
+//   cluster 0: 580 points  idx 927..1449, 0..56
+//     seg 0  (-1.002, -1.200) - (2.500, -1.196)  len 3.501 m  dist 1.199 m  heading -89.94 deg  foot in
+// and, with six numbers, one passage line
+//   passage  dir=0.0 deg   width=1.310 m   robot=0.5 m   margin=0.05 m   fits=true
+// dist is perp_distance(); heading is YOUR heading_to() turned into degrees for reading; foot
+// is YOUR foot_inside() ("out": the plane is there, but no wall in that direction, 2-2);
+// width and fits are YOUR passage_width() and fits(). An empty width prints as "none" --
+// never as 0.
+// No port, no clock, no motor: it reads one file, so it runs with the lidar unplugged.
+// Exit code: 0 = done; 1 = the loader refused the file or there is no such turn; 2 = usage.
+#include &lt;cmath&gt;
+#include &lt;cstddef&gt;
+#include &lt;cstdio&gt;
+#include &lt;cstdlib&gt;
+#include &lt;cstring&gt;
+#include &lt;exception&gt;
+#include &lt;optional&gt;
+#include &lt;string&gt;
+#include &lt;vector&gt;
+
+#include "lidar_lab/angles.hpp"
+#include "lidar_lab/clear.hpp"
+#include "lidar_lab/cluster.hpp"
+#include "lidar_lab/lines.hpp"
+#include "lidar_lab/repr.hpp"
+#include "lidar_lab/scan_io.hpp"
+
+using namespace lidar_lab;
+
+namespace {
+
+// "0.05" -&gt; 0.05. The whole text must be a finite number; anything else is a usage error.
+bool parse_double(const char* text, double&amp; v) {
+  char* end = nullptr;
+  v = std::strtod(text, &amp;end);
+  return end != text &amp;&amp; *end == '\0' &amp;&amp; std::isfinite(v);
+}
+
+// "4" -&gt; 4, only lo .. hi.
+bool parse_int(const char* text, long lo, long hi, long&amp; v) {
+  char* end = nullptr;
+  v = std::strtol(text, &amp;end, 10);
+  return end != text &amp;&amp; *end == '\0' &amp;&amp; v &gt;= lo &amp;&amp; v &lt;= hi;
+}
+
+// "351..359, 0..31": the cluster's idx as runs (the same text as lab_cluster and lab_lines).
+std::string idx_text(const std::vector&lt;std::size_t&gt;&amp; idx) {
+  std::string t;
+  for (std::size_t j = 0; j &lt; idx.size();) {
+    std::size_t e = j;
+    while (e + 1 &lt; idx.size() &amp;&amp; idx[e + 1] == idx[e] + 1) ++e;
+    if (!t.empty()) t += ", ";
+    t += std::to_string(idx[j]);
+    if (e &gt; j) t += ".." + std::to_string(idx[e]);
+    j = e + 1;
+  }
+  return t;
+}
+
+int usage() {
+  std::printf(
+      "usage: lab_clear &lt;file.scan.jsonl&gt; &lt;gap&gt; &lt;tol&gt; [&lt;dir_deg&gt; &lt;robot&gt; &lt;margin&gt;] [--turn K]\n"
+      "  gap tol: segments with distance and heading (3-1)\n"
+      "  gap tol dir robot margin: + the passage width and fits (3-3)\n"
+      "  gap: metres &gt; 0   tol: metres &gt;= 0   dir: degrees, + = left\n"
+      "  robot: metres &gt; 0   margin: metres &gt;= 0, on EACH side   K: 1 = the first\n");
+  return 2;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+  std::vector&lt;const char*&gt; pos;
+  long turn = 1;
+  for (int i = 1; i &lt; argc; ++i) {
+    if (std::strcmp(argv[i], "--turn") == 0 &amp;&amp; i + 1 &lt; argc) {
+      if (!parse_int(argv[++i], 1, 100000, turn)) return usage();
+    } else if (argv[i][0] == '-' &amp;&amp; argv[i][1] == '-') {
+      return usage();
+    } else {
+      pos.push_back(argv[i]);
+    }
+  }
+  if (pos.size() != 3 &amp;&amp; pos.size() != 6) return usage();
+  double gap = 0.0, tol = 0.0, dir_deg = 0.0, robot = 0.0, margin = 0.0;
+  if (!parse_double(pos[1], gap) || gap &lt;= 0.0) return usage();
+  if (!parse_double(pos[2], tol) || tol &lt; 0.0) return usage();
+  const bool want_passage = pos.size() == 6;
+  if (want_passage) {
+    if (!parse_double(pos[3], dir_deg)) return usage();
+    if (!parse_double(pos[4], robot) || robot &lt;= 0.0) return usage();
+    if (!parse_double(pos[5], margin) || margin &lt; 0.0) return usage();
+  }
+
+  try {
+    const std::vector&lt;Scan&gt; scans = load_jsonl(pos[0]);
+    if (static_cast&lt;std::size_t&gt;(turn) &gt; scans.size()) {
+      std::printf("no turn %ld: the file has %zu revolutions\n", turn, scans.size());
+      return 1;
+    }
+    const Scan&amp; s = scans[static_cast&lt;std::size_t&gt;(turn) - 1];
+    const std::vector&lt;Cluster&gt; cs = split(s, gap);
+    std::size_t points = 0;
+    for (const Cluster&amp; c : cs) points += c.size();
+
+    std::printf("turn %ld of %zu  gap=%s m  tol=%s m  clusters=%zu  (points %zu)\n", turn,
+                scans.size(), repr_double(gap).c_str(), repr_double(tol).c_str(), cs.size(),
+                points);
+    for (std::size_t c = 0; c &lt; cs.size(); ++c) {
+      const std::vector&lt;Segment&gt; segs = fit_lines(cs[c].pts, tol);
+      std::printf("cluster %zu: %zu points  idx %s\n", c, cs[c].size(),
+                  idx_text(cs[c].idx).c_str());
+      for (std::size_t k = 0; k &lt; segs.size(); ++k) {
+        const Segment&amp; g = segs[k];
+        std::printf("  seg %zu  (%.3f, %.3f) - (%.3f, %.3f)  len %.3f m  dist %.3f m  heading %.2f deg"
+                    "  foot %s\n",
+                    k, g.p0.first, g.p0.second, g.p1.first, g.p1.second, g.length(),
+                    perp_distance(g), to_deg(heading_to(g)), foot_inside(g) ? "in" : "out");
+      }
+    }
+    if (want_passage) {
+      const std::optional&lt;double&gt; w = passage_width(cs, to_rad(dir_deg));
+      char wtext[32] = "none";
+      if (w) std::snprintf(wtext, sizeof wtext, "%.3f", *w);
+      std::printf("passage  dir=%s deg   width=%s%s   robot=%s m   margin=%s m   fits=%s\n",
+                  repr_double(dir_deg).c_str(), wtext, w ? " m" : "", repr_double(robot).c_str(),
+                  repr_double(margin).c_str(), fits(w, robot, margin) ? "true" : "false");
+    }
+  } catch (const std::exception&amp; e) {
+    std::printf("error: %s\n", e.what());
+    return 1;
+  }
+  return 0;
+}</code></pre>
+      <p><code>CMakeLists.txt</code> 의 맨 아래에 두 줄을 붙인다(도구 <code>lab_clear_try</code> 줄은 §3-2-3, 시험 줄은 §3-5-2).</p>
+      <pre><code class="lang-cmake"># ---- l-12 ----
+lab_tool(clear)                                    # 3-1-2: src/clear.cpp -&gt; build/lab_clear</code></pre>
+      <p>골격 그대로(두 블록 다 붙인 상태) 빌드하면 <strong>경고 없이 빌드된다.</strong> <code>lab_clear</code> 를 실행하면 선분 줄은 l-11 과 같이 나오지만 모든 줄이 <code>heading 0.00 deg  foot out</code> 이다. 수 셋을 더 주면 <code>width=none … fits=false</code> 다. 골격의 함수가 <code>0.0</code> · <code>false</code> · 빈 값을 돌려주기 때문이고, 그 결과가 골격의 정상이다. <code>dist</code> 칸만은 골격에서도 맞는 수다 — 전량인 <code>perp_distance()</code> 가 낸다.<sup class="fn"><a href="#fn-7">7</a></sup></p>
+      <p class="small">⚠ aarch64(Pi 5 의 CPU 가 쓰는 64비트 ARM 명령어 체계)의 <code>g++</code> 는 <code>clear.hpp</code> 를 include 하는 파일마다 여섯 줄 묶음을 찍는다. 그 가운데 한 줄이 <code>note: parameter passing for argument of type 'std::pair&lt;double, double&gt;' …</code> 다. <a href="l-10-clusters.html#s3-1-2">l-10 §3-1-2</a> · <a href="l-11-lines.html#s3-1-2">l-11 §3-1-2</a> 끝의 것과 같은 안내이고, <strong>경고도 오류도 아니다</strong>. 묶음은 파일마다 한 번이고 <code>cluster.hpp</code> 의 <code>centroid()</code> 를 가리킨다. 이 쪽의 <code>mean_point()</code> 도 <code>Point</code> 를 값으로 돌려주지만 묶음이 늘지는 않는다. CMake 빌드에서는 <code>lab_clear</code> · <code>lab_clear_try</code> · <code>test_clear</code> · <code>test_clear_ub</code> 를 빌드할 때 한 번씩 나온다.<sup class="fn"><a href="#fn-7">7</a></sup></p>
 
       <h4 id="s3-1-3">3-1-3. 직접 채우기 — 그리고 벡터로 채점한다</h4>
-      <p>순서는 이렇다. <strong>1번을 먼저 하는 것이 요령이다</strong> — 실패 메시지가 곧 할 일 목록이 된다.</p>
+      <p>순서는 이렇다. <strong>1번을 먼저 하는 것이 요령이다</strong> — 실패 줄의 목록이 곧 할 일 목록이 된다.</p>
       <ol class="steps">
-        <li><strong>시험 파일을 먼저 놓고 실행한다.</strong> §3-5-2 의 블록을 <code>scripts/lidar_lab/tests/test_clear.py</code> 로 그대로 둔다. 골격 그대로 실행하면 <strong>벡터 6 까지는 통과하고 7 에서 멈춘다</strong> — 1~5 는 전량으로 준 <code>perp_distance</code> 가 맡고, 6 은 <code>return 0.0</code> 이 우연히 맞는 자리다. <strong>우연히 통과하는 벡터가 있다는 것을 먼저 보는 것</strong>이 이 실습의 덤이다.</li>
-        <li><p><strong><code>heading_to</code> 를 채운다</strong>(벡터 6~12). 세 걸음이다 — ① l-11 의 <code>seg.normal()</code> 을 받는다 ② <strong>내적 하나</strong>로 뒤집을지 정한다(§2-2-1 의 부등호) ③ <code>atan2</code> 로 각을 만들고 <code>normalize()</code> 로 감는다.</p>
-          <p>힌트 하나: <strong><code>atan2(y, x)</code> 이지 <code>atan2(x, y)</code> 가 아니다.</strong> 바꿔 쓰면 모든 각이 <code>90° - θ</code> 로 바뀌어 <strong>정면 벽(벡터 6)이 정확히 90° 로 나온다</strong>. 이 실수를 검출하는 것은 벡터 <strong>6</strong> 이고(<code>got 1.5707963267948966, want 0.0</code>), 거꾸로 <strong>45° 벽(벡터 10)은 답이 그대로라 이 실수를 검출하지 못한다.</strong></p>
-          <p>힌트 둘: ②를 빼먹으면 <strong>벡터 6 에서 <code>3.141592653589793</code> 이 나온다</strong>(§3-5-4 의 첫 줄이 그 출력이다). 정확히 반대 방향이므로 <strong>실물에서는 벽을 등지고 도는 로봇</strong>이 된다.</p></li>
-        <li><strong>껍질을 붙인다.</strong> <code>main()</code> 은 §3-3-2 에서 한 번에 쓰므로, 지금은 <strong>파이썬을 직접 쳐서</strong> 값을 본다 — 아래 §3-1-4 의 첫 블록이 그 예다. 껍질보다 <strong>내 손으로 호출해 보는 것</strong>이 이 단계에서는 더 빠르다.</li>
-        <li><strong>발이 선분 안에 있는지 확인하는 줄을 내 코드에 둔다.</strong> §2-2 가 이 확인을 함수 밖으로 뺐다. 수직선의 발 <code>F</code> 를 구해(<code>F = perp_distance × 바깥 법선</code>) <code>F</code> 가 <code>p0</code> 와 <code>p1</code> 사이에 있는지 본다. 없으면 그 선분의 수직 거리는 <strong>"저 면이 저기 있다"는 뜻일 뿐 "그 방향에 벽이 있다"는 뜻이 아니다.</strong></li>
+        <li><p><strong>시험 파일을 먼저 두고 빌드 · 실행한다.</strong> §3-5-2 의 전량을 <code>scripts/lidar_lab/tests/test_clear.cpp</code> 로 저장하고 그 아래 CMake 한 줄을 붙인 뒤 빌드한다. 지금 실행하면 <strong><code>15 of 31 cases failed</code></strong> 로 끝난다. 시험은 실패해도 멈추지 않고 끝까지 실행된다 — <strong>FAIL 줄이 0 개로 줄어드는 것이 이 걸음의 진도표</strong>다.</p>
+          <p>⚠ 31 개 중 나머지 열여섯은 <strong>골격에서도 이미 통과한다</strong>. 1 ~ 5 는 전량으로 준 <code>perp_distance()</code> 가 맡는다. 6 · 12 · 16 ~ 19 · 22 · 24 · 25 · 27 · 28 은 기대값이 <code>0.0</code> · 빈 값 · <code>false</code> 라서 골격의 반환값과 우연히 같다. <strong>통과한 줄이 있다고 그만큼 된 것이 아니다</strong> — 진도는 남은 FAIL 로만 센다. <strong>우연히 통과하는 벡터가 있다는 것을 먼저 보는 것</strong>이 이 걸음의 덤이다.</p></li>
+        <li><p><strong><code>heading_to()</code> 를 채운다</strong>(벡터 6 ~ 12, <code>15</code> → <code>10 of 31</code>). 세 걸음이다 — ① l-11 의 <code>normal()</code> 을 받는다 ② <strong>내적 하나</strong>로 뒤집을지 정한다(§2-2-1 의 부등호) ③ <code>std::atan2</code> 로 각을 만들고 <code>normalize()</code> 로 감는다.</p>
+          <p>힌트 하나: <strong><code>std::atan2(y, x)</code> 이지 <code>std::atan2(x, y)</code> 가 아니다.</strong> 바꿔 쓰면 모든 각이 <code>90° - θ</code> 로 바뀌어 <strong>정면 벽(벡터 6)이 정확히 90° 로 나온다</strong>. 이 실수를 검출하는 것은 벡터 <strong>6</strong> 이고(<code>got 1.5707963267948966, want 0.0</code>), 거꾸로 <strong>45° 벽(벡터 10)은 답이 그대로라 이 실수를 검출하지 못한다.</strong></p>
+          <p>힌트 둘: ②를 빼먹으면 <strong>벡터 6 에서 <code>3.141592653589793</code> 이 나온다</strong>(§3-5-4 의 첫 줄이 그 출력이다). 정확히 반대 방향이므로 <strong>실물에서는 벽을 등지고 도는 로봇</strong>이 된다. → T1</p></li>
+        <li><p><strong><code>foot_inside()</code> 를 채운다</strong>(벡터 26 ~ 31, <code>10</code> → <code>6 of 31</code>). §2-2 가 <code>perp_distance()</code> 밖으로 뺀 확인이다. 수직선의 발은 <code>p0 + t × (p1 − p0)</code> 이고, <code>t</code> 가 0 과 1 사이면 발이 선분 위에 있다. <code>t</code> 는 <strong>전체 길이에 대한 비율</strong>이라 길이의 <strong>제곱</strong>으로 나눈다 — 길이로 나누면 길이 1 m 인 선분에서만 맞고, 4 m 인 벡터 31 이 그 잘못을 검출한다. 발이 밖이면 그 선분의 수직 거리는 <strong>"저 면이 저기 있다"는 뜻일 뿐 "그 방향에 벽이 있다"는 뜻이 아니다.</strong> → T2</p></li>
+        <li>실습 A 에서 채우는 것은 여기까지다. 남은 FAIL 여섯(13 ~ 15 · 20 · 21 · 23)은 실습 C 의 T3 · T4 가 채운다. <strong>지금은 §3-1-4 로 간다</strong> — <code>lab_clear</code> 의 거리 · 방위 · 발 칸은 이미 내 함수의 값이다.</li>
       </ol>
+      <p class="small">걸음과 카드의 짝: 걸음 2 = T1, 3 = T2. 걸음 1 · 4 는 카드가 없다(빌드하고 실행해서 보는 일). 막히는 자리는 대개 <strong>부호를 어느 쪽으로 정하느냐</strong>지 <strong>식이 아니다.</strong> 식은 §2-2 · §2-2-1 에 다 있다.</p>
+      <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>heading_to()</code> · 바깥 법선을 고르고, 그 각을 감는다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 선분의 두 법선 중 <strong>센서에서 벽으로 가는 쪽</strong>(바깥 법선)을 골라, 그 방향의 각을 라디안으로 돌려준다. 결과는 <code>[-π, π]</code> 이고 <code>+</code> 가 왼쪽이다.</p>
+        <p>채점은 <code>test_clear</code> 의 벡터 6 ~ 12 가 한다. 기대값을 어떻게 얻었는지는 시험 파일 머리에 있다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T1 - scripts/lidar_lab/include/lidar_lab/clear.hpp (heading_to) */
+inline double heading_to(const Segment&amp; seg) {
+  Point n = seg.normal();
+  if (n.first * seg.p0.first + n.second * seg.p0.second &lt; 0.0) n = Point{-n.first, -n.second};
+  return normalize(std::atan2(n.second, n.first));
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>Point n = seg.normal();</code> — l-11 의 <code>normal()</code> 은 <code>p0 → p1</code> 을 반시계로 90° 돌린 단위 벡터다. 점의 순서가 뒤집히면 이 벡터도 뒤집힌다. 나중에 뒤집을 수 있게 <code>const</code> 를 붙이지 않았다.</li>
+          <li><code>n.first * seg.p0.first + n.second * seg.p0.second</code> — 내적 <code>n · p0</code> 이다. 센서가 원점이므로 센서에서 벽 위의 한 점으로 가는 벡터는 <code>p0</code> 자신이다(§2-2-1).</li>
+          <li><code>&lt; 0.0</code> 이면 <code>n = Point{-n.first, -n.second};</code> — 법선이 벽 반대쪽을 가리키므로 뒤집는다(불변식 1). 이 한 줄 덕분에 점의 순서가 바뀌어도 답이 같다(불변식 2, 벡터 9).</li>
+          <li><code>std::atan2(n.second, n.first)</code> — <strong>y 가 먼저</strong>다. x 축(정면)에서 반시계로 잰 각이 라디안으로 나온다.</li>
+          <li><code>normalize(…)</code> — l-08 의 <code>geom.hpp</code> 에 있는 함수다. 각을 <code>[-π, π]</code> 로 감는다(불변식 3).</li>
+          <li>골격의 자리표시 <code>(void)seg;</code> 와 <code>return 0.0;</code> 은 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 하나다.<sup class="fn"><a href="#fn-8" id="fnref-8">8</a></sup></p><p><code>normalize()</code> 없이 <code>return std::atan2(n.second, n.first);</code> 로 써도 31 개를 통과한다. <code>std::atan2</code> 가 이미 <code>[-π, π]</code> 의 값을 내기 때문이다. 이 쪽은 §2-2-1 의 식 <code>heading_to(seg) = normalize( atan2(…) )</code> 과 같은 꼴로 두었다.</p></li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>normal()</code>(l-11 의 <code>Segment</code>) · <code>std::atan2</code> · <code>normalize()</code>(l-08 의 <code>geom.hpp</code>).</p>
+        <p><strong>흔한 실수</strong> — 그 잘못을 저지른 판을 실제로 만들어 잰 결과다. 진단 빌드도 같은 줄을 찍는다.<sup class="fn"><a href="#fn-8">8</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w50"><col class="w20"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_clear</code> · <code>test_clear_ub</code> 가 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>법선을 뒤집는 줄이 없다(<code>normal()</code> 을 그대로 썼다)</td><td><code>6 of 31</code> — 6 · 7 · 8 · 10 · 11 · 12. <code>FAIL 6 6 front wall -&gt; heading 0: got 3.141592653589793, want 0.0</code>. 벡터 9 는 뒤집힌 순서라 우연히 맞는다</td><td>§2-2-1 의 내적 한 줄</td></tr>
+            <tr><td><code>std::atan2(n.first, n.second)</code> — 인자 순서를 바꿨다</td><td><code>6 of 31</code> — 6 · 7 · 8 · 9 · 11 · 12. <code>FAIL 6 6 front wall -&gt; heading 0: got 1.5707963267948966, want 0.0</code>. 45° 벽(벡터 10)은 통과한다</td><td>y 를 먼저</td></tr>
+            <tr><td>뒤집는 조건의 부등호를 반대로(<code>&gt; 0.0</code> 이면 뒤집음)</td><td><code>7 of 31</code> — 6 ~ 12. <code>FAIL 6 6 front wall -&gt; heading 0: got 3.141592653589793, want 0.0</code>. 언제나 벽 반대쪽을 고른다</td><td><code>&lt; 0.0</code> 이면 뒤집는다</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — 골격 그대로는 <code>15 of 31 cases failed</code> 다. T1 을 채우면 <code>10 of 31</code> 이다.</p>
+        </div></details>
+      <details class="hint" id="hint-t2"><summary>힌트 T2 — <code>foot_inside()</code> · 발의 자리를 길이의 비율 t 로 낸다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 센서에서 선분의 직선에 내린 수직선의 발이 선분 위(양 끝 포함)에 있으면 <code>true</code>, 밖이면 <code>false</code> 를 돌려준다. 길이 0 인 선분은 직선이 없으므로 <code>false</code> 다.</p>
+        <p>채점은 벡터 26 ~ 31 이 한다. 27 · 28 은 벡터 5 의 선분과 그 뒤집은 것이다 — 수직 거리 <code>1.0</code> 이 나오지만 그 방향에 벽이 없는 장면이다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T2 - scripts/lidar_lab/include/lidar_lab/clear.hpp (foot_inside) */
+inline bool foot_inside(const Segment&amp; seg) {
+  const double dx = seg.p1.first - seg.p0.first, dy = seg.p1.second - seg.p0.second;
+  const double len2 = dx * dx + dy * dy;
+  if (len2 == 0.0) return false;
+  const double t = -(seg.p0.first * dx + seg.p0.second * dy) / len2;
+  return t &gt;= 0.0 &amp;&amp; t &lt;= 1.0;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>dx</code> · <code>dy</code> — 방향 <code>d = p1 − p0</code> 의 두 성분.</li>
+          <li><code>len2 = dx * dx + dy * dy</code> — 길이의 <strong>제곱</strong> <code>d · d</code> 이다. 제곱근을 구하지 않는다.</li>
+          <li><code>if (len2 == 0.0) return false;</code> — 같은 점 두 개면 직선이 없다(불변식 4). 나누기 전에 거른다.</li>
+          <li><code>t = -(p0 · d) / len2</code> — 발 <code>p0 + t·d</code> 가 원점에서 내린 수선의 발이 되는 <code>t</code> 다. 발에서 원점으로 가는 벡터 <code>−(p0 + t·d)</code> 가 <code>d</code> 와 직각이라는 조건 <code>(p0 + t·d) · d = 0</code> 을 <code>t</code> 에 대해 푼 것이다.</li>
+          <li><code>return t &gt;= 0.0 &amp;&amp; t &lt;= 1.0;</code> — <code>t = 0</code> 이면 발이 <code>p0</code>, <code>t = 1</code> 이면 <code>p1</code> 이다. 양 끝을 포함한다(불변식 1, 벡터 29).</li>
+          <li>센서 뒤의 벽도 같은 식이다(불변식 3, 벡터 30) — 발이 앞에 있는지는 묻지 않는다.</li>
+          <li>골격의 자리표시 <code>(void)seg;</code> 와 <code>return false;</code> 는 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 둘이다.<sup class="fn"><a href="#fn-8">8</a></sup></p>
+            <p>① 나누지 않고 <code>along = -(p0 · d)</code> 를 <code>0 ≤ along ≤ len2</code> 로 견줘도 31 개를 통과한다.</p>
+            <p>② 발의 좌표 <code>F = perp_distance(seg) × (cos h, sin h)</code> 를 구해도 된다(<code>h = heading_to(seg)</code>). <code>(F − p0) · d ≥ 0</code> 과 <code>(F − p1) · d ≤ 0</code> 을 보면 31 개를 통과한다. 다만 T1 의 답에 기대므로 T1 이 틀리면 이 함수도 같이 틀린다.</p></li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 곱셈 · 나눗셈 · 비교뿐이다.</p>
+        <p><strong>흔한 실수</strong> — 그 잘못을 저지른 판을 실제로 만들어 잰 결과다. 진단 빌드도 같은 줄을 찍는다.<sup class="fn"><a href="#fn-8">8</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w50"><col class="w20"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_clear</code> · <code>test_clear_ub</code> 가 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>길이의 제곱이 아니라 길이(<code>std::sqrt(len2)</code>)로 나눴다</td><td><code>1 of 31</code> — <code>FAIL 31 31 t is a fraction of the whole length (4 m piece): got false, want true</code>. 길이 1 m 가 아닌 선분에서만 틀린다</td><td><code>len2</code> 로</td></tr>
+            <tr><td>양 끝을 빼고 <code>t &gt; 0.0 &amp;&amp; t &lt; 1.0</code></td><td><code>1 of 31</code> — <code>FAIL 29 29 a foot exactly on an endpoint is on the segment: got false, want true</code></td><td><code>&gt;=</code> · <code>&lt;=</code></td></tr>
+            <tr><td><code>t &lt;= 1.0</code> 만 봤다</td><td><code>1 of 31</code> — <code>FAIL 27 27 vector 5's piece: the foot lies before p0: got true, want false</code></td><td>양쪽 다</td></tr>
+            <tr><td><code>t</code> 의 마이너스를 빠뜨렸다</td><td><code>3 of 31</code> — 26 · 30 · 31. <code>FAIL 26 26 the foot of the front wall is on it: got false, want true</code></td><td><code>-(p0 · d)</code></td></tr>
+            <tr><td>발이 센서 <strong>앞</strong>(x &gt; 0)일 때만 <code>true</code></td><td><code>1 of 31</code> — <code>FAIL 30 30 a wall behind has its foot on it too: got false, want true</code></td><td>앞뒤를 묻지 않는다</td></tr>
+          </tbody>
+        </table></div>
+        <p class="small">⚠ 길이 0 을 거르는 줄을 빼도 31 개를 통과한다 — 벡터가 잡지 못한다. 그때 <code>t</code> 는 <code>0.0 / 0.0</code> 이라 NaN 이고, NaN 과의 비교는 늘 거짓이라 결과가 우연히 <code>false</code> 다. 줄을 두는 이유는 그 우연에 기대지 않으려는 것이다.<sup class="fn"><a href="#fn-8">8</a></sup></p>
+        <p><strong>확인</strong> — T1 · T2 를 채운 상태는 <code>6 of 31</code> 이다.</p>
+        </div></details>
 
       <h4 id="s3-1-4">3-1-4. 돌리고 보기 — 줄자와 각도기를 댄다</h4>
-      <p>먼저 값을 낸다. 아래는 <strong>모양</strong>이고 값은 내 것이다.</p>
-      <pre><code class="lang-bash">pi$ cd scripts/lidar_lab &amp;&amp; python3
-&gt;&gt;&gt; import math, turn, geom, cluster, lines, clear
-&gt;&gt;&gt; scans = turn.load_jsonl("scans/&lt;내 파일&gt;.scan.jsonl")
-&gt;&gt;&gt; segs = lines.fit_lines(cluster.split(scans[0], &lt;내 gap&gt;)[&lt;벽 덩어리 번호&gt;], &lt;내 tol&gt;)
-&gt;&gt;&gt; s = segs[&lt;벽 선분 번호&gt;]
-&gt;&gt;&gt; clear.perp_distance(s), math.degrees(clear.heading_to(s))
-(&lt;n&gt;, &lt;n&gt;)</code></pre>
+      <p>먼저 값을 낸다. 파일 뒤의 수 둘은 §3-1-1 3번에서 <code>lab_lines</code> 에 준 것과 같은 두 문턱이다 — 같은 선분 목록이 나와야 번호가 맞는다.</p>
+      <pre><code class="lang-bash">pi$ cd ~/ros2_rpi5
+pi$ cmake --build scripts/lidar_lab/build -j2 --target test_clear test_clear_ub lab_clear
+pi$ scripts/lidar_lab/build/test_clear
+6 of 31 cases failed                      # T1 · T2 를 채운 상태 — 나머지 여섯은 실습 C 에서
+pi$ scripts/lidar_lab/build/lab_clear scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl 0.__ 0.__</code></pre>
+      <p class="small">FAIL 줄 여섯(13 ~ 15 · 20 · 21 · 23)은 위 출력에서 줄였다. T1 만 채웠으면 <code>10 of 31</code> 이다. 시험은 Mac 의 <code>clang++</code> 로 연습할 수 있다(아래 한 줄, 저장소 루트에서). 통과의 기준은 Pi 빌드다(결정 L3).<sup class="fn"><a href="#fn-7">7</a></sup></p>
+      <pre><code class="lang-bash">mac$ clang++ -std=c++17 -Wall -Wextra -D_GLIBCXX_ASSERTIONS -Iscripts/lidar_lab/include scripts/lidar_lab/tests/test_clear.cpp -o /tmp/test_clear &amp;&amp; /tmp/test_clear</code></pre>
+      <p><code>lab_clear</code> 출력의 모양은 이렇다(값은 <code>&lt;n&gt;</code>). 머리 줄 하나, 덩어리마다 <code>cluster</code> 줄 하나와 그 아래 선분마다 한 줄이다.</p>
+      <pre><code class="lang-text">turn 1 of &lt;n&gt;  gap=0.__ m  tol=0.__ m  clusters=&lt;n&gt;  (points &lt;n&gt;)
+cluster 0: &lt;n&gt; points  idx &lt;a&gt;..&lt;b&gt;
+  seg 0  (&lt;x&gt;, &lt;y&gt;) - (&lt;x&gt;, &lt;y&gt;)  len &lt;n&gt; m  dist &lt;n&gt; m  heading &lt;n&gt; deg  foot in
+  seg 1  …</code></pre>
+      <ul>
+        <li><code>dist</code> — <code>perp_distance()</code>, 센서에서 그 선분의 <strong>직선</strong>까지(m).</li>
+        <li><code>heading</code> — 내 <code>heading_to()</code> 를 <code>to_deg()</code> 로 도로 바꿔 찍은 것. 계산은 라디안이고 읽기만 도다(§2-2-2).</li>
+        <li><code>foot</code> — 내 <code>foot_inside()</code>. <code>out</code> 이면 그 <code>dist</code> 는 "저 면이 저기 있다"는 뜻일 뿐이다(§2-2).</li>
+      </ul>
+      <p><strong>무엇이 보이면 된 것인지</strong>는 아래와 같다. 집필자가 l-09 ~ l-11 과 같은 <strong>합성 기록 파일</strong>(방 4 m × 3 m · 앞쪽에 상자 하나 · 30° 폭의 무반사 구간 하나)로 완결 코드를 실행한 결과다(덩어리 문턱 <code>0.05</code>, 선분 문턱 <code>0.02</code>).<sup class="fn"><a href="#fn-9" id="fnref-9">9</a></sup> 합성 기록 파일은 센서 없이 계산으로 만든 기록 파일이다. 내 방은 수가 다르다.</p>
+      <pre><code class="lang-text">turn 1 of 1  gap=0.05 m  tol=0.02 m  clusters=3  (points 1329)
+cluster 0: 580 points  idx 927..1449, 0..56
+  seg 0  (-1.002, -1.200) - (2.500, -1.196)  len 3.501 m  dist 1.199 m  heading -89.94 deg  foot in
+  seg 1  (2.500, -1.196) - (2.500, 0.619)  len 1.815 m  dist 2.500 m  heading -0.00 deg  foot in
+cluster 1: 109 points  idx 57..165
+  seg 0  (1.190, 0.300) - (0.800, 0.301)  len 0.389 m  dist 0.303 m  heading 89.86 deg  foot out
+  seg 1  (0.800, 0.301) - (0.800, 0.694)  len 0.393 m  dist 0.801 m  heading 0.09 deg  foot out
+cluster 2: 640 points  idx 166..805
+  seg 0  (2.055, 1.800) - (-1.500, 1.797)  len 3.555 m  dist 1.798 m  heading 90.04 deg  foot in
+  seg 1  (-1.500, 1.797) - (-1.500, -0.542)  len 2.339 m  dist 1.500 m  heading 180.00 deg  foot in</code></pre>
+      <ul>
+        <li>방의 벽 넷은 오른쪽 <code>y = −1.2</code> · 앞 <code>x = 2.5</code> · 왼쪽 <code>y = 1.8</code> · 뒤 <code>x = −1.5</code> 다. <code>dist</code> 는 1.199 · 2.500 · 1.798 · 1.500, 방위는 약 −90° · 0° · +90° · 180° 로 나온다. 오른쪽 벽이 <strong>−</strong>(오른쪽으로 돈다), 왼쪽 벽이 <strong>+</strong> 다.</li>
+        <li>상자의 두 면은 <code>foot out</code> 이다. 앞면(<code>x = 0.8</code>)의 <code>dist 0.801 m</code> 는 정면 0.8 m 에 면이 있다는 뜻이지만, 정면 방향에는 상자가 없다 — 상자는 <code>y = 0.3 ~ 0.7</code> 에 있다. 이 줄이 §2-2 의 함정을 실제 기록에서 보여 준다.</li>
+        <li><code>heading -0.00 deg</code> 는 0 보다 아주 조금 작은 값이 소수 둘째 자리에서 반올림된 것이다. 끝점의 <code>x</code> 가 셋째 자리 아래에서 조금 다르기 때문이다. 실제 값은 §3-2-3 의 <code>lab_clear_try</code> 가 라디안으로 찍는다(<code>-1.9818821113499775e-06</code>).</li>
+      </ul>
+      <p class="small">선분의 양 끝 · 길이는 같은 기록으로 낸 l-11 의 견본(<a href="l-11-lines.html#s3-1-4">l-11 §3-1-4</a>)과 같다 — <code>lab_clear</code> 는 같은 <code>split()</code> · <code>fit_lines()</code> 를 부른다.</p>
       <p>이제 <strong>같은 벽</strong>에 줄자와 각도기를 댄다. 대는 자리를 틀리면 값이 아니라 <strong>비교가 무의미해진다</strong> — 그래서 대는 자리를 먼저 정한다.</p>
       <div class="tbl"><table>
         <thead><tr><th>재는 것</th><th>어디에 대는가</th><th>내 도구</th><th>줄자·각도기</th><th>차</th></tr></thead>
@@ -341,9 +665,9 @@ def perp_distance(seg):
       <p>⚠ <strong>각도기를 대는 자리가 거리보다 어렵다.</strong> 방을 위에서 내려다본 그림을 종이에 그리고, 센서 자리에서 벽에 수선을 내린 뒤 그 선과 0° 방향 사이를 재는 것이 가장 쉽다. 각도기가 없으면 A4 를 반으로 두 번 접어 90° 를 만들고 <strong>"벽이 정면과 직각인가, 아닌가"</strong> 만 판정해도 된다 — 그 경우 셋째 행(부호)은 그대로 통과된다.</p>
       <p>세 가지를 노트에 적는다. <strong>예상대로 안 나와도 그 값이 결과다.</strong></p>
       <ol class="steps">
-        <li><strong>거리의 차가 한쪽으로 쏠리는가</strong>(늘 크거나 늘 작다). 쏠리면 산포가 아니라 <strong>계통 오차</strong>이고, 계통 오차는 <a href="l-17-acceptance.html">l-17</a> 에서 잰다. 여기서는 <strong>적어 두기만</strong> 한다.</li>
+        <li><strong>거리의 차가 한쪽으로 쏠리는가</strong>(늘 크거나 늘 작다). 쏠리면 산포가 아니라 <strong>계통 오차</strong>(늘 같은 쪽으로 치우치는 오차)이고, 계통 오차는 <a href="l-17-acceptance.html">l-17</a> 에서 잰다. 여기서는 <strong>적어 두기만</strong> 한다.</li>
         <li><strong>부호가 맞는가.</strong> 뒤집혔으면 §2-2-1 의 내적 한 줄이 빠졌거나 반대다. <strong>벡터는 통과하는데 실물에서 뒤집힌다면</strong> l-08 의 각도 방향(<a href="l-08-floor-plan.html#s3-3">l-08 §3-3</a>)이 뒤집힌 채로 남아 있는 것이다. l-08 로 돌아가 각도 방향을 되돌려 놓는다.</li>
-        <li><strong>수선의 발이 그 선분 안에 있었는가</strong>(§3-1-3 4번). 밖이었다면 이 표의 검산은 <strong>성립하지 않는다</strong> — 다른 벽을 골라 다시 한다.</li>
+        <li><strong>수선의 발이 그 선분 안에 있었는가</strong>(<code>lab_clear</code> 의 <code>foot</code> 칸 — T2). <code>out</code> 이었다면 이 표의 검산은 <strong>성립하지 않는다</strong> — 다른 벽을 골라 다시 한다.</li>
       </ol>
 
       <h3 id="s3-2">3-2. 실습 B — "벽까지의 거리" 세 값을 같은 장면에서 <span class="tag sim">기록 파일</span></h3>
@@ -354,13 +678,13 @@ def perp_distance(seg):
       <div class="tbl"><table class="compact">
         <thead><tr><th>이름</th><th>정확히 무엇을 세는가 (내가 적는다)</th><th>버리는 점은</th></tr></thead>
         <tbody>
-          <tr><td>① 정면 섹터 최소</td><td><code>____</code></td><td>±15° 밖의 점 전부 · 무반사(<code>None</code>)</td></tr>
+          <tr><td>① 정면 섹터 최소</td><td><code>____</code></td><td>±15° 밖의 점 전부 · 무반사(빈 값)</td></tr>
           <tr><td>② 가장 가까운 점</td><td><code>____</code></td><td>무반사만</td></tr>
           <tr><td>③ 면까지 수직 거리</td><td><code>____</code></td><td>선분에 안 들어간 점 전부</td></tr>
         </tbody>
       </table></div>
       <p>①은 <a href="07-lidar.html">07</a> §3-10 의 <code>scan_watch</code> 가 내는 <code>/scan_front_min</code> 과 <strong>같은 계산</strong>이다. 그 노드는 <code>sector_deg</code> 기본값 30.0 으로 정면 ±15° 를 보고, <code>inf</code>·NaN·<code>range_min</code> 미만·<code>range_max</code> 초과를 버린 뒤 최소를 낸다.
-      <strong>이 쪽은 그 노드를 다시 만들지 않는다</strong> — 기준 형식 파일에서 <strong>같은 수를 한 번 계산해 견주기만</strong> 한다. 버리는 규칙도 맞춘다: 기준 형식에서 "못 쟀다"는 <code>None</code> 이므로(<a href="l-04-one-turn.html#s3-4-2">l-04 §3-4-2</a>), <strong><code>None</code> 을 버리는 것이 <code>inf</code>·NaN 을 버리는 것에 대응한다.</strong> 그래야 두 수가 같은 것을 센다.</p>
+      <strong>이 쪽은 그 노드를 다시 만들지 않는다</strong> — 기준 형식 파일에서 <strong>같은 수를 한 번 계산해 견주기만</strong> 한다. 버리는 규칙도 맞춘다: 기준 형식에서 "못 쟀다"는 <code>null</code> 이고 C++ 로더는 그 자리를 빈 <code>std::optional</code> 로 읽는다(<a href="l-04-one-turn.html#s2-6-2">l-04 §2-6-2</a>). 그래서 <strong>빈 값을 버리는 것이 <code>inf</code>·NaN 을 버리는 것에 대응한다.</strong> 그래야 두 수가 같은 것을 센다.</p>
       <p class="small">⚠ ①의 "정면"은 <strong>센서의 0° 방향</strong>이지 로봇의 정면이 아니다. 07 의 코드 주석도 같은 것을 명시한다(<em>"라이다 자기 기준이다 — 로봇 정면이 아니다"</em>). 차체가 없는 지금은 둘이 같다고 두고, 다른 값이 되는 것은 <strong><a href="09a-assembly-gate.html">09a</a></strong> 에서다.</p>
 
       <h4 id="s3-2-2">3-2-2. 빈 표 — 내가 채운다</h4>
@@ -375,14 +699,174 @@ def perp_distance(seg):
       </table></div>
       <p>그리고 한 줄: <strong>세 값이 다른 이유</strong> — <code>____</code></p>
 
-      <h4 id="s3-2-3">3-2-3. 채우기</h4>
+      <h4 id="s3-2-3">3-2-3. 채우기 — 확인 도구 <code>lab_clear_try</code></h4>
+      <p>세 값은 <strong>전량으로 주는 확인 도구</strong> <code>lab_clear_try</code> 가 한 화면에 나란히 찍는다. 이 실습에서 내가 쓰는 코드는 없다 — ③은 실습 A 에서 채운 내 <code>heading_to()</code> · <code>foot_inside()</code> 와 전량 <code>perp_distance()</code> 가 내고, ① · ② 는 도구 안의 몇 줄이 낸다. 도구를 먼저 읽고, <strong>①이 정면을 어떻게 세는지</strong>를 §3-2-1 의 표에 내 말로 적는다.</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/src/clear_try.cpp -- "the distance to the wall", three ways, in one scene.
+// (l-12, in full -- a tool to look with, not to write)
+//   pi$ scripts/lidar_lab/build/lab_clear_try &lt;file.scan.jsonl&gt; &lt;gap&gt; &lt;tol&gt; &lt;k&gt; &lt;j&gt; [--turn K]
+//   gap tol   the same two thresholds you gave lab_clear (3-1-4)
+//   k j       cluster k, segment j -- the numbers lab_clear printed for the wall you chose
+//   --turn K  revolution K (1 = the first); default 1
+// It prints the segment, what l-11's normal() and YOUR heading_to() / foot_inside() make of
+// it, and the three numbers of 3-2 side by side:
+//   1 front    the smallest range within +-15 deg of 0 deg -- the same count as 07's
+//              scan_watch (/scan_front_min, sector_deg 30): each angle is turned into radians
+//              and folded with normalize() before |angle| &lt;= 15 deg is tested, because a[] is
+//              in [0, 360) and "straight ahead" is BOTH near 0 and near 360. A test written
+//              as 0 &lt;= a &lt;= 15 sees only the left half.
+//   2 nearest  the smallest range of the whole revolution.
+//   3 perp     perp_distance() of segment j of cluster k, and its heading.
+// Empty ranges (no return, l-04 2-6) are skipped by 1 and 2, as scan_watch skips inf and NaN.
+// 1 and 2 are written here, not in clear.hpp, on purpose: 07 owns the first number, and a
+// second function of the same name in the toolbox is the confusion 2-1 is about.
+// No port, no clock, no motor: it reads one file, so it runs with the lidar unplugged.
+// Exit code: 0 = done; 1 = the loader refused the file, or no such turn / cluster / segment;
+// 2 = usage.
+#include &lt;cmath&gt;
+#include &lt;cstddef&gt;
+#include &lt;cstdio&gt;
+#include &lt;cstdlib&gt;
+#include &lt;cstring&gt;
+#include &lt;exception&gt;
+#include &lt;optional&gt;
+#include &lt;vector&gt;
+
+#include "lidar_lab/angles.hpp"
+#include "lidar_lab/clear.hpp"
+#include "lidar_lab/cluster.hpp"
+#include "lidar_lab/geom.hpp"
+#include "lidar_lab/lines.hpp"
+#include "lidar_lab/repr.hpp"
+#include "lidar_lab/scan_io.hpp"
+
+using namespace lidar_lab;
+
+namespace {
+
+bool parse_double(const char* text, double&amp; v) {
+  char* end = nullptr;
+  v = std::strtod(text, &amp;end);
+  return end != text &amp;&amp; *end == '\0' &amp;&amp; std::isfinite(v);
+}
+
+bool parse_int(const char* text, long lo, long hi, long&amp; v) {
+  char* end = nullptr;
+  v = std::strtol(text, &amp;end, 10);
+  return end != text &amp;&amp; *end == '\0' &amp;&amp; v &gt;= lo &amp;&amp; v &lt;= hi;
+}
+
+// The smallest measured range among the indices keep(i) accepts -&gt; its index, or empty.
+template &lt;class Keep&gt;
+std::optional&lt;std::size_t&gt; min_range(const Scan&amp; s, Keep keep) {
+  std::optional&lt;std::size_t&gt; best;
+  for (std::size_t i = 0; i &lt; s.size(); ++i) {
+    if (!s.r[i] || !keep(i)) continue;
+    if (!best || *s.r[i] &lt; *s.r[*best]) best = i;
+  }
+  return best;
+}
+
+void print_min(const char* label, const Scan&amp; s, const std::optional&lt;std::size_t&gt;&amp; i) {
+  if (!i) {
+    std::printf("%s r=none  (no measured point)\n", label);
+    return;
+  }
+  std::printf("%s r=%.3f m  i=%zu  a=%.2f deg\n", label, *s.r[*i], *i, s.a[*i]);
+}
+
+int usage() {
+  std::printf(
+      "usage: lab_clear_try &lt;file.scan.jsonl&gt; &lt;gap&gt; &lt;tol&gt; &lt;k&gt; &lt;j&gt; [--turn K]\n"
+      "  gap tol: as for lab_clear   k j: cluster k, segment j as lab_clear numbers them\n");
+  return 2;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+  std::vector&lt;const char*&gt; pos;
+  long turn = 1;
+  for (int i = 1; i &lt; argc; ++i) {
+    if (std::strcmp(argv[i], "--turn") == 0 &amp;&amp; i + 1 &lt; argc) {
+      if (!parse_int(argv[++i], 1, 100000, turn)) return usage();
+    } else if (argv[i][0] == '-' &amp;&amp; argv[i][1] == '-') {
+      return usage();
+    } else {
+      pos.push_back(argv[i]);
+    }
+  }
+  if (pos.size() != 5) return usage();
+  double gap = 0.0, tol = 0.0;
+  long k = 0, j = 0;
+  if (!parse_double(pos[1], gap) || gap &lt;= 0.0) return usage();
+  if (!parse_double(pos[2], tol) || tol &lt; 0.0) return usage();
+  if (!parse_int(pos[3], 0, 1000000, k) || !parse_int(pos[4], 0, 1000000, j)) return usage();
+
+  try {
+    const std::vector&lt;Scan&gt; scans = load_jsonl(pos[0]);
+    if (static_cast&lt;std::size_t&gt;(turn) &gt; scans.size()) {
+      std::printf("no turn %ld: the file has %zu revolutions\n", turn, scans.size());
+      return 1;
+    }
+    const Scan&amp; s = scans[static_cast&lt;std::size_t&gt;(turn) - 1];
+    const std::vector&lt;Cluster&gt; cs = split(s, gap);
+    if (static_cast&lt;std::size_t&gt;(k) &gt;= cs.size()) {
+      std::printf("no cluster %ld: there are %zu (0 .. %zu)\n", k, cs.size(),
+                  cs.empty() ? 0 : cs.size() - 1);
+      return 1;
+    }
+    const std::vector&lt;Segment&gt; segs = fit_lines(cs[static_cast&lt;std::size_t&gt;(k)].pts, tol);
+    if (static_cast&lt;std::size_t&gt;(j) &gt;= segs.size()) {
+      std::printf("no segment %ld in cluster %ld: it has %zu\n", j, k, segs.size());
+      return 1;
+    }
+    const Segment&amp; g = segs[static_cast&lt;std::size_t&gt;(j)];
+    const Point n = g.normal();
+    const double h = heading_to(g);
+
+    std::printf("turn %ld of %zu  gap=%s m  tol=%s m  cluster %ld  seg %ld\n", turn, scans.size(),
+                repr_double(gap).c_str(), repr_double(tol).c_str(), k, j);
+    std::printf("segment  (%.3f, %.3f) - (%.3f, %.3f)  len %.3f m  n=%d\n", g.p0.first,
+                g.p0.second, g.p1.first, g.p1.second, g.length(), g.n);
+    std::printf("normal() (%.3f, %.3f)   n . p0 = %.3f\n", n.first, n.second,
+                n.first * g.p0.first + n.second * g.p0.second);
+    std::printf("heading_to %s rad = %.2f deg   foot_inside %s\n", repr_double(h).c_str(),
+                to_deg(h), foot_inside(g) ? "true" : "false");
+
+    const double half = to_rad(15.0);
+    print_min("1 front   +-15 deg  ", s, min_range(s, [&amp;](std::size_t i) {
+                return std::fabs(normalize(to_rad(s.a[i]))) &lt;= half;
+              }));
+    print_min("2 nearest           ", s, min_range(s, [](std::size_t) { return true; }));
+    std::printf("3 perp    seg %ld.%ld   d=%.3f m  heading=%.2f deg  foot %s\n", k, j,
+                perp_distance(g), to_deg(h), foot_inside(g) ? "in" : "out");
+  } catch (const std::exception&amp; e) {
+    std::printf("error: %s\n", e.what());
+    return 1;
+  }
+  return 0;
+}</code></pre>
+      <p><code>CMakeLists.txt</code> 의 맨 아래에 한 줄을 붙인다.</p>
+      <pre><code class="lang-cmake">lab_tool(clear_try)                                # 3-2-3: src/clear_try.cpp -&gt; build/lab_clear_try</code></pre>
+      <p>빌드하고, 실습 A 에서 고른 벽의 <strong>덩어리 번호 <code>k</code> 와 선분 번호 <code>j</code></strong>(§3-1-1 4번)를 준다.</p>
+      <pre><code class="lang-bash">pi$ cmake --build scripts/lidar_lab/build -j2 --target lab_clear_try
+pi$ scripts/lidar_lab/build/lab_clear_try scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl 0.__ 0.__ &lt;k&gt; &lt;j&gt;</code></pre>
+      <p>합성 기록에서 앞 벽(<code>cluster 0</code> 의 <code>seg 1</code>)을 고르면 이렇게 나온다.<sup class="fn"><a href="#fn-9">9</a></sup></p>
+      <pre><code class="lang-text">turn 1 of 1  gap=0.05 m  tol=0.02 m  cluster 0  seg 1
+segment  (2.500, -1.196) - (2.500, 0.619)  len 1.815 m  n=160
+normal() (-1.000, 0.000)   n . p0 = -2.500
+heading_to -1.9818821113499775e-06 rad = -0.00 deg   foot_inside true
+1 front   +-15 deg   r=1.167 m  i=60  a=14.90 deg
+2 nearest            r=0.855 m  i=83  a=20.61 deg
+3 perp    seg 0.1   d=2.500 m  heading=-0.00 deg  foot in</code></pre>
       <ol class="steps">
-        <li><strong>①</strong>: 스캔의 각도 목록 <code>scan.a</code> 를 순회하면서 <strong>0° 에서 ±15° 안</strong>인 인덱스만 고른다. ⚠ <code>a</code> 는 <code>[0, 360)</code> 이므로 정면은 <strong>0 근처와 360 근처 양쪽</strong>이다 — <code>0 ≤ a ≤ 15</code> 만 보면 <strong>반쪽만 본다</strong>(07 의 코드가 <code>atan2</code> 한 줄로 피한 바로 그 함정이다). <code>r[i]</code> 가 <code>None</code> 인 것을 버리고 최소를 낸다.</li>
-        <li><strong>②</strong>: <code>None</code> 만 버리고 전체에서 최소. 그 인덱스의 각도를 함께 적는다.</li>
-        <li><strong>③</strong>: 실습 A 에서 고른 그 선분의 <code>perp_distance</code> 와 <code>math.degrees(heading_to(...))</code>.</li>
-        <li>세 줄을 표에 적는다. <strong>①과 ②가 같은 점일 수도 있다</strong> — 그러면 그 일치도 결과다(가장 가까운 것이 마침 정면에 있었다는 뜻이다).</li>
+        <li><strong>①</strong> 은 0° 에서 ±15° 안의 측정점 중 가장 가까운 것이다. ⚠ <code>a</code> 는 <code>[0, 360)</code> 이므로 정면은 <strong>0 근처와 360 근처 양쪽</strong>이다 — <code>0 ≤ a ≤ 15</code> 만 보면 <strong>반쪽만 본다</strong>. 도구는 07 의 코드와 같이 각을 라디안으로 바꿔 <code>normalize()</code> 로 감은 뒤 <code>|각| ≤ 15°</code> 를 본다. 빈 값(무반사)은 버린다.</li>
+        <li><strong>②</strong> 는 빈 값만 버리고 한 바퀴 전체에서 가장 가까운 점이다. <code>i</code> · <code>a</code> 가 그 점의 인덱스와 각도다.</li>
+        <li><strong>③</strong> 은 고른 선분의 <code>perp_distance()</code> 와 <code>heading_to()</code>(도), 그리고 발이 선분 위인지다. <code>normal()</code> 줄은 l-11 의 법선을 그대로 보여 주고, <code>n . p0</code> 가 음수면 내 <code>heading_to()</code> 가 그 법선을 뒤집었어야 한다(§2-2-1).</li>
+        <li>세 줄을 §3-2-2 의 표에 적는다. <strong>①과 ②가 같은 점일 수도 있다</strong> — 그러면 그 일치도 결과다(가장 가까운 것이 마침 정면에 있었다는 뜻이다).</li>
       </ol>
-      <p class="small">이 계산들은 <strong>공개 함수로 만들지 않는다.</strong> <code>main()</code> 안이나 파이썬 프롬프트에서 몇 줄로 끝난다. ①은 07 이 소유하는 수이고, 도구 상자에 같은 이름의 함수를 하나 더 만들면 <strong>나중에 어느 것이 무엇인지 알 수 없어진다</strong>(이 혼동이 이 쪽 §2-1 의 주제다).</p>
+      <p>위 견본에서 세 값은 <code>1.167</code> · <code>0.855</code> · <code>2.500</code> 으로 다 다르다. ①은 상자의 센서 쪽 면(y = 0.3) 위의 점으로, 정면 범위의 <strong>가장자리</strong>(14.90°)에 걸쳐 있다. ②는 범위 <strong>밖</strong>(20.61°)의 같은 상자, ③은 그 뒤의 앞 벽까지의 수직 거리다 — §2-1 이 문장으로 설명한 차이가 그대로 수로 나왔다.</p>
+      <p class="small">① · ② 의 계산은 <strong>공개 함수로 만들지 않았다.</strong> <code>lab_clear_try</code> 안의 몇 줄로 끝나고 <code>clear.hpp</code> 에는 넣지 않았다. ①은 07 이 소유하는 수이고, 도구 상자에 같은 이름의 함수를 하나 더 만들면 <strong>나중에 어느 것이 무엇인지 알 수 없어진다</strong>(이 혼동이 이 쪽 §2-1 의 주제다).</p>
 
       <h4 id="s3-2-4">3-2-4. 보고 판정하기</h4>
       <p>표를 보고 <strong>둘 중 하나</strong>를 적는다. 어느 쪽이든 이 항목은 통과된다.</p>
@@ -402,7 +886,7 @@ def perp_distance(seg):
         <li><strong>못 재면</strong> — 섀시가 손에 없으면 <code>hardware/INVENTORY.md</code> 6절 "외곽(footprint)"의 <strong>688 mm</strong> 를 쓴다. 이때 <strong>NOMINAL(gen1-record, 2026-07-25) · 바깥 엣지 폭</strong>이라고 같이 적는다. 그 줄 자신이 <em>"트랙 폭이 아니다"</em> 라고 명시하고 있고, 길이 쪽은 다른 기록과 41 mm 어긋나 있다. <strong>내 값으로 바꿀 자리라는 표시를 남긴 채로</strong> 쓴다.</li>
         <li><strong>여유를 아직 정하지 않는다.</strong> §3-3-3 에서 여러 값으로 실행해 본 뒤에 정한다.</li>
       </ol>
-      <p>그리고 같은 낱말을 네 갈래가 각각 어떻게 다루는지 본다. <strong>이 표가 이해 확인 1번과 같은 구조</strong>이고, 실습에서 채워 두면 이해 확인에서는 되돌아보기만 하면 된다.</p>
+      <p>그리고 같은 낱말을 네 갈래가 각각 어떻게 다루는지 본다. <strong>이 표가 이해 확인 1번과 같은 구조</strong>이고, 실습에서 채워 두면 이해 확인에서는 되돌아보기만 하면 된다. 표의 <code>ros2$</code> 는 컨테이너 안의 셸에서 친다는 표시다.</p>
       <div class="tbl"><table>
         <thead><tr><th>갈래</th><th>어디</th><th>무엇이라 하는가</th><th>내 값</th></tr></thead>
         <tbody>
@@ -415,77 +899,194 @@ def perp_distance(seg):
       <p class="small">넷이 다르면 <strong>④가 내 로봇의 사실</strong>이고, 나머지는 각자 "무엇을 가정했는가"를 보여 준다. 어느 것이 틀렸다고 쓰지 말고 <strong>조건이 무엇이었는지</strong>를 적는다.</p>
 
       <h4 id="s3-3-2">3-3-2. 골격</h4>
-      <p>같은 파일 <code>scripts/lidar_lab/clear.py</code> 에 이어 붙인다. 주석의 불변식은 전부 §2-3 · §2-3-1 · §2-4 에서 도출됐고 <strong>전부 시험 벡터로 채점된다.</strong></p>
-      <pre><code class="lang-python">def passage_width(clusters, direction):
-    """Narrowest gap between the two clusters flanking `direction`.
-    -&gt; float in METERS, or None when there is no passage to measure.
+      <p>같은 파일 <code>include/lidar_lab/clear.hpp</code> 의 둘째 블록이다 — 첫 블록 뒤에 붙인다(§3-1-2 에서 이미 붙였으면 그대로 둔다). 주석의 불변식은 전부 §2-3 · §2-3-1 · §2-4 에서 도출됐고 <strong>전부 시험 벡터로 채점된다.</strong></p>
+      <pre><code class="lang-cpp">namespace lidar_lab {
 
-    `clusters` are l-10's Cluster objects; `direction` is a heading in RADIANS
-    (the way you want to go). Pure.
-    Invariants -- each is graded by a vector in tests/test_clear.py:
-      1. a cluster counts only if its centroid is within +-90 deg of `direction`.
-         Anything behind is not a door post, and the sign of an angle near pi is
-         not trustworthy anyway (2-3-1, vector 17).
-      2. sides are decided by s = normalize(angle_of_centroid - direction):
-         s &gt; 0 is left, s &lt; 0 is right, s == 0 belongs to NEITHER -- it blocks the
-         middle of the gate, it is not a post.
-      3. on each side take the cluster with the SMALLEST |s| (nearest the ray).
-      4. the width is the smallest POINT-TO-POINT distance between the two chosen
-         clusters -- not the distance between their centroids (vector 13).
-      5. no cluster on one side -&gt; None, never 0.0. 0.0 would read as "the gap is
-         zero", and this is "I could not measure a gap" (2-3, same argument that
-         made the reference format use null).
-    """
-    # TODO(you): one pass to pick the two clusters (2-3-1's three conditions),
-    #   then one double loop for the closest pair of points. Cluster keeps its
-    #   points in .pts and has .centroid() -- l-10 named them, not this page.
-    return None
+// Arithmetic mean of pts -&gt; (x, y) in metres. Given in full.
+// passage_width() uses this, not l-10's Cluster::centroid(): the same number, but this page's
+// grading sheet does not lean on another page's TODO (3-5-1). Never call it with an empty
+// list -- passage_width() skips empty clusters first.
+inline Point mean_point(const std::vector&lt;Point&gt;&amp; pts) {
+  double sx = 0.0, sy = 0.0;
+  for (const Point&amp; p : pts) {
+    sx += p.first;
+    sy += p.second;
+  }
+  const double n = static_cast&lt;double&gt;(pts.size());
+  return {sx / n, sy / n};
+}
 
+// Narrowest gap between the two clusters flanking direction_rad -&gt; METRES, or an EMPTY
+// optional when there is no passage to measure.
+// clusters are l-10's; direction_rad is a heading in RADIANS (the way you want to go).
+// Invariants -- each one is graded by a vector in tests/test_clear.cpp:
+//   1. a cluster counts only if its mean point is within +-90 deg of direction_rad.
+//      Anything behind is not a door post, and the sign of an angle near pi is not
+//      trustworthy anyway (2-3-1, vector 17).
+//   2. sides are decided by s = normalize(angle_of_mean_point - direction_rad):
+//      s &gt; 0 is left, s &lt; 0 is right, s == 0 belongs to NEITHER -- it blocks the middle of
+//      the gate, it is not a post. WITHOUT normalize() a gate across +-180 deg loses a post
+//      (vector 20).
+//   3. on each side take the cluster with the SMALLEST |s| (nearest the ray).
+//   4. the width is the smallest POINT-TO-POINT distance between the two chosen clusters --
+//      not the distance between their mean points (vector 13).
+//   5. no cluster on one side -&gt; empty, never 0.0. 0.0 would read as "the gap is zero",
+//      and this is "I could not measure a gap" (2-3, the same argument that made the
+//      reference format use null).
+inline std::optional&lt;double&gt; passage_width(const std::vector&lt;Cluster&gt;&amp; clusters,
+                                           double direction_rad) {
+  // TODO(you) [T3]: pick two posts, then the closest pair of points - hint card T3
+  //   1) for each non-empty cluster: s = normalize(atan2 of mean_point(c.pts) - direction_rad)
+  //   2) |s| &gt;= kPi / 2: skip it (invariant 1). s == 0 goes to neither side (invariant 2)
+  //   3) keep the smallest |s| on the left (s &gt; 0) and on the right (s &lt; 0) (invariant 3)
+  //   4) either side empty: std::nullopt (invariant 5); otherwise the smallest std::hypot
+  //      over every pair of points of the two -- not mean point to mean point (invariant 4)
+  //   Cluster keeps its points in .pts -- l-10 named it, not this page.
+  //   Delete the placeholder lines below when you start.
+  (void)clusters;
+  (void)direction_rad;
+  return std::nullopt;
+}
 
-def fits(width, robot_width, margin):
-    """Does a body of `robot_width` go through a gap of `width`? -&gt; bool.
+// Does a body of robot_width go through a gap of width? -&gt; bool.
+// margin is the clearance ON EACH SIDE and has NO DEFAULT on purpose: it is a value you
+// decide (2-4), and a silent default would make the judgement the guide's instead of yours.
+// Invariants -- each one is graded by a vector in tests/test_clear.cpp:
+//   1. the test is width &gt;= robot_width + 2 * margin. The boundary itself FITS (vector 21
+//      pins &gt;= against &gt;).
+//   2. an empty width -&gt; false. "I do not know" is not a pass (vectors 24, 25).
+//   3. margin 0.0 is legal and is exactly what 3-3-4 makes you try.
+inline bool fits(std::optional&lt;double&gt; width, double robot_width, double margin) {
+  // TODO(you) [T4]: two lines - hint card T4
+  //   1) an empty width: false (invariant 2) -- check it BEFORE reading *width
+  //   2) width &gt;= robot_width + 2 * margin, with &gt;= (invariant 1)
+  //   Delete the placeholder lines below when you start.
+  (void)width;
+  (void)robot_width;
+  (void)margin;
+  return false;
+}
 
-    `margin` is the clearance ON EACH SIDE and has NO DEFAULT on purpose: it is
-    a value you decide (2-4), and a silent default would make the judgement the
-    guide's instead of yours.
-    Invariants:
-      1. the test is width &gt;= robot_width + 2 * margin. The boundary itself FITS
-         (vector 21 pins &gt;= against &gt;).
-      2. width None -&gt; False. "I do not know" is not a pass (vector 24).
-      3. margin 0.0 is legal and is exactly what 3-3-4 makes you try.
-    """
-    # TODO(you): two lines.
-    return False
-
-
-def main(argv):
-    """pi$ python3 scripts/lidar_lab/clear.py &lt;file.scan.jsonl&gt; &lt;gap&gt; &lt;tol&gt;            -- 3-1
-       pi$ python3 scripts/lidar_lab/clear.py &lt;file&gt; &lt;gap&gt; &lt;tol&gt; &lt;dir_deg&gt; &lt;w&gt; &lt;margin&gt; -- 3-3
-    """
-    # TODO(you): load_jsonl() the file (l-04 -- do not write another reader), take
-    #   ONE revolution, to_xy + split + fit_lines as in l-11's main, then:
-    #   with three arguments  print every segment with perp_distance and
-    #     math.degrees(heading_to(...)) -- that is 3-1-4's table;
-    #   with six              also print passage_width() for the direction you
-    #     gave (in DEGREES on the command line, radians inside) and the fits()
-    #     verdict. Print the width as "none" when it is None -- never as 0.
-    return 1
-
-
-if __name__ == "__main__":
-    import sys
-    raise SystemExit(main(sys.argv[1:]))</code></pre>
-      <p class="small">⚠ <code>main()</code> 은 파일을 읽지만 <strong>읽는 코드를 여기에 쓰지 않는다</strong> — <code>load_jsonl()</code> 은 l-04 가 전량으로 준 <strong>검사하는</strong> 로더이고 다시 쓰면 그 검사가 사라진다. 호출하기만 한다.</p>
+}  // namespace lidar_lab</code></pre>
+      <p class="small">이 블록의 <code>mean_point()</code> 는 <strong>전량 제공이다</strong> — 이유: 점들의 평균은 l-10 의 <code>centroid()</code>(l-10 의 T2)와 같은 계산이다. <code>passage_width()</code> 가 <code>centroid()</code> 를 부르면 <strong>l-10 의 TODO 가 맞아야 이 쪽의 시험이 맞는다</strong>. 그래서 이 쪽은 같은 계산을 전량으로 따로 두고, l-10 의 <code>Cluster</code> 에서는 구조체의 <code>pts</code> 만 읽는다. <code>mean_point()</code> 는 빈 목록으로 부르지 않는다 — 점이 없는 덩어리는 <code>passage_width()</code> 가 먼저 건너뛴다.</p>
+      <p class="small">파일을 읽는 일은 이 헤더에 없다. <code>lab_clear</code>(§3-1-2)가 l-04 의 <code>load_jsonl()</code> 로 읽어 덩어리 목록을 넘긴다 — 그 로더는 l-04 가 전량으로 준 <strong>검사하는</strong> 로더이고, 다시 쓰면 그 검사가 사라진다.</p>
 
       <h4 id="s3-3-3">3-3-3. 직접 채우기 — 그리고 여유를 <strong>내가 정한다</strong></h4>
       <ol class="steps">
-        <li><strong><code>fits</code> 를 먼저 채운다</strong>(벡터 21~24). 두 줄이다. <strong><code>&gt;</code> 인가 <code>&gt;=</code> 인가</strong>를 의식하고 쓴다 — 벡터 21 은 폭이 <strong>정확히</strong> <code>robot_width + 2×margin</code> 인 경우이고 오직 그 한 글자만 채점한다.</li>
-        <li><p><strong><code>passage_width</code> 를 채운다</strong>(벡터 13~20). 네 걸음으로 나눈다. ① 덩어리마다 중심의 방위를 내고 <code>direction</code> 을 빼서 <strong>감는다</strong>. ② <code>|s| ≥ π/2</code> 면 건너뛴다. ③ 왼쪽·오른쪽에서 각각 <code>|s|</code> 가 가장 작은 것을 남긴다. ④ 남은 둘의 <strong>모든 점 쌍</strong>을 순회해 최단을 찾는다.</p>
-          <p>힌트 하나: ①에서 <code>normalize()</code> 를 빼면 <strong>벡터 20 이 이 실수를 검출한다</strong>. 통로가 ±180° 이음매를 걸치면 뺄셈 결과가 <code>[-π, π]</code> 밖으로 나가고, 앞쪽 판정이 그 덩어리를 <strong>통째로 버려</strong> 답이 오류 없이 <code>None</code> 이 된다.</p>
-          <p>힌트 둘: <strong><code>list(cluster)</code> 라고 쓰지 않는다.</strong> l-10 의 <code>Cluster</code> 에는 <code>__iter__</code> 가 없어서 <code>TypeError: 'Cluster' object is not iterable</code> 오류로 <strong>그 자리에서 종료된다</strong>. 점은 <code>c.pts</code> 로 꺼낸다(<a href="l-10-clusters.html#s3-1-2">l-10 §3-1-2</a>).</p></li>
-        <li><strong>벡터를 전부 통과시킨다</strong> → <code>PASS clear 24 cases</code>.</li>
-        <li><strong>그 다음에 여유를 정한다.</strong> 순서가 중요하다 — 도구가 옳다는 것을 먼저 확인하고, 그 뒤에 <strong>값을 고르는 것이 내 판단</strong>이다. 아래 표를 채운 뒤 한 줄로 적는다.</li>
+        <li><strong><code>fits()</code> 를 먼저 채운다</strong>(벡터 21 ~ 25, <code>6</code> → <code>4 of 31</code>). 두 줄이다. 빈 값을 <strong>먼저</strong> 거르고, 그다음에 꺼내 견준다. <strong><code>&gt;</code> 인가 <code>&gt;=</code> 인가</strong>를 의식하고 쓴다 — 벡터 21 은 폭이 <strong>정확히</strong> <code>robot_width + 2×margin</code> 인 경우이고 오직 그 한 글자만 채점한다. → T4</li>
+        <li><p><strong><code>passage_width()</code> 를 채운다</strong>(벡터 13 ~ 20, <code>4</code> → <code>PASS clear 31 cases</code>). 네 걸음으로 나눈다. ① 덩어리마다 점들의 평균(<code>mean_point(c.pts)</code>)의 방위를 내고 <code>direction_rad</code> 를 빼서 <strong>감는다</strong>. ② <code>|s| ≥ π/2</code> 면 건너뛴다. ③ 왼쪽·오른쪽에서 각각 <code>|s|</code> 가 가장 작은 것을 남긴다. ④ 남은 둘의 <strong>모든 점 쌍</strong>을 순회해 최단을 찾는다.</p>
+          <p>힌트 하나: ①에서 <code>normalize()</code> 를 빼면 <strong>벡터 20 이 이 실수를 검출한다</strong>. 통로가 ±180° 이음매를 걸치면 뺄셈 결과가 <code>[-π, π]</code> 밖으로 나가고, 앞쪽 판정이 그 덩어리를 <strong>통째로 버려</strong> 답이 오류 없이 빈 값이 된다.</p>
+          <p>힌트 둘: <strong><code>Cluster</code> 는 점 목록이 아니다.</strong> 점은 <code>c.pts</code> 로 꺼낸다(<a href="l-10-clusters.html#s3-1-2">l-10 §3-1-2</a>). <code>for (const Point&amp; p : c)</code> 처럼 덩어리를 바로 순회하면 빌드가 컴파일 오류로 멈춘다. → T3</p></li>
+        <li><strong>31 개가 다 통과할 때까지 실물 파일로 가지 않는다.</strong> 여기까지는 기록 파일도 필요 없다.</li>
+        <li><strong>그 다음에 여유를 정한다.</strong> 순서가 중요하다 — 도구가 옳다는 것을 먼저 확인하고, 그 뒤에 <strong>값을 고르는 것이 내 판단</strong>이다. §3-3-4 의 명령을 <strong>여유만 바꿔</strong> 여러 번 실행해 카드 아래의 표를 채운 뒤 한 줄로 적는다.</li>
       </ol>
+      <p class="small">걸음과 카드의 짝: 걸음 1 = T4, 2 = T3. 카드는 코드에 나오는 순서(T3 → T4)로 놓였고, 채우는 순서는 짧은 <code>fits()</code> 가 먼저다. 걸음 3 · 4 는 카드가 없다.</p>
+      <details class="hint" id="hint-t3"><summary>힌트 T3 — <code>passage_width()</code> · 설주 둘을 고르고, 점 쌍의 최단</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 가려는 방향의 앞쪽(±90° 안)에 있는 덩어리를 왼쪽 · 오른쪽으로 갈라, 각 쪽에서 방향에 가장 가까운 덩어리 하나씩을 고른다. 두 덩어리의 점 대 점 최단 거리를 m 로 돌려준다. 한쪽이 비면 빈 값이다.</p>
+        <p>채점은 벡터 13 ~ 20 이 한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T3 - scripts/lidar_lab/include/lidar_lab/clear.hpp (passage_width) */
+inline std::optional&lt;double&gt; passage_width(const std::vector&lt;Cluster&gt;&amp; clusters,
+                                           double direction_rad) {
+  const Cluster* left = nullptr;
+  const Cluster* right = nullptr;
+  double left_s = 0.0, right_s = 0.0;
+  for (const Cluster&amp; c : clusters) {
+    if (c.pts.empty()) continue;
+    const Point m = mean_point(c.pts);
+    const double s = normalize(std::atan2(m.second, m.first) - direction_rad);
+    if (std::fabs(s) &gt;= kPi / 2.0) continue;
+    if (s &gt; 0.0) {
+      if (left == nullptr || std::fabs(s) &lt; left_s) {
+        left_s = std::fabs(s);
+        left = &amp;c;
+      }
+    } else if (s &lt; 0.0) {
+      if (right == nullptr || std::fabs(s) &lt; right_s) {
+        right_s = std::fabs(s);
+        right = &amp;c;
+      }
+    }
+  }
+  if (left == nullptr || right == nullptr) return std::nullopt;
+  std::optional&lt;double&gt; best;
+  for (const Point&amp; p : left-&gt;pts) {
+    for (const Point&amp; q : right-&gt;pts) {
+      const double d = std::hypot(p.first - q.first, p.second - q.second);
+      if (!best || d &lt; *best) best = d;
+    }
+  }
+  return best;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>const Cluster* left = nullptr;</code> — 고른 덩어리를 <strong>복사하지 않고 가리킨다</strong>. 아직 못 골랐으면 <code>nullptr</code> 다. <code>left_s</code> · <code>right_s</code> 는 지금까지 고른 것의 <code>|s|</code> 다.</li>
+          <li><code>if (c.pts.empty()) continue;</code> — 점이 없는 덩어리는 평균이 없다. <code>split()</code> 은 빈 덩어리를 만들지 않지만, 이 함수가 어떤 목록을 받아도 안전하게 해 둔다.</li>
+          <li><code>mean_point(c.pts)</code> — 점들의 평균(전량). <code>c.centroid()</code> 를 부르지 않는 이유는 §3-3-2 의 작은 글씨다.</li>
+          <li><code>s = normalize(std::atan2(m.second, m.first) - direction_rad)</code> — 평균점의 방위에서 가려는 방향을 빼고 <strong>감는다</strong>(불변식 2, 벡터 20).</li>
+          <li><code>if (std::fabs(s) &gt;= kPi / 2.0) continue;</code> — 앞쪽이 아니면 보지 않는다(불변식 1, 벡터 17 · 19). <code>kPi</code> 는 l-06 의 <code>angles.hpp</code> 에 있다.</li>
+          <li><code>if (s &gt; 0.0)</code> … <code>else if (s &lt; 0.0)</code> — 왼쪽 · 오른쪽. <code>s == 0.0</code> 은 어느 쪽에도 들어가지 않는다(불변식 2). 각 쪽에서 <code>|s|</code> 가 더 작으면 바꾼다(불변식 3, 벡터 15).</li>
+          <li><code>if (left == nullptr || right == nullptr) return std::nullopt;</code> — 한쪽이 비면 빈 값(불변식 5, 벡터 16 ~ 19).</li>
+          <li><code>std::optional&lt;double&gt; best;</code> — 처음에는 빈 값이다. 두 겹 반복으로 모든 점 쌍의 <code>std::hypot</code> 을 재고, <code>!best || d &lt; *best</code> 면 바꾼다. <code>!best</code> 를 먼저 보므로 빈 값을 꺼내 읽는 일이 없다(불변식 4, 벡터 13).</li>
+          <li>골격의 자리표시(<code>(void)</code> 두 줄과 <code>return std::nullopt;</code>)는 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 아래 넷은 모두 31 개를 통과한다. 어느 쪽이 맞고 틀린 문제가 아니다.<sup class="fn"><a href="#fn-8">8</a></sup></p>
+            <p>① <strong>"가장 가까운 설주"를 무엇으로 고르는가.</strong> 여기는 <strong>각도로</strong> 고른다(<code>|s|</code> 가 가장 작은 것). <strong>거리로</strong> 고르는 것도 말이 된다 — 가려는 방향에 가장 가까운 설주가 아니라 <strong>나에게 가장 가까운</strong> 설주를 쓰는 것이다(평균점까지의 <code>std::hypot</code> 이 가장 작은 것). 벡터 15 는 두 방법이 <strong>같은 답</strong>을 내는 장면이라 둘을 가르지 않는다. 내 방에서 둘이 갈리는 장면을 찾으면 그 장면이 내 판단이 필요한 자리다.</p>
+            <p>② <strong><code>s == 0.0</code> 을 어디에 넣는가.</strong> 여기는 <strong>어느 쪽에도</strong> 넣지 않는다(§2-3-1). 왼쪽에 넣기로 정해도(<code>s &gt;= 0.0</code>) 벡터는 전부 통과한다 — 다만 그러면 <strong>문 한가운데를 막고 있는 물건</strong>이 설주로 잘못 분류되어 통로가 실제보다 좁게 나온다. 어느 쪽이든 <strong>노트에 적어 두면</strong> 나중에 이상한 폭이 나왔을 때 볼 곳이 생긴다.</p>
+            <p>③ <strong>평균점을 <code>c.centroid()</code> 로 내도</strong> l-10 의 T2 가 맞으면 같은 값이다. 다만 l-10 의 T2 가 비어 있으면 13 · 14 · 15 · 20 이 <code>got none</code> 으로 실패한다 — 원인이 이 쪽에 없는 실패다. 그래서 이 쪽은 <code>mean_point()</code> 를 쓴다.</p>
+            <p>④ <strong>점 쌍을 전부 순회하는 것.</strong> 덩어리가 각각 점 수백 개면 수만 번을 반복한다. 한 바퀴가 <strong>약 182 ms</strong> 인 것을 생각하면 아직 여유가 크지만(§2-6), 방이 커지면 여기가 먼저 느려진다. 각도 순서를 이용해 <strong>마주 보는 끝점 근처만</strong> 보는 방법이 있고, <a href="l-16-node.html">l-16</a> 이 이 헤더를 패키지로 옮길 후보로 둘 때 다시 검토한다.</p></li>
+          <li><strong><code>direction_rad</code> 를 인자로 받는 이유</strong> — 도구가 자동으로 "가장 넓은 통로"를 찾게 만들 수도 있지만, 그러면 <strong>"어디로 가고 싶은가"라는 결정이 도구 코드 안에 감춰진다</strong>. 그 결정은 이 가이드가 아니라 10 의 주행 계획이 내린다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>mean_point()</code>(이 헤더, 전량) · <code>normalize()</code>(l-08) · <code>kPi</code>(l-06) · <code>std::atan2</code> · <code>std::fabs</code> · <code>std::hypot</code>. 반환은 <code>std::optional</code> 과 <code>std::nullopt</code> 다.</p>
+        <p><strong>흔한 실수</strong> — 그 잘못을 저지른 판을 실제로 만들어 잰 결과다. 진단 빌드도 같은 줄을 찍는다.<sup class="fn"><a href="#fn-8">8</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w50"><col class="w20"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_clear</code> · <code>test_clear_ub</code> 가 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>평균점끼리의 거리를 폭으로 썼다</td><td><code>4 of 31</code> — 13 · 14 · 15 · 20. <code>FAIL 13 13 the gap between two jambs: got 1.6000000000000003, want 0.8</code></td><td>점 쌍의 최단(불변식 4)</td></tr>
+            <tr><td><code>|s| ≥ π/2</code> 로 뒤를 잘라 내는 줄을 뺐다</td><td><code>2 of 31</code> — 17 · 19. <code>FAIL 17 17 a cluster BEHIND is not a door post: got 2.08806130178211, want none</code></td><td>앞쪽만(불변식 1)</td></tr>
+            <tr><td>각을 뺀 뒤 <code>normalize()</code> 를 안 썼다</td><td><code>1 of 31</code> — <code>FAIL 20 20 a gate across the +-180 deg seam still has two sides: got none, want 0.8</code></td><td>감는다(불변식 2)</td></tr>
+            <tr><td>한쪽이 비었을 때 <code>0.0</code> 을 돌려줬다</td><td><code>4 of 31</code> — 16 ~ 19. <code>FAIL 16 16 nothing on one side -&gt; none: got 0.0, want none</code></td><td><code>std::nullopt</code>(불변식 5)</td></tr>
+            <tr><td>각 쪽에서 <code>|s|</code> 가 <strong>큰</strong> 것을 남겼다</td><td><code>1 of 31</code> — <code>FAIL 15 15 the jamb NEAREST the ray wins: got 2.4, want 0.8</code></td><td>작은 것(불변식 3)</td></tr>
+            <tr><td>덩어리를 바로 순회했다(<code>for (const Point&amp; p : *left)</code>)</td><td>빌드가 멈춘다. clang: <code>invalid range expression of type 'const Cluster'; no viable 'begin' function available</code>. g++: <code>'begin' was not declared in this scope; did you mean 'std::begin'?</code></td><td><code>left-&gt;pts</code></td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — T1 · T2 · T4 를 채운 상태는 <code>4 of 31</code> 이다. T3 까지 채우면 <code>PASS clear 31 cases</code> 다.</p>
+        </div></details>
+      <details class="hint" id="hint-t4"><summary>힌트 T4 — <code>fits()</code> · 빈 값을 먼저 거르고, 여유는 두 번</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 폭이 빈 값이면 <code>false</code>. 아니면 <code>폭 ≥ 로봇 폭 + 2 × 여유</code> 인지를 돌려준다.</p>
+        <p>채점은 벡터 21 ~ 25 가 한다. 25 는 빈 값을 <code>0.0</code> 으로 꺼낸 판을 검출한다 — 그 판은 24 를 통과하므로, 25 는 로봇 폭 0 · 여유 0 으로 검사한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T4 - scripts/lidar_lab/include/lidar_lab/clear.hpp (fits) */
+inline bool fits(std::optional&lt;double&gt; width, double robot_width, double margin) {
+  if (!width) return false;
+  return *width &gt;= robot_width + 2.0 * margin;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>if (!width) return false;</code> — <code>std::optional</code> 은 값이 있으면 참, 비었으면 거짓으로 읽힌다. "모른다"는 통과가 아니다(불변식 2, 벡터 24 · 25). <strong>꺼내기 전에</strong> 거른다.</li>
+          <li><code>*width</code> — 값이 있는 것을 확인한 뒤에만 꺼낸다. 비었는데 꺼내면 이 가이드의 빌드는 그 자리에서 중단한다(아래 표).</li>
+          <li><code>&gt;= robot_width + 2.0 * margin</code> — 여유는 <strong>한쪽</strong> 값이라 두 번 더한다(§2-4). 경계는 통과다(불변식 1, 벡터 21).</li>
+          <li>골격의 자리표시(<code>(void)</code> 세 줄과 <code>return false;</code>)는 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 하나다.<sup class="fn"><a href="#fn-8">8</a></sup></p><p><code>return width.has_value() &amp;&amp; *width &gt;= robot_width + 2.0 * margin;</code> 한 줄로 써도 같다. <code>&amp;&amp;</code> 는 왼쪽이 거짓이면 오른쪽을 계산하지 않으므로 빈 값을 꺼내지 않는다.</p></li>
+          <li><strong><code>margin</code> 에 기본값이 없는 이유</strong> — §2-4 끝. 내가 정할 값을 함수의 기본값이 대신 정하면 그 판정은 내 판정이 아니다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>std::optional</code> 의 참·거짓 읽기와 <code>*</code>.</p>
+        <p><strong>흔한 실수</strong> — 그 잘못을 저지른 판을 실제로 만들어 잰 결과다. 진단 빌드도 같은 줄을 찍는다. 다른 줄을 찍는 행은 그 행 안에 적었다.<sup class="fn"><a href="#fn-8">8</a></sup></p>
+        <p>표의 수는 <strong>T1 ~ T3 를 다 채운 판</strong>에서 잰 것이다. 걸음 순서대로 T4 를 먼저 채워 T3 가 아직 골격이면, 어느 행이든 그 앞에 <code>FAIL 13</code> · <code>14</code> · <code>15</code> · <code>20</code>(<code>got none</code>) 네 줄이 먼저 찍히고 실패 수가 넷 늘어난다. 중단하는 행도 그 네 줄을 찍은 뒤 멈춘다.</p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w50"><col class="w20"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_clear</code> · <code>test_clear_ub</code> 가 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>여유를 한 번만 더했다</td><td><code>1 of 31</code> — <code>FAIL 22 22 one millimetre narrower does not: got true, want false</code>. 여유가 절반이 된다</td><td><code>2.0 * margin</code></td></tr>
+            <tr><td><code>&gt;</code> 로 썼다</td><td><code>2 of 31</code> — 21 · 23. <code>FAIL 21 21 margin is PER SIDE: exactly on the line fits: got false, want true</code></td><td><code>&gt;=</code></td></tr>
+            <tr><td>빈 값을 거르지 않고 <code>*width</code> 로 꺼냈다</td><td>g++: 벡터 24 에서 <code>Assertion 'this-&gt;_M_is_engaged()' failed.</code> 뒤 중단(종료 코드 134), FAIL 줄도 마지막 줄도 없다. clang: 멈추지 않고 빈 값 자리의 수를 읽는다 — 이번 실행은 <code>FAIL 25</code> 한 줄</td><td>꺼내기 전에 <code>if (!width)</code></td></tr>
+            <tr><td><code>width.value_or(0.0)</code> 으로 꺼냈다</td><td><code>1 of 31</code> — <code>FAIL 25 25 not even for a body of zero width: got true, want false</code>. 멈추지 않고 24 는 통과한다 — <code>0.0 &gt;= 0.75</code> 가 거짓이라서다</td><td>빈 값은 <code>false</code></td></tr>
+            <tr><td><code>width.value()</code> 로 꺼냈다</td><td>벡터 24 에서 예외 문구 뒤 끝난다(종료 코드 134). g++: <code>terminate called after throwing an instance of 'std::bad_optional_access'</code></td><td>꺼내기 전에 <code>if (!width)</code></td></tr>
+          </tbody>
+        </table></div>
+        <p class="small">g++ 의 중단 문구는 터미널에서 실행했을 때 보이는 것이다. 파이프로 받으면 문구가 남지 않을 수 있다(<a href="l-04-one-turn.html#s2-6-2">l-04 §2-6-2</a>).<sup class="fn"><a href="#fn-10" id="fnref-10">10</a></sup> 판정은 Pi 의 g++ 빌드로 한다. 종료 코드 134 는 중단(abort)이다.</p>
+        <p><strong>확인</strong> — T1 · T2 · T4 를 채운 상태는 <code>4 of 31</code> 이다(13 ~ 15 · 20 이 남는다).</p>
+        </div></details>
       <div class="tbl"><table>
         <thead><tr><th>여유 (m)</th><th><code>robot_width + 2×margin</code></th><th>내 통로 폭</th><th><code>fits</code></th><th>이 값을 고르면 무엇을 걱정하게 되는가</th></tr></thead>
         <tbody>
@@ -497,17 +1098,29 @@ if __name__ == "__main__":
       <p><strong>내가 고른 여유 <code>____</code> m — 근거 <code>____</code></strong>. 이 가이드는 값을 고르지 않는다(§2-4). 고르는 축 셋은 §2-4 의 상자에 있다.</p>
 
       <h4 id="s3-3-4">3-3-4. 돌리고 보기 — 그리고 <strong>여유 0 으로 오판을 만든다</strong></h4>
-      <pre><code class="lang-bash">pi$ python3 scripts/lidar_lab/clear.py scans/&lt;내 파일&gt;.scan.jsonl &lt;gap&gt; &lt;tol&gt; &lt;방향 도&gt; &lt;로봇 폭&gt; &lt;여유&gt;</code></pre>
-      <pre><code class="lang-text">passage  dir=&lt;n&gt; deg   width=&lt;n&gt; m   robot=&lt;n&gt; m   margin=&lt;n&gt; m   fits=&lt;True|False&gt;</code></pre>
+      <p>파일과 두 문턱 뒤에 수 셋을 더 준다 — <strong>가려는 방향</strong>(도, <code>+</code> 가 왼쪽), <strong>로봇 폭</strong>(m), <strong>여유</strong>(m, 한쪽). 방향은 §3-3-1 1번에서 적은 각도다. 도구가 라디안으로 바꿔 <code>passage_width()</code> 에 넘긴다.</p>
+      <pre><code class="lang-bash">pi$ cmake --build scripts/lidar_lab/build -j2 --target test_clear test_clear_ub lab_clear
+pi$ scripts/lidar_lab/build/test_clear
+PASS clear 31 cases
+pi$ scripts/lidar_lab/build/test_clear_ub      # 진단 빌드(ASan · UBSan) — 같은 한 줄만 나와야 한다
+PASS clear 31 cases
+pi$ scripts/lidar_lab/build/lab_clear scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl 0.__ 0.__ &lt;방향 도&gt; &lt;로봇 폭&gt; &lt;여유&gt;</code></pre>
+      <p>선분 줄들(§3-1-4) 뒤에 한 줄이 더 나온다. 폭을 못 재면 <code>width=none</code> 이고, 그때 판정은 언제나 <code>fits=false</code> 다.</p>
+      <pre><code class="lang-text">passage  dir=&lt;n&gt; deg   width=&lt;n&gt; m   robot=&lt;n&gt; m   margin=&lt;n&gt; m   fits=&lt;true|false&gt;</code></pre>
+      <p>합성 기록에서 정면(<code>0</code>°)으로, 로봇 폭 <code>1.2</code> m 를 두고 여유만 바꾸면 이렇다. 왼쪽 설주는 상자, 오른쪽 설주는 오른쪽 벽과 앞 벽이 한 덩어리가 된 것이고, 폭은 상자 모서리에서 앞 벽까지다. 뒤(<code>180</code>°)로 가려 하면 그 방향의 ±90° 안에 덩어리가 하나(왼쪽 벽과 뒤 벽)뿐이다 — 뒤를 향하면 그 덩어리는 오른쪽에 있고 왼쪽이 비어 폭이 없다.<sup class="fn"><a href="#fn-9">9</a></sup></p>
+      <pre><code class="lang-text">passage  dir=0.0 deg   width=1.310 m   robot=1.2 m   margin=0.0 m   fits=true
+passage  dir=0.0 deg   width=1.310 m   robot=1.2 m   margin=0.05 m   fits=true
+passage  dir=0.0 deg   width=1.310 m   robot=1.2 m   margin=0.1 m   fits=false
+passage  dir=180.0 deg   width=none   robot=1.2 m   margin=0.05 m   fits=false</code></pre>
       <p>세 가지를 차례로 한다.</p>
       <ol class="steps">
         <li><p><strong>줄자로 그 통로를 잰다.</strong> 라이다가 본 것과 같은 높이에서 양쪽 면 사이를 잰다. 내 도구 <code>____</code> m · 줄자 <code>____</code> m · 차 <code>____</code> mm.</p>
           <p>⚠ 도구 값이 <strong>더 크게</strong> 나오면 대개 덩어리가 끊긴 것이다 — 설주의 일부만 한 덩어리가 되어 <strong>가장 가까운 두 점이 실제 가장자리가 아니다</strong>. l-10 의 문턱을 줄여 다시 실행한다.</p></li>
-        <li><p><strong>여유를 0 으로 두고 다시 실행한다.</strong> <code>fits</code> 가 <code>True</code> 로 바뀌는 통로를 하나 찾는다(없으면 로봇 폭에 가까운 좁은 곳을 고르거나, 상자 둘을 그만큼 벌려 놓고 한 장 더 기록한다).</p>
+        <li><p><strong>여유를 0 으로 두고 다시 실행한다</strong>(명령줄의 마지막 수만 <code>0</code>). <code>fits</code> 가 <code>true</code> 로 바뀌는 통로를 하나 찾는다(없으면 로봇 폭에 가까운 좁은 곳을 고르거나, 상자 둘을 그만큼 벌려 놓고 한 장 더 기록한다).</p>
           <p>그리고 <strong>실물로 확인한다</strong> — 로봇 폭만큼 자른 <strong>판지나 막대</strong>를 들고 그 통로를 실제로 지나가 본다. 벽에 닿는가? 똑바로 들어가야만 통과하는가? <strong>무엇이 일어났는지 적는다.</strong></p>
-          <p>⚠ <strong>빌려 온 파일이라면</strong> — 내가 걸어 들어갈 수 없는 방의 기록이면 이 확인을 할 수 없다. <code>fits</code> 가 <code>True</code> 로 바뀌는 <code>margin</code> 값까지는 찾아 적고, 체크 항목에는 <em>"현물 확인 못 함 — 빌려 온 기록"</em> 이라고 적어 <strong>미통과로 둔다</strong>(§3-4-1 3번과 같은 처리다). 다음 쪽으로 가는 데 지장이 없다.</p>
-          <p>다만 ⚠ <strong>아래 3번의 되돌리기는 빌려 온 파일이어도 한다.</strong> 현물 확인을 못 한 것과 <code>margin = 0.0</code> 을 남겨 두는 것은 다른 일이다.</p></li>
-        <li><strong>되돌려 놓는다.</strong> <code>margin</code> 을 §3-3-3 에서 고른 값으로 되돌리고, 파일에 <code>0.0</code> 이 남아 있지 않은지 <strong>눈으로 확인한다.</strong> 이 설정은 오류 표시 없이 남아 뒤 쪽의 결과를 통째로 바꾼다.</li>
+          <p>⚠ <strong>빌려 온 파일이라면</strong> — 내가 걸어 들어갈 수 없는 방의 기록이면 이 확인을 할 수 없다. <code>fits</code> 가 <code>true</code> 로 바뀌는 <code>margin</code> 값까지는 찾아 적고, 체크 항목에는 <em>"현물 확인 못 함 — 빌려 온 기록"</em> 이라고 적어 <strong>미통과로 둔다</strong>(§3-4-1 3번과 같은 처리다). 다음 쪽으로 가는 데 지장이 없다.</p>
+          <p>다만 ⚠ <strong>아래 3번은 빌려 온 파일이어도 한다.</strong> 현물 확인을 못 한 것과 0 을 내 여유로 남겨 두는 것은 다른 일이다.</p></li>
+        <li><strong>되돌려 놓는다.</strong> 노트의 "내가 고른 여유" 칸이 §3-3-3 에서 고른 값인지, <code>0</code> 이 아닌지 <strong>눈으로 확인한다.</strong> 여유는 명령줄의 수라 파일에는 남지 않지만, 셸 기록(위 화살표 키)과 노트에서 <code>0</code> 이 다음 실행으로 따라간다. 이 설정은 오류 표시 없이 따라가 뒤 쪽의 결과를 통째로 바꾼다.</li>
       </ol>
       <p>2번에서 보게 되는 것이 <strong>여유가 무엇인지</strong>의 답이다. 여유 0 은 "완벽하게 조준하고 완벽하게 직진하면 이론상 지나간다"는 뜻이고, <strong>실제 로봇은 그 둘을 다 못 한다.</strong> 그래서 여유는 센서의 값이 아니라 <strong>제어의 값</strong>이다 — 주행이 정확해질수록 줄일 수 있고, 그 정확도는 10 에서 결정된다.</p>
 
@@ -517,7 +1130,7 @@ if __name__ == "__main__":
       <h4 id="s3-4-1">3-4-1. 확인 — 내 스캔 면이 바닥에서 얼마나 높은가</h4>
       <ol class="steps">
         <li><p><strong>스캔 면의 높이를 잰다.</strong> 센서를 놓았던 그 자리에서, 바닥(또는 센서를 올려놓은 면)에서 <strong>회전 머리의 레이저 창 한가운데</strong>까지 줄자로 잰다: <code>h_L</code> = <code>____</code> m.</p>
-          <p>⚠ 데이터시트의 기구 치수도(rev.2.2 p.16 Fig 5-2)에는 <strong>이 치수가 단일 값으로 나와 있지 않다</strong>(집필자가 열어 확인했다). 그래서 <strong>재는 수밖에 없다.</strong> 못 재면 <code>____</code> 로 두고 아래 표의 판정만 한다.</p></li>
+          <p>⚠ 데이터시트의 기구 치수도에는 <strong>이 치수가 단일 값으로 나와 있지 않다</strong>.<sup class="fn"><a href="#fn-11" id="fnref-11">11</a></sup> 그래서 <strong>재는 수밖에 없다.</strong> 못 재면 <code>____</code> 로 두고 아래 표의 판정만 한다.</p></li>
         <li><strong>그 높이에서 안 보이는 것을 하나 고른다.</strong> 실습 C 의 통로에서 <strong>바닥 가까이에 있는 것</strong>(문지방·전선·러그 가장자리·의자 가로대) 또는 <strong>머리 위에 있는 것</strong>(선반·책상 상판·손잡이)이면 된다. 통로에 아무것도 없으면 <strong>낮은 턱 하나를 놓는다</strong> — 그 경우 라이다로 한 장 더 기록하면 "도구는 그대로 통과라고 한다"를 더 선명하게 볼 수 있지만 <strong>필요하지는 않다</strong>. 스캔에 안 찍히는 물건이므로 파일은 어차피 같고, 바로 이 점이 이 실습의 논점이다.</li>
         <li><strong>빌려 온 파일이라면</strong> — 내가 걸어 들어갈 수 없는 방의 기록이면 2번을 할 수 없다. 그때는 <strong>§3-4-2 의 표를 산술로만 채우고</strong>(아래 계산은 파일이 없어도 된다) 체크 항목에 <em>"현물 확인 못 함 — 빌려 온 기록"</em> 이라고 적어 <strong>미통과로 둔다.</strong> 다음 쪽으로 가는 데 지장이 없다.</li>
       </ol>
@@ -539,7 +1152,7 @@ if __name__ == "__main__":
       <h4 id="s3-4-3">3-4-3. 채우기</h4>
       <ol class="steps">
         <li>줄자로 <code>h_L</code> 과 물건의 높이, 거리를 잰다. 셋 다 <strong>같은 바닥면 기준</strong>이어야 한다.</li>
-        <li><code>d × tan(1.5°)</code> 를 계산한다. 계산기가 없으면 <strong>거리의 약 2.6 %</strong> 로 어림한다 — §2-5 의 표가 <code>1.0 m → 0.026185921569186928 m</code> 라고 적어 두었다.</li>
+        <li><code>d × tan(1.5°)</code> 를 계산한다. 계산기가 없으면 <strong>거리의 약 2.6 %</strong> 로 어림한다 — §2-5 의 표가 <code>1.0 m → 0.02618592156918693 m</code> 라고 적어 두었다.</li>
         <li>도구를 <strong>고치지 않고</strong> 그대로 실행해 판정을 받는다.</li>
         <li>판지나 막대를 들고 실제로 지나가 본다.</li>
       </ol>
@@ -553,174 +1166,199 @@ if __name__ == "__main__":
       </ul>
       <p class="small">⚠ 이 실습에서 놓은 턱·상자는 <strong>치운다.</strong> 실습 C 의 <code>margin</code> 과 함께, 일부러 만든 장면을 남겨 두면 다음 쪽에서 생기는 이상한 결과의 원인을 라이다에서 찾게 된다.</p>
 
-      <h3 id="s3-5">3-5. 실습 E — 벡터 스물넷으로 채점한다 <span class="tag sim">기록 파일</span></h3>
-      <p>이 쪽의 함수 넷은 <strong>전부 순수</strong>하다 — 파일도 포트도 ROS 도 건드리지 않는다. 그래서 <strong>라이다도 기록 파일도 없이</strong> 채점된다. Mac 에서도 그대로 실행된다(결정 L3).</p>
+      <h3 id="s3-5">3-5. 실습 E — 벡터 서른하나로 채점한다 <span class="tag sim">기록 파일</span></h3>
+      <p>이 쪽의 헤더는 <strong>전부 순수</strong>하다 — 파일도 포트도 ROS 도 건드리지 않는다. 그래서 <strong>라이다도 기록 파일도 없이</strong> 채점된다. 시험은 Mac 의 <code>clang++</code> 로 연습할 수 있고, 통과의 기준은 Pi 빌드다(결정 L3). 이 실습은 <strong>A 를 시작할 때 이미 시작된다</strong>(§3-1-3 1번) — 여기 모아 둔 것은 벡터가 <strong>네 함수를 한꺼번에</strong> 채점하기 때문이다.</p>
 
       <h4 id="s3-5-1">3-5-1. 확인 — 자리와 이름</h4>
-      <p><strong>실행 확인:</strong> 아래 두 줄은 <strong>미확인</strong>(집필자는 Pi 의 파일 배치를 볼 수 없다). 다만 <strong>시험 파일 자체는 2026-09-23 Mac 에서 실행해 확인했다</strong> — §3-5-3 과 §3-5-4 의 출력은 지어낸 것이 아니라 그때 출력된 줄이다.</p>
-      <div class="tbl"><table class="compact">
+      <p><strong>실행 확인:</strong> 집필자가 세 컴파일러로 이 시험을 빌드해 골격 상태와 완결 상태를 다 실행해 보았다.<sup class="fn"><a href="#fn-7">7</a></sup> Pi 의 <code>g++</code> 로는 실행해 보지 않았다 — Pi 에서의 두 줄은 내가 확인한다.</p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w5"><col class="w35"><col class="w30"><col class="w30"></colgroup>
         <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
         <tbody>
-          <tr><td>1</td><td><code>pi$ ls scripts/lidar_lab/tests/</code></td><td><code>test_clear.py</code> 가 있다</td><td>§3-5-2 의 블록을 그 이름으로 그대로 둔다</td></tr>
-          <tr><td>2</td><td><code>pi$ python3 -c "import lines"</code> (<code>scripts/lidar_lab</code> 안에서)</td><td>아무 출력 없음</td><td>l-11 의 파일이 없거나 이름이 다르다 → <a href="l-11-lines.html#s3-1-2">l-11 §3-1-2</a></td></tr>
+          <tr><td>1</td><td><code>pi$ ls scripts/lidar_lab/tests/</code></td><td><code>check.hpp  test_cluster.cpp  …  test_lines.cpp</code> — 앞 쪽들이 만든 시험이 이미 있다</td><td><code>check.hpp</code> 가 없으면 <a href="l-02-device-id.html">l-02</a> 로 돌아간다. 이 쪽의 시험은 <code>clear.hpp</code> 와 <code>check.hpp</code> 만 include 한다</td></tr>
+          <tr><td>2</td><td>아래 §3-5-2 의 파일을 두고 CMake 한 줄을 붙인 뒤 <code>pi$ scripts/lidar_lab/build/test_clear</code></td><td>골격 그대로면 첫 줄이 <code>FAIL 7 7 wall on the left -&gt; +90 deg: got 0.0, want 1.5707963267948966</code>, 마지막 줄이 <code>15 of 31 cases failed</code></td><td>빌드가 <code>lidar_lab/clear.hpp</code> 를 찾지 못한다고 멈추면 헤더의 자리가 다르다 — <code>scripts/lidar_lab/include/lidar_lab/</code> 안이어야 한다</td></tr>
         </tbody>
       </table></div>
-      <p class="small">⚠ 이 시험은 <strong>l-11 의 <code>Segment</code> 를 쓴다</strong> — <code>heading_to</code> 가 <code>normal()</code> 을 호출하기 때문이다. <code>normal()</code> 이 아직 비어 있으면 <strong>벡터 7 부터 실패하는데 원인은 이 쪽에 있지 않다.</strong> 그때는 <a href="l-11-lines.html#s3-4-3">l-11 §3-4-3</a> 의 벡터 18·19 를 먼저 통과시킨다. 반대로 l-10 의 <code>Cluster</code> 는 <strong>쓰지 않는다</strong> — 이웃 쪽의 클래스에 의존하면 그 쪽이 바뀔 때 내 채점표도 함께 바뀐다.</p>
+      <p class="small">⚠ 이 시험은 <strong>l-11 의 <code>Segment</code> 를 쓴다</strong> — <code>heading_to()</code> 가 <code>normal()</code> 을 호출하기 때문이다. <code>normal()</code> 이 아직 비어 있으면 <strong>벡터 7 부터 실패하는데 원인은 이 쪽에 있지 않다.</strong> 그때는 <a href="l-11-lines.html#s3-4-2">l-11 §3-4-2</a> 의 벡터 18 · 19 · 19b 를 먼저 통과시킨다. 반대로 l-10 의 <code>Cluster</code> 는 <strong>구조체만</strong> 쓴다(<code>Cluster{pts, {}}</code>) — l-10 이 채우는 <code>centroid()</code> 는 부르지 않는다. 이웃 쪽의 TODO 에 내 채점표가 기대면 그 쪽이 비었을 때 내 채점표도 함께 틀린다. <code>passage_width()</code> 가 <code>mean_point()</code> 를 쓰는 이유가 이것이다.</p>
 
       <h4 id="s3-5-2">3-5-2. 시험 파일 — 전량</h4>
-      <p class="small">이 블록은 <strong>전량 제공이다</strong> — 이유: <strong>벡터가 곧 채점표</strong>이고 내 답을 내가 채점할 수는 없다. 기댓값의 출처는 <strong>파일 머리에 한 줄씩</strong> 적혀 있고, 숫자는 전부 집필자가 <code>python3</code> 로 <strong>실제로 실행해 확인한 것</strong>이다(2026-09-23, Mac. 반올림하지 않고 출력된 그대로 적었다).</p>
-      <pre><code class="lang-python"># scripts/lidar_lab/tests/test_clear.py -- grading vectors for clear.py.
-# Standard library only. No lidar, no file, no ROS: every function under test is pure.
-#   pi$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_clear.py
-# It uses l-11's Segment (heading_to calls its normal()), but NOT l-10's Cluster:
-# the stand-in below keeps this grading sheet from moving when a sibling page moves.
-# Sources of the expected numbers (writer ran every one of them, 2026-09-23, python3):
-#   1,2,3   : exact by construction -- a wall built at distance d is at distance d,
-#             and 3 is the same wall behind the sensor: the answer stays POSITIVE.
-#   4       : the line through (1,0) and (0,1): 1/sqrt(2) = 0.7071067811865475
-#   5,12    : the foot of the perpendicular falls OUTSIDE the segment. Both the
-#             distance (1.0) and the heading (0.0) describe a place with no wall.
-#   6,7,10  : 0, math.radians(90) = 1.5707963267948966, math.radians(45) = 0.7853981633974483
-#   8,9     : math.radians(15) = 0.2617993877991494. 9 is the SAME wall with its two
-#             endpoints swapped -- l-11's normal() flips, heading_to must not.
-#   11      : normalize()'s range is [-pi, pi] and BOTH ends occur (l-08 measured it:
-#             normalize(-pi) -&gt; -3.141592653589793). A wall behind is +pi or -pi and
-#             both are right, so this vector grades abs(), never the sign.
-#   13..15  : the two jambs are 0.8 m apart at their nearest points. Measuring
-#             centroid to centroid instead gives 1.5999999999999999 -- vector 13 is
-#             the one that tells those two implementations apart.
-#   17      : with the +-90 deg front test removed, this returns 2.08806130178211
-#             instead of None: something behind you becomes the other door post.
-#   20      : the same two posts seen from a gate pointing backwards. Subtracting
-#             the angles WITHOUT normalize() leaves -5.608444364956034 for the second post,
-#             which the +-90 deg test then throws away: the answer silently becomes
-#             None. This is the only vector that grades the wrap.
-#   21..23  : 0.5 + 2 * 0.125 = 0.75 exactly, so the boundary case is exact in
-#             binary too -- vector 21 grades &gt;= against &gt; and nothing else.
-import math
-import os
-import sys
+      <p class="small">이 블록은 <strong>전량 제공이다</strong> — 이유: <strong>벡터가 곧 채점표</strong>이고 내 답을 내가 채점할 수는 없다. 기댓값의 출처는 <strong>파일 머리에 한 줄씩</strong> 적혀 있다.<sup class="fn"><a href="#fn-7">7</a></sup></p>
+      <p>실패 줄의 두 숫자는 <strong>몇 번째 검사인지</strong>와 <strong>벡터 번호</strong>다(이 쪽은 둘이 같다). 25 는 <code>fits()</code> 의 빈 값을, 26 ~ 31 은 <code>foot_inside()</code>(T2)를 채점한다.</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/tests/test_clear.cpp -- grading vectors for clear.hpp.  (l-12, in full)
+// Includes only clear.hpp and check.hpp: no port, no ROS, no file. It runs with nothing
+// plugged in -- on the Pi host, and on the Mac with clang++ for practice.
+//   pi$ scripts/lidar_lab/build/test_clear &amp;&amp; scripts/lidar_lab/build/test_clear_ub
+// It uses l-11's Segment (heading_to() calls its normal()) and l-10's Cluster STRUCT, built
+// as Cluster{pts, {}} -- but never l-10's centroid(): passage_width() takes the mean with
+// mean_point() from this page, so this sheet does not move when a sibling page's TODO moves.
+// Sources of the expected numbers (vectors 1 to 24 and their numbers are the previous,
+// Python edition's; the C++ reference gives the same within 1e-9):
+//   1, 2, 3  exact by construction -- a wall built at distance d is at distance d, and 3 is
+//            the same wall behind the sensor: the answer stays POSITIVE.
+//   4        the line through (1,0) and (0,1): 1/sqrt(2) = 0.7071067811865475
+//   5, 12    the foot of the perpendicular falls OUTSIDE the segment. Both the distance
+//            (1.0) and the heading (0.0) describe a place with no wall.
+//   6, 7, 10 0, to_rad(90) = 1.5707963267948966, to_rad(45) = 0.7853981633974483
+//   8, 9     to_rad(15) = 0.2617993877991494. 9 is the SAME wall with its two endpoints
+//            swapped -- l-11's normal() flips, heading_to() must not.
+//   11       normalize()'s range is [-pi, pi] and BOTH ends occur (l-08 measured it:
+//            normalize(-kPi) -&gt; -3.141592653589793). A wall behind is +pi or -pi and both
+//            are right, so this vector grades the size, never the sign.
+//   13 .. 15 the two jambs are 0.8 m apart at their nearest points. Measuring mean point
+//            to mean point instead gives 1.6000000000000003 -- vector 13 is the one that
+//            tells those two implementations apart.
+//   17       with the +-90 deg front test removed, this returns 2.08806130178211 instead of
+//            none: something behind you becomes the other door post.
+//   20       the same two posts seen from a gate pointing backwards. Subtracting the angles
+//            WITHOUT normalize() leaves -5.608444364956034 for the second post, which the
+//            +-90 deg test then throws away: the answer silently becomes none. This is the
+//            only vector that grades the wrap.
+//   21 .. 23 0.5 + 2 * 0.125 = 0.75 exactly, so the boundary case is exact in binary too --
+//            vector 21 grades &gt;= against &gt; and nothing else.
+//   25       new in C++: an empty width read as 0.0 (value_or(0.0)) passes 24, because
+//            0.0 &gt;= 0.75 is false. A zero-width body is the case where it does not.
+//   26 .. 31 new in C++, foot_inside(): t = -(p0 . d) / (d . d) is 0.5 (26), -2.0 (27),
+//            3.0 (28), 0.0 (29), 0.5 (30) and 0.75 (31; divided by the length instead of
+//            its square it would be 3.0).
+#include &lt;cmath&gt;
+#include &lt;optional&gt;
+#include &lt;string&gt;
+#include &lt;vector&gt;
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lines import Segment                                              # noqa: E402
-from clear import perp_distance, heading_to, passage_width, fits       # noqa: E402
+#include "lidar_lab/clear.hpp"
+#include "check.hpp"
 
-N = 0
+using namespace lidar_lab;
 
+namespace {
 
-def check(name, got, want):
-    global N
-    N += 1
-    if want is None or isinstance(want, bool):
-        ok = got is want
-    elif isinstance(want, float):
-        ok = isinstance(got, (int, float)) and abs(got - want) &lt;= 1e-9
-    else:
-        ok = got == want
-    if not ok:
-        print("FAIL %d %s: got %r, want %r" % (N, name, got, want))
-        sys.exit(1)
+// A segment whose perpendicular foot from the origin is at (dist, deg).
+Segment wall(double dist, double deg, double half = 1.0) {
+  const double c = std::cos(to_rad(deg)), s = std::sin(to_rad(deg));
+  const double fx = dist * c, fy = dist * s;
+  return Segment{{fx + s * half, fy - c * half}, {fx - s * half, fy + c * half}, 2};
+}
 
+// A door post: l-10's Cluster with the points only. idx is not read on this page.
+Cluster post(std::vector&lt;Point&gt; pts) { return Cluster{pts, {}}; }
 
-def wall(dist, deg, half=1.0):
-    """A segment whose perpendicular foot from the origin is at (dist, deg)."""
-    c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
-    fx, fy = dist * c, dist * s
-    return Segment((fx + s * half, fy - c * half), (fx - s * half, fy + c * half))
+void near_opt(const std::string&amp; name, const std::optional&lt;double&gt;&amp; got, double want) {
+  check(name, got.has_value() &amp;&amp; std::fabs(*got - want) &lt;= 1e-9, str(got), str(want));
+}
 
+}  // namespace
 
-class Post:
-    """Stand-in for l-10's Cluster: only .pts, len() and .centroid() are used."""
+int main() {
+  const Segment FRONT = wall(1.4, 0.0);
+  const Segment TILT = wall(1.4, 15.0);
+  const Segment LEFT = wall(1.0, 90.0);
+  const Segment BEHIND = wall(2.0, 180.0);
+  const Segment DIAG{{1.0, 0.0}, {0.0, 1.0}, 2};
+  const Segment ASIDE{{1.0, 2.0}, {1.0, 3.0}, 2};
 
-    def __init__(self, pts):
-        self.pts = pts
+  near("1 front wall distance", perp_distance(FRONT), 1.4);
+  near("2 same wall, endpoints swapped", perp_distance(Segment{FRONT.p1, FRONT.p0, 2}), 1.4);
+  near("3 a wall BEHIND is a positive distance", perp_distance(BEHIND), 2.0);
+  near("4 45 deg wall through (1,0) and (0,1)", perp_distance(DIAG), 0.7071067811865475);
+  near("5 the foot may fall OUTSIDE the segment", perp_distance(ASIDE), 1.0);
 
-    def __len__(self):
-        return len(self.pts)
+  near("6 front wall -&gt; heading 0", std::fabs(heading_to(FRONT)), 0.0);
+  near("7 wall on the left -&gt; +90 deg", heading_to(LEFT), 1.5707963267948966);
+  near("8 tilted wall -&gt; 15 deg", heading_to(TILT), 0.2617993877991494);
+  near("9 endpoint order must NOT change the heading", heading_to(Segment{TILT.p1, TILT.p0, 2}),
+       0.2617993877991494);
+  near("10 45 deg wall -&gt; 45 deg", heading_to(DIAG), 0.7853981633974483);
+  near("11 wall behind -&gt; pi, sign NOT graded", std::fabs(heading_to(BEHIND)), 3.141592653589793);
+  near("12 the foot is outside the segment: it still points straight ahead",
+       std::fabs(heading_to(ASIDE)), 0.0);
 
-    def centroid(self):
-        n = len(self.pts)
-        return (sum(p[0] for p in self.pts) / n, sum(p[1] for p in self.pts) / n)</code></pre>
-      <p>아래가 벡터 본문이다. <strong>위에서 아래로가 곧 채울 순서</strong>이고, 실패 메시지의 두 숫자는 <strong>몇 번째 검사인지</strong>와 <strong>벡터 번호</strong>다(이 쪽은 둘이 같다).</p>
-      <pre><code class="lang-python">FRONT = wall(1.4, 0.0)
-TILT = wall(1.4, 15.0)
-LEFT = wall(1.0, 90.0)
-BEHIND = wall(2.0, 180.0)
-DIAG = Segment((1.0, 0.0), (0.0, 1.0))
-ASIDE = Segment((1.0, 2.0), (1.0, 3.0))
+  const Cluster JAMB_L = post({{1.0, 0.4}, {1.0, 0.8}, {1.0, 1.2}});
+  const Cluster JAMB_R = post({{1.0, -0.4}, {1.0, -0.8}, {1.0, -1.2}});
+  const Cluster FAR_L = post({{1.0, 2.0}, {1.0, 2.4}});
+  const Cluster BEHIND_R = post({{-1.0, -0.2}, {-1.2, -0.3}});
+  const Cluster BACK_L = post({{-1.0, 0.4}, {-1.0, 0.8}, {-1.0, 1.2}});
+  const Cluster BACK_R = post({{-1.0, -0.4}, {-1.0, -0.8}, {-1.0, -1.2}});
 
-check("1 front wall distance", perp_distance(FRONT), 1.4)
-check("2 same wall, endpoints swapped", perp_distance(Segment(FRONT.p1, FRONT.p0)), 1.4)
-check("3 a wall BEHIND is a positive distance", perp_distance(BEHIND), 2.0)
-check("4 45 deg wall through (1,0) and (0,1)", perp_distance(DIAG), 0.7071067811865475)
-check("5 the foot may fall OUTSIDE the segment", perp_distance(ASIDE), 1.0)
+  near_opt("13 the gap between two jambs", passage_width({JAMB_L, JAMB_R}, 0.0), 0.8);
+  near_opt("14 the order of the clusters does not matter", passage_width({JAMB_R, JAMB_L}, 0.0),
+           0.8);
+  near_opt("15 the jamb NEAREST the ray wins", passage_width({FAR_L, JAMB_L, JAMB_R}, 0.0), 0.8);
+  is_none("16 nothing on one side -&gt; none", passage_width({JAMB_L, FAR_L}, 0.0));
+  is_none("17 a cluster BEHIND is not a door post", passage_width({JAMB_L, BEHIND_R}, 0.0));
+  is_none("18 no clusters at all -&gt; none", passage_width({}, 0.0));
+  is_none("19 turn the gate around and the same two are behind you",
+          passage_width({JAMB_L, JAMB_R}, kPi));
+  near_opt("20 a gate across the +-180 deg seam still has two sides",
+           passage_width({BACK_L, BACK_R}, kPi), 0.8);
 
-check("6 front wall -&gt; heading 0", abs(heading_to(FRONT)), 0.0)
-check("7 wall on the left -&gt; +90 deg", heading_to(LEFT), 1.5707963267948966)
-check("8 tilted wall -&gt; 15 deg", heading_to(TILT), 0.2617993877991494)
-check("9 endpoint order must NOT change the heading", heading_to(Segment(TILT.p1, TILT.p0)), 0.2617993877991494)
-check("10 45 deg wall -&gt; 45 deg", heading_to(DIAG), 0.7853981633974483)
-check("11 wall behind -&gt; pi, sign NOT graded", abs(heading_to(BEHIND)), 3.141592653589793)
-check("12 the foot is outside the segment: it still points straight ahead", abs(heading_to(ASIDE)), 0.0)
+  eq_bool("21 margin is PER SIDE: exactly on the line fits", fits(0.75, 0.5, 0.125), true);
+  eq_bool("22 one millimetre narrower does not", fits(0.749, 0.5, 0.125), false);
+  eq_bool("23 margin 0 lets a bare fit through", fits(0.5, 0.5, 0.0), true);
+  eq_bool("24 an unknown width is NOT a pass", fits(std::nullopt, 0.5, 0.125), false);
+  eq_bool("25 not even for a body of zero width", fits(std::nullopt, 0.0, 0.0), false);
 
-JAMB_L = Post([(1.0, 0.4), (1.0, 0.8), (1.0, 1.2)])
-JAMB_R = Post([(1.0, -0.4), (1.0, -0.8), (1.0, -1.2)])
-FAR_L = Post([(1.0, 2.0), (1.0, 2.4)])
-BEHIND_R = Post([(-1.0, -0.2), (-1.2, -0.3)])
-BACK_L = Post([(-1.0, 0.4), (-1.0, 0.8), (-1.0, 1.2)])
-BACK_R = Post([(-1.0, -0.4), (-1.0, -0.8), (-1.0, -1.2)])
+  eq_bool("26 the foot of the front wall is on it", foot_inside(FRONT), true);
+  eq_bool("27 vector 5's piece: the foot lies before p0", foot_inside(ASIDE), false);
+  eq_bool("28 the same piece reversed: the foot lies past p1",
+          foot_inside(Segment{ASIDE.p1, ASIDE.p0, 2}), false);
+  eq_bool("29 a foot exactly on an endpoint is on the segment",
+          foot_inside(Segment{{1.0, 0.0}, {1.0, 1.0}, 2}), true);
+  eq_bool("30 a wall behind has its foot on it too", foot_inside(BEHIND), true);
+  eq_bool("31 t is a fraction of the whole length (4 m piece)",
+          foot_inside(Segment{{1.0, -3.0}, {1.0, 1.0}, 2}), true);
 
-check("13 the gap between two jambs", passage_width([JAMB_L, JAMB_R], 0.0), 0.8)
-check("14 the order of the clusters does not matter", passage_width([JAMB_R, JAMB_L], 0.0), 0.8)
-check("15 the jamb NEAREST the ray wins", passage_width([FAR_L, JAMB_L, JAMB_R], 0.0), 0.8)
-check("16 nothing on one side -&gt; None", passage_width([JAMB_L, FAR_L], 0.0), None)
-check("17 a cluster BEHIND is not a door post", passage_width([JAMB_L, BEHIND_R], 0.0), None)
-check("18 no clusters at all -&gt; None", passage_width([], 0.0), None)
-check("19 turn the gate around and the same two are behind you", passage_width([JAMB_L, JAMB_R], math.pi), None)
-check("20 a gate across the +-180 deg seam still has two sides", passage_width([BACK_L, BACK_R], math.pi), 0.8)
+  return finish("clear");
+}</code></pre>
+      <p><code>CMakeLists.txt</code> 의 맨 아래에 한 줄을 붙이고 빌드한다.</p>
+      <pre><code class="lang-cmake">lab_test(clear)                                    # 3-5-2: tests/test_clear.cpp</code></pre>
+      <pre><code class="lang-bash">pi$ cmake --build scripts/lidar_lab/build -j2 --target test_clear test_clear_ub
+pi$ scripts/lidar_lab/build/test_clear
+FAIL 7 7 wall on the left -&gt; +90 deg: got 0.0, want 1.5707963267948966
+FAIL 8 8 tilted wall -&gt; 15 deg: got 0.0, want 0.2617993877991494
+...
+FAIL 31 31 t is a fraction of the whole length (4 m piece): got false, want true
+15 of 31 cases failed
+pi$ scripts/lidar_lab/build/test_clear_ub      # 진단 빌드(ASan · UBSan) — 같은 줄만 나와야 한다</code></pre>
+      <p class="small">위 출력은 골격 그대로의 결과다.<sup class="fn"><a href="#fn-7">7</a></sup> 골격에서 통과하는 열여섯은 §3-1-3 1번에 적었다 — 1 ~ 5 는 전량인 <code>perp_distance()</code> 가 맡고, 나머지는 기대값이 골격의 반환값(<code>0.0</code> · 빈 값 · <code>false</code>)과 우연히 같다. <strong>통과한 벡터가 곧 맞게 짰다는 뜻은 아니다.</strong></p>
 
-check("21 margin is PER SIDE: exactly on the line fits", fits(0.75, 0.5, 0.125), True)
-check("22 one millimetre narrower does not", fits(0.749, 0.5, 0.125), False)
-check("23 margin 0 lets a bare fit through", fits(0.5, 0.5, 0.0), True)
-check("24 an unknown width is NOT a pass", fits(None, 0.5, 0.125), False)
-
-print("PASS clear %d cases" % N)</code></pre>
       <h4 id="s3-5-3">3-5-3. 실행한다</h4>
-      <pre><code class="lang-bash">pi$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_clear.py
-PASS clear 24 cases</code></pre>
-      <p>골격 그대로 실행하면 <strong><code>FAIL 7 7 wall on the left -&gt; +90 deg: got 0.0, want 1.5707963267948966</code></strong> 에서 멈춘다. 집필자가 골격을 실제로 만들어 실행해 확인했다(2026-09-23). 1~6 이 먼저 통과하는 것은 <strong>1~5 를 전량으로 준 <code>perp_distance</code> 가 맡고, 6 은 <code>return 0.0</code> 이 우연히 맞는 자리</strong>이기 때문이다 — <strong>통과한 벡터가 곧 맞게 짰다는 뜻은 아니다.</strong></p>
+      <pre><code class="lang-bash">pi$ scripts/lidar_lab/build/test_clear
+PASS clear 31 cases
+pi$ scripts/lidar_lab/build/test_clear_ub
+PASS clear 31 cases</code></pre>
+      <p>통과하지 못한 벡터가 있었다면 <strong>몇 번이 무엇을 냈는지</strong>도 노트에 적는다. 이 기록이 내 구현이 어느 규칙을 안 지키고 있었는지를 보여 준다. <a href="l-16-node.html">l-16</a> 이 이 헤더를 패키지로 옮길 후보로 고르면 같은 <code>test_clear.cpp</code> 를 그대로 채점표로 쓴다.</p>
 
       <h4 id="s3-5-4">3-5-4. 벡터가 무엇을 검출하는지 확인한다</h4>
-      <p>통과한 뒤에 <strong>한 걸음 더</strong> 간다 — 내 코드를 일부러 한 줄씩 틀리게 해 보고 <strong>어느 벡터가 그 실수를 검출하는지</strong> 확인한다. 아래 다섯은 <strong>집필자가 실제로 그렇게 만들어 실행해 본 것</strong>이고, 오른쪽 칸이 그때 나온 줄 그대로다(2026-09-23, Mac).</p>
+      <p>통과한 뒤에 <strong>한 걸음 더</strong> 간다 — 내 <code>clear.hpp</code> 를 일부러 한 줄씩 틀리게 해 보고 <strong>어느 벡터가 그 실수를 검출하는지</strong> 확인한다. 아래 다섯은 <strong>집필자가 실제로 그렇게 만들어 빌드 · 실행해 본 것</strong>이고, 오른쪽 칸이 그때 나온 줄 그대로다.<sup class="fn"><a href="#fn-8">8</a></sup> 각 카드의 흔한 실수 표에 나머지가 있다.</p>
       <div class="tbl"><table>
         <thead><tr><th>이렇게 바꾸면</th><th>무엇이 오류 없이 틀리는가</th><th>검출하는 벡터 (실제 출력)</th></tr></thead>
         <tbody>
-          <tr><td><code>heading_to</code> 에서 법선을 <strong>뒤집지 않는다</strong>(§2-2-1 의 내적을 뺀다)</td><td>벽을 <strong>마주 보는 대신 등지고</strong> 돈다. 정확히 180° 틀렸는데 <strong>값은 정상처럼 보인다</strong></td><td><code>FAIL 6 6 front wall -&gt; heading 0: got 3.141592653589793, want 0.0</code></td></tr>
-          <tr><td><code>passage_width</code> 에서 <strong>중심끼리의 거리</strong>를 폭으로 쓴다</td><td>통로가 <strong>실제보다 넓게</strong> 나온다 — 설주가 길수록 더 넓어진다. 판정이 통과 쪽으로 기운다</td><td><code>FAIL 13 13 the gap between two jambs: got 1.5999999999999999, want 0.8</code></td></tr>
-          <tr><td><code>|s| ≥ π/2</code> 로 <strong>뒤를 잘라 내는 줄</strong>을 뺀다</td><td>한쪽 설주가 없는 장면에서 <strong>뒤에 있던 물건이 설주로 선택</strong>된다. <code>None</code> 이어야 할 자리에 그럴듯한 수가 나온다</td><td><code>FAIL 17 17 a cluster BEHIND is not a door post: got 2.08806130178211, want None</code></td></tr>
-          <tr><td>각을 뺄 때 <code>normalize()</code> 를 <strong>안 쓴다</strong></td><td>통로가 <strong>±180° 이음매</strong>를 걸치면 한쪽 설주가 통째로 버려진다. 답이 <code>None</code> 이 된다 — <strong>오류도 경고도 없다</strong></td><td><code>FAIL 20 20 a gate across the +-180 deg seam still has two sides: got None, want 0.8</code></td></tr>
-          <tr><td><code>fits</code> 에서 여유를 <strong>한 번만</strong> 더한다</td><td>여유가 <strong>절반</strong>이 된다. 내가 0.1 m 를 뒀다고 생각하는데 실제로는 한쪽에 0.05 m 씩이다</td><td><code>FAIL 22 22 one millimetre narrower does not: got True, want False</code></td></tr>
+          <tr><td><code>heading_to()</code> 에서 법선을 <strong>뒤집지 않는다</strong>(§2-2-1 의 내적을 뺀다)</td><td>벽을 <strong>마주 보는 대신 등지고</strong> 돈다. 정확히 180° 틀렸는데 <strong>값은 정상처럼 보인다</strong></td><td><code>FAIL 6 6 front wall -&gt; heading 0: got 3.141592653589793, want 0.0</code></td></tr>
+          <tr><td><code>passage_width()</code> 에서 <strong>평균점끼리의 거리</strong>를 폭으로 쓴다</td><td>통로가 <strong>실제보다 넓게</strong> 나온다 — 설주가 길수록 더 넓어진다. 판정이 통과 쪽으로 기운다</td><td><code>FAIL 13 13 the gap between two jambs: got 1.6000000000000003, want 0.8</code></td></tr>
+          <tr><td><code>|s| ≥ π/2</code> 로 <strong>뒤를 잘라 내는 줄</strong>을 뺀다</td><td>한쪽 설주가 없는 장면에서 <strong>뒤에 있던 물건이 설주로 선택</strong>된다. 빈 값이어야 할 자리에 그럴듯한 수가 나온다</td><td><code>FAIL 17 17 a cluster BEHIND is not a door post: got 2.08806130178211, want none</code></td></tr>
+          <tr><td>각을 뺄 때 <code>normalize()</code> 를 <strong>안 쓴다</strong></td><td>통로가 <strong>±180° 이음매</strong>를 걸치면 한쪽 설주가 통째로 버려진다. 답이 빈 값이 된다 — <strong>오류도 경고도 없다</strong></td><td><code>FAIL 20 20 a gate across the +-180 deg seam still has two sides: got none, want 0.8</code></td></tr>
+          <tr><td><code>fits()</code> 에서 여유를 <strong>한 번만</strong> 더한다</td><td>여유가 <strong>절반</strong>이 된다. 내가 0.1 m 를 뒀다고 생각하는데 실제로는 한쪽에 0.05 m 씩이다</td><td><code>FAIL 22 22 one millimetre narrower does not: got true, want false</code></td></tr>
         </tbody>
       </table></div>
-      <p>⚠ 반대로 <strong>벡터가 검출하지 못하는 것</strong>도 하나 확인해 두었다. <code>fits</code> 에서 <code>width is None</code> 을 거르는 줄을 빼면 벡터 24 는 FAIL 줄을 내지 않는다. 대신 <strong><code>TypeError: '&gt;=' not supported between instances of 'NoneType' and 'float'</code> 오류로 종료된다</strong>(집필자가 실행해 확인했다). 시험이 <strong>멈추는 것</strong>과 <strong>틀렸다고 보고하는 것</strong>은 다르고, 비정상 종료된 자리는 채점되지 않은 자리와 구별하기 어렵다 — <strong>마지막 줄에 <code>PASS</code> 가 출력됐는지를 언제나 눈으로 본다.</strong></p>
-      <p><strong>스물넷을 통과했다는 것은 "틀린 데가 없다"가 아니라 "이 스물네 가지에 대해 옳다"는 뜻이다.</strong> 끝나면 일부러 고쳐 놓은 줄을 <strong>되돌린다.</strong></p>
+      <p>⚠ 반대로 <strong>시험이 FAIL 줄을 내지 못하는 실수</strong>도 확인해 두었다. 그 실수는 <code>fits()</code> 에서 빈 값을 거르는 줄을 빼고 <code>*width</code> 로 바로 꺼내는 것이다. g++ 빌드(Pi 와 같은 표준 라이브러리 libstdc++)는 벡터 24 에서 <code>Assertion 'this-&gt;_M_is_engaged()' failed.</code> 를 찍고 <strong>중단한다</strong> — FAIL 줄도 마지막 줄도 없다. 이 문구는 터미널에서 실행했을 때 보이는 것이다(파이프로 받으면 남지 않을 수 있다 — <a href="l-04-one-turn.html#s2-6-2">l-04 §2-6-2</a>).<sup class="fn"><a href="#fn-12" id="fnref-12">12</a></sup> Mac 의 <code>clang++</code> 는 멈추지 않고 빈 값 자리에 남아 있던 수를 읽는다. 그리고 <code>width.value_or(0.0)</code> 으로 꺼내면 멈추지도 않고 벡터 24 를 통과한다 — 그 판을 잡는 것이 벡터 25 다(T4 카드).<sup class="fn"><a href="#fn-8">8</a></sup> 시험이 <strong>멈추는 것</strong>과 <strong>틀렸다고 보고하는 것</strong>은 다르고, 비정상 종료된 자리는 채점되지 않은 자리와 구별하기 어렵다 — <strong>마지막 줄에 <code>PASS</code> 가 출력됐는지를 언제나 눈으로 본다.</strong></p>
+      <p><strong>서른하나를 통과했다는 것은 "틀린 데가 없다"가 아니라 "이 서른한 가지에 대해 옳다"는 뜻이다.</strong> 끝나면 일부러 고쳐 놓은 줄을 <strong>되돌리고</strong>, 다시 빌드해 <code>PASS clear 31 cases</code> 를 확인한다.</p>
 
       <h2 id="checkpoints">✅ 검증 체크포인트</h2>
       <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.
       ⚠ 이 쪽의 항목은 "<strong>예상한 것을 봤는가</strong>"가 아니라 "<strong>무엇이 일어났는지 적었는가</strong>"로 쓰여 있다 — 세 값이 거의 같게 나온 것도, 턱을 놓았는데 도구가 원래부터 "못 지나간다"고 한 것도 그 항목을 통과시킨다.</p>
+      <p>머리말의 <strong>경로 통과</strong>는 정상 절차를 끝까지 했다는 뜻이고, <strong>발동 확인</strong>은 일부러 만든 이상 상황의 출력을 봤다는 뜻이다. 이 "경로"는 <a href="l-00-map.html">l-00</a> 의 경로 A / B 와 관계없다.</p>
       <ul class="checklist">
-        <li><label><input type="checkbox" data-key="clear-selftest-pass"><span><strong>경로 통과</strong> — <code>python3 tests/test_clear.py</code> 의 마지막 줄이 <code>PASS clear 24 cases</code> 다. 도중에 실패한 벡터가 있었다면 <strong>몇 번이 무엇을 냈는지</strong>도 적었다. 그리고 §3-5-4 의 다섯 가지 중 <strong>적어도 하나</strong>를 직접 만들어 어느 벡터가 검출하는지 보고 <strong>되돌려 놓았다</strong>
-          <span class="sub">판정 수단: 자기시험 출력 · §3-5-3 · §3-5-4 · <strong>라이다도 기록 파일도 없이 통과된다</strong> · 이 스물넷은 식이 아니라 <strong>부호와 경계와 감기</strong>를 채점한다</span></span></label></li>
-        <li><label><input type="checkbox" data-key="wall-distance-and-normal"><span><strong>경로 통과</strong> — 벽 하나에 대해 <strong>수직 거리와 방위</strong>를 내 도구로 내고, 줄자·각도기 값과 나란히 적어 <strong>차</strong>를 적었다. <strong>부호가 맞았는지</strong>(수선이 왼쪽인가 오른쪽인가)도 적었고, <strong>수선의 발이 그 선분 안에 있었는지</strong>를 확인했다
-          <span class="sub">판정 수단: 줄자 · 각도기(또는 접은 종이) · §3-1-4 의 표 · <strong>합격선 없음</strong> — 몇 mm·몇 도까지 맞아야 하는지는 <strong>내가 정해 적는다</strong> · 각도기가 없으면 <strong>부호 행만</strong> 통과시키고 나머지는 미통과로 둔다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="clear-selftest-pass"><span><strong>경로 통과</strong> — Pi 에서 빌드한 <code>build/test_clear</code> 와 <code>build/test_clear_ub</code> 가 둘 다 <code>PASS clear 31 cases</code> 한 줄만 찍었다. 도중에 실패한 벡터가 있었다면 <strong>몇 번이 무엇을 냈는지</strong>도 적었다. 그리고 §3-5-4 의 다섯 가지 중 <strong>적어도 하나</strong>를 직접 만들어 어느 벡터가 검출하는지 보고 <strong>되돌려 놓았다</strong>(되돌린 뒤 다시 <code>PASS</code>)
+          <span class="sub">판정 수단: 시험 출력 · §3-5-3 · §3-5-4 · <strong>라이다도 기록 파일도 없이 통과된다</strong> · 이 서른하나는 식이 아니라 <strong>부호와 경계와 감기</strong>를 채점한다. Mac 의 <code>clang++</code> 로 통과한 것은 연습이고 이 항목의 판정이 아니다(결정 L3)</span></span></label></li>
+        <li><label><input type="checkbox" data-key="wall-distance-and-normal"><span><strong>경로 통과</strong> — 벽 하나에 대해 <strong>수직 거리와 방위</strong>를 내 도구로 내고, 줄자·각도기 값과 나란히 적어 <strong>차</strong>를 적었다. <strong>부호가 맞았는지</strong>(수선이 왼쪽인가 오른쪽인가)도 적었고, <strong>수선의 발이 그 선분 안에 있었는지</strong>를 확인했다(<code>lab_clear</code> 의 <code>foot</code> 칸)
+          <span class="sub">판정 수단: <code>lab_clear</code> · 줄자 · 각도기(또는 접은 종이) · §3-1-4 의 표 · <strong>합격선 없음</strong> — 몇 mm·몇 도까지 맞아야 하는지는 <strong>내가 정해 적는다</strong>. 각도기가 없으면 <strong>부호 행만</strong> 통과시키고 나머지는 미통과로 둔다</span></span></label></li>
         <li><label><input type="checkbox" data-key="min-range-vs-normal-distinguished"><span><strong>경로 통과</strong> — <strong>같은 스캔 한 장</strong>에서 ① 정면 ±15° 최소 ② 가장 가까운 점 ③ 면까지 수직 거리 <strong>세 값과 각각의 방향</strong>을 적고, <strong>왜 다른지(또는 왜 거의 같은지)를 한 줄</strong> 적었다
-          <span class="sub">판정 수단: 내 도구의 출력 · §3-2-2 의 표 · §3-2-4 · <strong>합격선 없음</strong> · 셋이 거의 같게 나온 것도 유효한 관찰이다(정면에 평평한 벽 하나였다는 뜻이다)</span></span></label></li>
+          <span class="sub">판정 수단: <code>lab_clear_try</code> 의 출력 · §3-2-2 의 표 · §3-2-4 · <strong>합격선 없음</strong> · 셋이 거의 같게 나온 것도 유효한 관찰이다(정면에 평평한 벽 하나였다는 뜻이다)</span></span></label></li>
         <li><label><input type="checkbox" data-key="passage-width-judged"><span><strong>경로 통과</strong> — 통로 하나의 <strong>폭 · 내 로봇 폭 · 내가 정한 여유</strong> 세 수를 적고 통과 여부를 판정했다. 로봇 폭에 <strong>어떻게 얻은 값인지</strong>(줄자인가 INVENTORY 6절의 <code>NOMINAL</code> 인가)를 같이 적었고, 폭을 <strong>줄자 값과 견주어</strong> 차도 적었다
-          <span class="sub">판정 수단: 줄자 · 내 도구의 출력 · §3-3-3 의 표 · §3-3-4 · <strong>합격선 없음</strong> — 여유는 <strong>내가 고르고 근거를 적는다</strong> · 섀시가 손에 없으면 <code>NOMINAL(gen1-record, 2026-07-25)</code> 688 mm 를 <strong>임시값이라고 밝히고</strong> 쓴다</span></span></label></li>
+          <span class="sub">판정 수단: 줄자 · <code>lab_clear</code> · §3-3-3 의 표 · §3-3-4 · <strong>합격선 없음</strong> — 여유는 <strong>내가 고르고 근거를 적는다</strong>. 섀시가 손에 없으면 <code>NOMINAL(gen1-record, 2026-07-25)</code> 688 mm 를 <strong>임시값이라고 밝히고</strong> 쓴다</span></span></label></li>
         <li><label><input type="checkbox" data-key="off-plane-obstacle-missed"><span><strong>발동 확인</strong> — 스캔 면 <strong>밖</strong>의 턱이나 선반이 있는 통로에서 도구가 어떻게 판정했는지, 실제로는 어땠는지를 <strong>둘 다</strong> 적었다. 그리고 <code>d × tan(1.5°)</code> 로 <strong>그 거리에서의 높이 범위</strong>를 계산해 함께 적었다
           <span class="sub">판정 수단: 줄자 · §3-4-2 의 표 · §3-4-4 · <strong>도구가 원래부터 "못 지나간다"고 했어도 통과된다</strong> — 무엇이 달랐는지 적으면 된다 · 빌려 온 기록 파일이면 <strong>산술로만 채우고 미통과로 둔다</strong></span></span></label></li>
-        <li><label><input type="checkbox" data-key="margin-zero-passes-too-narrow"><span><strong>발동 확인</strong> — 여유를 <strong>0 으로</strong> 두어 <code>fits</code> 가 <code>True</code> 로 바뀌는 통로를 만들고, <strong>로봇 폭만큼의 판지·막대로 실제로 지나가 보아</strong> 무엇이 일어났는지 적었다. 그리고 <code>margin</code> 을 <strong>내가 고른 값으로 되돌려 놓았다</strong>
-          <span class="sub">판정 수단: 내 도구의 출력 · 판지·막대 · §3-3-4 · ⚠ <strong>되돌렸는지 눈으로 확인</strong> — 이 설정은 오류 표시 없이 남아 다음 쪽의 결과를 통째로 바꾼다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="margin-zero-passes-too-narrow"><span><strong>발동 확인</strong> — 여유를 <strong>0 으로</strong> 두어 <code>fits</code> 가 <code>true</code> 로 바뀌는 통로를 만들고, <strong>로봇 폭만큼의 판지·막대로 실제로 지나가 보아</strong> 무엇이 일어났는지 적었다. 그리고 노트의 여유 칸에 0 이 아니라 <strong>내가 고른 값</strong>을 적어 두었다
+          <span class="sub">판정 수단: <code>lab_clear</code> 의 출력 · 판지·막대 · §3-3-4 · ⚠ <strong>노트의 여유가 0 이 아닌지 눈으로 확인</strong> — 0 은 오류 표시 없이 다음 명령으로 따라가 다음 쪽의 결과를 통째로 바꾼다</span></span></label></li>
       </ul>
       <p class="progress-line"></p>
       <div class="progress-bar"><span></span></div>
@@ -729,19 +1367,24 @@ PASS clear 24 cases</code></pre>
       <div class="tbl"><table class="fixed"><colgroup><col class="w18"><col class="w40"><col class="w22"><col class="w20"></colgroup>
         <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
         <tbody>
-          <tr><td>수직 거리가 <strong>음수</strong>로 나온다</td><td>l-11 의 <code>point_line_distance()</code> 를 호출하지 않고 <strong>부호 있는 외적 식을 직접 썼다</strong>. 그 식은 "어느 쪽인가"를 담고 있어 벽이 뒤에 있으면 음수가 된다</td><td>벡터 <strong>2 · 3</strong> 이 검출한다(<code>got -1.4, want 1.4</code> 꼴)</td><td>§3-1-2 의 전량 블록을 <strong>그대로</strong> 쓴다. 방향은 <code>heading_to</code> 가 담당한다</td></tr>
-          <tr><td>방위가 <strong>정확히 180°</strong> 뒤집혔다 — 벽을 등지고 돈다</td><td>§2-2-1 의 <strong>바깥 법선 고르기</strong>가 없다. l-11 의 <code>normal()</code> 을 그대로 썼다</td><td>벡터 <strong>6</strong>: <code>got 3.141592653589793, want 0.0</code></td><td>§2-2-1 의 내적 한 줄</td></tr>
-          <tr><td>방위가 <strong>180 근처</strong>의 수로 나온다(정면인데도)</td><td><strong>도와 라디안을 섞었다.</strong> <code>1 rad = 57.29577951308232°</code> 이고, 이 쪽은 라디안 · l-11 의 <code>corners()</code> 는 도다</td><td>값이 <code>3.14</code> 근처인가 <code>180</code> 근처인가를 본다. 이름 끝의 <code>_deg</code> 가 유일한 표시다</td><td>§2-2-2 — 화면에 출력할 때만 <code>math.degrees()</code></td></tr>
-          <tr><td>방위가 <strong>90° 어긋난다</strong></td><td><code>atan2(x, y)</code> 로 인자 순서를 바꿔 썼다. 각이 <code>90° - θ</code> 로 바뀌어 <strong>정면 벽이 정확히 90° 로 나오는 것</strong>이 이 오류의 증상이다. 거꾸로 <strong>45° 벽(벡터 10)에서는 답이 그대로라 검출되지 않는다</strong></td><td>벡터 <strong>6</strong>: <code>got 1.5707963267948966, want 0.0</code></td><td>§3-1-3 2번 힌트 하나</td></tr>
-          <tr><td>수직 거리가 나오는데 <strong>그 방향에 아무것도 없다</strong></td><td>수선의 <strong>발이 선분 밖</strong>이다. 값은 "저 면이 저기 있다"는 뜻이지 "그 방향에 벽이 있다"가 아니다 — <strong>정의대로다</strong></td><td>벡터 <strong>5 · 12</strong> 가 같은 장면이다. 발을 구해 <code>p0</code>~<code>p1</code> 사이인지 본다</td><td>§3-1-3 4번 — 호출하는 쪽에서 확인한다</td></tr>
-          <tr><td>통로 폭이 <strong>줄자보다 크다</strong></td><td>덩어리가 끊겨 설주의 일부만 한 덩어리가 됐다 / 또는 <strong>중심끼리의 거리</strong>를 쟀다</td><td>벡터 <strong>13</strong> 이 뒤의 경우를 검출한다. 앞의 경우는 §3-1-1 2번처럼 덩어리마다 점 수를 본다</td><td>l-10 의 분할 문턱(<a href="l-10-clusters.html#s3-3">l-10 §3-3</a>) / §3-3-2 불변식 4</td></tr>
-          <tr><td>통로 폭이 <strong>늘 <code>None</code></strong> 이다</td><td>가려는 방향이 틀렸다(설주가 ±90° 밖) / 두 설주가 <strong>한 덩어리</strong>로 합쳐져 있다 / 한쪽이 무반사라 점이 없다</td><td>평면도에서 그 방향 앞에 덩어리가 <strong>둘</strong> 있는지 먼저 본다</td><td>§3-3-1 1번 — 방향과 덩어리를 먼저 고른다</td></tr>
+          <tr><td>수직 거리가 <strong>음수</strong>로 나온다</td><td><code>perp_distance()</code> 의 전량 한 줄을 지우고 <strong>부호 있는 외적 식을 직접 썼다</strong>. 그 식은 "어느 쪽인가"를 담고 있어 점의 순서가 뒤집히면 음수가 된다</td><td>벡터 <strong>2</strong> 가 검출한다(<code>FAIL 2 2 same wall, endpoints swapped: got -1.4, want 1.4</code>)</td><td>§3-1-2 의 전량 줄을 <strong>그대로</strong> 쓴다. 방향은 <code>heading_to()</code> 가 담당한다</td></tr>
+          <tr><td>방위가 <strong>정확히 180°</strong> 뒤집혔다 — 벽을 등지고 돈다</td><td>§2-2-1 의 <strong>바깥 법선 고르기</strong>가 없다. l-11 의 <code>normal()</code> 을 그대로 썼다</td><td>벡터 <strong>6</strong>: <code>got 3.141592653589793, want 0.0</code></td><td>T1 카드 — §2-2-1 의 내적 한 줄</td></tr>
+          <tr><td>방위가 <strong>180 근처</strong>의 수로 나온다(정면인데도)</td><td><strong>도와 라디안을 섞었다.</strong> <code>1 rad = 57.29577951308232°</code> 이고, 이 쪽은 라디안 · l-11 의 <code>corners()</code> 는 도다</td><td>값이 <code>3.14</code> 근처인가 <code>180</code> 근처인가를 본다. 이름 끝의 <code>_deg</code> 가 유일한 표시다</td><td>§2-2-2 — 화면에 찍을 때만 <code>to_deg()</code></td></tr>
+          <tr><td>방위가 <strong>90° 어긋난다</strong></td><td><code>std::atan2(x, y)</code> 로 인자 순서를 바꿔 썼다. 각이 <code>90° - θ</code> 로 바뀌어 <strong>정면 벽이 정확히 90° 로 나오는 것</strong>이 이 오류의 증상이다. 거꾸로 <strong>45° 벽(벡터 10)에서는 답이 그대로라 검출되지 않는다</strong></td><td>벡터 <strong>6</strong>: <code>got 1.5707963267948966, want 0.0</code></td><td>T1 카드 · §3-1-3 2번 힌트 하나</td></tr>
+          <tr><td>수직 거리가 나오는데 <strong>그 방향에 아무것도 없다</strong></td><td>수선의 <strong>발이 선분 밖</strong>이다. 값은 "저 면이 저기 있다"는 뜻이지 "그 방향에 벽이 있다"가 아니다 — <strong>정의대로다</strong></td><td><code>lab_clear</code> 의 그 줄이 <code>foot out</code> 이다. 벡터 <strong>5 · 12 · 27 · 28</strong> 이 같은 장면이다</td><td>T2 카드 — <code>foot_inside()</code> 로 확인하고 다른 선분을 고른다</td></tr>
+          <tr><td>통로 폭이 <strong>줄자보다 크다</strong></td><td>덩어리가 끊겨 설주의 일부만 한 덩어리가 됐다 / 또는 <strong>평균점끼리의 거리</strong>를 쟀다</td><td>벡터 <strong>13</strong> 이 뒤의 경우를 검출한다. 앞의 경우는 §3-1-1 3번처럼 덩어리마다 점 수를 본다</td><td>l-10 의 분할 문턱(<a href="l-10-clusters.html#s3-3">l-10 §3-3</a>) / T3 카드 · 불변식 4</td></tr>
+          <tr><td>통로 폭이 <strong>늘 <code>none</code></strong> 이다</td><td>가려는 방향이 틀렸다(설주가 ±90° 밖) / 두 설주가 <strong>한 덩어리</strong>로 합쳐져 있다 / 한쪽이 무반사라 점이 없다</td><td>평면도에서 그 방향 앞에 덩어리가 <strong>둘</strong> 있는지 먼저 본다</td><td>§3-3-1 1번 — 방향과 덩어리를 먼저 고른다</td></tr>
           <tr><td><strong>판정은 통과인데 실물은 못 지나간다</strong></td><td>셋 중 하나다: 스캔 면 밖의 것(§2-5) · 여유 0 (§3-3-4) · 로봇 폭이 <strong>임시값</strong>이라 실제보다 작다(§2-4)</td><td>§3-4-2 의 표를 채우면 셋 중 어느 것인지 갈린다</td><td>§3-4-4 — <strong>고칠 곳이 없는 경우</strong>가 있다는 것이 이 쪽의 결론이다</td></tr>
-          <tr><td><code>TypeError: 'Cluster' object is not iterable</code></td><td><code>list(cluster)</code> 라고 썼다. l-10 의 <code>Cluster</code> 에는 <code>__iter__</code> 가 없다</td><td>그 자리에서 오류로 종료되므로 줄 번호가 바로 나온다</td><td><a href="l-10-clusters.html#s3-1-2">l-10 §3-1-2</a> — 점은 <code>c.pts</code></td></tr>
-          <tr><td>통로 폭이 실물과 안 맞는데 <strong>벡터 스물넷은 전부 통과</strong>한다</td><td>l-10 의 <code>Cluster.centroid()</code> 가 비어 있거나 틀렸다. <code>passage_width</code> 가 <code>centroid()</code> 로 좌우를 가르는데, <strong>시험 파일은 자기 대역 클래스를 쓰므로 그 함수를 채점하지 않는다</strong>(§3-5-1)</td><td>덩어리 하나에 <code>c.centroid()</code> 를 직접 호출해 본다 — <code>(0.0, 0.0)</code> 이 나오면 골격 그대로다</td><td><a href="l-10-clusters.html#s3-1-2">l-10 §3-1-2</a></td></tr>
+          <tr><td>빌드가 <code>begin</code> 이 없다는 컴파일 오류로 멈춘다</td><td>덩어리를 점 목록처럼 바로 순회했다(<code>for (… : 덩어리)</code>). <code>Cluster</code> 는 점 목록이 아니다. 문구는 clang 이 <code>invalid range expression of type 'const Cluster'</code>, g++ 가 <code>'begin' was not declared in this scope</code> 다</td><td>오류 줄이 <code>clear.hpp</code> 의 그 반복문을 가리킨다</td><td>T3 카드 — 점은 <code>c.pts</code>(<a href="l-10-clusters.html#s3-1-2">l-10 §3-1-2</a>)</td></tr>
+          <tr><td><code>test_clear</code> 의 13 · 14 · 15 · 20 이 <code>got none</code> 으로 실패하는데 내 <code>passage_width()</code> 는 맞아 보인다</td><td><code>mean_point(c.pts)</code> 대신 l-10 의 <code>c.centroid()</code> 를 불렀고, l-10 의 T2 가 아직 골격(<code>{0.0, 0.0}</code>)이다. 평균점이 모두 원점이라 방위가 0 으로 나오고, 덩어리가 어느 쪽에도 들어가지 않는다</td><td>l-10 의 <code>test_cluster</code> 가 통과하는가</td><td>T3 카드 — <code>mean_point()</code> 를 쓴다(§3-3-2 작은 글씨)</td></tr>
+          <tr><td>g++ 빌드의 <code>test_clear</code> 가 벡터 24 에서 중단된다</td><td><code>fits()</code> 에서 빈 값을 거르지 않고 <code>*width</code> 로 꺼냈다. 문구는 <code>Assertion 'this-&gt;_M_is_engaged()' failed.</code> 다</td><td>문구는 터미널에서 실행하면 보인다. 파이프로 받으면 사라질 수 있다<sup class="fn"><a href="#fn-13" id="fnref-13">13</a></sup></td><td>T4 카드 — 꺼내기 전에 <code>if (!width)</code></td></tr>
+          <tr><td>T4 의 벡터(21 ~ 25) 가운데 25 만 <code>got true</code> 로 실패한다</td><td>빈 값을 <code>value_or(0.0)</code> 으로 꺼냈다 — 로봇 폭과 여유가 0 이면 <code>0.0 &gt;= 0.0</code> 이 참이다</td><td>벡터 24 는 통과한다</td><td>T4 카드</td></tr>
+          <tr><td>빌드할 때 <code>note: parameter passing …</code> 묶음이 파일마다 나온다</td><td>오류가 아니다 — aarch64 의 <code>g++</code> 가 <code>Point</code> 를 값으로 돌려주는 함수(l-10 의 <code>centroid()</code>)에 붙이는 안내다. 줄 전체는 <code>note: parameter passing for argument of type 'std::pair&lt;double, double&gt;' …</code> 이고, 따옴표는 로케일에 따라 <code>‘ ’</code> 다</td><td>빌드는 끝까지 되고 실행 파일이 생긴다</td><td>고칠 것이 없다(§3-1-2 끝)</td></tr>
+          <tr><td>시작하자마자 <code>error: line &lt;n&gt;: …</code></td><td>기록 파일이 기준 형식을 어겼다 — <strong>로더가 거부한 것이지 이 쪽의 잘못이 아니다</strong></td><td>메시지에 줄 번호와 어긋난 조건이 그대로 나온다</td><td><a href="l-04-one-turn.html#s3-4-2">l-04 §3-4-2</a> 가 소유한다</td></tr>
+          <tr><td>Mac 에서는 FAIL 줄로 끝나는데 Pi 에서는 문구와 함께 중단된다</td><td>빈 <code>std::optional</code> 을 꺼냈다 — Mac 의 <code>clang++</code> 와 그 표준 라이브러리 libc++ 는 이 꺼내기를 검사하지 않는다</td><td>Pi 의 중단 문구가 가리키는 함수를 본다</td><td>카드의 흔한 실수 표</td></tr>
         </tbody>
       </table></div>
-      <p class="small">파일이 안 열리는 것 같은 <strong>공통 증상</strong>은 <a href="l-04-one-turn.html#s3-4-2">l-04 §3-4-2</a> 와 <a href="99-troubleshooting.html">99</a> 가 소유한다.</p>
+      <p class="small">파일이 안 열리는 것 같은 <strong>공통 증상</strong>은 <a href="l-04-one-turn.html#s3-4-2">l-04 §3-4-2</a> 와 <a href="99-troubleshooting.html">99</a>(본편의 트러블슈팅 쪽)가 소유한다.</p>
 
       <h2 id="quiz">🤔 이해 확인</h2>
       <details class="quiz"><summary>1. (네 갈래 검색) 이 쪽에서 쓴 <strong>여유</strong>를 네 군데에서 찾아 적어 보라 — 정의 → 사양 → 구현 → 내 장치. <strong>넷 중 하나는 "없다"가 답이다.</strong></summary>
@@ -753,16 +1396,16 @@ PASS clear 24 cases</code></pre>
         <div class="ans"><p>스칼라 하나로 할 수 있는 것은 <strong>멈추는 것</strong>뿐이다. 거리는 "얼마나 가까운가"만 말하고 "어느 쪽인가"는 말하지 않기 때문이다 — 그래서 07 의 <code>/scan_front_min</code> 도 역할이 <strong>급정지 판단</strong> 하나로 정해져 있다.</p>
         <p>구체적인 동작으로 말하면 <strong>벽 따라가기</strong>다. 벽에서 0.5 m 를 유지하며 나란히 가려면 "지금 0.42 m 다"만으로는 부족하다 — <strong>멀어지는 중인지 가까워지는 중인지</strong>, 벽이 앞으로 꺾이는지를 알아야 조향을 정한다. 그 정보를 한 장의 스캔에서 주는 것이 <strong>법선</strong>이다. 방위가 0 이면 벽을 정면으로 보고 있고(따라가기가 아니라 부딪히는 자세다), ±90° 에 가까우면 벽과 나란하다. <strong>거리는 얼마나, 방위는 어떻게를 답한다.</strong></p>
         <p>그리고 최소 거리로는 법선을 <strong>복원할 수 없다.</strong> 최소 거리 점은 벽이 기울면 정면이 아닌 곳으로 옮겨 가고, 그 점 하나만으로는 면이 어느 쪽으로 기울었는지 알 방법이 없다 — <strong>면이 필요하고, 면은 l-11 이 만들어 주었다.</strong></p></div></details>
-      <details class="quiz"><summary>3. <code>passage_width</code> 는 통로를 못 찾으면 <code>0.0</code> 이 아니라 <code>None</code> 을 돌려준다. 이 결정은 이 가이드 안의 <strong>어느 결정과 같은 것</strong>이고, <code>0.0</code> 이나 <code>inf</code> 를 골랐다면 무엇이 잘못되는가</summary>
+      <details class="quiz"><summary>3. <code>passage_width</code> 는 통로를 못 찾으면 <code>0.0</code> 이 아니라 빈 값(<code>std::nullopt</code>)을 돌려준다. 이 결정은 이 가이드 안의 <strong>어느 결정과 같은 것</strong>이고, <code>0.0</code> 이나 <code>inf</code> 를 골랐다면 무엇이 잘못되는가</summary>
         <div class="ans"><p>기준 형식이 무반사를 <code>null</code> 로 적기로 한 결정과 <strong>같은 종류</strong>다(<a href="l-04-one-turn.html#s3-4-2">l-04 §3-4-2</a>). 논점도 같다 — <strong>"못 쟀다"와 "재었더니 이 값이다"는 다른 사건인데, 같은 표기를 쓰면 둘을 구별할 방법이 없어진다.</strong></p>
-        <p><code>0.0</code> 을 고르면 "폭이 0 이다(문이 막혔다)"와 섞인다. <code>fits</code> 는 두 경우 모두 <code>False</code> 를 내므로 <strong>당장은 안전해 보이지만</strong>, 로그를 보고 원인을 찾을 때 "문이 막혔다"와 "설주를 못 찾았다"를 가를 수 없다. 전자는 돌아가야 하고 후자는 <strong>문턱을 고쳐 다시 봐야 한다.</strong></p>
-        <p><code>inf</code> 는 더 나쁘다. "막는 것이 없다"처럼 읽히고 <code>fits</code> 가 <strong><code>True</code></strong> 를 낸다 — 아무것도 못 본 상태가 <strong>통과 판정</strong>이 된다. 센서가 가려졌을 때(l-15 의 무반사, 09a 의 차체 가림) 정확히 이 조합이 생긴다. 그래서 <code>None</code> 과 "모르면 <code>False</code>"(벡터 24)가 한 쌍으로 쓰인다.</p></div></details>
+        <p><code>0.0</code> 을 고르면 "폭이 0 이다(문이 막혔다)"와 섞인다. <code>fits</code> 는 두 경우 모두 <code>false</code> 를 내므로 <strong>당장은 안전해 보이지만</strong>, 로그를 보고 원인을 찾을 때 "문이 막혔다"와 "설주를 못 찾았다"를 가를 수 없다. 전자는 돌아가야 하고 후자는 <strong>문턱을 고쳐 다시 봐야 한다.</strong></p>
+        <p><code>inf</code> 는 더 나쁘다. "막는 것이 없다"처럼 읽히고 <code>fits</code> 가 <strong><code>true</code></strong> 를 낸다 — 아무것도 못 본 상태가 <strong>통과 판정</strong>이 된다. 센서가 가려졌을 때(l-15 의 무반사, 09a 의 차체 가림) 정확히 이 조합이 생긴다. C++ 의 <code>double</code> 에는 <code>inf</code> 가 값으로 있으므로 이 실수는 오류 없이 지나간다. 그래서 빈 값과 "모르면 <code>false</code>"(벡터 24 · 25)가 한 쌍으로 쓰인다.</p></div></details>
       <details class="quiz"><summary>4. 통로를 가를 때 <strong>뒤쪽 덩어리를 잘라 내는 줄</strong>을 지우면 무엇이 일어나는가. 그리고 이 현상이 <code>normalize()</code> 의 어떤 성질과 관계있는가</summary>
-        <div class="ans"><p>두 가지가 한꺼번에 일어난다. <strong>물리적으로</strong>, 문설주가 아닌 뒤쪽 물건이 설주로 선택되어 <code>None</code> 이어야 할 자리에 그럴듯한 수가 나온다 — 벡터 17 이 그 장면이고, 실제 출력은 <code>2.08806130178211</code> 이다.</p>
+        <div class="ans"><p>두 가지가 한꺼번에 일어난다. <strong>물리적으로</strong>, 문설주가 아닌 뒤쪽 물건이 설주로 선택되어 빈 값이어야 할 자리에 그럴듯한 수가 나온다 — 벡터 17 이 그 장면이고, 실제 출력은 <code>2.08806130178211</code> 이다.</p>
         <p><strong>수치적으로</strong>, 뒤쪽 180° 부근은 부호를 그대로 받아들일 수 없는 자리다. <code>normalize()</code> 의 치역은 <code>[-π, π]</code> 인데 <strong>양 끝이 다 나온다</strong> — l-08 이 실측으로 <code>normalize(-π) = -3.141592653589793</code> 이라고 적어 두었다. 그래서 정확히 뒤에 있는 덩어리는 <code>+π</code> 로도 <code>-π</code> 로도 나올 수 있고, <strong>같은 덩어리가 어떤 날은 왼쪽 어떤 날은 오른쪽</strong>이 된다. 왼쪽·오른쪽을 각의 <strong>부호</strong>로 가르는 이상 이 자리는 원리적으로 불안정하다.</p>
         <p>두 이유가 <strong>같은 한 줄</strong>의 조건으로 해결된다는 것이 이 규칙이 안전한 이유다. 수치적 요령만이었다면 언젠가 "이건 임시방편인데" 하며 지웠을 텐데, <strong>문설주는 옆에 있지 뒤에 있지 않다</strong>는 물리가 같은 줄을 요구한다. ⚠ 단 그 줄이 <code>normalize()</code> 를 대신하지는 <strong>못한다</strong> — 통로 자체가 ±180° 이음매를 걸치면 감기가 없을 때 한쪽 설주가 통째로 버려진다(벡터 20).</p></div></details>
       <details class="quiz"><summary>5. (일부러 틀리면) 여유를 <code>0.0</code> 으로 두고 그대로 다음 쪽으로 갔다. <strong>무엇이 언제 드러나는가</strong></summary>
-        <div class="ans"><p>당장은 아무 일도 일어나지 않는다. 바로 이 점이 이 설정이 위험한 이유다. 시험은 스물넷을 그대로 통과하고(벡터 23 은 <strong>여유 0 을 합법</strong>으로 채점한다), 도구도 오류로 종료되지 않는다. 달라지는 것은 <strong>판정이 통과 쪽으로 늘 기운다</strong>는 것뿐이고, 그런 도구는 <strong>오히려 더 유능해 보인다.</strong></p>
+        <div class="ans"><p>당장은 아무 일도 일어나지 않는다. 바로 이 점이 이 설정이 위험한 이유다. 시험은 서른하나를 그대로 통과하고(벡터 23 은 <strong>여유 0 을 합법</strong>으로 채점한다), 도구도 오류로 종료되지 않는다. 달라지는 것은 <strong>판정이 통과 쪽으로 늘 기운다</strong>는 것뿐이고, 그런 도구는 <strong>오히려 더 유능해 보인다.</strong></p>
         <p>드러나는 자리는 셋이다.</p>
         <ul>
           <li>① <a href="l-13-motion.html">l-13</a> · <a href="l-14-alignment.html">l-14</a> 에서 센서를 옮겨 가며 같은 장면을 다시 볼 때, 통과라던 통로가 장마다 통과·불통과로 바뀐다(여유 0 이면 <strong>측정 잡음이 그대로 판정 잡음</strong>이 된다).</li>
@@ -775,58 +1418,19 @@ PASS clear 24 cases</code></pre>
         <ul>
           <li>첫째, <strong>장착 높이</strong>가 취향이 아니라 선언이 된다. 낮게 달면 문지방·전선이 보이고 책상 상판이 사라지며, 높게 달면 그 반대다. 어느 높이도 전부를 보지 못하므로 <strong>무엇을 포기할지 고르는 것</strong>이고, 그 고르기를 <strong><a href="09a-assembly-gate.html">09a</a></strong> 가 실측으로 확정한다.</li>
           <li>둘째, <strong>카메라가 왜 필요한가</strong>가 이 쪽에서 도출된다 — 08d 가 카메라를 추가하는 이유는 "더 좋은 센서"라서가 아니라 <strong>다른 높이를 보기 때문</strong>이다.</li>
-          <li>셋째, 여유를 고를 때 <strong>모르는 것의 크기</strong>를 아는 채로 고르게 된다. <code>d × tan(1.5°)</code> 는 스캔 면의 위치조차 거리에 비례해 불확실해진다는 뜻이고, 5 m 에서 그 높이 범위는 <code>0.13092960784593463</code> m 다.</li>
+          <li>셋째, 여유를 고를 때 <strong>모르는 것의 크기</strong>를 아는 채로 고르게 된다. <code>d × tan(1.5°)</code> 는 스캔 면의 위치조차 거리에 비례해 불확실해진다는 뜻이고, 5 m 에서 그 높이 범위는 <code>0.13092960784593466</code> m 다(§2-5 의 표).</li>
         </ul>
         <p>그리고 이것이 <strong>실습으로만 전달되는 종류</strong>의 앎이다. "라이다는 2D 다"라는 문장은 누구나 읽었지만, <strong>내 도구가 내 방의 턱 앞에서 "통과 가능"이라고 판정하는 것</strong>을 한 번 보면 그 문장의 뜻이 달라진다.</p></div></details>
-
-      <h2 id="compare">비교본</h2>
-      <p>체크포인트를 <strong>통과한 뒤에</strong> 내 코드와 견주어 보는 용도다. 먼저 열면 이 쪽에서 얻을 것이 줄어든다.</p>
-      <details class="quiz"><summary>비교본 — <code>passage_width()</code> 한 함수</summary>
-        <div class="ans">
-          <pre><code class="lang-python">def passage_width(clusters, direction):
-    """Narrowest gap between the two clusters flanking `direction`. Pure."""
-    left = right = None
-    la = ra = None
-    for c in clusters:
-        if not len(c):
-            continue
-        cx, cy = c.centroid()
-        s = normalize(math.atan2(cy, cx) - direction)   # &lt;- invariant 2: WRAP it
-        if abs(s) &gt;= math.pi / 2.0:                     # &lt;- invariant 1: front only
-            continue
-        if s &gt; 0.0:                                     # left; s == 0.0 is neither
-            if la is None or abs(s) &lt; la:
-                la, left = abs(s), c
-        elif s &lt; 0.0:
-            if ra is None or abs(s) &lt; ra:
-                ra, right = abs(s), c
-    if left is None or right is None:
-        return None                                     # &lt;- invariant 5: not 0.0
-    best = None
-    for p in left.pts:                                  # &lt;- invariant 4: point pairs
-        for q in right.pts:
-            d = math.hypot(p[0] - q[0], p[1] - q[1])
-            if best is None or d &lt; best:
-                best = d
-    return best</code></pre>
-          <p><strong>내 것과 다를 수 있는 곳</strong> — 어느 쪽이 맞고 틀린 문제가 아니다.</p>
-          <ul>
-            <li><strong>"가장 가까운 설주"를 무엇으로 고르는가.</strong> 여기는 <strong>각도로</strong> 고른다(<code>|s|</code> 가 가장 작은 것). <strong>거리로</strong> 고르는 것도 말이 된다 — 가려는 방향에 가장 가까운 설주가 아니라 <strong>나에게 가장 가까운</strong> 설주를 쓰는 것이다. 벡터 15 는 두 방법이 <strong>같은 답</strong>을 내는 장면이라 둘을 가르지 않는다. 내 방에서 둘이 갈리는 장면을 찾으면 그 장면이 내 판단이 필요한 자리다.</li>
-            <li><strong>점 쌍을 전부 순회하는 것.</strong> 덩어리가 각각 점 수백 개면 수만 번을 반복한다. 한 바퀴가 <strong>약 182 ms</strong> 인 것을 생각하면 아직 여유가 크지만(§2-6), 방이 커지면 여기가 먼저 느려진다. 각도 순서를 이용해 <strong>마주 보는 끝점 근처만</strong> 보는 방법이 있고, 이 방법은 <strong><a href="l-16-node.html">l-16</a> 에서 C++ 로 옮길 때</strong> 다시 검토한다.</li>
-            <li><strong><code>s == 0.0</code> 을 어디에 넣는가.</strong> 여기는 <strong>어느 쪽에도</strong> 넣지 않는다(§2-3-1). 왼쪽에 넣기로 정해도 벡터는 전부 통과한다 — 다만 그러면 <strong>문 한가운데를 막고 있는 물건</strong>이 설주로 잘못 분류되어 통로가 실제보다 좁게 나온다. 어느 쪽이든 <strong>노트에 적어 두면</strong> 나중에 이상한 폭이 나왔을 때 볼 곳이 생긴다.</li>
-            <li><strong><code>direction</code> 을 누가 정하는가.</strong> 여기는 <strong>인자로 받는다</strong>. 도구가 자동으로 "가장 넓은 통로"를 찾게 만들 수도 있지만, 그러면 <strong>"어디로 가고 싶은가"라는 결정이 도구 코드 안에 감춰진다</strong>. 그 결정은 이 가이드가 아니라 10 의 주행 계획이 내린다.</li>
-          </ul>
-        </div></details>
 
       <h2 id="next">다음 행선지</h2>
       <div class="callout tip"><span class="ct">여기까지 했으면</span>
         <ul>
           <li><strong>번호순 다음은</strong> → <a href="l-13-motion.html">l-13</a> — 무엇이 움직였나. 지금까지는 <strong>한 장</strong>이었고 l-13 부터는 <strong>두 장</strong>이다. 이 쪽의 덩어리와 선분이 그대로 쓰이고, "센서가 가만히 있었다"는 전제가 처음으로 성립하지 않는다.</li>
           <li><strong>공간 인식 다섯 쪽이 여기서 끝났다.</strong> l-08 부터 여기까지는 <strong>기록 파일 한 장</strong>이면 충분했다. l-13 · l-14 는 <strong>연속된 여러 바퀴</strong>가 든 파일이 필요하다 — 없으면 <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> 로 한 장 더 기록하거나, <a href="l-00-map.html#s1-3">l-00 §1-3</a> 의 표에서 지금 가진 것으로 할 수 있는 쪽을 고른다.</li>
-          <li><strong>이 쪽에서 나온 것을 받는 다른 쪽</strong> — <a href="l-16-node.html">l-16</a> 이 이 넷 중 어느 조각을 C++ 로 옮길지 고르게 한다(격자 · 선분 · <strong>통로 폭</strong> 셋 중에서). 그때 이 스물네 벡터가 <strong>그대로 채점표</strong>가 된다. 그리고 <a href="09-slam-nav2.html">09</a> 에서 <code>inflation_radius</code> 를 정할 때 §3-3-1 에 적어 둔 수가 근거가 된다.</li>
-          <li><strong>⚠ 되돌려 놓았는가</strong> — ① §3-3-4 의 <code>margin = 0.0</code> ② §3-4 에서 통로에 놓은 턱·상자 ③ §3-5-4 에서 일부러 틀리게 한 줄. <strong>셋 다 오류를 내지 않고 남는 종류</strong>이고, 남겨 두면 다음 쪽에서 생기는 이상한 결과의 원인을 <strong>라이다에서</strong> 찾게 된다.</li>
+          <li><strong>이 쪽에서 나온 것을 받는 다른 쪽</strong> — <a href="l-16-node.html">l-16</a> 이 이 헤더를 패키지로 옮길 후보로 둔다(격자 · 선분 · <strong>통로 폭</strong> 셋 중에서 하나를 고른다). 고르면 이 서른한 벡터가 <strong>그대로 채점표</strong>가 된다. 그리고 <a href="09-slam-nav2.html">09</a> 에서 <code>inflation_radius</code> 를 정할 때 §3-3-1 에 적어 둔 수가 근거가 된다.</li>
+          <li><strong>⚠ 되돌려 놓았는가</strong> — ① §3-3-4 에서 일부러 친 여유 <code>0</code>(노트의 여유 칸) ② §3-4 에서 통로에 놓은 턱·상자 ③ §3-5-4 에서 일부러 틀리게 한 줄(되돌린 뒤 다시 <code>PASS</code>). <strong>셋 다 오류를 내지 않고 남는 종류</strong>이고, 남겨 두면 다음 쪽에서 생기는 이상한 결과의 원인을 <strong>라이다에서</strong> 찾게 된다.</li>
           <li><p><strong>이 쪽을 못 끝냈어도</strong> — 경우가 셋이다.</p>
-            <p>① <code>PASS clear 24 cases</code> 까지 갔으면 <strong>줄자 검산이 안 맞아도 l-13 으로 갈 수 있다.</strong> l-13 이 쓰는 것은 덩어리이지 이 쪽의 판정이 아니다.</p>
+            <p>① <code>PASS clear 31 cases</code> 까지 갔으면 <strong>줄자 검산이 안 맞아도 l-13 으로 갈 수 있다.</strong> l-13 이 쓰는 것은 덩어리이지 이 쪽의 판정이 아니다.</p>
             <p>② 반대로 <strong>자기시험이 통과하지 못했으면 여기서 멈춘다</strong> — 특히 <strong>방위의 부호</strong>가 틀린 채로 가면 l-14 의 회전 추정에서 원인을 찾기 훨씬 어려워진다.</p>
             <p>③ 줄자·각도기가 없거나 기록이 빌려 온 것이어서 통과되지 않는 항목은 <strong>미통과로 두고 간다</strong>(그 방법은 §3-1-4 · §3-3-4 · §3-4-1 에 적어 두었다).</p>
             <p>⚠ <strong>빌려 온 파일뿐이면 이 쪽의 발동 확인 둘을 모두 미통과로 둔 채 간다</strong> — 현물 확인이 <strong>둘 다 내 방</strong>을 요구하기 때문이다. 자기시험과 실습 B 는 내 방과 무관하게 통과되고, 내 방의 기록이 생기는 날 이 둘로 돌아온다.</p></li>
@@ -841,6 +1445,24 @@ PASS clear 24 cases</code></pre>
             <p><code>hardware/INVENTORY.md</code> 에 <strong>이 쪽이 채우는 칸은 없다</strong> — 로봇 폭 칸은 <code>hardware/INVENTORY.md</code> 6절이 소유하고 차체가 조립된 뒤에 확인된다.</p></li>
         </ul>
       </div>
+
+      <h2 id="footnotes">각주</h2>
+      <p class="small">본문의 작은 번호를 누르면 여기로 온다. 근거 문서 · 1세대 기록 · 측정하거나 확인한 날짜와 기계를 모았다. ↩ 를 누르면 본문으로 돌아간다.</p>
+      <ol class="footnotes">
+          <li id="fn-1">2026-11-01, 집필자가 이 쪽에 인용한 수를 C++ 로 다시 계산해 <code>repr_double()</code>(<a href="l-02-device-id.html">l-02</a>)로 찍었다. 평균점끼리의 거리는 <code>1.6000000000000003</code> 이다. 세 점의 y 를 차례로 더한 <code>0.4 + 0.8 + 1.2</code> 가 <code>2.4000000000000004</code> 라서 평균이 <code>0.8000000000000002</code> 가 된다. 이 쪽의 이전 판(파이썬, 2026-09-23)은 <code>1.5999999999999999</code> 를 적었다. 파이썬의 <code>sum()</code> 은 3.12 부터 반올림 오차를 보정하며 더해 <code>2.4</code> 를 내기 때문이다(Mac 의 python3 3.14.7 에서 확인). 다음 넷은 이전 판과 같았다. 뒤를 잘라 내지 않은 판은 <code>2.08806130178211</code>, 감지 않은 각은 <code>-5.608444364956034</code> 다. <code>normalize(-kPi)</code> 는 <code>-3.141592653589793</code>, <code>to_deg(1.0)</code> 은 <code>57.29577951308232</code> 다. §2-5 의 <code>d * std::tan(to_rad(1.5))</code> 는 g++ 11.4 로 계산했다. l-06 의 컨테이너와 같은 판이고, 수학 라이브러리는 glibc 다. 값은 <code>0.02618592156918693</code> · <code>0.05237184313837386</code> · <code>0.13092960784593466</code> 였다. Mac 의 clang 은 <code>0.026185921569186928</code> · <code>0.052371843138373855</code> · <code>0.13092960784593463</code> 를 찍었다. 두 값을 <code>%a</code>(16진 표기)로 찍어 보면 셋 다 바로 아래의 <code>double</code> 이다 — Mac 수학 라이브러리의 <code>tan</code> 이 마지막 비트 하나만큼 작은 값을 낸다. 이전 판의 파이썬 값(Mac)도 이쪽과 같다. Mac 의 g++ 16.1 은 <code>-O2</code> 에서 컴파일할 때 상수를 미리 계산하면 glibc 쪽 값을, 실행할 때 계산하면 Mac 쪽 값을 냈다. 표에는 Pi 와 같은 glibc 쪽 값을 적었다. Pi 의 g++(gcc 14 계열)와 glibc 로는 계산하지 않았다(확인 과제). <a class="fn-back" href="#fnref-1" aria-label="본문으로">↩</a></li>
+          <li id="fn-2"><code>hardware/INVENTORY.md</code> 6절 "외곽(footprint)" 줄의 표기는 NOMINAL(gen1-record, 2026-07-25) 이다. 날짜는 1세대의 기록일이다. <a class="fn-back" href="#fnref-2" aria-label="본문으로">↩</a></li>
+          <li id="fn-3">같은 줄에 따르면 길이는 줄자 기록(650 mm)과 41 mm 어긋난다. 1세대 문서는 그 차이를 설명하지 않는다. <a class="fn-back" href="#fnref-3" aria-label="본문으로">↩</a></li>
+          <li id="fn-4">데이터시트 rev.2.2 p.8 Fig 2-1 · v3.0 p.8 Fig 2-1. 집필자가 두 PDF 를 직접 열어 대조했다, 2026-09-23. <a class="fn-back" href="#fnref-4" aria-label="본문으로">↩</a></li>
+          <li id="fn-5">데이터시트 rev.2.2 p.8 · v3.0 p.8 Fig 2-1. <a class="fn-back" href="#fnref-5" aria-label="본문으로">↩</a></li>
+          <li id="fn-6">데이터시트의 Figure 5-2(rev.2.2 p.16)가 기구 치수도다. 집필자가 열어 확인했다. <a class="fn-back" href="#fnref-6" aria-label="본문으로">↩</a></li>
+          <li id="fn-7">2026-11-01, 집필자가 이 쪽의 코드 블록을 다시 뽑아 골격 상태와 완결 상태 두 벌로 빌드했다. 앞 쪽(l-01 ~ l-11)의 파일과 함께다. 컴파일러는 Apple clang 21.0(libc++) · g++ 16.1(libstdc++, <code>-O0</code> · <code>-O2</code>) · g++ 11.4(l-06 의 컨테이너와 같은 판)다. 마지막은 CMake 3.22.1 과 이 쪽의 <code>CMakeLists.txt</code> 로 빌드했다(<code>lab_clear</code> · <code>lab_clear_try</code> 링크 포함). 플래그는 <code>-std=c++17 -Wall -Wextra -Wpedantic -Werror -D_GLIBCXX_ASSERTIONS</code> 다. 골격은 경고 없이 빌드되고 <code>test_clear</code> 가 <code>15 of 31 cases failed</code> 로 끝났다. 진단 빌드도 같은 줄이고 중단은 없었다. 쪽의 순서대로 채운 상태는 T1 <code>10</code> · T1 ~ T2 <code>6</code> · T1 · T2 · T4 <code>4 of 31</code> 이었다(세 컴파일러가 같았다). 완결은 <code>PASS clear 31 cases</code>(진단 빌드도 같은 한 줄)였다. 골격의 <code>lab_clear</code> 를 §3-1-4 의 합성 기록에 돌리면 선분 여섯 줄이 모두 <code>heading 0.00 deg  foot out</code> 이고, 수 셋을 더 주면 <code>width=none … fits=false</code> 였다. 벡터 1 ~ 24 와 기대값은 이전 판(파이썬, 2026-09-23)의 시험 파일에서 옮겼고, 완결 C++ 가 <code>1e-9</code> 안에서 같은 값을 냈다. 25 ~ 31 은 이 쪽에서 새로 더했다. 기대값은 손으로 확인할 수 있는 참 · 거짓이다(시험 파일 머리의 <code>t</code> 값). <code>note: parameter passing …</code> 묶음은 <code>clear.hpp</code> 를 include 하는 파일마다 한 번 나왔고 <code>cluster.hpp</code> 의 <code>centroid()</code> 를 가리켰다. Apple silicon 의 g++ 16.1 과 aarch64 컨테이너의 g++ 11.4 둘 다였고, <code>-Werror</code> 로도 빌드가 끝났다. clang 은 찍지 않았다. 안내의 근거는 l-10 §3-1-2 의 <code>note</code> 안내에 단 각주와 같다. §3-1-4 의 Mac 연습 명령은 헤더와 시험 파일만 둔 디렉터리에서 실행해 <code>PASS clear 31 cases</code> 였다. Pi 의 g++(gcc 14 계열)로는 빌드해 보지 않았다 — <code>note</code> 가 나오는지도 확인 과제다. 벡터 1 ~ 24 는 파이썬 판의 벡터를 그대로 옮긴 것이고, 25 ~ 31 은 C++ 로 옮기며 더했다. <a class="fn-back" href="#fnref-7" aria-label="본문으로">↩</a></li>
+          <li id="fn-8">2026-11-01, 집필자가 완결 코드에서 한 군데만 바꾼 판을 만들었다. 틀린 판은 열여덟이다. T1 셋은 뒤집기 없음 · <code>atan2</code> 인자 순서 · 부등호 반대다. T2 다섯은 길이로 나눔 · 양 끝 제외 · 한쪽만 · 마이너스 없음 · 앞쪽만이다. T3 다섯은 평균점끼리 · 뒤 자르기 없음 · <code>normalize()</code> 없음 · <code>0.0</code> 반환 · 큰 <code>|s|</code> 다. T4 다섯은 여유 한 번 · <code>&gt;</code> · <code>*width</code> · <code>value_or(0.0)</code> · <code>value()</code> 다. 그 밖에 덩어리를 바로 돌린 판은 컴파일 오류였고, <code>perp_distance()</code> 를 부호 있는 식으로 바꾼 판은 벡터 2 만 실패했다. 벡터가 잡지 못하는 판은 둘이다 — <code>foot_inside()</code> 의 길이 0 검사를 뺀 판과 <code>std::abs</code> 대신 <code>abs</code> 를 쓴 판이다(둘 다 31 개 통과). 다르게 쓴 판은 일곱이고 세 컴파일러 모두 31 개를 통과했다. T1 은 <code>normalize()</code> 없음, T2 는 나누기 없는 비교 · 발 좌표로 확인이다. T3 은 거리로 고르기 · <code>s &gt;= 0.0</code> · <code>centroid()</code>, T4 는 <code>has_value() &amp;&amp;</code> 한 줄이다. <code>centroid()</code> 판을 l-10 의 골격 <code>cluster.hpp</code> 와 함께 빌드하면 13 · 14 · 15 · 20 이 <code>got none</code> 으로 실패했다(Apple clang). 틀린 판은 골격의 자리표시가 없는 꼴로 <code>-Werror</code> 없이 컴파일해 경고를 읽었다 — 경고는 하나도 없었다(<code>note</code> 는 각주 7). 세 컴파일러(Apple clang 21.0 <code>-O2</code> · g++ 16.1 <code>-O0</code> · <code>-O2</code> · g++ 11.4 <code>-O2</code>)로 시험과 진단 빌드를 의사 터미널에서 실행했다. 의사 터미널은 운영체제가 만드는 가짜 터미널 장치다 — 프로그램에는 진짜 터미널로 보인다. FAIL 번호는 세 컴파일러가 같았다. <code>*width</code> 판은 g++ 둘이 벡터 24 에서 문구 뒤 중단(134)했고(진단 빌드도 같은 문구), g++ 11.4 의 그 중단은 파이프로 받으면 아무 줄도 남지 않았다. clang 은 중단하지 않고 <code>FAIL 25</code> 한 줄로 끝났다(진단 빌드도 같았다). <code>value()</code> 판은 세 컴파일러 모두 예외 문구 뒤 134 였다. Pi 의 g++(gcc 14 계열)로는 재지 않았다(확인 과제). <a class="fn-back" href="#fnref-8" aria-label="본문으로">↩</a></li>
+          <li id="fn-9">2026-11-01, <a href="l-09-occupancy.html">l-09</a> ~ <a href="l-11-lines.html">l-11</a> 과 같은 집필자의 합성 기록이다(l-10 §3-1-4 의 합성 기록 각주). 4.0 m × 3.0 m 의 방(벽 x = −1.5 · 2.5 m, y = −1.2 · 1.8 m), 센서는 (0, 0), 한 변 0.4 m 의 상자가 (1.0, 0.5) 에 있다. 200° ~ 230° 는 무반사이고, 한 바퀴 1 450 점, 거리는 mm 자리에서 반올림했다. 완결 코드의 <code>lab_clear</code> · <code>lab_clear_try</code> 를 세 컴파일러로 빌드해 돌린 출력이 글자 단위로 같았다. 덩어리 문턱 0.05 · 선분 문턱 0.02 에서 선분 6 개, 정면의 통로 폭 <code>1.310</code> m(상자 모서리와 앞 벽 사이), 뒤(180°)는 <code>none</code>, 45° 는 <code>1.106</code> m 였다. 정면 ±15° 최소는 <code>1.167</code> m 로, 범위 경계(14.90°)에 걸친 상자의 센서 쪽 면(y = 0.3) 위의 점 (1.128, 0.300) 이다. 상자 모서리 (1.2, 0.3) 는 14.04° · 1.237 m 라 그 점이 아니다. 가장 가까운 점은 같은 상자(20.61°)의 <code>0.855</code> m 였다. 내 방의 기록으로는 돌려 보지 않았다 — 실제 센서에서의 거리 · 방위 · 통로 폭은 확인 과제다. <a class="fn-back" href="#fnref-9" aria-label="본문으로">↩</a></li>
+          <li id="fn-10">g++ 11.4 는 그 문구를 표준 출력으로 내므로 파이프로 받으면 아무 줄도 남지 않는다. 측정은 각주 8 에 있다. <a class="fn-back" href="#fnref-10" aria-label="본문으로">↩</a></li>
+          <li id="fn-11">데이터시트 rev.2.2 p.16 Fig 5-2. 집필자가 열어 확인했다. <a class="fn-back" href="#fnref-11" aria-label="본문으로">↩</a></li>
+          <li id="fn-12">g++ 11.4 를 파이프로 받으면 아무 줄도 남지 않는다. 측정은 각주 8 에 있다. <a class="fn-back" href="#fnref-12" aria-label="본문으로">↩</a></li>
+          <li id="fn-13">파이프로 받으면 g++ 11 에서는 사라진다. 측정은 각주 8 에 있다. <a class="fn-back" href="#fnref-13" aria-label="본문으로">↩</a></li>
+      </ol>
 
       <div class="pager"></div>
     </div>

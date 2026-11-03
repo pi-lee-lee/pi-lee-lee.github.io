@@ -16,7 +16,7 @@
       <p class="kicker">L10 · 저것들은 몇 개의 물건인가</p>
       <h1>저것들은 몇 개의 물건인가</h1>
       <p class="lead"><a href="l-08-floor-plan.html">l-08</a> 이 점을 방의 좌표로 옮겨 놓았다. 그 그림을 사람이 보면 "벽, 의자, 사람" 이라고 바로 말하지만, 도구가 가진 것은 <strong>순서가 매겨진 점 수백 개</strong>뿐이다.
-      점들을 물건 단위로 묶는 규칙을 이 쪽에서 직접 정한다. 붙이는 도구는 <code>cluster.py</code> — 이웃 사이의 거리를 재는 <code>neighbor_distances()</code>, 문턱으로 자르는 <code>split()</code>, 솎아 내는 <code>downsample()</code>, 그리고 덩어리 하나를 담는 <code>Cluster</code> 다.
+      점들을 물건 단위로 묶는 규칙을 이 쪽에서 직접 정한다. 이 쪽에서 만드는 것은 헤더 <code>cluster.hpp</code> 와 도구 <code>lab_cluster</code> 다. 헤더의 <code>Cluster</code> 는 덩어리 하나를 담는다. 함수는 넷이다 — 이웃 사이의 거리를 재는 <code>neighbor_distances()</code>, 문턱으로 자르는 <code>split()</code>, 솎아 내는 <code>downsample()</code>, 거리의 분포를 네 수로 줄이는 <code>gap_stats()</code>.
       여기서 나온 덩어리를 l-11 이 선분으로 바꾸고, l-12 가 그 사이를 지나갈 수 있는지 판정한다.</p>
 
       <div class="goal">
@@ -25,26 +25,31 @@
         <ul>
           <li>한 스캔에서 덩어리가 <code>&lt;n&gt;</code> 개 나오고, 그 개수를 내 방에 실제로 있는 물건과 대조한 표가 생긴다.</li>
           <li>문턱을 낮추다 보면 <strong>한 물건이 둘로 갈라지는 값</strong>이 나오고 그 값이 내 노트에 적힌다.</li>
-          <li><code>python3 tests/test_cluster.py</code> 의 마지막 줄은 <code>PASS cluster 27 cases</code> 다.</li>
+          <li><code>build/test_cluster</code> 와 진단 빌드(ASan · UBSan 을 켠 빌드, l-01) <code>build/test_cluster_ub</code> 가 둘 다 <code>PASS cluster 43 cases</code> 한 줄만 찍는다.</li>
         </ul>
         <p><strong>이 쪽에 필요한 것</strong></p>
         <ul>
-          <li><code>.scan.jsonl</code> 한 장과 <a href="l-08-floor-plan.html">l-08</a> 까지 끝낸 도구(<code>turn.py</code> · <code>geom.py</code>).</li>
+          <li><code>.scan.jsonl</code> 한 장 · Pi 의 빌드 도구(<code>g++</code> · <code>cmake</code>) · 앞 쪽의 파일(아래 <code>.meta</code> 의 "선행" 칸). <strong>라이다도 컨테이너도 필요 없다.</strong></li>
+          <li><code>cluster.hpp</code> 는 포트도 ROS 도 쓰지 않는 순수 헤더라 시험 <code>test_cluster</code> 를 Mac 의 <code>clang++</code> 로 연습할 수 있다. 통과의 기준은 Pi 빌드다(결정 L3). 결정 L3 은 라이다 가이드의 설계 결정 번호이고, Mac 에서 해도 되는 것을 정한다(<a href="l-00-map.html">l-00</a>). <a href="l-01-link.html">l-01</a> 의 안전 규칙 L3 · 사이드바의 쪽 번호 L3 과는 다른 번호다.</li>
           <li>방 가운데 의자 하나가 있으면 실습 B 의 결과가 훨씬 분명해진다.</li>
         </ul>
         <p><strong>없으면</strong></p>
         <ul>
-          <li>라이다도 Pi 도 컨테이너도 필요 없다. 기록 파일 한 장이면 이 쪽 전체를 실행할 수 있다(ROS 를 <code>import</code> 하지 않는 순수 파이썬이라 Mac 에서 실행해도 된다).</li>
+          <li>Pi 에 <code>g++</code> · <code>cmake</code> 가 없으면 <a href="l-00-map.html">l-00</a> 실습 A 의 체크포인트 <code>host-cpp-toolchain-ready</code> 로 돌아간다(<a href="l-00-map.html#s3-1">l-00 §3-1</a>).</li>
           <li>파일조차 없으면 <a href="l-00-map.html#s1-3">l-00 §1-3</a> 의 표에서 지금 할 수 있는 쪽을 고른다. 파일을 얻는 방법은 <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> 와 <a href="l-06-three-sources.html#s3-4">l-06 §3-4</a> 가 한 가지씩 설명한다.</li>
           <li><strong>의자가 없어도</strong> 실습 B 는 벽·문틀·책장만으로 끝낼 수 있다. 개수를 맞히는 것이 목적이 아니라 <strong>왜 다른가를 적는 것</strong>이 목적이다.</li>
         </ul>
       </div>
 
       <div class="meta">
-        <div><span class="k">환경</span><span class="tag sim">기록 파일</span> <span class="tag py">Python</span> <span class="tag pi">Pi 호스트</span> <span class="tag mac">Mac</span></div>
-        <div><span class="k">선행</span><a href="l-08-floor-plan.html">l-08</a> (점을 방으로) — 실제로 쓰는 것: <code>to_xy()</code> / <a href="l-04-one-turn.html">l-04</a> — <code>Scan</code> · <code>load_jsonl()</code>(파일을 읽는 함수는 이 쪽이 다시 만들지 않는다)</div>
+        <div><span class="k">환경</span><span class="tag sim">기록 파일</span> <span class="tag pi">Pi 호스트</span> <span class="tag cpp">C++</span> <span class="small">(확인 도구 <code>view/peek.py</code> · <code>view/floor_plan.py</code> 는 파이썬 — 전량 제공, 채울 자리 없이 완성된 코드를 준다)</span></div>
+        <div><span class="k">선행</span><a href="l-08-floor-plan.html">l-08</a> (점을 방으로) — 실제로 쓰는 것: <code>to_xy()</code> · <code>Point</code>(<code>geom.hpp</code>) · <code>xy_csv_path()</code> · <code>write_xy_csv()</code>(<code>dump.hpp</code>) · 도구 <code>lab_geom</code> /
+          <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> — <code>Scan</code> · <code>load_jsonl()</code>(<code>scan_io.hpp</code> — 파일을 읽는 함수는 이 쪽이 다시 만들지 않는다) /
+          <a href="l-06-three-sources.html">l-06</a> — 도구 <code>lab_source</code> /
+          <a href="l-02-device-id.html">l-02</a> — <code>repr_double()</code>(<code>repr.hpp</code>) · 시험 도구 <code>tests/check.hpp</code>.<br>
+          <strong>빌드에 먼저 있어야 하는 파일</strong> — <code>CMakeLists.txt</code> 의 l-01 ~ l-08 블록이 부르는 소스다. 하나라도 없으면 <code>cmake</code> 가 구성 단계에서 멈춘다. 목록은 <a href="l-09-occupancy.html">l-09</a> 의 <code>.meta</code> "빌드에 먼저 있어야 하는 파일" 칸과 같다. 이 쪽은 l-09 의 코드를 쓰지 않는다. 다만 <code>CMakeLists.txt</code> 에 l-09 의 두 줄을 이미 붙였으면 l-09 의 파일 넷도 있어야 한다 — <code>grid.hpp</code> · <code>grid.cpp</code> · <code>test_grid.cpp</code> · <code>pgm.py</code></div>
         <div><span class="k">채우는 INVENTORY 칸</span>없음. 이 쪽의 문턱은 <strong>내 방과 내 문턱</strong>이라 장비 대장에 들어갈 값이 아니다 — 전부 내 노트에 적는다</div>
-        <div><span class="k">이 쪽이 요구하는 수학</span>두 점 사이의 거리(피타고라스)와 <strong>분포를 중앙값·분위수로 말하는 법</strong> — 정의는 §2-4 가 준다. 재는 순서와 어디에 적용할지는 내가 쓴다</div>
+        <div><span class="k">이 쪽이 요구하는 수학</span>두 점 사이의 거리(피타고라스)와 <strong>분포를 중앙값·분위수로 말하는 법</strong> — 정의는 §2-4 가 준다. 그 정의대로 계산하는 코드(<code>gap_stats()</code>)와 어디에 적용할지는 내가 쓴다</div>
         <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
       </div>
 
@@ -52,7 +57,7 @@
       <p><a href="l-08-floor-plan.html">l-08</a> 까지 오면 스캔 한 장은 <strong>방 좌표 위의 점 수백 개</strong>다. 그림으로 보면 물건의 경계가 눈에 보이지만, 경계를 알아보는 것은 사람의 눈이고, 도구에는 아직 경계 정보가 없다.
       도구가 "저기 있는 것이 하나의 물건이다"를 판정하려면 규칙이 있어야 한다. 이 쪽이 쓰는 규칙은 <strong>딱 하나</strong>다 — <em>이웃한 두 점이 충분히 가까우면 같은 물건이다.</em></p>
       <p>규칙이 하나뿐이라서 이 쪽의 일은 규칙을 고르는 것이 아니라 <strong>"충분히 가까우면"의 값을 정하는 것</strong>이 된다. 그 값을 이 가이드는 <strong>문턱</strong>이라 부른다.
-      문턱은 데이터시트에도 드라이버에도 없다 — <strong>내 방과 내 기록 파일에서 재서 내가 정하는 값</strong>이고, 그래서 이 쪽의 실습 넷 중 첫째가 "정하기" 전에 "재기"다.</p>
+      문턱은 데이터시트(제조사가 낸 RPLIDAR A1 사양 문서)에도 드라이버에도 없다. 문턱은 <strong>내 방과 내 기록 파일에서 재서 내가 정하는 값</strong>이고, 그래서 이 쪽의 실습 넷 중 첫째가 "정하기" 전에 "재기"다.</p>
       <pre class="diagram"><code> l-08 이 넘기는 것            이 쪽이 하는 일                    이 쪽이 남기는 것
  ─────────────────────       ───────────────────────────       ──────────────────────
  to_xy(scan)                 이웃 사이 거리를 잰다              [Cluster, Cluster, …]
@@ -63,39 +68,39 @@
       <div class="tbl"><table class="compact">
         <thead><tr><th>용어</th><th>이 가이드에서의 뜻</th></tr></thead>
         <tbody>
-          <tr><td><strong>각도 간격</strong></td><td>이웃한 두 점의 <strong>각도</strong> 차(단위 <strong>도</strong>). <a href="l-04-one-turn.html#s2-4">l-04 §2-4</a> 가 중앙값과 σ 로 재 두었고, 이 쪽은 그 값을 <strong>입력으로 받아 쓴다</strong></td></tr>
+          <tr><td><strong>각도 간격</strong></td><td>이웃한 두 점의 <strong>각도</strong> 차(단위 <strong>도</strong>). <a href="l-04-one-turn.html#s2-4">l-04 §2-4</a> 가 중앙값과 σ(표준편차)로 재 두었고, 이 쪽은 그 값을 <strong>입력으로 받아 쓴다</strong></td></tr>
           <tr><td><strong>점 간 거리</strong></td><td>이웃한 두 점 사이의 <strong>실제 거리</strong>(단위 <strong>m</strong>). 같은 각도 간격이어도 <strong>멀리 있는 물체일수록 커진다</strong>(§2-3). 이 쪽이 재는 것은 점 간 거리이고, <code>neighbor_distances()</code> 가 돌려주는 값이다</td></tr>
-          <tr><td><strong>문턱</strong></td><td>"이보다 멀면 다른 물건" 이라고 내가 선언한 <strong>점 간 거리</strong>(m). <code>split(scan, gap)</code> 의 <code>gap</code> 이 이것이다 — <strong>이름은 gap 이지만 단위는 m</strong> 이다(각도가 아니다)</td></tr>
+          <tr><td><strong>문턱</strong></td><td>"이보다 멀면 다른 물건" 이라고 내가 선언한 <strong>점 간 거리</strong>(m). <code>split(s, gap)</code> 의 <code>gap</code> 이 이것이다 — <strong>이름은 gap 이지만 단위는 m</strong> 이다(각도가 아니다)</td></tr>
           <tr><td><strong>덩어리</strong></td><td>문턱으로 잘라 낸 점의 한 묶음. <code>Cluster</code> 가 담는다. <strong>"물건"이 아니다</strong> — 도구가 한 덩어리로 본 것일 뿐이고, 그 덩어리가 물건 하나와 맞는지가 실습 B 의 물음이다</td></tr>
           <tr><td><strong>솎기</strong></td><td>점을 k 개마다 하나씩만 남기는 것(<code>downsample</code>). 계산을 줄이려고 하지만 <strong>점 간 거리를 k 배로 벌리므로</strong> 같은 문턱에서 덩어리가 늘어난다(§2-5)</td></tr>
         </tbody>
       </table></div>
-      <p>이 쪽은 <strong>라이다도 컨테이너도 쓰지 않는다.</strong> 입력은 <code>.scan.jsonl</code> 한 장이고, 모든 함수가 포트·시계·파일에 접근하지 않는 순수 함수라 센서를 뽑아 둔 채로 채점된다.
-      명령은 전부 <code>pi$</code> 로 적었지만, Pi 가 없는 날에는 Mac 에서 같은 명령을 그대로 실행해도 된다. 이 쪽의 코드는 ROS 를 <code>import</code> 하지 않기 때문이다. 그때는 <code>pi$</code> 를 <code>mac$</code> 로 읽는다. <strong>어느 기계에서 실행했는지는 노트에 적는다.</strong></p>
+      <p>이 쪽은 <strong>라이다도 컨테이너도 쓰지 않는다.</strong> 입력은 <code>.scan.jsonl</code> 한 장이다. <code>cluster.hpp</code> 의 함수는 모두 포트·시계·파일에 접근하지 않는 순수 함수라 센서를 뽑아 둔 채로 채점된다.
+      빌드와 실행은 Pi 에서 한다(<code>pi$</code>). Mac 의 <code>clang++</code> 로는 시험 <code>test_cluster</code> 만 연습할 수 있고, 체크포인트의 기준은 Pi 빌드다(결정 L3).</p>
 
       <h2 id="why">2. 원리 — 왜 이웃만 보면 되고, 왜 문턱은 하나로 고정할 수 없는가</h2>
 
       <h3 id="s2-1">2-1. 이웃 하나, 거리 하나 — 판정은 그것으로 끝난다</h3>
-      <p>"이 점들이 한 물건인가"를 일반적으로 풀면 어려운 문제다. 그런데 라이다 한 바퀴에는 <strong>따로 만들지 않아도 이미 있는 구조</strong>가 하나 있다 — <strong>점이 이미 각도 순서로 정렬되어 있다</strong>(<a href="l-04-one-turn.html#s3-1-2">l-04 §3-1-2</a> 의 불변식 4가 <code>Scan</code> 안의 각도를 오름차순으로 정했다).
+      <p>"이 점들이 한 물건인가"를 일반적으로 풀면 어려운 문제다. 그런데 라이다 한 바퀴에는 <strong>따로 만들지 않아도 이미 있는 구조</strong>가 하나 있다 — <strong>점이 이미 각도 순서로 정렬되어 있다</strong>(<a href="l-04-one-turn.html#s3-1-2">l-04 §3-1-2</a> 의 불변식 4가 <code>Scan</code> 안의 각도를 오름차순으로 정했다). 불변식은 함수나 클래스가 늘 지켜야 한다고 주석에 번호를 달아 적은 조건이다.
       정렬되어 있으면 "이웃"이 <strong>목록에서 바로 옆 항목</strong>이라는 뜻이 되고, 그러면 견줄 쌍이 <code>n</code> 개뿐이다. 모든 점 쌍을 견주면 <code>n(n−1)/2</code> 쌍이니 360 점짜리 한 바퀴에서 6만 쌍 대 360 쌍의 차이다.</p>
       <p>그래서 이 쪽의 판정은 한 줄로 끝난다.</p>
       <pre class="diagram"><code>  이웃한 두 점의 거리  d  =  √( (x₂−x₁)² + (y₂−y₁)² )
 
         d ≤ 문턱   →   같은 덩어리
         d &gt; 문턱   →   여기서 자른다</code></pre>
-      <p>경계에 정확히 걸린 값(<code>d</code> 가 문턱과 똑같을 때)을 어느 쪽에 넣을지는 정해야 한다. <strong>이 가이드는 "같은 덩어리"로 고정했다</strong> — 시험 벡터 1이 그 뜻으로 채점하기 때문이다.
+      <p>경계에 정확히 걸린 값(<code>d</code> 가 문턱과 똑같을 때)을 어느 쪽에 넣을지는 정해야 한다. <strong>이 가이드는 "같은 덩어리"로 고정했다</strong> — 시험 벡터 1이 그 뜻으로 채점하기 때문이다. 시험 벡터는 입력과 기대 출력을 정해 둔 시험 한 건이다(§3-1-3 의 <code>test_cluster</code>).
       관찰이 달라지는 축은 아니다(측정값이 문턱과 소수점 아래까지 똑같이 나올 일은 사실상 없다 — <strong>동일</strong>). 다만 <strong>둘 중 하나로 적어 두지 않으면</strong> 내 구현과 벡터가 어긋났을 때 그 원인이 오차인지 규약 차이인지 알 수 없다.</p>
       <div class="callout why"><span class="ct">왜 이 쪽은 각도 방향이 아직 안 정해졌어도 진행할 수 있는가</span>
         <p>l-08 은 "각도가 커지는 방향"을 내 기기에서 판정하는 쪽이고, 그 답이 아직 안 나왔을 수 있다. 그래도 이 쪽은 진행할 수 있다 — <strong>두 점 사이의 거리는 그림을 돌리거나 좌우로 뒤집어도 변하지 않기 때문</strong>이다.
-        그래서 <code>neighbor_distances()</code> · <code>split()</code> · <code>Cluster.width()</code> 는 부호 규약과 무관하게 옳은 값을 낸다.</p>
-        <p><strong>변하는 것도 있다.</strong> <code>Cluster.centroid()</code> 가 돌려주는 <em>좌표</em>는 규약에 달렸고, "이 덩어리가 내 왼쪽에 있다" 같은 서술은 규약이 정해져야 참·거짓을 말할 수 있다. 그래서 이 쪽의 관찰은 <strong>개수·폭·거리</strong>로 적고, <strong>어느 쪽에 있는가</strong>는 l-08 의 답이 나온 뒤에 적는다.</p>
+        그래서 <code>neighbor_distances()</code> · <code>split()</code> · <code>Cluster</code> 의 <code>width()</code> 는 부호 규약과 무관하게 옳은 값을 낸다.</p>
+        <p><strong>변하는 것도 있다.</strong> <code>Cluster</code> 의 <code>centroid()</code> 가 돌려주는 <em>좌표</em>는 규약에 달렸고, "이 덩어리가 내 왼쪽에 있다" 같은 서술은 규약이 정해져야 참·거짓을 말할 수 있다. 그래서 이 쪽의 관찰은 <strong>개수·폭·거리</strong>로 적고, <strong>어느 쪽에 있는가</strong>는 l-08 의 답이 나온 뒤에 적는다.</p>
       </div>
-      <p>한 가지 더. <strong>무반사 방향은 좌표가 없다.</strong> 기준 형식은 못 잰 방향을 <code>null</code> 로 적고(<a href="l-04-one-turn.html#s2-6">l-04 §2-6</a>), <code>null</code> 은 "거기 아무것도 없다"가 아니라 <strong>"거기를 못 쟀다"</strong> 하나만 뜻한다.
+      <p>한 가지 더. <strong>무반사 방향은 좌표가 없다.</strong> 기준 형식은 못 잰 방향을 <code>null</code> 로 적는다(<a href="l-04-one-turn.html#s2-6">l-04 §2-6</a>). 기준 형식은 l-04 가 정한 기록 파일 <code>.scan.jsonl</code> 의 형식이다. <code>null</code> 은 "그 방향에 아무것도 없다"가 아니라 <strong>"그 방향을 못 쟀다"</strong> 하나만 뜻한다.
       좌표가 없으니 이 쪽은 그 자리를 <strong>건너뛴다</strong>. 그런데 건너뛰면 그 앞뒤 점 사이의 거리가 그만큼 벌어지므로, <strong>못 잰 구간이 하나 있으면 물체가 그 구간에서 잘린다</strong>. 유리나 검은 천 앞에서 벽 하나가 둘로 보이는 일이 그래서 생긴다. 이 잘림은 버그가 아니라 <strong>도구가 가진 정보의 한계</strong>이고, 무엇이 못 잰 구간을 만드는지는 l-15 가 다룬다.</p>
 
       <h3 id="s2-2">2-2. 목록은 줄이 아니라 원이다 — 359° 와 1° 도 이웃이다</h3>
       <p>점이 각도 순서로 정렬되어 있다고 했지만, 한 바퀴는 <strong>원</strong>이라 목록의 <strong>마지막 점과 첫 점도 이웃</strong>이다. 359.0° 와 1.0° 는 목록의 양 끝에 있지만 실제로는 2° 밖에 떨어져 있지 않다.</p>
-      <p>l-04 가 같은 문제를 각도에서 만났고(<a href="l-04-one-turn.html#s2-4">§2-4</a> 의 랩 간격), 이 쪽에서는 같은 문제가 <strong>거리</strong>에서 다시 나타난다. 처리를 빠뜨리면 오류 없이 틀린 값을 낸다 — 프로그램은 정상으로 실행되고, 덩어리 개수만 하나 더 나온다.</p>
+      <p>l-04 가 같은 문제를 각도에서 만났다(<a href="l-04-one-turn.html#s2-4">l-04 §2-4</a> 의 랩 간격). 랩 간격은 마지막 점에서 360° 를 넘어 첫 점으로 돌아오는 각도 간격이다. 이 쪽에서는 같은 문제가 <strong>거리</strong>에서 다시 나타난다. 처리를 빠뜨리면 오류 없이 틀린 값을 낸다 — 프로그램은 정상으로 실행되고, 덩어리 개수만 하나 더 나온다.</p>
       <pre class="diagram"><code>  각도 순서로 줄 세운 목록                     실제 배치(위에서 본 것)
   ┌───────────────────────────────┐
   │ 1°  2°  …   90°  …  358° 359° │                  ●● ← 359°, 1°
@@ -107,7 +112,7 @@
   원으로 보고 자르면  →  [358°, 359°, 1°, 2°, …]     한 덩어리</code></pre>
       <p>하필 이 이음매가 <strong>0°</strong> 라는 것이 문제를 키운다. 0° 는 센서가 정면으로 정한 방향이고, 로봇이 가려는 방향이며, 앞에 있는 물건이 가장 자주 놓이는 방향이다.
       이음매를 처리하지 않으면 <strong>내 앞의 물건만 언제나 둘로 세어지는 도구</strong>가 된다 — 그리고 그 도구는 아무 오류도 내지 않는다. 시험 벡터 3이 이것 하나를 채점한다.</p>
-      <p>이음매를 이을 때 걸리는 함정이 하나 더 있다. <strong>덩어리가 처음부터 하나뿐이면 이을 것이 없다</strong> — 그런데도 "끝과 처음을 잇는다"를 그대로 적용하면 같은 덩어리를 자기 자신에 붙여 점이 두 번 들어간다. 벡터 4가 이 경우를 채점한다.</p>
+      <p>이음매를 이을 때 걸리는 함정이 하나 더 있다. <strong>덩어리가 처음부터 하나뿐이면 이을 것이 없다</strong> — 그런데도 "끝과 처음을 잇는다"를 그대로 적용하면 같은 덩어리를 자기 자신에 붙이게 된다. 벡터 1b · 4 가 이 경우를 채점한다. C++ 에서 나타나는 꼴은 T4 카드(§3-1-3 의 <code>split()</code> 힌트 카드)에 있다.</p>
 
       <h3 id="s2-3">2-3. 문턱 하나로는 방 전체를 못 덮는다 — 같은 각도 간격이 멀리서는 넓은 틈이 된다</h3>
       <p>센서가 고르게 내보내는 것은 <strong>각도</strong>다. 그런데 우리가 재는 것은 <strong>거리</strong>이고, 둘의 관계에 거리 <code>r</code> 이 들어 있다.
@@ -115,17 +120,26 @@
       <pre class="diagram"><code>  점 간 거리  d  =  2 · r · sin(Δθ / 2)   ≈   r · Δθ(라디안)     (Δθ 가 작을 때)
 
     r 이 2배가 되면  d 도 2배가 된다.  각도는 그대로인데 틈이 벌어진다.</code></pre>
-      <p>숫자로 보면 문턱 하나로 안 되는 이유가 바로 보인다. 아래 표의 두 줄은 <strong>같은 모델(A1M8)의 기록에 남은 각도 간격 두 가지</strong>이고, 칸의 값은 위 식을 그대로 계산한 것이다.</p>
+      <p>숫자로 보면 문턱 하나로 안 되는 이유가 바로 보인다. 아래 표의 두 줄은 <strong>같은 모델(A1M8)의 1세대 기록에 남은 각도 간격 두 가지</strong>이고, 칸의 값은 위 식을 그대로 계산한 것이다.</p>
+      <p>표에 나오는 이름은 다음과 같다.</p>
+      <ul>
+        <li>A1M8 — 이 프로젝트 라이다(Slamtec RPLIDAR A1)의 모델명.</li>
+        <li>1세대 — 이 프로젝트 이전에 같은 부품 일부로 만든 첫 로봇. 같은 모델의 라이다를 썼다(같은 개체인지는 확인되지 않았다).</li>
+        <li>legacy SCAN — <code>SCAN</code> 명령의 응답 형식. 점 하나를 5 B 에 따로 담는다(<a href="l-03-one-point.html">l-03</a>).</li>
+        <li>Sensitivity — 1세대 기록에서 같은 모델이 신고한 스캔 모드 다섯 중 하나(<a href="l-05-bandwidth-modes.html">l-05</a>).</li>
+        <li>NOMINAL — 출처는 있지만 이 프로젝트에서 잰 값은 아닌 임시값의 표기(l-00 의 "값의 세 상태").</li>
+        <li>등급 — 값의 출처가 얼마나 확실한지 나타내는 표시. 이 표의 등급은 NOMINAL 이다.</li>
+      </ul>
       <div class="tbl"><table>
         <thead><tr><th>각도 간격 Δθ</th><th>0.5 m 에서</th><th>1 m 에서</th><th>2 m 에서</th><th>5 m 에서</th><th>출처 · 등급</th></tr></thead>
         <tbody>
-          <tr><td><strong>1.42°</strong> (legacy SCAN)</td><td>12.4 mm</td><td>24.8 mm</td><td>49.6 mm</td><td><strong>123.9 mm</strong></td><td>NOMINAL(gen1-record, 2026-07-14) — <code>~/ros2/docs/camera_lidar/LIDAR_MODES.md</code> §2 실측 표. <strong>같은 모델에서 이런 결과가 나왔다</strong></td></tr>
+          <tr><td><strong>1.42°</strong> (legacy SCAN)</td><td>12.4 mm</td><td>24.8 mm</td><td>49.6 mm</td><td><strong>123.9 mm</strong></td><td>NOMINAL — 1세대의 실측 표.<sup class="fn"><a href="#fn-1" id="fnref-1">1</a></sup> <strong>같은 모델에서 이런 결과가 나왔다</strong></td></tr>
           <tr><td><strong>0.35°</strong> (Sensitivity 모드)</td><td>3.1 mm</td><td>6.1 mm</td><td>12.2 mm</td><td>30.5 mm</td><td>같은 표의 다른 행 — <strong>같은 기기, 다른 모드</strong></td></tr>
           <tr><td><strong>내 값 <code>____</code></strong></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td><td><code>____</code></td><td>내 <code>turn_stats()</code> 의 <code>gap_median</code> — <strong>l-04 §3-2-4 에서 이미 쟀다.</strong> 이 표는 그 값으로 다시 채운다</td></tr>
         </tbody>
       </table></div>
       <div class="callout note"><span class="ct">등급 — 두 줄은 같은 기기의 서로 다른 모드다. 어느 줄이 내 줄인지는 내가 안다</span>
-        <p>1세대 기록의 두 값은 <strong>기기가 좋아졌다 나빠졌다 한 것이 아니라 포장(모드)이 다른 것</strong>이다. 모드 이야기는 <a href="l-05-bandwidth-modes.html">l-05</a> 가 전부 다룬다.
+        <p>1세대 기록의 두 값은 <strong>기기가 좋아졌다 나빠졌다 한 것이 아니라 포장(모드)이 다른 것</strong>이다. 포장은 점을 바이트로 담아 보내는 전송 형식이다. 모드 이야기는 <a href="l-05-bandwidth-modes.html">l-05</a> 가 전부 다룬다.
         여기서 중요한 것은 <strong>내 기록 파일이 어느 줄에 가까운가</strong>이고, 그 답은 이미 나와 있다 — 이 가이드가 l-03 에서 직접 해석한 것은 5바이트 한 점짜리 <strong>legacy</strong> 포장이다. 그러니 내 파일의 점 간 거리는 윗줄에 가까울 가능성이 크다.
         <strong>가능성이지 사실이 아니다.</strong> 사실은 l-04 에서 잰 내 <code>gap_median</code> 이고, 셋째 줄은 그 값으로 내가 채운다. 그리고 그 기기가 내 기기와 같은 개체인지는 <strong>아직 확인되지 않았다</strong>.</p>
       </div>
@@ -150,7 +164,7 @@
           <li>(다) <strong>구간별로 다른 상수</strong> — 가까운 곳과 먼 곳에 각각 하나씩.</li>
         </ul>
         <p>차이가 없는 축: 어느 형태든 <code>split()</code> 은 이웃 쌍을 한 번 훑고 끝난다(<strong>계산량은 동일</strong>).</p>
-        <p>이 가이드는 고르지 않는다. <strong>시험 벡터가 채점하는 계약은 (가) 상수 하나</strong>다. <code>split(scan, gap)</code> 의 <code>gap</code> 은 미터 단위의 상수다. (나)·(다)를 쓰고 싶으면 <strong><code>split()</code> 을 고치지 말고 호출하는 코드에서</strong> 거리 구간을 나눠 부르거나 문턱을 정하는 층을 따로 둔다. 그래야 l-11 이 받는 <code>Cluster</code> 의 뜻이 변하지 않는다.</p>
+        <p>이 가이드는 고르지 않는다. <strong>시험 벡터가 채점하는 계약은 (가) 상수 하나</strong>다. <code>split(s, gap)</code> 의 <code>gap</code> 은 미터 단위의 상수다. (나)·(다)를 쓰고 싶으면 <strong><code>split()</code> 을 고치지 말고 호출하는 코드에서</strong> 거리 구간을 나눠 부르거나 문턱을 정하는 층을 따로 둔다. 그래야 l-11 이 받는 <code>Cluster</code> 의 뜻이 변하지 않는다.</p>
       </div>
 
       <h3 id="s2-4">2-4. 문턱은 주는 것이 아니라 재는 것이다</h3>
@@ -162,7 +176,7 @@
         <thead><tr><th>이름</th><th>정의 (이 쪽이 쓰는 뜻)</th></tr></thead>
         <tbody>
           <tr><td><strong>중앙값</strong></td><td>값들을 크기순으로 정렬했을 때 한가운데 값. 개수가 짝수면 가운데 둘의 평균. <strong>"대부분의 이웃은 이 정도"</strong> 를 말한다</td></tr>
-          <tr><td><strong>분위수</strong></td><td>정렬한 값의 몇 번째 자리. 90 % 분위수 = <strong>아래에서 90 % 지점의 값</strong> = "이웃의 90 %는 이보다 가깝다". 중앙값은 50 % 분위수다</td></tr>
+          <tr><td><strong>분위수</strong></td><td>정렬한 값의 몇 번째 자리. 90 % 분위수 = <strong>아래에서 90 % 지점의 값</strong> = "이웃의 90 %는 이보다 가깝다". 중앙값도 50 % 지점이지만, 개수가 짝수일 때는 윗줄의 정의(가운데 둘의 평균)를 따른다. 분위수는 <strong>최근접 순위</strong>로 정한다 — n 개를 정렬해 <code>ceil(n × p)</code> 번째(1 부터 센다) 값이고, 두 값 사이를 보간하지 않는다(<code>gap_stats()</code> 의 계약, §3-1-2)</td></tr>
         </tbody>
       </table></div>
       <p>왜 평균이 아닌가 — <a href="l-04-one-turn.html#s2-4">l-04 §2-4</a> 가 각도에서 이미 답했다. 못 잰 구간 하나가 거대한 값 하나를 만들고, 평균은 그 값 하나 때문에 크게 달라지지만 중앙값은 거의 변하지 않는다.</p>
@@ -191,9 +205,9 @@
       솎기의 이득이 큰 곳은 <strong>점 쌍을 서로 견주는 계산</strong>, 즉 두 스캔을 맞춰 보는 l-14 다. 여기서는 <strong>무엇을 잃는지 먼저 보고</strong> 가는 것이 목적이고, 그래서 실습 D 는 시간을 재지 않고 <strong>개수가 달라지기 시작하는 지점</strong>을 찾는다.</p>
 
       <h3 id="s2-6">2-6. 라이다만으로 사람을 가를 수 있는가 — 여기서 08d 의 분업이 근거를 얻는다</h3>
-      <p>덩어리를 세다 보면 자연스럽게 다음 질문이 온다. <strong>"사람은 다리가 둘이니, 적당한 폭의 덩어리 두 개가 적당한 간격으로 있으면 사람 아닌가?"</strong> 실제로 쓰이는 발상이고, 이 쪽의 도구로 곧바로 해 볼 수 있다. <code>Cluster.width()</code> 와 두 <code>centroid()</code> 사이의 거리면 된다.</p>
+      <p>덩어리를 세다 보면 자연스럽게 다음 질문이 온다. <strong>"사람은 다리가 둘이니, 적당한 폭의 덩어리 두 개가 적당한 간격으로 있으면 사람 아닌가?"</strong> 실제로 쓰이는 발상이고, 이 쪽의 도구로 곧바로 해 볼 수 있다. <code>Cluster</code> 의 <code>width()</code> 와 두 <code>centroid()</code> 사이의 거리면 된다.</p>
       <p>해 보면 곧 한계가 드러난다. <strong>의자 다리 두 개도 똑같이 생겼다.</strong> 식탁 다리, 삼각대, 옷걸이 기둥도 그렇다. 폭과 간격의 허용 범위를 아무리 좁혀도 <strong>라이다가 그 높이에서 본 것은 "지름 몇 cm 짜리 기둥 두 개"가 전부</strong>이고, 그 정보에는 사람과 의자를 가를 단서가 애초에 들어 있지 않다.</p>
-      <p>라이다만으로 사람과 의자를 가를 수 없다는 것이 이 프로젝트가 <strong>사람에게 카메라를 쓰는 이유</strong>다. 08d §1-1 의 분업 표는 "무엇인가 · 같은 것인가" 칸에서 라이다를 <strong>모른다</strong>, 카메라를 <strong>클래스와 번호(추적)</strong> 로 적어 두었다.
+      <p>라이다만으로 사람과 의자를 가를 수 없다는 것이 이 프로젝트가 <strong>사람에게 카메라를 쓰는 이유</strong>다. 08d 는 본편(로봇 전체를 순서대로 만드는 가이드)의 쪽으로, 카메라와 라이다를 합쳐 객체를 추적하고 거리를 추정한다. 08d §1-1 의 분업 표는 "무엇인가 · 같은 것인가" 칸에서 라이다를 <strong>모른다</strong>, 카메라를 <strong>클래스와 번호(추적)</strong> 로 적어 두었다.
       그 표에는 결론만 적혀 있어서 그냥 읽으면 그대로 받아들이고 넘어가게 된다. 그러나 <strong>이 쪽에서 직접 덩어리를 세어 본 사람에게는 그 결론이 자기가 관찰한 결과</strong>가 된다. 라이다가 주는 것은 <strong>어디에 · 얼마나 넓게</strong> 까지이고, <strong>무엇인가</strong>는 다른 센서가 판단한다.</p>
       <div class="callout note"><span class="ct">이름이 같아 보이는 다른 파라미터 — 08d 의 <code>cluster_tol</code></span>
         <p>08d 에는 <code>cluster_tol</code> 이라는 파라미터가 있다(기본값 0.25). 이름이 이 쪽의 문턱과 닮았지만 <strong>다른 파라미터다.</strong>
@@ -202,326 +216,1017 @@
       </div>
 
       <h2 id="lab">3. 실습</h2>
-      <p>실습 넷은 <strong>이어지는 한 과정</strong>이다 — 재고(A) · 나누고(B) · 문턱을 바꿔 보고(C) · 점을 줄여 본다(D). 넷 다 같은 기록 파일 하나와 같은 명령 하나를 쓴다.
+      <p>실습 넷은 <strong>이어지는 한 과정</strong>이다 — 재고(A) · 나누고(B) · 문턱을 바꿔 보고(C) · 점을 줄여 본다(D). 넷 다 같은 기록 파일 하나와 같은 도구 하나(<code>build/lab_cluster</code>)를 쓴다. 도구에 주는 수의 개수가 곧 실습 번호다.
       <strong>A 를 건너뛰고 B 로 가지 않는다</strong>: 재지 않은 문턱으로 나눈 결과는 맞아도 왜 맞는지 말할 수 없고, 틀려도 어디를 고칠지 알 수 없다.</p>
+      <p>A 에서 헤더 <code>cluster.hpp</code> 를 채워 도구를 만들고, B·C·D 는 그 도구의 명령줄 값만 바꾼다. 빌드와 실행은 Pi 에서 한다(<code>pi$</code>). Mac 에서는 시험 <code>test_cluster</code> 만 연습할 수 있다(결정 L3).</p>
+      <div class="callout note"><span class="ct">이 쪽의 안전 규칙</span>
+        <p>이 쪽은 <strong>기록 파일로 실행하는 쪽</strong>이라 자체 안전 규칙이 없다. 이 쪽의 도구(<code>lab_cluster</code> · <code>lab_source</code> · <code>lab_geom</code> · <code>peek.py</code>)는 포트를 열지 않고 모터를 부르지 않는다 — 라이다가 꽂혀 있고 머리가 돌고 있었다면 <strong>그대로 돈다. 돈다고 간주한다.</strong>
+        기록을 새로 만든다면 <a href="l-04-one-turn.html">l-04</a> 의 <code>lab_turn</code> 으로 한다. 그 도구는 끝에 <code>motor(fd, false)</code> 로 머리를 멈춘다 — 끝난 뒤에도 돌면 USB 케이블을 뽑는다(<a href="l-01-link.html">l-01</a> 의 L2). 레이저 규칙 L1 도 l-01 이 소유한다.</p>
+        <p>L1 · L2 는 l-01 이 정한 안전 규칙 번호다. L1 은 보이지 않는 785 nm 레이저에 관한 규칙이다 — 스캔 창을 렌즈 높이에서 정면으로 들여다보지 않는다. L2 는 도는 머리에 관한 규칙이다. 결정 L3 과는 다른 번호다.</p>
+      </div>
+      <div class="callout tip"><span class="ct">힌트 카드 읽는 법</span>
+        <p>골격(채울 자리를 비워 둔 코드)의 빈 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 있다. 이 쪽은 T1 ~ T6 이다 — <code>width()</code> · <code>centroid()</code> · <code>neighbor_distances()</code> · <code>split()</code> · <code>downsample()</code> · <code>gap_stats()</code>. 카드는 여섯 다 실습 A 의 §3-1-3 에 있다. 주석 안의 번호 걸음을 보고 먼저 직접 써 본다.</p>
+        <p>막히면 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와 <strong>줄마다의 설명</strong>이 있다. 칸은 늘 같다: 할 일 · 완결 코드 · 코드 설명 · 다르게 써도 되는 곳 · 쓰는 API · 흔한 실수 · 확인.</p>
+        <p>T1 ~ T6 은 시험 <code>test_cluster</code> 가 채점한다. 완결 코드는 Pi 에서 돌려 본 것이 아니다. Pi 의 빌드와 내 기록 파일에서의 결과는 "돌리고 보기"에서 내가 확인한다.<sup class="fn"><a href="#fn-2" id="fnref-2">2</a></sup></p>
+        <p>붙여 넣고 끝내지 않는다. 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
+      </div>
 
       <h3 id="s3-1">3-1. 실습 A — 같은 물건 안에서 이웃은 얼마나 떨어져 있는가 <span class="tag sim">기록 파일</span></h3>
 
       <h4 id="s3-1-1">3-1-1. 확인 — 입력이 무엇이고, 앞 쪽이 무엇을 정해 두었는가</h4>
       <p>이 쪽이 쓰는 값은 대부분 <strong>앞 쪽에서 이미 정해졌거나 이미 쟀다</strong>. 무엇이 확정이고 무엇이 내 빈칸인지부터 가른다.</p>
+      <p>표의 "출처 · 등급" 열에 나오는 등급은 다음과 같다.</p>
+      <ul>
+        <li><strong>확정</strong> — 근거 문서(데이터시트 · 앞 쪽의 계약 등)에 값이 그대로 적혀 있다.</li>
+        <li><strong>산술</strong> — 위 등급의 값에서 계산한 값이다.</li>
+        <li><strong>확인 과제</strong> — 이 가이드를 쓴 사람이 확인하지 못한 사실이다. 실물이나 뒤 쪽에서 확인한다.</li>
+      </ul>
       <div class="tbl"><table>
         <thead><tr><th>항목</th><th>값</th><th>출처 · 등급</th><th>내 장치에서 보는 법</th></tr></thead>
         <tbody>
           <tr><td>입력 형식</td><td><code>.scan.jsonl</code> — 각도 deg · 거리 <strong>m</strong> · 무반사 <code>null</code></td><td>기준 형식 <a href="l-04-one-turn.html#s2-6">l-04 §2-6</a> — <strong>확정</strong></td><td><code>pi$ head -c 200 scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl</code></td></tr>
           <tr><td>내 각도 간격(중앙값)</td><td><code>____</code> °</td><td><strong>확인 과제</strong> — l-04 §3-2-4 에서 이미 쟀다. 안 쟀으면 l-04 §3-2-4 로 돌아간다</td><td>내 노트의 <code>gap median</code> 칸</td></tr>
           <tr><td>1 m 에서의 점 간 거리</td><td><code>____</code> m</td><td><strong>산술</strong> — <code>2 × 1 × sin(Δθ/2)</code>, Δθ 는 윗줄</td><td>§2-3 표의 셋째 줄을 채운다</td></tr>
-          <tr><td><code>to_xy()</code> 가 무반사에 돌려주는 것</td><td><code>None</code> — <strong>자리는 남는다</strong>(목록 길이 = <code>len(scan.a)</code>)</td><td><strong>확정</strong> — <a href="l-08-floor-plan.html#s3-1-2">l-08 §3-1-2</a> 의 CONTRACT 가 확정했다</td><td>내 구현이 그 계약을 지키는지는 아래 확인 표 3번</td></tr>
+          <tr><td><code>to_xy()</code> 가 무반사에 돌려주는 것</td><td>빈 <code>optional</code> — <strong>자리는 남는다</strong>(목록 길이 = <code>s.size()</code>)</td><td><strong>확정</strong> — <a href="l-08-floor-plan.html#s3-1-2">l-08 §3-1-2</a> 의 계약 주석(CONTRACT)이 확정했다</td><td>내 구현이 그 계약을 지키는지는 아래 확인 표 5번</td></tr>
           <tr><td>문턱</td><td><code>____</code> m</td><td><strong>확인 과제</strong> — 이 실습에서 잰 분포로 <strong>내가 정한다</strong></td><td>§3-1-4 의 분포 표 → §3-2</td></tr>
         </tbody>
       </table></div>
-      <p><strong>실행 확인:</strong> 미확인 — 집필자는 Pi 에 접속하지 못했고 라이다를 동작시키지 못했다. 아래 네 줄은 출력의 <em>모양</em>이고 값 자리는 <code>&lt;n&gt;</code> 이다. 이 쪽의 파이썬만은 예외다. 시험 벡터와 골격은 집필자가 Mac 에서 직접 실행해 확인했다(§3-1-3).</p>
-      <div class="tbl"><table class="fixed"><colgroup><col class="w5"><col class="w50"><col class="w15"><col class="w30"></colgroup>
+      <p><strong>실행 확인: 미확인</strong> — 이 가이드를 쓴 사람은 Pi 에 접속하지 못했고 라이다를 동작시키지 못했다. 아래는 출력의 <em>모양</em>이고 값 자리는 <code>&lt;n&gt;</code> 이다.</p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w5"><col class="w35"><col class="w25"><col class="w35"></colgroup>
         <thead><tr><th>#</th><th>어디서 보는가</th><th>기대 출력의 모양</th><th>없으면</th></tr></thead>
         <tbody>
-          <tr><td>1</td><td><code>pi$ ls -l scripts/lidar_lab/scans/</code></td><td><code>-rw-r--r-- … &lt;이름&gt;.scan.jsonl</code></td><td>파일이 없다. 기록하는 방법은 둘 — 내 라이다로 기록한다(<a href="l-04-one-turn.html#s3-4">l-04 §3-4</a>) · <code>/scan</code> 에서 받아 적는다(<a href="l-06-three-sources.html#s3-4">l-06 §3-4</a>)</td></tr>
-          <tr><td>2</td><td><code>pi$ python3 scripts/lidar_lab/source.py scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl</code></td><td><code>turn 0 n=&lt;n&gt; miss=&lt;n&gt; t=0.000</code> 이 바퀴마다 한 줄</td><td><code>ValueError: line &lt;n&gt;: …</code> 이면 <strong>로더가 거부한 것</strong>이고 메시지에 줄 번호가 나온다 → l-04 §3-4. 이 쪽은 그 검사를 통과한 파일만 입력으로 받는다</td></tr>
-          <tr><td>3</td><td><code>pi$ cd scripts/lidar_lab &amp;&amp; python3 -c "from turn import load_jsonl; from geom import to_xy; s = load_jsonl('scans/&lt;이름&gt;.scan.jsonl'); xy = to_xy(s[0]); print(len(xy) == len(s[0].a), sum(1 for v in xy if v is None), sum(1 for v in s[0].r if v is None))"</code></td><td><code>True &lt;n&gt; &lt;n&gt;</code> — 앞이 <code>True</code> 이고 <strong>뒤 두 수가 같다</strong></td><td><code>False</code> 면 내 <code>to_xy()</code> 가 무반사 자리를 <strong>빼고</strong> 돌려주는 것이다(l-08 벡터 <strong>3a</strong>). 뒤 두 수가 다르면 무반사 자리에 <code>None</code> 이 아닌 것(예컨대 <code>(0, 0)</code>)이 들어 있다(벡터 <strong>3b</strong>). 둘 다 <a href="l-08-floor-plan.html#s3-1-3">l-08 §3-1-3</a> 의 ②로 돌아간다</td></tr>
-          <tr><td>4</td><td><code>pi$ ls scripts/lidar_lab/tests/</code></td><td><code>test_geom.py  test_point.py  test_turn.py  …</code></td><td>앞 쪽의 시험이 아직 없다. <strong><a href="l-08-floor-plan.html">l-08</a> 의 <code>PASS geom</code> 을 먼저 통과시킨다</strong> — 이 쪽의 벡터는 <code>to_xy()</code> 를 거쳐 계산되므로, <code>to_xy()</code> 가 틀려 있으면 이 쪽에서 엉뚱한 곳을 고치게 된다</td></tr>
+          <tr><td>1</td><td><code>pi$ g++ --version</code> · <code>pi$ cmake --version</code></td><td><code>g++ … &lt;n&gt;.&lt;n&gt;.&lt;n&gt;</code> · <code>cmake version 3.&lt;n&gt;.&lt;n&gt;</code></td><td><a href="l-00-map.html#s3-1">l-00 §3-1</a> 로 돌아간다. Mac 의 <code>clang++</code> 는 시험 연습용이다(결정 L3)</td></tr>
+          <tr><td>2</td><td><code>pi$ ls scripts/lidar_lab/include/lidar_lab/ scripts/lidar_lab/build/CMakeCache.txt</code></td><td><code>geom.hpp</code> · <code>dump.hpp</code> · <code>scan_io.hpp</code> 가 보이고, 빌드 디렉터리 경로가 나온다</td><td>위 <code>.meta</code> 의 "선행" 칸의 파일을 먼저 만든다. 빌드 디렉터리가 없으면 저장소 루트에서 <code>pi$ cmake -S scripts/lidar_lab -B scripts/lidar_lab/build</code> 를 한 번 한다</td></tr>
+          <tr><td>3</td><td><code>pi$ ls scripts/lidar_lab/scans/</code></td><td><code>&lt;이름&gt;.scan.jsonl</code> 이 하나 이상</td><td>기록하는 방법은 둘 — 내 라이다로 기록한다(<a href="l-04-one-turn.html#s3-4">l-04 §3-4</a>) · <code>/scan</code> 에서 받아 적는다(<a href="l-06-three-sources.html#s3-4">l-06 §3-4</a>)</td></tr>
+          <tr><td>4</td><td><code>pi$ scripts/lidar_lab/build/lab_source scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl</code></td><td>바퀴마다 <code>turn &lt;k&gt;  n=&lt;n&gt;  miss=&lt;n&gt;  t=&lt;t&gt;</code> 한 줄</td><td><code>error: line &lt;n&gt;: …</code> 이면 <strong>로더가 거부한 것</strong>이다 → <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a>. 이 쪽은 그 검사를 통과한 파일만 받는다</td></tr>
+          <tr><td>5</td><td><code>pi$ scripts/lidar_lab/build/lab_geom scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl 1</code></td><td><code>turn 1 of &lt;n&gt;  n=&lt;n&gt;  measured=&lt;n&gt;  no-return=&lt;n&gt;</code></td><td><code>error: to_xy() returned …</code> 면 내 <code>to_xy()</code> 가 무반사 방향을 <strong>빼고</strong> 돌려준다 → <a href="l-08-floor-plan.html#s3-1-3">l-08 §3-1-3</a> 의 T1. 아래 작은 글씨</td></tr>
+          <tr><td>6</td><td><code>pi$ ls scripts/lidar_lab/tests/</code></td><td><code>check.hpp  test_geom.cpp  test_point.cpp  test_turn.cpp  …</code></td><td><strong><a href="l-08-floor-plan.html">l-08</a> 의 <code>test_geom</code> 을 먼저 통과시킨다</strong> — 이 쪽의 벡터는 <code>to_xy()</code> 를 거쳐 계산된다</td></tr>
         </tbody>
       </table></div>
-      <p class="small">확인 표 1번 보충: 남의 방 기록을 빌려 알고리즘만 실행해 보는 방법은 <a href="l-08-floor-plan.html">l-08</a> 이 다룬다. 그 파일로는 <strong>체크 항목을 통과시킬 수 없다</strong>.</p>
-      <p class="small">확인 표 3번 보충: <code>False</code> 면 인덱스가 밀려 점이 남의 각도에 배정된다. 두 실패 모두 <code>PASS geom</code> 이 통과하지 못하는 상태다. <strong>이 계약은 l-08 이 소유하고 이 쪽은 확인만 한다.</strong></p>
+      <p class="small">3번 보충: 남의 방 기록을 빌려 알고리즘만 실행해 보는 방법은 <a href="l-08-floor-plan.html">l-08</a> 이 다룬다. 그 파일로는 <strong>체크 항목을 통과시킬 수 없다</strong>.</p>
+      <p class="small">4 · 5번 보충: 5행은 l-08 의 계약 — <code>to_xy()</code> 는 무반사 방향의 <strong>자리를 남기고 그 자리를 비워 둔다</strong> — 을 확인한다. 자리를 빼면 인덱스가 밀려 점이 남의 각도에 배정된다. <strong>이 계약은 l-08 이 소유하고 이 쪽은 확인만 한다.</strong> 4행 첫 줄의 <code>miss</code> 와 5행의 <code>no-return</code> 은 같은 첫 바퀴의 수라 같아야 한다. 바퀴마다의 무반사 수는 <code>pi$ python3 scripts/lidar_lab/view/peek.py &lt;파일&gt;</code> 의 <code>null=</code> 로도 볼 수 있다. <code>lab_source</code> 는 바퀴를 0 부터 세고(<code>turn   0</code>), <code>lab_geom</code> · <code>peek.py</code> · 이 쪽의 <code>lab_cluster</code> 는 1 부터 센다.</p>
+      <p class="small">6번 보충: <code>to_xy()</code> 가 틀려 있으면 이 쪽에서 엉뚱한 곳을 고치게 된다. <code>test_cluster</code> 의 1 ~ 9 군이 <code>to_xy()</code> 를 부른다. 군은 같은 번호를 단 벡터의 묶음이다(1a · 1b 는 1군).</p>
 
-      <h4 id="s3-1-2">3-1-2. 골격</h4>
-      <p>파일은 <code>scripts/lidar_lab/cluster.py</code> 하나다. 이 쪽이 끝나면 여기에 공개 이름이 넷 생긴다 — <code>Cluster</code> · <code>neighbor_distances()</code> · <code>split()</code> · <code>downsample()</code>.</p>
-      <p>⚠ <strong><a href="l-11-lines.html">l-11</a> 과 l-12 가 이 <code>Cluster</code> 를 그대로 가져다 쓴다.</strong> 그래서 필드 이름 둘(<code>pts</code> · <code>idx</code>)과 <code>width()</code> 의 <strong>정의</strong>가 이 쪽에서 고정된다 — 뒤 쪽이 <code>c.pts</code> 로 점을 꺼내고 <code>c.idx</code> 로 원래 각도를 되찾는다. 이름을 바꾸면 <code>pts</code> · <code>idx</code> 를 그대로 읽는 뒤 쪽 코드가 그 줄에서 오류로 종료된다(l-11 비교본에서는 <code>TypeError</code>). <code>width()</code> 의 정의를 바꾸면 오류 없이 폭 값이 달라진다.</p>
-      <pre><code class="lang-python"># scripts/lidar_lab/cluster.py -- cut one revolution into objects, and thin it out.
-# Every function here is PURE: no port, no clock, no file. That is why
-# tests/test_cluster.py grades them with no lidar attached, and why this page runs
-# from a recorded .scan.jsonl on any machine.
+      <h4 id="s3-1-2">3-1-2. 골격 — <code>cluster.hpp</code> · <code>lab_cluster</code></h4>
+      <p>실습 A 가 <code>scripts/lidar_lab/</code> 에 더하는 파일은 셋이다. 시험 파일은 §3-1-3 에 있고, 그 1번 걸음에서 먼저 붙인다.</p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w35"><col class="w40"><col class="w25"></colgroup>
+        <thead><tr><th>파일</th><th>성질</th><th>채울 자리</th></tr></thead>
+        <tbody>
+          <tr><td><code>include/lidar_lab/cluster.hpp</code></td><td>순수 — <code>Cluster</code> · 함수 넷 · <code>GapStats</code></td><td>T1 <code>width()</code> · T2 <code>centroid()</code> · T3 <code>neighbor_distances()</code> · T4 <code>split()</code> · T5 <code>downsample()</code> · T6 <code>gap_stats()</code></td></tr>
+          <tr><td><code>src/cluster.cpp</code> → <code>build/lab_cluster</code></td><td>진입점 — 분포 · 덩어리 표 · 솎은 뒤 표. 옵션 <code>--turn</code> · <code>--sector</code> · <code>--xy</code></td><td>없음(전량)</td></tr>
+          <tr><td><code>tests/test_cluster.cpp</code></td><td>시험 — 벡터 43 개(§3-1-3)</td><td>없음(전량)</td></tr>
+          <tr><td><code>CMakeLists.txt</code></td><td>맨 아래에 두 줄(도구 · 시험)</td><td>—</td></tr>
+        </tbody>
+      </table></div>
+      <p><code>cluster.hpp</code> 는 <strong>순수</strong>하다 — 포트도 시계도 파일도 ROS 도 건드리지 않는다. 그래서 라이다 없이 채점되고, 시험은 Mac 의 <code>clang++</code> 로도 연습할 수 있다. 파일을 읽는 것은 <code>lab_cluster</code> 이고, 읽는 함수는 l-04 의 <code>load_jsonl()</code> 하나다. 그 로더는 <strong>검사하는</strong> 로더라서 이 쪽이 다시 쓰지 않는다 — 다시 쓰면 그 검사가 빠진다.</p>
+      <p>⚠ <strong><a href="l-11-lines.html">l-11</a> · l-12 · l-13 이 이 <code>Cluster</code> 를 그대로 가져다 쓴다.</strong> 그래서 필드 이름 둘(<code>pts</code> · <code>idx</code>)과 <code>width()</code> 의 <strong>정의</strong>가 이 쪽에서 고정된다 — 뒤 쪽이 <code>c.pts</code> 로 점을 꺼내고 <code>c.idx</code> 로 원래 각도를 되찾는다. 이름을 바꾸면 <strong>뒤 쪽을 빌드할 때</strong> 그 이름을 읽는 줄이 컴파일 오류를 낸다. <code>width()</code> 의 정의를 바꾸면 오류 없이 폭 값이 달라진다. 생성자는 일부러 두지 않았다 — <code>Cluster{pts, idx}</code> 로 만든다.</p>
+      <p>주석의 <strong>불변식</strong>을 먼저 읽는다. 전부 §2-1 · §2-2 · §2-4 에서 도출된 것이고, 전부 시험 벡터로 채점된다 — 벡터 번호가 주석에 적혀 있다. 첫 블록은 <code>cluster.hpp</code> 의 머리와 <code>Cluster</code> 다(T1 · T2).</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/include/lidar_lab/cluster.hpp -- one revolution cut into objects.  (l-10)
+// PURE: no port, no ROS, no clock, no file. That is why tests/test_cluster.cpp grades it with
+// nothing plugged in (on the Pi host, or on the Mac with clang++), and why l-11 to l-14 can
+// call the same functions from their own tools.
+#pragma once
 
-import math
-from turn import Scan                 # l-04
-from geom import to_xy                # l-08
+#include &lt;algorithm&gt;
+#include &lt;cmath&gt;
+#include &lt;cstddef&gt;
+#include &lt;optional&gt;
+#include &lt;utility&gt;
+#include &lt;vector&gt;
 
+#include "lidar_lab/geom.hpp"
+#include "lidar_lab/scan_io.hpp"
 
-class Cluster:
-    """One run of neighbouring points that this tool decided are one object.
+namespace lidar_lab {
 
-    pts : [(x, y)] in METERS, in ascending-angle order, wrapping through 0 deg
-          when the cluster straddles the seam (2-2).
-    idx : [int] the index each point had in the Scan it came from. Keep it --
-          l-11 needs the way back to the angle, and it is how you find the
-          offending point when a cluster looks wrong.
-    Both lists are the same length. A one-point cluster is legal (2-4).
-    """
+// One run of neighbouring points that this tool decided are one object.
+//   pts  (x, y) in METRES, in ascending-angle order -- wrapping through 0 deg when the
+//        cluster straddles the seam (2-2): then the tail points come first, the head points
+//        after them.
+//   idx  the index each point had in the Scan it came from. Keep it: l-11 needs the way
+//        back to the angle, and it is how you find the offending point when a cluster
+//        looks wrong.
+// Both vectors are the same length. A one-point cluster is legal (2-4).
+// No constructor on purpose: write Cluster{pts, idx}. l-11, l-12 and l-13 read pts and idx
+// BY NAME -- rename one and those pages stop compiling.
+struct Cluster {
+  std::vector&lt;Point&gt; pts;
+  std::vector&lt;std::size_t&gt; idx;
 
-    __slots__ = ("pts", "idx")
+  std::size_t size() const { return pts.size(); }
 
-    def __init__(self, pts, idx):
-        self.pts, self.idx = pts, idx
+  // Straight-line distance between the FIRST and the LAST point, in metres.
+  // Fixed definition (2-1): the two ends in angle order. It is NOT the bounding box and NOT
+  // the widest pair inside the cluster -- for a cluster that bends more than half a turn
+  // those three disagree, and l-11 / l-12 inherit whatever this returns.
+  // Fewer than two points -&gt; 0.0, not an error.
+  double width() const {
+    // TODO(you) [T1]: the distance between the two END points - hint card T1
+    //   1) fewer than two points: 0.0 (look before you read an end)
+    //   2) the first point and the last point of pts, one std::hypot
+    //   Delete the placeholder line below when you start.
+    return 0.0;
+  }
 
-    def __len__(self):
-        return len(self.pts)
+  // Arithmetic mean of pts -&gt; (x, y) in metres.
+  // The mean of the POINTS, not of the object: the sensor sees only the near face, so the
+  // centroid of a round bin sits on its front edge. The value depends on l-08's angle
+  // convention (2-1) -- report it as a place only after that convention is settled.
+  // Never called on an empty cluster: split() does not make one.
+  Point centroid() const {
+    // TODO(you) [T2]: the mean of x and the mean of y - hint card T2
+    //   1) add up x and y over pts
+    //   2) divide each sum by the number of points (a double, not an integer division)
+    //   Delete the placeholder line below when you start.
+    return {0.0, 0.0};
+  }
+};
 
-    def width(self):
-        """Straight-line distance between the FIRST and LAST point, in meters.
+}  // namespace lidar_lab</code></pre>
+      <p>둘째 블록이 이 쪽의 핵심 둘이다(T3 · T4). 같은 파일의 아래에 붙인다.</p>
+      <pre><code class="lang-cpp">namespace lidar_lab {
 
-        Fixed definition (2-1): the two ends in angle order. It is NOT the
-        bounding box and NOT the widest pair inside the cluster -- for a cluster
-        that bends more than half a turn those three disagree, and l-11 / l-12
-        inherit whatever this returns. A one-point cluster is 0.0, not an error.
-        """
-        # TODO(you): two points, one hypot. Watch the one-point case.
-        return 0.0
+// Distance in METRES from each measured point to the next measured one, around the whole
+// ring (2-1, 2-2) -&gt; one entry per measured point.
+// Invariants -- each one is graded by a vector in tests/test_cluster.cpp:
+//   1. A no-return (an EMPTY r) is SKIPPED: it has no coordinate, and skipping it widens the
+//      gap on either side. That is the truth, not a bug (5a, 5b).
+//   2. The list is a RING: entry k is the distance from measured point k to measured point
+//      k + 1, and the LAST entry runs from the last measured point back to the first (3a).
+//      result.size() == the number of measured points.
+//   3. Fewer than two measured points -&gt; an empty vector (9a). Not an error, not a crash.
+//   4. l-08's angle convention does not matter here: a distance survives any rotation or
+//      mirroring of the plane.
+// Uses to_xy() from geom.hpp (l-08). Called from split() below and from lab_cluster (3-1).
+inline std::vector&lt;double&gt; neighbor_distances(const Scan&amp; s) {
+  // TODO(you) [T3]: one distance per measured point, around the ring - hint card T3
+  //   1) to_xy(s) (l-08), then keep only the slots that HAVE a point -- an empty one is a
+  //      no-return (invariant 1)
+  //   2) fewer than two kept points: return the empty vector (invariant 3)
+  //   3) walk the kept points once: from point k to point (k + 1) % count, one std::hypot each
+  //      -- the remainder is what makes the last entry wrap to the first (invariant 2)
+  //   Delete the placeholder lines below when you start.
+  (void)s;
+  return {};
+}
 
-    def centroid(self):
-        """Arithmetic mean of pts -&gt; (x, y) in meters.
+// Cut one Scan into objects -&gt; clusters in ascending-angle order.
+//   gap  the threshold in METRES, one constant (2-3 says why the constant is the thing you
+//        will argue with -- and that a non-constant policy goes OUTSIDE this function).
+// Invariants:
+//   1. Neighbours with d &lt;= gap stay together; d &gt; gap starts a new cluster. The boundary
+//      is INCLUSIVE, and vector 1 grades exactly that.
+//   2. The seam is closed: if the last cluster and the first are within gap they are ONE
+//      cluster, it comes out FIRST, and it carries the tail points before the head points.
+//      Skip this and the object in front of you is always counted twice (2-2, vector 3).
+//   3. ... unless there is only one cluster to begin with. Do not merge it with itself --
+//      its points would appear twice (vector 4).
+//   4. The same skip rule for a no-return as above. One measured point -&gt; one one-point
+//      cluster (9c). No measured point at all -&gt; an empty vector, not one empty cluster (9b).
+inline std::vector&lt;Cluster&gt; split(const Scan&amp; s, double gap) {
+  // TODO(you) [T4]: one pass to build the runs, then ONE decision about the seam - hint card T4
+  //   1) the indices of the measured points (the same skip rule as T3); none: return {}
+  //   2) the first measured point opens the first cluster
+  //   3) for each next measured point: a distance &gt; gap opens a new cluster, then the point
+  //      (its (x, y) AND its index) goes into the last cluster
+  //   4) AFTER the pass, once: more than one cluster and the last distance (the seam) &lt;= gap
+  //      -&gt; the last cluster's points, then the first cluster's points, become the first
+  //      cluster, and the last one goes away (invariants 2, 3)
+  //   Delete the placeholder lines below when you start.
+  (void)s;
+  (void)gap;
+  return {};
+}
 
-        Note this is the mean of the POINTS, not of the object: the sensor only
-        sees the near face, so the centroid of a round bin sits on its front edge.
-        The value also depends on l-08's angle convention (2-1) -- report it as a
-        coordinate only after that convention is settled.
-        """
-        # TODO(you): mean of x, mean of y. Empty clusters do not exist here.
-        return (0.0, 0.0)</code></pre>
-      <p>아래 두 함수가 이 쪽의 핵심이다. 주석의 불변식이 전부 §2-1 · §2-2 에서 도출된 것이고, <strong>전부 시험 벡터로 채점된다</strong> — 벡터 번호가 주석에 적혀 있다.</p>
-      <pre><code class="lang-python">
-def neighbor_distances(scan):
-    """Distance in METERS between each measured point and the next one, around
-    the whole ring -&gt; [float], one entry per measured point (2-1, 2-2).
+}  // namespace lidar_lab</code></pre>
+      <p>셋째 블록은 솎기(T5)와, 거리 목록을 네 수로 줄이는 계산(T6)이다. 같은 파일의 아래에 붙인다. T6 의 정의는 §2-4 의 표 그대로다 — 중앙값은 개수가 짝수면 가운데 둘의 평균, 분위수는 최근접 순위.</p>
+      <pre><code class="lang-cpp">namespace lidar_lab {
 
-    Invariants -- each one is graded by a vector in tests/test_cluster.py:
-      1. Points whose range is None are SKIPPED. They have no coordinate, and
-         skipping them widens the gap on either side. That is the truth, not a bug.
-      2. The list is a RING: the last entry is the distance from the last measured
-         point back to the first. len(result) == number of measured points.
-      3. Fewer than two measured points -&gt; [] (not an error, not a crash).
-      4. The angle convention of l-08 does not matter here: distances survive any
-         rotation or mirroring of the plane.
-    Pure. Called from split() below and from the baseline lab of 3-1.
-    Verify with: python3 tests/test_cluster.py
-    """
-    # TODO(you): build the list of (index, (x, y)) for the MEASURED points first
-    #   -- scan.r[i] is None tells you which to leave out -- then walk it once,
-    #   taking the next point modulo the length so the last pair wraps around.
-    return []
+// Keep every k-th point, starting with the first -&gt; a NEW Scan; s is not touched.
+// The result is still a legal Scan of the reference format, because the rest of the
+// toolchain reads it like any other (l-04 3-4-2): a stays ascending inside [0, 360), r and q
+// follow their own angle, and the vectors say how long it is -- no counter kept by hand.
+//   k  1 = the same content. k must be &gt;= 1: lab_cluster refuses 0 before it gets here.
+//   q  an EMPTY q means "no intensities" (l-04) and stays empty -- do not invent values.
+//   t  carried over unchanged: the revolution happened when it happened.
+// Thinning is not free: it multiplies the gaps by k (2-5, vector 8).
+inline Scan downsample(const Scan&amp; s, std::size_t k) {
+  // TODO(you) [T5]: every k-th point into a NEW Scan - hint card T5
+  //   1) an empty Scan; walk i = 0, k, 2k, ... while i &lt; s.size()
+  //   2) copy a[i] and r[i]; copy q[i] only when s.q is not empty
+  //   3) copy t
+  //   Delete the placeholder lines below when you start.
+  (void)k;
+  return s;
+}
 
+// The distribution of 3-1 in four numbers (2-4) -- what lab_cluster prints.
+//   median    the middle of the SORTED values; the mean of the two middle ones when n is even
+//   p75, p90  NEAREST RANK: the value at sorted position ceil(n * p), counted from 1 -- always
+//             one of the values, never something between two of them
+//   max       the largest value
+struct GapStats {
+  std::size_t n;
+  double median, p75, p90, max;
+};
 
-def split(scan, gap):
-    """Cut one Scan into objects -&gt; [Cluster], in ascending-angle order.
+// d is taken BY VALUE: the function sorts its own copy, and the caller's order stays.
+// Empty d -&gt; an EMPTY optional: there is nothing to describe (fewer than two measured
+// points, or a sector with no pair in it). Not an error.
+inline std::optional&lt;GapStats&gt; gap_stats(std::vector&lt;double&gt; d) {
+  // TODO(you) [T6]: sort, then read four numbers off the sorted copy - hint card T6
+  //   1) empty: return std::nullopt
+  //   2) std::sort the copy
+  //   3) median: n odd -&gt; the middle one; n even -&gt; the mean of the middle two
+  //   4) nearest rank: rank = ceil(n * p) counted from 1, so the element at rank - 1
+  //   5) max: the last element
+  //   Delete the placeholder lines below when you start.
+  (void)d;
+  return std::nullopt;
+}
 
-    gap is the threshold in METERS (a constant -- 2-3 says why the constant is
-    the thing you will argue with, and where to put a non-constant policy).
-    Invariants:
-      1. Neighbours d &lt;= gap stay together; d &gt; gap starts a new cluster. The
-         boundary is INCLUSIVE and vector 1 grades exactly that.
-      2. The seam is closed: if the last cluster and the first are within gap they
-         are ONE cluster, and it comes out first, carrying the tail points before
-         the head points. Skip this and the object in front of you is always
-         counted twice (2-2).
-      3. ... unless there is only one cluster to begin with. Do not merge it with
-         itself -- the points would appear twice (vector 4).
-      4. Same skip rule for None as above, and a scan with no measured point at
-         all yields [], not [Cluster([], [])].
-    Pure.
-    """
-    # TODO(you): one pass to build the runs, then ONE decision about the seam.
-    #   Do the seam after the pass, never inside it.
-    return []</code></pre>
-      <p>남은 둘은 솎기(<code>downsample()</code>)와 실행 진입점(<code>main()</code>)이다. <code>main()</code> 은 이 쪽의 실습 넷이 <strong>전부 같은 명령 하나</strong>로 실행되게 한다 — 인자를 몇 개 주느냐가 곧 실습 번호다.</p>
-      <pre><code class="lang-python">def downsample(scan, k):
-    """Keep every k-th point -&gt; a new Scan (k = 1 returns the same content).
+}  // namespace lidar_lab</code></pre>
+      <p>진입점 <code>src/cluster.cpp</code> 는 <strong>전량</strong>이다. 실습 넷이 <strong>전부 같은 도구 하나</strong>로 실행되게 한다 — 파일 이름 뒤에 주는 수의 개수가 곧 실습 번호다.</p>
+      <ul>
+        <li>수 없음 → 실습 A 의 점 간 거리 분포(<code>gap_stats()</code> 의 네 수)</li>
+        <li>문턱 하나 → 실습 B · C 의 덩어리 표</li>
+        <li>문턱과 k → 실습 D 의 솎은 뒤 표</li>
+      </ul>
+      <p>계산은 모두 헤더의 내 함수가 한다. 이 파일은 인자를 읽어 그 함수를 부르고 결과를 찍기만 한다. 실습 A 의 "벽 하나만" 재기는 <code>--sector A0 A1</code> 로, 바퀴 하나만 보기는 <code>--turn K</code> 로 한다 — 코드를 고칠 일이 없다.</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/src/cluster.cpp -- one record -&gt; the gap distribution, the cluster table, or
+// the cluster table after thinning. How many numbers you give IS the lab.  (l-10, given in full)
+//   pi$ scripts/lidar_lab/build/lab_cluster &lt;file.scan.jsonl&gt;              3-1  distances
+//   pi$ scripts/lidar_lab/build/lab_cluster &lt;file.scan.jsonl&gt; &lt;gap&gt;        3-2, 3-3  clusters
+//   pi$ scripts/lidar_lab/build/lab_cluster &lt;file.scan.jsonl&gt; &lt;gap&gt; &lt;k&gt;    3-4  thin, then cluster
+//   gap             the threshold in metres, &gt; 0                        your decision (3-2)
+//   k               keep every k-th point, 1 .. 1000                    your decision (3-4)
+//   --turn K        only revolution K (1 = the first, as peek.py numbers them); default: all
+//   --sector A0 A1  3-1 only: only the neighbour pairs with BOTH points in [A0, A1) degrees;
+//                   A0 &gt; A1 means the sector runs through 0 deg (--sector 350 10)
+//   --xy            also write each printed revolution (thinned when k is given) next to the
+//                   record, for view/floor_plan.py: &lt;stem&gt;.t&lt;K&gt;.xy.csv, or .t&lt;K&gt;.k&lt;k&gt;.xy.csv
+// It prints, per revolution, one of
+//   turn 1 of 12  measured=352/360  pairs=352  median=0.0251 m  p75=0.0302  p90=0.0444  max=1.2071
+//   turn 1 of 12  gap=0.05 m  clusters=9  (points 352)
+//   turn 1 of 12  k=4  points=90 (was 360)  gap=0.05 m  clusters=17
+// and under a cluster line, one line per cluster:
+//     #0  n=41  width=0.982 m  centroid=(1.52, -0.31)  idx 351..359, 0..31
+// The numbers are YOUR neighbor_distances(), gap_stats(), split() and downsample(). The idx
+// ranges are runs of the cluster's idx; "351..359, 0..31" is a cluster across the 0 deg seam.
+// With k, idx is printed in the ORIGINAL revolution's numbering (idx * k), so a k=4 table can
+// be laid next to the k=1 table.
+// No port, no clock, no motor: it reads one file, so it runs with the lidar unplugged.
+// Exit code: 0 = done; 1 = the loader refused the file, there is no such turn,
+// neighbor_distances() broke invariant 2, or the csv could not be written; 2 = usage.
+#include &lt;cmath&gt;
+#include &lt;cstddef&gt;
+#include &lt;cstdio&gt;
+#include &lt;cstdlib&gt;
+#include &lt;cstring&gt;
+#include &lt;exception&gt;
+#include &lt;optional&gt;
+#include &lt;string&gt;
+#include &lt;vector&gt;
 
-    The result must still be a legal Scan of the reference format, because the
-    rest of the toolchain will read it exactly like any other: a stays ascending
-    and inside [0, 360), r and q follow their own angle, and the length is what
-    the lists say it is -- never a counter kept by hand (l-04 3-4-2's loader
-    refuses a file whose n disagrees).
-    Thinning is not free: it multiplies the gaps by k (2-5). t is carried over
-    unchanged -- the revolution happened when it happened.
-    Pure: it builds a new Scan and does not touch the one it was given.
-    """
-    # TODO(you): slice the lists. q may be None -- do not invent an empty list.
-    return Scan(scan.a, scan.r, scan.q, scan.t)
+#include "lidar_lab/cluster.hpp"
+#include "lidar_lab/dump.hpp"
+#include "lidar_lab/geom.hpp"
+#include "lidar_lab/scan_io.hpp"
 
+using namespace lidar_lab;
 
-def main(argv):
-    """pi$ python3 scripts/lidar_lab/cluster.py &lt;file.scan.jsonl&gt;              -- 3-1
-       pi$ python3 scripts/lidar_lab/cluster.py &lt;file.scan.jsonl&gt; &lt;gap&gt;        -- 3-2, 3-3
-       pi$ python3 scripts/lidar_lab/cluster.py &lt;file.scan.jsonl&gt; &lt;gap&gt; &lt;k&gt;    -- 3-4
-    """
-    # TODO(you): load_jsonl() the file (l-04 -- do not write another reader),
-    #   then print what the lab you are on asks for. No threshold -&gt; the distance
-    #   distribution of 3-1. With one -&gt; the cluster table of 3-2.
-    return 1
+namespace {
 
+// "0.05" -&gt; 0.05. The whole text must be a finite number; anything else is a usage error.
+bool parse_double(const char* text, double&amp; v) {
+  char* end = nullptr;
+  v = std::strtod(text, &amp;end);
+  return end != text &amp;&amp; *end == '\0' &amp;&amp; std::isfinite(v);
+}
 
-if __name__ == "__main__":
-    import sys
-    raise SystemExit(main(sys.argv[1:]))</code></pre>
-      <p class="small">⚠ <code>main()</code> 은 파일을 읽지만 <strong>읽는 코드를 여기에 쓰지 않는다</strong> — <code>load_jsonl()</code> 은 l-04 가 전량 제공한 <strong>검사하는</strong> 로더다. 로더를 다시 쓰면 그 검사가 빠진다. 호출만 한다.</p>
+// "4" -&gt; 4, only lo .. hi.
+bool parse_int(const char* text, long lo, long hi, long&amp; v) {
+  char* end = nullptr;
+  v = std::strtol(text, &amp;end, 10);
+  return end != text &amp;&amp; *end == '\0' &amp;&amp; v &gt;= lo &amp;&amp; v &lt;= hi;
+}
+
+// [a0, a1) in degrees; a0 &gt; a1 runs through 0 deg.
+bool in_sector(double a, double a0, double a1) {
+  return a0 &lt;= a1 ? (a &gt;= a0 &amp;&amp; a &lt; a1) : (a &gt;= a0 || a &lt; a1);
+}
+
+// 3-1: the distribution of the distances between neighbours. With a sector, only the pairs
+// whose two points both lie in it -- the pair that LEAVES the sector is not a neighbour pair
+// of the wall you picked.
+bool print_distances(const Scan&amp; s, int turn, std::size_t turns, const double* sector) {
+  std::vector&lt;std::size_t&gt; m;  // the measured indices, the order neighbor_distances() walks
+  for (std::size_t i = 0; i &lt; s.size(); ++i) {
+    if (s.r[i]) m.push_back(i);
+  }
+  const std::vector&lt;double&gt; d = neighbor_distances(s);
+  const std::size_t want = m.size() &lt; 2 ? 0 : m.size();
+  if (d.size() != want) {
+    std::printf("error: neighbor_distances() returned %zu entries for %zu measured points"
+                " (invariant 2)\n", d.size(), m.size());
+    return false;
+  }
+  std::vector&lt;double&gt; use;
+  std::size_t measured = m.size();
+  if (sector) {
+    measured = 0;
+    for (std::size_t i : m) measured += in_sector(s.a[i], sector[0], sector[1]) ? 1 : 0;
+    for (std::size_t k = 0; k &lt; d.size(); ++k) {
+      const double a = s.a[m[k]], b = s.a[m[(k + 1) % m.size()]];
+      if (in_sector(a, sector[0], sector[1]) &amp;&amp; in_sector(b, sector[0], sector[1])) {
+        use.push_back(d[k]);
+      }
+    }
+  } else {
+    use = d;
+  }
+  std::printf("turn %d of %zu  ", turn, turns);
+  if (sector) {
+    std::printf("sector=[%s, %s) deg  ", repr_double(sector[0]).c_str(),
+                repr_double(sector[1]).c_str());
+  }
+  std::printf("measured=%zu/%zu  pairs=%zu", measured, s.size(), use.size());
+  const std::optional&lt;GapStats&gt; g = gap_stats(use);
+  if (g) {
+    std::printf("  median=%.4f m  p75=%.4f  p90=%.4f  max=%.4f\n", g-&gt;median, g-&gt;p75, g-&gt;p90,
+                g-&gt;max);
+  } else {
+    std::printf("  median=none\n");
+  }
+  return true;
+}
+
+// "351..359, 0..31": the cluster's idx as runs; a new run starts where the index does not
+// go up by one. Indices are multiplied by k (the original revolution's numbering).
+std::string idx_text(const std::vector&lt;std::size_t&gt;&amp; idx, std::size_t k) {
+  std::string t;
+  for (std::size_t j = 0; j &lt; idx.size();) {
+    std::size_t e = j;
+    while (e + 1 &lt; idx.size() &amp;&amp; idx[e + 1] == idx[e] + 1) ++e;
+    if (!t.empty()) t += ", ";
+    t += std::to_string(idx[j] * k);
+    if (e &gt; j) t += ".." + std::to_string(idx[e] * k);
+    j = e + 1;
+  }
+  return t;
+}
+
+// 3-2, 3-3, 3-4: one line per cluster.
+void print_clusters(const std::vector&lt;Cluster&gt;&amp; cs, std::size_t k) {
+  for (std::size_t c = 0; c &lt; cs.size(); ++c) {
+    const Point m = cs[c].centroid();
+    std::printf("  #%zu  n=%zu  width=%.3f m  centroid=(%.2f, %.2f)  idx %s\n", c, cs[c].size(),
+                cs[c].width(), m.first, m.second, idx_text(cs[c].idx, k).c_str());
+  }
+}
+
+std::size_t measured_points(const Scan&amp; s) {
+  std::size_t n = 0;
+  for (const std::optional&lt;double&gt;&amp; r : s.r) n += r ? 1 : 0;
+  return n;
+}
+
+int usage() {
+  std::printf(
+      "usage: lab_cluster &lt;file.scan.jsonl&gt; [gap] [k] [--turn K] [--sector A0 A1] [--xy]\n"
+      "  no gap: the distances (3-1)   gap: the clusters (3-2, 3-3)   gap k: thinned (3-4)\n"
+      "  gap: metres &gt; 0   k: 1 .. 1000   K: 1 = the first revolution   --sector: no gap only\n");
+  return 2;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+  std::vector&lt;const char*&gt; pos;
+  long turn = 0, k = 1;
+  bool write_xy = false, have_sector = false;
+  double sector[2] = {0.0, 0.0};
+  for (int i = 1; i &lt; argc; ++i) {
+    if (std::strcmp(argv[i], "--xy") == 0) {
+      write_xy = true;
+    } else if (std::strcmp(argv[i], "--turn") == 0 &amp;&amp; i + 1 &lt; argc) {
+      if (!parse_int(argv[++i], 1, 100000, turn)) return usage();
+    } else if (std::strcmp(argv[i], "--sector") == 0 &amp;&amp; i + 2 &lt; argc) {
+      if (!parse_double(argv[i + 1], sector[0]) || !parse_double(argv[i + 2], sector[1])) {
+        return usage();
+      }
+      if (sector[0] &lt; 0.0 || sector[0] &gt;= 360.0 || sector[1] &lt; 0.0 || sector[1] &gt; 360.0 ||
+          sector[0] == sector[1]) {
+        return usage();
+      }
+      have_sector = true;
+      i += 2;
+    } else if (argv[i][0] == '-' &amp;&amp; argv[i][1] == '-') {
+      return usage();
+    } else {
+      pos.push_back(argv[i]);
+    }
+  }
+  if (pos.empty() || pos.size() &gt; 3) return usage();
+  std::optional&lt;double&gt; gap;
+  if (pos.size() &gt;= 2) {
+    double g = 0.0;
+    if (!parse_double(pos[1], g) || g &lt;= 0.0) return usage();
+    gap = g;
+  }
+  if (pos.size() == 3 &amp;&amp; !parse_int(pos[2], 1, 1000, k)) return usage();
+  if (have_sector &amp;&amp; gap) return usage();
+
+  try {
+    const std::vector&lt;Scan&gt; scans = load_jsonl(pos[0]);
+    if (turn &gt; 0 &amp;&amp; static_cast&lt;std::size_t&gt;(turn) &gt; scans.size()) {
+      std::printf("no turn %ld: the file has %zu revolutions\n", turn, scans.size());
+      return 1;
+    }
+    for (std::size_t t = 1; t &lt;= scans.size(); ++t) {
+      if (turn &gt; 0 &amp;&amp; t != static_cast&lt;std::size_t&gt;(turn)) continue;
+      const Scan&amp; full = scans[t - 1];
+      const int tn = static_cast&lt;int&gt;(t);
+      if (!gap) {
+        if (!print_distances(full, tn, scans.size(), have_sector ? sector : nullptr)) return 1;
+      } else if (pos.size() == 2) {
+        const std::vector&lt;Cluster&gt; cs = split(full, *gap);
+        std::printf("turn %d of %zu  gap=%s m  clusters=%zu  (points %zu)\n", tn, scans.size(),
+                    repr_double(*gap).c_str(), cs.size(), measured_points(full));
+        print_clusters(cs, 1);
+      } else {
+        const Scan thin = downsample(full, static_cast&lt;std::size_t&gt;(k));
+        const std::vector&lt;Cluster&gt; cs = split(thin, *gap);
+        std::printf("turn %d of %zu  k=%ld  points=%zu (was %zu)  gap=%s m  clusters=%zu\n", tn,
+                    scans.size(), k, thin.size(), full.size(), repr_double(*gap).c_str(),
+                    cs.size());
+        print_clusters(cs, static_cast&lt;std::size_t&gt;(k));
+      }
+      if (write_xy) {
+        const Scan s = pos.size() == 3 ? downsample(full, static_cast&lt;std::size_t&gt;(k)) : full;
+        const std::string tag = pos.size() == 3 ? "k" + std::to_string(k) : "";
+        const std::string out = xy_csv_path(pos[0], tn, tag);
+        write_xy_csv(out, tn, s, to_xy(s), tag);
+        std::printf("wrote %s\n", out.c_str());
+      }
+    }
+  } catch (const std::exception&amp; e) {
+    std::printf("error: %s\n", e.what());
+    return 1;
+  }
+  return 0;
+}</code></pre>
+      <p><code>CMakeLists.txt</code> 의 맨 아래에 두 줄을 붙인다(시험 줄은 §3-1-3).</p>
+      <pre><code class="lang-cmake"># ---- l-10 ----
+lab_tool(cluster)                                  # 3-1-2: src/cluster.cpp -&gt; build/lab_cluster</code></pre>
+      <p>골격 그대로 빌드하면 <strong>경고 없이 빌드된다.</strong> <code>lab_cluster</code> 에 파일만 주면 <code>error: neighbor_distances() returned 0 entries for &lt;n&gt; measured points (invariant 2)</code> 를 찍고 1 로 끝난다. 문턱을 주면 <code>clusters=0</code> 을 찍는다. 골격의 <code>neighbor_distances()</code> · <code>split()</code> 이 빈 목록을 돌려주기 때문이다. 그 결과가 골격의 정상이다.<sup class="fn"><a href="#fn-2">2</a></sup></p>
+      <p class="small">⚠ aarch64(64비트 ARM — Pi 5 의 CPU 구조)의 <code>g++</code> 는 이 헤더를 include 하는 파일마다 아래 묶음을 찍는다. <code>note:</code> 로 시작하는 줄이 본문이고, 앞 두 줄은 위치, 뒤 두 줄은 그 줄의 원문과 <code>^</code> 표시다. CMake 빌드에서는 <code>lab_cluster</code> · <code>test_cluster</code> · <code>test_cluster_ub</code> 를 빌드할 때 한 번씩, 세 번 나온다.</p>
+      <pre><code class="lang-text">In file included from &lt;파일&gt;:&lt;n&gt;:
+&lt;경로&gt;/include/lidar_lab/cluster.hpp: In member function 'lidar_lab::Point lidar_lab::Cluster::centroid() const':
+&lt;경로&gt;/include/lidar_lab/cluster.hpp:&lt;n&gt;:&lt;n&gt;: note: parameter passing for argument of type 'std::pair&lt;double, double&gt;' when C++17 is enabled changed to match C++14 in GCC 10.1
+   &lt;n&gt; |   Point centroid() const {
+      |                          ^</code></pre>
+      <p class="small">UTF-8 로케일에서는 작은따옴표 <code>'</code> 가 <code>‘ ’</code> 로 찍힌다. 출력에서 찾을 때는 <code>note: parameter passing</code> 까지만 찾는다.</p>
+      <p class="small"><strong>경고도 오류도 아닌 안내</strong>다. <code>centroid()</code> 처럼 <code>Point</code>(<code>std::pair&lt;double, double&gt;</code>)를 값으로 돌려주는 함수가 있으면 나온다. GCC 10 에서 이런 값을 주고받는 방식이 aarch64 등에서 바뀌었다는 안내다. 다른 판의 GCC 로 빌드한 코드와 섞어 링크할 때만 문제가 된다. 이 가이드는 한 컴파일러로 한 번에 빌드하므로 해당하지 않는다.<sup class="fn"><a href="#fn-2">2</a></sup></p>
 
       <h4 id="s3-1-3">3-1-3. 직접 채우기 — 그리고 벡터로 채점한다</h4>
-      <p>순서는 l-04 와 같다. <strong>2번을 먼저 하는 것이 요령이다</strong> — 실패 메시지가 곧 할 일 목록이 된다.</p>
+      <p>순서는 이렇다. <strong>1번을 먼저 하는 것이 요령이다</strong> — 실패 줄의 목록이 곧 할 일 목록이 된다.</p>
       <ol class="steps">
-        <li><strong>골격을 그대로 한 번 실행한다.</strong> 아무것도 출력하지 않고 끝난다 — 골격의 <code>main()</code> 은 <code>1</code> 을 돌려주므로 <strong>종료 코드만 1</strong> 이고 트레이스백은 없다. 예외 없이 끝나는 것이 정상이다.</li>
-        <li><strong>시험 파일을 먼저 두고 실행한다.</strong> 아래 블록을 <code>scripts/lidar_lab/tests/test_cluster.py</code> 로 그대로 둔다. 지금 실행하면 <strong>벡터 1a 에서 멈춘다</strong> — 다만 <code>FAIL</code> 줄이 아니라 <code>IndexError: list index out of range</code> 트레이스백이다(집필자가 골격 그대로 실행해 확인했다). 골격의 <code>neighbor_distances()</code> 가 빈 목록을 돌려주니 <code>[0]</code> 이 없는 것이고, <strong>멈춘 줄이 곧 지금 할 일</strong>이다. 채워 갈수록 트레이스백이 <code>FAIL … got … want …</code> 줄로 바뀌고, 하나 통과시킬 때마다 다음 실패로 넘어간다 — <strong>그 순서가 곧 채울 순서</strong>다.</li>
-        <li><strong><code>neighbor_distances()</code> 를 먼저 채운다.</strong> 세 걸음이다 — ① 측정된 점만 골라 <code>(인덱스, (x, y))</code> 목록을 만든다 ② 그 목록을 한 번 훑으며 이웃 거리를 담는다 ③ <strong>마지막에서 처음으로 돌아오는 한 칸</strong>을 빠뜨리지 않는다. 이 한 칸은 <code>(k+1) % 길이</code> 의 나머지 연산이 만든다.</li>
-        <li><strong><code>split()</code> 은 3번의 <code>neighbor_distances()</code> 를 전제한다.</strong> 같은 훑기를 하면서 자를 자리를 정하고, <strong>이음매 판정은 훑기가 끝난 뒤 한 번만</strong> 한다. 훑는 도중에 이음매를 보려고 하면 경우의 수가 빠르게 늘어난다.
-          <br>힌트: 덩어리가 <strong>하나뿐</strong>일 때를 먼저 손으로 따져 본다(벡터 4). 그 한 줄을 빠뜨리면 점이 두 번 들어가는데, 개수는 그대로라 <strong>알아채기 어렵다</strong>.</li>
-        <li><strong><code>width()</code> · <code>centroid()</code> · <code>downsample()</code> 은 마지막에.</strong> 벡터 6·7 이 정의를 고정한다.</li>
-        <li><strong>27개가 다 통과할 때까지 내 방 파일로 가지 않는다.</strong> 여기까지 라이다도 Pi 도 필요 없다.</li>
+        <li><p><strong>시험 파일을 먼저 만들어 두고 빌드 · 실행한다.</strong> 아래 전량을 <code>scripts/lidar_lab/tests/test_cluster.cpp</code> 로 저장하고 그 아래 CMake 한 줄을 붙인 뒤 빌드한다. 지금 실행하면 <strong><code>36 of 43 cases failed</code></strong> 로 끝난다. 시험은 실패해도 멈추지 않고 끝까지 돈다 — <strong>FAIL 줄이 0 개로 줄어드는 것이 이 걸음의 진도표</strong>다.</p>
+          <p>⚠ 43 개 중 나머지 일곱(7e · 9a · 9b · 10a · 11a · 11c · 12a)은 <strong>골격에서도 이미 통과한다</strong>. 기대값이 빈 목록 · <code>0.0</code> · 들어온 바퀴 그대로 · <code>none</code> 이라서, 골격이 돌려주는 값과 우연히 같기 때문이다. <strong>통과한 줄이 있다고 그만큼 된 것이 아니다</strong> — 진도는 남은 FAIL 로만 센다.</p></li>
+        <li><strong><code>width()</code> · <code>centroid()</code> 부터 채운다.</strong> 10군이 덩어리를 손으로 만들어 이 둘만 따로 채점하므로, <code>split()</code> 이 비어 있어도 진도가 보인다(<code>36</code> → <code>33</code> → <code>31 of 43</code>). <code>split()</code> 을 거치는 2 · 6 군은 T4 뒤에 통과한다. → T1 · T2</li>
+        <li><strong><code>neighbor_distances()</code> 를 채운다.</strong> 세 걸음이다 — ① 측정된 점만 고른다 ② 그 목록을 한 번 훑으며 이웃 거리를 담는다 ③ <strong>마지막에서 처음으로 돌아오는 한 칸</strong>을 빠뜨리지 않는다. 이 한 칸은 <code>(k + 1) % 개수</code> 의 나머지 연산이 만든다(<code>31</code> → <code>27</code>). → T3</li>
+        <li><strong><code>split()</code> 을 채운다.</strong> T3 의 거리 목록을 그대로 쓴다. 같은 훑기를 하면서 자를 자리를 정하고, <strong>이음매 판정은 훑기가 끝난 뒤 한 번만</strong> 한다. 훑는 도중에 이음매를 보려고 하면 경우의 수가 빠르게 늘어난다(<code>27</code> → <code>11</code>).
+          <br>힌트: 덩어리가 <strong>하나뿐</strong>일 때를 먼저 손으로 따져 본다(벡터 4). 그 확인을 빠뜨리면 하나뿐인 덩어리를 떼어 낸 뒤 <strong>빈 목록의 첫 덩어리</strong>를 읽는다 — g++ 빌드는 1b 에서 중단하고, Mac 의 clang 은 FAIL 일곱 줄 뒤 종료 코드 139 로 끝난다(T4 카드). → T4</li>
+        <li><strong><code>downsample()</code> 을 채운다</strong>(<code>11</code> → <code>4</code>). 7 · 8 · 11 군이 정의를 고정한다. → T5</li>
+        <li><strong><code>gap_stats()</code> 를 채운다</strong>(<code>4</code> → <code>PASS cluster 43 cases</code>). 12군이 §2-4 의 정의를 고정한다. → T6</li>
+        <li><strong>43 개가 다 통과할 때까지 내 방 파일로 가지 않는다.</strong> 여기까지 라이다는 필요 없다.</li>
       </ol>
-      <p class="small">이 블록은 전량 제공이다 — 이유: <strong>벡터가 곧 채점표</strong>이고 내 답을 내가 채점할 수 없다. 기댓값은 집필자가 독립 구현으로 <strong>실제로 계산</strong>한 값이고(눈대중이 아니다), 계산에 쓴 여섯 줄을 파일 머리에 남겼다. <strong>집필자가 Mac 의 <code>python3</code> 로 27개가 통과하는 것과, 아래 표의 네 가지 잘못이 실제로 검출되는 것까지 확인했다(2026-09-23).</strong></p>
-      <pre><code class="lang-python"># scripts/lidar_lab/tests/test_cluster.py -- grading vectors for cluster.py.
-# Standard library only. Runs with the lidar unplugged: everything here is pure.
-#   pi$ cd scripts/lidar_lab &amp;&amp; python3 tests/test_cluster.py
-#
-# These vectors go through geom.to_xy() (l-08), so pass PASS geom first.
-# All points sit at r = 1.0 m, where the distance between two neighbours that are
-# D degrees apart is the chord 2*sin(D/2). The writer computed the expectations with
-# an independent implementation on 2026-09-23; the numbers used were:
-#   2*sin(radians(2)/2)   = 0.03490481287454384   (2 deg apart at 1 m)
-#   2*sin(radians(10)/2)  = 0.17431148549531633   (10 deg)
-#   2*sin(radians(20)/2)  = 0.3472963553338607    (20 deg)
-#   2*sin(radians(30)/2)  = 0.5176380902050415    (30 deg)
-#   2*sin(radians(180)/2) = 2.0                   (opposite sides, exact in float)
-#   2*sin(radians(90)/2)  = 1.4142135623730951    (quarter turn)
+      <p class="small">걸음과 카드의 짝: 걸음 2 = T1 · T2, 3 = T3, 4 = T4, 5 = T5, 6 = T6. 걸음 1 · 7 은 카드가 없다(빌드하고 실행해서 보는 일).</p>
+      <p>시험 파일은 <strong>전량</strong>이다 — 벡터가 곧 채점표이고, 내 답을 내가 채점할 수 없기 때문이다.
+      1 ~ 9 군의 기대값(새로 더한 9c 를 뺀 27 개)은 <strong>집필자가 독립 구현으로 실제로 계산</strong>한 값이고(눈대중이 아니다), 계산에 쓴 다섯 줄을 파일 머리에 남겼다.<sup class="fn"><a href="#fn-2">2</a></sup> 9c(측정점 하나 → 덩어리 하나)와 10 ~ 12 군은 이 쪽에서 새로 더한 벡터다. 10 ~ 12 군은 덩어리를 손으로 만들어 <code>width()</code> · <code>centroid()</code> 를 따로 채점하고, <code>downsample()</code> 의 나머지 계약과 <code>gap_stats()</code> 를 채점한다. <code>cluster.hpp</code> 와 <code>check.hpp</code>(l-02)만 include 한다.</p>
+      <pre><code class="lang-cpp">// scripts/lidar_lab/tests/test_cluster.cpp -- grading vectors for cluster.hpp.  (l-10, in full)
+// Includes only cluster.hpp and check.hpp: no port, no ROS, no file. It runs with nothing
+// plugged in -- on the Pi host, and on the Mac with clang++ for practice.
+//   pi$ scripts/lidar_lab/build/test_cluster &amp;&amp; scripts/lidar_lab/build/test_cluster_ub
+//
+// Groups 1 to 9 go through l-08's to_xy(), so pass test_geom first. Groups 10 to 12 do not:
+// they build a Cluster, a Scan or a list of distances by hand.
+// All points of groups 1 to 9 sit at r = 1.0 m, where two neighbours D degrees apart are the
+// chord 2*sin(D/2) apart. The writer computed the expectations of groups 1 to 9 (all but 9c:
+// one point, one cluster) with an independent implementation; the numbers used were:
+//   2*sin(radians(2)/2)   = 0.03490481287454384   (2 deg apart at 1 m)
+//   2*sin(radians(10)/2)  = 0.17431148549531633   (10 deg)
+//   2*sin(radians(20)/2)  = 0.3472963553338607    (20 deg)
+//   2*sin(radians(180)/2) = 2.0                   (opposite sides, exact in float)
+//   2*sin(radians(90)/2)  = 1.4142135623730951    (quarter turn)
+#include &lt;cstddef&gt;
+#include &lt;limits&gt;
+#include &lt;optional&gt;
+#include &lt;string&gt;
+#include &lt;utility&gt;
+#include &lt;vector&gt;
 
-import os, sys, math
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from turn import Scan
-from cluster import split, neighbor_distances, downsample
+#include "lidar_lab/cluster.hpp"
+#include "check.hpp"
 
-CASES = 0
-def check(name, got, want):
-    global CASES
-    CASES += 1
-    if got != want:
-        print("FAIL %s\n  got  %r\n  want %r" % (name, got, want))
-        sys.exit(1)
+using namespace lidar_lab;
 
-def close(name, got, want, tol=1e-9):
-    global CASES
-    CASES += 1
-    if not isinstance(got, (int, float)) or abs(got - want) &gt; tol:
-        print("FAIL %s\n  got  %r\n  want %r (+-%g)" % (name, got, want, tol))
-        sys.exit(1)
+namespace {
 
-def S(a, r, q=None):
-    return Scan(a, r, q, 0.0)
+using Idx = std::vector&lt;std::vector&lt;std::size_t&gt;&gt;;
 
-def idx(clusters):
-    return [c.idx for c in clusters]
+// An entry that is not there reads as nan -- and nan never passes near().
+const double kMissing = std::numeric_limits&lt;double&gt;::quiet_NaN();
 
-# 1. THE BOUNDARY. Two points exactly one threshold apart belong together: the
-#    rule is d &lt;= gap. One ulp less and they are two clusters of one point each,
-#    which is also how this vector grades "a one-point cluster is kept".
-V1 = S([0.0, 180.0], [1.0, 1.0])
-close("1a the two points are 2.0 m apart", neighbor_distances(V1)[0], 2.0)
-check("1b d == gap -&gt; one cluster", idx(split(V1, 2.0)), [[0, 1]])
-check("1c d &gt; gap  -&gt; two one-point clusters", idx(split(V1, 1.9999999)), [[0], [1]])
+Scan S(std::vector&lt;double&gt; a, std::vector&lt;std::optional&lt;double&gt;&gt; r, std::vector&lt;long&gt; q = {}) {
+  Scan s;
+  s.a = std::move(a);
+  s.r = std::move(r);
+  s.q = std::move(q);
+  s.t = 0.0;
+  return s;
+}
 
-# 2. A one-point cluster is a cluster. Its width is 0.0 and its centroid is the
-#    point itself -- neither is an error to be filtered away here (2-4).
-V2 = S([0.0, 10.0, 200.0], [1.0, 1.0, 1.0])
-c2 = split(V2, 0.5)
-check("2a two clusters", idx(c2), [[0, 1], [2]])
-close("2b width of the pair", c2[0].width(), 0.17431148549531633)
-close("2c width of the single point", c2[1].width(), 0.0)
-close("2d centroid x of the single point", c2[1].centroid()[0], -0.9396926207859084)
+Idx idx(const std::vector&lt;Cluster&gt;&amp; cs) {
+  Idx out;
+  for (const Cluster&amp; c : cs) out.push_back(c.idx);
+  return out;
+}
 
-# 3. THE RING. The list ends at 359 deg and starts again at 1 deg, and those two
-#    points are 2 deg apart -- the same object. An implementation that walks the
-#    list from front to back and stops returns five clusters here, not four.
-#    The merged cluster comes first and carries the last run before the first run.
-V3 = S([1.0, 90.0, 180.0, 270.0, 359.0], [1.0, 1.0, 1.0, 1.0, 1.0])
-close("3a wrap distance", neighbor_distances(V3)[-1], 0.03490481287454384)
-check("3b wrap cluster merged", idx(split(V3, 0.1)), [[4, 0], [1], [2], [3]])
+std::vector&lt;std::size_t&gt; sizes(const std::vector&lt;Cluster&gt;&amp; cs) {
+  std::vector&lt;std::size_t&gt; out;
+  for (const Cluster&amp; c : cs) out.push_back(c.size());
+  return out;
+}
 
-# 4. One cluster must not be merged with itself: a threshold that swallows the
-#    whole revolution yields ONE cluster holding every point, in order, once.
-check("4 everything in one cluster", idx(split(V3, 3.0)), [[0, 1, 2, 3, 4]])
+// Read through the size: a skeleton that returns nothing reports FAIL, not a crash.
+double width_at(const std::vector&lt;Cluster&gt;&amp; cs, std::size_t i) {
+  return i &lt; cs.size() ? cs[i].width() : kMissing;
+}
+Point centroid_at(const std::vector&lt;Cluster&gt;&amp; cs, std::size_t i) {
+  return i &lt; cs.size() &amp;&amp; !cs[i].pts.empty() ? cs[i].centroid() : Point{kMissing, kMissing};
+}
+double last_or_missing(const std::vector&lt;double&gt;&amp; v) { return v.empty() ? kMissing : v.back(); }
 
-# 5. A direction that could not be measured has no coordinate. It is skipped --
-#    and skipping it widens the distance between the points on either side, which
-#    is why a no-return run cuts an object in two (3-2-4, symptom table).
-V5 = S([0.0, 10.0, 20.0, 30.0], [1.0, None, 1.0, 1.0])
-check("5a one distance per measured point", len(neighbor_distances(V5)), 3)
-close("5b distance across the hole", neighbor_distances(V5)[0], 0.3472963553338607)
-check("5c the hole cuts", idx(split(V5, 0.25)), [[0], [2, 3]])
+template &lt;class T&gt;
+void same(const std::string&amp; name, const T&amp; got, const T&amp; want) {
+  check(name, got == want, str(got), str(want));
+}
 
-# 6. width() is the straight line between the two END points of the cluster in
-#    angle order (2-1), not the bounding box and not the largest gap inside it.
-V6 = S([0.0, 90.0], [1.0, 1.0])
-c6 = split(V6, 3.0)[0]
-close("6a width is end to end", c6.width(), 1.4142135623730951)
-close("6b centroid x", c6.centroid()[0], 0.5)
-close("6c centroid y", c6.centroid()[1], 0.5)
+std::string stats(const std::optional&lt;GapStats&gt;&amp; g) {
+  if (!g) return "none";
+  return "n=" + str(g-&gt;n) + " median=" + str(g-&gt;median) + " p75=" + str(g-&gt;p75) +
+         " p90=" + str(g-&gt;p90) + " max=" + str(g-&gt;max);
+}
+void same_stats(const std::string&amp; name, const std::optional&lt;GapStats&gt;&amp; got,
+                const std::string&amp; want) {
+  check(name, stats(got) == want, stats(got), want);
+}
 
-# 6b. A cluster that bends: three points spanning half a turn. End to end is 2.0 m
-#    while the bounding box of the same three points is 2.236 m across, so this is
-#    the vector that tells the two definitions apart.
-V6b = S([0.0, 90.0, 180.0], [1.0, 1.0, 1.0])
-close("6d width of a bent cluster", split(V6b, 3.0)[0].width(), 2.0)
+}  // namespace
 
-# 6c. Three quarters of a circle: the two ends are 1.414 m apart while the widest
-#    pair inside the cluster is 2.0 m. width() reports the ends.
-V6c = S([0.0, 90.0, 180.0, 270.0], [1.0, 1.0, 1.0, 1.0])
-close("6e width is not the widest pair", split(V6c, 3.0)[0].width(), 1.4142135623730951)
+int main() {
+  // 1. THE BOUNDARY. Two points exactly one threshold apart belong together: the rule is
+  //    d &lt;= gap. Slightly less and they are two clusters of one point each, which is also
+  //    how this vector grades "a one-point cluster is kept".
+  const Scan V1 = S({0.0, 180.0}, {1.0, 1.0});
+  near("1a the two points are 2.0 m apart", at_or(neighbor_distances(V1), 0, kMissing), 2.0);
+  same("1b d == gap -&gt; one cluster", idx(split(V1, 2.0)), Idx{{0, 1}});
+  same("1c d &gt; gap -&gt; two one-point clusters", idx(split(V1, 1.9999999)), Idx{{0}, {1}});
 
-# 7. downsample keeps every k-th point and the result is still a valid Scan:
-#    a stays ascending and inside [0, 360), r and q follow their own angle.
-V7 = S([0.0, 10.0, 20.0, 30.0, 40.0], [1.0, 2.0, 3.0, 4.0, 5.0], [1, 2, 3, 4, 5])
-d7 = downsample(V7, 2)
-check("7a every second angle", d7.a, [0.0, 20.0, 40.0])
-check("7b r follows", d7.r, [1.0, 3.0, 5.0])
-check("7c q follows", d7.q, [1, 3, 5])
-check("7d len agrees", len(d7), 3)
-check("7e k=1 changes nothing", downsample(V7, 1).a, V7.a)
+  // 2. A one-point cluster is a cluster. Its width is 0.0 and its centroid is the point
+  //    itself -- neither is an error to be filtered away here (2-4).
+  const Scan V2 = S({0.0, 10.0, 200.0}, {1.0, 1.0, 1.0});
+  const std::vector&lt;Cluster&gt; c2 = split(V2, 0.5);
+  same("2a two clusters", idx(c2), Idx{{0, 1}, {2}});
+  near("2b width of the pair", width_at(c2, 0), 0.17431148549531633);
+  near("2c width of the single point", width_at(c2, 1), 0.0);
+  near("2d centroid x of the single point", centroid_at(c2, 1).first, -0.9396926207859084);
 
-# 8. Thinning breaks objects APART: the same threshold that held an 11-point arc
-#    together (neighbours 2 deg = 0.0349 m apart) cuts it into six pieces once the
-#    neighbours are 4 deg = 0.0698 m apart. Counting clusters is not scale free.
-V8 = S([2.0 * i for i in range(11)], [1.0] * 11)
-check("8a whole arc is one object", [len(c) for c in split(V8, 0.05)], [11])
-check("8b thinned by half it is six", [len(c) for c in split(downsample(V8, 2), 0.05)],
-      [1, 1, 1, 1, 1, 1])
+  // 3. THE RING. The list ends at 359 deg and starts again at 1 deg, and those two points
+  //    are 2 deg apart -- the same object. An implementation that walks the list from front
+  //    to back and stops returns five clusters here, not four. The merged cluster comes
+  //    first and carries the last run before the first run.
+  const Scan V3 = S({1.0, 90.0, 180.0, 270.0, 359.0}, {1.0, 1.0, 1.0, 1.0, 1.0});
+  near("3a wrap distance", last_or_missing(neighbor_distances(V3)), 0.03490481287454384);
+  same("3b wrap cluster merged", idx(split(V3, 0.1)), Idx{{4, 0}, {1}, {2}, {3}});
 
-# 9. Fewer than two measured points: no distances, and no crash.
-check("9a one point -&gt; no distances", neighbor_distances(S([0.0], [1.0])), [])
-check("9b all no-return -&gt; no clusters", idx(split(S([0.0, 10.0], [None, None]), 1.0)), [])
+  // 4. One cluster must not be merged with itself: a threshold that swallows the whole
+  //    revolution yields ONE cluster holding every point, in order, once.
+  same("4 everything in one cluster", idx(split(V3, 3.0)), Idx{{0, 1, 2, 3, 4}});
 
-print("PASS cluster %d cases" % CASES)</code></pre>
-      <p>벡터가 무엇을 검사하는지는 <strong>일부러 틀리게 만들어 보면</strong> 가장 빨리 보인다. 아래 넷은 집필자가 실제로 그렇게 고쳐 실행해 본 것이고, 오른쪽 칸이 그때 출력된 줄이다.</p>
-      <div class="tbl"><table>
+  // 5. A direction that could not be measured has no coordinate. It is skipped -- and
+  //    skipping it widens the distance between the points on either side, which is why a
+  //    no-return run cuts an object in two (3-2-4, symptom table).
+  const Scan V5 = S({0.0, 10.0, 20.0, 30.0}, {1.0, std::nullopt, 1.0, 1.0});
+  eq_int("5a one distance per measured point",
+         static_cast&lt;long long&gt;(neighbor_distances(V5).size()), 3);
+  near("5b distance across the hole", at_or(neighbor_distances(V5), 0, kMissing),
+       0.3472963553338607);
+  same("5c the hole cuts", idx(split(V5, 0.25)), Idx{{0}, {2, 3}});
+
+  // 6. width() is the straight line between the two END points of the cluster in angle
+  //    order (2-1), not the bounding box and not the largest gap inside it.
+  const std::vector&lt;Cluster&gt; c6 = split(S({0.0, 90.0}, {1.0, 1.0}), 3.0);
+  near("6a width is end to end", width_at(c6, 0), 1.4142135623730951);
+  near("6b centroid x", centroid_at(c6, 0).first, 0.5);
+  near("6c centroid y", centroid_at(c6, 0).second, 0.5);
+  // A cluster that bends: three points spanning half a turn. End to end is 2.0 m while the
+  // bounding box of the same three points is 2.236 m across -- this tells the two apart.
+  const std::vector&lt;Cluster&gt; c6d = split(S({0.0, 90.0, 180.0}, {1.0, 1.0, 1.0}), 3.0);
+  near("6d width of a bent cluster", width_at(c6d, 0), 2.0);
+  // Three quarters of a circle: the two ends are 1.414 m apart while the widest pair inside
+  // the cluster is 2.0 m. width() reports the ends.
+  near("6e width is not the widest pair",
+       width_at(split(S({0.0, 90.0, 180.0, 270.0}, {1.0, 1.0, 1.0, 1.0}), 3.0), 0),
+       1.4142135623730951);
+
+  // 7. downsample keeps every k-th point and the result is still a valid Scan: a stays
+  //    ascending and inside [0, 360), r and q follow their own angle.
+  const Scan V7 = S({0.0, 10.0, 20.0, 30.0, 40.0}, {1.0, 2.0, 3.0, 4.0, 5.0}, {1, 2, 3, 4, 5});
+  const Scan d7 = downsample(V7, 2);
+  same("7a every second angle", d7.a, std::vector&lt;double&gt;{0.0, 20.0, 40.0});
+  same("7b r follows", d7.r, std::vector&lt;std::optional&lt;double&gt;&gt;{1.0, 3.0, 5.0});
+  same("7c q follows", d7.q, std::vector&lt;long&gt;{1, 3, 5});
+  eq_int("7d size agrees", static_cast&lt;long long&gt;(d7.size()), 3);
+  same("7e k=1 changes nothing", downsample(V7, 1).a, V7.a);
+
+  // 8. Thinning breaks objects APART: the same threshold that held an 11-point arc together
+  //    (neighbours 2 deg = 0.0349 m apart) cuts it into six pieces once the neighbours are
+  //    4 deg = 0.0698 m apart. Counting clusters is not scale free.
+  std::vector&lt;double&gt; a8;
+  for (int i = 0; i &lt; 11; ++i) a8.push_back(2.0 * i);
+  const Scan V8 = S(a8, std::vector&lt;std::optional&lt;double&gt;&gt;(11, 1.0));
+  same("8a whole arc is one object", sizes(split(V8, 0.05)), std::vector&lt;std::size_t&gt;{11});
+  same("8b thinned by half it is six", sizes(split(downsample(V8, 2), 0.05)),
+       std::vector&lt;std::size_t&gt;{1, 1, 1, 1, 1, 1});
+
+  // 9. Fewer than two measured points: no distances, and no crash.
+  same("9a one point -&gt; no distances", neighbor_distances(S({0.0}, {1.0})),
+       std::vector&lt;double&gt;{});
+  const Scan V9b = S({0.0, 10.0}, {std::nullopt, std::nullopt});
+  same("9b all no-return -&gt; no clusters", idx(split(V9b, 1.0)), Idx{});
+  const Scan V9c = S({0.0, 10.0}, {std::nullopt, 1.0});
+  same("9c one measured point -&gt; one cluster", idx(split(V9c, 1.0)), Idx{{1}});
+
+  // 10. The Cluster on its own -- built by hand, no split(), so width() and centroid() are
+  //     graded even while split() is still empty.
+  near("10a width of an empty cluster", Cluster{}.width(), 0.0);
+  near("10b width end to end (3-4-5)", Cluster{{{0.0, 0.0}, {3.0, 4.0}}, {0, 1}}.width(), 5.0);
+  const Cluster bent{{{1.0, 0.0}, {0.0, 1.0}, {-1.0, 0.0}}, {0, 1, 2}};
+  near("10c width of a bent cluster is not the box", bent.width(), 2.0);
+  const Cluster ring{{{1.0, 0.0}, {0.0, 1.0}, {-1.0, 0.0}, {0.0, -1.0}}, {0, 1, 2, 3}};
+  near("10d width is not the widest pair", ring.width(), 1.4142135623730951);
+  const Cluster three{{{1.0, 2.0}, {3.0, 4.0}, {5.0, 9.0}}, {0, 1, 2}};
+  near("10e centroid x of three points", three.centroid().first, 3.0);
+  near("10f centroid y of three points", three.centroid().second, 5.0);
+
+  // 11. downsample, the rest of its contract: an empty q stays empty, a no-return keeps its
+  //     slot, t is carried, and a k that does not divide n still starts at the first point.
+  const Scan V11 = S({0.0, 10.0, 20.0, 30.0, 40.0}, {1.0, 2.0, std::nullopt, 4.0, 5.0});
+  eq_int("11a an empty q stays empty", static_cast&lt;long long&gt;(downsample(V11, 2).q.size()), 0);
+  same("11b a no-return keeps its slot", downsample(V11, 2).r,
+       std::vector&lt;std::optional&lt;double&gt;&gt;{1.0, std::nullopt, 5.0});
+  Scan V11t = V11;
+  V11t.t = 12.5;
+  same("11c t is carried", downsample(V11t, 2).t, std::optional&lt;double&gt;{12.5});
+  same("11d k=3 over five points", downsample(V11, 3).a, std::vector&lt;double&gt;{0.0, 30.0});
+
+  // 12. gap_stats: the four numbers of 3-1. Whole numbers so every expectation is exact;
+  //     the unit does not matter here. The inputs are NOT sorted.
+  same_stats("12a nothing to describe", gap_stats({}), "none");
+  same_stats("12b one value", gap_stats({7.0}), "n=1 median=7.0 p75=7.0 p90=7.0 max=7.0");
+  same_stats("12c four values: median of the middle two", gap_stats({4.0, 1.0, 3.0, 2.0}),
+             "n=4 median=2.5 p75=3.0 p90=4.0 max=4.0");
+  same_stats("12d five values", gap_stats({5.0, 1.0, 4.0, 2.0, 3.0}),
+             "n=5 median=3.0 p75=4.0 p90=5.0 max=5.0");
+  same_stats("12e ten values: nearest rank",
+             gap_stats({10.0, 3.0, 7.0, 1.0, 9.0, 5.0, 2.0, 8.0, 6.0, 4.0}),
+             "n=10 median=5.5 p75=8.0 p90=9.0 max=10.0");
+
+  return finish("cluster");
+}</code></pre>
+      <p><code>CMakeLists.txt</code> 의 맨 아래에 한 줄을 붙이고 빌드한다.</p>
+      <pre><code class="lang-cmake">lab_test(cluster)                                  # 3-1-3: tests/test_cluster.cpp</code></pre>
+      <pre><code class="lang-bash">pi$ cmake --build scripts/lidar_lab/build -j2 --target test_cluster test_cluster_ub
+pi$ scripts/lidar_lab/build/test_cluster
+FAIL 1 1a the two points are 2.0 m apart: got nan, want 2.0
+FAIL 2 1b d == gap -&gt; one cluster: got [], want [[0, 1]]
+...
+FAIL 30 10b width end to end (3-4-5): got 0.0, want 5.0
+...
+FAIL 43 12e ten values: nearest rank: got none, want n=10 median=5.5 p75=8.0 p90=9.0 max=10.0
+36 of 43 cases failed
+pi$ scripts/lidar_lab/build/test_cluster_ub      # 진단 빌드(ASan · UBSan) — 같은 줄만 나와야 한다</code></pre>
+      <p class="small">위 출력은 골격 그대로의 결과다.<sup class="fn"><a href="#fn-2">2</a></sup> 없는 원소는 <code>nan</code> 으로 찍힌다 — 시험이 크기를 확인하고 읽기 때문이다(<code>check.hpp</code> 의 <code>at_or()</code>, l-02). 빈 목록에서 <code>[0]</code> 을 읽어 멈추는 대신 FAIL 줄을 낸다.</p>
+      <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>width()</code> · 첫 점과 끝 점 사이의 직선 하나</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 덩어리의 <strong>첫 점과 끝 점</strong>(각도 순서) 사이의 직선 거리를 m 로 돌려준다. 점이 둘 미만이면 <code>0.0</code> 이다.</p>
+        <p>채점은 <code>test_cluster</code> 의 10a ~ 10d(손으로 만든 덩어리)가 한다. 2b · 2c · 6a · 6d · 6e 도 <code>width()</code> 를 보지만, <code>split()</code> 을 거친 덩어리라 T4 뒤에 통과한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T1 - scripts/lidar_lab/include/lidar_lab/cluster.hpp (Cluster::width) */
+double width() const {
+  if (pts.size() &lt; 2) return 0.0;
+  return std::hypot(pts.back().first - pts.front().first,
+                    pts.back().second - pts.front().second);
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>if (pts.size() &lt; 2) return 0.0;</code> — 점이 하나면 이 줄이 없어도 <code>0.0</code> 이 나온다(첫 점 = 끝 점). 이 줄이 막는 것은 <strong>빈 덩어리</strong>다 — 빈 벡터의 <code>front()</code> · <code>back()</code> 은 없는 원소를 읽는다(10a).</li>
+          <li><code>pts.front()</code> · <code>pts.back()</code> — 각도 순서의 첫 점과 끝 점. 덩어리가 0° 이음매를 걸치면 <code>front()</code> 는 꼬리 쪽(359° 쪽) 점이다(<code>split()</code> 불변식 2).</li>
+          <li><code>std::hypot(dx, dy)</code> — <code>√(dx² + dy²)</code>. 각 좌표의 차를 넣는다.</li>
+          <li>골격의 자리표시 <code>return 0.0;</code> 은 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 하나다.<sup class="fn"><a href="#fn-3" id="fnref-3">3</a></sup></p><p>차를 지역 변수 <code>dx</code> · <code>dy</code> 로 받은 뒤 <code>std::sqrt(dx * dx + dy * dy)</code> 로 써도 43 개를 통과한다.</p></li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>std::hypot</code> · <code>front()</code> · <code>back()</code> · <code>size()</code>.</p>
+        <p><strong>흔한 실수</strong> — 그 잘못을 저지른 판을 실제로 만들어 잰 결과다. 진단 빌드도 같은 줄을 찍는다. 진단 빌드가 다른 줄을 찍는 행(중단하는 행 · clang)은 그 행 안에 적었다.<sup class="fn"><a href="#fn-3">3</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w50"><col class="w20"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_cluster</code> · <code>test_cluster_ub</code> 가 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>경계상자의 대각선을 돌려줬다</td><td><code>4 of 43</code> — 6d · 6e · 10c · 10d. <code>FAIL 17 6d width of a bent cluster: got 2.23606797749979, want 2.0</code></td><td>첫 점과 끝 점만</td></tr>
+            <tr><td>덩어리 안에서 가장 먼 두 점을 돌려줬다</td><td><code>2 of 43</code> — 6e · 10d. 반 바퀴 이하로 굽은 덩어리에서는 두 정의가 같은 값을 낸다</td><td>첫 점과 끝 점만</td></tr>
+            <tr><td>크기를 보지 않고 <code>back()</code> 을 읽었다</td><td>g++: <code>Assertion '!this-&gt;empty()' failed.</code> 뒤 중단(종료 코드 134, 10a 의 빈 덩어리). clang: 종료 코드 139 — 셸이 segmentation fault 를 알린다(문구는 셸마다 다르다). clang 진단 빌드: <code>runtime error: applying non-zero offset … to null pointer</code> 뒤 중단(134)</td><td>둘 미만이면 <code>0.0</code> 먼저</td></tr>
+          </tbody>
+        </table></div>
+        <p class="small">g++ 의 중단 문구는 터미널에서 실행했을 때 보이는 것이다. 파이프로 받으면 문구가 남지 않을 수 있다.<sup class="fn"><a href="#fn-4" id="fnref-4">4</a></sup> 판정은 Pi 의 g++ 빌드로 한다.</p>
+        <p class="small">종료 코드 134 는 중단(abort)이다. 139 는 segmentation fault 다 — 허용되지 않은 메모리 주소에 접근해 운영체제가 프로그램을 끝낸 것이다.</p>
+        <p><strong>확인</strong> — 골격 그대로는 <code>36 of 43 cases failed</code> 다. T1 을 채우면 <code>33 of 43</code> 이다.</p>
+        </div></details>
+      <details class="hint" id="hint-t2"><summary>힌트 T2 — <code>centroid()</code> · x 의 평균과 y 의 평균</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 덩어리의 점들의 x 평균과 y 평균을 <code>Point</code> 로 돌려준다. 빈 덩어리에는 부르지 않는다 — <code>split()</code> 이 빈 덩어리를 만들지 않기 때문이다.</p>
+        <p>채점은 10e · 10f 가 한다. 2d · 6b · 6c 도 <code>centroid()</code> 를 보지만 T4 뒤에 통과한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T2 - scripts/lidar_lab/include/lidar_lab/cluster.hpp (Cluster::centroid) */
+Point centroid() const {
+  double sx = 0.0, sy = 0.0;
+  for (const Point&amp; p : pts) {
+    sx += p.first;
+    sy += p.second;
+  }
+  const double n = static_cast&lt;double&gt;(pts.size());
+  return {sx / n, sy / n};
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>double sx = 0.0, sy = 0.0;</code> — 합은 <code>double</code> 로 시작한다. 좌표가 m 단위의 소수이기 때문이다.</li>
+          <li><code>for (const Point&amp; p : pts)</code> — 점마다 x 는 <code>sx</code> 에, y 는 <code>sy</code> 에 더한다. <code>const&amp;</code> 는 복사하지 않고 읽기만 한다는 뜻이다.</li>
+          <li><code>static_cast&lt;double&gt;(pts.size())</code> — 개수를 <code>double</code> 로 바꿔 나눈다. <code>pts.size()</code> 를 그대로 나눠도 <code>double</code> 나눗셈이 되지만, 무엇으로 나누는지를 적어 둔다.</li>
+          <li><code>return {sx / n, sy / n};</code> — <code>Point</code>(<code>std::pair&lt;double, double&gt;</code>)를 중괄호로 만든다. 이 줄이 §3-1-2 끝의 <code>note:</code> 가 가리키는 "값으로 돌려주는 <code>Point</code>" 다.</li>
+          <li>골격의 자리표시 <code>return {0.0, 0.0};</code> 은 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 하나다.<sup class="fn"><a href="#fn-3">3</a></sup></p><p>범위 <code>for</code> 대신 인덱스 반복(<code>for (std::size_t i = 0; i &lt; pts.size(); ++i)</code>)으로 써도 43 개를 통과한다.</p></li>
+        </ul>
+        <p><strong>쓰는 API</strong> — 범위 <code>for</code> · <code>size()</code> · <code>static_cast&lt;double&gt;</code>.</p>
+        <p><strong>흔한 실수</strong> — 그 잘못을 저지른 판을 실제로 만들어 잰 결과다. 진단 빌드도 같은 줄을 찍는다.<sup class="fn"><a href="#fn-3">3</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w50"><col class="w20"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_cluster</code> · <code>test_cluster_ub</code> 가 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>합을 <code>int sx = 0, sy = 0;</code> 으로 시작했다</td><td><code>1 of 43</code> — 2d 만. <code>FAIL 7 2d centroid x of the single point: got 0.0, want -0.9396926207859084</code>. 빌드 경고는 없다. 10e · 10f 는 정수 좌표라 통과한다</td><td><code>double</code> 로</td></tr>
+          </tbody>
+        </table></div>
+        <p class="small">이 잘못은 <code>-Wall -Wextra</code> 로는 경고가 나오지 않는다(소수 → 정수 변환을 경고하는 <code>-Wconversion</code> 은 그 묶음에 없다). 정수 좌표만 쓰는 벡터였다면 지나갔을 잘못이라, 2d 가 소수 좌표의 한 점을 둔다.</p>
+        <p><strong>확인</strong> — T1 · T2 를 채운 상태는 <code>31 of 43</code> 이다.</p>
+        </div></details>
+      <details class="hint" id="hint-t3"><summary>힌트 T3 — <code>neighbor_distances()</code> · 측정된 점만 골라, 고리로 한 바퀴</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 측정된 점마다 <strong>다음 측정된 점까지의 거리</strong>(m)를 하나씩 담는다. 마지막 칸은 마지막 점에서 첫 점으로 돌아오는 거리다. 측정된 점이 둘 미만이면 빈 목록이다.</p>
+        <p>채점은 1a · 3a · 5a · 5b · 9a 가 직접, 그리고 <code>split()</code> 을 거치는 벡터 전부가 간접으로 한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T3 - scripts/lidar_lab/include/lidar_lab/cluster.hpp (neighbor_distances) */
+inline std::vector&lt;double&gt; neighbor_distances(const Scan&amp; s) {
+  const std::vector&lt;std::optional&lt;Point&gt;&gt; xy = to_xy(s);
+  std::vector&lt;Point&gt; m;
+  for (const std::optional&lt;Point&gt;&amp; p : xy) {
+    if (p) m.push_back(*p);
+  }
+  std::vector&lt;double&gt; d;
+  if (m.size() &lt; 2) return d;
+  for (std::size_t k = 0; k &lt; m.size(); ++k) {
+    const Point&amp; a = m[k];
+    const Point&amp; b = m[(k + 1) % m.size()];
+    d.push_back(std::hypot(b.first - a.first, b.second - a.second));
+  }
+  return d;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>to_xy(s)</code> — l-08 의 T1. 길이는 <code>s.size()</code> 그대로이고, 무반사 자리는 <strong>빈 <code>optional</code></strong> 이다(l-08 불변식 1).</li>
+          <li><code>if (p) m.push_back(*p);</code> — 값이 있는 자리만 꺼낸다. <code>if (p)</code> 가 "값이 있는가"를 보고, <code>*p</code> 가 그 값을 꺼낸다. 확인 없이 <code>*p</code> 를 쓰면 빈 자리에서 멈춘다(아래 표).</li>
+          <li><code>if (m.size() &lt; 2) return d;</code> — 불변식 3. 점 하나는 이웃이 없다. 이 줄이 없으면 점 하나가 자기 자신까지의 거리 <code>0.0</code> 을 낸다.</li>
+          <li><code>m[(k + 1) % m.size()]</code> — 다음 점. 마지막 <code>k</code> 에서 <code>k + 1</code> 이 개수와 같아져 나머지가 <code>0</code> 이 된다 — <strong>마지막 점에서 첫 점으로</strong>(불변식 2).</li>
+          <li><code>std::hypot(…)</code> — 두 점 사이의 직선 거리. 각도 규약과 무관하다(불변식 4).</li>
+          <li>골격의 자리표시 둘(<code>(void)s;</code> · <code>return {};</code>)은 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 하나다.<sup class="fn"><a href="#fn-3">3</a></sup></p><p>점 대신 <strong>인덱스</strong>를 모아(<code>std::vector&lt;std::size_t&gt;</code>) 거리를 잴 때 <code>*xy[m[k]]</code> 로 꺼내도 43 개를 통과한다. <code>split()</code> 의 완결 코드가 그 꼴이다.</p></li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>to_xy()</code>(l-08) · <code>std::optional</code> 의 <code>if (p)</code> · <code>*p</code> · <code>std::hypot</code> · <code>%</code>.</p>
+        <p><strong>흔한 실수</strong> — 그 잘못을 저지른 판을 실제로 만들어 잰 결과다. 진단 빌드도 같은 줄을 찍는다. 진단 빌드가 다른 줄을 찍는 행(중단하는 행 · clang)은 그 행 안에 적었다.<sup class="fn"><a href="#fn-3">3</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w50"><col class="w20"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_cluster</code> · <code>test_cluster_ub</code> 가 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>나머지 연산 없이 <code>k + 1 &lt; 개수</code> 까지만 돌았다</td><td><code>4 of 43</code> — 3a · 3b · 5a · 5c. <code>FAIL 8 3a wrap distance: got 1.401818528599702, want 0.03490481287454384</code></td><td><code>(k + 1) % 개수</code></td></tr>
+            <tr><td>무반사를 <code>p.value_or(Point{0.0, 0.0})</code> 로 꺼냈다</td><td><code>3 of 43</code> — 5a · 5b · 5c. 5a <code>got 4</code>(측정점 셋에 거리 넷), 5b <code>got 1.0</code>, 5c <code>got [[0], [2], [3]]</code> — 무반사 자리가 (0, 0) 의 점이 되어 <strong>거리가 하나 더 생긴다</strong>. <code>split()</code> 은 측정점만 담으므로 그 점이 덩어리에 들어가지는 않지만, 거리 목록과 측정점이 어긋나 엉뚱한 자리에서 자른다(5c). 오류 표시는 없다</td><td><code>if (p)</code> 로 거른다</td></tr>
+            <tr><td>값이 있는지 보지 않고 <code>*p</code> 를 꺼냈다</td><td>g++: <code>Assertion 'this-&gt;_M_is_engaged()' failed.</code> 뒤 중단(134, 5a). clang: <code>3 of 43</code> — 5a · 5b · 5c(멈추지 않는다). clang 진단 빌드도 같은 셋이지만 5b 의 값이 다르다 — 없는 값을 읽은 것이라 빌드마다 달라진다</td><td><code>if (p)</code> 먼저</td></tr>
+            <tr><td>"둘 미만이면 빈 목록"을 빠뜨렸다</td><td><code>1 of 43</code> — 9a. <code>got [0.0]</code></td><td><code>m.size() &lt; 2</code></td></tr>
+          </tbody>
+        </table></div>
+        <p class="small">g++ 의 중단 문구는 터미널에서 실행했을 때 보인다(T1 카드의 작은 글씨). clang(Mac)은 빈 <code>optional</code> 의 <code>*p</code> 를 검사하지 않아 멈추지 않는다. 그래서 같은 잘못이 Mac 에서는 FAIL 셋, Pi 의 g++ 에서는 중단으로 보인다 — 판정은 Pi 의 g++ 빌드로 한다.</p>
+        <p><strong>확인</strong> — T1 · T2 를 채운 상태는 <code>31 of 43</code> 이다. T3 까지 채우면 <code>27 of 43</code> 이다.</p>
+        </div></details>
+      <details class="hint" id="hint-t4"><summary>힌트 T4 — <code>split()</code> · 한 번 훑어 자르고, 끝난 뒤에 이음매를 한 번</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 한 바퀴를 덩어리 목록으로 자른다. 이웃 거리 <code>d &lt;= gap</code> 이면 같은 덩어리, <code>d &gt; gap</code> 이면 새 덩어리다. 훑기가 끝난 뒤 <strong>한 번</strong>, 마지막 덩어리와 첫 덩어리가 이음매에서 가까우면 하나로 합쳐 맨 앞에 둔다 — 단 덩어리가 처음부터 하나뿐이면 합치지 않는다.</p>
+        <p>채점은 1 · 2 · 3 · 4 · 5c · 6 · 8 · 9b · 9c 가 한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T4 - scripts/lidar_lab/include/lidar_lab/cluster.hpp (split) */
+inline std::vector&lt;Cluster&gt; split(const Scan&amp; s, double gap) {
+  const std::vector&lt;std::optional&lt;Point&gt;&gt; xy = to_xy(s);
+  std::vector&lt;std::size_t&gt; m;  // indices of the measured points, in order
+  for (std::size_t i = 0; i &lt; xy.size(); ++i) {
+    if (xy[i]) m.push_back(i);
+  }
+  std::vector&lt;Cluster&gt; out;
+  if (m.empty()) return out;
+  const std::vector&lt;double&gt; d = neighbor_distances(s);  // d[k]: m[k] -&gt; m[k + 1], a ring
+  out.push_back(Cluster{{*xy[m[0]]}, {m[0]}});
+  for (std::size_t k = 1; k &lt; m.size(); ++k) {
+    if (d[k - 1] &gt; gap) out.push_back(Cluster{});
+    out.back().pts.push_back(*xy[m[k]]);
+    out.back().idx.push_back(m[k]);
+  }
+  if (out.size() &gt; 1 &amp;&amp; d.back() &lt;= gap) {  // the seam: decided once, after the pass
+    Cluster tail = std::move(out.back());
+    out.pop_back();
+    Cluster&amp; head = out.front();
+    tail.pts.insert(tail.pts.end(), head.pts.begin(), head.pts.end());
+    tail.idx.insert(tail.idx.end(), head.idx.begin(), head.idx.end());
+    head = std::move(tail);
+  }
+  return out;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>std::vector&lt;std::size_t&gt; m;</code> — 측정된 점의 <strong>인덱스</strong>. 덩어리에는 좌표(<code>pts</code>)와 함께 원래 인덱스(<code>idx</code>)도 넣어야 하므로, 점이 아니라 인덱스를 모은다.</li>
+          <li><code>if (m.empty()) return out;</code> — 측정된 점이 하나도 없으면 빈 목록(불변식 4, 9b). 빈 덩어리 하나를 돌려주지 않는다.</li>
+          <li><code>const std::vector&lt;double&gt; d = neighbor_distances(s);</code> — T3. <code>d[k]</code> 는 <code>m[k]</code> 에서 <code>m[k + 1]</code> 까지, 마지막 칸 <code>d.back()</code> 은 이음매의 거리다. 측정된 점이 하나면 비어 있다.</li>
+          <li><code>out.push_back(Cluster{{*xy[m[0]]}, {m[0]}});</code> — 첫 측정점으로 첫 덩어리를 연다. <code>Cluster{pts, idx}</code> 꼴이다.</li>
+          <li><code>if (d[k - 1] &gt; gap) out.push_back(Cluster{});</code> — 앞 점과의 거리가 문턱을 <strong>넘으면</strong> 새 덩어리. 같으면 넘지 않은 것이다(불변식 1, 1b).</li>
+          <li><code>out.back().pts.push_back(…); out.back().idx.push_back(m[k]);</code> — 지금 점을 마지막 덩어리에 넣는다. 두 벡터에 늘 함께 넣어 길이를 맞춘다.</li>
+          <li><code>if (out.size() &gt; 1 &amp;&amp; d.back() &lt;= gap)</code> — 이음매 판정. <strong>순서가 중요하다</strong>: <code>out.size() &gt; 1</code> 이 거짓이면 <code>d.back()</code> 을 읽지 않는다(<code>&amp;&amp;</code> 는 왼쪽이 거짓이면 오른쪽을 계산하지 않는다). 점이 하나뿐인 바퀴(9c)에서 <code>d</code> 는 비어 있다.</li>
+          <li><code>Cluster tail = std::move(out.back()); out.pop_back();</code> — 마지막 덩어리를 꺼내고 목록에서 뺀다. <code>std::move</code> 는 복사하지 않고 내용을 옮긴다.</li>
+          <li><code>tail.pts.insert(tail.pts.end(), head.pts.begin(), head.pts.end());</code> — 꼬리 뒤에 머리를 붙인다. <strong>꼬리 점이 먼저</strong>다(불변식 2, 3b 의 <code>[[4, 0], …]</code>). 그 결과를 첫 자리에 둔다(<code>head = std::move(tail);</code>).</li>
+          <li>골격의 자리표시 셋(<code>(void)s;</code> · <code>(void)gap;</code> · <code>return {};</code>)은 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 하나다.<sup class="fn"><a href="#fn-3">3</a></sup></p><p><code>neighbor_distances()</code> 를 부르지 않고 같은 고리 거리를 이 함수 안에서 직접 재도 43 개를 통과한다. 다만 같은 계산이 두 곳에 생긴다 — 한쪽만 고치면 실습 A 의 분포와 실습 B 의 덩어리가 서로 다른 거리를 쓰게 된다.</p></li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>neighbor_distances()</code>(T3) · <code>to_xy()</code>(l-08) · <code>push_back</code> · <code>back()</code> · <code>pop_back()</code> · <code>insert</code> · <code>std::move</code>.</p>
+        <p><strong>흔한 실수</strong> — 그 잘못을 저지른 판을 실제로 만들어 잰 결과다. 진단 빌드도 같은 줄을 찍는다. 진단 빌드가 다른 줄을 찍는 행(중단하는 행 · clang)은 그 행 안에 적었다.<sup class="fn"><a href="#fn-3">3</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w50"><col class="w20"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_cluster</code> · <code>test_cluster_ub</code> 가 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>이음매를 잇지 않았다(앞에서 뒤로만 훑었다)</td><td><code>1 of 43</code> — 3b. <code>FAIL 9 3b wrap cluster merged: got [[0], [1], [2], [3], [4]], …</code> — 덩어리가 하나 더 많다</td><td>훑은 뒤 한 번</td></tr>
+            <tr><td>자르는 조건을 <code>d &gt;= gap</code> 으로 썼다</td><td><code>1 of 43</code> — 1b. <code>got [[1, 0]]</code> — 거리가 문턱과 같은 두 점이 갈라졌다가 이음매에서 다시 붙어 순서가 뒤집혔다</td><td><code>d &gt; gap</code></td></tr>
+            <tr><td>덩어리가 하나뿐일 때도 이음매를 합쳤다(조건에서 <code>out.size() &gt; 1 &amp;&amp;</code> 를 뺐다)</td><td>g++: <code>Assertion '!this-&gt;empty()' failed.</code> 뒤 중단(134, 1b — 하나뿐인 덩어리를 떼어 낸 뒤 빈 목록의 <code>front()</code>). clang: FAIL 일곱 줄(1b · 4 · 6a ~ 6e, <code>got []</code> · <code>nan</code>) 뒤 종료 코드 139. clang 진단 빌드: FAIL 줄 없이 <code>AddressSanitizer: container-overflow</code> 뒤 중단(134)</td><td><code>out.size() &gt; 1</code></td></tr>
+            <tr><td>합칠 때 머리 점을 먼저 놓았다</td><td><code>1 of 43</code> — 3b. <code>got [[0, 4], [1], [2], [3]]</code></td><td>꼬리 뒤에 머리</td></tr>
+            <tr><td>이음매 조건에서 <code>d.back()</code> 을 먼저 읽었다</td><td>g++: <code>Assertion '!this-&gt;empty()' failed.</code> 뒤 중단(134, 9c 의 점 하나뿐인 바퀴). clang: 종료 코드 139 — 셸이 segmentation fault 를 알린다(문구는 셸마다 다르다). clang 진단 빌드: <code>runtime error: applying non-zero offset … to null pointer</code> 뒤 중단(134)</td><td><code>out.size() &gt; 1 &amp;&amp;</code> 를 앞에</td></tr>
+          </tbody>
+        </table></div>
+        <p class="small">g++ 의 중단 문구를 읽는 법은 T1 카드의 작은 글씨와 같다 — 터미널에서 실행했을 때 보이고, 파이프로 받으면 남지 않을 수 있다.<sup class="fn"><a href="#fn-4">4</a></sup></p>
+        <p><strong>확인</strong> — T1 ~ T3 을 채운 상태는 <code>27 of 43</code> 이다. T4 까지 채우면 <code>11 of 43</code> 이다(남는 것은 7 · 8b · 11 · 12 군).</p>
+        </div></details>
+      <details class="hint" id="hint-t5"><summary>힌트 T5 — <code>downsample()</code> · k 개마다 하나를 새 Scan 에</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 첫 점부터 k 개마다 하나씩 남긴 <strong>새</strong> <code>Scan</code> 을 돌려준다. <code>a</code> · <code>r</code> 은 같은 인덱스로 함께 옮긴다. <code>q</code> 는 비어 있으면(세기 없음, l-04) 비운 채로 두고, 있으면 함께 옮긴다. <code>t</code> 는 그대로 옮긴다. <code>k</code> 는 1 이상이다 — <code>lab_cluster</code> 가 0 을 받지 않는다.</p>
+        <p>채점은 7 · 8b · 11 군이 한다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T5 - scripts/lidar_lab/include/lidar_lab/cluster.hpp (downsample) */
+inline Scan downsample(const Scan&amp; s, std::size_t k) {
+  Scan out;
+  for (std::size_t i = 0; i &lt; s.size(); i += k) {
+    out.a.push_back(s.a[i]);
+    out.r.push_back(s.r[i]);
+    if (!s.q.empty()) out.q.push_back(s.q[i]);
+  }
+  out.t = s.t;
+  return out;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>Scan out;</code> — 빈 <code>Scan</code>. 들어온 <code>s</code> 는 <code>const&amp;</code> 라 고치지 않는다.</li>
+          <li><code>for (std::size_t i = 0; i &lt; s.size(); i += k)</code> — 0, k, 2k, … 번째. 첫 점은 늘 남는다(11d: 다섯 점에 k = 3 이면 0 · 3 번째).</li>
+          <li><code>out.a.push_back(s.a[i]); out.r.push_back(s.r[i]);</code> — 각도와 거리를 같은 자리에서 함께 옮긴다. 무반사(빈 <code>optional</code>)도 자리째 옮긴다(11b).</li>
+          <li><code>if (!s.q.empty()) out.q.push_back(s.q[i]);</code> — 빈 <code>q</code> 에서 <code>s.q[i]</code> 를 읽으면 없는 원소를 읽는다. 그래서 확인이 먼저다.</li>
+          <li><code>out.t = s.t;</code> — 바퀴의 시각은 솎아도 그대로다.</li>
+          <li>개수를 따로 세지 않는다 — <code>out.size()</code> 는 <code>a</code> 의 길이다(l-04 로더가 <code>n</code> 이 다른 줄을 거부하는 것과 같은 이유).</li>
+          <li>골격의 자리표시 둘(<code>(void)k;</code> · <code>return s;</code>)은 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 하나다.<sup class="fn"><a href="#fn-3">3</a></sup></p><p>모든 <code>i</code> 를 돌며 <code>if (i % k != 0) continue;</code> 로 건너뛰어도 43 개를 통과한다.</p></li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>Scan</code> 의 <code>a</code> · <code>r</code> · <code>q</code> · <code>t</code> · <code>size()</code>(l-04) · <code>push_back</code> · <code>empty()</code>.</p>
+        <p><strong>흔한 실수</strong> — 그 잘못을 저지른 판을 실제로 만들어 잰 결과다. 진단 빌드도 같은 줄을 찍는다. 진단 빌드가 다른 줄을 찍는 행(중단하는 행 · clang)은 그 행 안에 적었다.<sup class="fn"><a href="#fn-3">3</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w50"><col class="w20"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_cluster</code> · <code>test_cluster_ub</code> 가 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>q</code> 가 비었는지 보지 않고 <code>s.q[i]</code> 를 옮겼다</td><td>g++: <code>Assertion '__n &lt; this-&gt;size()' failed.</code> 뒤 중단(134, 8b — <code>q</code> 가 빈 바퀴). clang: 종료 코드 139 — 셸이 segmentation fault 를 알린다(문구는 셸마다 다르다). clang 진단 빌드: <code>runtime error: reference binding to null pointer</code> 뒤 중단(134)</td><td><code>!s.q.empty()</code> 먼저</td></tr>
+            <tr><td>빈 <code>q</code> 를 <code>0</code> 으로 채웠다</td><td><code>1 of 43</code> — 11a. <code>got 3, want 0</code> — 세기가 없던 기록에 세기 0 이 생긴다</td><td>빈 채로</td></tr>
+            <tr><td><code>t</code> 를 옮기지 않았다</td><td><code>1 of 43</code> — 11c. <code>got none, want 12.5</code></td><td><code>out.t = s.t;</code></td></tr>
+            <tr><td><code>i = k - 1</code> 부터 시작했다</td><td><code>7 of 43</code> — 7a ~ 7d · 8b · 11b · 11d. 7a <code>got [10.0, 30.0]</code></td><td><code>i = 0</code> 부터</td></tr>
+          </tbody>
+        </table></div>
+        <p class="small">g++ 의 중단 문구를 읽는 법은 T1 카드의 작은 글씨와 같다 — 터미널에서 실행했을 때 보이고, 파이프로 받으면 남지 않을 수 있다.<sup class="fn"><a href="#fn-4">4</a></sup></p>
+        <p><strong>확인</strong> — T1 ~ T4 를 채운 상태는 <code>11 of 43</code> 이다. T5 까지 채우면 <code>4 of 43</code> 이다(남는 것은 12b ~ 12e).</p>
+        </div></details>
+      <details class="hint" id="hint-t6"><summary>힌트 T6 — <code>gap_stats()</code> · 정렬한 사본에서 네 수를 읽는다</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 거리 목록을 정렬해 §2-4 의 정의대로 네 수(중앙값 · 75 % · 90 % · 최대)와 개수를 돌려준다. 목록이 비었으면 빈 <code>optional</code> 이다. 인자는 <strong>값으로</strong> 받으므로 정렬은 이 함수의 사본에서 일어나고, 부른 쪽의 순서는 그대로다.</p>
+        <p>채점은 12군(12a ~ 12e)이 한다. 입력은 일부러 정렬하지 않았고, 기대값이 정확히 떨어지게 정수를 썼다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-cpp">/* 완결 코드 T6 - scripts/lidar_lab/include/lidar_lab/cluster.hpp (gap_stats) */
+inline std::optional&lt;GapStats&gt; gap_stats(std::vector&lt;double&gt; d) {
+  if (d.empty()) return std::nullopt;
+  std::sort(d.begin(), d.end());
+  const std::size_t n = d.size();
+  const double median = n % 2 == 1 ? d[n / 2] : (d[n / 2 - 1] + d[n / 2]) / 2.0;
+  const std::size_t r75 = (n * 75 + 99) / 100;  // ceil(n * 0.75) in whole numbers
+  const std::size_t r90 = (n * 90 + 99) / 100;
+  return GapStats{n, median, d[r75 - 1], d[r90 - 1], d.back()};
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>if (d.empty()) return std::nullopt;</code> — 셀 것이 없다(측정점이 둘 미만인 바퀴, 쌍이 없는 각도 구간). 오류가 아니다. <code>lab_cluster</code> 는 이때 <code>median=none</code> 을 찍는다.</li>
+          <li><code>std::sort(d.begin(), d.end());</code> — 오름차순 정렬. 중앙값과 분위수는 정렬된 순서에서만 뜻이 있다.</li>
+          <li><code>n % 2 == 1 ? d[n / 2] : (d[n / 2 - 1] + d[n / 2]) / 2.0</code> — 홀수면 한가운데 하나, 짝수면 가운데 둘의 평균(§2-4 의 정의, 12c 의 <code>2.5</code>).</li>
+          <li><code>(n * 75 + 99) / 100</code> — <code>ceil(n × 0.75)</code> 를 정수 나눗셈으로 계산한 <strong>순위</strong>(1 부터). 원소는 <code>d[순위 - 1]</code> 이다 — 순위는 1 부터, 인덱스는 0 부터 세기 때문이다.</li>
+          <li><code>d.back()</code> — 정렬했으므로 마지막이 최대다.</li>
+          <li><code>GapStats{n, median, …}</code> — 구조체를 필드 순서대로 만든다(<code>n</code> · <code>median</code> · <code>p75</code> · <code>p90</code> · <code>max</code>).</li>
+          <li>골격의 자리표시 둘(<code>(void)d;</code> · <code>return std::nullopt;</code>)은 지웠다.</li>
+          <li><p><strong>다르게 써도 되는 곳</strong> — 하나다.<sup class="fn"><a href="#fn-3">3</a></sup></p><p>순위를 <code>static_cast&lt;std::size_t&gt;(std::ceil(n * 0.75))</code> 처럼 소수로 계산해도 43 개를 통과한다. 집필자가 n = 1 ~ 2 000 에서 두 계산이 같은 순위를 내는 것을 확인했다.</p></li>
+        </ul>
+        <p><strong>쓰는 API</strong> — <code>std::sort</code> · <code>std::optional</code> · <code>std::nullopt</code> · <code>back()</code> · 정수 나눗셈 <code>/</code> · <code>%</code>.</p>
+        <p><strong>흔한 실수</strong> — 그 잘못을 저지른 판을 실제로 만들어 잰 결과다. 진단 빌드도 같은 줄을 찍는다. 진단 빌드가 다른 줄을 찍는 행(중단하는 행 · clang)은 그 행 안에 적었다.<sup class="fn"><a href="#fn-3">3</a></sup></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w30"><col class="w50"><col class="w20"></colgroup>
+          <thead><tr><th>쓴 것</th><th><code>test_cluster</code> · <code>test_cluster_ub</code> 가 찍는 것</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td>정렬하지 않았다</td><td><code>3 of 43</code> — 12c · 12d · 12e. 12c <code>got n=4 median=2.0 p75=3.0 p90=2.0 max=2.0</code></td><td><code>std::sort</code> 먼저</td></tr>
+            <tr><td>중앙값을 늘 <code>d[n / 2]</code> 로 읽었다</td><td><code>2 of 43</code> — 12c · 12e. 12c <code>median=3.0</code>(가운데 둘 중 위쪽)</td><td>짝수면 평균</td></tr>
+            <tr><td>인덱스를 <code>static_cast&lt;std::size_t&gt;(n * 0.90)</code> 으로 잘랐다</td><td><code>2 of 43</code> — 12c · 12e. 12e <code>p90=10.0</code>(9.0 이어야 한다)</td><td>올린 순위 − 1</td></tr>
+            <tr><td><code>ceil(n × p)</code> 를 그대로 인덱스로 썼다(− 1 없음)</td><td>g++: <code>Assertion '__n &lt; this-&gt;size()' failed.</code> 뒤 중단(134, 12b — 한 개짜리에서 <code>d[1]</code>). clang: <code>4 of 43</code>(없는 원소의 쓰레기 값). clang 진단 빌드: FAIL 줄 없이 <code>AddressSanitizer: heap-buffer-overflow</code> 뒤 중단(134)</td><td><code>d[순위 - 1]</code></td></tr>
+            <tr><td>빈 목록을 거르지 않았다</td><td>g++: 같은 <code>Assertion '__n &lt; this-&gt;size()' failed.</code> 뒤 중단(12a). clang: 종료 코드 139 — 셸이 segmentation fault 를 알린다(문구는 셸마다 다르다). clang 진단 빌드: <code>runtime error: applying non-zero offset … to null pointer</code> 뒤 중단(134)</td><td><code>empty()</code> 먼저</td></tr>
+          </tbody>
+        </table></div>
+        <p class="small">g++ 의 중단 문구를 읽는 법은 T1 카드의 작은 글씨와 같다 — 터미널에서 실행했을 때 보이고, 파이프로 받으면 남지 않을 수 있다.<sup class="fn"><a href="#fn-4">4</a></sup></p>
+        <p><strong>확인</strong> — T1 ~ T5 를 채운 상태는 <code>4 of 43</code> 이다. T6 까지 채우면 <code>PASS cluster 43 cases</code> 다.</p>
+        </div></details>
+      <p>벡터가 무엇을 검사하는지는 <strong>일부러 틀리게 만들어 보면</strong> 가장 빨리 보인다. 아래 다섯은 집필자가 실제로 그렇게 고쳐 빌드 · 실행해 본 것이고, 오른쪽 칸이 그때 나온 줄이다.<sup class="fn"><a href="#fn-3">3</a></sup> 각 카드의 흔한 실수 표에 나머지가 있다.</p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w35"><col class="w65"></colgroup>
         <thead><tr><th>이렇게 잘못 짜면</th><th>어느 벡터가 검출하는가 · 무엇이 출력되는가</th></tr></thead>
         <tbody>
-          <tr><td>이음매를 잇지 않는다(목록을 앞에서 뒤로만 훑는다)</td><td><code>FAIL 3b wrap cluster merged</code> — <code>got [[0], [1], [2], [3], [4]]</code>. 덩어리가 하나 더 많다</td></tr>
-          <tr><td>경계를 <code>d &lt; gap</code> 으로 쓴다</td><td><code>FAIL 1b d == gap -&gt; one cluster</code> — 거리가 문턱과 같은 두 점이 갈라진다</td></tr>
-          <tr><td>무반사를 걸러내지 않는다</td><td>벡터 5a 에서 <strong>FAIL 이 아니라 예외</strong>가 난다(<code>TypeError</code> 트레이스백). 좌표 자리에 숫자가 없기 때문이다</td></tr>
-          <tr><td><code>width()</code> 를 경계상자 대각선으로 쓴다</td><td><code>FAIL 6d width of a bent cluster</code> — <code>got 2.236…  want 2.0</code></td></tr>
+          <tr><td>이음매를 잇지 않는다(목록을 앞에서 뒤로만 훑는다)</td><td><code>FAIL 9 3b wrap cluster merged</code> — <code>got [[0], [1], [2], [3], [4]]</code>. 덩어리가 하나 더 많다</td></tr>
+          <tr><td>경계를 <code>d &lt; gap</code> 으로 쓴다(<code>d &gt;= gap</code> 에서 자른다)</td><td><code>FAIL 2 1b d == gap -&gt; one cluster</code> — <code>got [[1, 0]]</code>. 거리가 문턱과 같은 두 점이 갈라졌다가 이음매에서 다시 붙어 순서가 뒤집혔다</td></tr>
+          <tr><td>무반사를 거르지 않고 <code>*p</code> 로 꺼낸다</td><td>g++ 빌드는 5a 에서 <strong>FAIL 이 아니라 중단</strong>한다(<code>Assertion 'this-&gt;_M_is_engaged()' failed.</code>). 좌표가 없는 자리에서 값을 꺼냈기 때문이다</td></tr>
+          <tr><td>무반사를 <code>value_or(Point{0.0, 0.0})</code> 로 꺼낸다</td><td>오류 없이 <code>5a</code> · <code>5b</code> · <code>5c</code> 가 FAIL — 거리가 측정점보다 하나 많아져(5a <code>got 4</code>) 엉뚱한 자리에서 자른다(5c). <code>lab_cluster</code> 는 분포 모드에서 <code>invariant 2</code> 오류로 멈추고, 문턱을 주면 벽이 엉뚱한 자리에서 잘린다</td></tr>
+          <tr><td><code>width()</code> 를 경계상자 대각선으로 쓴다</td><td><code>FAIL 17 6d width of a bent cluster</code> — <code>got 2.23606797749979, want 2.0</code></td></tr>
         </tbody>
       </table></div>
-      <p class="small">⚠ 벡터가 <strong>구분하지 못하는 것</strong>도 하나 적어 둔다. <code>width()</code> 를 "덩어리 안에서 가장 먼 두 점"으로 짜면 벡터 6e 가 검출하지만, 반 바퀴 이하로만 굽은 덩어리에서는 두 정의가 <strong>같은 값</strong>을 낸다. 벡터가 통과했다는 것은 "이 스물일곱 가지에서 어긋나지 않았다"는 뜻이지 "옳다"는 뜻이 아니다 — <a href="l-07-cross-verify.html#s2-1">l-07 §2-1</a> 이 체크섬에 대해 설명한 것과 같은 종류의 한계다.</p>
+      <p class="small">⚠ 벡터가 <strong>구분하지 못하는 것</strong>도 하나 적어 둔다. <code>width()</code> 를 "덩어리 안에서 가장 먼 두 점"으로 짜면 벡터 6e · 10d 가 검출하지만, 반 바퀴 이하로만 굽은 덩어리에서는 두 정의가 <strong>같은 값</strong>을 낸다. 벡터가 통과했다는 것은 "이 마흔세 가지에서 어긋나지 않았다"는 뜻이지 "옳다"는 뜻이 아니다 — <a href="l-07-cross-verify.html#s2-1">l-07 §2-1</a> 이 체크섬에 대해 설명한 것과 같은 종류의 한계다.</p>
 
       <h4 id="s3-1-4">3-1-4. 돌리고 보기 — 내 방의 "같은 물건이라면 이 정도"</h4>
-      <p>문턱 없이 파일 이름만 주면 <strong>점 간 거리의 분포</strong>를 출력하게 한다. 무엇을 몇 개나 출력할지는 내가 정한다 — 아래는 출력의 모양이다.</p>
+      <p>문턱 없이 파일 이름만 주면 <strong>점 간 거리의 분포</strong>를 바퀴마다 한 줄 찍는다. 아래는 출력의 모양이다.</p>
       <pre><code class="lang-bash">pi$ cd ~/ros2_rpi5
-pi$ python3 scripts/lidar_lab/cluster.py scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl
-scan 0   measured=&lt;n&gt;/&lt;n&gt;   median=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt; m   p75=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;   p90=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;   max=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;
-scan 1   measured=&lt;n&gt;/&lt;n&gt;   median=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt; m   p75=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;   p90=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;   max=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;
+pi$ cmake --build scripts/lidar_lab/build -j2 --target test_cluster test_cluster_ub lab_cluster
+pi$ scripts/lidar_lab/build/test_cluster
+PASS cluster 43 cases
+pi$ scripts/lidar_lab/build/test_cluster_ub      # 진단 빌드(ASan · UBSan) — 같은 한 줄만 나와야 한다
+PASS cluster 43 cases
+pi$ scripts/lidar_lab/build/lab_cluster scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl
+turn 1 of &lt;n&gt;  measured=&lt;n&gt;/&lt;n&gt;  pairs=&lt;n&gt;  median=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;&lt;n&gt; m  p75=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;&lt;n&gt;  p90=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;&lt;n&gt;  max=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt;&lt;n&gt;
+turn 2 of &lt;n&gt;  measured=&lt;n&gt;/&lt;n&gt;  pairs=&lt;n&gt;  median=…
 …</code></pre>
-      <p>⚠ 도구를 실행하는 형식은 저장소 루트에서 <code>python3 scripts/lidar_lab/&lt;모듈&gt;.py</code> 하나다. <code>python3 -m lidar_lab.cluster</code> 로 실행하지 않는다 — 형제 모듈 <code>cmd.py</code> 대신 표준 라이브러리의 <code>cmd</code> 가 import 되고 <strong>오류 없이</strong> 엉뚱하게 동작한다(이유는 <a href="l-01-link.html#s3-3">l-01 §3-3</a>).</p>
+      <p class="small">T1 ~ T6 을 채운 뒤의 결과다.<sup class="fn"><a href="#fn-2">2</a></sup> 시험은 Mac 의 <code>clang++</code> 로 연습할 수 있다(아래 한 줄, 저장소 루트에서). 통과의 기준은 Pi 빌드의 두 줄이다(결정 L3).</p>
+      <pre><code class="lang-bash">mac$ clang++ -std=c++17 -Wall -Wextra -D_GLIBCXX_ASSERTIONS -Iscripts/lidar_lab/include scripts/lidar_lab/tests/test_cluster.cpp -o /tmp/test_cluster &amp;&amp; /tmp/test_cluster</code></pre>
+      <p>한 줄을 읽는 법은 이렇다.</p>
+      <ul>
+        <li><code>measured=&lt;측정된 점&gt;/&lt;전체 점&gt;</code> — 그 바퀴에서 거리가 있는 점의 수. 나머지는 무반사다.</li>
+        <li><code>pairs</code> — 분포에 들어간 이웃 쌍의 수. 방 전체는 고리라서 측정점마다 한 쌍이고, <code>measured</code> 의 앞 수와 같다.</li>
+        <li><code>median</code> · <code>p75</code> · <code>p90</code> · <code>max</code> — §2-4 의 정의대로 내 <code>gap_stats()</code> 가 계산한 네 수(m).</li>
+      </ul>
       <p>이 한 줄은 <strong>방 전체</strong>의 분포다. 방 전체에는 물건 사이의 큰 틈이 섞여 있으므로, 여기까지는 "이 정도가 같은 물건"의 근거가 되지 못한다 — <strong>max 는 방을 가로지르는 틈</strong>일 것이다.
-      그래서 두 번째로 <strong>벽 하나만</strong> 본다. 어느 각도 구간을 볼지, 그 구간을 도구에 어떻게 넘길지(인자로 받을지, 파일을 미리 자를지)는 내가 정한다 — <code>main()</code> 의 <code>TODO</code> 안이다.</p>
+      그래서 두 번째로 <strong>벽 하나만</strong> 본다. 각도 구간은 <code>--sector A0 A1</code>(도)로 준다. 두 점이 <strong>모두</strong> <code>[A0, A1)</code> 안에 있는 이웃 쌍만 센다 — 구간 끝에서 다음 물건으로 건너가는 쌍은 그 벽의 이웃 쌍이 아니기 때문이다. 0° 를 가로지르는 구간은 <code>A0 &gt; A1</code> 로 준다(<code>--sector 350 10</code>).</p>
+      <pre><code class="lang-bash">pi$ scripts/lidar_lab/build/lab_cluster scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl --sector &lt;A0&gt; &lt;A1&gt; --turn 1
+turn 1 of &lt;n&gt;  sector=[&lt;A0&gt;, &lt;A1&gt;) deg  measured=&lt;n&gt;/&lt;n&gt;  pairs=&lt;n&gt;  median=…</code></pre>
       <ol class="steps">
-        <li><strong>평면도에서 끊긴 데 없는 면을 하나 고른다.</strong> <a href="l-08-floor-plan.html">l-08</a> 에서 그린 그림을 쓴다. 문틀·모서리·가구가 걸치지 않은 구간이어야 한다(§2-4 의 주의점).</li>
+        <li><strong>평면도에서 끊긴 데 없는 면을 하나 고른다.</strong> <a href="l-08-floor-plan.html">l-08</a> 에서 그린 그림을 쓴다(<code>lab_geom … --xy</code> 와 <code>floor_plan.py</code>). 문틀·모서리·가구가 걸치지 않은 구간이어야 한다(§2-4 의 주의점).</li>
         <li><strong>그 구간의 각도 범위를 적는다</strong> — <code>____</code>° ~ <code>____</code>°. 나중에 이 값을 보고 "내가 무엇을 재고 말했는지"를 되짚을 수 있어야 한다.</li>
-        <li><strong>그 구간만으로 분포를 다시 낸다.</strong> 전체와 나란히 적는다.</li>
-        <li><strong>구간의 양 끝과 가운데를 따로 본다면</strong> §2-3-1 이 예고한 차이(정면 대 비스듬히)가 숫자로 보이는지도 적는다. 차이가 안 보여도 그 결과가 관찰이다 — 벽이 거의 정면이었다는 뜻이다.</li>
+        <li><strong>그 구간만으로 분포를 다시 낸다</strong>(<code>--sector</code>). 전체와 나란히 적는다.</li>
+        <li><strong>구간의 양 끝과 가운데를 따로 본다면</strong>(구간을 셋으로 나눠 <code>--sector</code> 를 세 번) §2-3-1 이 예고한 차이(정면 대 비스듬히)가 숫자로 보이는지도 적는다. 차이가 안 보여도 그 결과가 관찰이다 — 벽이 거의 정면이었다는 뜻이다.</li>
       </ol>
+      <p><strong>무엇이 보이면 된 것인지</strong>는 아래와 같다. 집필자가 l-09 와 같은 <strong>합성 기록 파일</strong>(방 4 m × 3 m · 앞쪽에 상자 하나 · 30° 폭의 무반사 구간 하나, 한 바퀴 1 450 점 = 점 사이 약 0.248°)로 완결 코드를 실행한 결과다.<sup class="fn"><a href="#fn-5" id="fnref-5">5</a></sup> <strong>내 방은 모양과 각도 간격이 달라 수가 다르다</strong> — 볼 것은 수가 아니라 세 줄의 관계다.</p>
+      <pre><code class="lang-text">turn 1 of 1  measured=1329/1450  pairs=1329  median=0.0082 m  p75=0.0110  p90=0.0130  max=1.6730
+turn 1 of 1  sector=[90.0, 100.0) deg  measured=40/1450  pairs=39  median=0.0079 m  p75=0.0079  p90=0.0080  max=0.0082
+turn 1 of 1  sector=[100.0, 125.0) deg  measured=101/1450  pairs=100  median=0.0092 m  p75=0.0102  p90=0.0110  max=0.0118</code></pre>
+      <ul>
+        <li>첫 줄(방 전체)의 <code>max=1.6730</code> 은 <strong>상자 모서리에서 그 뒤의 벽으로 건너간 한 쌍</strong>이다. 방 전체의 최대는 이렇게 물건 사이의 틈이다.</li>
+        <li>둘째 줄은 왼쪽 벽(y = 1.8 m)을 거의 수직으로 본 구간이다. 분포가 좁고, 중앙값 0.0079 m 가 §2-3 의 식(1.8 m × 0.00433 rad ≈ 0.0078 m, 0.248° = 0.00433 rad)과 같은 자릿수다.</li>
+        <li>셋째 줄은 같은 벽을 <strong>비스듬히</strong> 본 구간이다. 벽의 모서리(약 129.8°)에 닿기 전인 125° 에서 끊었다. 분포가 넓어지고, max 0.0118 m 가 둘째 줄 중앙값 0.0079 m 의 약 1.5 배다. 구간 끝 125° 는 정면 90° 에서 35° 벗어나 있고 §2-3-1 의 <code>1/cos²θ</code> 는 1/cos²35° ≈ 1.49 다.<sup class="fn"><a href="#fn-5">5</a></sup></li>
+      </ul>
       <p>노트에 이 표를 그려 채운다. <strong>이 표가 이 쪽의 산출물</strong>이고, 실습 B·C 의 문턱이 전부 여기서 나온다.</p>
       <div class="tbl"><table>
         <thead><tr><th>무엇</th><th>방 전체</th><th>내가 고른 벽 <code>____</code>° ~ <code>____</code>°</th><th>읽는 법</th></tr></thead>
@@ -558,14 +1263,18 @@ scan 1   measured=&lt;n&gt;/&lt;n&gt;   median=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n
       <h4 id="s3-2-3">3-2-3. 채우기 — 문턱 하나를 골라 한 번 실행한다</h4>
       <ol class="steps">
         <li><strong>문턱을 하나 고른다.</strong> §3-1-4 표의 벽 구간 <strong>중앙값과 90 % 분위수 사이</strong>에서 고른다. 고른 값과 <strong>고른 이유 한 줄</strong>을 적는다 — 이유가 "그냥"이면 실습 A 로 돌아간다.</li>
-        <li><strong>실행한다.</strong> 문턱을 둘째 인자로 준다.
-          <pre><code class="lang-bash">pi$ python3 scripts/lidar_lab/cluster.py scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl 0.__
-scan 0   clusters=&lt;n&gt;   (points &lt;n&gt;)
-  #0  n=&lt;n&gt;  width=&lt;n&gt;.&lt;n&gt;&lt;n&gt; m  centroid=(&lt;n&gt;.&lt;n&gt;&lt;n&gt;, &lt;n&gt;.&lt;n&gt;&lt;n&gt;)  idx &lt;n&gt;..&lt;n&gt;
-  #1  n=&lt;n&gt;  width=&lt;n&gt;.&lt;n&gt;&lt;n&gt; m  centroid=(&lt;n&gt;.&lt;n&gt;&lt;n&gt;, &lt;n&gt;.&lt;n&gt;&lt;n&gt;)  idx &lt;n&gt;..&lt;n&gt;
-  …</code></pre></li>
+        <li><strong>실행한다.</strong> 문턱(m)을 파일 이름 뒤에 준다. 바퀴마다 머리 줄 하나와 덩어리마다 한 줄이 나온다.
+          <pre><code class="lang-bash">pi$ scripts/lidar_lab/build/lab_cluster scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl 0.__
+turn 1 of &lt;n&gt;  gap=0.__ m  clusters=&lt;n&gt;  (points &lt;n&gt;)
+  #0  n=&lt;n&gt;  width=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt; m  centroid=(&lt;n&gt;.&lt;n&gt;&lt;n&gt;, &lt;n&gt;.&lt;n&gt;&lt;n&gt;)  idx &lt;n&gt;..&lt;n&gt;
+  #1  n=&lt;n&gt;  width=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt; m  centroid=(&lt;n&gt;.&lt;n&gt;&lt;n&gt;, &lt;n&gt;.&lt;n&gt;&lt;n&gt;)  idx &lt;n&gt;..&lt;n&gt;
+  …
+turn 2 of &lt;n&gt;  gap=0.__ m  clusters=&lt;n&gt;  (points &lt;n&gt;)
+  …</code></pre>
+          <p class="small"><code>points</code> 는 그 바퀴의 측정된 점 수다. <code>idx</code> 는 덩어리의 원래 인덱스를 이어진 구간으로 줄여 찍은 것이다. 이음매를 걸친 덩어리는 <code>idx 351..359, 0..4</code> 처럼 두 구간이 된다. 바퀴 하나만 보려면 <code>--turn K</code> 를 붙인다.</p>
+          <p class="small">집필자의 합성 기록(§3-1-4)에 문턱 <code>0.05</code> 를 주면 <code>clusters=3</code> 이었다 — 상자 하나, 무반사 구간 양쪽의 벽 둘. 그중 하나가 <code>idx 927..1449, 0..56</code>, 즉 0° 이음매를 걸친 덩어리였다.<sup class="fn"><a href="#fn-5">5</a></sup></p></li>
         <li><strong>점 하나짜리 덩어리를 어떻게 셀지</strong>(§2-4 의 선택)를 정해 적는다. 남기기로 했으면 그대로, 버리기로 했으면 <strong>몇 점 미만을 버렸는지</strong>까지.</li>
-        <li><strong>여러 바퀴를 본다.</strong> 같은 파일의 다른 줄(다른 바퀴)에서 개수가 얼마나 달라지는지 적는다. 방은 그대로였으므로 <strong>개수의 변동은 전부 센서와 도구에서 온다</strong>.</li>
+        <li><strong>여러 바퀴를 본다.</strong> 도구는 파일의 바퀴를 모두 찍는다. 바퀴마다 개수가 얼마나 달라지는지 적는다. 방은 그대로였으므로 <strong>개수의 변동은 전부 센서와 도구에서 온다</strong>.</li>
       </ol>
 
       <h4 id="s3-2-4">3-2-4. 보고 판정하기</h4>
@@ -589,21 +1298,21 @@ scan 0   clusters=&lt;n&gt;   (points &lt;n&gt;)
       <div class="tbl"><table>
         <thead><tr><th>갈래</th><th>어디</th><th>무엇이라 하는가</th><th>내 값</th></tr></thead>
         <tbody>
-          <tr><td>① 정의</td><td>—</td><td><strong>없다.</strong> <code>LaserScan</code> 에도 어떤 표준 메시지에도 "덩어리"라는 개념이 없다. 점의 배열까지가 표준이고, <strong>묶는 일은 전부 응용 코드가 한다</strong> — 그래서 이 값은 어디에도 "옳은 값"이 적혀 있지 않다</td><td>—</td></tr>
-          <tr><td>② 사양</td><td>데이터시트 <strong>rev.2.2 p.8 Fig 2-1</strong></td><td>Angular Resolution <code>≤1°</code> — <strong>비고 칸에 <code>5.5Hz scan rate</code> 라는 조건</strong>이 붙어 있다(5.5 Hz = 한 바퀴에 약 182 ms). 같은 표의 Scan Rate 행은 그 조건을 <code>360 samples per scan</code> 이라고 풀어 적는다. <strong>조건 없이 "약 1°"라고 옮기면 내 모드의 값이 아니다</strong></td><td>—</td></tr>
+          <tr><td>① 정의</td><td>—</td><td><strong>없다.</strong> <code>LaserScan</code>(ROS 2 가 라이다 스캔 한 장을 담는 표준 메시지)에도 다른 표준 메시지에도 "덩어리"라는 개념이 없다. 점의 배열까지가 표준이고, <strong>묶는 일은 전부 응용 코드가 한다</strong> — 그래서 이 값은 어디에도 "옳은 값"이 적혀 있지 않다</td><td>—</td></tr>
+          <tr><td>② 사양</td><td>데이터시트의 성능 표<sup class="fn"><a href="#fn-6" id="fnref-6">6</a></sup></td><td>Angular Resolution <code>≤1°</code> — <strong>비고 칸에 <code>5.5Hz scan rate</code> 라는 조건</strong>이 붙어 있다(5.5 Hz = 한 바퀴에 약 182 ms). 같은 표의 Scan Rate 행은 그 조건을 <code>360 samples per scan</code> 이라고 풀어 적는다. <strong>조건 없이 "약 1°"라고 옮기면 내 모드의 값이 아니다</strong></td><td>—</td></tr>
           <tr><td>③ 구현</td><td>08d <code>object_tracker</code> 의 <code>cluster_tol</code></td><td>기본값 <strong>0.25</strong>(m). 단 <strong>다른 파라미터다</strong> — 카메라 박스 안에서 <code>r_min</code> 기준 거리 축으로만 재는 허용값이다(§2-6)</td><td>—</td></tr>
           <tr><td>④ 실물</td><td>내 기록 파일 · 내 문턱</td><td>—</td><td><code>____</code> m<br><span class="small">(§3-1-4 의 분포 → 아래 회차 표)</span></td></tr>
         </tbody>
       </table></div>
       <p class="small">넷이 다르면 <strong>④가 내 기기·내 방의 사실</strong>이고, 나머지는 "무엇을 가정했는가"를 말해 준다. 어느 것이 틀렸다고 쓰지 말고 <strong>조건이 무엇이었는지</strong>를 적는다. ①이 비어 있다는 것 자체가 답이다 — <strong>표준이 안 정한 값을 내가 정하고 있다</strong>는 뜻이고, 그래서 이 쪽의 산출물은 값이 아니라 <strong>값을 정한 근거</strong>다.</p>
-      <p class="small">이 실습은 기록 파일로 실행한다. 방을 바꿔 새 파일을 기록하고 싶으면 <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> 로 돌아간다 — 전원이 들어온 센서를 다루는 규칙(보이지 않는 785 nm 레이저와 도는 머리)이 l-04 §3-4 에 있다.</p>
+      <p class="small">이 실습은 기록 파일로 실행한다. 방을 바꿔 새 파일을 기록하고 싶으면 <a href="l-04-one-turn.html#s3-4">l-04 §3-4</a> 로 돌아간다 — 전원이 들어온 센서를 다루는 규칙(보이지 않는 785 nm 레이저와 도는 머리)이 l-04 §3-4 에 있다. 기록이 끝난 뒤에도 머리가 돌면 USB 케이블을 뽑는다(<a href="l-01-link.html">l-01</a> 의 L2).</p>
 
       <h4 id="s3-3-3">3-3-3. 채우기 — 한 방향으로 바꿔 본다</h4>
       <p>값을 무작위로 바꿔 보지 않는다. <strong>한 방향으로 값을 바꿔 가면서 무엇이 언제 바뀌는지</strong>를 본다. 최소 네 회차를 권한다 — 값은 내가 고른다.</p>
       <ol class="steps">
         <li><strong>실습 B 의 값에서 시작한다</strong>(1회차 = 이미 적혀 있다).</li>
         <li><strong>절반으로 줄인다.</strong> 무엇이 먼저 갈라지는가 — <strong>가장 먼 물체</strong>일 것이다(§2-3). 실제로 그 물체가 먼저 갈라졌는지 적는다.</li>
-        <li><strong>계속 줄여 "한 물건이 둘"이 <em>처음</em> 일어나는 값을 찾는다.</strong> 어느 물건이 먼저 갈라졌는지, 그 물건이 몇 m 에 있었는지 함께 적는다. <strong>이 값과 이 관찰이 발동 확인 항목이다.</strong></li>
+        <li><strong>계속 줄여 "한 물건이 둘"이 <em>처음</em> 일어나는 값을 찾는다.</strong> 어느 물건이 먼저 갈라졌는지, 그 물건이 몇 m 에 있었는지 함께 적는다. <strong>이 값과 이 관찰이 발동 확인 항목이다.</strong> 발동 확인은 일부러 만든 이상 상황의 출력을 봤다는 뜻이다(검증 체크포인트의 머리말).</li>
         <li><strong>반대로 키운다.</strong> 두 물건이 하나로 합쳐지는 값도 찾는다. <strong>이 두 값 사이가 내 방에서 문턱을 둘 수 있는 범위</strong>이고, 그 범위가 좁으면 이 방은 상수 문턱으로는 잘 안 되는 방이다(§2-3 의 (나)·(다)가 왜 있는지가 여기서 직접 확인된다).</li>
       </ol>
       <div class="tbl"><table>
@@ -646,10 +1355,12 @@ scan 0   clusters=&lt;n&gt;   (points &lt;n&gt;)
       <h4 id="s3-4-3">3-4-3. 채우기 — k 를 키우며 같은 문턱으로 실행한다</h4>
       <ol class="steps">
         <li><strong>문턱은 실습 B 의 값으로 고정한다.</strong> 둘을 같이 움직이면 무엇 때문에 달라졌는지 알 수 없다 — <strong>한 번에 하나만 바꾼다.</strong></li>
-        <li><strong>k = 1 · 2 · 4 · 8 로 실행한다.</strong> 셋째 인자가 k 다.
-          <pre><code class="lang-bash">pi$ python3 scripts/lidar_lab/cluster.py scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl 0.__ 4
-scan 0   k=4  points=&lt;n&gt;(was &lt;n&gt;)  clusters=&lt;n&gt;
-  #0  n=&lt;n&gt;  width=&lt;n&gt;.&lt;n&gt;&lt;n&gt; m  …</code></pre></li>
+        <li><strong>k = 1 · 2 · 4 · 8 로 실행한다.</strong> 문턱 다음의 수가 k 다.
+          <pre><code class="lang-bash">pi$ scripts/lidar_lab/build/lab_cluster scripts/lidar_lab/scans/&lt;이름&gt;.scan.jsonl 0.__ 4 --turn 1
+turn 1 of &lt;n&gt;  k=4  points=&lt;n&gt; (was &lt;n&gt;)  gap=0.__ m  clusters=&lt;n&gt;
+  #0  n=&lt;n&gt;  width=&lt;n&gt;.&lt;n&gt;&lt;n&gt;&lt;n&gt; m  …</code></pre>
+          <p class="small"><code>points</code> 는 솎은 뒤의 점 수(무반사 포함), <code>was</code> 는 솎기 전이다. <code>idx</code> 는 <strong>솎기 전 바퀴의 번호</strong>로 찍힌다(솎은 바퀴의 인덱스 × k) — k = 1 의 표와 나란히 놓고 같은 물건을 찾을 수 있게 하려는 것이다. 솎은 점을 평면도로 보려면 <code>--xy</code> 를 붙인다 — <code>&lt;이름&gt;.t1.k4.xy.csv</code> 가 생기고 <code>floor_plan.py</code> 가 그 파일을 그린다(<a href="l-08-floor-plan.html">l-08</a>).</p>
+          <p class="small">합성 기록에 같은 문턱 <code>0.05</code> 로 k = 4 를 주면 <code>clusters=3</code> 이 <code>clusters=45</code> 가 되었다. 그중 서른아홉이 점 하나짜리 덩어리였고, 모두 비스듬히 본 면(방 모서리 쪽 벽과 상자의 옆면)이었다(§2-5 · 벡터 8).<sup class="fn"><a href="#fn-5">5</a></sup></p></li>
         <li><strong>매 회차에 §3-4-1 에서 고른 기준을 확인한다.</strong> 개수만 적지 말고 <strong>어느 물건이 없어졌는지</strong>를 이름으로 적는다.</li>
         <li><strong>마지막 한 번은 문턱도 같이 k 배로 키워 본다.</strong> 개수가 원래대로 돌아오는가? 돌아온다면 무엇을 대가로 돌아왔는지 적는다(§2-3 의 15 cm 예 · §2-4 의 "왜 최대값이 아닌가" — 합쳐지지 말아야 할 것이 합쳐진다).</li>
       </ol>
@@ -669,7 +1380,7 @@ scan 0   k=4  points=&lt;n&gt;(was &lt;n&gt;)  clusters=&lt;n&gt;
       <div class="tbl"><table class="compact">
         <thead><tr><th>본 것</th><th>뜻</th></tr></thead>
         <tbody>
-          <tr><td>덩어리 수가 <strong>늘었다</strong></td><td>점 간 거리가 문턱을 넘어섰다(§2-5 · 벡터 8). <strong>멀리 있는 것부터</strong> 갈라졌는지 확인한다 — 그렇다면 §2-3 이 그대로 재현된 것이다</td></tr>
+          <tr><td>덩어리 수가 <strong>늘었다</strong></td><td>점 간 거리가 문턱보다 커졌다(§2-5 · 벡터 8). <strong>멀리 있는 것부터</strong> 갈라졌는지 확인한다 — 그렇다면 §2-3 이 그대로 재현된 것이다</td></tr>
           <tr><td>덩어리 수가 <strong>줄었다</strong></td><td>점이 서넛뿐이던 작은 물체가 통째로 사라졌다. <strong>사라진 것은 아무 증상도 내지 않는다</strong> — 정답지가 없으면 알아채지 못했을 것이다. 이 점이 §3-2-2 를 먼저 적은 이유다</td></tr>
           <tr><td>둘 다 일어나 개수가 <strong>그대로</strong></td><td>가장 헷갈리는 경우다. 개수만 보고 "견뎠다"고 적었으면 틀린 기록이 된다 — 내용을 본 사람만 가릴 수 있다</td></tr>
         </tbody>
@@ -678,11 +1389,12 @@ scan 0   k=4  points=&lt;n&gt;(was &lt;n&gt;)  clusters=&lt;n&gt;
       <h2 id="checkpoints">✅ 검증 체크포인트</h2>
       <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.
       <strong>이 쪽의 항목은 "예상한 것을 봤는가"가 아니라 "무엇이 일어났는지 적었는가"</strong> 다 — 방마다 다른 값이 나오는 것이 정상이기 때문이다.</p>
+      <p>머리말의 <strong>경로 통과</strong>는 정상 절차를 끝까지 했다는 뜻이고, <strong>발동 확인</strong>은 일부러 만든 이상 상황의 출력을 봤다는 뜻이다. 이 "경로"는 <a href="l-00-map.html">l-00</a> 의 경로 A / B 와 관계없다.</p>
       <ul class="checklist">
         <li><label><input type="checkbox" data-key="gap-baseline-measured"><span><strong>경로 통과</strong> — 같은 물건(벽 하나) 안에서 이웃 점들이 얼마나 떨어져 있는지 <strong>분포</strong>로 재고, 중앙값 · 75 % · 90 % · 최대를 적었다. 고른 각도 구간도 함께 적었다
-          <span class="sub">판정 수단: 내 도구의 출력 · §3-1-4 의 표 · 합격선 없음(방과 모드에 따라 달라진다 — 이유는 §2-3)</span></span></label></li>
-        <li><label><input type="checkbox" data-key="cluster-selftest-pass"><span><strong>경로 통과</strong> — <code>python3 tests/test_cluster.py</code> 가 <code>PASS cluster 27 cases</code> 로 끝났다
-          <span class="sub">판정 수단: 자기시험 출력 · §3-1-3 · 라이다 없이 실행한다</span></span></label></li>
+          <span class="sub">판정 수단: <code>lab_cluster &lt;파일&gt;</code> 과 <code>--sector</code> 의 출력 · §3-1-4 의 표 · 합격선 없음(방과 모드에 따라 달라진다 — 이유는 §2-3)</span></span></label></li>
+        <li><label><input type="checkbox" data-key="cluster-selftest-pass"><span><strong>경로 통과</strong> — Pi 에서 빌드한 <code>build/test_cluster</code> 와 <code>build/test_cluster_ub</code> 가 둘 다 <code>PASS cluster 43 cases</code> 한 줄만 찍었다
+          <span class="sub">판정 수단: 시험 출력 · §3-1-3 · 라이다 없이 실행한다. Mac 의 <code>clang++</code> 로 통과한 것은 연습이고 이 항목의 판정이 아니다(결정 L3)</span></span></label></li>
         <li><label><input type="checkbox" data-key="clusters-match-room"><span><strong>경로 통과</strong> — 도구가 낸 덩어리 수와 <strong>내가 미리 적은</strong> 방의 물건 수를 한 표에 놓고, 어긋난 줄마다 이유를 적었다
           <span class="sub">판정 수단: §3-2-2 의 정답지 ↔ §3-2-4 의 대조 표 · <strong>두 수가 같을 필요는 없다</strong> — 이유를 댔는가로 판정한다</span></span></label></li>
         <li><label><input type="checkbox" data-key="downsample-limit-found"><span><strong>경로 통과</strong> — "견딘다"의 뜻을 내가 정해 적고, 내 방에서 <strong>k 가 얼마까지</strong>인지와 그 기준을 적었다
@@ -701,8 +1413,12 @@ scan 0   k=4  points=&lt;n&gt;(was &lt;n&gt;)  clusters=&lt;n&gt;
           <tr><td>벽 하나가 수십 개로 쪼개진다</td><td>문턱이 작다 / 그 구간이 무반사다 / 벽을 비스듬히 보고 있다(<code>1/cos²θ</code>)</td><td>쪼개진 덩어리의 <code>idx</code> 를 평면도에서 짚는다. 끊긴 자리가 <strong>한 곳</strong>이면 무반사, <strong>끝으로 갈수록</strong>이면 비스듬한 것이다</td><td>§2-3-1 · §3-3</td></tr>
           <tr><td>정면의 물건만 언제나 둘로 세어진다 (덩어리가 늘 하나 더 많다)</td><td>목록의 끝과 처음을 안 이었다 — <strong>오류는 나지 않는다</strong></td><td><code>idx</code> 가 큰 수에서 작은 수로 넘어가는 덩어리(<code>351..359, 0..4</code> 꼴)가 목록에 있는가</td><td>§2-2 · 벡터 3</td></tr>
           <tr><td>솎았더니 덩어리가 <strong>늘었다</strong></td><td>점 간 거리가 k 배가 되어 문턱을 넘었다. 정상 동작이다</td><td>같은 문턱에 k = 1 · 2 를 나란히 실행해 본다(벡터 8이 같은 것을 채점한다)</td><td>§2-5 · §3-4</td></tr>
-          <tr><td><code>TypeError</code> 트레이스백이 나며 비정상 종료된다</td><td>무반사(<code>null</code>) 자리를 걸러내지 않고 좌표로 썼다</td><td><code>python3 tests/test_cluster.py</code> 의 벡터 5a 에서 같은 예외가 난다</td><td>§3-1-2 골격의 불변식 1</td></tr>
-          <tr><td>시작하자마자 <code>ValueError: line &lt;n&gt;: …</code></td><td>기록 파일이 기준 형식을 어겼다 — <strong>로더가 거부한 것이지 이 쪽의 잘못이 아니다</strong></td><td>메시지에 줄 번호와 어긋난 조건이 그대로 나온다</td><td><a href="l-04-one-turn.html#s3-4">l-04 §3-4</a></td></tr>
+          <tr><td><code>Assertion 'this-&gt;_M_is_engaged()' failed.</code> 뒤 중단된다(g++ 빌드)</td><td>무반사(빈 <code>optional</code>) 자리를 확인하지 않고 <code>*p</code> 로 꺼냈다</td><td><code>test_cluster</code> 가 벡터 5a 에서 같은 문구로 멈춘다. 문구는 터미널에서 실행했을 때 보인다(파이프로 받으면 사라질 수 있다).<sup class="fn"><a href="#fn-4">4</a></sup></td><td>T3 카드 · 불변식 1</td></tr>
+          <tr><td>문턱을 준 <code>lab_cluster</code> 가 멈추지 않는데 <strong>벽이 엉뚱한 자리에서 잘린다</strong></td><td>무반사 자리를 <code>value_or(Point{0.0, 0.0})</code> 로 꺼냈다 — 거리가 측정점보다 많아져 거리와 점이 어긋난다</td><td>문턱 없이(분포 모드) 돌리면 바로 아래 행의 <code>invariant 2</code> 오류가 난다. <code>test_cluster</code> 의 5a · 5b · 5c 가 FAIL 한다</td><td>T3 카드</td></tr>
+          <tr><td><code>lab_cluster</code> 가 <code>error: neighbor_distances() returned &lt;n&gt; entries for &lt;n&gt; measured points (invariant 2)</code></td><td>내 <code>neighbor_distances()</code> 가 측정점마다 하나를 돌려주지 않는다. 앞 수가 <strong>적으면</strong> 골격 그대로(0 개)이거나 고리의 마지막 칸이 빠졌고, <strong>많으면</strong> 무반사 자리까지 거리를 냈다(<code>value_or</code>)</td><td><code>test_cluster</code> 의 3a · 5a</td><td>T3 카드</td></tr>
+          <tr><td>시작하자마자 <code>error: line &lt;n&gt;: …</code></td><td>기록 파일이 기준 형식을 어겼다 — <strong>로더가 거부한 것이지 이 쪽의 잘못이 아니다</strong></td><td>메시지에 줄 번호와 어긋난 조건이 그대로 나온다</td><td><a href="l-04-one-turn.html#s3-4">l-04 §3-4</a></td></tr>
+          <tr><td>빌드할 때 <code>note: parameter passing for argument of type 'std::pair&lt;double, double&gt;' …</code> 를 포함한 묶음이 파일마다 나온다(따옴표는 로케일에 따라 <code>‘ ’</code>)</td><td>오류가 아니다 — aarch64 의 <code>g++</code> 가 <code>Point</code> 를 값으로 돌려주는 함수(<code>centroid()</code>)에 붙이는 안내다</td><td>빌드는 끝까지 되고 실행 파일이 생긴다</td><td>고칠 것이 없다(§3-1-2 끝)</td></tr>
+          <tr><td>Mac 에서는 FAIL 줄로 끝나거나 종료 코드 139(segmentation fault)인데 Pi 에서는 문구와 함께 중단된다</td><td>빈 <code>optional</code> · 빈 벡터 · 범위 밖 읽기 — Mac 의 <code>clang++</code> 와 그 표준 라이브러리 libc++ 는 이 읽기를 검사하지 않는다</td><td>Pi 의 중단 문구가 가리키는 함수를 본다</td><td>카드의 흔한 실수 표</td></tr>
           <tr><td><code>width()</code> 가 실제 물건 폭보다 늘 작다</td><td>라이다는 <strong>그 높이의 단면</strong> 중에서도 <strong>앞면만</strong> 본다. 둥근 물건은 앞쪽 호만 찍힌다</td><td>그 물건을 <strong>라이다 높이에서</strong> 줄자로 재 본다 — 눈높이에서 잰 폭과 다르다</td><td>고칠 것이 아니다. 이 한계를 수치로 다루는 것은 l-12 다</td></tr>
         </tbody>
       </table></div>
@@ -710,7 +1426,7 @@ scan 0   k=4  points=&lt;n&gt;(was &lt;n&gt;)  clusters=&lt;n&gt;
       <h2 id="quiz">🤔 이해 확인</h2>
       <details class="quiz"><summary>1. (네 갈래 검색) "물체 하나로 묶는 허용 거리"를 네 군데에서 찾아 적어 보라 — 정의 → 사양 → 구현 → 내 장치</summary>
         <div class="ans"><p><strong>① 정의: 없다.</strong> <code>LaserScan</code> 에도 표준 메시지 어디에도 "덩어리"가 없다. 점의 배열까지가 표준이고 묶는 규칙은 응용 코드가 정한다. <strong>비어 있다는 것이 답</strong>이며, 이 값이 "옳은 값"을 가질 수 없는 이유다.</p>
-        <p><strong>② 사양</strong>은 값을 직접 주지 않고 <strong>하한을 정하는 조건</strong>을 준다. 데이터시트 rev.2.2 p.8 Fig 2-1 의 Angular Resolution <code>≤1°</code> 에는 <code>5.5Hz scan rate</code> 라는 조건이 붙어 있다. 같은 표는 이 조건을 <code>360 samples per scan</code> 으로 풀어 적는다. 내 모드가 그 조건이 아니면 이 값도 내 값이 아니다. 여기에 거리를 곱해야(§2-3) 비로소 미터가 된다.</p>
+        <p><strong>② 사양</strong>은 값을 직접 주지 않고 <strong>하한을 정하는 조건</strong>을 준다. 데이터시트 성능 표의 Angular Resolution <code>≤1°</code> 에는 <code>5.5Hz scan rate</code> 라는 조건이 붙어 있다.<sup class="fn"><a href="#fn-7" id="fnref-7">7</a></sup> 같은 표는 이 조건을 <code>360 samples per scan</code> 으로 풀어 적는다. 내 모드가 그 조건이 아니면 이 값도 내 값이 아니다. 여기에 거리를 곱해야(§2-3) 비로소 미터가 된다.</p>
         <p><strong>③ 구현</strong>은 이름은 같고 뜻이 다르다 — 08d 의 <code>cluster_tol</code>(기본 0.25)은 카메라 박스 안에서 <code>r_min</code> 기준 거리 축으로만 재는 허용값이다. <strong>옮겨 적으면 안 되는 값</strong>이라는 것을 아는 것이 이 문항의 목적이다.</p>
         <p><strong>④ 내 장치</strong>가 유일하게 답을 주는 자리다 — §3-1-4 에서 잰 분포와 §3-3 에서 문턱을 바꿔 가며 찾은 값. 네 갈래 중 <strong>①이 비었고 ②는 조건부이며 ③은 다른 파라미터</strong>라, 이 값은 내가 재서 정하는 것 말고 다른 방법이 없다.</p></div></details>
       <details class="quiz"><summary>2. 점 수백 개를 묶는데 왜 모든 점 쌍을 견주지 않고 <strong>옆자리</strong> 하나만 보는가</summary>
@@ -729,7 +1445,7 @@ scan 0   k=4  points=&lt;n&gt;(was &lt;n&gt;)  clusters=&lt;n&gt;
         <div class="ans"><p>버그가 아니다. k 개마다 하나를 남기면 남은 이웃들의 각도 간격이 k 배가 되고, 따라서 점 간 거리도 k 배가 된다. 문턱을 그대로 두면 <strong>같은 벽이 여러 조각</strong>으로 갈린다 — 시험 벡터 8이 11점짜리 호가 여섯 조각이 되는 것을 그대로 채점한다.</p>
         <p>더 조심할 것은 반대 방향이다. <strong>점이 서넛뿐이던 작은 물체는 통째로 사라지고, 사라진 것은 아무 증상도 내지 않는다.</strong> 그래서 실습 D 는 개수만 보지 않고 §3-2-2 의 정답지와 대조하게 한다. 개수가 그대로인데 내용이 바뀐 경우가 가장 위험하다.</p></div></details>
       <details class="quiz"><summary>7. (일부러 틀리기) <code>width()</code> 를 "덩어리를 감싸는 사각형의 대각선"으로 바꾸면 무엇이 달라지는가</summary>
-        <div class="ans"><p>거의 모든 덩어리에서 같은 값이 나온다 — 짧고 곧은 덩어리는 두 정의가 일치하기 때문이다. 어긋나는 것은 <strong>많이 굽은 덩어리</strong>뿐이고, 시험 벡터 6d 가 그 한 경우를 만든다(반 바퀴 굽은 세 점: 양 끝 2.0 m ↔ 경계상자 대각 2.236 m).</p>
+        <div class="ans"><p>거의 모든 덩어리에서 같은 값이 나온다 — 짧고 곧은 덩어리는 두 정의가 일치하기 때문이다. 어긋나는 것은 <strong>많이 굽은 덩어리</strong>뿐이고, 시험 벡터 6d · 6e · 10c · 10d 넷이 그런 덩어리다(반 바퀴 · 4분의 3 바퀴 굽은 덩어리를 <code>split()</code> 을 거쳐 한 번, 손으로 만들어 한 번씩). 6d 는 반 바퀴 굽은 세 점이다: 양 끝 2.0 m ↔ 경계상자 대각 2.236 m.</p>
         <p>배울 것은 값의 차이가 아니라 <strong>정의가 뒤 쪽으로 그대로 전달된다</strong>는 것이다. l-11 은 이 <code>Cluster</code> 를 받아 선분을 추출하고, l-12 는 그 결과로 통로 폭을 판정한다. 이 쪽에서 <code>width()</code> 의 뜻을 바꾸면 <strong>두 쪽 뒤에서 "지나갈 수 있다"의 답이 달라지는데 아무도 그 연결을 기억하지 못한다.</strong> 정의를 골격 주석과 벡터 양쪽에 적어 두는 이유다.</p></div></details>
 
       <h2 id="next">다음 행선지</h2>
@@ -738,7 +1454,7 @@ scan 0   k=4  points=&lt;n&gt;(was &lt;n&gt;)  clusters=&lt;n&gt;
           <li><strong>번호순 다음은</strong> → <a href="l-11-lines.html">l-11</a> — 덩어리를 <strong>선분</strong>으로 줄인다. 이 쪽에서 나온 <code>Cluster</code> 가 그대로 입력이고, 점 수백 개가 선 몇 개가 되면 l-12 의 "지나갈 수 있나"가 계산 가능한 물음이 된다.</li>
           <li><strong>기록 파일 하나만 있으면</strong> → <a href="l-09-occupancy.html">l-09</a> 와 이 쪽은 서로 의존하지 않는다. 격자(l-09)는 <strong>점이 없는 곳</strong>을, 이 쪽은 <strong>점이 있는 곳</strong>을 다룬다 — 어느 쪽을 먼저 해도 된다.</li>
           <li><strong>이 쪽을 다 마치지 못했어도</strong> 다음 셋에 따라 진행한다.
-            <p>① <code>PASS cluster 27 cases</code> 까지 갔으면 <strong>실습 B·C·D 의 관찰이 아직 없어도 l-11 로 갈 수 있다.</strong> l-11 이 요구하는 것은 <code>Cluster</code> 가 옳게 나오는 것이고, 그 정확성은 벡터가 보장한다.</p>
+            <p>① <code>PASS cluster 43 cases</code> 까지 갔으면 <strong>실습 B·C·D 의 관찰이 아직 없어도 l-11 로 갈 수 있다.</strong> l-11 이 요구하는 것은 <code>Cluster</code> 가 옳게 나오는 것이고, 그 정확성은 벡터가 보장한다.</p>
             <p>② 반대로 <strong>벡터가 통과하지 못했으면 여기서 멈춘다</strong> — 이음매나 무반사 처리가 틀린 덩어리 위에 선분·통로 폭이 올라가면, 뒤에서 나는 이상한 값의 원인을 라이다에서 찾게 된다.</p>
             <p>③ 문턱을 못 정했어도 된다. <strong>고정된 값이 아니라 고르는 방법</strong>이 이 쪽의 산출물이고, l-11·l-12 는 문턱을 각자 다시 고른다.</p></li>
           <li><strong>이 쪽에서 잰 값은 내 노트에 적었는가</strong> — 적을 것은 다음 다섯이다.
@@ -752,6 +1468,18 @@ scan 0   k=4  points=&lt;n&gt;(was &lt;n&gt;)  clusters=&lt;n&gt;
             <p><code>hardware/INVENTORY.md</code> 에 <strong>이 쪽이 채우는 칸은 없다</strong> — 문턱은 내 방과 내 판단이지 장비의 사양이 아니기 때문이다.</p></li>
         </ul>
       </div>
+
+      <h2 id="footnotes">각주</h2>
+      <p class="small">본문의 작은 번호를 누르면 여기로 온다. 근거 문서 · 1세대 기록 · 측정하거나 확인한 날짜와 기계를 모았다. ↩ 를 누르면 본문으로 돌아간다.</p>
+      <ol class="footnotes">
+          <li id="fn-1"><code>NOMINAL(gen1-record, 2026-07-14)</code> — 1세대 기록 <code>~/ros2/docs/camera_lidar/LIDAR_MODES.md</code> §2 의 실측 표. <code>gen1-record</code> 는 출처가 1세대 기록이라는 뜻이고, 괄호 안 날짜는 기록일이다. <a class="fn-back" href="#fnref-1" aria-label="본문으로">↩</a></li>
+          <li id="fn-2">2026-10-31, 집필자가 이 쪽의 코드 블록을 다시 뽑아 골격 상태와 완결 상태 두 벌로 빌드했다. 앞 쪽(l-01 ~ l-09)의 파일과 함께다. 컴파일러는 Apple clang 21.0(libc++) · g++ 16.1(libstdc++, <code>-O0</code> · <code>-O2</code>) · g++ 11.4(l-06 의 컨테이너와 같은 판)다. 마지막은 CMake 3.22.1 과 이 쪽의 <code>CMakeLists.txt</code> 로 빌드했다(<code>lab_cluster</code> 링크 포함). 플래그는 <code>-std=c++17 -Wall -Wextra -Wpedantic -Werror -D_GLIBCXX_ASSERTIONS</code> 다. 골격은 경고 없이 빌드되고 <code>test_cluster</code> 가 <code>36 of 43 cases failed</code> 로 끝났다. 진단 빌드도 같은 줄이고 중단은 없었다. 앞에서부터 채운 상태는 T1 <code>33</code> · T1 ~ T2 <code>31</code> · T1 ~ T3 <code>27</code> · T1 ~ T4 <code>11</code> · T1 ~ T5 <code>4 of 43</code> 이었다(세 컴파일러가 같았다). 완결은 <code>PASS cluster 43 cases</code>(진단 빌드도 같은 한 줄)였다. 골격의 <code>lab_cluster</code> 를 §3-1-4 의 합성 기록에 돌렸다. 파일만 주면 <code>error: neighbor_distances() returned 0 entries for 1329 measured points (invariant 2)</code>, 문턱을 주면 <code>clusters=0</code> 이었다. 1 ~ 9 군의 벡터 27 개(9c 를 뺀 것)와 기대값은 이전 판(파이썬, 2026-09-23)의 시험 파일에서 옮겼고, 완결 C++ 가 <code>1e-9</code> 안에서 같은 값을 냈다. <code>note: parameter passing …</code> 묶음(위치 두 줄 · <code>note:</code> 한 줄 · 원문과 <code>^</code> 두 줄)은 <code>cluster.hpp</code> 를 include 하는 파일마다 나왔다. CMake 빌드에서는 세 번이었다. UTF-8 로케일의 g++ 11.4 는 따옴표를 <code>‘ ’</code> 로 찍었다. Apple silicon 의 g++ 16.1 과 aarch64 컨테이너의 g++ 11.4 둘 다였고, <code>-Werror</code> 로도 빌드가 끝났다. 이 안내의 근거는 GCC 10 변경 기록(<code>gcc.gnu.org/gcc-10/changes.html</code> 의 C++ 절)이다. 빈 기반 클래스를 가진 클래스를 값으로 주고받는 ABI 가 AArch64 를 포함한 몇 대상에서 바뀌었고, 그 변화를 <code>-Wpsabi</code> 로 알린다고 적혀 있다(2026-10-31 확인). clang 은 찍지 않았다. §3-1-4 의 Mac 연습 명령은 헤더 다섯과 시험 파일만 둔 디렉터리에서 실행해 <code>PASS cluster 43 cases</code> 였다. 다섯은 <code>cluster.hpp</code> · <code>geom.hpp</code> · <code>scan_io.hpp</code> · <code>repr.hpp</code> · <code>angles.hpp</code> 다(<code>check.hpp</code> 는 시험 폴더에 둔다). Pi 의 g++(gcc 14 계열)로는 빌드해 보지 않았다 — <code>note</code> 가 나오는지도 확인 과제다. <a class="fn-back" href="#fnref-2" aria-label="본문으로">↩</a></li>
+          <li id="fn-3">2026-10-31, 집필자가 완결 코드에서 한 군데만 바꾼 판을 만들었다. 틀린 판은 스물둘이다. T1 셋(경계상자 · 가장 먼 쌍 · 크기 확인 없는 <code>back()</code>), T2 하나(<code>int</code> 합), T3 넷(나머지 없음 · <code>value_or</code> · 확인 없는 <code>*p</code> · 둘 미만 처리 없음)이다. T4 다섯(이음매 없음 · <code>d &gt;= gap</code> · 하나뿐일 때도 합침(<code>out.size() &gt; 1 &amp;&amp;</code> 를 뺌) · 머리 먼저 · <code>d.back()</code> 먼저)이다. T5 넷(<code>q</code> 확인 없음 · <code>q</code> 를 0 으로 · <code>t</code> 없음 · <code>k − 1</code> 부터)이다. T6 다섯은 정렬 없음 · 중앙값 <code>d[n / 2]</code> · 자른 인덱스 · 올린 순위를 그대로 인덱스로 · 빈 목록이다. 다르게 쓴 판은 여섯(<code>std::sqrt</code> · 인덱스 반복 · 인덱스 모으기 · <code>split()</code> 안에서 거리 · <code>i % k</code> · <code>std::ceil</code>)이다. 골격의 자리표시가 없는 꼴로 <code>-Werror</code> 없이 컴파일해 경고를 읽었다 — 경고는 하나도 없었다(<code>note</code> 는 각주 2). 세 컴파일러(Apple clang 21.0 · g++ 16.1 · g++ 11.4 <code>-O2</code>)로 시험과 진단 빌드를 의사 터미널에서 실행했다. 의사 터미널은 운영체제가 만드는 가짜 터미널 장치다 — 프로그램에는 진짜 터미널로 보인다. 중단하지 않는 판의 FAIL 번호는 세 컴파일러가 같았다. 갈린 것은 g++ 에서 중단하는 판 일곱이다. g++ 둘은 문구 뒤 중단(134)했고(진단 빌드도 같은 문구), g++ 11.4 의 그 중단은 파이프로 받으면 아무 줄도 남지 않았다. clang 은 확인 없는 <code>*p</code> 와 올린 순위의 판에서 FAIL 줄로 끝났다. 진단 빌드는 앞이 같은 FAIL 셋(5b 의 값만 다름 — 없는 값을 읽었다), 뒤가 FAIL 줄 없이 <code>heap-buffer-overflow</code> 뒤 134 였다. 하나뿐일 때도 합친 판은 FAIL 일곱 줄 뒤 종료 코드 139, 진단 빌드는 <code>container-overflow</code> 뒤 134 였다. 나머지 넷은 종료 코드 139(segmentation fault)였고, 진단 빌드는 UBSan 의 <code>runtime error: … null pointer</code> 뒤 134 였다. 셸이 찍는 문구는 셸마다 달라 적지 않는다. 다르게 쓴 판 여섯은 세 컴파일러 모두 43 개를 통과했다. 올린 순위를 소수로 계산한 것과 정수로 계산한 것이 n = 1 ~ 2 000 에서 같다는 것은 세 컴파일러로 따로 확인했다. Pi 의 g++(gcc 14 계열)로는 재지 않았다(확인 과제). <a class="fn-back" href="#fnref-3" aria-label="본문으로">↩</a></li>
+          <li id="fn-4">2026-10-31, 집필자의 측정에서 g++ 11.4(l-06 의 컨테이너와 같은 판)는 그 문구를 표준 출력으로 냈다. 그래서 파이프로 받으면 아무 줄도 남지 않았다(<a href="l-04-one-turn.html#s2-6-2">l-04 §2-6-2</a>). Pi 의 g++(gcc 14 계열)로는 재지 않았다(확인 과제). <a class="fn-back" href="#fnref-4" aria-label="본문으로">↩</a></li>
+          <li id="fn-5">2026-10-31, <a href="l-09-occupancy.html">l-09</a> 와 같은 집필자의 합성 기록이다(<a href="l-09-occupancy.html#s2-3">l-09 §2-3</a> 의 각주에 적은 것과 같은 방). 4.0 m × 3.0 m 의 방(벽 x = −1.5 · 2.5 m, y = −1.2 · 1.8 m), 센서는 (0, 0), 한 변 0.4 m 의 상자가 (1.0, 0.5) 에 있다. 200° ~ 230° 는 무반사로 두었다(유리창 하나를 흉내 냈다). 한 바퀴 1 450 점, 같은 간격(약 0.248°), 거리는 mm 자리에서 반올림했다(무반사 121 점). 완결 코드의 <code>lab_cluster</code> 를 세 컴파일러로 빌드해 돌린 출력이 글자 단위로 같았다. 방 전체의 <code>max</code> 1.673 m 는 41.0° 의 상자 모서리 (0.80, 0.69) 에서 41.2° 의 벽 (2.06, 1.80) 으로 건너간 쌍이다. 무반사 구간을 건너뛴 쌍은 0.826 m 였다. 이 둘은 집필자가 기록 파일에서 따로 계산했다. 문턱 0.05 의 세 덩어리는 <code>#0 n=580 idx 927..1449, 0..56</code> · <code>#1 n=109 idx 57..165</code>(상자) · <code>#2 n=640 idx 166..805</code> 였다. k = 4 는 <code>points=363 (was 1450)</code> · <code>clusters=45</code>, 그중 점 하나짜리가 39 였다. y = 1.8 m 벽과 x = −1.5 m 벽이 만나는 모서리는 <code>atan2(1.8, −1.5)</code> ≈ 129.8° 다. 그래서 견본 셋째 줄은 그 앞인 100° ~ 125° 로 잡았다. 구간이 모서리를 넘으면 두 벽이 섞인다. 100° ~ 140° 를 모서리에서 나눠 재면 <code>[100, 129)</code> 는 중앙값 0.0094 · 최대 0.0128, <code>[131, 140)</code> 은 중앙값 0.0128 이었다. 정면 간격 1.8 m × 0.00433 rad ≈ 0.0078 m 에 1/cos²35° ≈ 1.490 을 곱하면 0.0116 m 이고, 잰 최대 0.0118 m 와의 차는 mm 반올림 안이다. 이 쪽의 이전 판(파이썬)에는 견본 출력이 없었다. 내 방의 기록으로는 돌려 보지 않았다 — 실제 센서의 분포와 덩어리 수는 확인 과제다. <a class="fn-back" href="#fnref-5" aria-label="본문으로">↩</a></li>
+          <li id="fn-6">데이터시트 rev.2.2 p.8 Fig 2-1(성능 표). <a class="fn-back" href="#fnref-6" aria-label="본문으로">↩</a></li>
+          <li id="fn-7">데이터시트 rev.2.2 p.8 Fig 2-1 — §3-3-1 표의 ② 행과 같은 자리. <a class="fn-back" href="#fnref-7" aria-label="본문으로">↩</a></li>
+      </ol>
 
       <div class="pager"></div>
     </div>

@@ -76,7 +76,8 @@
     { id: 'ref-rclcpp', file: 'ref-rclcpp.html', num: 'A', title: 'rclcpp 레퍼런스', group: 'ref' },
     { id: 'ref-opencv', file: 'ref-opencv.html', num: 'B', title: 'OpenCV 사용법', group: 'ref' },
     { id: 'ref-yolo', file: 'ref-yolo.html', num: 'C', title: 'YOLO 사용법', group: 'ref' },
-    { id: 'ref-abbr', file: 'ref-abbr.html', num: 'D', title: '약어 모음 — MCU · 펌웨어', group: 'ref' }
+    { id: 'ref-abbr', file: 'ref-abbr.html', num: 'D', title: '약어 모음 — MCU · 펌웨어', group: 'ref' },
+    { id: 'ref-abbr-lidar', file: 'ref-abbr-lidar.html', num: 'E', title: '약어 모음 — 라이다 L 쪽', group: 'ref' }
   ];
 
   // 그룹: 배열 순서 = 사이드바에 그리는 순서. 이전/다음은 그룹 경계를 넘지 않는다.
@@ -561,20 +562,32 @@
   }
 
   // ── 약어 자동 링크 ────────────────────────────────────────────────────
-  // 사전은 assets/abbr.js (생성물 — 정본은 ref-abbr.html, scripts/gen_abbr_js.py 가 만든다).
+  // 사전은 둘이다(생성물 — scripts/gen_abbr_js.py 가 만든다).
+  //   assets/abbr.js       ← ref-abbr.html        : fw · 06 · 06a · 06b · ref-abbr
+  //   assets/abbr-lidar.js ← ref-abbr-lidar.html  : 라이다 L 쪽(group 'lidar') · ref-abbr-lidar
+  // 같은 약어라도 L 쪽에서는 L 쪽의 뜻(풍선)과 L 쪽 약어 쪽의 줄로 간다.
   // 본문의 약어를 약어 쪽의 그 줄로 가는 링크로 바꾼다. 쪽의 HTML 은 고치지 않는다.
-  // 걸지 않는 곳: pre · 링크 · 제목 · summary · 체크 항목 · 여러 낱말이 든 인라인 code.
-  var ABBR_STAGES = { '06': 1, '06a': 1, '06b': 1, 'ref-abbr': 1 };   // 그룹 'fw' 는 전부
+  // 걸지 않는 곳: pre · 링크 · 제목 · summary · 체크 항목 · 여러 낱말이 든 인라인 code,
+  // 그리고 data-noabbr 를 단 요소의 안 — 약어는 맞지만 그 자리만 다른 뜻일 때 쪽에서 감싼다
+  // (예: <span data-noabbr>PID</span> = 프로세스 번호). 사전 줄 전체를 빼는 것은 약어 쪽 줄의 data-nolink.
+  var ABBR_MCU = { src: 'assets/abbr.js', list: 'RPI5_ABBR', page: 'ref-abbr.html' };
+  var ABBR_L = { src: 'assets/abbr-lidar.js', list: 'RPI5_ABBR_L', pageVar: 'RPI5_ABBR_L_PAGE', page: 'ref-abbr-lidar.html' };
+  var ABBR_STAGES = { '06': ABBR_MCU, '06a': ABBR_MCU, '06b': ABBR_MCU, 'ref-abbr': ABBR_MCU, 'ref-abbr-lidar': ABBR_L };
+  var ABBR_GROUPS = { fw: ABBR_MCU, lidar: ABBR_L };
 
   function loadAbbr(stage) {
-    if (!stage || !(stage.group === 'fw' || ABBR_STAGES[stage.id])) return;
+    var cfg = stage && (ABBR_GROUPS[stage.group] || ABBR_STAGES[stage.id]);
+    if (!cfg) return;
     var sc = document.createElement('script');
-    sc.src = 'assets/abbr.js';
-    sc.onload = function () { if (window.RPI5_ABBR) linkAbbr(window.RPI5_ABBR); };
+    sc.src = cfg.src;
+    sc.onload = function () {
+      var list = window[cfg.list];
+      if (list) linkAbbr(list, (cfg.pageVar && window[cfg.pageVar]) || cfg.page);
+    };
     document.head.appendChild(sc);
   }
 
-  function linkAbbr(list) {
+  function linkAbbr(list, page) {
     var root = document.querySelector('.content');
     if (!root || !list.length) return;
     var map = {};
@@ -590,11 +603,12 @@
     function makeLink(txt) {
       var e = map[txt] || map[txt.replace(/\d+$/, '')];
       if (!e) return document.createTextNode(txt);
-      return el('a', { class: 'abbr', href: 'ref-abbr.html#' + e[1], title: e[2] + (e[4] ? ' — ' + e[4] : ''), text: txt });
+      return el('a', { class: 'abbr', href: page + '#' + e[1], title: e[2] + (e[4] ? ' — ' + e[4] : ''), text: txt });
     }
     function skipped(node) {
       for (var p = node.parentNode; p && p !== root; p = p.parentNode) {
         if (SKIP[p.nodeName]) return true;
+        if (p.hasAttribute && p.hasAttribute('data-noabbr')) return true;
         if (p.classList && (p.classList.contains('checklist') || p.classList.contains('kicker') || p.classList.contains('pager'))) return true;
         // 약어 쪽 자신: 약어 칸과 풀이 칸은 그대로 둔다
         if (p.nodeName === 'TD' && p.cellIndex < 2 && p.parentNode.hasAttribute('data-abbr')) return true;
@@ -628,6 +642,49 @@
     });
   }
 
+  // ── 절 들여쓰기 (2026-10-28, fw 쪽만) ─────────────────────────────────
+  // 쪽 HTML 은 제목과 본문이 형제로 나란히 있다. 제목(h2~h4) 뒤의 본문을 다음 같은 단계 이상의
+  // 제목 앞까지 div.sec 로 묶어 한 단계씩 들여쓴다. .pager 는 묶지 않는다.
+  function wrapSections(stageId) {
+    if (stageId.indexOf('fw-') !== 0 && stageId.indexOf('l-') !== 0) return;
+    var root = document.querySelector('.content');
+    if (!root) return;
+    function isStop(n, level) {
+      if (n.classList && n.classList.contains('pager')) return true;
+      return /^H[1-4]$/.test(n.tagName) && Number(n.tagName.charAt(1)) <= level;
+    }
+    function wrap(container, level) {
+      Array.prototype.slice.call(container.children).forEach(function (h) {
+        if (h.tagName !== 'H' + level) return;
+        var box = document.createElement('div');
+        box.className = 'sec sec-' + level;
+        var n = h.nextElementSibling;
+        while (n && !isStop(n, level)) {
+          var next = n.nextElementSibling;
+          box.appendChild(n);
+          n = next;
+        }
+        h.parentNode.insertBefore(box, h.nextSibling);
+        if (level < 4) wrap(box, level + 1);
+      });
+    }
+    wrap(root, 2);
+  }
+
+  // ── 번호 목록의 시작 번호 (2026-11-02) ───────────────────────────────
+  // .steps 는 CSS 카운터(counter-reset: step)로 번호를 그려 <ol start> · <li value> 를
+  // 무시한다. CSS 만으로는 속성 값을 카운터에 넣을 수 없으므로 여기서 카운터를 맞춘다.
+  function fixListStart() {
+    Array.prototype.forEach.call(document.querySelectorAll('ol.steps[start]'), function (ol) {
+      var n = parseInt(ol.getAttribute('start'), 10);
+      if (!isNaN(n)) ol.style.counterReset = 'step ' + (n - 1);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('ol.steps > li[value]'), function (li) {
+      var n = parseInt(li.getAttribute('value'), 10);
+      if (!isNaN(n)) li.style.counterSet = 'step ' + n;     // counter-set 은 증가 뒤에 적용된다
+    });
+  }
+
   // ── 시작 ──────────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', function () {
     var stageId = document.body.getAttribute('data-stage') || 'index';
@@ -639,6 +696,8 @@
     buildPager(stageId);
     bindChecklists(stageId, store);
     renderOverview(store);
+    wrapSections(stageId);
+    fixListStart();
     enhanceCode();
     addAnchors();
     loadAbbr(stage);

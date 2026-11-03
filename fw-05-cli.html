@@ -15,9 +15,9 @@
 
       <p class="kicker">F5 · 명령 창(mini CLI)</p>
       <h1>보드에게 말을 건다 — 한 줄을 받아 등록된 함수를 부르는 창</h1>
-      <p class="lead"><a href="fw-03-clock-console.html">fw-03</a> 의 콘솔은 <strong>송신만</strong> 한다(<code>printf</code> → VCP, 부팅 배너 3줄). 이 쪽은 <strong>수신 쪽</strong>을 더한다:
-      USART3 로 들어온 바이트를 인터럽트에서 받아 링에 넣고, 주 루프가 한 줄로 조립해 낱말로 자르고, 등록된 함수를 찾아 부른다.
-      여기서 만든 <code>cli_register()</code> 하나로 뒤의 모든 쪽이 자기 명령(<code>stat</code> · <code>pwm</code> · <code>enc</code> · <code>ina</code> …)을 더한다 — 벤치에서 보는 값은 전부 이 창으로 나온다.
+      <p class="lead"><a href="fw-03-clock-console.html">fw-03</a> 의 콘솔은 <strong>송신만</strong> 한다(<code>printf</code> → VCP, 부팅 배너 3줄). VCP 는 ST-LINK 가 USB 케이블 위에 만드는 가상 직렬 포트이고, MCU 쪽 끝은 USART3 이다.
+      이 쪽은 <strong>수신 쪽</strong>을 더한다. USART3 로 들어온 바이트를 인터럽트에서 받아 링(고정 크기 순환 배열)에 넣는다. 주 루프가 그 바이트를 한 줄로 조립해 낱말로 자르고, 등록된 함수를 찾아 부른다.
+      여기서 만든 <code>cli_register()</code> 하나로 뒤의 모든 쪽이 자기 명령(<code>stat</code> · <code>pwm</code> · <code>enc</code> · <code>ina</code> …)을 더한다. 벤치에서 보는 값은 전부 이 명령 창으로 나온다.
       그래서 이 쪽의 버그는 나중에 <strong>다른 쪽의 증상</strong>으로 나타난다. 수신이 오류 표시 없이 멈추는 경우까지 여기서 일부러 일으켜 본다.</p>
 
       <div class="goal">
@@ -76,7 +76,7 @@
                                           ▼
   Mac terminal ◄──USB── ST-LINK VCP ◄── PD8 (USART3_TX)</code></pre>
       <p>이 쪽에서 쓰는 낱말:</p>
-      <div class="tbl"><table class="compact">
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w20"><col class="w80"></colgroup>
         <thead><tr><th>낱말</th><th>뜻 (이 가이드에서)</th></tr></thead>
         <tbody>
           <tr><td>ISR</td><td>인터럽트 서비스 루틴. 여기서는 <code>USART3_IRQHandler</code> → <code>HAL_UART_IRQHandler</code> → 내 콜백까지의 구간. 주 루프를 <strong>언제든 끊고</strong> 들어온다</td></tr>
@@ -86,6 +86,9 @@
           <tr><td>디스패치</td><td><code>argv[0]</code>(명령 이름)을 등록 테이블에서 찾아 그 함수를 부르는 일</td></tr>
           <tr><td>다시 걸기(re-arm)</td><td>HAL 의 인터럽트 수신은 정해 준 바이트 수를 받으면 <strong>끝난다.</strong> 계속 받으려면 다시 걸어야 한다 — 그 "다시 걸기"</td></tr>
           <tr><td>순수(pure) 파일</td><td>HAL 헤더를 포함하지 않는 <code>.c</code>. Mac 의 <code>cc</code> 로 그대로 컴파일돼 호스트 시험을 돌릴 수 있다. 이 쪽에서는 <code>cli.c</code></td></tr>
+          <tr><td>계약 v2</td><td>Pi 와 MCU 가 주고받는 이진 프레임의 사양. 정본은 <a href="06a-mcu-protocol.html">06a</a> §4-2 다</td></tr>
+          <tr><td>TEXT · V2 모드</td><td>VCP 선 하나를 쓰는 두 방식. TEXT 는 사람이 읽는 명령 창, V2 는 계약 v2 의 이진 프레임이다</td></tr>
+          <tr><td>1세대</td><td>이 프로젝트 이전에 같은 부품 일부로 만든 첫 로봇. 이 가이드는 그 기록을 참고로만 인용한다</td></tr>
         </tbody>
       </table></div>
       <p>이 쪽이 만들거나 고치는 파일은 넷이다.</p>
@@ -100,22 +103,35 @@
       <h2 id="why">2. 원리 — 왜 이렇게 생겼는가</h2>
 
       <h3 id="s2-1">2-1. 왜 글자 창이 먼저인가 — 계약에 없는 값을 본다, 계약은 넓히지 않는다</h3>
-      <p>Pi 와 MCU 사이의 계약 v2(<a href="06a-mcu-protocol.html">06a</a> §4-2)로 오가는 프레임은 네 가지뿐이다: 속도 명령(0x01) · 상태(0x81) · IMU(0x82) · 이벤트(0x83). 상태 프레임에 드는 것은 좌 · 우 각각의 평균 틱 · 배터리 전압 · 전류 · fault 다.
-      상태 프레임의 틱은 "좌 · 우 각각 앞뒤 평균"이고 <strong>바퀴별 값은 MCU 안에서만 쓴다</strong>고 그 표에 적혀 있다. 그런데 벤치에서 보고 싶은 것은 정확히 그 MCU 안의 값이다 — 바퀴 하나의 엔코더 카운트, 채널 하나의 듀티, ADC 의 raw 값, 1 kHz(주기 1 ms) 루프의 지터, PID 의 적분항.</p>
-      <p>방법은 둘이다. (가) 계약에 진단용 TYPE 을 더한다 — 그러면 Pi 쪽 브리지 · 파이썬 도구 · 펌웨어 세 곳이 같이 바뀌고, 벤치가 끝나면 쓸모없는 필드가 계약에 남는다.
-      (나) 계약은 그대로 두고 <strong>벤치 전용의 글자 창</strong>을 하나 둔다 — 같은 VCP 선을 TEXT / V2 두 모드로 번갈아 쓴다. 모드는 실행 중에 바꾸고 부팅은 TEXT 다(전환은 <a href="fw-17-link-v2.html">fw-17</a>).</p>
-      <p>이 프로젝트는 (나)로 정했다(텍스트 CLI 를 앞에, 계약 v2 를 뒤에).
-      계약의 유일한 원천은 06a §4-2 이고, 이 창에서 무엇을 찍든 계약은 한 글자도 바뀌지 않는다. 순서의 이유(왜 계약 v2 가 뒤인가)는 <a href="fw-00-map.html">fw-00</a> §2-2 에 있다.</p>
-      <p>대가도 적어 둔다. 최종 펌웨어에 벤치용 창이 하나 더 남는다(코드와 시험할 모드가 는다). 그리고 <strong>V2 모드에는 이 창이 없다</strong> — VCP 가 이진 프레임 전용이 되기 때문이다.
-      그때의 관측 수단은 파이썬 probe 의 출력과 gdb(<a href="fw-04-debugger.html">fw-04</a>)로 읽는 카운터 변수뿐이다. 그래서 이 쪽에서 카운터를 <strong>변수로</strong> 두는 습관을 들인다(§3-1-2 의 <code>console_rx_stats_t</code>).</p>
+      <p>Pi 와 MCU 사이의 계약 v2 로 오가는 프레임은 네 가지뿐이다: 속도 명령(0x01) · 상태(0x81) · IMU(0x82) · 이벤트(0x83).<sup class="fn"><a href="#fn-1" id="fnref-1">1</a></sup></p>
+      <p>상태 프레임에 드는 것은 좌 · 우 각각의 평균 틱 · 배터리 전압 · 전류 · fault 다. 틱은 "좌 · 우 각각 앞뒤 평균"이고, <strong>바퀴별 값은 MCU 안에서만 쓴다</strong>고 계약에 적혀 있다.</p>
+      <p>그런데 벤치에서 보고 싶은 것은 정확히 그 MCU 안의 값이다.</p>
+      <ul>
+        <li>바퀴 하나의 엔코더 카운트</li>
+        <li>채널 하나의 듀티</li>
+        <li>ADC 의 raw 값</li>
+        <li>1 kHz(주기 1 ms) 루프의 지터</li>
+        <li>PID 의 적분항</li>
+      </ul>
+      <p>방법은 둘이다.</p>
+      <ul>
+        <li>(가) 계약에 진단용 TYPE 을 더한다. 그러면 Pi 쪽 브리지 · 파이썬 도구 · 펌웨어 세 곳이 같이 바뀌고, 벤치가 끝나면 쓸모없는 필드가 계약에 남는다.</li>
+        <li>(나) 계약은 그대로 두고 <strong>벤치 전용의 글자 창</strong>을 하나 둔다. 같은 VCP 선을 TEXT / V2 두 모드로 번갈아 쓴다. 모드는 실행 중에 바꾸고, 부팅 때는 TEXT 다(전환은 <a href="fw-17-link-v2.html">fw-17</a>).</li>
+      </ul>
+      <p>이 프로젝트는 (나)로 정했다(텍스트 CLI 를 앞에, 계약 v2 를 뒤에).<sup class="fn"><a href="#fn-2" id="fnref-2">2</a></sup> TEXT 모드의 명령 창에서 무엇을 찍든 계약은 한 글자도 바뀌지 않는다.</p>
+      <p>대가도 적어 둔다.</p>
+      <ul>
+        <li>최종 펌웨어에 벤치용 명령 창이 하나 더 남는다(코드와 시험할 모드가 는다).</li>
+        <li><strong>V2 모드에는 이 명령 창이 없다.</strong> VCP 가 이진 프레임 전용이 되기 때문이다. 그때의 관측 수단은 파이썬 probe 의 출력과 gdb(<a href="fw-04-debugger.html">fw-04</a>)로 읽는 카운터 변수뿐이다.</li>
+      </ul>
+      <p>그래서 이 쪽에서 카운터를 <strong>변수로</strong> 두는 습관을 들인다(§3-1-2 의 <code>console_rx_stats_t</code>).</p>
 
       <h3 id="s2-2">2-2. ISR 이 하는 일, 주 루프가 하는 일</h3>
       <p>먼저 숫자 하나. 460800 8N1 에서 한 바이트는 시작 1 + 데이터 8 + 정지 1 = 10 비트다. 10 ÷ 460 800 = <strong>21.7 µs</strong> 에 한 바이트, 1 초에 46 080 바이트(≈ 46 kB/s)다.</p>
-      <p>USART 의 수신기에는 (FIFO 를 켜지 않으면) 받은 바이트를 둘 자리가 <strong>하나</strong>(RDR)뿐이다. RM0468 Rev 3 §53.5.6 의 "Overrun error" 는 이렇게 적는다:
-      "An overrun error occurs if a character is received and RXNE has not been reset … the RDR content is not lost … the shift register is overwritten. After that, any data received during overrun is lost."
-      즉 바이트 A 가 RDR 에 들어온 뒤 <strong>다음 바이트 B 가 다 들어올 때까지</strong> A 를 꺼내지 않으면 B 는 버려진다. 바이트가 잇달아 올 때 그 기한은 한 바이트 시간, 21.7 µs 다.</p>
-      <p>손실은 이 기한에서 <strong>바로</strong> 시작한다 — 같은 절의 Note 가 "The ORE bit, when set, indicates that at least 1 data has been lost" 라고 명시한다. ISR 진입이 RXNE 뒤 21.7 µs 보다 늦으면 ORE 와 함께 B 하나를 잃고, 더 늦을수록 잃는 수가 는다.
-      바이트가 잇달아 오는 동안(붙여넣기)에는 ISR 이 <strong>한 바이트를 처리하는 시간</strong>도 같은 21.7 µs 안이어야 한다 — 그보다 길면 밀린 시간이 바이트마다 쌓여 결국 같은 ORE 가 난다.</p>
+      <p>USART 의 수신기에는 (FIFO 를 켜지 않으면) 받은 바이트를 둘 자리가 <strong>하나</strong>뿐이다. 그 자리가 RDR(수신 데이터 레지스터)이다. RDR 에 바이트가 있으면 RXNE 플래그가 1 이 되고, 이때 수신 인터럽트가 발생한다.</p>
+      <p>바이트 A 가 RDR 에 들어온 뒤 <strong>다음 바이트 B 가 다 들어올 때까지</strong> A 를 꺼내지 않으면 B 는 버려진다. 이것이 오버런 오류(ORE)다.<sup class="fn"><a href="#fn-3" id="fnref-3">3</a></sup> 바이트가 잇달아 올 때 그 기한은 한 바이트 시간, 21.7 µs 다.</p>
+      <p>손실은 이 기한에서 <strong>바로</strong> 시작한다. ORE 가 1 이면 적어도 한 바이트를 이미 잃은 것이다.<sup class="fn"><a href="#fn-4" id="fnref-4">4</a></sup> ISR 진입이 RXNE 뒤 21.7 µs 보다 늦으면 ORE 와 함께 B 하나를 잃고, 더 늦을수록 잃는 수가 는다.</p>
+      <p>바이트가 잇달아 오는 동안(붙여넣기)에는 ISR 이 <strong>한 바이트를 처리하는 시간</strong>도 같은 21.7 µs 안이어야 한다. 그보다 길면 밀린 시간이 바이트마다 쌓여 결국 같은 ORE 가 난다.</p>
       <p>그래서 ISR 에 두는 일은 "기한이 21.7 µs 인 일" 하나뿐이다.</p>
       <div class="tbl"><table>
         <thead><tr><th>일</th><th>어디서</th><th>왜</th></tr></thead>
@@ -124,18 +140,31 @@
           <tr><td>에코, 줄 조립, 토큰화, 명령 실행, <code>printf</code></td><td><strong>주 루프</strong></td><td>기한이 사람(한 줄 치는 데 수백 ms)에게 있다. 그리고 <strong>길다</strong> — 명령 21개가 다 등록된 뒤의 <code>help</code> 는 184 바이트를 찍는다(머리 줄 29 + 이름 줄 155 — 직접 세어 본다). 184 × 21.7 µs ≈ 4.0 ms 다. 이것을 ISR 에 두면 그동안 같은 우선순위 이하의 인터럽트가 전부 밀린다</td></tr>
         </tbody>
       </table></div>
-      <p>ISR 안에서 하지 않는 것 둘을 정해 둔다. ① <strong>글자를 찍지 않는다</strong>(<code>printf</code> · <code>LOG_*</code>) — ISR 은 카운터만 올리고, 찍는 것은 주 루프다.
-      ② <strong>타임아웃이 있는 HAL 블로킹 호출을 하지 않는다.</strong> HAL 의 타임아웃은 <code>HAL_GetTick()</code> 으로 잰다. 그 tick 을 올리는 SysTick 인터럽트의 선점 우선순위는 사용자의 H723 <code>.ioc</code> 에서 15(가장 낮다)였다(<code>NVIC.SysTick_IRQn=true\:15\:0\:…</code>). 내 프로젝트의 값은 §3-1-1 의 grep 에서 직접 본다.
-      USART3 의 ISR(이 가이드의 예시값 6)이 SysTick 보다 높으면 그 안에서는 SysTick 이 끼어들지 못하므로 <strong>tick 이 멈춰 있다</strong> — 타임아웃이 만료되지 않는다.</p>
-      <p><strong>링이 잠금 없이 되는 이유.</strong> 쓰는 쪽(ISR)은 <code>head</code> 만 고치고 읽는 쪽(주 루프)은 <code>tail</code> 만 고친다. 같은 변수를 두 문맥이 <strong>고치는</strong> 일이 없고, 16 비트 인덱스 하나를 읽고 쓰는 것은 이 CPU 에서 한 번의 메모리 접근이다.
-      규칙은 둘이다: 비었다 = <code>head == tail</code>, 가득 찼다 = <code>head</code> 를 한 칸 전진시키면 <code>tail</code> 과 같아진다(그래서 크기 N 의 링에 들어가는 것은 N − 1 바이트다).
-      가득 찼을 때 ISR 은 <strong>새 바이트를 버리고 센다.</strong> 오래된 것을 밀어내려면 ISR 이 <code>tail</code> 을 고쳐야 하고, 그 순간 "한 변수 = 한 문맥" 규칙이 깨진다.</p>
-      <p>크기(이 가이드의 예시값 256 B)의 근거는 하나다. 주 루프가 가장 긴 출력을 찍는 동안(위의 4.0 ms) 상대가 최고 속도로 보내면, 같은 속도이므로 같은 수인 184 바이트가 쌓인다. 링 크기는 그보다 큰 2 의 거듭제곱으로 정한다. 사람이 치는 입력에는 넘치도록 크고, 여러 줄 붙여넣기에는 빠듯하다. 빠듯한 쪽은 세서 본다(<code>ring_drop</code>).</p>
+      <p>ISR 안에서 하지 않는 것 둘을 정해 둔다.</p>
+      <ul>
+        <li>① <strong>글자를 찍지 않는다</strong>(<code>printf</code> · <code>LOG_*</code>). ISR 은 카운터만 올리고, 찍는 것은 주 루프다.</li>
+        <li><p>② <strong>타임아웃이 있는 HAL 블로킹 호출을 하지 않는다.</strong> HAL 의 타임아웃은 <code>HAL_GetTick()</code> 으로 잰다. 그 tick 을 올리는 것은 SysTick(코어 안의 타이머) 인터럽트다.</p>
+          <p>SysTick 의 선점 우선순위는 사용자의 H723 <code>.ioc</code> 에서 15(가장 낮다)였다.<sup class="fn"><a href="#fn-5" id="fnref-5">5</a></sup> 내 프로젝트의 값은 §3-1-1 의 grep 에서 직접 본다.</p>
+          <p>USART3 의 ISR(이 가이드의 예시값 6)이 SysTick 보다 높으면, 그 안에서는 SysTick 이 끼어들지 못한다. 그래서 <strong>tick 이 멈춰 있고</strong> 타임아웃이 만료되지 않는다.</p></li>
+      </ul>
+      <p><strong>링이 잠금 없이 되는 이유.</strong> 쓰는 쪽(ISR)은 <code>head</code> 만 고치고, 읽는 쪽(주 루프)은 <code>tail</code> 만 고친다. 같은 변수를 두 문맥이 <strong>고치는</strong> 일이 없다. 그리고 16 비트 인덱스 하나를 읽고 쓰는 것은 이 CPU 에서 한 번의 메모리 접근이다.</p>
+      <p>규칙은 둘이다.</p>
+      <ul>
+        <li>비었다 = <code>head == tail</code></li>
+        <li>가득 찼다 = <code>head</code> 를 한 칸 전진시키면 <code>tail</code> 과 같아진다. 그래서 크기 N 의 링에 들어가는 것은 N − 1 바이트다.</li>
+      </ul>
+      <p>가득 찼을 때 ISR 은 <strong>새 바이트를 버리고 센다.</strong> 오래된 것을 밀어내려면 ISR 이 <code>tail</code> 을 고쳐야 하고, 그 순간 "한 변수 = 한 문맥" 규칙이 깨진다.</p>
+      <p>크기(이 가이드의 예시값 256 B)의 근거는 하나다. 주 루프가 가장 긴 출력을 찍는 동안(위의 4.0 ms) 상대가 최고 속도로 보내면, 같은 속도이므로 같은 수인 184 바이트가 쌓인다. 링 크기는 그보다 큰 2 의 거듭제곱으로 정한다.</p>
+      <p>이 크기는 사람이 치는 입력에는 넘치도록 크고, 여러 줄 붙여넣기에는 빠듯하다. 빠듯한 쪽은 세서 본다(<code>ring_drop</code>).</p>
       <div class="callout why"><span class="ct">왜 1 바이트씩인가 — 그리고 그 값</span>
-        <p><code>HAL_UART_Receive_IT(&amp;huart3, buf, n)</code> 은 "n 바이트를 다 받으면 콜백 한 번"이다. 사람이 치는 줄은 길이를 미리 모르므로 n = 1 로 걸고 콜백마다 다시 건다.
-        HAL 소스로 보면 바이트마다 이런 일이 돈다(<code>stm32h7xx_hal_uart.c</code>, FW_H7 V1.13.0). <code>UART_RxISR_8BIT</code>(:4225)가 RDR 을 읽는다(:4233). 남은 수가 0 이면 RXNE 인터럽트와 오류 인터럽트를 <strong>끄고</strong>(:4241 · :4244) 상태를 READY 로 돌린 뒤(:4247) 내 콜백을 부른다(:4297).
-        콜백이 다시 <code>HAL_UART_Receive_IT</code>(:1377) → <code>UART_Start_Receive_IT</code>(:3494)를 불러 인터럽트를 <strong>다시 켠다</strong>(:3508 · :3549). 바이트마다 끄고 켜는 셈이다.
-        46 kB/s 를 계속 받기에는 비효율적인 구조이고, 그래서 <a href="fw-07-memory-dma.html">fw-07</a>에서 Circular DMA 로 바꾼다. 지금은 이 구조가 <strong>HAL 의 수신이 언제 끝나는가</strong>를 배우기에 가장 좋다(§2-5).</p>
+        <p><code>HAL_UART_Receive_IT(&amp;huart3, buf, n)</code> 은 "n 바이트를 다 받으면 콜백 한 번"이다. 사람이 치는 줄은 길이를 미리 모르므로 n = 1 로 걸고 콜백마다 다시 건다.</p>
+        <p>HAL 소스로 보면 바이트마다 이런 일이 실행된다.<sup class="fn"><a href="#fn-6" id="fnref-6">6</a></sup></p>
+        <ul>
+          <li><code>UART_RxISR_8BIT</code> 가 RDR 을 읽는다.</li>
+          <li>남은 수가 0 이면 RXNE 인터럽트와 오류 인터럽트를 <strong>끄고</strong>, 상태를 READY 로 돌린 뒤 내 콜백을 부른다.</li>
+          <li>콜백이 다시 <code>HAL_UART_Receive_IT</code> → <code>UART_Start_Receive_IT</code> 를 불러 인터럽트를 <strong>다시 켠다</strong>.</li>
+        </ul>
+        <p>바이트마다 끄고 켜는 셈이다. 46 kB/s 를 계속 받기에는 비효율적인 구조이고, 그래서 <a href="fw-07-memory-dma.html">fw-07</a>에서 Circular DMA 로 바꾼다. 지금은 이 구조가 <strong>HAL 의 수신이 언제 끝나는가</strong>를 배우기에 가장 좋다(§2-5).</p>
       </div>
 
       <h3 id="s2-3">2-3. 등록 테이블 — 모듈이 자기 명령을 직접 등록한다</h3>
@@ -163,11 +192,15 @@ void encoder_cli_register(void)
         </tbody>
       </table></div>
       <div class="callout warn"><span class="ct">1세대에서 확인된 함정 — 등록 상한을 넘은 명령은 오류 표시 없이 사라진다</span>
-        <p>1세대(~/ros2) CLI 의 <code>cli_register()</code> 도 테이블이 가득 차면 <code>false</code> 를 돌려줬다. 그런데 등록하는 쪽 15줄이 전부 그 반환값을 버렸다(<code>~/ros2/guide/stm32/cli/4-code.html</code> 의 <code>cli_register</code> 해설).
-        상한 20 에서 21번째 명령을 더하면, 그 명령은 <strong>컴파일도 되고 경고도 없이</strong> 콘솔에서 <code>unknown command</code> 가 된다 — 원인은 방금 쓴 명령 함수가 아니라 다른 파일에 있는 상수다.</p>
-        <p>이 가이드의 코어는 같은 구조에 두 가지를 더했다: 거절된 등록을 <strong>센다</strong>(<code>help</code> 의 첫 줄 <code>rejected=</code>), 그리고 같은 이름의 두 번째 등록도 거절한다.</p>
-        <p>등록하는 쪽은 반환값을 <code>FW_ASSERT</code> 에 넣는다 — 등록 실패는 실행 중의 사건이 아니라 <strong>프로그램의 오류</strong>다. 부팅 때 멈추면 원인이 그 파일 · 그 줄에 찍히고, 오류 표시 없이 넘어가면 증상은 한참 뒤에 다른 곳에서 난다.</p>
-        <p>지금은 IWDG 가 없어서 <code>FW_ASSERT</code> 는 LD3 를 켜고 <strong>멈춘 채로</strong> 있다. NRST 로 복구한다. 자동으로 리셋되는 것은 <a href="fw-06-tick-watchdog.html">fw-06</a> 뒤다.</p>
+        <p>1세대 CLI 의 <code>cli_register()</code> 도 테이블이 가득 차면 <code>false</code> 를 돌려줬다. 그런데 등록하는 쪽 15줄이 전부 그 반환값을 버렸다.<sup class="fn"><a href="#fn-7" id="fnref-7">7</a></sup></p>
+        <p>상한 20 에서 21번째 명령을 더하면, 그 명령은 <strong>컴파일도 되고 경고도 없이</strong> 콘솔에서 <code>unknown command</code> 가 된다. 원인은 방금 쓴 명령 함수가 아니라 다른 파일에 있는 상수다.</p>
+        <p>이 가이드의 코어는 같은 구조에 두 가지를 더했다.</p>
+        <ul>
+          <li>거절된 등록을 <strong>센다</strong>(<code>help</code> 의 첫 줄 <code>rejected=</code>).</li>
+          <li>같은 이름의 두 번째 등록도 거절한다.</li>
+        </ul>
+        <p>등록하는 쪽은 반환값을 <code>FW_ASSERT</code> 에 넣는다. 등록 실패는 실행 중의 사건이 아니라 <strong>프로그램의 오류</strong>이기 때문이다. 부팅 때 멈추면 원인이 그 파일 · 그 줄에 찍힌다. 오류 표시 없이 넘어가면 증상은 한참 뒤에 다른 곳에서 난다.</p>
+        <p>지금은 IWDG(하드웨어 워치독 — 갱신이 끊기면 칩을 리셋한다)가 없다. 그래서 <code>FW_ASSERT</code> 는 LD3(빨강 LED)를 켜고 <strong>멈춘 채로</strong> 있다. NRST(보드의 검은 리셋 버튼)로 복구한다. 자동으로 리셋되는 것은 <a href="fw-06-tick-watchdog.html">fw-06</a> 뒤다.</p>
       </div>
 
       <h3 id="s2-4">2-4. 출력 규약 — 사람도 읽고 Mac 의 스크립트도 읽는다</h3>
@@ -185,15 +218,16 @@ void encoder_cli_register(void)
           <tr><td>출력 줄 끝</td><td><code>\r\n</code></td><td><code>\n</code> 만 보내면 터미널에 따라 줄마다 시작 위치가 오른쪽으로 밀린다</td></tr>
         </tbody>
       </table></div>
-      <p class="small">정수만 찍는 이유: CubeMX 가 만든 <code>cmake/gcc-arm-none-eabi.cmake</code> 는 <code>--specs=nano.specs</code> 로 링크한다(사용자의 H723 생성물에서 확인). 이 작은 C 라이브러리의 <code>printf</code> 는 따로 켜지 않으면 <code>%f</code> 를 찍지 않는다 [추정: newlib-nano 의 기본 동작. 한 줄 찍어 보면 안다].</p>
-      <p class="small">miniterm 의 줄 끝 확인법: 기본값은 pyserial 3.5 소스 <code>serial/tools/miniterm.py</code> 의 <code>default='CRLF'</code> 에 있다. <code>--help</code> 는 선택지 <code>{CR,LF,CRLF}</code> 만 보이고 기본값을 찍지 않는다. 화면에서 보려면 miniterm 안에서 <kbd>Ctrl+T</kbd> 뒤 <kbd>Ctrl+I</kbd>(메뉴 → 정보) — <code>--- EOL: CRLF</code> 줄이 나온다. 실습 A 의 에코로도 확인된다(§3-1-4).</p>
+      <p class="small">정수만 찍는 이유: CubeMX 가 만든 링크 설정은 <code>--specs=nano.specs</code> 로 작은 C 라이브러리(newlib-nano)를 링크한다.<sup class="fn"><a href="#fn-8" id="fnref-8">8</a></sup> 이 라이브러리의 <code>printf</code> 는 따로 켜지 않으면 <code>%f</code> 를 찍지 않는다 [추정: newlib-nano 의 기본 동작. 한 줄 찍어 보면 안다].</p>
+      <p class="small">miniterm 의 줄 끝 기본값은 CRLF 다.<sup class="fn"><a href="#fn-9" id="fnref-9">9</a></sup> <code>--help</code> 는 선택지 <code>{CR,LF,CRLF}</code> 만 보이고 기본값을 찍지 않는다. 화면에서 보려면 miniterm 안에서 <kbd>Ctrl+T</kbd> 뒤 <kbd>Ctrl+I</kbd>(메뉴 → 정보)를 누른다. <code>--- EOL: CRLF</code> 줄이 나온다. 실습 A 의 에코로도 확인된다(§3-1-4).</p>
       <p><strong>너무 긴 줄은 자르지 않고 통째로 버린다</strong>(<code>ERR line too-long</code>). 잘린 줄은 다른 명령이기 때문이다 — <code>pwm fl 1000</code> 이 버퍼 끝에서 잘리면 <code>pwm fl 100</code> 이 된다. 둘 다 문법에 맞는 명령이다.</p>
       <p><strong>프롬프트 뒤에는 줄바꿈이 없다.</strong> C 라이브러리의 <code>stdout</code> 은 줄 단위로 모았다가 내보낼 수 있어서, <code>&gt; </code> 와 에코 글자는 <code>fflush(stdout)</code> 을 해 줘야 제때 보인다. fw-03 에서 <code>setvbuf()</code> 로 버퍼링을 꺼 뒀다면 <code>fflush</code> 는 하는 일이 없을 뿐 해가 없다. <code>cli.c</code> 는 Mac 의 호스트 시험에서도 같은 코드로 도므로 <code>fflush</code> 를 넣어 두는 쪽이 두 환경에서 같게 동작한다.</p>
 
       <h3 id="s2-5">2-5. 수신 오류 — HAL 은 언제 수신을 끝내는가, 그리고 왜 다시 걸어야 하는가</h3>
-      <p>"인터럽트 수신을 걸어 뒀으니 계속 받겠지"는 HAL 에서는 틀린 기대다. HAL 은 어떤 오류를 <strong>blocking</strong> 으로 분류하고 그때 수신을 <strong>끝낸다.</strong> 알림은 <code>HAL_UART_ErrorCallback()</code> 한 번뿐이고, 그 콜백의 기본 구현은 비어 있다(<code>__weak</code>, <code>stm32h7xx_hal_uart.c:2614</code>).
-      그 콜백에서 다시 걸지 않으면 그 UART 는 리셋까지 <strong>오류 표시 없이</strong> 입력을 받지 못한다. 보드는 동작 중이고 LD1 은 깜박이는데 명령 창만 멈춘다 — 뒤의 쪽에서 이 일이 나면 증상은 "방금 고친 모터 코드가 이상하다"로 보인다.</p>
-      <p><code>HAL_UART_IRQHandler()</code>(:2202)의 오류 가지를 줄 번호로 따라간다(FW_H7 V1.13.0 — 내 프로젝트의 <code>$HAL/Src</code> 에서 같은 줄을 직접 연다).</p>
+      <p>"인터럽트 수신을 걸어 뒀으니 계속 받겠지"는 HAL 에서는 틀린 기대다. HAL 은 일부 오류를 <strong>blocking</strong>(수신을 끝내야 하는 오류)으로 분류하고, 그때 수신을 <strong>끝낸다.</strong></p>
+      <p>알림은 <code>HAL_UART_ErrorCallback()</code> 한 번뿐이고, 그 콜백의 기본 구현은 비어 있다(<code>__weak</code>).<sup class="fn"><a href="#fn-10" id="fnref-10">10</a></sup> 그 콜백에서 다시 걸지 않으면 그 UART 는 리셋까지 <strong>오류 표시 없이</strong> 입력을 받지 못한다.</p>
+      <p>보드는 동작 중이고 LD1(초록 LED, 주 루프 심박)은 깜박이는데 명령 창만 멈춘다. 뒤의 쪽에서 이 일이 나면 증상은 "방금 고친 모터 코드가 이상하다"로 보인다.</p>
+      <p><code>HAL_UART_IRQHandler()</code>(:2202)의 오류 가지를 줄 번호로 따라간다.<sup class="fn"><a href="#fn-11" id="fnref-11">11</a></sup></p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>#</th><th>일어나는 일</th><th>줄</th></tr></thead>
         <tbody>
@@ -210,21 +244,25 @@ void encoder_cli_register(void)
         <tbody>
           <tr><td><strong>(가)</strong> n ≥ 2 로 건 수신 중에 ORE</td><td>2 에서 한 바이트를 받지만 아직 다 받지 않았으므로 콜백은 없다 → 3 에서 ORE 비트가 그대로 → 4</td><td><strong>수신 종료.</strong> 콜백에서 읽는 <code>ErrorCode</code> = 8(ORE). 다시 걸지 않으면 끝</td></tr>
           <tr><td><strong>(나)</strong> n = 1 + 콜백에서 다시 걸기, ORE 와 RXNE 가 같이 1 이다(보통의 경우 — RDR 에 앞 바이트가 남아 있다)</td><td>2 에서 바이트를 받고 → 내 콜백 → 다시 걸기 → <code>UART_Start_Receive_IT()</code> 가 <code>ErrorCode = NONE</code> 으로 <strong>지운다</strong>(:3504) → 3 이 읽는 값은 0 → 5</td><td><strong>수신은 유지된다.</strong> <code>ErrorCallback</code> 은 불리는데 그 안에서 읽는 <code>ErrorCode</code> 는 <strong>0</strong> 이다. 잃은 바이트는 돌아오지 않는다</td></tr>
-          <tr><td><strong>(다)</strong> n = 1, ORE 만 1 이고 RXNE = 0</td><td>2 를 건너뛴다(받을 바이트가 없다) → 3 에서 ORE → 4</td><td><strong>수신 종료.</strong> RM0468 §53.5.6 의 Note 가 이 경우를 적어 뒀다: "if RXNE = 0, the last valid data has already been read … This case can occur when the last valid data is read in the RDR register at the same time as the new (and lost) data is received."</td></tr>
+          <tr><td><strong>(다)</strong> n = 1, ORE 만 1 이고 RXNE = 0</td><td>2 를 건너뛴다(받을 바이트가 없다) → 3 에서 ORE → 4</td><td><strong>수신 종료.</strong> RM 의 Note 가 이 경우를 적어 뒀다: 마지막 바이트를 RDR 에서 읽는 순간 새 바이트가 들어와 잃으면 RXNE = 0 인 채 ORE 만 1 이 된다.<sup class="fn"><a href="#fn-12" id="fnref-12">12</a></sup></td></tr>
         </tbody>
       </table></div>
-      <p>(나)에서 수신이 유지되는 것은 HAL 이 그렇게 보장해서가 아니라 <strong>다시 걸기가 오류 코드를 지우는 부수 효과</strong> 때문이다. HAL 버전이 바뀌면 달라질 수 있고, (다)처럼 같은 설계에서도 끝나는 경우가 있다.
-      "대부분 유지된다"는 "항상 유지된다"가 아니다. 게다가 <a href="fw-07-memory-dma.html">fw-07</a>에서 수신을 DMA 로 바꾸면 3 의 조건식 첫 항(<code>DMAR</code>)이 참이 되어 <strong>모든</strong> 수신 오류가 blocking 이 된다.</p>
+      <p>(나)에서 수신이 유지되는 것은 HAL 이 그렇게 보장해서가 아니다. <strong>다시 걸기가 오류 코드를 지우는 부수 효과</strong> 때문이다. HAL 버전이 바뀌면 달라질 수 있고, (다)처럼 같은 설계에서도 끝나는 경우가 있다.</p>
+      <p>"대부분 유지된다"는 "항상 유지된다"가 아니다. 게다가 <a href="fw-07-memory-dma.html">fw-07</a>에서 수신을 DMA 로 바꾸면 3 의 조건식 첫 항(<code>DMAR</code>)이 참이 되어 <strong>모든</strong> 수신 오류가 blocking 이 된다.</p>
       <p>그래서 오류 콜백이 지킬 것은 셋이다.</p>
       <ul>
         <li><strong>센다</strong>(<code>uart_err</code>, <code>last_err</code>) — HAL 함수를 부르기 <strong>전에</strong> 읽는다. 다시 걸기가 지우기 때문이다.</li>
-        <li><strong>무조건 다시 건다</strong> — <code>HAL_UART_Receive_IT()</code> 는 수신이 동작 중이면 <code>HAL_BUSY</code> 를 돌려줄 뿐 아무것도 하지 않는다(:1380 · :1404). 그러니 "멈췄는지"를 따로 판정할 필요가 없다.</li>
-        <li>실제로 복구한 횟수(<code>HAL_OK</code> 가 돌아온 횟수)를 <strong>따로 센다</strong>(<code>rearm</code>) — 이 숫자가 0 이 아니면 다시 걸기가 없었을 때 명령 창이 멈췄을 횟수다.</li>
+        <li><strong>무조건 다시 건다</strong> — <code>HAL_UART_Receive_IT()</code> 는 수신이 동작 중이면 <code>HAL_BUSY</code> 를 돌려줄 뿐 아무것도 하지 않는다.<sup class="fn"><a href="#fn-13" id="fnref-13">13</a></sup> 그러니 "멈췄는지"를 따로 판정할 필요가 없다.</li>
+        <li>실제로 복구한 횟수(<code>HAL_OK</code> 가 돌아온 횟수)를 <strong>따로 센다</strong>(<code>rearm</code>). 이 숫자가 0 이 아니면, 그 수가 곧 다시 걸기가 없었을 때 명령 창이 멈췄을 횟수다.</li>
       </ul>
       <div class="callout note"><span class="ct">등급 — 확정과 추정을 가른다</span>
-        <p><strong>확정</strong>: 위 두 표의 줄 번호와 분기, 그리고 RM0468 Rev 3 §53.5.6 의 인용문. 줄 번호와 분기는 2026-09-22 에 <code>~/STM32Cube/Repository/STM32Cube_FW_H7_V1.13.0</code> 의 <code>stm32h7xx_hal_uart.c</code> 를 직접 열어 확인했다.</p>
-        <p><strong>추정</strong>: 둘이다. 하나는 (다)가 실제로 얼마나 자주 나는가다 — 1 의 스냅숏 :2204 과 RDR 읽기 :4233 사이의 좁은 시간 구간에서 ORE 가 1 이 될 때 난다고 소스와 RM 으로 추론했고, 보드에서 재현하지 못했다.
-        다른 하나는 터미널에 붙여넣은 글이 VCP 를 지나 <strong>바이트 사이에 틈 없이</strong> 온다는 전제다. 실습 C 의 기대 출력은 이 추론에서 나온 것이다. <strong>관찰이 다르면 관찰이 맞다</strong> — 다른 점을 노트에 적는다.</p>
+        <p><strong>확정</strong>: 위 두 표의 줄 번호와 분기, 그리고 각주에 옮긴 RM0468 Rev 3 §53.5.6 의 인용문.<sup class="fn"><a href="#fn-14" id="fnref-14">14</a></sup></p>
+        <p><strong>추정</strong>: 둘이다.</p>
+        <ul>
+          <li>(다)가 실제로 얼마나 자주 나는가. 1 의 스냅숏 :2204 과 RDR 읽기 :4233 사이의 좁은 시간 구간에서 ORE 가 1 이 될 때 난다고 소스와 RM 으로 추론했다. 보드에서는 재현하지 못했다.</li>
+          <li>터미널에 붙여넣은 글이 VCP 를 지나 <strong>바이트 사이에 틈 없이</strong> 온다는 전제.</li>
+        </ul>
+        <p>실습 C 의 기대 출력은 이 추론에서 나온 것이다. <strong>관찰이 다르면 관찰이 맞다</strong> — 다른 점을 노트에 적는다.</p>
       </div>
 
       <h3 id="s2-6">2-6. 블로킹 송신의 한계 — 찍는 동안 주 루프는 멈춰 있다</h3>
@@ -244,12 +282,14 @@ void encoder_cli_register(void)
             1 바이트 인터럽트 수신은 더 높은 ISR 에 21.7 µs 넘게 밀리면 곧 ORE 다 — 그 약점은 fw-07 의 Circular DMA 가 버퍼로 보완한다</td><td>USART3 의 RX · TX DMA 스트림(fw-07 에서 켠다)과 <strong>서로 같게</strong></td></tr>
           </tbody>
         </table></div>
-        <p>워치독 예산표에 더하는 행은 없다(IWDG 는 fw-06 에서 처음 생긴다). 숫자는 설계 선택이고, 사실인 제약은 순서다(제어 &gt; 수신 &gt; SysTick). 우선순위 그룹은 <code>NVIC_PRIORITYGROUP_4</code>(선점 16단계, 0 이 가장 높다 — 사용자의 H723 <code>.ioc</code> 에서 확인)를 전제한다.</p>
+        <p>워치독 예산표에 더하는 행은 없다(IWDG 는 fw-06 에서 처음 생긴다).</p>
+        <p>숫자는 설계 선택이고, 사실인 제약은 순서다(제어 &gt; 수신 &gt; SysTick). 우선순위 그룹은 <code>NVIC_PRIORITYGROUP_4</code>(선점 16단계, 0 이 가장 높다)를 전제한다.<sup class="fn"><a href="#fn-15" id="fnref-15">15</a></sup></p>
       </div>
 
       <div class="callout warn"><span class="ct">안전 — PD8 / PD9 에 루프백 점퍼를 걸지 않는다</span>
-        <p>"수신이 되는지 보려고 TX 와 RX 를 점퍼로 잇는" 시험을 <strong>이 보드의 USART3 에서는 하지 않는다.</strong> PD8 / PD9 는 솔더 브리지 SB19 / SB12(기본 ON)로 ST-LINK 의 VCP 에 이어져 있다. PD9(RX)에는 ST-LINK 의 <strong>출력</strong>이 이미 연결돼 있어서, 그 PD9 에 PD8(역시 출력)을 이으면 두 출력이 서로 반대 레벨로 구동돼 충돌한다.
-        Morpho 의 CN12-10(PD8) · CN11-69(PD9)에도 아무것도 꽂지 않는다(<code>hardware/pinmap-h723.md</code> 의 2-C절, 7-3절의 M1 행). 이 쪽의 "상대"는 언제나 USB 너머의 Mac 터미널이다.</p>
+        <p>"수신이 되는지 보려고 TX 와 RX 를 점퍼로 잇는" 시험을 <strong>이 보드의 USART3 에서는 하지 않는다.</strong></p>
+        <p>PD8 / PD9 는 솔더 브리지 SB19 / SB12(기본 ON)로 ST-LINK 의 VCP 에 이어져 있다. PD9(RX)에는 ST-LINK 의 <strong>출력</strong>이 이미 연결돼 있다. 그 PD9 에 PD8(역시 출력)을 이으면 두 출력이 서로 반대 레벨로 구동돼 충돌한다.</p>
+        <p>Morpho 헤더(CN11 · CN12)의 CN12-10(PD8) · CN11-69(PD9)에도 아무것도 꽂지 않는다.<sup class="fn"><a href="#fn-16" id="fnref-16">16</a></sup> 이 쪽의 "상대"는 언제나 USB 너머의 Mac 터미널이다.</p>
       </div>
 
       <h2 id="lab">3. 실습</h2>
@@ -261,10 +301,10 @@ void encoder_cli_register(void)
       </ul>
       <p>끝자리 번호의 뜻은 어느 쪽에서나 같다(1 = CubeMX, 2 = 골격, 3 = 직접 채우기, 4 = 굽고 보기). CubeMX 는 실습 A 에서 한 번만 연다.</p>
       <div class="callout tip"><span class="ct">채울 자리마다 힌트 카드가 있다 — 읽는 순서</span>
-        <p>골격의 채울 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 붙어 있고(이 쪽은 T1 ~ T9), 그 주석 안에 <strong>번호 걸음</strong>이 있다. 먼저 걸음을 보고 직접 써 본다.
-        막히면 "직접 채우기" 절에서 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인.</p>
-        <p>완결 코드는 Mac 의 호스트 시험과 이 프로젝트의 펌웨어 빌드(링크까지)를 통과한 코드다(2026-10-02). 보드에서 도는 것은 "굽고 보기"에서 내가 확인한다. 붙여 넣는 것으로 끝내지 않는다 — 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.
-        같은 일을 하는 코드는 하나가 아니다. 내 코드가 카드와 달라도 "확인" 칸을 통과하면 맞은 것이다.</p>
+        <p>골격의 채울 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 붙어 있고(이 쪽은 T1 ~ T9), 그 주석 안에 <strong>번호 걸음</strong>이 있다. 먼저 걸음을 보고 직접 써 본다.</p>
+        <p>막히면 "직접 채우기" 절에서 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인.</p>
+        <p>완결 코드는 Mac 의 호스트 시험과 이 프로젝트의 펌웨어 빌드(링크까지)를 통과한 코드다.<sup class="fn"><a href="#fn-17" id="fnref-17">17</a></sup> 보드에서 실행되는 것은 "굽고 보기"에서 내가 확인한다.</p>
+        <p>붙여 넣는 것으로 끝내지 않는다. 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다. 같은 일을 하는 코드는 하나가 아니다. 내 코드가 카드와 달라도 "확인" 칸을 통과하면 맞은 것이다.</p>
       </div>
 
       <h3 id="s3-1">3-1. 실습 A — 1 바이트 인터럽트 수신과 에코</h3>
@@ -280,7 +320,7 @@ void encoder_cli_register(void)
         </tbody>
       </table></div>
       <p><strong>② 위치 표</strong></p>
-      <p class="small"><strong>화면 확인: 1세대 가이드에서 옮김 — H7RS 화면 기준, H723 미확인.</strong> 1행은 1세대 가이드(<code>~/ros2/docs/firmware/usart2_rpi5_cubemx_guide.md</code> §3-4)에서 옮긴 것이다. 그 가이드의 같은 설정은 USART → NVIC Settings → global interrupt Enable 이다. 2·3행은 CubeMX 의 일반 구조에서 추정한 것이다. CubeMX 6.18.1 의 H723 화면에서는 확인하지 못했다.
+      <p class="small"><strong>화면 확인: 1세대 가이드에서 옮김 — H7RS 화면 기준, H723 미확인.</strong> 1행은 1세대 가이드에서 옮긴 것이다.<sup class="fn"><a href="#fn-18" id="fnref-18">18</a></sup> 2·3행은 CubeMX 의 일반 구조에서 추정한 것이다. CubeMX 6.18.1 의 H723 화면에서는 확인하지 못했다.
       화면이 다르면 <strong>화면이 맞다.</strong> 못 찾으면 값 표의 항목 이름("USART3 global interrupt")으로 검색하고, 달랐던 경로를 노트에 적어 둔다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>#</th><th>위치 (화면 경로)</th><th>설정</th></tr></thead>
@@ -427,11 +467,11 @@ void console_rx_start(void)
               <li><code>rx_buf</code> 는 받은 바이트를 둘 곳이다. 배열 이름은 그 자체가 <strong>첫 칸의 주소</strong>라서 <code>&amp;</code> 없이 넘긴다.</li>
               <li><code>RX_CHUNK</code> 는 "몇 바이트를 받으면 콜백을 부를 것인가"다(평소 1).</li>
             </ul></li>
-          <li><code>HAL_StatusTypeDef</code> — 값이 넷인 열거형이다: <code>HAL_OK</code>(0) · <code>HAL_ERROR</code>(1) · <code>HAL_BUSY</code>(2) · <code>HAL_TIMEOUT</code>(3) (<code>stm32h7xx_hal_def.h:39-45</code>). HAL 함수 대부분이 이 형으로 "됐는가"를 돌려준다.</li>
+          <li><code>HAL_StatusTypeDef</code> — 값이 넷인 열거형이다: <code>HAL_OK</code>(0) · <code>HAL_ERROR</code>(1) · <code>HAL_BUSY</code>(2) · <code>HAL_TIMEOUT</code>(3). HAL 함수 대부분이 이 형으로 "됐는가"를 돌려준다.<sup class="fn"><a href="#fn-19" id="fnref-19">19</a></sup></li>
           <li><code>FW_ASSERT(st == HAL_OK);</code> — 걸지 못했으면(<code>st</code> 가 <code>HAL_OK</code> 가 아니면) 파일 이름과 줄 번호를 찍고 LD3 을 켠 채 멈춘다. 수신 없이 부팅하면 이 명령 창으로 보는 이후의 관측이 전부 불가능하기 때문에, 오류 표시 없이 넘어가는 것보다 그 자리에서 멈추는 쪽을 골랐다.
             <strong>다르게 써도 되는 곳</strong>이다: 멈추지 않고 LD3 만 켜고 계속 가는 답도 있다. 어느 쪽을 골랐는지와 이유를 노트에 적는다.</li>
         </ul>
-        <p><strong>쓰는 API</strong> — <code>stm32h7xx_hal_uart.h:1637</code></p>
+        <p><strong>쓰는 API</strong> — 선언은 HAL 의 UART 헤더에 있다.<sup class="fn"><a href="#fn-20" id="fnref-20">20</a></sup></p>
         <pre><code class="lang-c">HAL_StatusTypeDef HAL_UART_Receive_IT(UART_HandleTypeDef *huart,
                                       uint8_t *pData, uint16_t Size);</code></pre>
         <div class="tbl"><table class="compact">
@@ -440,12 +480,12 @@ void console_rx_start(void)
             <tr><td><code>huart</code></td><td><code>&amp;huart3</code></td><td>어느 UART 인가</td></tr>
             <tr><td><code>pData</code></td><td><code>rx_buf</code></td><td>받은 바이트를 둘 곳. 수신이 끝날 때까지 <strong>유지돼야</strong> 한다 — 그래서 함수 밖의 <code>static</code> 배열이다(함수 안의 지역 배열은 함수가 돌아가면 사라진다)</td></tr>
             <tr><td><code>Size</code></td><td><code>RX_CHUNK</code></td><td>몇 바이트를 받으면 콜백을 부를 것인가</td></tr>
-            <tr><td rowspan="3">반환값</td><td><code>HAL_OK</code></td><td>수신을 걸었다(<code>:1400</code> → <code>:3552</code>)</td></tr>
-            <tr><td><code>HAL_BUSY</code></td><td>이미 수신이 걸려 있다. 아무것도 하지 않았다(<code>:1380</code> · <code>:1404</code>)</td></tr>
-            <tr><td><code>HAL_ERROR</code></td><td><code>pData</code> 가 <code>NULL</code> 이거나 <code>Size</code> 가 0 이다(<code>:1382-1384</code>)</td></tr>
+            <tr><td rowspan="3">반환값<sup class="fn"><a href="#fn-21" id="fnref-21">21</a></sup></td><td><code>HAL_OK</code></td><td>수신을 걸었다</td></tr>
+            <tr><td><code>HAL_BUSY</code></td><td>이미 수신이 걸려 있다. 아무것도 하지 않았다</td></tr>
+            <tr><td><code>HAL_ERROR</code></td><td><code>pData</code> 가 <code>NULL</code> 이거나 <code>Size</code> 가 0 이다</td></tr>
           </tbody>
         </table></div>
-        <p>부를 수 있는 문맥은 주 루프와 ISR 둘 다다(기다리지 않는 호출이다). 그래서 T2 · T8 의 콜백 안에서도 같은 호출을 쓴다. 줄 번호는 FW_H7 V1.13.0 의 <code>stm32h7xx_hal_uart.c</code>(2026-10-02 에 직접 열어 확인).</p>
+        <p>부를 수 있는 문맥은 주 루프와 ISR 둘 다다(기다리지 않는 호출이다). 그래서 T2 · T8 의 콜백 안에서도 같은 호출을 쓴다.</p>
         <p><strong>흔한 실수</strong></p>
         <div class="tbl"><table class="compact">
           <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
@@ -485,7 +525,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 }</code></pre>
         <p><strong>코드 설명</strong></p>
         <ul>
-          <li><code>void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)</code> — 이름과 인자가 HAL 헤더(<code>stm32h7xx_hal_uart.h:1655</code>)와 글자 하나 다르지 않아야 한다. 다르면 오류 표시 없이 <strong>불리지 않는다</strong>(HAL 의 빈 기본 구현이 대신 불린다).</li>
+          <li><code>void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)</code> — 이름과 인자가 HAL 헤더의 선언과 글자 하나 다르지 않아야 한다.<sup class="fn"><a href="#fn-22" id="fnref-22">22</a></sup> 다르면 오류 표시 없이 <strong>불리지 않는다</strong>(HAL 의 빈 기본 구현이 대신 불린다).</li>
           <li><code>if (huart-&gt;Instance != USART3) { return; }</code> — 골격에 있던 줄이다. 칩의 모든 UART 가 이 콜백 하나를 같이 쓰므로, 내 것(USART3)이 아니면 바로 돌아간다. <code>huart</code> 는 포인터라서 필드를 화살표(<code>-&gt;</code>)로 고른다.</li>
           <li><code>for (uint32_t i = 0u; i &lt; RX_CHUNK; i++)</code> — HAL 이 받아 둔 바이트 하나마다 한 번 돈다. 평소에는 <code>RX_CHUNK</code> 가 1 이라 한 번뿐이지만, 실습 C 에서 4 로 바꿔도 이 코드는 그대로 돈다. <code>0u</code> 의 <code>u</code> 는 "부호 없는 정수 상수"라는 표시다.</li>
           <li><code>uint16_t next = (uint16_t)((rx_head + 1u) &amp; (RX_RING_SIZE - 1u));</code> — "<code>rx_head</code> 의 다음 칸"을 구한다. 크기가 2의 거듭제곱이면 <code>&amp; (크기 - 1)</code> 이 "끝 다음은 0" 을 만든다. 크기 4 로 세어 보면: 0 → 1, 1 → 2, 2 → 3, 3 → <code>4 &amp; 3</code> = 0. 크기 256 이면 255 → <code>256 &amp; 255</code> = 0.
@@ -597,7 +637,10 @@ typedef void (*cli_fn_t)(int argc, char *argv[]);
 typedef enum { CLI_RAN = 0, CLI_EMPTY, CLI_UNKNOWN, CLI_TOO_MANY_ARGS } cli_result_t;
 
 void         cli_init(void);                              /* 빈 테이블 + 내장 "help" */
-bool         cli_register(const char *name, cli_fn_t fn); /* false = 거절(NULL, 가득 참, 중복) */
+bool         cli_register(const char *name, cli_fn_t fn); /* false = 거절(NULL, 가득 참, 중복). 도움말 없음 */
+bool         cli_register_help(const char *name, cli_fn_t fn, const char *help);
+                                                          /* help = "&lt;명령&gt; -h" 가 찍는 글(줄 끝 \r\n 포함).
+                                                             NULL 이면 cli_register() 와 같다. 복사하지 않는다 - 문자열 리터럴로 */
 cli_result_t cli_dispatch(char *line);                    /* line 을 제자리에서 자른다(복사 없음, zero-copy) */
 void         cli_feed(uint8_t ch);                        /* 받은 바이트 하나. 주 루프 전용 */
 
@@ -615,6 +658,7 @@ _Static_assert(CLI_MAX_ARGS &gt;= 2, "cli.h: CLI_MAX_ARGS must be at least 2");
 typedef struct {
   const char *name;   /* 복사하지 않는다: 테이블보다 오래 살아야 한다(문자열 리터럴이나 정적 저장소) */
   cli_fn_t    fn;
+  const char *help;   /* NULL = 도움말 없음. "&lt;명령&gt; -h" 를 가로채지 않고 명령에 그대로 넘긴다 */
 } cli_cmd_t;
 
 static cli_cmd_t cmd_tbl[CLI_MAX_CMD];
@@ -641,6 +685,11 @@ static int tokenize(char *line, char *argv[], int max)
       <p><code>tokenize()</code> 의 첫 <code>while</code> 한 줄이 핵심이다. 공백을 <code>'\0'</code> 으로 덮는 그 쓰기가 <strong>앞 토큰을 닫는다.</strong> 입력 <code>"led··2"</code>(· 은 공백 — 공백이 둘이다)를 따라가면: <code>argv[0]</code> 은 <code>l</code> 의 주소, 공백 둘이 <code>'\0'</code> 둘이 되면서 <code>"led"</code> 가 닫히고, <code>argv[1]</code> 은 <code>2</code> 의 주소가 된다. 복사는 한 번도 없다.</p>
       <pre><code class="lang-c">bool cli_register(const char *name, cli_fn_t fn)
 {
+  return cli_register_help(name, fn, NULL);
+}
+
+bool cli_register_help(const char *name, cli_fn_t fn, const char *help)
+{
   bool ok = (name != NULL) &amp;&amp; (name[0] != '\0') &amp;&amp; (fn != NULL) &amp;&amp; (cmd_cnt &lt; CLI_MAX_CMD);
 
   for (int i = 0; ok &amp;&amp; i &lt; cmd_cnt; i++) {
@@ -652,6 +701,7 @@ static int tokenize(char *line, char *argv[], int max)
   }
   cmd_tbl[cmd_cnt].name = name;
   cmd_tbl[cmd_cnt].fn   = fn;
+  cmd_tbl[cmd_cnt].help = help;
   cmd_cnt++;
   return true;
 }
@@ -668,6 +718,10 @@ cli_result_t cli_dispatch(char *line)
   }
   for (int i = 0; i &lt; cmd_cnt; i++) {
     if (strcmp(argv[0], cmd_tbl[i].name) == 0) {   /* 완전 일치만: 접두어 없음, 대소문자 구분 */
+      if (argc == 2 &amp;&amp; strcmp(argv[1], "-h") == 0 &amp;&amp; cmd_tbl[i].help != NULL) {
+        printf("%s", cmd_tbl[i].help);             /* 명령 함수는 부르지 않는다: -h 는 아무것도 바꾸지 않는다 */
+        return CLI_RAN;
+      }
       cmd_tbl[i].fn(argc, argv);
       return CLI_RAN;
     }
@@ -769,10 +823,19 @@ static void cmd_ver(int argc, char *argv[])
        1) fw-03 에서 만든 배너 함수 console_print_banner() 를 한 번 부른다. 그것이 전부다 */
 }
 
+/* "&lt;명령&gt; -h" 가 찍는 도움말 (cli_register_help). 인자 형식이 바뀌면 같이 고친다 */
+static const char HELP_LED[] =
+  "led &lt;1|2|3&gt; &lt;on|off|toggle&gt;  - drive board LED LD1..LD3\r\n"
+  "ex) led 2 on\r\n"
+  "    led 1 toggle\r\n";
+static const char HELP_VER[] =
+  "ver  - print the boot banner again\r\n"
+  "ex) ver\r\n";
+
 static void app_cli_register(void)
 {
-  bool ok = cli_register("led", cmd_led);
-  ok = cli_register("ver", cmd_ver) &amp;&amp; ok;
+  bool ok = cli_register_help("led", cmd_led, HELP_LED);
+  ok = cli_register_help("ver", cmd_ver, HELP_VER) &amp;&amp; ok;
   FW_ASSERT(ok);   /* 거절된 등록은 프로그램의 오류다: 부팅 때 요란하게 멈춘다 */
 }
 
@@ -900,7 +963,13 @@ Assertion failed: (cap_calls == 1 &amp;&amp; cap_argc == 2), function main, file
 PASS cli 29 cases</code></pre>
       <p>1묶음이 통과하지 않으면 코어를 옮겨 적다 틀린 것이다 — 고치고 나서 다음으로 간다. 채우는 순서:</p>
       <ol class="steps">
-        <li><strong><code>cli_feed()</code> 의 줄 끝</strong> — <code>\r</code> 과 <code>\n</code> 을 같게 다루되, <strong>바로 앞 바이트가 <code>\r</code> 이었던 <code>\n</code></strong> 은 버린다(<code>last_was_cr</code>). 줄 끝에서 할 일의 순서: ① <code>"\r\n"</code> 에코 ② 넘친 줄이면 <code>ERR line too-long</code>, 아니면 <code>'\0'</code> 을 붙여 <code>cli_dispatch()</code> ③ 길이 · 넘침 표시를 0 으로 ④ 프롬프트 <code>&gt; </code> + <code>fflush(stdout)</code>.</li>
+        <li><p><strong><code>cli_feed()</code> 의 줄 끝</strong> — <code>\r</code> 과 <code>\n</code> 을 같게 다루되, <strong>바로 앞 바이트가 <code>\r</code> 이었던 <code>\n</code></strong> 은 버린다(<code>last_was_cr</code>). 줄 끝에서 할 일의 순서는 넷이다.</p>
+          <ul>
+            <li>① <code>"\r\n"</code> 에코</li>
+            <li>② 넘친 줄이면 <code>ERR line too-long</code>, 아니면 <code>'\0'</code> 을 붙여 <code>cli_dispatch()</code></li>
+            <li>③ 길이 · 넘침 표시를 0 으로</li>
+            <li>④ 프롬프트 <code>&gt; </code> + <code>fflush(stdout)</code></li>
+          </ul></li>
         <li><strong>보통 글자</strong> — <code>line_len &lt; CLI_LINE_MAX - 1</code> 일 때만 넣고 에코한다. 아니면 <code>line_overflow</code> 를 <code>true</code> 로 설정하기만 한다(넣지도 에코하지도 않는다). <code>- 1</code> 은 <code>'\0'</code> 의 자리다. 2묶음의 마지막 두 벡터가 이 경계의 양쪽을 시험한다: "딱 맞는 줄"은 79자가 들어가는가를, "한 글자 넘는 줄"은 80자를 받지 않는가를 본다.</li>
         <li><strong>지우기</strong> — <code>0x08</code> 과 <code>0x7F</code> 둘 다(macOS 터미널의 지우기 키는 보통 <code>0x7F</code> 를 보낸다). <code>line_len &gt; 0</code> 일 때만 하나 줄이고 <code>"\b \b"</code> 를 찍는다(뒤로 · 공백으로 덮기 · 다시 뒤로).</li>
         <li><strong>그 밖의 제어 문자</strong>(<code>0x20</code> 미만에서 <code>\t</code> 제외, <code>0x7E</code> 초과)는 버린다. 화살표 키는 <code>ESC [ A</code> 세 바이트를 보낸다 — <code>ESC</code> 는 버려지고 <code>[A</code> 는 글자로 들어온다. 이 명령 창은 그 글자를 고치지 않는다 — 줄 편집 · 히스토리는 없다. 잘못 쳤으면 지우고 다시 친다.</li>
@@ -909,7 +978,8 @@ PASS cli 29 cases</code></pre>
         <li><strong><code>cmd_ver()</code></strong> — fw-03 의 <code>console_print_banner()</code> 를 부른다(그 쪽에서 다른 이름을 줬다면 그 이름). 부팅 때와 <strong>같은 함수</strong>여야 한다 — 문자열을 베껴 다시 찍으면 언젠가 둘이 어긋난다.</li>
         <li><p><code>app_init()</code> 에 세 호출과 첫 프롬프트를 더하고, <code>app_loop()</code> 의 에코 줄을 <code>cli_feed(ch);</code> 로 바꾼다(골격의 맨 아래 주석).</p>
           <p>fw-03 에서 <code>app_loop()</code> 에 임시로 넣어 둔 <strong>배너 주기 재출력을 지운다</strong> — 이제 <code>ver</code> 가 그 일을 한다(남겨 두면 명령을 치는 도중에 배너가 끼어든다).</p>
-          <p>남은 자리를 센다: <code>grep -n "TODO(you)" h723zg/User/Src/Tools/cli.c h723zg/User/Src/app.c h723zg/User/Src/Tools/console.c</code> — 실습 C 의 자리 말고는 0 이어야 한다.</p></li>
+          <p>남은 자리를 센다. 실습 C 의 자리 말고는 0 이어야 한다.</p>
+          <p><code>grep -n "TODO(you)" h723zg/User/Src/Tools/cli.c h723zg/User/Src/app.c h723zg/User/Src/Tools/console.c</code></p></li>
       </ol>
       <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 1 ~ 4 = T5 · 걸음 5 = T4 · 걸음 6 = T6 · 걸음 7 = T7. 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐이고 언제든 열어도 된다.</p>
       <details class="hint" id="hint-t4"><summary>힌트 T4 — <code>cmd_help()</code> · 등록된 명령의 목록을 찍는다</summary>
@@ -994,8 +1064,12 @@ void cli_feed(uint8_t ch)
           <li><strong>맨 위 다섯 줄 — <code>"\r\n"</code> 을 줄 끝 한 번으로(걸음 4).</strong> miniterm 은 Enter 에 <code>'\r'</code> 과 <code>'\n'</code> 두 바이트를 보낸다(§2-4). 둘 다 줄 끝으로 다루면 Enter 한 번에 줄이 두 번 끝난다. 그래서 "바로 앞 바이트가 <code>'\r'</code> 이었는가"를 <code>last_was_cr</code> 에 기억해 두고, 그 바로 뒤의 <code>'\n'</code> 은 아무것도 하지 않고 <code>return</code> 한다.
             <code>last_was_cr = (ch == '\r');</code> 는 견준 결과(<code>true</code> / <code>false</code>)를 그대로 변수에 넣는 줄이다. <strong>판정이 먼저, 갱신이 나중</strong>이어야 한다 — 순서를 바꾸면 "앞 바이트"가 아니라 "이번 바이트"를 보게 된다.
             작은따옴표는 글자 <strong>하나</strong>(정수)다: <code>'\r'</code> = 0x0D, <code>'\n'</code> = 0x0A. 큰따옴표 <code>"\r"</code> 는 문자열(주소)이라 바이트와 견줄 수 없다.</li>
-          <li><strong><code>if (ch == '\r' || ch == '\n')</code> — 줄 끝(걸음 1).</strong> <code>||</code> 는 "이거나"다. 순서대로: ① <code>printf("\r\n")</code> 로 화면의 줄을 바꾼다(에코) ② 넘친 줄이면 <code>ERR line too-long</code> 을 찍고 <strong>실행하지 않는다</strong> ③ 아니면 <code>line_buf[line_len] = '\0';</code> 으로 C 문자열을 닫는다. C 문자열은 <code>'\0'</code> 에서 끝나고, <code>cli_dispatch()</code> 는 그 끝을 보고 줄의 길이를 안다. 그다음 <code>cli_dispatch(line_buf)</code> 로 명령을 실행한다. 반환값은 여기서 쓰지 않으므로 <code>(void)</code> 를 붙였다.
-            ④ <code>line_len = 0; line_overflow = false;</code> 로 다음 줄을 위해 비운다 ⑤ 프롬프트 <code>&gt; </code> 를 찍는다. 프롬프트 뒤에는 줄바꿈이 없어서 <code>fflush(stdout);</code> 을 불러야 제때 나간다(§2-4).</li>
+          <li><p><strong><code>if (ch == '\r' || ch == '\n')</code> — 줄 끝(걸음 1).</strong> <code>||</code> 는 "이거나"다. 순서는 다섯이다.</p>
+            <p>① <code>printf("\r\n")</code> 로 화면의 줄을 바꾼다(에코).</p>
+            <p>② 넘친 줄이면 <code>ERR line too-long</code> 을 찍고 <strong>실행하지 않는다</strong>.</p>
+            <p>③ 아니면 <code>line_buf[line_len] = '\0';</code> 으로 C 문자열을 닫는다. C 문자열은 <code>'\0'</code> 에서 끝나고, <code>cli_dispatch()</code> 는 그 끝을 보고 줄의 길이를 안다. 그다음 <code>cli_dispatch(line_buf)</code> 로 명령을 실행한다. 반환값은 여기서 쓰지 않으므로 <code>(void)</code> 를 붙였다.</p>
+            <p>④ <code>line_len = 0; line_overflow = false;</code> 로 다음 줄을 위해 비운다.</p>
+            <p>⑤ 프롬프트 <code>&gt; </code> 를 찍는다. 프롬프트 뒤에는 줄바꿈이 없어서 <code>fflush(stdout);</code> 을 불러야 제때 나간다(§2-4).</p></li>
           <li><strong><code>else if ((ch &gt;= 0x20 &amp;&amp; ch &lt;= 0x7E) || ch == '\t')</code> — 찍을 수 있는 글자(걸음 2).</strong> <code>&amp;&amp;</code> 는 "이고"다: 0x20(공백) 이상이고 0x7E(<code>~</code>) 이하. 자리가 있으면(<code>line_len &lt; CLI_LINE_MAX - 1</code>) 넣고 에코한다.
             <code>line_buf[line_len++] = (char)ch;</code> 는 "지금 칸에 쓰고, 그다음 길이를 1 올린다"를 한 줄로 쓴 것이다. <code>- 1</code> 은 줄 끝에서 붙일 <code>'\0'</code> 의 자리다 — 80 칸짜리 버퍼에 글자는 79 개까지다.
             자리가 없으면 <code>line_overflow = true;</code> 만 실행한다. 넣지도 에코하지도 않는다 — 화면에 안 보이는 글자는 받지 않은 글자다.</li>
@@ -1004,7 +1078,7 @@ void cli_feed(uint8_t ch)
           <li><strong>마지막 <code>else</code> 가 없다.</strong> 위 세 가지 어디에도 들지 않는 바이트(나머지 제어 문자, 0x7E 초과)는 어느 가지에도 들어가지 않고 함수가 끝난다. 이 동작이 "무시한다"다.</li>
         </ul>
         <p><strong>쓰는 API</strong> — <code>cli_dispatch(char *line)</code> 는 같은 파일의 코어다. 줄을 낱말로 잘라 명령을 찾아 부른다. 나머지는 <code>printf</code>(문자열) · <code>putchar</code>(글자 하나) · <code>fflush</code> 다.</p>
-        <p><strong>걸음대로 직접 쓸 때 시험이 어디까지 가는가</strong> — 걸음 하나를 채울 때마다 §3-2-3 의 명령으로 시험을 돌린다. 멈춘 줄의 <code>feed("…")</code> 가 다음에 볼 곳이다(2026-10-02 에 완결 코드를 걸음 단위로 잘라 직접 돌려 확인).</p>
+        <p><strong>걸음대로 직접 쓸 때 시험이 어디까지 가는가</strong> — 걸음 하나를 채울 때마다 §3-2-3 의 명령으로 시험을 돌린다. 멈춘 줄의 <code>feed("…")</code> 가 다음에 볼 곳이다.<sup class="fn"><a href="#fn-23" id="fnref-23">23</a></sup></p>
         <div class="tbl"><table class="compact">
           <thead><tr><th>여기까지 채웠을 때</th><th><code>/tmp/test_cli</code> 의 결과</th></tr></thead>
           <tbody>
@@ -1067,10 +1141,10 @@ static void cmd_led(int argc, char *argv[])
           <li><code>printf("OK led\r\n");</code> — 두 연쇄를 모두 통과한 경우에만 여기에 온다.</li>
           <li><strong>다르게 써도 되는 곳</strong> — <code>ERR</code> 줄 뒤에 사람을 위한 줄 <code># usage: led &lt;1|2|3&gt; &lt;on|off|toggle&gt;</code> 를 더 찍어도 된다(<code>#</code> 줄은 스크립트가 건너뛴다 — §2-4). 같은 <code>ERR</code> 줄이 세 번 되풀이되는 것을 줄이려면 그 한 줄을 작은 함수로 묶어도 된다.</li>
         </ul>
-        <p><strong>쓰는 API</strong> — <code>stm32h7xx_hal_gpio.h:266-267</code>. 값은 <code>GPIO_PIN_RESET</code>(0) · <code>GPIO_PIN_SET</code> 둘이다(같은 파일 <code>:67-71</code>).</p>
+        <p><strong>쓰는 API</strong> — HAL 의 GPIO 헤더에 있는 두 함수다. 값은 <code>GPIO_PIN_RESET</code>(0) · <code>GPIO_PIN_SET</code> 둘이다.<sup class="fn"><a href="#fn-24" id="fnref-24">24</a></sup></p>
         <pre><code class="lang-c">void HAL_GPIO_WritePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin, GPIO_PinState PinState);
 void HAL_GPIO_TogglePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin);</code></pre>
-        <p>이 보드의 사용자 LED 는 핀이 <strong>HIGH 일 때 켜진다</strong>(UM2407 §7.6.1: "These user LEDs are on when the I/O is HIGH value"). 그래서 <code>GPIO_PIN_SET</code> 이 "켠다"다. 내 프로젝트의 이름은 <code>grep -n "LD[123]_" h723zg/Core/Inc/main.h</code> 로 확인한다. <code>strcmp()</code> 는 <code>&lt;string.h&gt;</code> 에 있고, 골격에 이미 포함돼 있다.</p>
+        <p>이 보드의 사용자 LED 는 핀이 <strong>HIGH 일 때 켜진다</strong>.<sup class="fn"><a href="#fn-25" id="fnref-25">25</a></sup> 그래서 <code>GPIO_PIN_SET</code> 이 "켠다"다. 내 프로젝트의 이름은 <code>grep -n "LD[123]_" h723zg/Core/Inc/main.h</code> 로 확인한다. <code>strcmp()</code> 는 <code>&lt;string.h&gt;</code> 에 있고, 골격에 이미 포함돼 있다.</p>
         <p><strong>흔한 실수</strong></p>
         <div class="tbl"><table class="compact">
           <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
@@ -1139,7 +1213,13 @@ ERR led too-many-args
       <p>하나씩 무엇을 본 것인지:</p>
       <ul>
         <li><code>help</code> 의 <code>n=3</code> 은 지금 등록된 셋이다. 뒤 쪽을 할 때마다 이 수가 는다 — <strong><code>rejected</code> 가 0 이 아니게 되면</strong> §2-3 의 함정이 실제로 난 것이다.</li>
-        <li><code>led 2 toggle</code> 에서 LD2(노랑)가 눈에 보이게 바뀐다. <code>led 1 …</code> 은 곧 심박이 덮어쓴다(LD1 은 주 루프 심박). 그리고 <a href="fw-08-pwm-safe-output.html">fw-08</a>부터 LD2 는 EN 네 핀의 표시(넷 다 HIGH = 상시 점등, 1~3 = 점멸, 0 = 소등 — 1 kHz 틱이 맞추므로 이 명령으로 바꾼 LD2 는 EN 마스크가 바뀌는 순간 덮인다), LD3 는 fault · ASSERT 표시가 된다 — 그 뒤로 이 명령은 "LED 가 동작하는가"를 보는 용도로만 남는다.</li>
+        <li><p><code>led 2 toggle</code> 에서 LD2(노랑)가 눈에 보이게 바뀐다. <code>led 1 …</code> 은 곧 심박이 덮어쓴다(LD1 은 주 루프 심박).</p>
+          <p><a href="fw-08-pwm-safe-output.html">fw-08</a>부터 LED 의 쓰임이 바뀐다. 그 뒤로 이 명령은 "LED 가 동작하는가"를 보는 용도로만 남는다.</p>
+          <ul>
+            <li>LD2 = EN 네 핀(모터 드라이버의 켜기 신호)의 표시. 넷 다 HIGH = 상시 점등, 1~3 = 점멸, 0 = 소등이다.</li>
+            <li>1 kHz 틱이 LD2 를 맞추므로, 이 명령으로 바꾼 LD2 는 EN 마스크가 바뀌는 순간 덮인다.</li>
+            <li>LD3 = fault · ASSERT 표시.</li>
+          </ul></li>
         <li><code>ver</code> 의 세 줄이 부팅 때의 세 줄과 글자 하나 다르지 않다(같은 함수이므로). 뒤 쪽에서 "지금 도는 펌웨어가 방금 구운 펌웨어인가"를 이 명령의 build 줄로 확인한다.</li>
         <li>마지막의 빈 <code>&gt;</code> 는 Enter 만 친 것이다 — 빈 줄은 아무것도 실행하지 않고 프롬프트만 다시 나온다. Enter 한 번에 프롬프트가 <strong>두 번</strong> 나오면 <code>\r\n</code> 을 줄 끝 둘로 센 것이다(3-2-3 의 1번).</li>
       </ul>
@@ -1150,7 +1230,11 @@ ERR line too-long
 help n=3 max=24 rejected=0
  …</code></pre>
       <p>기대: 에코가 79자에서 멈춘다 — 그 뒤의 글자는 받지도 되돌리지도 않는다. Enter 뒤에 <code>ERR line too-long</code> 이 나오고, <strong>다음 명령이 정상으로 돈다.</strong> 보드가 멈추거나 LD3 가 켜지면 줄 버퍼 밖에 쓴 것이다.</p>
-      <p>여기까지가 체크포인트 <code>help-lists-commands</code> · <code>led-command-toggles</code> · <code>ver-reprints-banner</code> · <code>unknown-command-err</code> · <code>overlong-line-safe</code> 다.</p>
+      <p>여기까지가 체크포인트 다섯이다.</p>
+      <ul>
+        <li><code>help-lists-commands</code> · <code>led-command-toggles</code> · <code>ver-reprints-banner</code></li>
+        <li><code>unknown-command-err</code> · <code>overlong-line-safe</code></li>
+      </ul>
 
       <h3 id="s3-3">3-3. 실습 C — 수신을 일부러 멈추게 하고 복구한다</h3>
       <p>§2-5 의 세 경우 중 (나)와 (가)를 보드에서 일으킨다. 방법은 <strong>ISR 을 일부러 늦게 만들고</strong> 긴 글을 붙여넣는 것이다. CubeMX 는 열지 않는다(3-3-1 없음).
@@ -1230,7 +1314,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
         <ul>
           <li><code>rx_stats.uart_err++;</code> — 이 콜백이 불린 횟수를 센다. ISR 안이라 찍지 않고 세기만 한다. 찍는 것은 주 루프(T9)의 일이다.</li>
           <li><code>rx_stats.last_err = huart-&gt;ErrorCode;</code> — HAL 이 적어 둔 오류 코드를 옮겨 적는다. <code>rx_stats</code> 는 구조체 <strong>변수</strong>라 점(<code>.</code>)으로, <code>huart</code> 는 <strong>포인터</strong>라 화살표(<code>-&gt;</code>)로 필드를 고른다.
-            <code>ErrorCode</code>(<code>stm32h7xx_hal_uart.h:270</code>)는 비트 합이다: PE = 1, NE = 2, FE = 4, ORE = 8(<code>:361-364</code>).
+            <code>ErrorCode</code> 는 비트 합이다: PE = 1, NE = 2, FE = 4, ORE = 8.<sup class="fn"><a href="#fn-26" id="fnref-26">26</a></sup>
             <strong>이 줄이 아래의 HAL 호출보다 앞에 있어야 한다</strong> — 다시 걸기가 성공하면 HAL 이 <code>ErrorCode</code> 를 0 으로 지운다(§2-5 의 <code>:3504</code>). 뒤에 두면 <code>last_err</code> 는 늘 0 이다.</li>
           <li><code>if (HAL_UART_Receive_IT(&amp;huart3, rx_buf, RX_CHUNK) == HAL_OK)</code> — 수신이 멈췄는지 따지지 않고 <strong>무조건</strong> 다시 걸어 본다. 반환값이 판정을 대신한다: <code>HAL_OK</code> 면 멎어 있던 수신을 방금 복구한 것이고, <code>HAL_BUSY</code> 면 수신이 동작 중이었던 것이다(오류가 아니다. 아무것도 하지 않는다).
             함수 호출을 <code>if</code> 의 조건 안에 직접 쓰면 "부르고, 그 반환값을 견준다"가 한 줄이 된다.</li>
@@ -1342,7 +1426,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
         <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
         <tbody>
           <tr><td>배너는 나오는데 친 글자가 전혀 안 돌아온다</td><td>USART3 global interrupt 가 꺼져 있다. <code>HAL_UART_Receive_IT()</code> 는 <code>HAL_OK</code> 를 돌려주므로 코드로는 알 수 없다</td><td><code>grep -n "NVIC.USART3" h723zg.ioc</code> · <code>stm32h7xx_it.c</code> 에 <code>USART3_IRQHandler</code> 가 없다</td><td>§3-1-1</td></tr>
-          <tr><td>첫 글자만 돌아오고 끝이다</td><td>콜백에서 수신을 다시 걸지 않았다 — HAL 은 정해 준 수를 받으면 수신을 끝낸다(<code>stm32h7xx_hal_uart.c:4241-4247</code>)</td><td>콜백의 마지막 줄을 본다. gdb 가 있으면(<a href="fw-04-debugger.html">fw-04</a>) <code>huart3.RxState</code> 가 READY 에 머문다</td><td>§3-1-3 의 3번</td></tr>
+          <tr><td>첫 글자만 돌아오고 끝이다</td><td>콜백에서 수신을 다시 걸지 않았다 — HAL 은 정해 준 수를 받으면 수신을 끝낸다<sup class="fn"><a href="#fn-27" id="fnref-27">27</a></sup></td><td>콜백의 마지막 줄을 본다. gdb 가 있으면(<a href="fw-04-debugger.html">fw-04</a>) <code>huart3.RxState</code> 가 READY 에 머문다</td><td>§3-1-3 의 3번</td></tr>
           <tr><td>친 글자가 두 번씩 보인다</td><td>터미널의 local echo 가 켜져 있다(보드 에코 + 터미널 에코)</td><td>miniterm 을 <code>-e</code> 없이 열었는가. USB 를 뽑아도 글자가 보이면 터미널이 찍는 것이다</td><td>§2-4</td></tr>
           <tr><td>프롬프트와 에코가 Enter 를 쳐야 몰아서 나온다</td><td><code>stdout</code> 이 줄 단위로 모았다 내보낸다 — 줄바꿈 없는 출력 뒤에 <code>fflush(stdout)</code> 이 없다</td><td><code>grep -n "fflush" h723zg/User/Src/Tools/cli.c</code></td><td>§3-2-3 의 1 · 2 · 3번</td></tr>
           <tr><td>Enter 한 번에 프롬프트가 두 번 나온다</td><td><code>\r\n</code> 을 줄 끝 둘로 셌다(miniterm 의 기본 줄 끝이 CRLF)</td><td>호스트 시험은 이것을 잡지 못한다(빈 줄은 아무것도 실행하지 않는다). 프롬프트 수를 센다: <code>/tmp/test_cli | grep -o '&gt; ' | wc -l</code> 가 14 이어야 한다(16 이면 둘로 센 것이다)</td><td>§3-2-3 의 1번 · 힌트 T5 의 걸음 4</td></tr>
@@ -1367,7 +1451,7 @@ grep -rln "HAL_UART_RxCpltCallback" $FW_H7/Projects/*/Examples/UART         # �
         ③ 호출은 다섯 곳이다. <code>:4297</code>(<code>UART_RxISR_8BIT</code>, 함수 시작 :4225)이 <strong>이 쪽이 오는 경로</strong>다 — 8 비트 · FIFO 끔일 때 <code>UART_Start_Receive_IT</code> 가 :3539 에서 이 함수를 고른다. 나머지는 <code>:4390</code>(<code>UART_RxISR_16BIT</code>, :4316), <code>:4534</code>(<code>UART_RxISR_8BIT_FIFOEN</code>, :4409), <code>:4699</code>(<code>UART_RxISR_16BIT_FIFOEN</code>, :4572),
         <code>:3780</code>(<code>UART_DMAReceiveCplt</code>, :3717 — DMA 수신이 끝났을 때의 경로)이다. 어느 경로든 "남은 수가 0 이 된 뒤, 수신을 끝낸 다음"에 불린다 — 그래서 콜백 안에서 다시 걸 수 있다(<code>RxState</code> 가 이미 READY 다).
         ④ NUCLEO-H723ZG 의 예제에는 이 콜백을 쓰는 것이 <strong>없다</strong>(0건 — 이 보드의 UART 예제는 폴링 하나뿐이다). 같은 팩의 <code>Projects/NUCLEO-H743ZI/Examples/UART/UART_TwoBoards_ComIT/Src/main.c:324</code> 가 가장 가까운 예제다. 그 예제의 오류 콜백(:346)은 <code>Error_Handler()</code> 로 가서 멈춘다 — 이 쪽이 다시 걸기로 간 것과 견주어 본다.
-        (줄 번호는 FW_H7 V1.13.0 기준으로 2026-09-22 에 직접 grep 한 것이다. 내 <code>$HAL</code> 의 버전이 다르면 번호가 다를 수 있다.)</p></div></details>
+        내 <code>$HAL</code> 의 버전이 다르면 줄 번호가 다를 수 있다.<sup class="fn"><a href="#fn-28" id="fnref-28">28</a></sup></p></div></details>
 
       <details class="quiz"><summary>2. 바퀴별 엔코더 카운트를 Pi 에서 보고 싶어졌다. 계약 v2 에 TYPE 을 하나 더하지 않고 글자 창을 둔 이유는? 그 대가는?</summary>
         <div class="ans"><p>계약을 넓히면 펌웨어 · Pi 의 브리지 · 파이썬 도구 세 구현이 같이 바뀌고, 벤치가 끝난 뒤에도 그 필드가 계약에 남는다. 계약의 원천은 06a §4-2 하나이고, 그 절에는 "바퀴별 값은 MCU 안에서만 쓴다"고 적혀 있다.
@@ -1405,6 +1489,39 @@ grep -rln "HAL_UART_RxCpltCallback" $FW_H7/Projects/*/Examples/UART         # �
           <li>이 쪽은 <code>hardware/INVENTORY.md</code> 에 채우는 칸이 없다. 노트에 남길 것: 내 SysTick 의 선점 우선순위(§3-1-1), 실습 C 의 관찰 표(§3-3-4), CubeMX 의 화면 경로가 위치 표와 달랐다면 그 경로, 실제로 걸린 시간.</li>
         </ul>
       </div>
+
+      <h2 id="footnotes">각주</h2>
+      <p class="small">본문의 작은 번호를 누르면 여기로 온다. 근거 문서 · 핀 목록 · 1세대 기록 · 확인한 날짜를 모았다. ↩ 를 누르면 본문으로 돌아간다.</p>
+      <ol class="footnotes">
+          <li id="fn-1">계약 v2 의 원천은 <a href="06a-mcu-protocol.html">06a</a> §4-2 다. 프레임 네 가지와 상태 프레임의 필드가 그 절의 표에 있다. <a class="fn-back" href="#fnref-1" aria-label="본문으로">↩</a></li>
+          <li id="fn-2">순서의 이유(왜 계약 v2 가 뒤인가)는 <a href="fw-00-map.html">fw-00</a> §2-2 에 있다. <a class="fn-back" href="#fnref-2" aria-label="본문으로">↩</a></li>
+          <li id="fn-3">RM0468 Rev 3 §53.5.6 "Overrun error": "An overrun error occurs if a character is received and RXNE has not been reset … the RDR content is not lost … the shift register is overwritten. After that, any data received during overrun is lost." <a class="fn-back" href="#fnref-3" aria-label="본문으로">↩</a></li>
+          <li id="fn-4">같은 절의 Note: "The ORE bit, when set, indicates that at least 1 data has been lost". <a class="fn-back" href="#fnref-4" aria-label="본문으로">↩</a></li>
+          <li id="fn-5"><code>.ioc</code> 의 해당 줄은 <code>NVIC.SysTick_IRQn=true\:15\:0\:…</code> 이다. <a class="fn-back" href="#fnref-5" aria-label="본문으로">↩</a></li>
+          <li id="fn-6"><code>stm32h7xx_hal_uart.c</code>, FW_H7 V1.13.0. <code>UART_RxISR_8BIT</code>(:4225)가 RDR 을 읽는 줄은 :4233 이다. 인터럽트를 끄는 줄은 :4241 · :4244, READY 로 돌리는 줄은 :4247, 콜백 호출은 :4297 이다. <code>HAL_UART_Receive_IT</code>(:1377) → <code>UART_Start_Receive_IT</code>(:3494)가 인터럽트를 다시 켜는 줄은 :3508 · :3549 다. <a class="fn-back" href="#fnref-6" aria-label="본문으로">↩</a></li>
+          <li id="fn-7">1세대 기록은 <code>~/ros2</code> 에 있다. 근거는 <code>~/ros2/guide/stm32/cli/4-code.html</code> 의 <code>cli_register</code> 해설이다. <a class="fn-back" href="#fnref-7" aria-label="본문으로">↩</a></li>
+          <li id="fn-8">링크 설정 파일은 CubeMX 가 만든 <code>cmake/gcc-arm-none-eabi.cmake</code> 다. 사용자의 H723 생성물에서 확인했다. <a class="fn-back" href="#fnref-8" aria-label="본문으로">↩</a></li>
+          <li id="fn-9">기본값은 pyserial 3.5 소스 <code>serial/tools/miniterm.py</code> 의 <code>default='CRLF'</code> 에 있다(<code>--eol</code> 인자의 기본값). <a class="fn-back" href="#fnref-9" aria-label="본문으로">↩</a></li>
+          <li id="fn-10"><code>__weak</code> 정의는 <code>stm32h7xx_hal_uart.c:2614</code> 에 있다. <a class="fn-back" href="#fnref-10" aria-label="본문으로">↩</a></li>
+          <li id="fn-11">줄 번호는 FW_H7 V1.13.0 의 <code>stm32h7xx_hal_uart.c</code> 기준이다. 내 프로젝트의 <code>$HAL/Src</code> 에서 같은 줄을 직접 연다. <a class="fn-back" href="#fnref-11" aria-label="본문으로">↩</a></li>
+          <li id="fn-12">RM0468 §53.5.6 의 Note: "if RXNE = 0, the last valid data has already been read … This case can occur when the last valid data is read in the RDR register at the same time as the new (and lost) data is received." <a class="fn-back" href="#fnref-12" aria-label="본문으로">↩</a></li>
+          <li id="fn-13"><code>stm32h7xx_hal_uart.c</code> 의 :1380 · :1404. <a class="fn-back" href="#fnref-13" aria-label="본문으로">↩</a></li>
+          <li id="fn-14">줄 번호와 분기는 2026-09-22 에 <code>~/STM32Cube/Repository/STM32Cube_FW_H7_V1.13.0</code> 의 <code>stm32h7xx_hal_uart.c</code> 를 직접 열어 확인했다. <a class="fn-back" href="#fnref-14" aria-label="본문으로">↩</a></li>
+          <li id="fn-15">사용자의 H723 <code>.ioc</code> 에서 확인했다. <a class="fn-back" href="#fnref-15" aria-label="본문으로">↩</a></li>
+          <li id="fn-16"><code>hardware/pinmap-h723.md</code> 의 2-C절, 7-3절의 M1 행. <a class="fn-back" href="#fnref-16" aria-label="본문으로">↩</a></li>
+          <li id="fn-17">2026-10-02 에 확인했다. <a class="fn-back" href="#fnref-17" aria-label="본문으로">↩</a></li>
+          <li id="fn-18"><code>~/ros2/docs/firmware/usart2_rpi5_cubemx_guide.md</code> §3-4. 그 가이드의 같은 설정은 USART → NVIC Settings → global interrupt Enable 이다. <a class="fn-back" href="#fnref-18" aria-label="본문으로">↩</a></li>
+          <li id="fn-19"><code>stm32h7xx_hal_def.h:39-45</code>. <a class="fn-back" href="#fnref-19" aria-label="본문으로">↩</a></li>
+          <li id="fn-20"><code>stm32h7xx_hal_uart.h:1637</code>. <a class="fn-back" href="#fnref-20" aria-label="본문으로">↩</a></li>
+          <li id="fn-21"><code>stm32h7xx_hal_uart.c</code> 의 줄: <code>HAL_OK</code> 는 <code>:1400</code> → <code>:3552</code>, <code>HAL_BUSY</code> 는 <code>:1380</code> · <code>:1404</code>, <code>HAL_ERROR</code> 는 <code>:1382-1384</code>. 줄 번호는 FW_H7 V1.13.0 의 <code>stm32h7xx_hal_uart.c</code>(2026-10-02 에 직접 열어 확인). <a class="fn-back" href="#fnref-21" aria-label="본문으로">↩</a></li>
+          <li id="fn-22"><code>stm32h7xx_hal_uart.h:1655</code>. <a class="fn-back" href="#fnref-22" aria-label="본문으로">↩</a></li>
+          <li id="fn-23">2026-10-02 에 완결 코드를 걸음 단위로 잘라 직접 돌려 확인했다. <a class="fn-back" href="#fnref-23" aria-label="본문으로">↩</a></li>
+          <li id="fn-24"><code>stm32h7xx_hal_gpio.h:266-267</code>. 값 정의는 같은 파일 <code>:67-71</code>. <a class="fn-back" href="#fnref-24" aria-label="본문으로">↩</a></li>
+          <li id="fn-25">UM2407 §7.6.1: "These user LEDs are on when the I/O is HIGH value". <a class="fn-back" href="#fnref-25" aria-label="본문으로">↩</a></li>
+          <li id="fn-26"><code>ErrorCode</code> 필드는 <code>stm32h7xx_hal_uart.h:270</code>, 비트 값은 <code>:361-364</code>. <a class="fn-back" href="#fnref-26" aria-label="본문으로">↩</a></li>
+          <li id="fn-27"><code>stm32h7xx_hal_uart.c:4241-4247</code>. <a class="fn-back" href="#fnref-27" aria-label="본문으로">↩</a></li>
+          <li id="fn-28">줄 번호는 FW_H7 V1.13.0 기준으로 2026-09-22 에 직접 grep 한 것이다. <a class="fn-back" href="#fnref-28" aria-label="본문으로">↩</a></li>
+      </ol>
 
       <div class="pager"></div>
     </div>
