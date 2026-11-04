@@ -24,7 +24,7 @@
         <p>이 쪽이 끝나면 다음 셋이 토픽과 Foxglove 에서 보인다.</p>
         <ul>
           <li>C++ <code>object_tracker</code> 가 <code>id</code> 가 채워진 <code>/tracks</code> 를 낸다.</li>
-          <li>Python <code>hailo_depth</code> 가 Colab 에서 컴파일한 YOLO26 깊이 모델을 낮은 주기로 실행해 <code>/camera/depth_logit</code> 을 낸다.</li>
+          <li>C++ <code>hailo_depth</code> 가 Colab 에서 컴파일한 YOLO26 깊이 모델을 낮은 주기로 실행해 <code>/camera/depth_logit</code> 을 낸다.</li>
           <li>C++ <code>object_localizer</code> 가 <code>/objects</code> 와 Foxglove 마커(번호·거리·물체 간 선·벽까지 선)를 낸다. 이 노드는 매 프레임 라이다 점으로 깊이 지도의 척도(a, b)를 맞추고, 트랙마다 <em>라이다 점 → 깊이 지도 → (선택) 지면 평면</em> 순으로 거리를 정한다. 정한 거리는 벽 상한으로 검증하고, 운행 중 누적되는 관측으로 위치를 계속 갱신한다.</li>
         </ul>
         <p>또 Hailo 시간 예산을 <code>hailortcli run2</code> 로 재고, 프레임 조절로 검출률을 지키며, 그래도 안 되면 카메라 깊이를 뺀다는 판정 규칙을 숫자로 말할 수 있다.</p>
@@ -35,7 +35,7 @@
         <div><span class="k">전제</span>08c (실시간 <code>/detections</code>, HailoRT 백엔드) · 07 (<code>/scan</code>) · 07 §3-9-1 (라이다 0° 방향 기록) · 08 §3-9 (<code>camera_info</code>) · 05 (TF 트리 — 센서 위치 값은 이 쪽 §3-1 의 임시 지그에서 잰다) · Google 계정 + Hailo Developer Zone 계정 (Colab 컴파일)</div>
         <div><span class="k">수행 환경</span><span class="tag bench">벤치</span> 카메라와 라이다를 <strong>임시 지그</strong>(판 하나)에 고정하고 두 센서의 상대 위치를 자로 잰 뒤(<code>NOMINAL(ruler)</code>) 이 쪽의 실습과 체크포인트를 전부 끝낸다. MCU·섀시는 쓰지 않는다. 지그의 값은 최종 장착값이 아니다. <span class="tag asm">조립 후</span> <a href="09a-assembly-gate.html#s3-3">09a</a>에서 센서를 섀시에 올린 뒤 같은 검증을 최종 장착값으로 다시 한다</div>
         <div><span class="k">예상 소요</span>12~18시간 (Colab 컴파일 대기 포함)</div>
-        <div><span class="k">언어</span><span class="tag cpp">C++</span> (추적기·투영·로컬라이저) 주 · <span class="tag py">Python</span> (깊이 노드 — HailoRT 제약, Colab 빌드 스크립트, 검산 스크립트) 보조</div>
+        <div><span class="k">언어</span><span class="tag cpp">C++</span> (추적기·투영·로컬라이저·깊이 노드) 주 · <span class="tag py">Python</span> (Colab 빌드 스크립트, 검산 스크립트) 보조 · 깊이 노드의 Python 판은 <a href="08d-1-tracking-fusion-python.html">08d-1</a></div>
       </div>
 
       <h2>1. 개요 — 분업, 파이프라인, 예산</h2>
@@ -269,7 +269,7 @@
         <tbody>
           <tr><td>① 깊이 주기 <code>depth_rate_hz</code></td><td><code>hailo_depth</code> 파라미터 (런타임)</td><td>5 → 2 fps 면 깊이의 Hailo 점유가 60 % 준다</td><td>움직이는 물체의 C 관측이 드물어진다. 트랙 필터가 그 공백을 보완한다</td></tr>
           <tr><td>② 깊이 입력 크기 <code>imgsz</code></td><td>Colab 에서 다시 내보내기 (768 → 512 → 384)</td><td>연산량이 대략 크기의 제곱에 비례해 준다</td><td>먼 곳·작은 물체의 깊이 해상도. 실내 6 m 이내라면 512 로 시작할 만하다</td></tr>
-          <tr><td>③ 스케줄러 우선순위</td><td>HailoRT 의 네트워크 우선순위/타임아웃 설정 (08c §3-3 의 방법으로 설치된 API 에서 이름을 찾는다)</td><td>검출이 깊이 때문에 늦어지지 않는다</td><td>깊이의 지연이 늘어난다 — 어차피 느려도 되는 쪽</td></tr>
+          <tr><td>③ 스케줄러 우선순위</td><td>HailoRT 의 네트워크 우선순위/타임아웃 설정 (08c §3-3 의 방법으로 설치된 헤더에서 이름을 찾는다)</td><td>검출이 깊이 때문에 늦어지지 않는다</td><td>깊이의 지연이 늘어난다 — 어차피 느려도 되는 쪽</td></tr>
         </tbody>
       </table></div>
       <p>손잡이를 쓰기 전에 <strong>재야 한다</strong>. <code>hailortcli run2</code> 는 HEF 두 개를 지정한 주기로 동시에 실행하며 각각의 달성 fps 를 보여 준다(§3-7). 노드를 쓰기 전에 이 숫자로 예산 안에 드는지 먼저 확인하는 것이 순서다. 손잡이를 다 써도 <code>f_det &lt; 10 fps</code> 면 카메라 깊이를 운용에서 빼고 A + B 만 쓴다. 그때 C 는 정지 상태에서 물체 목록을 만드는 보조 계측으로만 남긴다.</p>
@@ -861,116 +861,176 @@ hailortcli parse-hef ~/ros2_rpi5/ros2_ws/src/rpi5_hailo_detect/models/yolo26n-de
         출력이 미터이므로 노드에서 <code>x = log(d)</code> 로 바꿔 내면 로컬라이저 코드는 바꾸지 않아도 된다. §2-4 표의 두 번째 줄이 이 경우다. 두 모델의 실측 비교는 §3-7 표에 같이 적는다.</p>
       </div>
 
-      <h3>3-5. <code>hailo_depth</code> — 낮은 주기로 로그 깊이를 낸다 <span class="tag py">Python</span> <span class="tag cli">컨테이너</span> <span class="tag bench">벤치</span></h3>
-      <p><code>rpi5_hailo_detect/rpi5_hailo_detect/hailo_depth.py</code>. 08c 의 <code>hailo_detect</code> 와 같은 구조(구독 → 전처리 → HailoRT → 후처리 → 발행)인데 두 가지가 다르다. ① <strong>주기 제한</strong>: 카메라는 30 fps 로 오지만 <code>depth_rate_hz</code>(기본 3) 로만 처리하고 나머지는 버린다(§2-10 의 손잡이 ①). ② 후처리가 박스 디코드가 아니라 <em>텐서를 카메라 해상도로 리사이즈해 그대로 내는 것</em>이다. 미터로 바꾸지 않는다.</p>
+      <h3>3-5. <code>hailo_depth</code> — 낮은 주기로 로그 깊이를 낸다 <span class="tag cpp">C++</span> <span class="tag cli">컨테이너</span> <span class="tag bench">벤치</span></h3>
+      <p><code>rpi5_hailo_detect/src/hailo_depth.cpp</code>. 08c 에서 만든 C++ 패키지 <code>rpi5_hailo_detect</code> 에 실행파일 하나를 더한다. 08c 를 건너뛰고 08c-1(Python 판)만 했다면 이 패키지가 없다 — 08c §3-4 의 패키지 생성과 <code>CMakeLists.txt</code> 를 먼저 하거나, 이 절을 08d-1(Python 판)으로 한다. Python 판은 <a href="08d-1-tracking-fusion-python.html">08d-1</a> §3-5 다.</p>
+      <p>08c 의 <code>hailo_detect</code> 와 같은 구조(구독 → 전처리 → HailoRT → 후처리 → 발행)인데 두 가지가 다르다. ① <strong>주기 제한</strong>: 카메라는 30 fps 로 오지만 <code>depth_rate_hz</code>(기본 3) 로만 처리하고 나머지는 버린다(§2-10 의 손잡이 ①). ② 후처리가 박스 디코드가 아니라 <em>텐서를 카메라 해상도로 리사이즈해 그대로 내는 것</em>이다. 미터로 바꾸지 않는다.</p>
       <p>가짜 백엔드(<code>backend:=fake</code>)는 Hailo 없이 실행되지만 <code>/camera/image_raw</code> 를 받아야 발행한다. 카메라가 있어야 하므로 이 절은 SIM 이 아니라 벤치다. 하드웨어 없이 하는 시험은 §3-2 의 가짜 검출까지다.</p>
-<pre><code class="lang-python">#!/usr/bin/env python3
-"""hailo_depth — YOLO26 깊이 HEF 를 낮은 주기로 돌려 로그 깊이(logit) 지도를 /camera/depth_logit 으로 낸다.
+      <p>HailoRT 호출은 08c 와 같은 이유로 코드에 고정해 적지 않는다(08c §3-3). 08c 의 <code>HailoBackend</code> 를 구현했다면 ①② 는 거의 그대로 옮기고, 출력을 박스가 아니라 실수 텐서로 읽는 ④⑤ 만 새로 쓴다.</p>
+<pre><code class="lang-cpp">// hailo_depth — YOLO26 깊이 HEF 를 낮은 주기로 돌려 로그 깊이(logit) 지도를 /camera/depth_logit 으로 낸다.
+//
+//   ros2 run rpi5_hailo_detect hailo_depth --ros-args -p hef_path:=/path/x.hef -p depth_rate_hz:=3.0
+//   ros2 run rpi5_hailo_detect hailo_depth --ros-args -p backend:=fake          # HEF 없이 로컬라이저를 시험할 때
+// 미터가 아니다. 미터는 object_localizer 가 라이다로 (a, b) 를 맞춰 exp(a·x + b) 로 만든다 (08d §2-4).
+#include &lt;algorithm&gt;
+#include &lt;chrono&gt;
+#include &lt;memory&gt;
+#include &lt;stdexcept&gt;
+#include &lt;string&gt;
 
-  ros2 run rpi5_hailo_detect hailo_depth --ros-args -p hef_path:=/path/x.hef -p depth_rate_hz:=3.0
-  ros2 run rpi5_hailo_detect hailo_depth --ros-args -p backend:=fake          # HEF 없이 로컬라이저를 시험할 때
-미터가 아니다. 미터는 object_localizer 가 라이다로 (a, b) 를 맞춰 exp(a·x + b) 로 만든다 (08d §2-4).
-"""
-import math
-import time
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/image.hpp"
+#include "cv_bridge/cv_bridge.h"
+#include "image_transport/image_transport.hpp"
+#include "opencv2/imgproc.hpp"
+#include "hailo/hailort.hpp"   // 08c §3-3 표의 ① 과 같은 헤더
 
-import cv2
-import numpy as np
-import rclpy
-from cv_bridge import CvBridge
-from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import Image
+namespace
+{
 
+class DepthBackend
+{
+public:
+  virtual ~DepthBackend() = default;
+  virtual cv::Size input_size() const = 0;          // 모델 입력 (W, H)
+  virtual cv::Mat infer(const cv::Mat &amp; rgb) = 0;   // input_size() 의 RGB uint8 → CV_32FC1 (모델 출력 격자)
+};
 
-class FakeBackend:
-    """장면과 무관한 가짜 로그 깊이: 위로 갈수록 멀다(수평선 아래 바닥 가정). 파이프라인 검증용."""
+// 장면과 무관한 가짜 로그 깊이: 위로 갈수록 멀다(수평선 아래 바닥 가정). 파이프라인 검증용.
+class FakeBackend : public DepthBackend
+{
+public:
+  cv::Size input_size() const override {return cv::Size(320, 256);}
 
-    def __init__(self, size):
-        self.size = size
+  cv::Mat infer(const cv::Mat &amp; rgb) override
+  {
+    cv::Mat x(rgb.rows, rgb.cols, CV_32FC1);
+    for (int r = 0; r &lt; x.rows; ++r) {
+      x.row(r).setTo(1.0f - 2.0f * r / std::max(1, x.rows - 1));   // 화면 위 +1 … 아래 −1 (임의 단위)
+    }
+    return x;
+  }
+};
 
-    def infer(self, rgb_uint8):
-        h, w = rgb_uint8.shape[:2]
-        rows = np.linspace(1.0, -1.0, h, dtype=np.float32)          # 화면 위 +1 … 아래 −1 (임의 단위)
-        return np.repeat(rows[:, None], w, axis=1)
+// HailoRT 백엔드 — 08c 의 HailoBackend 와 같은 절차이고 ④⑤ 만 다르다.
+//   ① 장치 핸들(VDevice)을 연다 — 검출 노드와 장치를 공유한다. HailoRT 스케줄러가 번갈아 돌린다
+//   ② HEF 를 로드하고 네트워크를 구성한다 — 입력 shape 로 size_ 를 채운다 (§3-4 의 parse-hef 결과와 대조)
+//   ③ 입력: input_size() 로 리사이즈된 RGB uint8 을 넣는다
+//   ④ 출력: FLOAT32 로 읽는다 — (1, H, W, 1) 또는 (1, H, W)
+//   ⑤ 그 버퍼를 H×W 의 CV_32FC1 로 복사해 돌려준다 (박스 디코드 없음)
+// 다중 모델이면 네트워크를 직접 활성화하지 말고 스케줄러에 맡긴다 — 08c 의 방식과 같게.
+class HailoBackend : public DepthBackend
+{
+public:
+  explicit HailoBackend(const std::string &amp; hef_path)
+  {
+    (void)hef_path;
+    // TODO(you): ①② — 08c §3-3 에서 찾은 자기 버전의 API 로
+    throw std::runtime_error("HailoBackend: 08c §3-3 을 보고 구현하십시오");
+  }
 
+  cv::Size input_size() const override {return size_;}
 
-class HailoBackend:
-    """HailoRT 4.x 의 InferVStreams 패턴. 08c §3-3 에서 확인한 API 이름과 다르면 그쪽에 맞춘다."""
+  cv::Mat infer(const cv::Mat &amp; rgb) override
+  {
+    (void)rgb;
+    // TODO(you): ③④⑤
+    throw std::runtime_error("HailoBackend::infer 미구현");
+  }
 
-    def __init__(self, hef_path):
-        from hailo_platform import (HEF, VDevice, ConfigureParams, InferVStreams,
-                                    InputVStreamParams, OutputVStreamParams,
-                                    HailoStreamInterface, FormatType)
-        self.hef = HEF(hef_path)
-        self.vdevice = VDevice()                                      # 검출 노드와 장치를 공유한다 — HailoRT 스케줄러가 번갈아 돌린다
-        params = ConfigureParams.create_from_hef(self.hef, interface=HailoStreamInterface.PCIe)
-        self.ng = self.vdevice.configure(self.hef, params)[0]
-        self.in_info = self.hef.get_input_vstream_infos()[0]
-        self.out_info = self.hef.get_output_vstream_infos()[0]
-        self.size = (self.in_info.shape[1], self.in_info.shape[0])   # (W, H)
-        self.in_params = InputVStreamParams.make(self.ng, format_type=FormatType.UINT8)
-        self.out_params = OutputVStreamParams.make(self.ng, format_type=FormatType.FLOAT32)
-        self._InferVStreams = InferVStreams
+private:
+  cv::Size size_;
+  // TODO(you): ①② 에서 만든 장치 핸들·구성된 모델·입출력 버퍼를 여기에 멤버로 둔다
+};
 
-    def infer(self, rgb_uint8):
-        with self.ng.activate():                                      # 다중 모델이면 activate 를 빼고 스케줄러에 맡긴다 — 08c 의 방식과 같게
-            with self._InferVStreams(self.ng, self.in_params, self.out_params) as pipe:
-                out = pipe.infer({self.in_info.name: np.expand_dims(rgb_uint8, 0)})
-        x = out[self.out_info.name]                                   # (1, H, W, 1) 또는 (1, H, W)
-        return np.squeeze(x).astype(np.float32)
+}  // namespace
 
+class HailoDepth : public rclcpp::Node
+{
+public:
+  HailoDepth()
+  : Node("hailo_depth")
+  {
+    this-&gt;declare_parameter&lt;std::string&gt;("backend", "hailo");   // hailo | fake
+    this-&gt;declare_parameter&lt;std::string&gt;("hef_path", "");
+    this-&gt;declare_parameter&lt;double&gt;("depth_rate_hz", 3.0);      // §2-10 손잡이 ①
+    this-&gt;declare_parameter&lt;bool&gt;("log_input", false);          // 모델이 미터를 내면(scdepthv3) true → x = log(d)
+    rate_ = this-&gt;get_parameter("depth_rate_hz").as_double();
+    log_input_ = this-&gt;get_parameter("log_input").as_bool();
+    const auto backend = this-&gt;get_parameter("backend").as_string();
+    if (backend == "fake") {
+      backend_ = std::make_unique&lt;FakeBackend&gt;();
+    } else {
+      backend_ = std::make_unique&lt;HailoBackend&gt;(this-&gt;get_parameter("hef_path").as_string());
+    }
+    const cv::Size s = backend_-&gt;input_size();
+    RCLCPP_INFO(this-&gt;get_logger(), "backend=%s input=%dx%d rate=%.1f Hz",
+                backend.c_str(), s.width, s.height, rate_);
 
-class HailoDepth(Node):
-    def __init__(self):
-        super().__init__('hailo_depth')
-        self.declare_parameter('backend', 'hailo')            # hailo | fake
-        self.declare_parameter('hef_path', '')
-        self.declare_parameter('depth_rate_hz', 3.0)          # §2-10 손잡이 ①
-        self.declare_parameter('log_input', False)            # 모델이 미터를 내면(scdepthv3) True → x = log(d)
-        self.rate = self.get_parameter('depth_rate_hz').value
-        self.log_input = self.get_parameter('log_input').value
-        backend = self.get_parameter('backend').value
-        if backend == 'fake':
-            self.backend = FakeBackend((320, 256))
-        else:
-            self.backend = HailoBackend(self.get_parameter('hef_path').value)
-        self.get_logger().info(f'backend={backend} input={self.backend.size} rate={self.rate} Hz')
+    pub_ = this-&gt;create_publisher&lt;sensor_msgs::msg::Image&gt;("/camera/depth_logit", rclcpp::SensorDataQoS());
+    sub_ = image_transport::create_subscription(
+      this, "/camera/image_raw",
+      std::bind(&amp;HailoDepth::on_image, this, std::placeholders::_1), "raw", rmw_qos_profile_sensor_data);
+  }
 
-        self.bridge = CvBridge()
-        self.last_t = 0.0
-        self.pub = self.create_publisher(Image, '/camera/depth_logit', qos_profile_sensor_data)
-        self.sub = self.create_subscription(Image, '/camera/image_raw', self.on_image, qos_profile_sensor_data)
+private:
+  void on_image(const sensor_msgs::msg::Image::ConstSharedPtr &amp; msg)
+  {
+    const auto t0 = std::chrono::steady_clock::now();
+    if (t0 - last_t_ &lt; std::chrono::duration&lt;double&gt;(1.0 / rate_)) {   // 주기 제한: 나머지 프레임은 여기서 버린다
+      return;
+    }
+    last_t_ = t0;
+    try {
+      const auto cv_ptr = cv_bridge::toCvShare(msg, "rgb8");
+      cv::Mat rgb;
+      cv::resize(cv_ptr-&gt;image, rgb, backend_-&gt;input_size(), 0, 0, cv::INTER_AREA);
+      cv::Mat x = backend_-&gt;infer(rgb);
+      if (log_input_) {
+        cv::max(x, 1e-3, x);
+        cv::log(x, x);
+      }
+      cv::Mat full;   // 카메라 해상도로 — 박스 좌표와 같은 격자
+      cv::resize(x, full, cv::Size(msg-&gt;width, msg-&gt;height), 0, 0, cv::INTER_LINEAR);
+      pub_-&gt;publish(*cv_bridge::CvImage(msg-&gt;header, "32FC1", full).toImageMsg());   // ★ 촬영 시각·프레임 그대로
+      const double ms =
+        std::chrono::duration&lt;double, std::milli&gt;(std::chrono::steady_clock::now() - t0).count();
+      RCLCPP_INFO_THROTTLE(this-&gt;get_logger(), *this-&gt;get_clock(), 5000,
+        "depth %dx%d  %.0f ms", full.cols, full.rows, ms);
+    } catch (const std::exception &amp; e) {
+      RCLCPP_ERROR_THROTTLE(this-&gt;get_logger(), *this-&gt;get_clock(), 2000, "깊이 추론 실패: %s", e.what());
+    }
+  }
 
-    def on_image(self, msg):
-        now = time.monotonic()
-        if now - self.last_t &lt; 1.0 / self.rate:               # 주기 제한: 나머지 프레임은 여기서 버린다
-            return
-        self.last_t = now
-        t0 = now
-        bgr = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
-        rgb = cv2.cvtColor(cv2.resize(bgr, self.backend.size, interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2RGB)
-        x = self.backend.infer(rgb)
-        if self.log_input:
-            x = np.log(np.clip(x, 1e-3, None))
-        x = cv2.resize(x, (msg.width, msg.height), interpolation=cv2.INTER_LINEAR)   # 카메라 해상도로 — 박스 좌표와 같은 격자
-        out = self.bridge.cv2_to_imgmsg(x.astype(np.float32), encoding='32FC1')
-        out.header = msg.header                                                       # ★ 촬영 시각·프레임 그대로
-        self.pub.publish(out)
-        self.get_logger().info(f'depth {x.shape[1]}x{x.shape[0]}  {1000*(time.monotonic()-t0):.0f} ms', throttle_duration_sec=5.0)
+  std::unique_ptr&lt;DepthBackend&gt; backend_;
+  double rate_{3.0};
+  bool log_input_{false};
+  std::chrono::steady_clock::time_point last_t_{};
 
+  image_transport::Subscriber sub_;
+  rclcpp::Publisher&lt;sensor_msgs::msg::Image&gt;::SharedPtr pub_;
+};
 
-def main():
-    rclpy.init()
-    node = HailoDepth()
-    rclpy.spin(node)
-    rclpy.shutdown()
+int main(int argc, char ** argv)
+{
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared&lt;HailoDepth&gt;());
+  rclcpp::shutdown();
+  return 0;
+}</code></pre>
+      <p>08c 의 <code>CMakeLists.txt</code> 에 실행파일과 <code>models/</code> 설치를 더한다(기존 줄은 그대로).</p>
+<pre><code class="lang-cmake">add_executable(hailo_depth src/hailo_depth.cpp)
+ament_target_dependencies(hailo_depth
+  rclcpp sensor_msgs cv_bridge image_transport)
+target_include_directories(hailo_depth PUBLIC ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(hailo_depth ${OpenCV_LIBS} HailoRT::libhailort)   # ← 08c §3-3 표의 ④ 와 같은 타깃
 
+install(TARGETS hailo_detect hailo_depth              # ← hailo_depth 추가
+  DESTINATION lib/${PROJECT_NAME})
 
-if __name__ == '__main__':
-    main()</code></pre>
-      <p><code>setup.py</code> 의 <code>entry_points</code> 에 <code>hailo_depth = rpi5_hailo_detect.hailo_depth:main</code> 을 추가하고 빌드한다. 먼저 <strong>가짜 백엔드</strong>로 토픽 형태를 본다.</p>
-<pre><code class="lang-bash">colcon build --symlink-install --packages-select rpi5_hailo_detect &amp;&amp; source install/setup.bash
+install(DIRECTORY models
+  DESTINATION share/${PROJECT_NAME})                   # ← §3-4 에서 받은 HEF 를 share/rpi5_hailo_detect/models/ 로</code></pre>
+      <p>빌드하고, 먼저 <strong>가짜 백엔드</strong>로 토픽 형태를 본다.</p>
+<pre><code class="lang-bash">colcon build --symlink-install --packages-select rpi5_hailo_detect --cmake-args -DCMAKE_BUILD_TYPE=Release &amp;&amp; source install/setup.bash
 ros2 run rpi5_hailo_detect hailo_depth --ros-args -p backend:=fake
 ros2 topic hz /camera/depth_logit                  # ≈ 3 Hz — 카메라가 30 fps 여도
 ros2 topic echo /camera/depth_logit --once --field encoding     # 32FC1
@@ -985,7 +1045,7 @@ ros2 topic hz /detections                          # ★ 깊이를 켜기 전과
           <li>주기 제한을 <em>추론 전에</em> 적용한다. 추론하고 나서 버리면 Hailo 시간을 이미 쓴 뒤다.</li>
           <li>출력 header 를 입력의 것으로 복사한다(08b §2-6 의 규칙). 로컬라이저는 이 stamp 로 "가장 가까운 깊이 지도"를 고르고 TF 를 조회한다.</li>
           <li>리사이즈를 이 노드에서 한다. 로컬라이저는 깊이 지도와 박스가 같은 픽셀 격자라고 가정한다. 두 노드가 각자 리사이즈하면 두 결과가 어긋날 수 있다.</li>
-          <li><strong>TODO(you):</strong> 08c §3-3 의 방법으로 설치된 <code>hailo_platform</code> 에서 스케줄러 우선순위·타임아웃 API 를 찾으십시오. 그 API 로 검출 네트워크에 우선권을 주는 파라미터(<code>scheduler_priority</code>)를 붙여 보십시오(§2-10 의 손잡이 ③).</li>
+          <li><strong>TODO(you):</strong> 08c §3-3 의 방법으로 설치된 헤더에서 스케줄러 우선순위·타임아웃 API 를 찾으십시오. 그 API 로 검출 네트워크에 우선권을 주는 파라미터(<code>scheduler_priority</code>)를 붙여 보십시오(§2-10 의 손잡이 ③).</li>
         </ul>
       </div>
 
@@ -1568,7 +1628,7 @@ target_link_libraries(object_localizer ${OpenCV_LIBS})
       <h3>3-7. 재고, 비교하고, 판정한다 <span class="tag pi">Pi 호스트</span> <span class="tag cli">컨테이너</span> <span class="tag bench">벤치</span></h3>
       <p>노드를 다 실행하기 전에 <strong>Hailo 예산</strong>부터 잰다. <code>hailortcli run2</code> 는 HEF 두 개를 지정한 주기로 동시에 실행하며 각각의 달성 fps 를 보여 준다. 이 fps 가 §1-3 의 식에 들어갈 숫자다.</p>
 <pre><code class="lang-bash"># Pi 호스트 (컨테이너 밖). ROS 노드는 모두 끈 채로
-DET=~/ros2_rpi5/ros2_ws/src/rpi5_hailo_detect/models/yolov8n.hef                    # 08c 에서 쓰는 검출 HEF
+DET=~/ros2_rpi5/models/____.hef                                                     # 08c §3-2 에서 둔 검출 HEF (/usr/share/hailo-models/ 것을 쓰면 그 경로)
 DEP=~/ros2_rpi5/ros2_ws/src/rpi5_hailo_detect/models/yolo26n-depth_hailo_model/yolo26n-depth.hef
 hailortcli run2 set-net $DET --framerate 30                                         # ① 검출 단독 — 기준선
 hailortcli run2 set-net $DET --framerate 30 set-net $DEP --framerate 3              # ② 검출 + 깊이 3 fps
@@ -1764,7 +1824,7 @@ if __name__ == '__main__':
         <li><label><input type="checkbox" data-key="cp3"><span>(지그 기준) <code>/camera/scan_overlay</code> 에서 벽 위에 점이 수평선 한 줄로 찍히고 §3-3 표의 증상이 없다. 지그의 TF 가 두 센서로 검증됐다</span></label></li>
         <li><label><input type="checkbox" data-key="cp4"><span>Colab CLI 로 세션을 만들고 DFC wheel 을 올려 <code>hailo --version</code> 이 3.x 를 출력했다 (HailoRT 4.23.0 과 같은 Suite)</span></label></li>
         <li><label><input type="checkbox" data-key="cp5"><span><code>build_depth_hef.py</code> 가 끝나 HEF 를 받았고, Pi 의 <code>hailortcli parse-hef</code> 가 입력 <code>imgsz</code>·출력 [1, H, W, 1] 을 읽는다. 세션을 <code>colab stop</code> 했다</span></label></li>
-        <li><label><input type="checkbox" data-key="cp6"><span><code>hailo_depth</code> 가 가짜 백엔드로 <code>32FC1</code>, 입력과 같은 <code>header</code>, 약 3 Hz 로 <code>/camera/depth_logit</code> 을 낸다</span></label></li>
+        <li><label><input type="checkbox" data-key="depth-cpp-fake"><span><code>hailo_depth</code> 가 가짜 백엔드로 <code>32FC1</code>, 입력과 같은 <code>header</code>, 약 3 Hz 로 <code>/camera/depth_logit</code> 을 낸다</span></label></li>
         <li><label><input type="checkbox" data-key="cp7"><span>진짜 HEF 로 깊이를 켠 뒤 <code>ros2 topic hz /detections</code> 를 켜기 전과 비교해 §3-7 예산 표의 첫 두 행을 채웠다</span></label></li>
         <li><label><input type="checkbox" data-key="cp8"><span>(지그 기준) 로컬라이저 로그의 <code>calib ok a=… b=… n≥30 rms&lt;0.15</code> 가 벽 앞에서 안정적으로 출력되고, 지그를 다른 벽 앞으로 옮겨도 a, b 가 크게 변하지 않는다</span></label></li>
         <li><label><input type="checkbox" data-key="cp9"><span><code>ros2 topic echo /objects --once</code> 에서 <code>frame_id</code>, <code>id</code>, <code>results[0].pose.pose.position</code>, <code>covariance[0]</code> 경로를 확인했다</span></label></li>

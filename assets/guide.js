@@ -23,8 +23,10 @@
     { id: '08', file: '08-camera.html', num: '08', title: '카메라 — libcamera', group: 'main' },
     { id: '08a', file: '08a-opencv.html', num: '08a', title: 'OpenCV와 cv_bridge', group: 'main' },
     { id: '08b', file: '08b-yolo.html', num: '08b', title: 'YOLO 객체 검출', group: 'main' },
-    { id: '08c', file: '08c-hailo.html', num: '08c', title: 'Hailo-8 가속', group: 'main' },
+    { id: '08c', file: '08c-hailo.html', num: '08c', title: 'Hailo-8 가속 (C++)', group: 'main' },
+    { id: '08c-1', file: '08c-1-hailo-python.html', num: '08c-1', title: 'Hailo-8 가속 — Python 판(선택)', group: 'main', optional: true },
     { id: '08d', file: '08d-tracking-fusion.html', num: '08d', title: '객체 추적과 거리 추정 — 융합', group: 'main' },
+    { id: '08d-1', file: '08d-1-tracking-fusion-python.html', num: '08d-1', title: '추적과 거리 추정 — Python 깊이 노드판(선택)', group: 'main', optional: true },
     // 06b 는 번호로는 06 의 짝이지만 선행이 펌웨어 F19 라서 08d 뒤(09 앞)에 둔다 — 이전/다음이 하는 순서를 따른다.
     { id: '06b', file: '06b-bench-integration.html', num: '06b', title: '실물 MCU 벤치 통합', group: 'main' },
     { id: '09a', file: '09a-assembly-gate.html', num: '09a', title: '조립·실측 관문', group: 'main' },
@@ -50,7 +52,8 @@
     { id: 'fw-13', file: 'fw-13-pid-protection.html', num: 'F13', title: '속도 PID + 보호 3종', group: 'fw' },
     { id: 'fw-14', file: 'fw-14-wt901.html', num: 'F14', title: 'WT901', group: 'fw' },
     { id: 'fw-15', file: 'fw-15-bno055.html', num: 'F15', title: 'BNO055', group: 'fw' },
-    { id: 'fw-16', file: 'fw-16-flash-store.html', num: 'F16', title: '플래시 저장', group: 'fw' },
+    // removed: 쓰지 않는 쪽(번호만 유지). 사이드바·진행 현황에서 회색 '제거됨', 이전/다음에서 건너뛴다 — 결정 bd(2026-11-04)
+    { id: 'fw-16', file: 'fw-16-flash-store.html', num: 'F16', title: '플래시 저장', group: 'fw', removed: true },
     { id: 'fw-17', file: 'fw-17-link-v2.html', num: 'F17', title: '계약 v2 링크', group: 'fw' },
     { id: 'fw-18', file: 'fw-18-safety-fsm.html', num: 'F18', title: '안전 상태기계', group: 'fw' },
     { id: 'fw-19', file: 'fw-19-bench-acceptance.html', num: 'F19', title: '모듈 정리와 벤치 수용 시험', group: 'fw' },
@@ -128,7 +131,31 @@
     '07:cp12': null,   // 라이다 장착 위치 실측 — 차체에 올려야 잰다
     // fw-14: 단계 1 이 "0x54 를 끈다"에서 "껐다가 되돌린다"로 바뀌었다(2026-10-16, 자북 판정 결정).
     //   옛 항목의 주장(세 종류만 온다)은 새 항목(왕복)의 절반이라 잇지 않는다 — 되돌리기를 다시 확인한다.
-    'fw-14:wt-rsw-three-types': null
+    'fw-14:wt-rsw-three-types': null,
+    // fw-14 · fw-20: 자북 판정 폐기(2026-11-04, 결정 bf). 판정 항목은 이을 곳이 없다 — 새 항목(폐기 적용 · 기록 확인)은 다시 체크한다.
+    'fw-14:wt-north-rejects-steel': null,
+    'fw-14:wt-north-interface': null,
+    'fw-14:wt-north-gate-k1': null,
+    'fw-20:wt-mag-cal-constant': null,
+    'fw-20:wt-north-judged': null,
+    // 08c: C++ 판으로 바뀌었다(2026-11-03). 옛 Python 판은 08c-1 로 복사됐고 data-key(cp0~cp12)를 그대로 갖는다.
+    //   언어에 매인 항목은 08c-1 로, 하드웨어 사실(장치 인식·HEF·parse-hef·INVENTORY)은 08c 의 새 키로 잇는다.
+    '08c:cp0': '08c-1:cp0',
+    '08c:cp1': '08c:hailo-scan-in-container',
+    '08c:cp2': '08c:hailo-hef-mounted',
+    '08c:cp3': '08c:hailo-parse-hef-table',
+    '08c:cp4': '08c-1:cp4',
+    '08c:cp5': '08c-1:cp5',
+    '08c:cp6': '08c-1:cp6',
+    '08c:cp7': '08c-1:cp7',
+    '08c:cp8': '08c-1:cp8',
+    '08c:cp9': '08c-1:cp9',
+    '08c:cp10': '08c-1:cp10',
+    '08c:cp11': '08c-1:cp11',
+    '08c:cp12': '08c:hailo-inventory',
+    // 08d: 깊이 노드 hailo_depth 가 C++ 로 바뀌었다(2026-11-03). Python 판은 08d-1 로 복사됐고 data-key 를 그대로 갖는다.
+    //   언어에 매인 항목은 가짜 백엔드 확인(cp6) 하나다. 나머지 키는 08d 에 그대로 남는다.
+    '08d:cp6': '08d-1:cp6'
   };
 
   // JSON 이 객체가 아닌 것(null·숫자·배열)을 담고 있어도 뒤의 코드가 죽지 않게 형태를 확인한다.
@@ -261,9 +288,12 @@
       side.appendChild(el('div', { class: 'group-title', text: g.label }));
       var ul = el('ul');
       items.forEach(function (s) {
-        var a = el('a', { href: s.file, class: s.id === currentId ? 'current' : '' });
+        var a = el('a', { href: s.file, class: (s.id === currentId ? 'current' : '') + (s.removed ? ' removed' : '') });
         var dot = el('span', { class: 'dot' });
-        if (s.id !== 'index' && s.group !== 'ref') {
+        if (s.removed) {
+          dot.style.visibility = 'hidden';
+          a.title = '제거됨 — 쓰지 않는 쪽';
+        } else if (s.id !== 'index' && s.group !== 'ref') {
           var p = stageProgress(store, s.id);
           if (p.total > 0 && p.done >= p.total) dot.className = 'dot done';
           else if (p.done > 0 && p.total > 0) dot.className = 'dot part ' + (p.done / p.total >= 0.75 ? 'high' : (p.done / p.total <= 0.3 ? 'low' : ''));
@@ -274,7 +304,9 @@
         }
         a.appendChild(dot);
         a.appendChild(el('span', { class: 'num', text: s.num }));
-        a.appendChild(el('span', { text: s.title }));
+        var t = el('span', { text: s.title });
+        if (s.removed) t.appendChild(el('span', { class: 'removed-tag', text: '제거됨' }));   // 칸이 셋인 격자라 제목 칸 안에 붙인다
+        a.appendChild(t);
         ul.appendChild(el('li', null, [a]));
       });
       side.appendChild(ul);
@@ -328,7 +360,8 @@
     // 같은 그룹 안에서만 이전/다음을 만든다. 부록(ref)은 순서가 없으므로 그리지 않는다.
     var cur = stageById(currentId);
     if (!cur || cur.group === 'ref') return;
-    var list = stagesInGroup(cur.group);
+    // optional: 선택 쪽(Python 판). 사이드바에는 두되 이전/다음 순서에서는 건너뛴다 — 필요할 때 눌러서만 연다(2026-11-04).
+    var list = stagesInGroup(cur.group).filter(function (s) { return !(s.removed || s.optional) || s.id === currentId; });
     var idx = -1;
     for (var i = 0; i < list.length; i++) if (list[i].id === currentId) idx = i;
     if (idx < 0) return;
@@ -412,6 +445,15 @@
     box.innerHTML = '';
     var any = false;
     function row(s) {
+      if (s.removed) {
+        var lr = el('label', { class: 'removed' });
+        lr.appendChild(el('input', { type: 'checkbox', disabled: 'disabled' }));
+        var tr = el('span');
+        tr.appendChild(el('a', { href: s.file, text: s.num + ' · ' + s.title }));
+        tr.appendChild(el('span', { class: 'sub', text: '제거됨 — 쓰지 않는 쪽' }));
+        lr.appendChild(tr);
+        return el('li', null, [lr]);
+      }
       var p = stageProgress(store, s.id);
       if (p.total) any = true;
       var li = el('li');

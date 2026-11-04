@@ -96,7 +96,7 @@ ST-LINK/V3E ── SWD ──► STM32H723ZG 내장 플래시 ── 리셋 ─�
           <tr><td><code>cmake/stm32cubemx/CMakeLists.txt</code></td><td>다시 쓴다 — 주변장치를 켜면 컴파일할 HAL 소스 목록(이 파일의 <code>STM32_Drivers_Src</code>)이 바뀌기 때문이다</td><td>없다. 마커도 없다</td><td>파일 내용(§2-2). 실제로 다시 써지는지는 실습 B 에서 직접 본다</td></tr>
           <tr><td>최상위 <code>CMakeLists.txt</code></td><td><strong>다시 쓰지 않는다</strong></td><td>전부. 내 소스 · 포함 경로 · 매크로를 넣는 자리가 주석으로 표시돼 있다</td><td>파일 머리 주석이 "한 번만 생성하고, 사용자가 마음대로 고쳐도 된다"고 적는다.<sup class="fn"><a href="#fn-2" id="fnref-2">2</a></sup></td></tr>
           <tr><td><code>Drivers/</code></td><td>HAL 팩(<code>STM32Cube FW_H7 V1.13.0</code>)에서 <strong>필요한 파일만</strong> 복사해 온다. 주변장치를 켜면 파일이 는다</td><td>없다(고치면 팩과 달라진다)</td><td>주변장치 0개인 프로젝트에 복사된 HAL 소스는 18개, 팩 원본은 125개다.<sup class="fn"><a href="#fn-3" id="fnref-3">3</a></sup> 복사를 시키는 키는 <code>ProjectManager.LibraryCopy=1</code></td></tr>
-          <tr><td><code>startup_stm32h723xx.s</code> · <code>STM32H723xG_flash.ld</code> · <code>cmake/gcc-arm-none-eabi.cmake</code> · <code>CMakePresets.json</code></td><td><strong>확인하지 못했다</strong> — 실습 B 에서 수정 시각으로 직접 확인해 노트에 적는다</td><td>링커 스크립트는 뒤 쪽(메모리 지도 · 플래시 저장)에서 조각을 더한다. 그때 이 관찰이 필요하다</td><td>학습자 관찰 (<a href="#s3-2-4">§3-2-4</a>)</td></tr>
+          <tr><td><code>startup_stm32h723xx.s</code> · <code>STM32H723xG_flash.ld</code> · <code>cmake/gcc-arm-none-eabi.cmake</code> · <code>CMakePresets.json</code></td><td><strong>확인하지 못했다</strong> — 실습 B 에서 수정 시각으로 직접 확인해 노트에 적는다</td><td>링커 스크립트는 뒤 쪽(메모리 지도)에서 조각을 더한다. 그때 이 관찰이 필요하다</td><td>학습자 관찰 (<a href="#s3-2-4">§3-2-4</a>)</td></tr>
           <tr><td><code>User/Inc</code> · <code>User/Src</code></td><td>CubeMX 는 이 디렉터리를 모른다 — 만들지도, 지우지도 않는다(실습 C 의 마지막 걸음에서 직접 확인한다)</td><td>전부. 내 코드는 전부 여기 — 루트에는 <code>app</code> 둘만, 나머지는 목적별 묶음 폴더(<a href="#s2-2-1">§2-2-1</a>)</td><td><code>firmware/README.md</code> 예정 트리 · 규칙 1</td></tr>
         </tbody>
       </table></div>
@@ -155,7 +155,7 @@ cmake/stm32cubemx/CMakeLists.txt     매번 다시 생성된다. CubeMX 것
         <tbody>
           <tr><td><code>Config/</code></td><td>값만 있고 실행 코드가 없는가 — 빌드 스위치와 공용 상수</td><td><code>fw_config.h</code> (fw-03) · <code>robot_params.h</code> (fw-08)</td></tr>
           <tr><td><code>Tools/</code></td><td>사람이 보고 진단하려고 둔 것인가 — 글자 창 · 로그 · 명령 창 · 고장의 흔적</td><td><code>console</code> · <code>log.h</code> · <code>reset_cause</code> (fw-03) · <code>hardfault</code> (fw-04) · <code>cli</code> (fw-05)</td></tr>
-          <tr><td><code>System/</code></td><td>MCU 자체의 기반 기능인가 — 시간 · 감시 · 메모리 배치 · DMA 수신 버퍼 · 저장</td><td><code>tick</code> · <code>wdg</code> (fw-06) · <code>dma_buf.h</code> · <code>stream_rx</code> (fw-07) · <code>nvstore</code> (fw-16)</td></tr>
+          <tr><td><code>System/</code></td><td>MCU 자체의 기반 기능인가 — 시간 · 감시 · 메모리 배치 · DMA 수신 버퍼</td><td><code>tick</code> · <code>wdg</code> (fw-06) · <code>dma_buf.h</code> · <code>stream_rx</code> (fw-07)</td></tr>
           <tr><td><code>Periph/</code></td><td>MCU 주변장치 하나를 감싸 <strong>핀의 신호</strong>(PWM · 펄스 · 전압)를 다루는가</td><td><code>motor</code> (fw-08) · <code>encoder</code> (fw-09) · <code>adc</code> (fw-12)</td></tr>
           <tr><td><code>Device/</code></td><td>보드 밖 부품의 <strong>프로토콜</strong>(레지스터 맵 · 프레임)을 아는가</td><td><code>ina226</code> (fw-10) · <code>imu_sample.h</code> (fw-13) · <code>wt901_parse</code> · <code>wt901</code> (fw-14) · <code>bno055</code> (fw-15)</td></tr>
           <tr><td><code>Control/</code></td><td>판단하는가 — 상태기계와 제어식</td><td><code>power</code> (fw-11) · <code>pid</code> · <code>protect</code> · <code>control</code> (fw-13) · <code>safety</code> (fw-18) · <code>traction</code> (fw-20)</td></tr>
@@ -547,10 +547,7 @@ STM32_Programmer_CLI -c port=SWD -w "$ELF" -v -rst</code></pre>
         <li><code>set -euo pipefail</code> — 한 단계라도 실패하면 그 단계에서 멈춘다. 빌드가 깨졌는데 옛 ELF 를 굽는 일을 막는다.</li>
         <li><code>flash.sh</code> 가 <strong>먼저 <code>build.sh</code> 를 부른다</strong>는 점 — 소스를 고치고 빌드를 잊은 채 구워서 "고쳤는데 안 바뀐다"를 겪지 않게 한다.</li>
       </ul>
-      <p>두 도구에는 인자가 없다. VCP 를 글자 명령 창(TEXT)으로 쓸지 이진 프레임(V2)으로 쓸지는 빌드에서 고르지 않고 실행 중에 바꾼다(<a href="fw-17-link-v2.html">fw-17</a>) — 그래서 펌웨어는 한 가지로만 빌드된다.</p>
-      <div class="callout note"><span class="ct">이전 판의 <code>LINK_MODE</code> 를 넣었다면</span>
-        <p>이전 판은 모드를 빌드 스위치로 골랐고, 최상위 <code>CMakeLists.txt</code> 에 <code>LINK_MODE</code> 를 받는 여섯 줄을 넣었다.<sup class="fn"><a href="#fn-36" id="fnref-36">36</a></sup> 그 판대로 이미 넣었다면 그 줄들은 지워도 되고, 남겨 둬도 읽는 소스가 없어 빌드에 영향이 없다.</p></div>
-
+      <p>두 도구에는 인자가 없다. VCP 를 글자 명령 창(TEXT)으로 쓸지 이진 프레임(V2)으로 쓸지는 빌드에서 고르지 않고 실행 중에 바꾼다(<a href="fw-17-link-v2.html">fw-17</a>) — 그래서 펌웨어는 한 가지로만 빌드된다.<sup class="fn"><a href="#fn-36" id="fnref-36">36</a></sup></p>
       
 <h4 id="s3-1-4">3-1-4. 굽고 보기 — 아직 굽지 않는다. 빌드하고 ELF 를 본다</h4>
       <pre><code class="lang-bash">cd ~/ros2_rpi5
@@ -962,7 +959,7 @@ grep -rln "HAL_IncTick" $FW_H7/Projects/NUCLEO-H723ZG/Examples/HAL # ④ ST 예�
           <li id="fn-33">2026-09-22 에 확인했다. <a class="fn-back" href="#fnref-33" aria-label="본문으로">↩</a></li>
           <li id="fn-34">Homebrew 의 CMake 4.3.2, CubeCLT 의 CMake 3.28.1. <a class="fn-back" href="#fnref-34" aria-label="본문으로">↩</a></li>
           <li id="fn-35"><code>build.sh</code> 의 실제 빌드는 2026-09-22. <a class="fn-back" href="#fnref-35" aria-label="본문으로">↩</a></li>
-          <li id="fn-36">2026-10-12 개정. 이전 판의 도구에는 <code>[TEXT|V2]</code> 인자가 있었다. <a class="fn-back" href="#fnref-36" aria-label="본문으로">↩</a></li>
+          <li id="fn-36">결정 19(2026-10-12) — VCP 의 모드는 실행 중에 바꾼다. 전환 명령은 결정 bc · be(2026-11-04). <a class="fn-back" href="#fnref-36" aria-label="본문으로">↩</a></li>
           <li id="fn-37">2026-09-22 에 본 값은 6 KB 대였다. <a class="fn-back" href="#fnref-37" aria-label="본문으로">↩</a></li>
           <li id="fn-38">2026-07-01 21:22:59 ↔ 21:29:14~15. <code>stat -f '%Sm %N'</code> 로 확인했다. <a class="fn-back" href="#fnref-38" aria-label="본문으로">↩</a></li>
           <li id="fn-39"><code>HAL_GetTick()</code> 의 정의는 <code>stm32h7xx_hal.c:338</code>. <a class="fn-back" href="#fnref-39" aria-label="본문으로">↩</a></li>

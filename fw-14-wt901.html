@@ -29,21 +29,19 @@
           <li>설정을 모두 적용한 뒤에는 <code>frames_ok</code> 가 초당 약 800(4종 × 200 Hz)씩 늘고, 10분을 받아도 <code>check_fail</code> 이 0 이며 <code>discarded</code> 가 더 이상 늘지 않는다.</li>
           <li>센서를 손으로 들고 위에서 볼 때 <strong>반시계로</strong> 돌리면 <code>gz</code> 가 양수로 나온다.</li>
           <li>신호선을 뽑았다 꽂으면 <code>uart_err</code> 가 오르고 그 뒤 <code>frames_ok</code> 가 <strong>다시</strong> 는다.</li>
-          <li><code>wt north</code> 를 치면 지금의 자기장을 검사해 그 자리의 yaw(자북 방위)를 쓸 수 있는지 <code>ok=1</code> / <code>ok=0</code> 으로 판정한다. 모듈 옆에 철로 된 물건을 두면 <code>ok=0</code> 이 나온다(§2-14). 로봇에 단 뒤의 판정은 fw-20 에서 한다.</li>
-          <li><code>wt north start</code> 를 친 뒤 <code>wt north get</code> 을 치면 판정 결과가 보관값(<code>pending</code> · <code>fail</code> · <code>ok</code>)으로 나온다.
-            <p>K1 은 배터리와 모터 사이의 큰 전류를 잇고 끊는 주 접촉기(릴레이)다. 사전충전은 K1 을 닫기 전에 저항을 거쳐 모터 쪽 커패시터를 천천히 채우는 단계다(둘 다 <a href="fw-11-power-sequence.html">fw-11</a>).</p>
-            <p><code>pwr up</code> 을 치면 사전충전 뒤 GATE 상태(<code>state=gate gate=north</code>)에서 판정을 기다린 다음 K1 을 닫는다. K1 이 닫혀 있으면 판정 명령은 <code>ERR wt k1-closed</code> 로 거부된다(§2-14).</p></li>
+          <li><code>wt mag</code> 을 치면 지금의 자기장 원시값(<code>hx</code> · <code>hy</code> · <code>hz</code>)과 |H| · 복각 · yaw 가 한 줄로 나온다. 진단용이다 — <strong>자북 판정(<code>wt north</code>)은 로봇 실측 뒤 폐기했다</strong>(결정 bf, §2-14 의 상자).
+            <p>그래서 <code>pwr up</code> 의 GATE(<a href="fw-11-power-sequence.html">fw-11</a>)에 등록된 일이 없고, 사전충전이 끝나면 곧바로 K1 을 닫는다. K1 은 배터리와 모터 사이의 큰 전류를 잇고 끊는 주 접촉기(릴레이)다.</p></li>
         </ul>
         <p><strong>이 쪽에 필요한 것</strong></p>
         <ul>
-          <li>NUCLEO-H723ZG, USB 케이블, <a href="fw-07-memory-dma.html">fw-07</a> 까지 끝낸 프로젝트 — 실습 A ~ C 는 이것으로 충분하다. <strong>실습 D 는 <a href="fw-11-power-sequence.html">fw-11</a> 이 먼저 끝나 있어야 한다</strong>(판정을 전원 순서에 등록하고 K1 상태를 읽는다 — <code>Control/power.h</code>)</li>
+          <li>NUCLEO-H723ZG, USB 케이블, <a href="fw-07-memory-dma.html">fw-07</a> 까지 끝낸 프로젝트 — 실습 A ~ D 모두 이것으로 충분하다(실습 D 가 fw-11 에 기대던 자북 판정은 폐기 — 결정 bf)</li>
           <li><strong>WT901 모듈</strong>, 암–암 점퍼선 4~5가닥</li>
           <li>초를 잴 수 있는 시계</li>
           <li>DMM — 첫 결선 확인(3V3–GND)과 [실물 확인] 항목에만 쓴다.</li>
         </ul>
         <p><strong>없으면</strong></p>
         <ul>
-          <li>WT901 이 없으면 이 쪽은 시작할 수 없다. 그동안 <a href="fw-15-bno055.html">fw-15</a> 의 BNO055(부품이 있으면)나 <a href="fw-16-flash-store.html">fw-16</a> 의 플래시 저장으로 간다.</li>
+          <li>WT901 이 없으면 이 쪽은 시작할 수 없다. 그동안 <a href="fw-15-bno055.html">fw-15</a> 의 BNO055(부품이 있으면)나 <a href="fw-17-link-v2.html">fw-17</a> 의 호스트 시험으로 간다.</li>
           <li>기울기 판정은 두 센서 중 어느 쪽으로도 되므로 <a href="fw-18-safety-fsm.html">fw-18</a> 은 이 쪽 하나에만 의존하지 않는다.</li>
           <li>모듈이 <strong>맨 모듈(스탬프 홀)</strong> 이라 점퍼를 꽂을 자리가 없으면 핀헤더가 달린 형태가 필요하다. 품목만 적고 가격은 적지 않는다.</li>
         </ul>
@@ -188,7 +186,7 @@
           <tr><td><strong>3</strong></td><td>RATE: <code>FF AA 03 0B 00</code> → SAVE → 전원 재투입</td><td>230400</td><td><code>frames_ok</code> 가 초당 약 800 씩 는다(4종 × 200 Hz)</td><td>F4·F6. 보드레이트를 먼저 올려 두었으므로 <strong>자동 감속 구간에 들어가지 않는다</strong>(§2-6)</td></tr>
         </tbody>
       </table></div>
-      <p>단계 1 을 왕복으로 하는 이유: 기동 시 자북 판정이 <code>0x54</code> 를 쓴다.<sup class="fn"><a href="#fn-13" id="fnref-13">13</a></sup> 왕복이라 끝난 뒤의 설정은 출고값과 같고, 증거는 두 번 남는다.</p>
+      <p>단계 1 을 왕복으로 하는 이유: <code>wt mag</code> 진단이 <code>0x54</code> 를 쓴다(왕복을 정할 때는 기동 시 자북 판정 때문이었다 — 판정은 결정 bf 로 폐기).<sup class="fn"><a href="#fn-13" id="fnref-13">13</a></sup> 왕복이라 끝난 뒤의 설정은 출고값과 같고, 증거는 두 번 남는다.</p>
       <p>단계마다 <strong>SAVE 와 전원 재투입</strong>이 뒤따른다는 점을 놓치기 쉽다. F4 는 RATE 에 대해 SAVE 와 재투입을 명시하고, F3 은 SAVE 가 없으면 전원을 껐을 때 설정이 저장 전 값으로 돌아간다는 뜻이다.
       그래서 "명령을 보냈는데 아무 일도 안 일어난다"의 첫 번째 원인은 언제나 <strong>SAVE 를 빠뜨렸거나 재전원을 안 한 것</strong>이다.</p>
       <div class="callout note"><span class="ct">등급 — 확인불가 · 여기서 빈칸이 하나 생긴다</span>
@@ -201,7 +199,7 @@
         <thead><tr><th>옛 서술</th><th>매뉴얼에 적힌 것</th><th>이 쪽의 처리</th></tr></thead>
         <tbody>
           <tr><td>잠금 해제 <code>FF AA 69 88 B5</code> — "쓰기 전 필수"</td><td>레지스터 <code>0x69</code> 도, 잠금 해제 시퀀스도 <strong>매뉴얼 전체에 없다</strong><sup class="fn"><a href="#fn-14" id="fnref-14">14</a></sup></td><td><strong>쓰기마다 먼저 보낸다</strong>(<code>wt_send_write()</code>, §3-1-2). 근거 ① 제조사 SDK 가 모든 쓰기 앞에 보낸다.<sup class="fn"><a href="#fn-15" id="fnref-15">15</a></sup> ② 단계 1 실측에서 잠금 해제 없이 보낸 RSW <code>0x0E</code> 는 적용되지 않았다.<sup class="fn"><a href="#fn-16" id="fnref-16">16</a></sup> → 이 개체에는 06 의 서술이 맞았다</td></tr>
-          <tr><td>자기 캘리브레이션 <code>FF AA 01 07 00</code></td><td>CALSW(캘리브레이션 모드 레지스터) 표에 <code>0x07</code> 은 없다.<sup class="fn"><a href="#fn-17" id="fnref-17">17</a></sup> 자기 캘리브레이션은 <strong><code>2</code></strong> 다 → <code>FF AA 01 02 00</code></td><td>값을 바로잡아 적는다. <strong>로봇에 단 채</strong> 자기 캘리브레이션을 한다 — 기동 시 자북 판정이 자력계를 쓰기 때문이다.<sup class="fn"><a href="#fn-18" id="fnref-18">18</a></sup> 절차는 §2-14 · 실습 D</td></tr>
+          <tr><td>자기 캘리브레이션 <code>FF AA 01 07 00</code></td><td>CALSW(캘리브레이션 모드 레지스터) 표에 <code>0x07</code> 은 없다.<sup class="fn"><a href="#fn-17" id="fnref-17">17</a></sup> 매뉴얼의 자기 캘리브레이션은 <code>2</code>(<code>FF AA 01 02 00</code>)다</td><td><strong>06 의 <code>07</code> 을 쓴다.</strong> 제조사 SDK 가 자기 보정에 쓰는 값(<code>CALMAGMM</code>)이고, 이 개체에서 매뉴얼의 <code>2</code> 는 오프셋 일부만 뺐다(2026-11-04 실측, 실습 D). 자기 캘리브레이션은 <code>wt mag</code> 진단용으로 남는다 — 그것을 쓰던 기동 시 자북 판정은 폐기됐다(결정 bf).<sup class="fn"><a href="#fn-18" id="fnref-18">18</a></sup> 절차는 실습 D</td></tr>
           <tr><td>요 각 영점 <code>FF AA 01 04 00</code>(모델별 코드 확인)</td><td>CALSW <code>4</code> 는 표에 없다. 매뉴얼은 <strong>"Z axis to 0 is valid for WT61P only."</strong> 라고 적는다.<sup class="fn"><a href="#fn-19" id="fnref-19">19</a></sup> WT901 의 Z 각은 9축 알고리즘이 자기장으로 계산하는 <strong>절대각</strong>이라 상대 0 을 둘 수 없다</td><td><strong>그런 명령이 없다.</strong> 요 영점이 필요하면 펌웨어 쪽에서 빼야 한다. 모듈에서 할 수 있는 일이 아니다</td></tr>
           <tr><td>온도 "환산식 모델별"</td><td>매뉴얼이 네 곳에서 같은 식을 적는다: <code>T = ((TH&lt;&lt;8)|TL) / 100</code> ℃<sup class="fn"><a href="#fn-20" id="fnref-20">20</a></sup></td><td>빈칸이 아니다 — 식을 적는다</td></tr>
           <tr><td>가속도 캘리브레이션 <code>FF AA 01 01 00</code> = "가속도"</td><td>CALSW <code>1</code> = <strong>"Gyroscope and Accelerometer"</strong> calibration mode — 자이로도 같이 보정한다</td><td>코드는 맞다. 이름을 바로잡는다</td></tr>
@@ -451,7 +449,16 @@ When DMA is configured in Circular Mode, HT, TC or IDLE events don't stop Recept
         지금 둘 다 켜 두면 어느 쪽이 값을 바꿨는지 계속 구별할 수 없다.</p>
       </div>
 
-      <h3 id="s2-14">2-14. 기동 시 자북 판정 — 0x53 의 yaw 를 쓰고, 0x54 로 그 값을 검사한다</h3>
+      <h3 id="s2-14">2-14. 기동 시 자북 판정 — 폐기(결정 bf). 설계 기록으로 남긴다</h3>
+      <div class="callout warn"><span class="ct">폐기 — 자력계를 쓰지 않는다 (결정 bf, 2026-11-04)</span>
+        <p>이 절의 판정은 로봇에 단 채 잰 결과로 폐기했다. 방향의 기준은 <strong>층마다 정한 출발 자세</strong>다. 회전은 자이로 <code>gz</code> 적분과 라이다(지도 맞춤)가 맡는다.</p>
+        <ul>
+          <li><strong>보정이 되풀이되지 않는다</strong> — 로봇에 단 채 CALSW 7 을 두 번 했더니 남은 원 중심이 반지름의 0.18 · 0.29 로 달랐다(보정 전 0.59).</li>
+          <li><strong>복각 검사가 성립하지 않는다</strong> — 원 중심을 뺀 복각이 로봇에서 약 20°, 모듈만 손에 든 시험에서도 약 35° 였다. 장소의 기대값은 약 52° 다[추정: WMM 기억값 — 계산기 미확인].</li>
+          <li><strong>장소의 자기장이 휜다</strong> — 같은 방향으로 50 cm 만 옮겨도 수평 크기가 26 % 바뀌었다(방위 오차 최대 약 ±15°). 보정은 로봇에 붙은 것만 지우므로 이것은 못 고친다(아래 표 셋째 줄).</li>
+        </ul>
+        <p>코드는 지우지 않고 <strong>주석으로 남긴다</strong> — 무엇을 막는지는 <a href="#s3-4-5">§3-4-5</a>. <code>wt mag</code> · <code>wt cal 7</code> · <code>wt save</code> 와 <code>wt901_mag_check()</code> 는 진단용으로 남는다. 아래 본문은 설계 기록이다.</p>
+      </div>
       <p>이 프로젝트는 자력계를 <strong>한 번</strong> 쓴다.<sup class="fn"><a href="#fn-48" id="fnref-48">48</a></sup> 모터가 돌기 전, 전원만 들어온 때에 <code>0x53</code> 각도 프레임의 yaw 를 자북 방위로 읽는다. 그 뒤의 자력계 · yaw 값은 받아도 쓰지 않는다.
       이 절은 그 판정이 무엇에 기대고, 무엇으로 검사하는지를 정한다.</p>
       <p><strong>yaw 의 출처.</strong> WT901 의 기본 알고리즘은 9축이고, Z 각(yaw)은 "주로 자기장으로 계산"된다.<sup class="fn"><a href="#fn-49" id="fnref-49">49</a></sup> 그래서 yaw 는 자기장 기준의 절대각이고, 상대 0 을 둘 수 없다(§2-4 의 정정 표).<sup class="fn"><a href="#fn-50" id="fnref-50">50</a></sup>
@@ -460,7 +467,7 @@ When DMA is configured in Circular Mode, HT, TC or IDLE events don't stop Recept
       <div class="tbl"><table class="compact">
         <thead><tr><th>출처</th><th>모듈이 지울 수 있는가</th><th>이 쪽의 처리</th></tr></thead>
         <tbody>
-          <tr><td>로봇 자신의 철 · 영구자석(모터 자석, 섀시, 배터리)</td><td><strong>지울 수 있다</strong> — 센서와 함께 돌기 때문에, 돌려 보면 센서에 붙은 오프셋으로 분리된다</td><td>로봇에 단 채 자기 캘리브레이션(CALSW 2)을 한다(아래)</td></tr>
+          <tr><td>로봇 자신의 철 · 영구자석(모터 자석, 섀시, 배터리)</td><td><strong>지울 수 있다</strong> — 센서와 함께 돌기 때문에, 돌려 보면 센서에 붙은 오프셋으로 분리된다</td><td>로봇에 단 채 자기 캘리브레이션(CALSW 7)을 한다(아래)</td></tr>
           <tr><td>모터 전류가 만드는 자기장</td><td>지울 수 없다 — 전류에 따라 계속 변한다</td><td>모터가 돌기 전에 판정한다. 이것이 판정 시점을 기동 시로 둔 이유다</td></tr>
           <tr><td>건물의 철근 · 철골, 주변 금속</td><td><strong>지울 수 없다</strong> — 센서가 재는 것은 그 자리의 전체 자기장 하나다. 휘어진 지구 자기장과 다른 쪽을 가리키는 진짜 자기장을 구별할 정보가 센서에 없다</td><td><code>0x54</code> 로 검사한다(아래). 검사에 걸리면 그 판정을 쓰지 않는다</td></tr>
         </tbody>
@@ -495,7 +502,7 @@ When DMA is configured in Circular Mode, HT, TC or IDLE events don't stop Recept
         <li>A — 수신 · 설정 상태기계 · 보드레이트 전환. <strong>코드는 이 실습에서 전부 쓴다</strong>(T1 ~ T15). 보드에서 보는 것은 셋으로 나뉜다: 단계 0(설정을 하나도 건드리지 않은 출고 스트림, §3-1-4) · 단계 1(RSW 왕복, §3-1-5) · 단계 2(BAUD, §3-1-6). §2-4 표의 단계 번호가 그대로다.</li>
         <li>B — 단계 3(RATE). 새 코드가 없다 — 늘어나는 것은 <strong>보내는 바이트열과 관찰</strong>이다.</li>
         <li>C — 10분 수신과 오류 복구.</li>
-        <li>D — 자기 캘리브레이션과 기동 시 자북 판정(§2-14).</li>
+        <li>D — 자기 캘리브레이션과 <code>wt mag</code> 진단. 기동 시 자북 판정(§2-14)은 폐기(결정 bf).</li>
       </ul>
       <div class="callout note"><span class="ct">왜 단계 0 · 1 · 2 의 코드를 한 실습에 모았는가</span>
         <p><code>wt901.c</code> 의 함수들은 서로 부른다. <code>wt901_cli_register()</code> 가 <code>cmd_wt()</code> 를 부르고, <code>cmd_wt()</code> 와 <code>wt901_service_main()</code> 이 <code>wt_set_baud()</code> 를 부른다. <code>app.c</code> 는 <code>wt901_service_main()</code> 을 부른다.
@@ -813,7 +820,7 @@ static const uint8_t WT_CMD_RSW_3TYPES[5] = { 0xFFu, 0xAAu, 0x02u, 0x0Eu, 0x00u 
   /* RSW = 0x0E = bit1|bit2|bit3 = 0x51 가속도 + 0x52 각속도 + 0x53 각도. 단계 1 의 앞 절반: 0x54 가 사라지는지 본다.
      비트 표: 매뉴얼 7.2.8, p.37 (바이트 7..0 = 0x57 0x56 0x55 0x54 0x53 0x52 0x51 0x50, 기본값 0 0 0 1 1 1 1 0) */
 static const uint8_t WT_CMD_RSW_4TYPES[5] = { 0xFFu, 0xAAu, 0x02u, 0x1Eu, 0x00u };
-  /* RSW = 0x1E = 위 셋 + bit4 (0x54 자기). 출고값과 같다. 단계 1 의 뒤 절반: 자북 판정이 0x54 를 쓴다 (§2-14). */
+  /* RSW = 0x1E = 위 셋 + bit4 (0x54 자기). 출고값과 같다. 단계 1 의 뒤 절반: "wt mag" 진단이 0x54 를 쓴다 (자북 판정은 폐기 - 결정 bf). */
 static const uint8_t WT_CMD_BAUD_230400[5] = { 0xFFu, 0xAAu, 0x04u, 0x07u, 0x00u };
   /* BAUD 코드 0x07 = 230400.  0x02 = 9600 이 출고값.   매뉴얼 7.2.10, p.39 */
 static const uint8_t WT_CMD_RATE_200HZ[5]  = { 0xFFu, 0xAAu, 0x03u, 0x0Bu, 0x00u };
@@ -828,7 +835,7 @@ static const uint8_t WT_CMD_FACTORY[5]     = { 0xFFu, 0xAAu, 0x00u, 0x01u, 0x00u
 static const uint8_t WT_CMD_CAL_ENTER[5]   = { 0xFFu, 0xAAu, 0x01u, 0x01u, 0x00u };
 static const uint8_t WT_CMD_CAL_EXIT[5]    = { 0xFFu, 0xAAu, 0x01u, 0x00u, 0x00u };
   /* CALSW 1 = "Enter Gyroscope and Accelerometer calibration mode", 0 = "Exit calibration mode".  매뉴얼 7.2.3, p.36
-     1 · 0 은 실습 C 가 쓴다 ("wt cal"). 2(자기 캘리브레이션)의 바이트열 WT_CMD_CAL_MAG 는 실습 D 가 더한다 -
+     1 · 0 은 실습 C 가 쓴다 ("wt cal"). 7(자기 캘리브레이션)의 바이트열 WT_CMD_CAL_MAG 는 실습 D 가 더한다 -
      여기 두면 실습 D 전까지 "defined but not used" 경고가 남는다. 어느 cfg 단계도 쓰지 않는다. */
 
 /* 아래 둘은 매뉴얼 V4.0 에 없다. 출처: WitMotion C SDK wit_c_sdk (Linux_C/REG.h · wit_c_sdk.c).
@@ -1030,7 +1037,7 @@ void wt901_service_main(void)
 
 /* "wt stat" - 카운터 · 샘플 · 상태를 찍는다. "wt cfg &lt;stage&gt;" - 상태기계를 시작한다. "wt baud &lt;bps&gt;" - USART6 만 다시 초기화한다.
  * "wt cal &lt;0|1&gt;" - CALSW 명령 하나 (실습 C). "wt factory" - 공장 초기화 (§2-7). "wt read" - RSW 읽기 요청 (TX 선 시험).
- * "wt cal 2" · "wt mag" · "wt north" · "wt north start|get" · "wt save" 는 실습 D 가 더한다. */
+ * "wt cal 7" · "wt mag" · "wt save" 는 실습 D 가 더한다 ("wt north" 는 폐기 - 결정 bf). */
 static void cmd_wt(int argc, char **argv)
 {
   /* TODO(you) [T14]: 낱말을 가려 가지마다 한 가지 일을 한다 - 힌트 카드 T14
@@ -2061,7 +2068,7 @@ wt ax_mg=&lt;n&gt; ay_mg=&lt;n&gt; az_mg=&lt;n&gt; gx_ddps=&lt;n&gt; gy_ddps=&lt
       <ul class="steps">
         <li><strong>MCU → 모듈 방향(PG14 → 모듈 RX)이 실제로 동작하는지를 증명한다.</strong> 지금까지는 받기만 했으므로 TX 선이 끊겨 있어도 알 수 없었다. 보드레이트를 건드리기 전에 이 방향부터 확인해야 한다(§2-4 의 근거 칸).
           설정을 바꾸기 전에 <code>wt read</code> 로 TX 선만 따로 볼 수 있다(§2-3 상자) — 아래 기준선 블록의 첫 세 줄이다.</li>
-        <li><strong>증거는 눈에 보이는 변화여야 한다.</strong> RSW 를 <code>0x0E</code> 로 바꾸면 <code>0x54</code>(자기) 프레임이 사라진다. 사라진 것을 본 뒤 <code>0x1E</code> 로 되돌리면 <code>0x54</code> 가 다시 온다. 되돌리는 이유는 기동 시 자북 판정이 <code>0x54</code> 를 쓰기 때문이다(§2-14). 왕복이 끝나면 RSW 는 출고값과 같고, TX 선의 증거는 두 번 남는다.</li>
+        <li><strong>증거는 눈에 보이는 변화여야 한다.</strong> RSW 를 <code>0x0E</code> 로 바꾸면 <code>0x54</code>(자기) 프레임이 사라진다. 사라진 것을 본 뒤 <code>0x1E</code> 로 되돌리면 <code>0x54</code> 가 다시 온다. 되돌리는 이유는 <code>wt mag</code> 진단이 <code>0x54</code> 를 쓰기 때문이다(자북 판정은 폐기 — §2-14). 왕복이 끝나면 RSW 는 출고값과 같고, TX 선의 증거는 두 번 남는다.</li>
       </ul>
       <p><strong>먼저 기준선을 적는다.</strong> 바꾸기 전 상태를 적어 두지 않으면 "달라졌다"를 말할 수 없다(§2-3).</p>
       <pre><code class="lang-text">&gt; wt stat            (바꾸기 전 - n54 가 0 이 아니어야 한다. 그것이 출고 상태다)
@@ -2090,7 +2097,7 @@ OK wt
         <li>SAVE 가 적용됐다(재전원 뒤에도 유지된다),</li>
         <li>그리고 <strong>잠금 해제를 앞에 붙인 쓰기가 적용된다</strong> — <code>wt_send_write()</code> 가 쓰기와 SAVE 마다 <code>FF AA 69 88 B5</code> 를 먼저 보낸다(§2-4 의 정정 표).</li>
       </ul>
-      <p>세 가지가 한 번에 확인된다. ②는 같은 세 가지를 한 번 더 확인하고, 설정을 출고값(<code>0x1E</code>)으로 돌려놓는다 — 실습 D 의 자북 판정이 <code>0x54</code> 를 쓴다(§2-14). 체크 항목 <code>wt-rsw-round-trip</code>.</p>
+      <p>세 가지가 한 번에 확인된다. ②는 같은 세 가지를 한 번 더 확인하고, 설정을 출고값(<code>0x1E</code>)으로 돌려놓는다 — 실습 D 의 <code>wt mag</code> 이 <code>0x54</code> 를 쓴다(§2-14). 체크 항목 <code>wt-rsw-round-trip</code>.</p>
       <div class="callout note"><span class="ct">이 프로젝트의 실측(2026-10-19) — 잠금 해제가 필요한 개체였다</span>
         <p>처음에는 잠금 해제 없이 단계 1 을 진행했다. 기록은 순서대로 이렇다.</p>
         <ol>
@@ -2229,24 +2236,19 @@ firmware/tools/flash.sh</code></pre>
         <p><code>FF AA 01 01 00</code> 을 보낸 뒤 <strong>얼마 동안 두어야 하는지, <code>FF AA 01 00 00</code> 으로 빠져나와야 하는지, SAVE 가 필요한지 — 매뉴얼에 없다</strong>. 매뉴얼의 레지스터 절은 모드 값만 적고, 절차는 PC 도구 화면 기준으로만 적는다.<sup class="fn"><a href="#fn-94" id="fnref-94">94</a></sup>
         그러니 이 걸음의 산출물은 "캘리브레이션에 성공했다"가 아니라 <strong>"전후 바이어스가 이렇게 달라졌다(또는 안 달라졌다)"라는 기록</strong>이다. 대기 시간은 <code>____</code> 로 남기고 내가 시도한 값을 적는다.
         <code>cal</code> 가지가 <code>0</code> 도 받게 해 둔 이유는 <strong>빠져나오는 것이 필요한지 아닌지를 내가 시험해 볼 수 있어야</strong> 하기 때문이다. SAVE 를 붙일지도 같은 성격의 선택이고, 어느 쪽이든 결과를 적는다.
-        자기 캘리브레이션(CALSW 2)은 여기서 하지 않는다 — 로봇에 단 채 해야 하는 것이라 실습 D 에서 한다(§2-14).</p>
+        자기 캘리브레이션(CALSW 7)은 여기서 하지 않는다 — 실습 D 에서 한다.</p>
       </div>
-      <p>체크 항목 <code>wt-config-from-manual</code>. 이 항목은 본편 06 의 옛 체크 항목을 잇는 것이다 — 그때의 주장("매뉴얼에서 확인해 적었고 캘리브레이션 절차를 수행했다")을 그대로 담는다. 자기 캘리브레이션은 이 항목이 아니라 실습 D 의 <code>wt-mag-bench-hand</code>(손) 와 fw-20 실습 F(로봇)가 요구한다.</p>
+      <p>체크 항목 <code>wt-config-from-manual</code>. 이 항목은 본편 06 의 옛 체크 항목을 잇는 것이다 — 그때의 주장("매뉴얼에서 확인해 적었고 캘리브레이션 절차를 수행했다")을 그대로 담는다. 자기 캘리브레이션은 이 항목이 아니라 실습 D 의 <code>wt-mag-bench-hand</code> 가 요구한다.</p>
 
-      <h3 id="s3-4">3-4. 실습 D — 자북 판정 코드를 완성하고 손으로 시험한다</h3>
-      <p>마지막 실습이다. §2-14 의 판정을 명령으로 만든다 — <code>wt mag</code>(지금의 자기장을 찍는다) · <code>wt north</code>(검사하고 판정한다) · <code>wt cal 2</code> · <code>wt save</code>.
-      <strong>코드는 이 쪽에서 완성한다.</strong> 그리고 모듈을 손에 든 채 캘리브레이션부터 판정까지 한 번 돌려, 명령과 절차가 동작하는 것을 확인한다.
-      마지막으로 판정을 <strong>다른 모듈이 부를 수 있는 함수</strong>로 내놓고, fw-11 의 전원 순서에 <strong>등록</strong>한다(§2-14 의 상자).</p>
-      <div class="callout warn"><span class="ct">실습 D 는 fw-11 이 먼저다</span>
-        <p>실습 D 의 코드는 <a href="fw-11-power-sequence.html#s2-13">fw-11 §2-13</a> 의 등록 자리(<code>power_gate_register()</code>)와 전원 상태(<code>power_get_state()</code>)를 쓴다. fw-11 을 아직 하지 않았다면 실습 A ~ C 까지 하고, fw-11 을 끝낸 뒤 이 실습으로 돌아온다 — 실습 A ~ C 는 fw-07 까지로 충분하다.</p>
-      </div>
-      <div class="callout note"><span class="ct">로봇에 단 뒤의 캘리브레이션과 판정은 fw-20 에서 한다</span>
-        <p>판정에 쓰는 캘리브레이션은 <strong>로봇에 단 채</strong> 해야 한다 — 로봇 자신의 철 · 모터 자석이 보정에 들어가야 하기 때문이다(§2-14 의 표 첫 줄). 모듈만 손에 든 지금의 캘리브레이션 값과 판정 상수는 <strong>벤치용 임시값</strong>이다.
-        조립 뒤 <a href="fw-20-after-assembly.html#s3-6">fw-20 실습 F</a> 가 이 쪽에서 완성한 코드를 그대로 써서 캘리브레이션을 다시 하고 상수를 실측값으로 바꾼다. 공장 초기화(§2-7)를 한 뒤에도 같다 — 캘리브레이션 값이 지워질 것이기 때문이다[추정].</p>
+      <h3 id="s3-4">3-4. 실습 D — 자기 진단(<code>wt mag</code> · <code>wt cal 7</code> · <code>wt save</code>)과 6 축 전환</h3>
+      <p>마지막 실습이다. 자기 프레임(<code>0x54</code>)을 받아 지금의 자기장을 찍는 <code>wt mag</code>, 자기 보정 <code>wt cal 7</code>, 저장 <code>wt save</code> 를 만들고, 모듈을 손에 든 채 보정과 회전 시험을 한 번 돌린다. 마지막으로 모듈의 각도 계산을 6 축으로 바꾼다(§3-4-6).</p>
+      <div class="callout warn"><span class="ct">기동 시 자북 판정은 폐기됐다 (결정 bf)</span>
+        <p>이 실습은 원래 §2-14 의 자북 판정(T17 · T19, <code>wt north</code>, 판정 상수, GATE 등록)까지 만들었다. 로봇 실측으로 판정을 폐기했으므로 지금의 실습에는 그 부분이 없다 — 설계 기록은 <a href="#s3-4-7">§3-4-7</a> 에 접어 두었다.
+        이미 판정 코드를 채웠다면 <a href="#s3-4-5">§3-4-5</a> 대로 주석으로 막는다. 남은 코드는 fw-07 까지로 충분하다 — fw-11 은 필요 없다.</p>
       </div>
 
       <h4 id="s3-4-2">3-4-2. 골격</h4>
-      <p>파일이 둘 늘고, <code>wt901.c</code> 와 <code>robot_params.h</code> 에 몇 줄이 는다. 새 파일은 <strong>순수</strong> 파일이다 — HAL 을 포함하지 않아 Mac 의 <code>cc</code> 로 시험한다.</p>
+      <p>파일이 둘 늘고, <code>wt901.c</code> 에 몇 줄이 는다. 새 파일은 <strong>순수</strong> 파일이다 — HAL 을 포함하지 않아 Mac 의 <code>cc</code> 로 시험한다.</p>
       <pre><code class="lang-c">/* User/Inc/Device/wt901_mag.h - 0x54 자기 원시값으로 기동 시 yaw 를 믿어도 되는지 가리는 값 둘과 판정.
  * 순수 로직: HAL 헤더 없음, 파일 범위 상태 없음(호스트 시험 가능). main 문맥에서만 부른다 - 부동소수를 쓴다.
  * 0x54 의 단위는 매뉴얼에 없다(7.1.5 p.31-32) -&gt; µT 비교는 하지 않고, 단위와 무관한 두 값을 쓴다 (§2-14). */
@@ -2263,10 +2265,6 @@ typedef struct {
 /* h = 0x54 의 X Y Z 원시값, a_mg = 0x51 의 가속도 [mg]. 정지 상태에서 부른다 - a 가 중력 방향일 때만 복각이 뜻을 가진다.
  * 둘 중 하나라도 길이가 0 이면 false (각을 정할 수 없다). 가속도 부호가 +g 든 -g 든 같은 dip 을 낸다. */
 bool wt901_mag_check(const int16_t h[3], const int16_t a_mg[3], wt901_mag_t *out);
-
-/* 판정: 복각이 기대값 +- 허용 안이고, |H| 가 기준값의 +- 허용 % 안이면 true. 정수만 쓴다. */
-bool wt901_north_ok(const wt901_mag_t *m, int32_t ref_norm, int32_t dip_expect_ddeg,
-                    int32_t dip_tol_ddeg, int32_t norm_tol_pct);
 
 #endif /* WT901_MAG_H */</code></pre>
       <pre><code class="lang-c">/* User/Src/Device/wt901_mag.c - 크기와 복각, 그리고 판정. 순수 로직(호스트 시험 가능). */
@@ -2285,39 +2283,14 @@ bool wt901_mag_check(const int16_t h[3], const int16_t a_mg[3], wt901_mag_t *out
   (void)h; (void)a_mg; (void)out;
   return false;
 }
-
-bool wt901_north_ok(const wt901_mag_t *m, int32_t ref_norm, int32_t dip_expect_ddeg,
-                    int32_t dip_tol_ddeg, int32_t norm_tol_pct)
-{
-  /* TODO(you) [T17]: 두 검사가 다 허용 안인가 - 힌트 카드 T17
-       1) |m-&gt;dip_ddeg - dip_expect_ddeg| &lt;= dip_tol_ddeg
-       2) |m-&gt;norm - ref_norm| 이 ref_norm 의 norm_tol_pct % 이하 - 나눗셈 없이 양변에 100 을 곱해 견준다
-       3) 둘 다 참일 때만 true
-     채우기 시작하면 아래 두 줄(빌드용 자리표시)은 지운다. */
-  (void)m; (void)ref_norm; (void)dip_expect_ddeg; (void)dip_tol_ddeg; (void)norm_tol_pct;
-  return false;
 }</code></pre>
-      <p><code>robot_params.h</code> 에는 판정 상수 넷이 는다. <strong>넷 다 내가 재거나 정하는 값</strong>이라 빈칸으로 만들고(이 쪽에서는 벤치용 임시값, fw-20 에서 실측값), <code>wt901.c</code> 의 가드가 채우기 전에는 빌드를 멈춘다(fw-09 의 <code>ENC_SIGN_*</code> 와 같은 꼴).</p>
-      <pre><code class="lang-c">/* --- WT901 기동 시 자북 판정 (fw-14 실습 D) --- */
-#define WT_MAG_REF_NORM       0   /* ____ 회전 시험의 |H| 평균 [0x54 raw] */
-#define WT_DIP_EXPECT_DDEG    0   /* ____ 회전 시험의 복각 평균 [0.1 deg] - WMM 값과 견준 결과를 같이 적는다 */
-#define WT_DIP_TOL_DDEG       0   /* ____ 내가 정한 값 + 근거(회전 시험의 흩어짐) [0.1 deg] */
-#define WT_MAG_NORM_TOL_PCT   0   /* ____ 내가 정한 값 + 근거(회전 시험의 흩어짐) [%] */
-/* 상태 낱말: fw-14 실습 D 에서 NOMINAL(bench-hand, &lt;날짜&gt;) -&gt; fw-20 실습 F 에서 MEASURED(&lt;날짜&gt;, 로봇에 단 채 회전 시험) */</code></pre>
-      <p><code>wt901.c</code> 에 먼저 더하는 것은 넷이다 — 최신 <code>0x54</code> 를 남길 변수 하나, CALSW 2 의 바이트열 하나, <code>wt_feed()</code> 의 <code>case 0x54u</code> 두 줄, <code>cmd_wt()</code> 의 가지들. 그리고 위 상수의 가드. 다른 모듈에 내놓는 인터페이스는 그 아래에 따로 적었다.</p>
+      <p><code>wt901.c</code> 에 더하는 것은 넷이다 — 최신 <code>0x54</code> 를 남길 변수 하나, CALSW 7 의 바이트열 하나, <code>wt_feed()</code> 의 <code>case 0x54u</code> 두 줄, <code>cmd_wt()</code> 의 가지들.</p>
       <pre><code class="lang-c">/* User/Src/Device/wt901.c - 실습 D 가 더하는 것. include 는 맨 위에, 나머지는 각 자리에. */
 #include "Device/wt901_mag.h"
-#include "Config/robot_params.h"   /* WT_MAG_REF_NORM ... */
 
-_Static_assert((WT_MAG_REF_NORM) != 0,     "robot_params.h: WT_MAG_REF_NORM is still EMPTY");
-_Static_assert((WT_DIP_EXPECT_DDEG) != 0,  "robot_params.h: WT_DIP_EXPECT_DDEG is still EMPTY");
-_Static_assert((WT_DIP_TOL_DDEG) != 0,     "robot_params.h: WT_DIP_TOL_DDEG is still EMPTY");
-_Static_assert((WT_MAG_NORM_TOL_PCT) != 0, "robot_params.h: WT_MAG_NORM_TOL_PCT is still EMPTY");
-
-static volatile int16_t s_h[3];   /* 최신 0x54 원시값 X Y Z (단위 없음). ISR 이 쓰고 "wt mag" · "wt north" 가 읽는다 */
-static const uint8_t WT_CMD_CAL_MAG[5] = { 0xFFu, 0xAAu, 0x01u, 0x02u, 0x00u };   /* CALSW 2 = "Enter magnetic calibration mode"  매뉴얼 7.2.3 p.36
+static volatile int16_t s_h[3];   /* 최신 0x54 원시값 X Y Z (단위 없음). ISR 이 쓰고 "wt mag" 가 읽는다 */
+static const uint8_t WT_CMD_CAL_MAG[5] = { 0xFFu, 0xAAu, 0x01u, 0x07u, 0x00u };   /* CALSW 7 = 자기 보정(구 맞춤). 매뉴얼 V4.0 에 없다 - wit_c_sdk 의 CALMAGMM
                                                                                      실습 A 의 바이트열(WT_CMD_CAL_EXIT) 아래에 둔다 */
-static const uint8_t WT_CMD_CAL_MAG_SPH[5] = { 0xFFu, 0xAAu, 0x01u, 0x07u, 0x00u };   /* CALSW 7 = 자기 보정(구 맞춤). 매뉴얼 V4.0 에 없다 - wit_c_sdk 의 CALMAGMM */
 
 /* wt_feed() 의 switch 안 - 실습 A 의 case 0x54u 를 이것으로 바꾼다.
    TODO(you) [T18]: 세기만 하던 자리에서 값 셋을 남긴다 - 힌트 카드 T18
@@ -2326,11 +2299,316 @@ static const uint8_t WT_CMD_CAL_MAG_SPH[5] = { 0xFFu, 0xAAu, 0x01u, 0x07u, 0x00u
 
 /* cmd_wt() 에 더하는 가지 - "factory" 가지 앞에 둔다.
    TODO(you) (T18 이어서): 힌트 카드 T18
-     1) "cal" 가지가 "2" · "7" 도 받게 한다 -&gt; WT_CMD_CAL_MAG · WT_CMD_CAL_MAG_SPH
+     1) "cal" 가지가 "7" 도 받게 한다 -&gt; WT_CMD_CAL_MAG
      2) "mag"   -&gt; 샘플 · s_h · s_yaw_ddeg 를 한 순간의 값으로 옮기고 wt901_mag_check(), 한 줄로 찍는다
-     3) "north" -&gt; 2) 와 같이 구한 뒤 wt901_north_ok() 로 판정해 ok=1 / ok=0 을 찍는다
-     4) "save"  -&gt; WT_CMD_SAVE 를 wt_send_write() 로 한 번 (캘리브레이션 값을 저장해야 하는 경우 - §3-4-4 의 ②)
+     3) "save"  -&gt; WT_CMD_SAVE 를 wt_send_write() 로 한 번 (캘리브레이션 값을 저장해야 하는 경우 - §3-4-4 의 ②)
      옮기는 동안 ISR 이 끼어들지 못하게 - T10 과 같은 방법. 샘플이나 0x54 가 아직 없으면 ERR wt no-mag */</code></pre>
+      <h4 id="s3-4-3">3-4-3. 직접 채우기</h4>
+      <p>채점표부터 놓는다. 아래가 <code>firmware/host_tests/test_wt901_mag.c</code> 한 파일이다. <strong>시험 파일은 전량으로 준다.</strong> 벡터의 기대값은 <code>python3</code> 의 <code>math.acos</code> 로 계산했다.</p>
+      <pre><code class="lang-c">/* host_tests/test_wt901_mag.c - Mac 에서 돈다, MCU 없음. 벡터가 wt901_mag.c 의 채점표다.
+ * 벡터의 출처: 기대값은 python3 로 계산했다 (math.acos, 반올림은 C 쪽과 같은 int(x*10+0.5)).
+ *   H=(0,300,-400), |H|=500, 수평 성분 300 · 아래 성분 400 -&gt; 복각 atan(400/300) = 53.13 deg */
+#include &lt;assert.h&gt;
+#include &lt;stdio.h&gt;
+#include "Device/wt901_mag.h"
+
+static unsigned cases;
+#define CHECK(c) do { assert(c); cases++; } while (0)
+
+static void group1(void)   /* 크기와 복각 */
+{
+  wt901_mag_t m;
+  const int16_t h0[3] = { 0, 300, -400 };
+  const int16_t up[3] = { 0, 0, 1000 }, down[3] = { 0, 0, -1000 };
+  CHECK(wt901_mag_check(h0, up, &amp;m));
+  CHECK(m.norm == 500 &amp;&amp; m.dip_ddeg == 531);
+  CHECK(wt901_mag_check(h0, down, &amp;m));                /* 가속도 부호가 반대여도 같은 복각 */
+  CHECK(m.norm == 500 &amp;&amp; m.dip_ddeg == 531);
+
+  const int16_t h1[3] = { 0, 460, -196 }, a1[3] = { 0, -500, 866 };   /* 둘 다 x 축으로 30 deg 기울였다 */
+  CHECK(wt901_mag_check(h1, a1, &amp;m));
+  CHECK(m.norm == 500 &amp;&amp; m.dip_ddeg == 531);           /* 기울여도 복각은 그대로 - 사이 각이기 때문이다 */
+
+  const int16_t hflat[3] = { 300, 400, 0 }, hdown[3] = { 0, 0, -500 };
+  CHECK(wt901_mag_check(hflat, up, &amp;m) &amp;&amp; m.dip_ddeg == 0);    /* 수평 자기장: 복각 0 */
+  CHECK(wt901_mag_check(hdown, up, &amp;m) &amp;&amp; m.dip_ddeg == 900);  /* 수직 자기장: 복각 90 - cos = -1 끝값 */
+
+  const int16_t h2[3] = { 120, -80, -300 }, a2[3] = { 15, -20, 1003 };
+  CHECK(wt901_mag_check(h2, a2, &amp;m));
+  CHECK(m.norm == 333 &amp;&amp; m.dip_ddeg == 630);           /* 62.97 deg */
+
+  const int16_t zero[3] = { 0, 0, 0 };
+  CHECK(!wt901_mag_check(zero, up, &amp;m));               /* 길이 0: 각을 정할 수 없다 */
+  CHECK(!wt901_mag_check(h0, zero, &amp;m));
+}
+
+int main(void)
+{
+  group1();
+  printf("PASS wt901_mag %u cases\n", cases);
+  return 0;
+}</code></pre>
+      <p>돌리는 명령은 실습 A 와 같은 두 줄이다. <code>-lm</code> 이 붙는다(<code>sqrtf</code> · <code>acosf</code>). 보드 빌드에는 이미 들어 있다(<code>cmake/gcc-arm-none-eabi.cmake</code> 의 <code>TOOLCHAIN_LINK_LIBRARIES "m"</code>).</p>
+      <pre><code class="lang-bash">cd firmware
+cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_wt901_mag.c h723zg/User/Src/Device/wt901_mag.c -lm -o /tmp/test_wt901_mag &amp;&amp; /tmp/test_wt901_mag
+cc -std=c11 -Wall -Wextra -fsanitize=undefined -Ih723zg/User/Inc host_tests/test_wt901_mag.c h723zg/User/Src/Device/wt901_mag.c -lm -o /tmp/test_wt901_mag_ub &amp;&amp; /tmp/test_wt901_mag_ub</code></pre>
+      <p>잘못된 구현을 만들어 돌려 본 결과다(2026-10-16, Mac <code>cc</code>).</p>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>잘못된 구현</th><th>멈추는 자리</th></tr></thead>
+        <tbody>
+          <tr><td>복각에 절댓값을 빠뜨렸다: <code>(90 - 사이 각)</code></td><td>첫 벡터 <code>m.dip_ddeg == 531</code> — 가속도가 위를 향하면 사이 각이 143° 라 −53° 가 된다</td></tr>
+          <tr><td><code>c</code> 를 −1 .. 1 로 자르지 않았다</td><td><strong>검출하지 못한다</strong> — 이 벡터들에서는 <code>c</code> 가 끝값을 넘지 않았다. 넘는 입력은 반올림 오차에 달려 있어 벡터로 고정하기 어렵다. 그래서 자르는 두 줄은 시험이 아니라 <strong>읽어서</strong> 확인한다</td></tr>
+        </tbody>
+      </table></div>
+      <p>채우는 순서.</p>
+      <ol class="steps">
+        <li><strong><code>wt901_mag_check()</code> 를 채우고</strong> 두 줄을 돌려 <code>PASS wt901_mag 12 cases</code> 를 본다.</li>
+        <li><strong><code>wt901.c</code> 에 <code>s_h</code> 와 <code>case 0x54u</code> 두 줄, <code>cmd_wt()</code> 의 가지들을 더한다.</strong></li>
+      </ol>
+      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 1 = T16 · 걸음 2 = T18.</p>
+      <details class="hint" id="hint-t16"><summary>힌트 T16 — <code>wt901_mag_check()</code> · 두 벡터의 길이와 사이 각</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — main 문맥(<code>wt mag</code>)이 부른다. <code>0x54</code> 벡터 H 와 <code>0x51</code> 가속도 벡터 a 를 받아 |H| 와 복각을 정수로 돌려준다. 끝났을 때 참이어야 하는 것: 가속도 부호가 +g 든 −g 든, 모듈이 기울어 있든 같은 복각이 나온다(벡터 사이 각만 쓰기 때문이다).</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T16 - User/Src/Device/wt901_mag.c */
+bool wt901_mag_check(const int16_t h[3], const int16_t a_mg[3], wt901_mag_t *out)
+{
+  const float hx = (float)h[0], hy = (float)h[1], hz = (float)h[2];             /* 1) float 로 옮긴다 - 제곱이 int16 을 넘는다 */
+  const float ax = (float)a_mg[0], ay = (float)a_mg[1], az = (float)a_mg[2];
+  const float hn = sqrtf(hx * hx + hy * hy + hz * hz);                           /* 2) 두 벡터의 길이 */
+  const float an = sqrtf(ax * ax + ay * ay + az * az);
+  if (hn &lt;= 0.0f || an &lt;= 0.0f) { return false; }                               /* 3) 길이 0 이면 각이 없다 */
+
+  float c = (hx * ax + hy * ay + hz * az) / (hn * an);                          /* 4) 사이 각의 cos = 내적 / 길이 곱 */
+  if (c &gt; 1.0f)  { c = 1.0f; }                                                  /*    반올림 오차로 1 을 살짝 넘으면 acosf 가 NaN */
+  if (c &lt; -1.0f) { c = -1.0f; }
+  const float ang_deg = acosf(c) * (180.0f / 3.14159265f);                       /* 5) 라디안 -&gt; 도 */
+
+  out-&gt;norm     = (int32_t)(hn + 0.5f);                                         /* 6) 양수라 +0.5 절사가 반올림이다 */
+  out-&gt;dip_ddeg = (int32_t)(fabsf(90.0f - ang_deg) * 10.0f + 0.5f);
+  return true;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>(float)h[0]</code> … — 1). 원시값은 ±32767 이라 제곱하면 약 10⁹ 로 <code>int16_t</code> 를 넘는다. <code>float</code> 로 옮긴 뒤 곱한다. <code>int32_t</code> 로 옮겨 제곱을 셋 더하면 3 × 32767² ≈ 3.2 × 10⁹ 로 <code>int32_t</code> 도 넘는다 — 그래서 <code>float</code> 다.</li>
+          <li><code>sqrtf(…)</code> — 2). <code>&lt;math.h&gt;</code> 의 <code>float</code> 판 제곱근. 이 보드(Cortex-M7, FPU)에서는 명령 하나다. <code>sqrt</code>(<code>double</code> 판)를 써도 값은 같다 — 이 보드의 FPU(<code>-mfpu=fpv5-d16</code>)는 <code>double</code> 도 계산한다. 끝의 <code>f</code> 를 맞추는 것은 식 전체를 <code>float</code> 로 두겠다는 뜻을 코드에 드러내기 위해서다.</li>
+          <li><code>if (hn &lt;= 0.0f || an &lt;= 0.0f) { return false; }</code> — 3). 길이가 0 이면 아래 나눗셈이 0 으로 나누기다. 부팅 직후 아직 <code>0x54</code> 가 안 왔으면 <code>s_h</code> 가 0 이다 — 그 경우를 여기서 막는다.</li>
+          <li><code>c = 내적 / (hn * an)</code> — 4). 두 벡터 사이 각 θ 의 cos 이다(cos θ = a·b / |a||b|). 두 줄의 <code>if</code> 는 <code>c</code> 를 −1 .. 1 로 자른다. 수학적으로는 그 안이지만 <code>float</code> 반올림으로 1.0000001 이 될 수 있고, <code>acosf</code> 는 그 입력에 NaN 을 돌려준다(시험이 검출하지 못하는 자리 — 위 표).</li>
+          <li><code>acosf(c) * (180.0f / 3.14159265f)</code> — 5). <code>acosf</code> 는 라디안을 돌려준다(0 .. π). 도로 바꾼다.</li>
+          <li><code>fabsf(90.0f - ang_deg)</code> — 6). 자기장이 수평면 아래로 기운 각이 복각이다. 가속도가 위(+g)를 가리키면 사이 각은 90° + 복각, 아래(−g)를 가리키면 90° − 복각이다. 어느 쪽이든 <code>|90 − 사이 각|</code> 이 복각이다 — 그래서 실습 A 에서 적은 <code>az</code> 부호(<code>wt-az-sign-recorded</code>)를 여기서 따로 쓰지 않아도 된다.</li>
+          <li><code>(int32_t)(x + 0.5f)</code> — 6). 양수의 <code>+0.5</code> 후 절사는 반올림이다. 결과를 정수로 돌려주는 것은 <code>printf</code> 의 <code>%f</code> 를 피하기 위해서다(이 프로젝트의 <code>nano.specs</code> 는 기본으로 <code>%f</code> 를 찍지 않는다).</li>
+          <li>골격의 <code>(void)…; return false;</code> 는 지웠다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — C 표준 <code>&lt;math.h&gt;</code> 의 <code>sqrtf()</code> · <code>acosf()</code> · <code>fabsf()</code>. HAL 없음. main 문맥 — <strong>ISR 이나 1 kHz 경로에서 부르지 않는다</strong>(이 쪽은 1 kHz 경로에 부동소수를 들이지 않는다 — §3-1-2).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>h[0] * h[0]</code> 을 <code>int16_t</code> 그대로 곱했다</td><td>경고와 오류가 없다(정수 승격으로 <code>int</code> 곱이 된다). 셋을 더하면 <code>int</code> 를 넘을 수 있어 <code>-fsanitize=undefined</code> 줄이 <code>signed integer overflow</code> 를 낸다 — 이 벡터들은 값이 작아 넘지 않는다</td><td><code>float</code> 로 옮긴 뒤 곱한다</td></tr>
+            <tr><td><code>fabsf</code> 를 빠뜨렸다</td><td><code>Assertion failed: (m.norm == 500 &amp;&amp; m.dip_ddeg == 531)</code> — 첫 벡터</td><td><code>fabsf(90.0f - ang_deg)</code></td></tr>
+            <tr><td><code>-lm</code> 없이 호스트에서 링크했다</td><td>Mac 에서는 링크된다(libSystem 에 들어 있다). 리눅스에서는 <code>undefined reference to 'acosf'</code></td><td>명령 끝에 <code>-lm</code></td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-4-3 의 두 줄: <code>PASS wt901_mag 12 cases</code>.</p>
+        </div></details>
+      <details class="hint" id="hint-t18"><summary>힌트 T18 — <code>case 0x54u</code> 와 <code>wt cal 7</code> · <code>wt mag</code> · <code>wt save</code></summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — ISR(<code>wt_feed()</code>)은 <code>0x54</code> 의 원시값 셋을 남기기만 한다. 명령 창(main)은 그 값과 최신 가속도 · yaw 를 <strong>한 순간의 값</strong>으로 옮긴 뒤 T16 을 부른다. 끝났을 때 참이어야 하는 것: <code>wt mag</code> 가 한 줄을 찍고, <code>wt cal 7</code> · <code>wt save</code> 가 <code>OK wt</code> 로 답한다.</p>
+        <p><strong>완결 코드</strong> — 셋으로 나눴다. 첫 블록은 <code>wt_feed()</code> 의 <code>case</code>, 둘째는 <code>cmd_wt()</code> 바로 위에 두는 함수 둘, 셋째는 <code>cmd_wt()</code> 의 가지다.</p>
+        <pre><code class="lang-c">/* 완결 코드 T18 - User/Src/Device/wt901.c (1/3) - wt_feed() 의 switch 안 */
+    case 0x54u:                                             /* 자기: 원시값을 남긴다 (실습 D). 단위가 없어 환산하지 않는다 */
+      s_n54++;
+      s_h[0] = wt901_le16(&amp;d[0]);
+      s_h[1] = wt901_le16(&amp;d[2]);
+      s_h[2] = wt901_le16(&amp;d[4]);
+      break;</code></pre>
+        <pre><code class="lang-c">/* 완결 코드 T18 - User/Src/Device/wt901.c (2/3) - 바이트열 한 줄은 실습 A 의 WT_CMD_CAL_EXIT 아래, 나머지는 cmd_wt() 바로 위 */
+static const uint8_t WT_CMD_CAL_MAG[5] = { 0xFFu, 0xAAu, 0x01u, 0x07u, 0x00u };   /* CALSW 7 = 자기 보정(구 맞춤). 매뉴얼 V4.0 에 없다 -
+                                                                                     출처: wit_c_sdk WitStartMagCali() 의 CALMAGMM (REG.h).
+                                                                                     매뉴얼의 CALSW 2 는 이 개체에서 오프셋 일부만 뺐다 - 쓰지 않는다 (2026-11-04 실측) */
+
+/* 최신 가속도 · 0x54 · yaw 를 한 순간의 값으로 옮겨 |H| 와 복각을 낸다. false = 샘플이나 0x54 가 아직 없다. 문맥: main */
+static bool wt_mag_now(wt901_mag_t *m, int16_t h[3], int16_t *yaw_ddeg)
+{
+  imu_sample_t s;
+  if (!wt901_get_sample(&amp;s) || s_n54 == 0u) { return false; }
+  __disable_irq();                                         /* T10 과 같은 방법: 옮기는 동안 ISR 이 고치지 못한다 */
+  h[0] = s_h[0]; h[1] = s_h[1]; h[2] = s_h[2];
+  *yaw_ddeg = s_yaw_ddeg;
+  __enable_irq();
+  const int16_t a[3] = { s.ax_mg, s.ay_mg, s.az_mg };
+  return wt901_mag_check(h, a, m);
+}
+
+static void wt_print_mag(void)   /* "wt mag" */
+{
+  wt901_mag_t m;
+  int16_t h[3];
+  int16_t yaw;
+  if (!wt_mag_now(&amp;m, h, &amp;yaw)) { printf("ERR wt no-mag\r\n"); return; }
+  printf("wt mag hx=%d hy=%d hz=%d norm=%ld dip_ddeg=%ld yaw_ddeg=%d\r\n",
+         h[0], h[1], h[2], (long)m.norm, (long)m.dip_ddeg, yaw);   /* hx..hz 는 norm · dip 을 계산한 바로 그 값 */
+}</code></pre>
+        <pre><code class="lang-c">/* 완결 코드 T18 - User/Src/Device/wt901.c (3/3) - cmd_wt() 안 */
+  if (argc == 3 &amp;&amp; strcmp(argv[1], "cal") == 0) {                      /* 실습 C: 1 · 0, 실습 D: 7 */
+    const uint8_t *cmd = NULL;
+    if      (strcmp(argv[2], "1") == 0) { cmd = WT_CMD_CAL_ENTER; }
+    else if (strcmp(argv[2], "7") == 0) { cmd = WT_CMD_CAL_MAG; }       /* &lt;-- 실습 D 가 더한 줄 (SDK 의 자기 보정 값) */
+    else if (strcmp(argv[2], "0") == 0) { cmd = WT_CMD_CAL_EXIT; }
+    else { printf("ERR wt bad-arg\r\n"); return; }
+    if (!wt_send_write(cmd)) { printf("ERR wt tx-timeout\r\n"); return; }
+    printf("OK wt\r\n");
+    return;
+  }
+
+  if (argc == 2 &amp;&amp; strcmp(argv[1], "mag") == 0) { wt_print_mag(); return; }   /* 실습 D */
+  if (argc == 2 &amp;&amp; strcmp(argv[1], "save") == 0) {                     /* 실습 D: 캘리브레이션 뒤 SAVE 한 번 */
+    if (s_cfg_state != WT_CFG_IDLE &amp;&amp; s_cfg_state != WT_CFG_DONE) { printf("ERR wt busy\r\n"); return; }
+    if (!wt_send_write(WT_CMD_SAVE)) { printf("ERR wt tx-timeout\r\n"); return; }
+    printf("OK wt\r\n");
+    return;
+  }</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul>
+          <li><code>case 0x54u</code> — 실습 A 에서 세기만 하던 자리에 세 줄을 더했다. <code>d[0..1]</code> · <code>d[2..3]</code> · <code>d[4..5]</code> 가 X · Y · Z 다(매뉴얼 §7.1.5 의 <code>HxL HxH HyL HyH HzL HzH</code>). <strong>환산하지 않는다</strong> — 매뉴얼에 단위가 없고, 검사 값 둘(복각 · 크기 비)은 단위가 필요 없다(§2-14).</li>
+          <li><code>static volatile int16_t s_h[3];</code>(골격) — ISR 이 쓰고 main 이 읽으므로 <code>volatile</code> 이다. 같은 이유의 <code>s_n51</code> … 과 같은 꼴.</li>
+          <li><code>wt_mag_now()</code> — <code>wt901_get_sample()</code>(T10)로 가속도를, 막아 둔 구간 안에서 <code>s_h</code> 셋과 <code>s_yaw_ddeg</code> 를 옮긴다. 막지 않으면 X 는 앞 묶음, Z 는 다음 묶음의 값이 섞일 수 있다(T10 의 "찢어짐"). 옮긴 원시값 셋은 <code>h</code> 로 내보낸다 — 찍는 쪽이 <code>s_h</code> 를 다시 읽으면 계산에 쓴 값과 다른 묶음의 값이 찍힐 수 있다. 가속도와 자기는 같은 묶음의 값이 아닐 수 있다 — 정지 상태라 5 ms 차이는 판정에 영향이 없다.</li>
+          <li><code>s_n54 == 0u</code> — 부팅 뒤 <code>0x54</code> 가 한 번도 안 왔다(RSW 가 <code>0x0E</code> 인 채라면 영원히 안 온다 — 단계 1 의 되돌리기를 빠뜨린 것이다). 그때 <code>ERR wt no-mag</code>.</li>
+          <li><code>wt_print_mag()</code> — 원시값 셋과 |H| · 복각 · yaw 를 한 줄로 찍어 캘리브레이션 · 회전 시험에서 눈으로 보게 한다. <code>%ld</code> 와 <code>(long)</code> 은 <code>int32_t</code> 를 찍는 이 프로젝트의 관례다(fw-05).</li>
+          <li><code>cal</code> 가지 — 바이트열 <code>WT_CMD_CAL_MAG</code>(2/3 의 첫 줄, 실습 A 의 바이트열 아래)와 T14 의 가지에 <code>"7"</code> 한 줄을 더했다. <code>7</code> 은 매뉴얼 V4.0 에 없는 값이다 — 제조사 SDK(<code>wit_c_sdk</code>)의 <code>WitStartMagCali()</code> 가 자기 보정에 쓰는 <code>CALMAGMM</code> 이다. 이 개체는 매뉴얼에 없는 잠금 해제(KEY)를 요구해 SDK 쪽 프로토콜과 맞았다(§3-1-5). 매뉴얼의 <code>2</code> 는 2026-11-04 실측에서 원 중심을 26~38 % 만 줄였고, <code>7</code> 은 반지름의 약 10 % 까지 줄였다 — 그래서 <code>2</code> 는 두지 않는다. 바이트열을 실습 A 에 두지 않은 이유: 쓰는 가지가 생기기 전까지 <code>defined but not used</code> 경고가 남는다. 대기 · SAVE 를 붙일지는 실습 C 의 CALSW 1 과 같은 성격의 선택이다(§3-3-4 의 상자) — §3-4-4 의 ② 에서 시험한다.</li>
+          <li><code>mag</code> 가지 — <code>factory</code> 가지 앞에 둔다. 인자가 없는 명령이라 <code>argc == 2</code>.</li>
+          <li><code>save</code> 가지 — <code>WT_CMD_SAVE</code>(§3-1-2 의 바이트열)를 <code>wt_send_write()</code> 로 한 번 보낸다(잠금 해제가 앞에 붙는다). 상태기계가 SAVE 를 보내는 중일 수 있으므로 <code>factory</code> 와 같이 바쁜지부터 본다. 캘리브레이션 값이 SAVE 로 저장되는지는 [추정]이라 §3-4-4 의 ② 가 시험으로 가른다.</li>
+        </ul>
+        <p><strong>쓰는 API</strong> — CMSIS <code>__disable_irq()</code> · <code>__enable_irq()</code>(T10 과 같다), T1 · T10 · T12 · T16. 문맥은 첫 블록만 ISR, 나머지는 main.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact">
+          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
+          <tbody>
+            <tr><td><code>case 0x54u</code> 에서 <code>wt901_angle_ddeg()</code> 같은 환산을 했다</td><td>경고와 오류가 없다. 복각은 그대로 맞고(비율이 같다), 크기 비의 기준값을 그 단위로 적었다면 크기 비도 맞다 — 다만 뜻이 없는 단위가 생긴다</td><td>원시값 그대로</td></tr>
+            <tr><td><code>printf</code> 에 <code>%f</code> 로 복각을 찍었다</td><td>빌드는 된다. 명령 창에 숫자 대신 빈칸이 찍힌다(<code>nano.specs</code> 의 <code>printf</code> 는 기본으로 부동소수를 찍지 않는다)</td><td>정수(0.1° 단위)로 찍는다 — T16 이 정수를 돌려주는 이유</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>확인</strong> — §3-4-4 의 ①: <code>wt mag</code> 한 줄.</p>
+        </div></details>
+
+
+      <h4 id="s3-4-4">3-4-4. 굽고 보기 — 모듈을 손에 들고</h4>
+      <p>벤치에서 모듈만으로 한다. 두 걸음이다. 철제 책상 · 공구 · 노트북 · 휴대폰에서 떨어진 자리에서 한다 — 매뉴얼은 자석 · 철에서 20 cm 이상을 적는다.<sup class="fn"><a href="#fn-96" id="fnref-96">96</a></sup></p>
+      <p><strong>① <code>0x54</code> 가 오는가.</strong> 굽고 <code>wt mag</code> 을 친다.</p>
+      <pre><code class="lang-text">&gt; wt mag
+wt mag hx=&lt;n&gt; hy=&lt;n&gt; hz=&lt;n&gt; norm=&lt;n&gt; dip_ddeg=&lt;n&gt; yaw_ddeg=&lt;n&gt;</code></pre>
+      <p><code>ERR wt no-mag</code> 이면 <code>wt stat</code> 의 <code>n54</code> 를 본다 — 0 에 머물면 RSW 가 <code>0x0E</code> 인 채다(단계 1 의 되돌리기 <code>wt cfg 1r</code> 을 빠뜨렸다).</p>
+      <p><strong>② 손 캘리브레이션과 회전 시험.</strong> 순서가 기준선 → 캘리브레이션 → 같은 시험이다.</p>
+      <ol class="steps">
+        <li><strong>기준선</strong> — 모듈을 책상에 부품면이 위로 오게 놓고 45° 씩 돌려 놓으며 여덟 방향에서 <code>wt mag</code> 을 친다. 아래 표를 채운다.</li>
+        <li><code>wt cal 7</code> → <code>OK wt</code>. 매뉴얼의 CALSW 2 가 아니다(§1 의 정정 표).</li>
+        <li>모듈을 손에 들고 여러 방향으로 천천히 돌린다 — 수평으로 몇 바퀴, 세워서 몇 바퀴, 뒤집어서 몇 바퀴. 정확할 필요는 없다. 방향을 고르게 지나가는 것이 기준이다(§2-14).</li>
+        <li><code>wt cal 0</code> 으로 빠져나온다.</li>
+        <li>VCC 점퍼를 뽑았다 꽂고 1 의 시험을 다시 한다. 흩어짐이 기준선과 같으면 <strong>저장되지 않은 것</strong>이다 — 2 ~ 4 를 다시 하고 <code>wt save</code> 를 한 번 친 뒤 재전원해 다시 본다. 매뉴얼은 PC 도구의 "Write Parameters" 만 적고 명령 수준의 순서를 적지 않는다[추정: CALSW 7 → 회전 → CALSW 0 → SAVE]. <strong>저장이 필요했는지가 이 걸음의 답이다</strong>.</li>
+      </ol>
+      <div class="tbl"><table class="compact">
+        <thead><tr><th>방향</th><th><code>norm</code></th><th><code>dip_ddeg</code></th><th><code>yaw_ddeg</code></th></tr></thead>
+        <tbody>
+          <tr><td>0° · 45° · 90° · … · 315°</td><td><code>____</code> × 8</td><td><code>____</code> × 8</td><td><code>____</code> × 8</td></tr>
+          <tr><td><strong>흩어짐(최대 − 최소)</strong> — 캘리브레이션 전 / 후</td><td><code>____</code> / <code>____</code></td><td><code>____</code> / <code>____</code></td><td>yaw 간격이 45° 씩인가: <code>____</code></td></tr>
+        </tbody>
+      </table></div>
+      <p>지구 자기장은 모듈이 돌아도 변하지 않으므로, 보정이 맞았다면 <strong><code>norm</code> 과 <code>dip_ddeg</code> 가 여덟 방향에서 거의 같아야</strong> 한다. 캘리브레이션 뒤 흩어짐이 줄었으면 명령 · 절차가 동작한 것이다. 체크 항목 <code>wt-mag-bench-hand</code>.</p>
+      <h4 id="s3-4-5">3-4-5. 이미 판정 코드를 채웠다면 — 주석으로 막는다 (결정 bf)</h4>
+      <p>지우지 않고 줄마다 <code>//</code> 로 막고, 막은 덩어리 위에 한 줄을 단다: <code>/* DEPRECATED (결정 bf, 2026-11-04): 자력계 사용 안 함 - 자북 판정 폐기. 주석으로만 남긴다 */</code>.
+      <code>/* … */</code> 로 감싸지 않는 이유 — 막을 줄마다 이미 <code>/* … */</code> 주석이 있어서 C 의 블록 주석이 겹쳐 끝난다.</p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w28"><col></colgroup>
+        <thead><tr><th>파일</th><th>막는 것</th></tr></thead>
+        <tbody>
+          <tr><td><code>wt901.c</code></td><td><code>#include "Control/power.h"</code> · 판정 상수의 <code>_Static_assert</code> 가드 다섯 · <code>s_north_*</code> 다섯과 <code>wt_north_step</code> 앞 선언 · <code>wt901_service_main()</code> 끝의 <code>wt_north_step();</code> · <code>wt_k1_closed()</code> · <code>wt901_north_start()</code> · <code>wt_north_gate_done()</code> · <code>s_north_gate</code> · <code>wt901_north_get()</code> · <code>wt_north_step()</code> · <code>cmd_wt()</code> 의 <code>north</code> 가지 셋 · <code>wt901_init()</code> 끝의 세 줄(등록 · <code>FW_ASSERT</code> · 부팅 판정) · 도움말 두 줄</td></tr>
+          <tr><td><code>wt901.h</code></td><td><code>wt901_north_state_t</code> · <code>wt901_north_t</code> · 원형 둘</td></tr>
+          <tr><td><code>wt901_mag.h</code> · <code>wt901_mag.c</code></td><td><code>wt901_north_ok()</code> 의 원형과 정의</td></tr>
+          <tr><td><code>robot_params.h</code></td><td>판정 상수 다섯과 그 머리 · 상태 낱말 줄</td></tr>
+          <tr><td><code>test_wt901_mag.c</code></td><td><code>group2()</code> 와 그 호출</td></tr>
+        </tbody>
+      </table></div>
+      <p><code>wt_print_mag()</code> 은 막지 않고 고친다. 인자 <code>judge</code> 가 쓰이지 않게 되면 <code>-Wextra</code> 가 경고를 내기 때문이다.</p>
+      <pre><code class="lang-c">static void wt_print_mag(void)   /* "wt mag". 판정을 함께 하던 "wt north" 는 폐기 (결정 bf) */
+{
+  wt901_mag_t m;
+  int16_t h[3];
+  int16_t yaw;
+  if (!wt_mag_now(&amp;m, h, &amp;yaw)) { printf("ERR wt no-mag\r\n"); return; }
+  printf("wt mag hx=%d hy=%d hz=%d norm=%ld dip_ddeg=%ld yaw_ddeg=%d\r\n",
+         h[0], h[1], h[2], (long)m.norm, (long)m.dip_ddeg, yaw);   /* hx..hz 는 norm · dip 을 계산한 바로 그 값 */
+}
+
+/* cmd_wt() 의 부르는 줄도 인자를 뺀다 */
+  if (argc == 2 &amp;&amp; strcmp(argv[1], "mag") == 0) { wt_print_mag(); return; }   /* 실습 D */
+
+/* wt901_init() 의 끝 - 막은 꼴 */
+  /* DEPRECATED (결정 bf, 2026-11-04): 자력계 사용 안 함 - 자북 판정 폐기. 주석으로만 남긴다 - GATE 등록이 없으므로 fw-11 의 GATE 는 곧바로 지나간다 */
+//   const bool gate_ok = power_gate_register(&amp;s_north_gate);   /* fw-11 의 GATE 가 판정을 시작하고 끝났는지 묻게 한다 */
+//   FW_ASSERT(gate_ok);                                          /* 자리가 없으면 프로그래밍 오류 - POWER_GATE_MAX */
+//   wt901_north_start();                                         /* 부팅 판정 1 회 - 무조건 요청한다. 걸음이 조건(시간 · 새 0x54)을 기다린다 */</code></pre>
+      <p><strong>확인.</strong></p>
+      <ul class="steps">
+        <li>빌드 경고 0. 남은 <code>wt901_north</code> · <code>WT_NORTH</code> · <code>WT_DIP</code> · <code>WT_MAG_REF_NORM</code> · <code>WT_MAG_NORM_TOL_PCT</code> 가 주석 밖에 있으면 오류가 난다 — 그 줄을 마저 막는다.</li>
+        <li>호스트 시험 <code>PASS wt901_mag 12 cases</code>(판정 다섯 줄이 빠졌다).</li>
+        <li>구운 뒤 <code>wt north</code> → <code>ERR wt bad-arg</code>. <code>wt mag</code> 은 그대로 나온다.</li>
+        <li>(배터리 벤치가 있을 때) WT901 신호선을 뽑은 채 <code>pwr up</code> 해도 GATE 에 머물지 않는다 — <code>pwr stat</code> 의 <code>gate=-</code>. <strong>WT901 이 응답하지 않아도 K1 을 막지 않는다</strong>는 뜻이다.</li>
+      </ul>
+
+      <h4 id="s3-4-6">3-4-6. 알고리즘을 6 축으로 — <code>wt algo 6</code> (결정 bg)</h4>
+      <p>자력계를 쓰지 않으므로(결정 bf) 모듈의 각도 출력(<code>0x53</code>)도 자력계 없이 계산하게 한다. 알고리즘 레지스터 <code>0x24</code> 가 0 이면 9 축(출고값, Z 각을 주로 자기장으로), 1 이면 6 축(Z 각을 각속도 적분으로)이다.<sup class="fn"><a href="#fn-49" id="fnref-49b">49</a></sup>
+      ROS 의 EKF 가 받는 <code>gz</code>(<code>0x52</code>)는 알고리즘과 무관하다 — 바뀌는 것은 <code>0x53</code> 의 yaw 하나다.</p>
+      <pre><code class="lang-c">/* User/Src/Device/wt901.c - 바이트열 둘 (WT_CMD_CAL_MAG 아래) */
+static const uint8_t WT_CMD_ALG_6AXIS[5]   = { 0xFFu, 0xAAu, 0x24u, 0x01u, 0x00u };   /* ALG 1 = 6축: Z 각을 각속도 적분으로 (매뉴얼 7.2.6 p.37) */
+static const uint8_t WT_CMD_ALG_9AXIS[5]   = { 0xFFu, 0xAAu, 0x24u, 0x00u, 0x00u };   /* ALG 0 = 9축(출고값): Z 각을 주로 자기장으로. 자력계 미사용(결정 bf) -&gt; 6축 (결정 bg) */
+
+/* cmd_wt() 의 가지 - "mag" 가지 앞에 둔다 */
+  if (argc == 3 &amp;&amp; strcmp(argv[1], "algo") == 0) {                     /* 결정 bg: 6 = 6축, 9 = 9축(되돌리기). 남기려면 뒤에 "wt save" */
+    const uint8_t *cmd = NULL;
+    if      (strcmp(argv[2], "6") == 0) { cmd = WT_CMD_ALG_6AXIS; }
+    else if (strcmp(argv[2], "9") == 0) { cmd = WT_CMD_ALG_9AXIS; }
+    else { printf("ERR wt bad-arg\r\n"); return; }
+    if (s_cfg_state != WT_CFG_IDLE &amp;&amp; s_cfg_state != WT_CFG_DONE) { printf("ERR wt busy\r\n"); return; }
+    if (!wt_send_write(cmd)) { printf("ERR wt tx-timeout\r\n"); return; }
+    printf("OK wt\r\n");
+    return;
+  }
+
+/* HELP_WT 에 한 줄 - "mag" 줄 앞 */
+  "  algo 6|9     : 6-axis (gyro yaw) / 9-axis (mag yaw); then wt save\r\n"</code></pre>
+      <p><strong>순서.</strong> <code>wt algo 6</code> → <code>wt save</code> → 재전원. 매뉴얼은 6 축으로 바꾼 뒤 "추가 캘리브레이션과 Z 축 영점 맞춤"을 하라고 적지만 그 명령은 적지 않는다[확인불가]. 그래서 결과로 확인한다.</p>
+      <ul class="steps">
+        <li><strong>바뀌었는가</strong> — 모듈 옆으로 휴대폰(자석)을 가져갔다 치운다. 9 축이면 <code>wt mag</code> 의 <code>yaw_ddeg</code> 가 크게 튀고, 6 축이면 <code>hx</code> · <code>hy</code> 만 바뀌고 yaw 는 그대로다.</li>
+        <li><strong>정지 중에 흐르는가</strong> — 가만히 둔 채 1 분 간격으로 <code>yaw_ddeg</code> 를 몇 번 적는다. 흐르면 <code>wt cal 1</code> → 10 ~ 30 s → <code>wt cal 0</code> → <code>wt save</code> 뒤 다시 본다.</li>
+        <li><strong>되돌리기</strong> — <code>wt algo 9</code> → <code>wt save</code>. 공장 초기화(<code>wt factory</code>)도 9 축으로 돌린다.</li>
+      </ul>
+
+      <h4 id="s3-4-7">3-4-7. 폐기 기록 — 자북 판정의 코드와 시험 (결정 bf)</h4>
+      <p>판정을 폐기하기 전 이 실습에 있던 골격 · 힌트 카드 · 시험이다. 따라 하지 않는다 — §3-4-5 에서 주석으로 막는 코드가 무엇이었는지 보는 기록이다. 폐기 이유는 §2-14 의 상자.</p>
+      <details class="hint" id="deprecated-north"><summary>폐기된 판정 — 골격 · T17 · T19 · 시험 ③ ~ ⑦ 펼치기</summary>
+        <div class="ans">
+        <p><strong>골격 — <code>wt901_mag.c</code> 의 판정 함수</strong></p>
+        <pre><code class="lang-c">bool wt901_north_ok(const wt901_mag_t *m, int32_t ref_norm, int32_t dip_expect_ddeg,
+                    int32_t dip_tol_ddeg, int32_t norm_tol_pct)
+{
+  /* TODO(you) [T17]: 두 검사가 다 허용 안인가 - 힌트 카드 T17
+       1) |m-&gt;dip_ddeg - dip_expect_ddeg| &lt;= dip_tol_ddeg
+       2) |m-&gt;norm - ref_norm| 이 ref_norm 의 norm_tol_pct % 이하 - 나눗셈 없이 양변에 100 을 곱해 견준다
+       3) 둘 다 참일 때만 true
+     채우기 시작하면 아래 두 줄(빌드용 자리표시)은 지운다. */
+  (void)m; (void)ref_norm; (void)dip_expect_ddeg; (void)dip_tol_ddeg; (void)norm_tol_pct;
+  return false;}</code></pre>
+      <p><code>robot_params.h</code> 에는 판정 상수 넷이 는다. <strong>넷 다 내가 재거나 정하는 값</strong>이라 빈칸으로 만들고(이 쪽에서는 벤치용 임시값, fw-20 에서 실측값), <code>wt901.c</code> 의 가드가 채우기 전에는 빌드를 멈춘다(fw-09 의 <code>ENC_SIGN_*</code> 와 같은 꼴).</p>
+      <pre><code class="lang-c">/* --- WT901 기동 시 자북 판정 (fw-14 실습 D) --- */
+#define WT_MAG_REF_NORM       0   /* ____ 회전 시험의 |H| 평균 [0x54 raw] */
+#define WT_DIP_EXPECT_DDEG    0   /* ____ 회전 시험의 복각 평균 [0.1 deg] - WMM 값과 견준 결과를 같이 적는다 */
+#define WT_DIP_TOL_DDEG       0   /* ____ 내가 정한 값 + 근거(회전 시험의 흩어짐) [0.1 deg] */
+#define WT_MAG_NORM_TOL_PCT   0   /* ____ 내가 정한 값 + 근거(회전 시험의 흩어짐) [%] */
+/* 상태 낱말: fw-14 실습 D 에서 NOMINAL(bench-hand, &lt;날짜&gt;) -&gt; fw-20 실습 F 에서 MEASURED(&lt;날짜&gt;, 로봇에 단 채 회전 시험) */</code></pre>
+        <pre><code class="lang-c">/* wt901.c 의 가드 넷 (상수와 함께 폐기) */
+_Static_assert((WT_MAG_REF_NORM) != 0,     "robot_params.h: WT_MAG_REF_NORM is still EMPTY");
+_Static_assert((WT_DIP_EXPECT_DDEG) != 0,  "robot_params.h: WT_DIP_EXPECT_DDEG is still EMPTY");
+_Static_assert((WT_DIP_TOL_DDEG) != 0,     "robot_params.h: WT_DIP_TOL_DDEG is still EMPTY");
+_Static_assert((WT_MAG_NORM_TOL_PCT) != 0, "robot_params.h: WT_MAG_NORM_TOL_PCT is still EMPTY");</code></pre>
       <p><strong>다른 모듈에 내놓는 인터페이스.</strong> <code>wt north</code> 는 사람이 치는 명령이다. 전원 순서와 링크는 명령 창을 거치지 않고 함수로 부른다. 그래서 <code>wt901.h</code> 에 자료형 하나와 함수 둘을 더한다. 판정의 걸음은 이미 주 루프에서 도는 <code>wt901_service_main()</code> 안에 넣는다 — <code>app.c</code> 에는 줄이 늘지 않는다.
       그리고 시작 함수를 fw-11 의 <code>power_gate_register()</code> 에 등록한다 — <code>pwr up</code> 이 GATE 에서 이것을 부르고, 끝났는지 묻는다(<a href="fw-11-power-sequence.html#s2-13">fw-11 §2-13</a>).</p>
       <pre><code class="lang-c">/* User/Inc/Device/wt901.h - 실습 D 가 더하는 것. 기존 선언들 아래에 둔다. */
@@ -2411,46 +2689,8 @@ static void wt_north_step(void)
       <pre><code class="lang-c">_Static_assert((WT_NORTH_SETTLE_MS) != 0,  "robot_params.h: WT_NORTH_SETTLE_MS is still EMPTY");   /* wt901.c 의 가드 넷 아래 */</code></pre>
       <p><code>cmd_wt()</code> 에는 시험용 가지 둘을 더한다 — <code>wt north start</code> 와 <code>wt north get</code>. 배터리 없이도 판정을 시작해 볼 수 있게 사람이 부르는 자리다(T19 의 넷째 블록). 그리고 K1 이 닫혀 있으면 <code>wt north</code> 와 <code>wt north start</code> 는 <code>ERR wt k1-closed</code> 로 거부한다.</p>
 
-      <h4 id="s3-4-3">3-4-3. 직접 채우기</h4>
-      <p>채점표부터 놓는다. 아래가 <code>firmware/host_tests/test_wt901_mag.c</code> 한 파일이다. <strong>시험 파일은 전량으로 준다.</strong> 벡터의 기대값은 <code>python3</code> 의 <code>math.acos</code> 로 계산했다.</p>
-      <pre><code class="lang-c">/* host_tests/test_wt901_mag.c - Mac 에서 돈다, MCU 없음. 벡터가 wt901_mag.c 의 채점표다.
- * 벡터의 출처: 기대값은 python3 로 계산했다 (math.acos, 반올림은 C 쪽과 같은 int(x*10+0.5)).
- *   H=(0,300,-400), |H|=500, 수평 성분 300 · 아래 성분 400 -&gt; 복각 atan(400/300) = 53.13 deg */
-#include &lt;assert.h&gt;
-#include &lt;stdio.h&gt;
-#include "Device/wt901_mag.h"
-
-static unsigned cases;
-#define CHECK(c) do { assert(c); cases++; } while (0)
-
-static void group1(void)   /* 크기와 복각 */
-{
-  wt901_mag_t m;
-  const int16_t h0[3] = { 0, 300, -400 };
-  const int16_t up[3] = { 0, 0, 1000 }, down[3] = { 0, 0, -1000 };
-  CHECK(wt901_mag_check(h0, up, &amp;m));
-  CHECK(m.norm == 500 &amp;&amp; m.dip_ddeg == 531);
-  CHECK(wt901_mag_check(h0, down, &amp;m));                /* 가속도 부호가 반대여도 같은 복각 */
-  CHECK(m.norm == 500 &amp;&amp; m.dip_ddeg == 531);
-
-  const int16_t h1[3] = { 0, 460, -196 }, a1[3] = { 0, -500, 866 };   /* 둘 다 x 축으로 30 deg 기울였다 */
-  CHECK(wt901_mag_check(h1, a1, &amp;m));
-  CHECK(m.norm == 500 &amp;&amp; m.dip_ddeg == 531);           /* 기울여도 복각은 그대로 - 사이 각이기 때문이다 */
-
-  const int16_t hflat[3] = { 300, 400, 0 }, hdown[3] = { 0, 0, -500 };
-  CHECK(wt901_mag_check(hflat, up, &amp;m) &amp;&amp; m.dip_ddeg == 0);    /* 수평 자기장: 복각 0 */
-  CHECK(wt901_mag_check(hdown, up, &amp;m) &amp;&amp; m.dip_ddeg == 900);  /* 수직 자기장: 복각 90 - cos = -1 끝값 */
-
-  const int16_t h2[3] = { 120, -80, -300 }, a2[3] = { 15, -20, 1003 };
-  CHECK(wt901_mag_check(h2, a2, &amp;m));
-  CHECK(m.norm == 333 &amp;&amp; m.dip_ddeg == 630);           /* 62.97 deg */
-
-  const int16_t zero[3] = { 0, 0, 0 };
-  CHECK(!wt901_mag_check(zero, up, &amp;m));               /* 길이 0: 각을 정할 수 없다 */
-  CHECK(!wt901_mag_check(h0, zero, &amp;m));
-}
-
-static void group2(void)   /* 판정 */
+        <p><strong>시험 — <code>test_wt901_mag.c</code> 의 판정 묶음</strong></p>
+        <pre><code class="lang-c">static void group2(void)   /* 판정 */
 {
   const wt901_mag_t m = { 500, 531 };
   CHECK(wt901_north_ok(&amp;m, 500, 531, 30, 5));          /* 기준과 같다 */
@@ -2458,81 +2698,8 @@ static void group2(void)   /* 판정 */
   CHECK(!wt901_north_ok(&amp;m, 500, 500, 30, 5));         /* 복각 차 31: 밖 */
   CHECK(!wt901_north_ok(&amp;m, 476, 531, 30, 5));         /* 크기 차 24/476 = 5.04 %: 밖 (2400 &gt; 2380) */
   CHECK(wt901_north_ok(&amp;m, 525, 531, 30, 5));          /* 크기 차 25/525 = 4.76 %: 안 (2500 &lt;= 2625) */
-}
-
-int main(void)
-{
-  group1();
-  group2();
-  printf("PASS wt901_mag %u cases\n", cases);
-  return 0;
 }</code></pre>
-      <p>돌리는 명령은 실습 A 와 같은 두 줄이다. <code>-lm</code> 이 붙는다(<code>sqrtf</code> · <code>acosf</code>). 보드 빌드에는 이미 들어 있다(<code>cmake/gcc-arm-none-eabi.cmake</code> 의 <code>TOOLCHAIN_LINK_LIBRARIES "m"</code>).</p>
-      <pre><code class="lang-bash">cd firmware
-cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_wt901_mag.c h723zg/User/Src/Device/wt901_mag.c -lm -o /tmp/test_wt901_mag &amp;&amp; /tmp/test_wt901_mag
-cc -std=c11 -Wall -Wextra -fsanitize=undefined -Ih723zg/User/Inc host_tests/test_wt901_mag.c h723zg/User/Src/Device/wt901_mag.c -lm -o /tmp/test_wt901_mag_ub &amp;&amp; /tmp/test_wt901_mag_ub</code></pre>
-      <p>잘못된 구현 셋을 만들어 돌려 본 결과다(2026-10-16, Mac <code>cc</code>).</p>
-      <div class="tbl"><table class="compact">
-        <thead><tr><th>잘못된 구현</th><th>멈추는 자리</th></tr></thead>
-        <tbody>
-          <tr><td>복각에 절댓값을 빠뜨렸다: <code>(90 - 사이 각)</code></td><td>첫 벡터 <code>m.dip_ddeg == 531</code> — 가속도가 위를 향하면 사이 각이 143° 라 −53° 가 된다</td></tr>
-          <tr><td>크기 비를 정수 나눗셈으로 먼저 나눴다: <code>d_norm / ref_norm * 100</code></td><td><code>!wt901_north_ok(&amp;m, 476, …)</code> — 24 / 476 이 0 이 되어 5.04 % 가 "허용 안"으로 통과한다</td></tr>
-          <tr><td><code>c</code> 를 −1 .. 1 로 자르지 않았다</td><td><strong>검출하지 못한다</strong> — 이 벡터들에서는 <code>c</code> 가 끝값을 넘지 않았다. 넘는 입력은 반올림 오차에 달려 있어 벡터로 고정하기 어렵다. 그래서 자르는 두 줄은 시험이 아니라 <strong>읽어서</strong> 확인한다</td></tr>
-        </tbody>
-      </table></div>
-      <p>채우는 순서.</p>
-      <ol class="steps">
-        <li><strong><code>wt901_mag_check()</code> → <code>wt901_north_ok()</code> 순서로 채우고</strong> 두 줄을 돌려 <code>PASS wt901_mag 17 cases</code> 를 본다.</li>
-        <li><strong><code>robot_params.h</code> 에 상수 넷을 더한다.</strong> 값은 아직 모른다 — §3-4-4 의 ② · ③ 에서 재고 정한다. 그때까지는 가드가 빌드를 멈추므로, 가드 넷을 <strong>주석으로 막아 둔 채</strong> ① · ② 를 하고, ③ 에서 값을 채운 뒤 주석을 푼다. 막아 둔 동안 <code>wt north</code> 는 0 인 상수로 판정하므로 결과를 쓰지 않는다.</li>
-        <li><strong><code>wt901.c</code> 에 <code>s_h</code> 와 <code>case 0x54u</code> 두 줄, <code>cmd_wt()</code> 의 가지들을 더한다.</strong></li>
-      </ol>
-      <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 1 = T16 · T17 · 걸음 3 = T18. 걸음 2 는 기록이라 카드가 없다.</p>
-      <details class="hint" id="hint-t16"><summary>힌트 T16 — <code>wt901_mag_check()</code> · 두 벡터의 길이와 사이 각</summary>
-        <div class="ans">
-        <p><strong>할 일</strong> — main 문맥(<code>wt mag</code> · <code>wt north</code>)이 부른다. <code>0x54</code> 벡터 H 와 <code>0x51</code> 가속도 벡터 a 를 받아 |H| 와 복각을 정수로 돌려준다. 끝났을 때 참이어야 하는 것: 가속도 부호가 +g 든 −g 든, 모듈이 기울어 있든 같은 복각이 나온다(벡터 사이 각만 쓰기 때문이다).</p>
-        <p><strong>완결 코드</strong></p>
-        <pre><code class="lang-c">/* 완결 코드 T16 - User/Src/Device/wt901_mag.c */
-bool wt901_mag_check(const int16_t h[3], const int16_t a_mg[3], wt901_mag_t *out)
-{
-  const float hx = (float)h[0], hy = (float)h[1], hz = (float)h[2];             /* 1) float 로 옮긴다 - 제곱이 int16 을 넘는다 */
-  const float ax = (float)a_mg[0], ay = (float)a_mg[1], az = (float)a_mg[2];
-  const float hn = sqrtf(hx * hx + hy * hy + hz * hz);                           /* 2) 두 벡터의 길이 */
-  const float an = sqrtf(ax * ax + ay * ay + az * az);
-  if (hn &lt;= 0.0f || an &lt;= 0.0f) { return false; }                               /* 3) 길이 0 이면 각이 없다 */
-
-  float c = (hx * ax + hy * ay + hz * az) / (hn * an);                          /* 4) 사이 각의 cos = 내적 / 길이 곱 */
-  if (c &gt; 1.0f)  { c = 1.0f; }                                                  /*    반올림 오차로 1 을 살짝 넘으면 acosf 가 NaN */
-  if (c &lt; -1.0f) { c = -1.0f; }
-  const float ang_deg = acosf(c) * (180.0f / 3.14159265f);                       /* 5) 라디안 -&gt; 도 */
-
-  out-&gt;norm     = (int32_t)(hn + 0.5f);                                         /* 6) 양수라 +0.5 절사가 반올림이다 */
-  out-&gt;dip_ddeg = (int32_t)(fabsf(90.0f - ang_deg) * 10.0f + 0.5f);
-  return true;
-}</code></pre>
-        <p><strong>코드 설명</strong></p>
-        <ul>
-          <li><code>(float)h[0]</code> … — 1). 원시값은 ±32767 이라 제곱하면 약 10⁹ 로 <code>int16_t</code> 를 넘는다. <code>float</code> 로 옮긴 뒤 곱한다. <code>int32_t</code> 로 옮겨 제곱을 셋 더하면 3 × 32767² ≈ 3.2 × 10⁹ 로 <code>int32_t</code> 도 넘는다 — 그래서 <code>float</code> 다.</li>
-          <li><code>sqrtf(…)</code> — 2). <code>&lt;math.h&gt;</code> 의 <code>float</code> 판 제곱근. 이 보드(Cortex-M7, FPU)에서는 명령 하나다. <code>sqrt</code>(<code>double</code> 판)를 써도 값은 같다 — 이 보드의 FPU(<code>-mfpu=fpv5-d16</code>)는 <code>double</code> 도 계산한다. 끝의 <code>f</code> 를 맞추는 것은 식 전체를 <code>float</code> 로 두겠다는 뜻을 코드에 드러내기 위해서다.</li>
-          <li><code>if (hn &lt;= 0.0f || an &lt;= 0.0f) { return false; }</code> — 3). 길이가 0 이면 아래 나눗셈이 0 으로 나누기다. 부팅 직후 아직 <code>0x54</code> 가 안 왔으면 <code>s_h</code> 가 0 이다 — 그 경우를 여기서 막는다.</li>
-          <li><code>c = 내적 / (hn * an)</code> — 4). 두 벡터 사이 각 θ 의 cos 이다(cos θ = a·b / |a||b|). 두 줄의 <code>if</code> 는 <code>c</code> 를 −1 .. 1 로 자른다. 수학적으로는 그 안이지만 <code>float</code> 반올림으로 1.0000001 이 될 수 있고, <code>acosf</code> 는 그 입력에 NaN 을 돌려준다(시험이 검출하지 못하는 자리 — 위 표).</li>
-          <li><code>acosf(c) * (180.0f / 3.14159265f)</code> — 5). <code>acosf</code> 는 라디안을 돌려준다(0 .. π). 도로 바꾼다.</li>
-          <li><code>fabsf(90.0f - ang_deg)</code> — 6). 자기장이 수평면 아래로 기운 각이 복각이다. 가속도가 위(+g)를 가리키면 사이 각은 90° + 복각, 아래(−g)를 가리키면 90° − 복각이다. 어느 쪽이든 <code>|90 − 사이 각|</code> 이 복각이다 — 그래서 실습 A 에서 적은 <code>az</code> 부호(<code>wt-az-sign-recorded</code>)를 여기서 따로 쓰지 않아도 된다.</li>
-          <li><code>(int32_t)(x + 0.5f)</code> — 6). 양수의 <code>+0.5</code> 후 절사는 반올림이다. 결과를 정수로 돌려주는 것은 <code>printf</code> 의 <code>%f</code> 를 피하기 위해서다(이 프로젝트의 <code>nano.specs</code> 는 기본으로 <code>%f</code> 를 찍지 않는다).</li>
-          <li>골격의 <code>(void)…; return false;</code> 는 지웠다.</li>
-        </ul>
-        <p><strong>쓰는 API</strong> — C 표준 <code>&lt;math.h&gt;</code> 의 <code>sqrtf()</code> · <code>acosf()</code> · <code>fabsf()</code>. HAL 없음. main 문맥 — <strong>ISR 이나 1 kHz 경로에서 부르지 않는다</strong>(이 쪽은 1 kHz 경로에 부동소수를 들이지 않는다 — §3-1-2).</p>
-        <p><strong>흔한 실수</strong></p>
-        <div class="tbl"><table class="compact">
-          <thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead>
-          <tbody>
-            <tr><td><code>h[0] * h[0]</code> 을 <code>int16_t</code> 그대로 곱했다</td><td>경고와 오류가 없다(정수 승격으로 <code>int</code> 곱이 된다). 셋을 더하면 <code>int</code> 를 넘을 수 있어 <code>-fsanitize=undefined</code> 줄이 <code>signed integer overflow</code> 를 낸다 — 이 벡터들은 값이 작아 넘지 않는다</td><td><code>float</code> 로 옮긴 뒤 곱한다</td></tr>
-            <tr><td><code>fabsf</code> 를 빠뜨렸다</td><td><code>Assertion failed: (m.norm == 500 &amp;&amp; m.dip_ddeg == 531)</code> — 첫 벡터</td><td><code>fabsf(90.0f - ang_deg)</code></td></tr>
-            <tr><td><code>-lm</code> 없이 호스트에서 링크했다</td><td>Mac 에서는 링크된다(libSystem 에 들어 있다). 리눅스에서는 <code>undefined reference to 'acosf'</code></td><td>명령 끝에 <code>-lm</code></td></tr>
-          </tbody>
-        </table></div>
-        <p><strong>확인</strong> — §3-4-3 의 두 줄: <code>PASS wt901_mag 17 cases</code>(T17 까지 채운 뒤).</p>
-        </div></details>
-      <details class="hint" id="hint-t17"><summary>힌트 T17 — <code>wt901_north_ok()</code> · 두 검사가 다 허용 안인가</summary>
+      <details class="hint" id="hint-t17"><summary>힌트 T17 — <code>wt901_north_ok()</code> · 두 검사가 다 허용 안인가 (폐기 — 결정 bf, §3-4-5)</summary>
         <div class="ans">
         <p><strong>할 일</strong> — T16 의 결과와 <code>robot_params.h</code> 의 상수 넷을 받아 판정한다. 정수만 쓴다. 끝났을 때 참이어야 하는 것: 경계값(복각 차가 정확히 허용값)은 안으로 치고, 크기 비는 나눗셈 없이 견준다.</p>
         <p><strong>완결 코드</strong></p>
@@ -2567,96 +2734,7 @@ bool wt901_north_ok(const wt901_mag_t *m, int32_t ref_norm, int32_t dip_expect_d
         </table></div>
         <p><strong>확인</strong> — <code>PASS wt901_mag 17 cases</code>.</p>
         </div></details>
-      <details class="hint" id="hint-t18"><summary>힌트 T18 — <code>case 0x54u</code> 와 <code>wt cal 2</code> · <code>wt mag</code> · <code>wt north</code> · <code>wt save</code></summary>
-        <div class="ans">
-        <p><strong>할 일</strong> — ISR(<code>wt_feed()</code>)은 <code>0x54</code> 의 원시값 셋을 남기기만 한다. 명령 창(main)은 그 값과 최신 가속도 · yaw 를 <strong>한 순간의 값</strong>으로 옮긴 뒤 T16 · T17 을 부른다. 끝났을 때 참이어야 하는 것: <code>wt mag</code> 가 한 줄을 찍고, <code>wt north</code> 가 <code>ok=1</code> 또는 <code>ok=0</code> 을 찍고, <code>wt cal 2</code> · <code>wt save</code> 가 <code>OK wt</code> 로 답한다.</p>
-        <p><strong>완결 코드</strong> — 셋으로 나눴다. 첫 블록은 <code>wt_feed()</code> 의 <code>case</code>, 둘째는 <code>cmd_wt()</code> 바로 위에 두는 함수 둘, 셋째는 <code>cmd_wt()</code> 의 가지다.</p>
-        <pre><code class="lang-c">/* 완결 코드 T18 - User/Src/Device/wt901.c (1/3) - wt_feed() 의 switch 안 */
-    case 0x54u:                                             /* 자기: 원시값을 남긴다 (실습 D). 단위가 없어 환산하지 않는다 */
-      s_n54++;
-      s_h[0] = wt901_le16(&amp;d[0]);
-      s_h[1] = wt901_le16(&amp;d[2]);
-      s_h[2] = wt901_le16(&amp;d[4]);
-      break;</code></pre>
-        <pre><code class="lang-c">/* 완결 코드 T18 - User/Src/Device/wt901.c (2/3) - 바이트열 한 줄은 실습 A 의 WT_CMD_CAL_EXIT 아래, 나머지는 cmd_wt() 바로 위 */
-static const uint8_t WT_CMD_CAL_MAG[5] = { 0xFFu, 0xAAu, 0x01u, 0x02u, 0x00u };   /* CALSW 2  매뉴얼 7.2.3 p.36 */
-static const uint8_t WT_CMD_CAL_MAG_SPH[5] = { 0xFFu, 0xAAu, 0x01u, 0x07u, 0x00u };   /* CALSW 7 = 자기 보정(구 맞춤). 매뉴얼 V4.0 에 없다 -
-                                                                                     출처: wit_c_sdk WitStartMagCali() 의 CALMAGMM (REG.h). 2 와 어느 쪽이 맞는지는 §3-4-4 ② 에서 견준다 */
-
-/* 최신 가속도 · 0x54 · yaw 를 한 순간의 값으로 옮겨 |H| 와 복각을 낸다. false = 샘플이나 0x54 가 아직 없다. 문맥: main */
-static bool wt_mag_now(wt901_mag_t *m, int16_t h[3], int16_t *yaw_ddeg)
-{
-  imu_sample_t s;
-  if (!wt901_get_sample(&amp;s) || s_n54 == 0u) { return false; }
-  __disable_irq();                                         /* T10 과 같은 방법: 옮기는 동안 ISR 이 고치지 못한다 */
-  h[0] = s_h[0]; h[1] = s_h[1]; h[2] = s_h[2];
-  *yaw_ddeg = s_yaw_ddeg;
-  __enable_irq();
-  const int16_t a[3] = { s.ax_mg, s.ay_mg, s.az_mg };
-  return wt901_mag_check(h, a, m);
-}
-
-static void wt_print_mag(bool judge)   /* "wt mag" (judge = false) · "wt north" (judge = true) */
-{
-  wt901_mag_t m;
-  int16_t h[3];
-  int16_t yaw;
-  if (!wt_mag_now(&amp;m, h, &amp;yaw)) { printf("ERR wt no-mag\r\n"); return; }
-  if (!judge) {
-    printf("wt mag hx=%d hy=%d hz=%d norm=%ld dip_ddeg=%ld yaw_ddeg=%d\r\n",
-           h[0], h[1], h[2], (long)m.norm, (long)m.dip_ddeg, yaw);   /* hx..hz 는 norm · dip 을 계산한 바로 그 값 */
-    return;
-  }
-  const bool ok = wt901_north_ok(&amp;m, WT_MAG_REF_NORM, WT_DIP_EXPECT_DDEG, WT_DIP_TOL_DDEG, WT_MAG_NORM_TOL_PCT);
-  printf("wt north yaw_ddeg=%d dip_ddeg=%ld norm=%ld ref=%ld ok=%d\r\n",
-         yaw, (long)m.dip_ddeg, (long)m.norm, (long)WT_MAG_REF_NORM, ok ? 1 : 0);
-}</code></pre>
-        <pre><code class="lang-c">/* 완결 코드 T18 - User/Src/Device/wt901.c (3/3) - cmd_wt() 안 */
-  if (argc == 3 &amp;&amp; strcmp(argv[1], "cal") == 0) {                      /* 실습 C: 1 · 0, 실습 D: 2 · 7 */
-    const uint8_t *cmd = NULL;
-    if      (strcmp(argv[2], "1") == 0) { cmd = WT_CMD_CAL_ENTER; }
-    else if (strcmp(argv[2], "2") == 0) { cmd = WT_CMD_CAL_MAG; }       /* &lt;-- 실습 D 가 더한 줄 */
-    else if (strcmp(argv[2], "7") == 0) { cmd = WT_CMD_CAL_MAG_SPH; }   /* &lt;-- 실습 D: SDK 의 자기 보정 값 */
-    else if (strcmp(argv[2], "0") == 0) { cmd = WT_CMD_CAL_EXIT; }
-    else { printf("ERR wt bad-arg\r\n"); return; }
-    if (!wt_send_write(cmd)) { printf("ERR wt tx-timeout\r\n"); return; }
-    printf("OK wt\r\n");
-    return;
-  }
-
-  if (argc == 2 &amp;&amp; strcmp(argv[1], "mag") == 0)   { wt_print_mag(false); return; }   /* 실습 D */
-  if (argc == 2 &amp;&amp; strcmp(argv[1], "north") == 0) { wt_print_mag(true);  return; }   /* 실습 D */
-  if (argc == 2 &amp;&amp; strcmp(argv[1], "save") == 0) {                     /* 실습 D: 캘리브레이션 뒤 SAVE 한 번 */
-    if (s_cfg_state != WT_CFG_IDLE &amp;&amp; s_cfg_state != WT_CFG_DONE) { printf("ERR wt busy\r\n"); return; }
-    if (!wt_send_write(WT_CMD_SAVE)) { printf("ERR wt tx-timeout\r\n"); return; }
-    printf("OK wt\r\n");
-    return;
-  }</code></pre>
-        <p><strong>코드 설명</strong></p>
-        <ul>
-          <li><code>case 0x54u</code> — 실습 A 에서 세기만 하던 자리에 세 줄을 더했다. <code>d[0..1]</code> · <code>d[2..3]</code> · <code>d[4..5]</code> 가 X · Y · Z 다(매뉴얼 §7.1.5 의 <code>HxL HxH HyL HyH HzL HzH</code>). <strong>환산하지 않는다</strong> — 매뉴얼에 단위가 없고, 검사 값 둘(복각 · 크기 비)은 단위가 필요 없다(§2-14).</li>
-          <li><code>static volatile int16_t s_h[3];</code>(골격) — ISR 이 쓰고 main 이 읽으므로 <code>volatile</code> 이다. 같은 이유의 <code>s_n51</code> … 과 같은 꼴.</li>
-          <li><code>wt_mag_now()</code> — <code>wt901_get_sample()</code>(T10)로 가속도를, 막아 둔 구간 안에서 <code>s_h</code> 셋과 <code>s_yaw_ddeg</code> 를 옮긴다. 막지 않으면 X 는 앞 묶음, Z 는 다음 묶음의 값이 섞일 수 있다(T10 의 "찢어짐"). 옮긴 원시값 셋은 <code>h</code> 로 내보낸다 — 찍는 쪽이 <code>s_h</code> 를 다시 읽으면 계산에 쓴 값과 다른 묶음의 값이 찍힐 수 있다. 가속도와 자기는 같은 묶음의 값이 아닐 수 있다 — 정지 상태라 5 ms 차이는 판정에 영향이 없다.</li>
-          <li><code>s_n54 == 0u</code> — 부팅 뒤 <code>0x54</code> 가 한 번도 안 왔다(RSW 가 <code>0x0E</code> 인 채라면 영원히 안 온다 — 단계 1 의 되돌리기를 빠뜨린 것이다). 그때 <code>ERR wt no-mag</code>.</li>
-          <li><code>wt_print_mag()</code> — 하나의 함수가 두 명령을 맡는다. <code>wt mag</code> 은 원시값 셋까지 찍어 캘리브레이션 · 회전 시험에서 눈으로 보게 하고, <code>wt north</code> 는 판정까지 한다. <code>%ld</code> 와 <code>(long)</code> 은 <code>int32_t</code> 를 찍는 이 프로젝트의 관례다(fw-05).</li>
-          <li><code>cal</code> 가지 — 바이트열 <code>WT_CMD_CAL_MAG</code>(2/3 의 첫 줄, 실습 A 의 바이트열 아래)와 T14 의 가지에 <code>"2"</code> 한 줄을 더했다. <code>"7"</code>(<code>WT_CMD_CAL_MAG_SPH</code>)은 매뉴얼 V4.0 에 없는 값이다 — 제조사 SDK(<code>wit_c_sdk</code>)의 <code>WitStartMagCali()</code> 가 자기 보정에 쓰는 <code>CALMAGMM</code> 이다. 이 개체는 매뉴얼에 없는 잠금 해제(KEY)를 요구해 SDK 쪽 프로토콜과 맞았으므로(§3-1-5), 두 값을 다 두고 §3-4-4 의 ② 에서 흩어짐이 줄어드는 쪽을 고른다. 바이트열을 실습 A 에 두지 않은 이유: 쓰는 가지가 생기기 전까지 <code>defined but not used</code> 경고가 남는다. 대기 · SAVE 를 붙일지는 실습 C 의 CALSW 1 과 같은 성격의 선택이다(§3-3-4 의 상자) — §3-4-4 의 ② 에서 시험한다.</li>
-          <li><code>mag</code> · <code>north</code> 가지 — <code>factory</code> 가지 앞에 둔다. 인자가 없는 명령이라 <code>argc == 2</code>.</li>
-          <li><code>save</code> 가지 — <code>WT_CMD_SAVE</code>(§3-1-2 의 바이트열)를 <code>wt_send_write()</code> 로 한 번 보낸다(잠금 해제가 앞에 붙는다). 상태기계가 SAVE 를 보내는 중일 수 있으므로 <code>factory</code> 와 같이 바쁜지부터 본다. 캘리브레이션 값이 SAVE 로 저장되는지는 [추정]이라 §3-4-4 의 ② 가 시험으로 가른다.</li>
-        </ul>
-        <p><strong>쓰는 API</strong> — CMSIS <code>__disable_irq()</code> · <code>__enable_irq()</code>(T10 과 같다), T1 · T10 · T12 · T16 · T17. 문맥은 첫 블록만 ISR, 나머지는 main.</p>
-        <p><strong>흔한 실수</strong></p>
-        <div class="tbl"><table class="compact">
-          <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
-          <tbody>
-            <tr><td><code>case 0x54u</code> 에서 <code>wt901_angle_ddeg()</code> 같은 환산을 했다</td><td>경고와 오류가 없다. 복각은 그대로 맞고(비율이 같다), 크기 비의 기준값을 그 단위로 적었다면 크기 비도 맞다 — 다만 뜻이 없는 단위가 생긴다</td><td>원시값 그대로</td></tr>
-            <tr><td>상수 넷을 0 으로 둔 채 가드를 풀었다</td><td><code>error: static assertion failed: "robot_params.h: WT_MAG_REF_NORM is still EMPTY"</code></td><td>§3-4-4 의 ② · ③ 에서 재고 정한 값</td></tr>
-            <tr><td><code>printf</code> 에 <code>%f</code> 로 복각을 찍었다</td><td>빌드는 된다. 명령 창에 숫자 대신 빈칸이 찍힌다(<code>nano.specs</code> 의 <code>printf</code> 는 기본으로 부동소수를 찍지 않는다)</td><td>정수(0.1° 단위)로 찍는다 — T16 이 정수를 돌려주는 이유</td></tr>
-          </tbody>
-        </table></div>
-        <p><strong>확인</strong> — §3-4-4 의 ①: <code>wt mag</code> 한 줄, <code>wt north</code> 한 줄.</p>
-        </div></details>
-
-      <details class="hint" id="hint-t19"><summary>힌트 T19 — <code>wt901_north_start()</code> · <code>wt_north_step()</code> · 등록 · <code>wt north start|get</code></summary>
+      <details class="hint" id="hint-t19"><summary>힌트 T19 — <code>wt901_north_start()</code> · <code>wt_north_step()</code> · 등록 · <code>wt north start|get</code> (폐기 — 결정 bf, §3-4-5)</summary>
         <div class="ans">
         <p><strong>할 일</strong> — 요청과 판정을 나눈다. <code>wt901_north_start()</code> 는 요청만 남기고 바로 돌아간다. 판정은 주 루프가 돌 때마다 <code>wt_north_step()</code> 이 조건을 보다가, 조건이 다 되는 첫 바퀴에 <strong>한 번</strong> 한다.</p>
         <p>끝났을 때 참이어야 하는 것은 넷이다.</p>
@@ -2743,29 +2821,7 @@ static void wt_north_step(void)
         </table></div>
         <p><strong>확인</strong> — §3-4-4 의 ⑥ · ⑦.</p>
         </div></details>
-
-      <h4 id="s3-4-4">3-4-4. 굽고 보기 — 모듈을 손에 들고</h4>
-      <p>벤치에서 모듈만으로 한다. 일곱 걸음이고(⑦ 은 배터리 벤치가 있을 때), ③ 에서 벤치용 임시 상수 넷이, ⑥ 에서 다섯째가 정해진다. 철제 책상 · 공구 · 노트북에서 떨어진 자리에서 한다 — 매뉴얼은 자석 · 철에서 20 cm 이상을 적는다.<sup class="fn"><a href="#fn-96" id="fnref-96">96</a></sup></p>
-      <p><strong>① <code>0x54</code> 가 오는가.</strong> 가드 다섯(상수 넷의 것 + <code>WT_NORTH_SETTLE_MS</code> 의 것)을 주석으로 막은 빌드로 굽고 <code>wt mag</code> 을 친다.</p>
-      <pre><code class="lang-text">&gt; wt mag
-wt mag hx=&lt;n&gt; hy=&lt;n&gt; hz=&lt;n&gt; norm=&lt;n&gt; dip_ddeg=&lt;n&gt; yaw_ddeg=&lt;n&gt;</code></pre>
-      <p><code>ERR wt no-mag</code> 이면 <code>wt stat</code> 의 <code>n54</code> 를 본다 — 0 에 머물면 RSW 가 <code>0x0E</code> 인 채다(단계 1 의 되돌리기 <code>wt cfg 1r</code> 을 빠뜨렸다).</p>
-      <p><strong>② 손 캘리브레이션과 회전 시험.</strong> 순서가 기준선 → 캘리브레이션 → 같은 시험이다.</p>
-      <ol class="steps">
-        <li><strong>기준선</strong> — 모듈을 책상에 부품면이 위로 오게 놓고 45° 씩 돌려 놓으며 여덟 방향에서 <code>wt mag</code> 을 친다. 아래 표를 채운다.</li>
-        <li><code>wt cal 2</code> → <code>OK wt</code>.</li>
-        <li>모듈을 손에 들고 여러 방향으로 천천히 돌린다 — 수평으로 몇 바퀴, 세워서 몇 바퀴, 뒤집어서 몇 바퀴. 정확할 필요는 없다. 방향을 고르게 지나가는 것이 기준이다(§2-14).</li>
-        <li><code>wt cal 0</code> 으로 빠져나온다.</li>
-        <li>VCC 점퍼를 뽑았다 꽂고 1 의 시험을 다시 한다. 흩어짐이 기준선과 같으면 <strong>저장되지 않은 것</strong>이다 — 2 ~ 4 를 다시 하고 <code>wt save</code> 를 한 번 친 뒤 재전원해 다시 본다. 매뉴얼은 PC 도구의 "Write Parameters" 만 적고 명령 수준의 순서를 적지 않는다[추정: CALSW 2 → 회전 → CALSW 0 → SAVE]. <strong>저장이 필요했는지가 이 걸음의 답이다</strong> — fw-20 이 이 답을 그대로 쓴다.</li>
-      </ol>
-      <div class="tbl"><table class="compact">
-        <thead><tr><th>방향</th><th><code>norm</code></th><th><code>dip_ddeg</code></th><th><code>yaw_ddeg</code></th></tr></thead>
-        <tbody>
-          <tr><td>0° · 45° · 90° · … · 315°</td><td><code>____</code> × 8</td><td><code>____</code> × 8</td><td><code>____</code> × 8</td></tr>
-          <tr><td><strong>흩어짐(최대 − 최소)</strong> — 캘리브레이션 전 / 후</td><td><code>____</code> / <code>____</code></td><td><code>____</code> / <code>____</code></td><td>yaw 간격이 45° 씩인가: <code>____</code></td></tr>
-        </tbody>
-      </table></div>
-      <p>지구 자기장은 모듈이 돌아도 변하지 않으므로, 보정이 맞았다면 <strong><code>norm</code> 과 <code>dip_ddeg</code> 가 여덟 방향에서 거의 같아야</strong> 한다. 캘리브레이션 뒤 흩어짐이 줄었으면 명령 · 절차가 동작한 것이다. 체크 항목 <code>wt-mag-bench-hand</code>.</p>
+        <p><strong>시험 ③ ~ ⑦ (모듈을 손에 들고)</strong></p>
       <p><strong>③ 벤치용 임시 상수 넷.</strong> ② 의 "후" 결과로 채운다. 상태 낱말은 <code>robot_params.h</code> 의 상수 옆 주석에 값의 출처를 적는 표식이다. 이 상수 넷의 상태 낱말은 <code>NOMINAL(bench-hand, &lt;날짜&gt;)</code>(실측 전의 임시값)이다. 모듈만의 값이라 로봇에서는 쓸 수 없고, fw-20 실습 F 가 실측값으로 바꾼다.
       fw-20 의 마무리가 <code>robot_params.h</code> 에 <code>NOMINAL(</code> 이 남지 않았는지 센다.</p>
       <ul class="steps">
@@ -2802,6 +2858,8 @@ wt north state=ok yaw_ddeg=&lt;n&gt; judged_ms=&lt;n&gt;</code></pre>
       <p>체크 항목 <code>wt-north-gate-k1</code>. 배터리 벤치가 없으면 이 걸음은 fw-20 의 조립 뒤로 미룬다 — 1 · 3 의 결과는 그때 같은 꼴로 나온다.</p>
       <p class="small">yaw 0 일 때 X 축이 보는 방향은 <strong>로봇에 단 상태에서</strong> 잰다 — fw-20 실습 F. 손에 든 지금 재 봐도 되지만 그 값은 기록하지 않는다.</p>
 
+        </div></details>
+
       <h2 id="checkpoints">✅ 검증 체크포인트</h2>
       <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.</p>
       <ul class="checklist">
@@ -2826,17 +2884,15 @@ wt north state=ok yaw_ddeg=&lt;n&gt; judged_ms=&lt;n&gt;</code></pre>
         <li><label><input type="checkbox" data-key="wt-gz-ccw-positive"><span><strong>경로 통과</strong> — 위에서 볼 때 반시계로 돌리면 <code>gz_ddps</code> 가 양수다(또는 <strong>음수라는 사실을 적었다</strong> — 실물이 매뉴얼의 서술보다 우선한다)
           <span class="sub">판정 수단: <code>wt stat</code> 둘째 줄 · §3-3-4 의 ③ · 어느 쪽이든 INVENTORY 2절 "축 방향·부호" 칸에 적는다. <strong>코드에서 부호를 뒤집지 않는다</strong></span></span></label></li>
         <li><label><input type="checkbox" data-key="wt-config-from-manual"><span><strong>경로 통과</strong> — 내가 보낸 바이트열의 <strong>출력 속도(RATE)와 보드레이트(BAUD)</strong> 를 매뉴얼 표에서 직접 찾아 노트에 적었고, 캘리브레이션(CALSW 1) 절차를 한 번 수행했다
-          <span class="sub">판정 수단: 내 노트 · §3-3-4 의 ④ (보내는 수단은 §3-3-3 의 2 에서 만든 <code>wt cal &lt;0|1&gt;</code>). 절·쪽 병기와 전후 바이어스 표는 본문의 <strong>권유</strong>이고 요구가 아니다. 대기 시간은 매뉴얼에 없어 <code>____</code> 로 남는다. 자기 캘리브레이션(CALSW 2)은 이 항목이 아니라 <code>wt-mag-bench-hand</code> 다</span></span></label></li>
-        <li><label><input type="checkbox" data-key="wt-mag-host-pass"><span><strong>경로 통과</strong> — Mac 에서 <code>PASS wt901_mag 17 cases</code> 가 나오고, <code>-fsanitize=undefined</code> 를 붙인 둘째 줄도 runtime error 를 찍지 않는다
+          <span class="sub">판정 수단: 내 노트 · §3-3-4 의 ④ (보내는 수단은 §3-3-3 의 2 에서 만든 <code>wt cal &lt;0|1&gt;</code>). 절·쪽 병기와 전후 바이어스 표는 본문의 <strong>권유</strong>이고 요구가 아니다. 대기 시간은 매뉴얼에 없어 <code>____</code> 로 남는다. 자기 캘리브레이션(CALSW 7)은 이 항목이 아니라 <code>wt-mag-bench-hand</code> 다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="wt-mag-host-pass"><span><strong>경로 통과</strong> — Mac 에서 <code>PASS wt901_mag 12 cases</code> 가 나오고, <code>-fsanitize=undefined</code> 를 붙인 둘째 줄도 runtime error 를 찍지 않는다
           <span class="sub">판정 수단: 호스트 시험 출력 두 줄 · §3-4-3 · 보드에 굽기 <strong>전에</strong> 통과시킨다</span></span></label></li>
-        <li><label><input type="checkbox" data-key="wt-mag-bench-hand"><span><strong>경로 통과</strong> — 모듈을 손에 들고 자기 캘리브레이션(<code>wt cal 2</code> → 회전 → <code>wt cal 0</code>)을 했다. 여덟 방향 회전 시험의 <code>norm</code> · <code>dip_ddeg</code> 흩어짐을 캘리브레이션 전후로 적었고, 저장(<code>wt save</code>)이 필요했는지를 적었다
-          <span class="sub">판정 수단: <code>wt mag</code> 여덟 줄씩 두 번 · §3-4-4 의 ② · 흩어짐의 합격선은 매뉴얼에 없다 — 전후와 저장 여부를 적었으면 통과다. 로봇에 단 뒤의 캘리브레이션은 fw-20 실습 F</span></span></label></li>
-        <li><label><input type="checkbox" data-key="wt-north-rejects-steel"><span><strong>발동 확인</strong> — 벤치용 임시 상수로 가드를 푼 빌드에서, 깨끗한 자리의 <code>wt north</code> 가 <code>ok=1</code> 이고 철로 된 물건을 모듈 옆에 두면 <code>ok=0</code>, 치우면 다시 <code>ok=1</code> 이다
-          <span class="sub">판정 수단: <code>wt north</code> 세 번 · §3-4-4 의 ④ · 상수 넷의 상태 낱말은 <code>NOMINAL(bench-hand, …)</code> — fw-20 실습 F 가 실측값으로 바꾼다</span></span></label></li>
-        <li><label><input type="checkbox" data-key="wt-north-interface"><span><strong>발동 확인</strong> — 명령 없이도 <code>wt north get</code> 이 부팅 직후에는 <code>pending</code>, <code>WT_NORTH_SETTLE_MS</code> 가 지난 뒤에는 <code>ok</code>(또는 <code>fail</code>)다(부팅 판정). <code>wt north start</code> 로 다시 재면 <code>judged_ms</code> 가 바뀌고, 신호선을 뽑은 채 시작하면 <code>pending</code> 에 머문다
-          <span class="sub">판정 수단: <code>wt north get</code> · §3-4-4 의 ⑥ · <code>WT_NORTH_SETTLE_MS</code> 의 상태 낱말은 <code>NOMINAL(bench-hand, …)</code></span></span></label></li>
-        <li><label><input type="checkbox" data-key="wt-north-gate-k1"><span><strong>발동 확인</strong> — 신호선을 뽑은 채 <code>pwr up</code> 하면 <code>state=gate gate=north</code> 에 머물러 K1 이 닫히지 않는다. 꽂으면 <code>armed</code> 까지 가고, <code>armed</code> 에서 <code>wt north</code> · <code>wt north start</code> 가 <code>ERR wt k1-closed</code> 다
-          <span class="sub">판정 수단: <code>pwr stat</code> · <code>wt north get</code> · §3-4-4 의 ⑦ · 배터리 벤치가 필요하다 — 없으면 fw-20 에서</span></span></label></li>
+        <li><label><input type="checkbox" data-key="wt-mag-bench-hand"><span><strong>경로 통과</strong> — 모듈을 손에 들고 자기 캘리브레이션(<code>wt cal 7</code> → 회전 → <code>wt cal 0</code>)을 했다. 여덟 방향 회전 시험의 <code>norm</code> · <code>dip_ddeg</code> 흩어짐을 캘리브레이션 전후로 적었고, 저장(<code>wt save</code>)이 필요했는지를 적었다
+          <span class="sub">판정 수단: <code>wt mag</code> 여덟 줄씩 두 번 · §3-4-4 의 ② · 흩어짐의 합격선은 매뉴얼에 없다 — 전후와 저장 여부를 적었으면 통과다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="wt-north-deprecated"><span><strong>경로 통과</strong> — 판정 코드가 없는 빌드(처음부터 지금의 실습 D 를 했거나, §3-4-5 대로 주석으로 막았다)가 경고 0 이고, 구운 뒤 <code>wt north</code> 가 <code>ERR wt bad-arg</code>, <code>wt mag</code> 은 그대로 나온다
+          <span class="sub">판정 수단: 빌드 출력 · <code>wt north</code> · <code>wt mag</code> · §3-4-5. 옛 체크 항목 <code>wt-north-rejects-steel</code> · <code>wt-north-interface</code> · <code>wt-north-gate-k1</code> 은 판정 폐기(결정 bf)로 없앴다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="wt-algo-6axis"><span><strong>경로 통과</strong> — <code>wt algo 6</code> → <code>wt save</code> → 재전원 뒤, 모듈 옆으로 자석(휴대폰)을 가져가도 <code>wt mag</code> 의 <code>yaw_ddeg</code> 가 그대로이고, 반시계 90° 에서 약 +900 바뀐다
+          <span class="sub">판정 수단: <code>wt mag</code> · §3-4-6</span></span></label></li>
       </ul>
       <p class="progress-line"></p>
       <div class="progress-bar"><span></span></div>
@@ -2857,7 +2913,6 @@ wt north state=ok yaw_ddeg=&lt;n&gt; judged_ms=&lt;n&gt;</code></pre>
           <tr><td>200 Hz 로 올렸는데 약 20 Hz 만 나온다</td><td>보드레이트가 아직 9600 이다. 모듈이 <strong>자동으로 주기를 낮췄다</strong>(깨진 것이 아니다)</td><td><code>check_fail</code> 은 0 인데 초당 프레임 수만 낮다</td><td>§2-6 · 단계 2 를 다시 한다</td></tr>
           <tr><td><code>wt mag</code> 이 <code>ERR wt no-mag</code></td><td>RSW 가 <code>0x0E</code> 인 채다 — 단계 1 의 되돌리기(<code>wt cfg 1r</code>)를 빠뜨렸다</td><td><code>wt stat</code> 의 <code>n54</code> 가 0 에 머문다</td><td>§3-1-5 의 판정 ②</td></tr>
           <tr><td>회전 시험에서 <code>norm</code> 이 방향을 따라 한 번 오르내린다</td><td>캘리브레이션이 덜 됐다, 또는 저장되지 않았다</td><td>재전원 뒤 흩어짐이 캘리브레이션 전과 같은가</td><td>§3-4-4 의 ② 의 5 — 다시 하고 <code>wt save</code></td></tr>
-          <tr><td><code>wt north</code> 가 자리를 옮겨도 늘 <code>ok=0</code></td><td>허용 폭이 회전 시험의 흩어짐보다 좁다, 또는 기준 |H| 를 금속 가까이에서 쟀다</td><td><code>wt mag</code> 의 <code>norm</code> · <code>dip_ddeg</code> 를 상수와 견준다</td><td>§3-4-4 의 ③ · 로봇에서는 fw-20 실습 F</td></tr>
           <tr><td>어떤 속도로 열어도 프레임이 안 온다</td><td>모듈이 "내가 모르는 속도"로 설정된 채 저장됐다</td><td><code>wt baud &lt;bps&gt;</code> 로 열 가지를 차례로 열어 본다</td><td>§2-7 — D2–VCC 단락 복구가 가장 확실하다</td></tr>
         </tbody>
       </table></div>
@@ -2923,11 +2978,11 @@ grep -rln "HAL_UARTEx_RxEventCallback" $FW_H7/Projects | head            # ④ S
         <p>추가로 확인할 질문 하나가 없어진다. 매뉴얼은 모듈 TX 의 하이 레벨이 VCC 를 따라가는지 3.3 V 로 고정인지 <strong>적지 않는다</strong>(내부 LDO 서술만 있다). 3.3 V 로 급전하면 어느 쪽이든 3.3 V 다.
         그리고 3V3 인출 핀 <strong>바로 아래가 5 V</strong> 라서 한 칸 옆 핀에 잘못 꽂기 쉽다(<code>hardware/pinmap-h723.md</code> §5-5). 꽂은 자리를 눈으로 두 번 보고, 켠 뒤 DMM 으로 모듈의 3V3–GND 부터 잰다.</p></div></details>
 
-      <details class="quiz"><summary>10. 자북 판정을 모터가 돌기 전에 하는 이유는? 캘리브레이션으로도 지울 수 없는 것은 무엇이고, 그 왜곡을 <code>0x54</code> 로 어떻게 검사하는가? 왜 µT 로 견주지 않는가?</summary>
+      <details class="quiz"><summary>10. (폐기된 판정의 설계 — 결정 bf) 자북 판정을 모터가 돌기 전에 하는 이유는? 캘리브레이션으로도 지울 수 없는 것은 무엇이고, 그 왜곡을 <code>0x54</code> 로 어떻게 검사하는가? 왜 µT 로 견주지 않는가?</summary>
         <div class="ans"><p>센서 자리의 자기장을 바꾸는 출처는 셋이다(§2-14). 로봇 자신의 철 · 영구자석은 센서와 함께 돌기 때문에 캘리브레이션이 오프셋으로 지운다. 모터 전류의 자기장은 전류에 따라 계속 변해 지울 수 없다 — 그래서 <strong>전류가 없는 때</strong>, 모터가 돌기 전에 판정한다.</p>
         <p>남는 것이 <strong>건물의 철근 · 철골이 만드는 왜곡</strong>이다. 센서는 그 자리의 전체 자기장 하나만 재므로 휘어진 지구 자기장과 진짜 자기장을 구별할 수 없고, yaw 는 휘어 있어도 그럴듯한 각을 낸다. 그래서 <code>0x54</code> 로 두 가지를 본다: 복각(자기장과 중력 사이 각에서 구한 값이 장소의 WMM 값과 같은가)과 크기 비(|H| 가 깨끗한 자리에서 잰 기준과 같은가).</p>
         <p>µT 로 견주지 않는 이유는 매뉴얼이 <code>0x54</code> 의 단위를 적지 않기 때문이다(§7.1.5). 복각은 각도라 단위가 필요 없고, 크기 비는 같은 모듈 안의 비라 단위가 지워진다.</p></div></details>
-      <details class="quiz"><summary>11. <code>wt901_north_start()</code> 는 판정을 하지 않고 요청만 남긴다. 왜 그 자리에서 판정하지 않는가? 신호선을 뽑은 채 요청하면 보관값이 <code>pending</code> 에 머무는 것은 어느 줄 때문이고, <code>pending</code> 에 머무는 것이 왜 맞는 동작인가?</summary>
+      <details class="quiz"><summary>11. (폐기된 판정의 설계 — 결정 bf) <code>wt901_north_start()</code> 는 판정을 하지 않고 요청만 남긴다. 왜 그 자리에서 판정하지 않는가? 신호선을 뽑은 채 요청하면 보관값이 <code>pending</code> 에 머무는 것은 어느 줄 때문이고, <code>pending</code> 에 머무는 것이 왜 맞는 동작인가?</summary>
         <div class="ans"><p>판정에는 조건이 셋 있다 — 부팅 뒤 <code>WT_NORTH_SETTLE_MS</code> 가 지났는가, 요청 뒤 새 <code>0x54</code> 가 왔는가, 샘플이 있는가. 부르는 쪽은 이것들이 언제 다 될지 모른다. 그 자리에서 기다리면 그동안 주 루프가 멈춘다(T13 에서 설정 상태기계를 쪼갠 이유와 같다). 그래서 요청만 남기고, 주 루프의 <code>wt_north_step()</code> 이 조건이 다 되는 첫 바퀴에 한 번 판정한다. 결과는 <code>wt901_north_get()</code> 으로 나중에 읽는다.</p>
         <p><code>pending</code> 에 머무는 것은 T19 의 3) <code>s_n54 == s_north_n54_at_req</code> 때문이다. 이 줄이 없으면 <code>wt_mag_now()</code> 가 마지막으로 받은 옛 값으로 판정해 <code>ok</code> 를 낼 수 있다. 지금 동작하지 않는 센서의 값을 기준점으로 쓰는 것이다. 판정이 끝나지 않으면 K1 을 닫지 않고 계속 기다린다는 결정(§2-14 의 상자)은, 판정이 끝나지 않는 경우가 <code>pending</code> 으로 남아 있어야 성립한다.</p></div></details>
 
@@ -2943,19 +2998,18 @@ grep -rln "HAL_UARTEx_RxEventCallback" $FW_H7/Projects | head            # ④ S
             </ul>
             <p><code>idle_events</code> 와 묶음 안 프레임 순서도 같은 칸 옆에 한 줄로 적는다.</p></li>
           <li><strong>BNO055 가 있으면</strong> → <a href="fw-15-bno055.html">fw-15</a>. 부품이 겹치지 않고 버스도 다르다(I2C1). 두 센서를 같은 회전에서 견주는 것은 <strong>조립 뒤</strong>(<a href="06b-bench-integration.html">06b</a> §3-7)의 일이다 — 지금은 각자 동작하는 것까지 확인한다.</li>
-          <li><strong>BNO055 가 없으면</strong> → <a href="fw-16-flash-store.html">fw-16</a> 의 플래시 저장으로 간다. 이 쪽에서 정한 <code>WT_CFG_SETTLE_MS</code> 같은 값을 보드에 남기는 방법이 fw-16 에서 생긴다.</li>
-          <li><strong>전원부를 아직 기다리는 중이면</strong> → 이 쪽과 fw-15 · fw-16 은 모터 전원 없이 끝난다. 번호 순서가 하는 순서라는 것은 그대로다 — 이 경로는 기다리는 동안의 차선이다.</li>
+          <li><strong>BNO055 가 없으면</strong> → <a href="fw-17-link-v2.html">fw-17</a> 로 간다(fw-16 은 제거됨). 이 쪽에서 정한 <code>WT_CFG_SETTLE_MS</code> 같은 값은 <code>robot_params.h</code> 에 적고 다시 굽는다.</li>
+          <li><strong>전원부를 아직 기다리는 중이면</strong> → 이 쪽과 fw-15 는 모터 전원 없이 끝난다. 번호 순서가 하는 순서라는 것은 그대로다 — 이 경로는 기다리는 동안의 차선이다.</li>
           <li><strong>이 쪽이 남긴 것을 뒤에서 그대로 쓴다</strong> — <code>wt901_get_sample()</code> 이 내는 <code>imu_sample_t</code> 를 <a href="fw-13-pid-protection.html">fw-13</a> 의 <code>control_get_imu()</code> 가 받아 간다. <a href="fw-17-link-v2.html">fw-17</a> 의 통신 모듈이 그 샘플을 0x82 프레임으로 만든다.
             <code>seq</code> 가 바뀐 것만 보낸다는 규칙이 <strong>"센서가 새 값을 낼 때 보낸다"</strong>는 계약을 폴링으로 지키는 수단이다. 기울기(<code>0x53</code> 각도)를 과경사 판정에 쓸지는 <a href="fw-18-safety-fsm.html">fw-18</a> 이 정한다 — 이 쪽은 프레임을 받아 두기만 한다.</li>
-          <li><strong>자북 판정은 전원 순서에 등록까지 했다</strong> — <code>pwr up</code> 이 사전충전 뒤 GATE 에서 판정을 기다리고, K1 이 닫혀 있으면 재지 않는다. 남은 것은 Pi 에 전하는 요청 · 응답이고, 그 줄은 링크를 다루는 쪽에서 쓴다(§2-14 의 상자).</li>
-          <li><strong>남은 빈칸</strong> — 넷이다.
+          <li><strong>자북 판정은 폐기했다</strong>(결정 bf) — GATE 에 등록이 없으므로 <code>pwr up</code> 은 사전충전 뒤 곧바로 K1 을 닫는다. 방향 기준은 층마다 정한 출발 자세다(§2-14 의 상자).</li>
+          <li><strong>남은 빈칸</strong> — 셋이다.
             <ul>
               <li><code>WT_CFG_SETTLE_MS</code>(매뉴얼에 수치 없음)</li>
               <li>CALSW 1 의 소요 시간과 종료·SAVE 필요 여부</li>
               <li>자이로 자동 보정이 일정 선회에서 어떻게 동작하는가(§2-13)</li>
-              <li>전원 투입 뒤 yaw 가 더 변하지 않게 될 때까지의 시간(§2-14)</li>
             </ul>
-            <p>넷 다 <strong>내 관찰로만</strong> 채워진다. 지금 못 채웠으면 그 사실을 적어 두고 조립 뒤에 다시 본다.</p></li>
+            <p>셋 다 <strong>내 관찰로만</strong> 채워진다. 지금 못 채웠으면 그 사실을 적어 두고 조립 뒤에 다시 본다.</p></li>
         </ul>
       </div>
 

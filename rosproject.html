@@ -297,9 +297,9 @@
           <tr><td><code>lidar_node</code>, <code>camera</code></td><td>외부 C++ 패키지</td><td>드라이버는 쓰지 않고 <em>파라미터·프레임·QoS 를 맞추는 것</em>이 학습 내용</td><td>07, 08</td></tr>
           <tr><td><code>image_proc_node</code></td><td><span class="tag cpp">C++</span></td><td>cv_bridge → <code>cv::Mat</code> 가 복사 없이 이어진다. OpenCV C++ API 가 곧 Python API 이기도 하다</td><td>08a</td></tr>
           <tr><td><code>yolo_detector</code></td><td><span class="tag cpp">C++</span> (OpenCV DNN) · 원리 확인은 <span class="tag py">Python</span> (ultralytics)</td><td>전처리·NMS 등 후처리를 직접 구현해야 출력 텐서를 이해한다. Python 으로 먼저 정답을 확인한다</td><td>08b</td></tr>
-          <tr><td><code>hailo_detect</code></td><td><span class="tag py">Python</span></td><td>HailoRT 는 Python 예제·문서가 가장 풍부하고, 연산은 칩이 하므로 언어 성능이 무의미</td><td>08c</td></tr>
+          <tr><td><code>hailo_detect</code></td><td><span class="tag cpp">C++</span> · Python 판은 <span class="tag py">Python</span>(08c-1, 선택)</td><td>HailoRT 의 본체가 C++ 라이브러리다. 연산은 칩이 하므로 두 판의 추론 속도는 같고, 계약(<code>/detections</code>)이 같아 하위 노드는 어느 판인지 모른다</td><td>08c</td></tr>
           <tr><td><code>object_tracker</code>, <code>object_localizer</code>, <code>scan_overlay</code></td><td><span class="tag cpp">C++</span></td><td>프레임마다 IoU 행렬·스캔 투영·TF 변환을 수행하는 실시간 루프. 투영은 순수 함수 헤더로 두 노드가 공유한다. 피치 캘리브레이션 스크립트만 <span class="tag py">Python</span>(Mac)</td><td>08d</td></tr>
-          <tr><td><code>hailo_depth</code></td><td><span class="tag py">Python</span></td><td>08c 와 같은 HailoRT 제약. 낮은 주기(2~5 fps)로 깊이 logit 만 출력하고, 척도 맞춤·거리·필터는 C++ 로컬라이저가 한다</td><td>08d</td></tr>
+          <tr><td><code>hailo_depth</code></td><td><span class="tag cpp">C++</span> · Python 판은 <span class="tag py">Python</span>(08d-1, 선택)</td><td>08c 의 <code>hailo_detect</code> 와 같은 구조로 쓴다. 낮은 주기(2~5 fps)로 깊이 logit 만 출력하고, 척도 맞춤·거리·필터는 C++ 로컬라이저가 한다</td><td>08d</td></tr>
           <tr><td>SLAM, Nav2</td><td>외부 C++ 패키지</td><td>파라미터 YAML 과 런치로 구성. 구조(노드·액션·코스트맵)를 이해하는 것이 목표</td><td>09</td></tr>
           <tr><td><code>mission_supervisor</code></td><td><span class="tag cpp">C++</span></td><td>액션 클라이언트 + 상태기계. "계획 대비 수행 판정"을 코드로 쓰는 곳</td><td>10</td></tr>
           <tr><td>런치파일, 파라미터</td><td><span class="tag py">Python</span> launch, YAML</td><td>ROS 2 관례. 런치는 언어라기보다 선언이다</td><td>04~10</td></tr>
@@ -332,7 +332,7 @@
       <div class="phase"><div class="ph">Phase 4<small>비전 · 28~46h</small></div><div>
         <strong>08 · 08a · 08b · 08c · 08d</strong> — 영상을 ROS 토픽으로 받고, OpenCV 로 처리하고, YOLO 로 <code>/detections</code> 를 발행하고, 같은 것을 Hailo 로 실시간화한다. 그 뒤 검출을 추적하고, Colab 에서 컴파일한 YOLO 깊이 지도에 라이다로 척도를 매겨 물체의 위치·물체 사이 거리·벽까지 거리를 출력한다.
         전부 <span class="tag bench">벤치</span> 다 — 카메라와 라이다를 책상 위 <strong>임시 지그</strong>에 고정해 융합까지 확인한다.
-        <br><span class="small">산출물: <code>rpi5_vision</code> (C++: 검출기·추적기·로컬라이저), <code>rpi5_hailo_detect</code> (Python), 임시 지그 기준의 카메라 높이·피치(임시값). 이 높이·피치는 센서를 섀시에 올린 뒤 09a 에서 다시 구한다.</span></div></div>
+        <br><span class="small">산출물: <code>rpi5_vision</code> (C++: 검출기·추적기·로컬라이저), <code>rpi5_hailo_detect</code> (C++: 검출 · 깊이), <code>rpi5_hailo_detect_py</code> (Python 판: 08c-1 · 08d-1, 선택), 임시 지그 기준의 카메라 높이·피치(임시값). 이 높이·피치는 센서를 섀시에 올린 뒤 09a 에서 다시 구한다.</span></div></div>
       <div class="phase"><div class="ph">Phase F<small>Mac 차선 · 펌웨어 · ____ (직접 기록)</small></div><div>
         <strong><a href="fw-00-map.html">MCU 펌웨어 가이드</a> F0 ~ F19 → <a href="06b-bench-integration.html">06b</a></strong> <span class="tag bench">벤치</span> — Phase 2~4 와 <em>나란히</em> 간다(서로 기다리지 않는다).
         Mac + NUCLEO-H723ZG + 책상 위 부품으로 툴체인·콘솔에서 시작해 PWM·엔코더·전원 시퀀스·속도 PID 와 보호·IMU·계약 v2 링크·안전 상태기계를 한 쪽에 하나씩 구현한다. 마지막에 F19(벤치 수용 시험)를 통과한다.

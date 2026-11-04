@@ -220,7 +220,7 @@
         <li>기울기 기반 긴급정지는 §2-6 의 원칙대로 Pi 프로세스의 실행 여부에 좌우되면 안 된다.</li>
         <li>MCU 는 센서의 데이터 준비 신호나 타이머와 동기화된 시각을 찍을 수 있지만, Pi 의 리눅스 I2C 는 실시간성이 없다.</li>
       </ul>
-      <p><strong>ROS 가 IMU 에서 필요로 하는 것</strong>은 하나뿐이다. <code>sensor_msgs/Imu</code> 를 50~200 Hz 로 받아 <code>robot_localization</code> 의 EKF 가 <code>/odom</code> 과 융합해 회전 오차를 줄이는 것. 그래서 MCU 는 IMU 를 자기 제어에 쓰면서 <em>동시에</em> 샘플을 Pi 로 보내고, 브리지는 그 샘플을 <code>/imu/data_raw</code> 로 발행한다. <code>odom → base_footprint</code> TF 는 EKF 가 대신 발행하므로 브리지의 <code>publish_tf</code> 는 <code>false</code> 가 된다(05 의 "부모는 하나" 규칙). 실내에서 자력계 방위는 모터와 철골 때문에 수십 도씩 틀어지므로 EKF 에는 각속도와 가속도만 넣는다. 자력계를 쓰는 곳은 한 군데다 — <strong>기동 시 한 번, WT901 로 자북 방위를 판정한다</strong>(2026-10-16 결정). 모터가 돌기 전, 전원만 들어온 때(모터 전류의 자기장이 없는 때)에 0x53 각도의 yaw(9축 알고리즘의 자기장 기준 절대각 — WT901 매뉴얼 §6.13)를 읽고, 0x54 자기 원시값으로 그 yaw 를 믿어도 되는지 검사한다(복각 · 크기 비 — fw-14). 그 뒤의 자력계 · yaw 값은 받아도 쓰지 않는다. BNO055 의 자력계는 쓰지 않는다(IMU 모드). 판정한 방위는 Pi 가 지도의 북쪽 정렬과 출발 때의 초기 방향에 쓴다(2026-10-16 결정). 판정은 사전충전이 끝난 뒤 K1 을 닫기 전에 하고, Pi 는 설정 프레임으로 요청해 받는다 — 계약(§4)의 해당 줄은 링크를 다루는 쪽에서 쓴다.</p>
+      <p><strong>ROS 가 IMU 에서 필요로 하는 것</strong>은 하나뿐이다. <code>sensor_msgs/Imu</code> 를 50~200 Hz 로 받아 <code>robot_localization</code> 의 EKF 가 <code>/odom</code> 과 융합해 회전 오차를 줄이는 것. 그래서 MCU 는 IMU 를 자기 제어에 쓰면서 <em>동시에</em> 샘플을 Pi 로 보내고, 브리지는 그 샘플을 <code>/imu/data_raw</code> 로 발행한다. <code>odom → base_footprint</code> TF 는 EKF 가 대신 발행하므로 브리지의 <code>publish_tf</code> 는 <code>false</code> 가 된다(05 의 "부모는 하나" 규칙). 실내에서 자력계 방위는 모터와 철골 때문에 수십 도씩 틀어지므로 EKF 에는 각속도와 가속도만 넣는다. <strong>자력계는 어디에도 쓰지 않는다</strong>(결정 bf, 2026-11-04). 기동 시 한 번 WT901 로 자북 방위를 판정하는 안(2026-10-16 결정)이 있었으나, 로봇에 단 채 잰 결과 보정이 되풀이되지 않고 복각 검사가 성립하지 않으며 50 cm 이동에도 방위가 최대 ±15° 틀어져 폐기했다(fw-14 §2-14). BNO055 의 자력계도 쓰지 않는다(IMU 모드). 출발 때의 초기 방향은 층마다 정한 출발 자세로 준다.</p>
       <div class="tbl"><table class="fixed"><colgroup><col class="w14"><col class="w32"><col class="w54"></colgroup>
         <thead><tr><th></th><th>BNO055</th><th>WT901</th></tr></thead>
         <tbody>
@@ -449,7 +449,7 @@
    │          · 1 kHz 박자와 워치독 · 메모리 지도(DTCM · DMA · 캐시)     ← 관측 창이 먼저       │
    │ F8 ~F13  PWM 과 안전 출력단 · 엔코더 · I2C 와 INA226 · 전원 시퀀스와 첫 통전 · ADC         │
    │          · 속도 PID + 보호 3종                                                             │
-   │ F14~F16  WT901 · BNO055 · 플래시 저장                                                      │
+   │ F14~F15  WT901 · BNO055                                                                    │
    │ F17~F19  계약 v2 링크 · 안전 상태기계 · 모듈 정리와 벤치 수용 시험     ← 계약 v2 는 뒤     │
    └────────────────────────────────────────────────────────────────────────────────────────────┘
                     ↓  두 트랙은 서로 기다리지 않는다. 각각 확실해진 뒤에만 만난다
@@ -478,14 +478,20 @@
           <li>듀티 · ADC 채널별 값 · 1 kHz 루프의 지터도 계약에 없고, 설정 프레임 <code>0x02</code> / <code>0x84</code> 는 "처음에는 구현하지 않는다".</li>
         </ul>
         <p>그래서 <strong>결정(2026-09-22): 텍스트 명령 창(CLI)을 앞에, 계약 v2 는 뒤에.</strong> ST-LINK VCP(USART3) 하나를 TEXT / V2 두 모드로 번갈아 쓴다. TEXT 에서는 <code>enc</code> · <code>pwm</code> · <code>adc</code> · <code>step</code> 같은 명령으로 계약 밖의 값을 보고, V2 에서는 같은 포트가 이진 프레임 전용이 된다. 제어·안전 모듈은 두 모드에서 같은 코드다(§2-5 의 구조에 벤치용 관측 수단이 하나 더 추가된 꼴).</p>
-        <p><strong>모드 전환 방식(2026-10-12 개정):</strong> 처음에는 빌드 스위치(<code>LINK_MODE</code>, 바꾸려면 재플래시)였다. 지금은 <strong>재플래시 없이 실행 중에 바꾼다.</strong> 정해진 것은 셋이다.</p>
+        <p><strong>모드 전환 방식(결정 19 · bc · be):</strong> <strong>재플래시 없이 실행 중에 바꾼다.</strong> 정해진 것은 셋이다.</p>
         <ul>
           <li>두 모드는 동시에 돌지 않는다. 한 순간에는 TEXT 와 V2 중 하나만 VCP 를 쓴다.</li>
           <li>전원을 넣으면 <strong>TEXT 모드</strong>로 시작한다.</li>
           <li>V2 모드에서는 USART3 에 글자 바이트가 한 바이트도 나가지 않는다. 글자가 섞이면 받는 쪽 파서의 동기가 깨진다.</li>
         </ul>
         <p>부팅이 TEXT 라서 따라오는 요구가 하나 있다. 운영 중에 MCU 가 리셋되면(IWDG · 저전압 등) MCU 는 TEXT 모드로, 출력이 꺼진 채 돌아온다. 브리지는 이 상태를 알아채고 V2 진입을 다시 요청해야 한다.</p>
-        <p>아직 정하지 않은 것(결정 대기 — <a href="fw-17-link-v2.html">fw-17</a>): TEXT → V2 와 V2 → TEXT 의 전환 수단, V2 → TEXT 의 진입 조건, 지금 모드를 <code>0x81</code> 에 싣는 방법. V2 에서 TEXT 로 들어가는 수단은 계약에 프레임을 하나 더하는 일이라 이 문서 §4-2 를 함께 고친다.</p>
+        <p><strong>전환 수단(2026-11-04 결정 bc):</strong> TEXT → V2 는 TEXT 모드(CLI)의 전환 명령어로, V2 → TEXT 는 Pi 가 보내는 계약 프레임 TYPE 하나로 한다. 리셋은 전환 수단이 아니다 — 리셋은 고장 순간의 RAM 상태를 지운다.</p>
+        <p><strong>세부(2026-11-04 결정 be):</strong></p>
+        <ul>
+          <li>TEXT → V2 는 CLI 명령 <code>link v2</code> 다. <strong>전원이 ARMED 면 거부</strong>한다(<code>ERR link armed</code>) — 무장 중은 명령을 수행 중인 것으로 보고, 그동안에는 두 방향 모두 모드를 바꾸지 않는다. TEXT 에서 입력이 없어도 V2 로 저절로 돌아가지 않는다 — 복구는 브리지의 재요청이 맡는다.</li>
+          <li>V2 → TEXT 는 <code>0x11</code> 이고, MCU 는 <code>0x90</code> 으로 답한 뒤 바꾼다. <strong>전원이 ARMED 면 거부</strong>한다(<code>0x90 result=1</code>).</li>
+          <li>모드는 <code>0x81</code> 에 싣지 않는다. <code>0x81</code> 은 V2 에서만 나가므로 값이 늘 V2 이기 때문이다. 대신 <code>power_state</code> 를 싣는다(§4-2 의 표).</li>
+        </ul>
         <p>이 결정의 대가(사실)는 셋이다.</p>
         <ul>
           <li>최종 펌웨어에 TEXT / V2 두 경로가 남는다.</li>
@@ -501,7 +507,7 @@
           <tr><td>① PWM 으로 바퀴 회전</td><td><a href="fw-08-pwm-safe-output.html">fw-08</a> PWM 과 안전 출력단(모터 전원 없이) → <a href="fw-11-power-sequence.html">fw-11</a> 전원 시퀀스와 첫 통전</td></tr>
           <tr><td>② 엔코더 값 읽기</td><td><a href="fw-09-encoder.html">fw-09</a></td></tr>
           <tr><td>③ 속도 PID</td><td><a href="fw-13-pid-protection.html">fw-13</a> 속도 PID + 보호 3종</td></tr>
-          <tr><td>④ IMU 두 개 수신·캘리브레이션</td><td><a href="fw-14-wt901.html">fw-14</a> WT901 · <a href="fw-15-bno055.html">fw-15</a> BNO055 · <a href="fw-16-flash-store.html">fw-16</a> 플래시 저장(캘리브레이션 값의 보존)</td></tr>
+          <tr><td>④ IMU 두 개 수신·캘리브레이션</td><td><a href="fw-14-wt901.html">fw-14</a> WT901 · <a href="fw-15-bno055.html">fw-15</a> BNO055. 캘리브레이션 값은 WT901 모듈 안에 저장한다(<code>wt save</code>)</td></tr>
           <tr><td>⑤ 전원 감시·안전 상태기계</td><td>전원 감시 = <a href="fw-10-i2c-ina226.html">fw-10</a> I2C 와 INA226 · <a href="fw-11-power-sequence.html">fw-11</a> · <a href="fw-12-adc.html">fw-12</a> ADC / 안전 상태기계 = <a href="fw-18-safety-fsm.html">fw-18</a> — 이벤트 프레임(<code>0x83</code>)으로 발동을 확인하므로 계약 v2 링크 뒤에 온다</td></tr>
           <tr><td>⑥ 프레임 송수신 (Pi 없이, pyserial 로)</td><td><a href="fw-17-link-v2.html">fw-17</a> 계약 v2 링크 → <a href="fw-19-bench-acceptance.html">fw-19</a> 모듈 정리와 벤치 수용 시험</td></tr>
         </tbody>
@@ -528,10 +534,13 @@
       <div class="tbl"><table>
         <thead><tr><th>TYPE</th><th>방향·주기</th><th>PAYLOAD (리틀엔디안, 순서대로)</th><th>LEN</th></tr></thead>
         <tbody>
-          <tr><td><code>0x01</code> 속도 명령</td><td>Pi → MCU, 50 Hz(20 ms), 명령이 없어도 0 을 보낸다</td><td><code>v_left i16</code>, <code>v_right i16</code> [mm/s]</td><td>4</td></tr>
-          <tr><td><code>0x81</code> 상태</td><td>MCU → Pi, 50 Hz(20 ms) 상시</td><td><code>l_tick i32</code>, <code>r_tick i32</code> (누적, 좌 · 우 각각 앞뒤 평균 — 바퀴별 값은 MCU 안에서만 쓴다), <code>batt_mv u16</code>, <code>current_ma u16</code>(미구현 0), <code>fault u8</code>, <code>tick_ms u32</code></td><td>17</td></tr>
+          <tr><td><code>0x01</code> 속도 명령</td><td>Pi → MCU, 50 Hz(20 ms), 명령이 없어도 0 을 보낸다 — 정지 중에도 흐르는 이 프레임이 하트비트다. MCU 의 200 ms 워치독과 10 s 전원 내림은 이 프레임이 끊긴 것으로 링크 끊김을 판정한다(결정 be)</td><td><code>v_left i16</code>, <code>v_right i16</code> [mm/s]</td><td>4</td></tr>
+          <tr><td><code>0x10</code> 전원 명령</td><td>Pi → MCU, 켜고 끌 때 한 번 (결정 bb · be)</td><td><code>on u8</code> — 1 = 켠다(<code>pwr up</code> 과 같은 요청), 0 = 끈다(<code>pwr down</code> 과 같은 요청). MCU 는 fw-11 의 <code>power_request_up()</code> · <code>power_request_down()</code> 을 부를 뿐이고, 사전충전 → K1 → EN 순서는 상태기계가 지킨다. <strong>FAULT 중의 on 은 무시</strong>한다(CLI 와 같다 — off 로 래치를 푼 뒤 on). 응답 프레임은 없다 — 결과는 <code>0x81</code> 의 <code>power_state</code> 로 본다</td><td>1</td></tr>
+          <tr><td><code>0x11</code> TEXT 전환 요청</td><td>Pi → MCU, 필요할 때 한 번 (결정 bc · be)</td><td>없음. MCU 는 <code>0x90</code> 을 먼저 보내고 TEXT 로 바꾼다. <strong>전원이 ARMED 면 거부</strong>한다 — Pi 가 먼저 <code>0x10</code> off 를 보낸다</td><td>0</td></tr>
+          <tr><td><code>0x81</code> 상태</td><td>MCU → Pi, 50 Hz(20 ms) 상시</td><td><code>l_tick i32</code>, <code>r_tick i32</code> (누적, 좌 · 우 각각 앞뒤 평균 — 바퀴별 값은 MCU 안에서만 쓴다. <strong>전진하면 둘 다 는다</strong> — 부호는 fw-09 의 <code>ENC_SIGN_*</code> 실측이 정한다), <code>batt_mv u16</code>, <code>current_ma u16</code>(미구현 0), <code>fault u8</code>, <code>tick_ms u32</code>, <code>power_state u8</code>(fw-11 의 <code>POWER_IDLE</code> = 0 ~ <code>POWER_FAULT</code> = 6, 결정 be)</td><td>18</td></tr>
           <tr><td><code>0x82</code> IMU</td><td>MCU → Pi, 센서가 새 값을 낼 때(100~200 Hz), 센서마다</td><td><code>sensor_id u8</code> (0 = WT901, 1 = BNO055), <code>ax ay az i16</code> [mg], <code>gx gy gz i16</code> [0.1 °/s], <code>tick_ms u32</code></td><td>17</td></tr>
           <tr><td><code>0x83</code> 이벤트</td><td>MCU → Pi, 상태가 <em>바뀔 때</em> 1회 (상태 프레임의 fault 비트로 유지)</td><td><code>code u8</code>, <code>detail u16</code>, <code>tick_ms u32</code></td><td>7</td></tr>
+          <tr><td><code>0x90</code> TEXT 전환 응답</td><td>MCU → Pi, <code>0x11</code> 을 받았을 때 한 번 (결정 be)</td><td><code>result u8</code> — 0 = 전환한다(이 프레임이 V2 의 마지막 프레임), 1 = 거부(ARMED)</td><td>1</td></tr>
           <tr><td><code>0x02</code> 설정 / <code>0x84</code> 응답 (선택)</td><td>Pi → MCU / MCU → Pi</td><td><code>key u8</code>, <code>value i32</code> — 예: PID 게인, 워치독 시간. 처음에는 구현하지 않는다</td><td>5</td></tr>
         </tbody>
       </table></div>
@@ -554,13 +563,13 @@
         <thead><tr><th>항목</th><th>값</th><th>이유</th></tr></thead>
         <tbody>
           <tr><td>속도</td><td><code>int16</code> mm/s (±32.767 m/s, 포화 처리)</td><td>float 를 보내지 않는다 — 엔디안·정밀도·크기 문제를 한 번에 피한다</td></tr>
-          <tr><td>엔코더</td><td><code>int32</code> 누적 카운트 (리셋하지 않음)</td><td>Pi 가 차분을 내므로 프레임 하나를 놓쳐도 거리를 잃지 않는다. TIM2/TIM5/TIM23/TIM24 의 CNT 폭</td></tr>
+          <tr><td>엔코더</td><td><code>int32</code> 누적 카운트 (리셋하지 않음). <strong>전진 = +</strong></td><td>Pi 가 차분을 내므로 프레임 하나를 놓쳐도 거리를 잃지 않는다. TIM2/TIM5/TIM23/TIM24 의 CNT 폭. 부호는 펌웨어에서 뒤집지 않는다 — 바퀴마다의 부호는 fw-09 가 실측해 <code>ENC_SIGN_*</code> 에 적었고(2026-10-15), 틀리면 배선이나 .ioc 에서 고친다</td></tr>
           <tr><td>가속도 / 각속도</td><td><code>int16</code> mg / 0.1 °/s (±32 g / ±3276 °/s)</td><td>브리지가 SI 로 변환: m/s² = mg × 9.80665 / 1000, rad/s = 0.1°/s × π / 1800. 센서 원래 범위(±16 g, ±2000 °/s)를 잘리지 않게 담는다</td></tr>
           <tr><td><code>tick_ms</code></td><td>MCU 부팅 후 밀리초 (<code>u32</code>, 49일에 한 바퀴)</td><td>브리지가 첫 프레임에서 ROS 시각과의 오프셋을 계산해 환산한다. 엔코더 샘플과 IMU 샘플이 <strong>같은 시각축</strong>에 놓여야 EKF 가 맞게 융합한다</td></tr>
           <tr><td>바이트 순서</td><td><strong>리틀엔디안</strong></td><td>STM32 도 Pi(ARM64)도 리틀엔디안. 그래도 문서에 명시한다</td></tr>
           <tr><td>CRC</td><td><strong>CRC-8, 다항식 0x07, 초기값 0x00, 반사 없음</strong>. 범위 TYPE~PAYLOAD</td><td>모터 노이즈로 깨진 바이트가 속도 명령으로 해석되면 로봇이 의도하지 않은 속도로 움직인다. 안전 문제다</td></tr>
           <tr><td>보드레이트</td><td><strong>460800 으로 시작</strong> (VCP 라 자유)</td><td>아래 대역폭 계산. 병목이면 921600</td></tr>
-          <tr><td>워치독</td><td>MCU: <strong>200 ms</strong> 동안 워치독을 되감는 프레임이 없으면 → 정지 (= 50 Hz 명령 10개 결손). <em>무엇이 되감는가</em>는 <strong>결정 대기</strong> — 표 아래 상자 · Pi: <strong>0.5 s</strong> 무 <code>cmd_vel</code> → 0 송신</td><td>MCU 쪽은 "Pi 가 멈췄다 / 브리지가 멈췄다" — <strong>MCU 는 동작 중이고 명령만 끊긴 경우</strong>를, Pi 쪽은 "상위 노드가 멈췄다"를 각각 막는다. USB 가 빠진 경우는 표 아래에 적었다</td></tr>
+          <tr><td>워치독</td><td>MCU: <strong>200 ms</strong> 동안 워치독을 되감는 프레임이 없으면 → 정지 (= 50 Hz 명령 10개 결손). <strong>10 s</strong> 동안 없으면 → 전원을 내린다(EN 먼저, 그다음 K1 이 열린다 — 결정 be). <em>무엇이 되감는가</em>는 <strong>결정 대기</strong> — 표 아래 상자 · Pi: <strong>0.5 s</strong> 무 <code>cmd_vel</code> → 0 송신</td><td>MCU 쪽은 "Pi 가 멈췄다 / 브리지가 멈췄다" — <strong>MCU 는 동작 중이고 명령만 끊긴 경우</strong>를, Pi 쪽은 "상위 노드가 멈췄다"를 각각 막는다. USB 가 빠진 경우는 표 아래에 적었다</td></tr>
         </tbody>
       </table></div>
       <p class="small">USB 가 빠진 경우는 Nucleo 의 급전 방식에 달렸다. 지금처럼 USB(ST-LINK — 셀프 파워 허브 경유)로 급전하면(INVENTORY 7절) MCU 가 같이 꺼지므로 표의 MCU 쪽 워치독도 동작하지 않는다. 그때 바퀴를 멈추는 것은 제어기 전원이 끊기면 EN 네 핀을 LOW 로 끌어내리는 각 모듈의 풀다운이다(§3-3-B, <a href="06b-bench-integration.html#s2-4">06b §2-4</a>). 조립 후의 급전 방식(USB · E5V · VIN)은 아직 정하지 않았다(<a href="09a-assembly-gate.html#s3-1-2">09a</a>).</p>
@@ -572,7 +581,7 @@
         </ul>
         <p>두 규칙에서 <strong>동일</strong>한 것은 넷이다.</p>
         <ul>
-          <li>지금 계약에서 Pi → MCU 프레임은 <code>0x01</code> 하나뿐이라(선택 항목 <code>0x02</code> 를 구현하지 않는 동안) 동작이 같다.</li>
+          <li>지금 계약에서 Pi → MCU 프레임은 <code>0x01</code> 과 전원 명령(결정 bb)이다. 전원 명령은 켜고 끌 때 한 번만 오므로, (선택 항목 <code>0x02</code> 를 구현하지 않는 동안) 두 규칙의 차이는 전원 명령이 도착한 순간 한 번 더 되감기느냐뿐이다.</li>
           <li>CRC 가 틀린 프레임은 어느 쪽에서도 되감지 않는다.</li>
           <li>200 ms 라는 값.</li>
           <li>Pi 쪽 0.5 s 워치독.</li>
@@ -581,7 +590,7 @@
       </div>
       <pre class="diagram"><code>  대역폭 (프레임 = 헤더2 + TYPE1 + LEN1 + PAYLOAD + CRC1)
     0x01 명령  9 B × 50 Hz            =  0.45 kB/s   (Pi → MCU)
-    0x81 상태 22 B × 50 Hz            =  1.1  kB/s   (MCU → Pi)
+    0x81 상태 23 B × 50 Hz            =  1.15 kB/s   (MCU → Pi)
     0x82 IMU  22 B × 200 Hz × 2 센서  =  8.8  kB/s   (MCU → Pi)
                                   합계 ≈ 10 kB/s
     115200 bps ≈ 11.5 kB/s  → 90 %  (빠듯함, 지터가 생긴다)

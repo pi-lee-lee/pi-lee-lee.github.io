@@ -82,6 +82,7 @@
       │  (rpi5_mcu_bridge_cpp)│     m/s ↔ mm/s 정수,  틱 ↔ m,  mg ↔ m/s²
       └───────────────────────┘
               │  0x01 속도 명령 프레임 (50 Hz = 20 ms 마다, 명령이 없어도 0 을 보낸다)
+              │  0x10 전원 명령 (켜고 끌 때 한 번) · 포트를 열 때 글자 한 줄 link v2 (§3-4)
               ▼
            [ NUCLEO-H723ZG ] ──► 모터 드라이버 ──► 모터 (2 또는 4)
            [ NUCLEO-H723ZG ] ◄── 엔코더 ◄────────────┘
@@ -106,9 +107,12 @@
         <thead><tr><th>TYPE</th><th>방향·주기</th><th>PAYLOAD (LEN)</th><th>단위</th></tr></thead>
         <tbody>
           <tr><td><code>0x01</code> 속도 명령</td><td>Pi → MCU, 50 Hz (20 ms)</td><td><code>v_left i16, v_right i16</code> (4)</td><td>mm/s</td></tr>
-          <tr><td><code>0x81</code> 상태</td><td>MCU → Pi, 50 Hz (20 ms)</td><td><code>l_tick i32, r_tick i32, batt_mv u16, current_ma u16, fault u8, tick_ms u32</code> (17)</td><td>틱 누적(좌 · 우 각각 앞뒤 평균 — 바퀴별 카운트는 MCU 안의 바퀴별 PID 가 쓴다), mV, mA(미구현이면 0), 비트(아래 표), ms</td></tr>
+          <tr><td><code>0x10</code> 전원 명령</td><td>Pi → MCU, 켜고 끌 때 한 번</td><td><code>on u8</code> (1)</td><td>1 = 켠다(<code>pwr up</code> 과 같은 요청), 0 = 끈다. 응답 프레임은 없고 결과는 <code>0x81</code> 의 <code>power_state</code> 로 본다. FAULT 중의 on 은 무시된다</td></tr>
+          <tr><td><code>0x11</code> TEXT 전환 요청</td><td>Pi → MCU, 필요할 때 한 번</td><td>없음 (0)</td><td>MCU 는 <code>0x90</code> 으로 답한 뒤 TEXT 로 바꾼다. 전원이 ARMED 면 거부한다</td></tr>
+          <tr><td><code>0x81</code> 상태</td><td>MCU → Pi, 50 Hz (20 ms)</td><td><code>l_tick i32, r_tick i32, batt_mv u16, current_ma u16, fault u8, tick_ms u32, power_state u8</code> (18)</td><td>틱 누적(좌 · 우 각각 앞뒤 평균 — 바퀴별 카운트는 MCU 안의 바퀴별 PID 가 쓴다), mV, mA(미구현이면 0), 비트(아래 표), ms, 전원 상태 번호(fw-11 의 <code>POWER_IDLE</code> 0 · PRECHARGE 1 · GATE 2 · RELAY 3 · ARMED 4 · DOWN 5 · FAULT 6)</td></tr>
           <tr><td><code>0x82</code> IMU</td><td>MCU → Pi, 100~200 Hz (10~5 ms)</td><td><code>sensor_id u8, ax ay az i16, gx gy gz i16, tick_ms u32</code> (17)</td><td>id 0=WT901 1=BNO055, mg, <strong>0.1 °/s</strong>, ms</td></tr>
           <tr><td><code>0x83</code> 이벤트</td><td>MCU → Pi, 상태가 <em>바뀔 때</em> 1회 (유지는 상태 프레임의 fault 비트)</td><td><code>code u8, detail u16, tick_ms u32</code> (7)</td><td>코드는 아래 표</td></tr>
+          <tr><td><code>0x90</code> TEXT 전환 응답</td><td>MCU → Pi, <code>0x11</code> 을 받았을 때 한 번</td><td><code>result u8</code> (1)</td><td>0 = 전환한다(이 프레임이 V2 의 마지막 프레임), 1 = 거부(ARMED)</td></tr>
           <tr><td><code>0x02</code> 설정 / <code>0x84</code> 응답 (선택)</td><td>Pi → MCU / MCU → Pi</td><td><code>key u8, value i32</code> (5)</td><td>PID 게인·워치독 시간 등. 처음에는 구현하지 않는다</td></tr>
         </tbody>
       </table></div>
@@ -128,11 +132,12 @@
         <thead><tr><th>항목</th><th>값</th><th>근거</th></tr></thead>
         <tbody>
           <tr><td>물리 연결</td><td>ST-LINK/V3E 가상 COM 포트 → <code>/dev/ttyACM0</code> (실측 <code>0483:374e</code>, USB 포트 1-1.1) → udev 로 <code>/dev/mcu</code></td><td>USB 케이블 하나로 플래싱과 통신을 같이 한다. 대안은 Pi 5 GPIO 14/15 직결이다(<code>dtoverlay=uart0-pi5</code> → <code>/dev/ttyAMA0</code>, 3.3 V, USART3 대신 남는 USART). 이 대안은 printf 디버그 채널이 필요하거나 460800 에서 CRC 오류가 측정될 때만 쓴다. 제어 루프가 MCU 에 있어 링크 지연은 결정 요인이 아니다</td></tr>
-          <tr><td>보드레이트</td><td><strong>460800</strong>, 8N1, 흐름제어 없음</td><td>명령 9 B × 50 Hz = 0.45 kB/s, 상태 22 B × 50 Hz = 1.1 kB/s, IMU 22 B × 200 Hz × 2 센서 = 8.8 kB/s → 합계 ≈ 10 kB/s. 115200 bps(≈11.5 kB/s)면 90 % 로 빠듯해 지터가 생기고, 460800 bps(≈46 kB/s)면 22 %. 병목이면 921600. VCP 라서 보드레이트를 제약 없이 고를 수 있다 (06a §4-3)</td></tr>
+          <tr><td>보드레이트</td><td><strong>460800</strong>, 8N1, 흐름제어 없음</td><td>명령 9 B × 50 Hz = 0.45 kB/s, 상태 23 B × 50 Hz = 1.15 kB/s, IMU 22 B × 200 Hz × 2 센서 = 8.8 kB/s → 합계 ≈ 10 kB/s. 115200 bps(≈11.5 kB/s)면 90 % 로 빠듯해 지터가 생기고, 460800 bps(≈46 kB/s)면 22 %. 병목이면 921600. VCP 라서 보드레이트를 제약 없이 고를 수 있다 (06a §4-3)</td></tr>
           <tr><td>단위</td><td>속도 <code>i16</code> mm/s · 엔코더 <code>i32</code> 누적 · 가속도 <code>i16</code> mg · 각속도 <code>i16</code> 0.1 °/s (±32 g / ±3276 °/s)</td><td>float 를 보내지 않는다. 센서 범위(±16 g, ±2000 °/s)가 잘리지 않는다. 브리지가 SI 로 변환: m/s² = mg × 9.80665 / 1000, rad/s = 0.1 °/s × π / 1800</td></tr>
           <tr><td>무결성</td><td>CRC-8, 다항식 0x07, 초기값 0x00, 반사 없음, TYPE 부터 PAYLOAD 끝까지</td><td>모터 노이즈로 깨진 바이트가 속도 명령으로 해석되면 로봇이 명령하지 않은 속도로 움직인다</td></tr>
           <tr><td>시각</td><td>모든 MCU→Pi 프레임에 <code>tick_ms</code>(MCU 기동 후 ms)</td><td>엔코더 샘플과 IMU 샘플을 같은 시간축에 놓는다. Pi 가 ROS 시각으로 환산한다</td></tr>
-          <tr><td>워치독</td><td>MCU: 200 ms 무명령 → 정지. 브리지: <code>cmd_timeout_s</code>=0.5 s → 0 발행</td><td>서로 독립적인 2단 방어</td></tr>
+          <tr><td>워치독</td><td>MCU: 200 ms 무명령 → 정지. 무명령이 10 s 이어지고 전원이 ARMED 면 → 전원을 내린다(EN 먼저, 그다음 K1 열림. V2 에서만 센다). 브리지: <code>cmd_timeout_s</code>=0.5 s → 0 발행</td><td>서로 독립적인 2단 방어. 브리지는 <code>cmd_vel</code> 이 멈춰도 <code>0x01</code>(값 0)을 50 Hz 로 계속 보낸다. 그래서 10 s 규칙은 teleop 이 쉴 때가 아니라 브리지 · Pi · USB 가 사라졌을 때만 작동한다</td></tr>
+          <tr><td>모드</td><td>MCU 는 부팅하면 TEXT(글자 명령 창)다. 브리지가 글자 한 줄 <code>link v2</code> 를 보내면 V2(프레임)로 바뀐다. 전원이 ARMED 면 <code>ERR link armed</code> 로 거부하고 TEXT 에 머문다</td><td>한 포트(USART3 VCP)를 두 용도로 번갈아 쓴다(결정 19 · bc · be). 리셋하면 TEXT 로 돌아오므로 브리지가 다시 요청한다(§3-4)</td></tr>
         </tbody>
       </table></div>
 
@@ -227,7 +232,7 @@
       </div>
       <div class="callout why"><span class="ct">③ 워치독은 양쪽에 있어야 한다</span>
         <p>브리지의 워치독(<code>cmd_timeout_s</code>)은 "상위 노드가 명령을 안 보낼 때"를 막는다. 그런데 Pi 가 멈추거나 USB 가 빠지면 <strong>브리지 노드 자체가 사라져서</strong> 아무 명령도 못 보낸다.
-        그때 MCU 가 마지막 속도를 유지하면 로봇은 계속 달린다. 이 경우를 막는 마지막 안전장치는 MCU 의 명령 워치독이다. 그리고 두 명령 워치독과 별개로 IWDG(하드웨어 워치독)가 펌웨어 자체가 멈춘 경우를 막는다.</p>
+        그때 MCU 가 마지막 속도를 유지하면 로봇은 계속 달린다. 이 경우를 막는 마지막 안전장치는 MCU 의 명령 워치독이다. 명령이 끊긴 채 10 s 가 지나면 MCU 는 모터 전원까지 내린다(전원이 ARMED 일 때, 결정 be). 그리고 두 명령 워치독과 별개로 IWDG(하드웨어 워치독)가 펌웨어 자체가 멈춘 경우를 막는다.</p>
       </div>
       <div class="callout why"><span class="ct">④ 하나의 좌표계에는 부모가 하나뿐 — <code>publish_tf</code></span>
         <p>05 단계의 철칙이다. §3-10 에서 <code>robot_localization</code> 의 EKF 가 <code>odom → base_footprint</code> 를 발행하게 되면 브리지는 같은 TF 를 발행하면 안 된다. 그때 <code>publish_tf:=false</code> 로 둔다.
@@ -256,7 +261,7 @@
         <p>두 센서 모두 내부 융합 프로세서가 새 값을 만드는 속도는 100~200 Hz 다. 1 kHz(1 ms 주기) 루프가 하는 일은 <strong>매 주기 최신 IMU 값이 담긴 변수를 읽어 그 주기의 판단(기울기 검사, 요 보정)에 쓰는 것</strong>이고, 그 변수는 새 샘플이 도착할 때만 갱신된다.
         1 kHz 는 엔코더 PID 와 비상정지 반응을 위한 주기이지 IMU 의 샘플링 주기가 아니다. 전복 판정이 10 ms 늦는 것은 문제가 되지 않는다.</p>
       </div>
-      <p>실내에서 자력계로 얻는 절대 방위는 모터와 철골 때문에 수십 도씩 틀어진다. 이 프로젝트는 <strong>각속도와 가속도만</strong> 쓰고, 회전은 자이로 z 축 적분으로 구한다. 두 센서의 융합 출력(오일러·쿼터니언)은 참고로 보되 EKF 에는 넣지 않는다. 예외는 하나 — 기동 시 모터가 돌기 전에 WT901 의 yaw 로 자북 방위를 한 번 판정하고, 0x54 자기 원시값으로 그 값을 검사한다(06a §2-8 · fw-14). 그 뒤의 자력계 값은 쓰지 않는다.</p>
+      <p>실내에서 자력계로 얻는 절대 방위는 모터와 철골 때문에 수십 도씩 틀어진다. 이 프로젝트는 <strong>각속도와 가속도만</strong> 쓰고, 회전은 자이로 z 축 적분으로 구한다. 두 센서의 융합 출력(오일러·쿼터니언)은 참고로 보되 EKF 에는 넣지 않는다. 기동 시 한 번 WT901 로 자북 방위를 판정하는 예외도 두었다가, 로봇 실측 뒤 폐기했다(결정 bf — 06a §2-8 · fw-14 §2-14). 자력계는 쓰지 않는다.</p>
 
       <h2>3. 실습</h2>
       <p>ROS 트랙은 컨테이너 안에서 한다. <span class="tag pi">Pi 호스트</span> → <span class="tag cli">컨테이너</span></p>
@@ -266,7 +271,7 @@ cd ~/ros2_rpi5/docker &amp;&amp; docker compose run --rm dev</code></pre>
       <h3>3-1. 패키지 생성과 빌드 정의 <span class="tag cpp">C++</span> <span class="tag cli">컨테이너</span> <span class="tag sim">SIM</span></h3>
       <pre><code class="lang-bash">cd /ros2_ws/src
 ros2 pkg create rpi5_mcu_bridge_cpp --build-type ament_cmake --license Apache-2.0 \
-    --dependencies rclcpp geometry_msgs nav_msgs sensor_msgs std_msgs tf2 tf2_ros tf2_geometry_msgs
+    --dependencies rclcpp geometry_msgs nav_msgs sensor_msgs std_msgs std_srvs tf2 tf2_ros tf2_geometry_msgs
 
 mkdir -p rpi5_mcu_bridge_cpp/include/rpi5_mcu_bridge_cpp rpi5_mcu_bridge_cpp/src rpi5_mcu_bridge_cpp/test</code></pre>
       <pre class="diagram"><code>rpi5_mcu_bridge_cpp/
@@ -276,7 +281,7 @@ mkdir -p rpi5_mcu_bridge_cpp/include/rpi5_mcu_bridge_cpp rpi5_mcu_bridge_cpp/src
 │   ├── protocol.hpp        ← 계약 v2 프레임 인코더·디코더 + 스트림 파서 + CRC8 + 가짜 MCU   (ROS 에 의존하지 않는다)
 │   └── serial_port.hpp     ← termios 래퍼, 논블로킹 폴링                                  (ROS 에 의존하지 않는다)
 ├── src/
-│   └── mcu_bridge_node.cpp ← ROS 노드: 파라미터·타이머 2개·발행 7개·TF
+│   └── mcu_bridge_node.cpp ← ROS 노드: 파라미터·타이머 2개·발행 7개·서비스 1개·TF
 └── test/
     └── protocol_check.cpp  ← ROS 없이 도는 프로토콜 왕복 검사</code></pre>
       <div class="callout tip"><span class="ct">왜 프로토콜과 시리얼을 ROS 와 분리하는가</span>
@@ -301,6 +306,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)           # Imu, JointState, BatteryState
 find_package(std_msgs REQUIRED)              # UInt8 (fault), String (event)
+find_package(std_srvs REQUIRED)              # SetBool (~/power)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)     # tf2::toMsg(tf2::Quaternion) 가 여기 있다
@@ -309,7 +315,7 @@ add_executable(mcu_bridge_node src/mcu_bridge_node.cpp)
 target_include_directories(mcu_bridge_node PRIVATE include)
 target_compile_features(mcu_bridge_node PRIVATE cxx_std_17)   # std::optional, std::clamp
 ament_target_dependencies(mcu_bridge_node
-  rclcpp geometry_msgs nav_msgs sensor_msgs std_msgs tf2 tf2_ros tf2_geometry_msgs)
+  rclcpp geometry_msgs nav_msgs sensor_msgs std_msgs std_srvs tf2 tf2_ros tf2_geometry_msgs)
 
 # ROS 없이 도는 프로토콜 확인 프로그램 — 인코드 → 파서 → 디코드 왕복을 검사한다
 add_executable(protocol_check test/protocol_check.cpp)
@@ -320,7 +326,7 @@ install(TARGETS mcu_bridge_node protocol_check
   DESTINATION lib/${PROJECT_NAME})          # ros2 run 이 찾는 위치
 
 ament_package()</code></pre>
-      <p><code>package.xml</code> 에 <code>&lt;depend&gt;</code> 8개(rclcpp, geometry_msgs, nav_msgs, sensor_msgs, std_msgs, tf2, tf2_ros, tf2_geometry_msgs)가 들어갔는지, <code>&lt;build_type&gt;ament_cmake&lt;/build_type&gt;</code> 인지 확인한다.
+      <p><code>package.xml</code> 에 <code>&lt;depend&gt;</code> 9개(rclcpp, geometry_msgs, nav_msgs, sensor_msgs, std_msgs, std_srvs, tf2, tf2_ros, tf2_geometry_msgs)가 들어갔는지, <code>&lt;build_type&gt;ament_cmake&lt;/build_type&gt;</code> 인지 확인한다.
       <code>find_package(tf2_geometry_msgs)</code> 가 실패하면 컨테이너에 <code>ros-humble-tf2-geometry-msgs</code> 가 없는 것이다. 02 단계 §2-2 의 방식으로 추가한다 (A: <code>docker/Dockerfile</code> 의 ROS 패키지 목록에 넣고 재빌드, B: 컨테이너에서 설치).</p>
 
       <h3>3-2. <code>protocol.hpp</code> — 계약 v2 프레임, CRC8, 스트림 파서, 가짜 MCU <span class="tag sim">SIM</span></h3>
@@ -341,16 +347,26 @@ namespace rpi5_mcu
 // ── 프레임 상수 (06a 계약 v2): AA 55 | TYPE | LEN | PAYLOAD[LEN] | CRC8(TYPE..PAYLOAD) ──
 constexpr uint8_t HEADER0 = 0xAA;
 constexpr uint8_t HEADER1 = 0x55;
-constexpr uint8_t TYPE_VELOCITY = 0x01;   // Pi → MCU
-constexpr uint8_t TYPE_STATE    = 0x81;   // MCU → Pi
-constexpr uint8_t TYPE_IMU      = 0x82;
-constexpr uint8_t TYPE_EVENT    = 0x83;
+constexpr uint8_t TYPE_VELOCITY  = 0x01;  // Pi → MCU
+constexpr uint8_t TYPE_POWER     = 0x10;  // Pi → MCU, power on/off request
+constexpr uint8_t TYPE_TO_TEXT   = 0x11;  // Pi → MCU, switch back to TEXT
+constexpr uint8_t TYPE_STATE     = 0x81;  // MCU → Pi
+constexpr uint8_t TYPE_IMU       = 0x82;
+constexpr uint8_t TYPE_EVENT     = 0x83;
+constexpr uint8_t TYPE_TEXT_ACK  = 0x90;  // MCU → Pi, reply to 0x11
 constexpr size_t LEN_VELOCITY = 4;        // v_left i16, v_right i16
-constexpr size_t LEN_STATE    = 17;       // L i32, R i32, batt u16, current u16, fault u8, tick u32
+constexpr size_t LEN_POWER    = 1;        // on u8 (1 = up, 0 = down)
+constexpr size_t LEN_TO_TEXT  = 0;        // no payload
+constexpr size_t LEN_STATE    = 18;       // L i32, R i32, batt u16, current u16, fault u8, tick u32, power_state u8
 constexpr size_t LEN_IMU      = 17;       // id u8, ax ay az i16, gx gy gz i16, tick u32
 constexpr size_t LEN_EVENT    = 7;        // code u8, detail u16, tick u32
+constexpr size_t LEN_TEXT_ACK = 1;        // result u8 (0 = switching, 1 = refused: ARMED)
 constexpr size_t MAX_PAYLOAD  = 64;
 constexpr size_t OVERHEAD     = 5;        // 헤더 2 + TYPE + LEN + CRC
+
+// The MCU boots in TEXT mode. This ASCII line (not a frame) switches it to V2. Send 11 bytes, not the '\0'.
+// The leading "\r\n" ends whatever printable bytes are already on the CLI line (e.g. 0x55 = 'U' after a reset).
+inline constexpr char ENTER_V2_LINE[] = "\r\nlink v2\r\n";
 
 constexpr double G_MPS2  = 9.80665;                          // 1 g
 constexpr double DEG2RAD = 3.14159265358979323846 / 180.0;
@@ -380,6 +396,15 @@ inline const char * event_name(uint8_t code)
   }
 }
 
+// ── power_state in 0x81 = fw-11 power_state_t numbers (06a §4-2) ──
+constexpr uint8_t POWER_IDLE = 0, POWER_PRECHARGE = 1, POWER_GATE = 2, POWER_RELAY = 3,
+                  POWER_ARMED = 4, POWER_DOWN = 5, POWER_FAULT = 6;
+inline const char * power_name(uint8_t s)
+{
+  static const char * const names[] = {"idle", "precharge", "gate", "relay", "armed", "down", "fault"};
+  return (s &lt;= POWER_FAULT) ? names[s] : "unknown";
+}
+
 // ── MCU → Pi 로 올라오는 것들 ───────────────────────────────────────────────
 struct McuState
 {
@@ -389,6 +414,7 @@ struct McuState
   uint16_t current_ma = 0;     // 모터 총 전류 [mA]
   uint8_t fault = 0;           // 비트 플래그 (0 = 정상). FAULT_* — 06a §4-2 표
   uint32_t tick_ms = 0;        // MCU 기동 후 경과 ms — 샘플의 시각
+  uint8_t power_state = 0;     // POWER_* (0 = idle ... 4 = armed ... 6 = fault)
 };
 
 struct ImuSample                // SI 단위로 변환된 값 (REP-145: m/s², rad/s, 중력 포함)
@@ -466,6 +492,23 @@ inline std::array&lt;uint8_t, OVERHEAD + LEN_VELOCITY&gt; encode_velocity(double
   return f;
 }
 
+// Pi → MCU power command (6 bytes). No reply frame: the result shows up in 0x81 power_state.
+inline std::array&lt;uint8_t, OVERHEAD + LEN_POWER&gt; encode_power(bool on)
+{
+  const uint8_t p[LEN_POWER] = {static_cast&lt;uint8_t&gt;(on ? 1 : 0)};
+  std::array&lt;uint8_t, OVERHEAD + LEN_POWER&gt; f{};
+  encode_frame(TYPE_POWER, p, LEN_POWER, f.data());
+  return f;
+}
+
+// Pi → MCU "go back to TEXT" (5 bytes, LEN 0). The bridge does not send it; the diagnostic workflow does.
+inline std::array&lt;uint8_t, OVERHEAD + LEN_TO_TEXT&gt; encode_to_text()
+{
+  std::array&lt;uint8_t, OVERHEAD + LEN_TO_TEXT&gt; f{};
+  encode_frame(TYPE_TO_TEXT, nullptr, LEN_TO_TEXT, f.data());
+  return f;
+}
+
 // ── 완성된 프레임 하나 — 파서가 CRC 까지 확인한 뒤 넘겨 준다 ──
 struct Frame
 {
@@ -484,6 +527,7 @@ inline bool decode_state(const Frame &amp; f, McuState &amp; s, std::string &amp
   s.current_ma = rd_u16(p + 10);
   s.fault = p[12];
   s.tick_ms = rd_u32(p + 13);
+  s.power_state = p[17];
   return true;
 }
 
@@ -510,6 +554,13 @@ inline bool decode_event(const Frame &amp; f, McuEvent &amp; e, std::string &amp
   e.code = p[0];
   e.detail = rd_u16(p + 1);
   e.tick_ms = rd_u32(p + 3);
+  return true;
+}
+
+inline bool decode_text_ack(const Frame &amp; f, uint8_t &amp; result, std::string &amp; err)
+{
+  if (f.type != TYPE_TEXT_ACK || f.len != LEN_TEXT_ACK) { err = "text-ack frame: wrong type/len"; return false; }
+  result = f.payload[0];
   return true;
 }
 
@@ -558,6 +609,7 @@ public:
     return false;
   }
   uint32_t frames() const { return frames_; }
+  bool idle() const { return state_ == S::H0; }        // true = the next byte is outside any frame (text can only be here)
   uint32_t dropped_bytes() const { return dropped_; }   // 헤더를 찾느라 버린 바이트 — 0 이 아니면 동기 손실이 있었다
   uint32_t bad_crc() const { return bad_crc_; }
 
@@ -583,6 +635,10 @@ public:
     vr_ = v_right_mps;
   }
 
+  // 0x10 stand-in. The real MCU walks idle → precharge → gate → relay → armed; the fake jumps.
+  // Motion does not depend on it, so the odometry checks in 3-5 work in either state.
+  void set_power(bool on) { power_state_ = on ? POWER_ARMED : POWER_IDLE; }
+
   McuState step(double dt)   // dt 초가 흘렀다고 보고 엔코더를 적분한다
   {
     const double circumference = 2.0 * kPi * r_;
@@ -598,6 +654,7 @@ public:
     s.current_ma = static_cast&lt;uint16_t&gt;(200.0 + 2000.0 * (std::fabs(vl_) + std::fabs(vr_)));   // 움직이면 전류가 는다
     s.fault = 0;
     s.tick_ms = tick_ms_;
+    s.power_state = power_state_;
     return s;
   }
 
@@ -619,6 +676,7 @@ private:
   double vl_ = 0.0, vr_ = 0.0;
   double l_accum_ = 0.0, r_accum_ = 0.0;
   uint32_t tick_ms_ = 0, imu_tick_ms_ = 0;
+  uint8_t power_state_ = POWER_IDLE;
 };
 
 }  // namespace rpi5_mcu</code></pre>
@@ -658,12 +716,16 @@ int main()
   // ② 속도 명령 인코딩
   const auto a = encode_velocity(0.5, 0.5);    dump("vel(0.5, 0.5) :", a.data(), a.size());
   const auto b = encode_velocity(-0.1, 0.1);   dump("vel(-0.1, 0.1):", b.data(), b.size());
+  const auto c = encode_power(true);           dump("power(on) :", c.data(), c.size());
+  const auto d = encode_power(false);          dump("power(off):", d.data(), d.size());
+  const auto e = encode_to_text();             dump("to_text() :", e.data(), e.size());
 
   // ③ 상태·IMU·이벤트 프레임을 만들어 파서로 되돌린다 (MCU 가 보낼 바이트를 Pi 쪽에서 흉내)
   std::vector&lt;uint8_t&gt; stream = {0x00, 0xAA, 0x13};          // 쓰레기 + 가짜 헤더 조각 — 동기 복구 시험
   uint8_t p[MAX_PAYLOAD], f[OVERHEAD + MAX_PAYLOAD];
 
-  wr_i32(p, 1234); wr_i32(p + 4, -1234); wr_u16(p + 8, 12000); wr_u16(p + 10, 1500); p[12] = 0; wr_u32(p + 13, 5000);
+  // 0x81 with the golden values of the contract spec: L=1000 R=-1000 batt=24000 cur=0 fault=0 tick=123456 power=4 (armed)
+  wr_i32(p, 1000); wr_i32(p + 4, -1000); wr_u16(p + 8, 24000); wr_u16(p + 10, 0); p[12] = 0; wr_u32(p + 13, 123456); p[17] = POWER_ARMED;
   size_t n = encode_frame(TYPE_STATE, p, LEN_STATE, f);  dump("state frame:", f, n);
   stream.insert(stream.end(), f, f + n);
 
@@ -671,6 +733,10 @@ int main()
   wr_i16(p + 7, 0); wr_i16(p + 9, 0); wr_i16(p + 11, 50);                  // gz = 50 × 0.1 °/s = 5.0 °/s
   wr_u32(p + 13, 5010);
   n = encode_frame(TYPE_IMU, p, LEN_IMU, f);             dump("imu frame:", f, n);
+  stream.insert(stream.end(), f, f + n);
+
+  p[0] = 1;                                                                 // 0x90 result=1: refused because ARMED
+  n = encode_frame(TYPE_TEXT_ACK, p, LEN_TEXT_ACK, f);   dump("text-ack frame:", f, n);
   stream.insert(stream.end(), f, f + n);
 
   p[0] = EVT_OVERCURR; wr_u16(p + 1, 11300); wr_u32(p + 3, 5020);          // 과전류 이벤트(0x02), detail 11300 mA
@@ -681,18 +747,22 @@ int main()
   FrameParser parser;
   std::vector&lt;Frame&gt; frames;
   const int got = feed(parser, stream, frames);
-  std::printf("frames=%d (expect 2: state, imu — event is CRC-broken)  dropped_bytes=%u bad_crc=%u\n",
+  std::printf("frames=%d (expect 3: state, imu, text-ack — event is CRC-broken)  dropped_bytes=%u bad_crc=%u\n",
               got, parser.dropped_bytes(), parser.bad_crc());
 
   for (const auto &amp; fr : frames) {
     std::string err;
     if (fr.type == TYPE_STATE) {
       McuState s; decode_state(fr, s, err);
-      std::printf("state: L=%d R=%d batt=%u mV cur=%u mA fault=%u tick=%u\n",
-                  s.left_ticks, s.right_ticks, s.batt_mv, s.current_ma, s.fault, s.tick_ms);
+      std::printf("state: L=%d R=%d batt=%u mV cur=%u mA fault=%u tick=%u power=%u(%s)\n",
+                  s.left_ticks, s.right_ticks, s.batt_mv, s.current_ma, s.fault, s.tick_ms,
+                  s.power_state, power_name(s.power_state));
     } else if (fr.type == TYPE_IMU) {
       ImuSample s; decode_imu(fr, s, err);
       std::printf("imu: id=%u az=%.3f m/s2 gz=%.5f rad/s tick=%u\n", s.sensor_id, s.az, s.gz, s.tick_ms);
+    } else if (fr.type == TYPE_TEXT_ACK) {
+      uint8_t r = 0; decode_text_ack(fr, r, err);
+      std::printf("text-ack: result=%u\n", r);
     }
   }
   return 0;
@@ -701,15 +771,21 @@ int main()
       <pre class="diagram"><code>crc8(01 f4 01 f4 01) = 15   (expect 15)
 vel(0.5, 0.5) :        aa 55 01 04 f4 01 f4 01 d1
 vel(-0.1, 0.1):        aa 55 01 04 9c ff 64 00 92
-state frame:           aa 55 81 11 d2 04 00 00 2e fb ff ff e0 2e dc 05 00 88 13 00 00 ea
+power(on) :            aa 55 10 01 01 b0
+power(off):            aa 55 10 01 00 b7
+to_text() :            aa 55 11 00 42
+state frame:           aa 55 81 12 e8 03 00 00 18 fc ff ff c0 5d 00 00 00 40 e2 01 00 04 36
 imu frame:             aa 55 82 11 00 00 00 00 00 e8 03 00 00 00 00 32 00 92 13 00 00 92
+text-ack frame:        aa 55 90 01 01 bb
 event frame:           aa 55 83 07 02 24 2c 9c 13 00 00 b3
   parser: CRC mismatch (wiring / GND / baudrate / ModemManager?)
-frames=2 (expect 2: state, imu — event is CRC-broken)  dropped_bytes=2 bad_crc=1
-state: L=1234 R=-1234 batt=12000 mV cur=1500 mA fault=0 tick=5000
-imu: id=0 az=9.807 m/s2 gz=0.08727 rad/s tick=5010</code></pre>
+frames=3 (expect 3: state, imu, text-ack — event is CRC-broken)  dropped_bytes=2 bad_crc=1
+state: L=1000 R=-1000 batt=24000 mV cur=0 mA fault=0 tick=123456 power=4(armed)
+imu: id=0 az=9.807 m/s2 gz=0.08727 rad/s tick=5010
+text-ack: result=1</code></pre>
       <p>출력에서 <code>-0.1 m/s</code> 가 <code>9c ff</code> 로 나오는 것을 확인한다. −100 = 0xFF9C 의 2의 보수를 <em>하위 바이트 먼저</em> 쓴 것이다. 이 바이트 순서가 리틀엔디안이고, STM32 도 리틀엔디안이라 펌웨어는 <code>memcpy</code> 한 번으로 읽을 수 있다.</p>
-      <p><code>dropped_bytes=2</code> 는 헤더를 찾느라 버린 바이트 수다. 앞에 붙인 쓰레기는 3바이트(<code>00 AA 13</code>)인데 왜 2 인지 파서 코드에서 찾아본다. <code>AA</code> 는 헤더 후보로 받아들여졌다가 다음 바이트가 <code>55</code> 가 아니어서 버려지는데, 그 순간 세는 것은 <code>13</code> 하나다. 실제 연결에서 이 숫자가 계속 늘면 보드레이트나 배선을 의심한다.</p>
+      <p><code>state frame</code> 은 23 B(헤더 2 + TYPE + LEN + 18 + CRC)이고, 값은 계약 사양의 기준 프레임과 같은 것(L=1000, R=−1000, 24000 mV, tick 123456, power 4 = armed)을 썼다. <code>power(on)</code> · <code>to_text()</code> · <code>text-ack frame</code> 도 기준 프레임과 바이트가 같아야 한다. <code>to_text()</code> 는 LEN 이 0 이라 TYPE · LEN 바로 뒤가 CRC 다.</p>
+      <p><code>dropped_bytes=2</code> 는 헤더를 찾느라 버린 바이트 수다. 앞에 붙인 쓰레기는 3바이트(<code>00 AA 13</code>)인데 왜 2 인지 파서 코드에서 찾아본다. <code>AA</code> 는 헤더 후보로 받아들여졌다가 다음 바이트가 <code>55</code> 가 아니어서 버려지는데, 그 순간 세는 것은 <code>13</code> 하나다. 실제 연결에서 이 숫자가 계속 늘면 보드레이트나 배선을 의심한다. 다만 실물 MCU 에서는 첫 프레임 <em>전에</em> 글자가 온다(<code>link v2</code> 의 에코와 <code>OK link v2</code>, §3-4). 그 바이트도 여기에 세어지므로 정상이다. 의심할 것은 첫 프레임 <em>뒤에</em> 이 숫자가 느는 경우다.</p>
 
       <h3>3-3. <code>serial_port.hpp</code> — termios 로 시리얼 열기, 논블로킹 폴링 <span class="tag sim">SIM</span></h3>
       <p>Boost.Asio 나 외부 <code>serial</code> 라이브러리를 쓰지 않는다. 의존성이 0 이고, 무엇보다 <strong>OS 가 시리얼을 어떻게 다루는지</strong>(보드레이트·프레이밍·타임아웃이 전부 커널의 termios 구조체 하나에 있다)를 직접 확인하는 것이 이 단계의 학습 내용이기 때문이다.</p>
@@ -826,14 +902,17 @@ private:
       <h3>3-4. <code>mcu_bridge_node.cpp</code> — 노드 <span class="tag sim">SIM</span></h3>
       <p>Python 판의 구조를 옮기되 타이머가 둘이다. <strong>명령 타이머(50 Hz, 20 ms)</strong>는 속도 프레임을 보내고, <strong>수신 타이머(500 Hz, 2 ms)</strong>는 도착한 바이트를 전부 파서에 넣어 완성된 프레임을 타입별로 처리한다.
       파라미터 이름은 Python 판과 같게 두었으므로 <code>robot_params.yaml</code> 의 <code>mcu_bridge:</code> 블록이 그대로 적용된다(IMU 관련 두 개만 추가). <code>// TODO(you)</code> 다섯 곳은 비워 둔 채로도 빌드되지만, 당신이 채워야 노드가 완성된다.</p>
-      <div class="callout note"><span class="ct">결정 대기 — 실물 MCU 를 V2 모드로 전환하는 요청 (2026-10-12)</span>
-        <p>실물 MCU 는 전원을 넣거나 리셋되면 <strong>TEXT 모드(명령 창)</strong>로 시작한다. 계약 v2 프레임을 주고받으려면 V2 모드로 전환해야 하고, 전환은 재플래시 없이 실행 중에 한다(<a href="fw-17-link-v2.html">fw-17</a>).
-        그래서 이 노드는 나중에 두 가지를 더 해야 한다.</p>
+      <div class="callout note"><span class="ct">실물 MCU 를 V2 모드로 바꾸는 요청 — <code>link v2</code> (결정 19 · bc · be)</span>
+        <p>실물 MCU 는 전원을 넣거나 리셋되면 <strong>TEXT 모드(글자 명령 창)</strong>로 시작한다. 계약 v2 프레임을 주고받으려면 V2 모드로 바꿔야 하고, 바꾸는 수단은 TEXT 의 명령어 <code>link v2</code>(글자 한 줄)다(<a href="fw-17-link-v2.html">fw-17</a>). 그래서 노드는 아래 세 가지를 한다. 코드에서는 <code>maybe_enter_v2()</code> · <code>handle_text_byte()</code> · <code>link_up()</code> 이다.</p>
         <ul>
-          <li>시작할 때 MCU 에 V2 진입을 요청한다.</li>
-          <li>프레임이 끊겼다가 글자가 보이면(MCU 가 리셋되어 TEXT 로 돌아온 경우) 다시 요청한다.</li>
+          <li><strong>포트를 열면 <code>\r\nlink v2\r\n</code> 을 한 번 보낸다.</strong> 앞의 <code>\r\n</code> 은 명령 창의 줄에 이미 쌓인 글자를 먼저 끝낸다 — 그 줄은 알 수 없는 명령으로 처리되고, <code>link v2</code> 는 새 줄이 된다. MCU 는 그 줄을 에코하고 <code>OK link v2</code> 를 찍은 뒤 V2 로 바뀐다. 첫 프레임 전에 오는 이 글자는 정상이고, 노드는 줄 단위로 로그에 남긴다.</li>
+          <li><strong>프레임이 1 s 넘게 끊겼고 줄바꿈으로 끝나는 글자 줄이 보이면 다시 보낸다.</strong> 이것은 MCU 가 리셋되어 TEXT 로 돌아온 경우(부팅 안내문)다. 재전송은 1 s 에 한 번까지다.</li>
+          <li><strong>프레임이 1 s 넘게 없으면 <code>0x01</code> 을 보내지 않는다.</strong> TEXT 모드의 명령 창은 찍을 수 있는 바이트(예: 헤더의 <code>0x55</code> = <code>U</code>)를 줄에 쌓는다. 속도 프레임을 계속 보내면 <code>link v2</code> 앞에 이 글자가 붙어 명령으로 읽히지 않는다.</li>
         </ul>
-        <p>요청에 쓸 수단(프레임 TYPE)은 fw-17 에서 정한다. 이 쪽의 가짜 MCU(SIM)는 처음부터 V2 로 응답하므로 지금 코드에는 영향이 없다.</p></div>
+        <p>전원이 ARMED 면 MCU 는 <code>ERR link armed</code> 를 찍고 TEXT 에 머문다. 노드는 이 줄을 경고로 남길 뿐 다른 일을 하지 않는다. 이 상태에서는 링크가 없어 <code>~/power</code> 도 거부되고, MCU 의 10 s 전원 내림도 TEXT 에서는 세지 않는다. 브리지를 멈추고 터미널에서 <code>pwr down</code> 을 친 뒤 브리지를 다시 띄운다. V2 → TEXT 요청(<code>0x11</code>)은 브리지가 보내지 않는다. 진단할 때 브리지를 멈추고 다른 도구(fw-17 의 probe)가 보낸다. 브리지는 <code>0x90</code> 이 오면 로그만 남긴다.</p>
+        <p>전원 켜기 · 끄기(<code>0x10</code>)는 서비스 <code>~/power</code>(<code>std_srvs/SetBool</code>)로 노출한다. 실물 MCU 는 <code>0x10</code> on 이 와야 전원 시퀀스를 시작하고, <code>/dev/mcu</code> 를 쥐고 있는 것은 브리지 하나뿐이라서 ROS 에서 이 프레임을 보낼 수 있는 곳도 브리지뿐이다. 응답 프레임은 없으므로 서비스의 <code>success</code> 는 "프레임을 보냈다"는 뜻이다. 결과는 <code>0x81</code> 의 <code>power_state</code> 가 바뀐 것으로 보고, 노드는 바뀔 때마다 로그를 남긴다.</p>
+        <p>이 쪽의 가짜 MCU(SIM)는 처음부터 V2 로 동작하고 포트를 열지 않으므로 위의 글자 처리는 실행되지 않는다. 가짜 MCU 는 <code>~/power</code> 에 따라 <code>power_state</code> 를 idle(0) ↔ armed(4) 로 바꿀 뿐이고, 실물의 사전충전 · 게이트 · 릴레이 단계는 흉내 내지 않는다.</p>
+      </div>
       <pre><code class="lang-cpp">// src/mcu_bridge_node.cpp
 #include &lt;algorithm&gt;
 #include &lt;array&gt;
@@ -853,6 +932,7 @@ private:
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "std_msgs/msg/u_int8.hpp"
+#include "std_srvs/srv/set_bool.hpp"
 #include "tf2/LinearMath/Quaternion.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"   // tf2::toMsg(tf2::Quaternion)
 #include "tf2_ros/transform_broadcaster.h"
@@ -903,6 +983,8 @@ public:
     }
 
     // ── 2. 프로토콜 / 시리얼 ───────────────────────────────────────────────
+    last_frame_time_ = now();          // same clock type as now(), like last_cmd_time_ below. link_up() also needs got_frame_
+    last_enter_time_ = now();
     if (simulate_) {
       loopback_.emplace(encoder_cpr_, wheel_radius_, wheel_sep_);
       RCLCPP_WARN(get_logger(), "simulate:=true — 가짜 MCU 로 동작합니다 (엔코더 + 가짜 IMU).");
@@ -910,6 +992,8 @@ public:
       try {
         serial_.open_port(port_, baudrate_);
         RCLCPP_INFO(get_logger(), "시리얼 열림: %s @ %d", port_.c_str(), baudrate_);
+        // The MCU boots in TEXT. Ask for V2 before the timers start, so this line goes out before any 0x01.
+        send_enter_v2();
       } catch (const std::exception &amp; e) {
         RCLCPP_ERROR(get_logger(),
           "시리얼 열기 실패: %s\n"
@@ -933,6 +1017,9 @@ public:
     pub_fault_ = create_publisher&lt;std_msgs::msg::UInt8&gt;("mcu/fault", rclcpp::QoS(1).reliable().transient_local());
     pub_event_ = create_publisher&lt;std_msgs::msg::String&gt;("mcu/event", rclcpp::QoS(10).reliable());
     tf_broadcaster_ = std::make_unique&lt;tf2_ros::TransformBroadcaster&gt;(*this);
+    // ~/power = /mcu_bridge/power. true -&gt; 0x10 on, false -&gt; 0x10 off.
+    srv_power_ = create_service&lt;std_srvs::srv::SetBool&gt;(
+      "~/power", std::bind(&amp;McuBridge::on_power, this, std::placeholders::_1, std::placeholders::_2));
 
     {   // 기동 직후 fault = 0 을 한 번 발행한다. 이후 handle_state() 는 값이 바뀔 때만 발행하므로,
         // 이 한 번이 없으면 simulate 모드(항상 0)에서는 /mcu/fault 가 영원히 비어 있다.
@@ -994,6 +1081,9 @@ private:
       loopback_-&gt;set_velocity(v_left, v_right);
       handle_state(loopback_-&gt;step(period_));
     } else if (serial_.is_open()) {
+      maybe_enter_v2(t);
+      // No frame for 1 s = the MCU is not in V2. Velocity bytes would pile up on its TEXT line, so stay quiet.
+      if (!link_up(t)) { return; }
       try {
         const auto frame = rpi5_mcu::encode_velocity(v_left, v_right);
         serial_.write_all(frame.data(), frame.size());
@@ -1023,8 +1113,15 @@ private:
     for (size_t i = 0; i &lt; n; ++i) {
       rpi5_mcu::Frame f;
       std::string err;
+      const bool outside_frame = parser_.idle();     // decide before push(): text can only sit between frames
       if (parser_.push(buf[i], f, err)) {
+        last_frame_time_ = now();
+        got_frame_ = true;
+        text_seen_ = false;                           // only text that comes after the frames stop counts
+        text_line_.clear();
         dispatch(f);
+      } else if (outside_frame &amp;&amp; buf[i] != rpi5_mcu::HEADER0) {
+        handle_text_byte(buf[i]);
       } else if (!err.empty()) {
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "프레임 오류: %s (bad_crc=%u dropped=%u)",
                              err.c_str(), parser_.bad_crc(), parser_.dropped_bytes());
@@ -1039,6 +1136,13 @@ private:
       case rpi5_mcu::TYPE_STATE: { rpi5_mcu::McuState s; if (rpi5_mcu::decode_state(f, s, err)) { handle_state(s); } break; }
       case rpi5_mcu::TYPE_IMU:   { rpi5_mcu::ImuSample s; if (rpi5_mcu::decode_imu(f, s, err)) { handle_imu(s); } break; }
       case rpi5_mcu::TYPE_EVENT: { rpi5_mcu::McuEvent e; if (rpi5_mcu::decode_event(f, e, err)) { handle_event(e); } break; }
+      case rpi5_mcu::TYPE_TEXT_ACK: {      // reply to 0x11; someone other than this bridge sent it
+        uint8_t r = 0;
+        if (rpi5_mcu::decode_text_ack(f, r, err)) {
+          RCLCPP_WARN(get_logger(), "MCU 0x90 result=%u (%s)", r, r == 0 ? "TEXT 로 바뀝니다 — 프레임이 끊깁니다" : "거부: 전원이 ARMED");
+        }
+        break;
+      }
       default:
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "알 수 없는 프레임 타입 0x%02X", f.type);
     }
@@ -1071,6 +1175,11 @@ private:
       }
     }
     fault_ = s.fault;
+    if (s.power_state != power_state_) {                       // log every change; 0x10 has no reply frame
+      RCLCPP_INFO(get_logger(), "MCU 전원 %s -&gt; %s",
+                  rpi5_mcu::power_name(power_state_), rpi5_mcu::power_name(s.power_state));
+      power_state_ = s.power_state;
+    }
     integrate_odometry(s, t);
   }
 
@@ -1199,9 +1308,76 @@ private:
     pub_batt_-&gt;publish(batt);
   }
 
+  // ── ~/power service: send 0x10. success = "frame written", not "armed" ──
+  void on_power(const std::shared_ptr&lt;std_srvs::srv::SetBool::Request&gt; req,
+                std::shared_ptr&lt;std_srvs::srv::SetBool::Response&gt; res)
+  {
+    if (simulate_) {
+      loopback_-&gt;set_power(req-&gt;data);
+    } else if (serial_.is_open() &amp;&amp; link_up(now())) {
+      try {
+        const auto f = rpi5_mcu::encode_power(req-&gt;data);
+        serial_.write_all(f.data(), f.size());
+      } catch (const std::exception &amp; e) {
+        res-&gt;success = false;
+        res-&gt;message = e.what();
+        return;
+      }
+    } else {
+      res-&gt;success = false;
+      res-&gt;message = "링크 없음: 1 s 동안 프레임이 없다 (MCU 가 V2 가 아닌가?)";
+      return;
+    }
+    res-&gt;success = true;
+    res-&gt;message = req-&gt;data ? "0x10 on 보냄 — 결과는 power_state 로 본다" : "0x10 off 보냄 — 결과는 power_state 로 본다";
+  }
+
+  // ── TEXT mode handling (decisions bc, be) ──
+  bool link_up(const rclcpp::Time &amp; t) const
+  {
+    return got_frame_ &amp;&amp; (t - last_frame_time_).seconds() &lt;= 1.0;
+  }
+
+  void send_enter_v2()
+  {
+    const auto * line = reinterpret_cast&lt;const uint8_t *&gt;(rpi5_mcu::ENTER_V2_LINE);
+    serial_.write_all(line, sizeof(rpi5_mcu::ENTER_V2_LINE) - 1);   // 11 bytes, without the '\0'
+    last_enter_time_ = now();
+    text_seen_ = false;
+  }
+
+  // Frames gone for more than 1 s and a text line seen = the MCU reset and is in TEXT. At most once per second.
+  void maybe_enter_v2(const rclcpp::Time &amp; t)
+  {
+    if (text_seen_ &amp;&amp; (t - last_frame_time_).seconds() &gt; 1.0 &amp;&amp; (t - last_enter_time_).seconds() &gt;= 1.0) {
+      RCLCPP_WARN(get_logger(), "MCU 가 TEXT 모드입니다 (리셋?) — link v2 를 다시 보냅니다");
+      try { send_enter_v2(); } catch (const std::exception &amp; e) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "MCU 송신 오류: %s", e.what());
+      }
+    }
+  }
+
+  // Bytes outside frames are TEXT output (echo, "OK link v2", "ERR link armed", boot banner). Log them by line.
+  void handle_text_byte(uint8_t b)
+  {
+    if (b == '\n') {
+      if (!text_line_.empty()) {
+        if (text_line_.find("ERR link armed") != std::string::npos) {
+          RCLCPP_WARN(get_logger(), "MCU 가 link v2 를 거부했습니다: 전원이 ARMED (TEXT 에 머묾)");
+        } else {
+          RCLCPP_INFO(get_logger(), "MCU 글자: %s", text_line_.c_str());
+        }
+      }
+      text_line_.clear();
+      text_seen_ = true;
+    } else if (b &gt;= 0x20 &amp;&amp; b &lt;= 0x7E &amp;&amp; text_line_.size() &lt; 80) {
+      text_line_.push_back(static_cast&lt;char&gt;(b));
+    }
+  }
+
   void stop_motors()
   {
-    if (!simulate_ &amp;&amp; serial_.is_open()) {
+    if (!simulate_ &amp;&amp; serial_.is_open() &amp;&amp; link_up(now())) {
       try {
         const auto f = rpi5_mcu::encode_velocity(0.0, 0.0);
         serial_.write_all(f.data(), f.size());
@@ -1231,7 +1407,11 @@ private:
   std::optional&lt;Prev&gt; prev_;
   std::optional&lt;int64_t&gt; tick_offset_ns_;
   uint8_t fault_{0};
+  uint8_t power_state_{0xFF};               // 0xFF = nothing received yet, so the first state is logged
   uint32_t sim_div_{0};
+  rclcpp::Time last_frame_time_, last_enter_time_;
+  bool got_frame_{false}, text_seen_{false};
+  std::string text_line_;
 
   std::optional&lt;rpi5_mcu::LoopbackMcu&gt; loopback_;
   SerialPort serial_;
@@ -1244,6 +1424,7 @@ private:
   rclcpp::Publisher&lt;sensor_msgs::msg::Imu&gt;::SharedPtr pub_imu_, pub_imu_wt901_, pub_imu_bno055_;
   rclcpp::Publisher&lt;std_msgs::msg::UInt8&gt;::SharedPtr pub_fault_;
   rclcpp::Publisher&lt;std_msgs::msg::String&gt;::SharedPtr pub_event_;
+  rclcpp::Service&lt;std_srvs::srv::SetBool&gt;::SharedPtr srv_power_;
   std::unique_ptr&lt;tf2_ros::TransformBroadcaster&gt; tf_broadcaster_;
   rclcpp::TimerBase::SharedPtr cmd_timer_, rx_timer_;
 };
@@ -1342,6 +1523,13 @@ ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.0}, angular: {z:
 ros2 topic echo /imu/data_raw --field angular_velocity.z --once      # 0.5 — 가짜 IMU 는 명령 ω 를 그대로 낸다
 ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.2}, angular: {z: 0.0}}" -r 10
 ros2 topic echo /odom --field pose.pose.position      # x 가 초당 0.2 씩 증가</code></pre>
+      <p><strong>전원 서비스 확인:</strong> 노드를 띄운 터미널에는 첫 상태에서 <code>MCU 전원 unknown -&gt; idle</code> 이 한 번 찍혀 있다. 다른 터미널에서 서비스를 부른다.</p>
+      <pre><code class="lang-bash">ros2 service list | grep power        # /mcu_bridge/power
+ros2 service call /mcu_bridge/power std_srvs/srv/SetBool "{data: true}"    # success: True
+#  노드 로그: MCU 전원 idle -&gt; armed
+ros2 service call /mcu_bridge/power std_srvs/srv/SetBool "{data: false}"
+#  노드 로그: MCU 전원 armed -&gt; idle</code></pre>
+      <p>가짜 MCU 는 idle 과 armed 사이를 바로 오간다. 실물 MCU 는 on 을 받으면 precharge → gate → relay → armed 를 차례로 거치므로 로그가 네 줄 찍힌다(06b). 가짜 MCU 에서는 전원 상태와 관계없이 <code>/odom</code> 이 움직인다. 위의 운동학 확인을 전원 상태에 묶지 않으려고 그렇게 두었다.</p>
       <p><strong>워치독 확인:</strong> <code>ros2 topic pub</code> 을 <kbd>Ctrl</kbd>+<kbd>C</kbd> 로 멈추고 0.5초 뒤 <code>/odom</code> 의 <code>twist.twist.linear.x</code> 가 0 이 되는지 본다.</p>
       <p><strong>Python 판과 비교:</strong> 두 구현은 노드 이름과 TF 가 같으므로 <em>동시에 띄우지 않는다.</em> 번갈아 띄우고 같은 절차로 10초 전진시킨 뒤 <code>x</code> 를 비교한다. 프레임은 다르지만 운동학 수식이 같으므로 1 % 이내여야 한다. 다르면 <code>encoder_cpr</code>·<code>wheel_radius</code> 파라미터가 한쪽에만 들어갔거나(노드 이름·YAML 키 확인) 적분 코드의 오타다.</p>
       <pre><code class="lang-bash"># 10초 전진 후 x 읽기 — C++ 판과 Python 판에 각각 실행
@@ -1364,6 +1552,7 @@ ros2 launch rpi5_mcu_bridge mcu_bridge.launch.py simulate:=true</code></pre>
           <tr><td>QoS</td><td><code>topic info -v</code> — <code>/odom</code> RELIABLE, <code>/imu/data_raw</code> BEST_EFFORT, <code>/mcu/fault</code> 는 늦게 구독해도 마지막 값을 받는다(TRANSIENT_LOCAL)</td></tr>
           <tr><td>TF 트리</td><td><code>view_frames</code> 의 <code>odom → base_footprint → base_link → 바퀴 링크 4개</code>, <code>tf2_echo odom base_link</code></td></tr>
           <tr><td>브리지 워치독 (Pi 쪽 0.5 s)</td><td><code>topic pub</code> 을 멈추고 0.5 s 뒤 <code>twist.twist.linear.x</code> = 0</td></tr>
+          <tr><td><code>~/power</code> 서비스 배선</td><td><code>service call</code> 뒤 노드 로그의 <code>MCU 전원 idle -&gt; armed</code> — 서비스 → <code>set_power()</code> → <code>power_state</code> → <code>handle_state()</code> 의 로그까지. 프레임 <code>0x10</code> 의 바이트는 <code>protocol_check</code> 가 본다</td></tr>
           <tr><td>EKF 배선</td><td>§3-10 — <code>/odometry/filtered</code> 가 나오고 <code>odom → base_footprint</code> 를 발행하는 노드가 하나</td></tr>
           <tr><td>프레임 코덱 (인코드 · 디코드 · CRC8 · 합성 입력에서의 동기 복구)</td><td><code>protocol_check</code> — 노드 밖에서, 손으로 만든 바이트열로. 노드의 SIM 경로는 코덱을 지나지 않는다</td></tr>
         </tbody>
@@ -1372,6 +1561,7 @@ ros2 launch rpi5_mcu_bridge mcu_bridge.launch.py simulate:=true</code></pre>
         <thead><tr><th>검증하지 못한 것</th><th>왜 못 하는가</th><th>검증하는 곳</th></tr></thead>
         <tbody>
           <tr><td><code>serial_port.hpp</code> (termios) 전체</td><td><code>open_port()</code> 가 불리지 않는다. 보드레이트 설정 · <code>cfmakeraw</code> · <code>VMIN=0</code> 논블로킹 읽기 · <code>write_all</code> 이 한 줄도 실행되지 않았다</td><td>06b</td></tr>
+          <tr><td>모드 진입과 실물 전원 시퀀스</td><td>포트를 열지 않으므로 <code>link v2</code> 송신 · 글자 줄 감지와 재요청 · <code>ERR link armed</code> 로그 · <code>0x90</code> 처리가 실행되지 않았다. <code>~/power</code> 는 가짜 MCU 의 <code>set_power()</code> 를 부를 뿐 <code>0x10</code> 프레임을 보내지 않고, 사전충전 → 게이트 → 릴레이 단계도 없다</td><td>06b</td></tr>
           <tr><td>실제 스트림에서의 파서 재동기</td><td><code>protocol_check</code> 의 입력은 몇십 바이트의 합성열이다. 포트를 스트림 중간에 열었을 때, 상태 · IMU 프레임이 섞여 올 때, 프레임이 <code>read</code> 경계에서 잘려 올 때의 <code>FrameParser</code> 동작은 실물 스트림에서만 확인할 수 있다</td><td>06b</td></tr>
           <tr><td>fault · event 경로</td><td><code>LoopbackMcu</code> 의 <code>fault</code> 는 항상 0 이고 <code>0x83</code> 이벤트를 내지 않는다 → <code>handle_event()</code>, fault 동안의 0 명령, <code>/mcu/event</code> 발행이 한 번도 실행되지 않았다</td><td>06b</td></tr>
           <tr><td><code>tick_ms</code> → ROS 시각 환산</td><td><code>stamp_from_tick()</code> 은 실행됐지만 입력이 <code>dt</code> 를 그대로 더한 완벽한 시계였다. 실물의 지터 · 두 시계의 드리프트 · MCU 리셋 · 랩어라운드가 없었다</td><td>06b</td></tr>
@@ -1381,7 +1571,7 @@ ros2 launch rpi5_mcu_bridge mcu_bridge.launch.py simulate:=true</code></pre>
           <tr><td>EKF 의 융합 효과</td><td>가짜 gz 는 명령 ω 그대로라 휠과 IMU 가 언제나 일치한다. EKF 가 고칠 차이가 없다</td><td><a href="09a-assembly-gate.html">09a</a></td></tr>
         </tbody>
       </table></div>
-      <p>두 번째 표의 "06b" 여섯 줄이 곧 <a href="06b-bench-integration.html">06b · 실물 MCU 벤치 통합</a>의 목차다. 06b 에서 문제가 나면 첫 번째 표에 있는 것은 의심하지 않아도 된다. 의심 범위를 이렇게 줄이는 것이 이 쪽을 먼저 100 % 로 만드는 이유다.</p>
+      <p>두 번째 표의 "06b" 일곱 줄이 곧 <a href="06b-bench-integration.html">06b · 실물 MCU 벤치 통합</a>의 목차다. 06b 에서 문제가 나면 첫 번째 표에 있는 것은 의심하지 않아도 된다. 의심 범위를 이렇게 줄이는 것이 이 쪽을 먼저 100 % 로 만드는 이유다.</p>
 
       <h4>런치파일에서 C++ 판으로 교체하기</h4>
       <p>검증이 끝났으면 <code>ros2_ws/src/rpi5_bringup/launch/robot.launch.py</code> 의 mcu_bridge 블록에서 패키지만 바꾼다. 실행파일·노드 이름·파라미터 파일은 그대로다. "인터페이스가 같으면 구현을 교체할 수 있다"는 원칙의 실제 사례다.</p>
@@ -1404,7 +1594,7 @@ ros2 launch rpi5_mcu_bridge mcu_bridge.launch.py simulate:=true</code></pre>
       <h3>3-6. 펌웨어 트랙 — NUCLEO-H723ZG (STM32CubeMX + HAL) <span class="tag hw">HW</span></h3>
       <div class="callout warn"><span class="ct">이 절은 이전 중이다 — 새로 시작한다면 "MCU 펌웨어 가이드"에서</span>
         <p>펌웨어는 <a href="fw-00-map.html">MCU 펌웨어 가이드</a>(fw-00 부터, Mac 차선)로 이전 중이다. <strong>새로 시작한다면 MCU 펌웨어 가이드의 fw-00 에서 시작한다.</strong> 이 절은 이전이 끝나면 포인터로 줄어든다. 그때까지 본문은 그대로 둔다.
-        이 절은 이 쪽(06)의 완료 조건이 아니다. 체크포인트에서도 뺐다. 이 절을 검증하던 항목은 펌웨어 쪽(fw-14 · fw-16 · fw-17 · fw-19)의 체크포인트가 받는다(이 쪽 끝 "검증 체크포인트"의 머리말). 그때까지 이 절의 확인 절차는 §3-6-8 의 "확인할 것 ①~⑦"이다.</p>
+        이 절은 이 쪽(06)의 완료 조건이 아니다. 체크포인트에서도 뺐다. 이 절을 검증하던 항목은 펌웨어 쪽(fw-14 · fw-17 · fw-19)의 체크포인트가 받는다(이 쪽 끝 "검증 체크포인트"의 머리말). 그때까지 이 절의 확인 절차는 §3-6-8 의 "확인할 것 ①~⑦"이다.</p>
         <p>이 절의 다음 내용은 새 가이드에서 <strong>근거와 함께 다시 도출된다.</strong> 그대로 옮겨 쓰지 말고, 해당 쪽이 나올 때까지는 "아직 정해지지 않은 것"으로 읽는다.</p>
         <ul>
           <li>BNO055 의 I2C DMA 읽기 (§3-6-1 표, §3-6-6)</li>
@@ -1415,6 +1605,7 @@ ros2 launch rpi5_mcu_bridge mcu_bridge.launch.py simulate:=true</code></pre>
           <li><code>BATT_MIN_MV 9600</code> 의 "3S" 주석 (§3-6-7) — 실물 배터리는 6S 다 (<code>hardware/INVENTORY.md</code> 7절)</li>
           <li>WT901 의 캘리브레이션 명령 코드 (§3-6-5) — 보유 모델의 매뉴얼과 다르다. 잠금 해제 <code>FF AA 69 88 B5</code> 는 매뉴얼에 없지만 보유 개체에는 필요했다(2026-10-19 실측, <a href="fw-14-wt901.html#s2-4">fw-14 §2-4</a> 정정 표)</li>
           <li>"A0~A5 = ADC" 핀과 PA5 (§3-6-1) — 확정 핀맵은 <code>hardware/pinmap-h723.md</code> 와 INVENTORY 2절이다</li>
+          <li>TEXT ↔ V2 모드 전환(<code>link v2</code> · <code>0x11</code> · <code>0x90</code>)과 전원 명령 <code>0x10</code> 의 처리 (§3-6-4) — 이 절의 코드에는 없다. <a href="fw-17-link-v2.html">fw-17</a> 에서 쓴다. 이 절의 프레임 구조체 · 상태 보고는 <code>power_state</code> 를 넣은 18 B 판으로 고쳐 두었다</li>
         </ul>
       </div>
       <p>완성 코드가 아니라 <strong>구조와 계약</strong>을 준다. 핀 배치·모터 드라이버·엔코더 전압은 당신의 부품에 따라 다르고, 06a 의 3.3 V/FT 핀 확인을 먼저 끝냈어야 한다. 이 트랙은 <strong>Pi 없이</strong> 진행하고 검증한다(§3-6-8 의 probe 스크립트).</p>
@@ -1452,25 +1643,30 @@ ros2 launch rpi5_mcu_bridge mcu_bridge.launch.py simulate:=true</code></pre>
 #include &lt;stdint.h&gt;
 #include &lt;stddef.h&gt;
 #include &lt;string.h&gt;
+#include "power.h"     /* power_state_t, POWER_* (fw-11) */
 
 #define FRAME_H0      0xAA
 #define FRAME_H1      0x55
 #define TYPE_VELOCITY 0x01   /* Pi → MCU */
+#define TYPE_POWER    0x10   /* Pi → MCU, on u8 */
+#define TYPE_TO_TEXT  0x11   /* Pi → MCU, LEN 0 */
 #define TYPE_STATE    0x81   /* MCU → Pi, 50 Hz */
 #define TYPE_IMU      0x82   /* MCU → Pi, 100~200 Hz */
 #define TYPE_EVENT    0x83   /* MCU → Pi, 발생 시 */
+#define TYPE_TEXT_ACK 0x90   /* MCU → Pi, result u8 */
 
 #pragma pack(push, 1)                    /* 패딩 없이 바이트를 그대로 붙인다 */
 typedef struct { int16_t v_left_mm_s; int16_t v_right_mm_s; } velocity_payload_t;                              /* 4 B  */
 typedef struct { int32_t left_ticks; int32_t right_ticks; uint16_t batt_mv; uint16_t current_ma;
-                 uint8_t fault; uint32_t tick_ms; } state_payload_t;                                            /* 17 B */
+                 uint8_t fault; uint32_t tick_ms; uint8_t power_state; } state_payload_t;                       /* 18 B */
 typedef struct { uint8_t sensor_id; int16_t ax_mg, ay_mg, az_mg; int16_t gx_ddps, gy_ddps, gz_ddps;   /* ddps = 0.1 °/s */
                  uint32_t tick_ms; } imu_payload_t;                                                            /* 17 B */
 typedef struct { uint8_t code; uint16_t detail; uint32_t tick_ms; } event_payload_t;                           /* 7 B  */
 #pragma pack(pop)
 
 _Static_assert(sizeof(velocity_payload_t) == 4,  "velocity payload must be 4 bytes");
-_Static_assert(sizeof(state_payload_t)    == 17, "state payload must be 17 bytes");
+_Static_assert(sizeof(state_payload_t)    == 18, "state payload must be 18 bytes");
+_Static_assert(POWER_ARMED == 4 &amp;&amp; POWER_FAULT == 6, "power_state on the wire = fw-11 power_state_t numbers");
 _Static_assert(sizeof(imu_payload_t)      == 17, "imu payload must be 17 bytes");
 _Static_assert(sizeof(event_payload_t)    == 7,  "event payload must be 7 bytes");
 
@@ -1514,7 +1710,7 @@ static int16_t sat_i16(float v) { return (int16_t)(v &gt;  32767.f ?  32767.f : 
 static int16_t mps2_to_mg(float a)    { return sat_i16(a / 9.80665f * 1000.f); }
 static int16_t dps_to_ddps(float w)   { return sat_i16(w * 10.f); }    /* 0.1 °/s 단위, ±3276 °/s — 센서 범위 ±2000 °/s 가 잘리지 않는다 (06a §4-3) */</code></pre>
       <div class="callout note"><span class="ct">송신은 큐 + DMA 로</span>
-        <p>상태 22 B 는 460800 bps 에서 약 0.5 ms 다. 1 ms 인터럽트 안에서 블로킹 전송하면 루프 주기가 지연된다. 그래서 프레임을 링 버퍼에 넣고, DMA 송신이 비어 있을 때 다음 프레임을 꺼내 <code>HAL_UART_Transmit_DMA</code> 로 보내는 <code>tx_enqueue()</code> 를 둔다. 그러면 제어 루프·IMU 파서·안전 상태기계는 각자 프레임을 큐에 넣기만 하면 된다. IMU 200 Hz 와 상태 50 Hz 프레임이 번갈아 나가도 한 프레임의 바이트 사이에 다른 프레임이 끼어들지 않는다.</p>
+        <p>상태 23 B 는 460800 bps 에서 약 0.5 ms 다. 1 ms 인터럽트 안에서 블로킹 전송하면 루프 주기가 지연된다. 그래서 프레임을 링 버퍼에 넣고, DMA 송신이 비어 있을 때 다음 프레임을 꺼내 <code>HAL_UART_Transmit_DMA</code> 로 보내는 <code>tx_enqueue()</code> 를 둔다. 그러면 제어 루프·IMU 파서·안전 상태기계는 각자 프레임을 큐에 넣기만 하면 된다. IMU 200 Hz 와 상태 50 Hz 프레임이 번갈아 나가도 한 프레임의 바이트 사이에 다른 프레임이 끼어들지 않는다.</p>
       </div>
 
       <h4>3-6-3. 제어 루프 — 1 kHz(1 ms) 인터럽트에서</h4>
@@ -1587,7 +1783,8 @@ void control_step(void)                                /* TIM6 인터럽트에�
   if (tick_ms % 20 == 0) {                             /* ⑤ 50 Hz 상태 보고 — 계약은 쪽당 평균, 바퀴별 값은 MCU 안에서만 */
     const int32_t l_tick = (int32_t)(((int64_t)cnt[FL] + cnt[RL]) / 2);
     const int32_t r_tick = (int32_t)(((int64_t)cnt[FR] + cnt[RR]) / 2);
-    state_payload_t s = { l_tick, r_tick, adc_batt_mv(), adc_current_ma(), fault, tick_ms };
+    state_payload_t s = { l_tick, r_tick, adc_batt_mv(), adc_current_ma(), fault, tick_ms,
+                          (uint8_t)power_get_state() };   /* fw-11 state number, 0 = idle ... 6 = fault */
     uint8_t f[5 + sizeof s];
     tx_enqueue(f, frame_build(TYPE_STATE, &amp;s, sizeof s, f));
   }
@@ -1635,6 +1832,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
         velocity_payload_t v; memcpy(&amp;v, payload, sizeof v);
         set_target(v.v_left_mm_s, v.v_right_mm_s);       /* 제어 모듈의 유일한 입구. 안에서 ms_since_cmd = 0 */
       }
+      /* 0x10 (power on/off) and 0x11 (back to TEXT), and the TEXT/V2 switch itself, are written in fw-17 */
     }
     uart_pi_start();                                     /* 다시 걸기 */
   } else if (huart == &amp;huart6) {
@@ -1850,11 +2048,13 @@ uint8_t safety_step(uint16_t batt_mv, uint16_t current_ma, const volatile imu_pa
       </div>
 
       <h4>3-6-8. Pi 없이 검증 — probe 스크립트 <span class="tag mac">Mac</span> / <span class="tag pi">Pi 호스트</span></h4>
-      <p>Nucleo 를 USB 로 꽂는다(Mac 이면 <code>/dev/cu.usbmodem*</code>, Pi 호스트면 <code>/dev/mcu</code>). 계약 v2 를 Python 으로 독립 구현한 스크립트로 속도 프레임을 보내고 상태·IMU·이벤트 프레임을 해석한다. <code>pip3 install pyserial</code> 만 있으면 된다. 저장소 루트에 <code>scripts/mcu_probe.py</code> 로 저장한다. 이 스크립트는 §3-2 C++ 파서 · 펌웨어 C 파서에 이은 <strong>세 번째 독립 구현</strong>이기도 하다. 세 구현이 같은 바이트를 같은 값으로 읽으면 계약이 맞다.</p>
+      <p>Nucleo 를 USB 로 꽂는다(Mac 이면 <code>/dev/cu.usbmodem*</code>, Pi 호스트면 <code>/dev/mcu</code>). 계약 v2 를 Python 으로 독립 구현한 스크립트로 속도 프레임을 보내고 상태·IMU·이벤트 프레임을 해석한다. <code>pip3 install pyserial</code> 만 있으면 된다. 저장소 루트에 <code>scripts/mcu_probe.py</code> 로 저장한다. 이 스크립트는 §3-2 C++ 파서 · 펌웨어 C 파서에 이은 <strong>세 번째 독립 구현</strong>이기도 하다. 세 구현이 같은 바이트를 같은 값으로 읽으면 계약이 맞다.
+      아래는 최소판이다. 포트를 열 때 <code>link v2</code> 를 한 번 보내고, <code>0x81</code> 18 B 와 <code>0x90</code> 을 읽는다. 리셋 뒤 재요청 · <code>--power</code> · <code>--to-text</code> 가 들어간 판은 <a href="fw-17-link-v2.html">fw-17</a> 의 probe 다.</p>
       <pre><code class="lang-python">#!/usr/bin/env python3
 """MCU 단독 검증 (계약 v2): 속도 프레임을 50 Hz 로 보내고 상태/IMU/이벤트 프레임을 해석한다. ROS 불필요.
     python3 scripts/mcu_probe.py /dev/cu.usbmodem1103 0.1 0.1        # v_left v_right [m/s]
-    python3 scripts/mcu_probe.py /dev/mcu 0 0 --baud 460800"""
+    python3 scripts/mcu_probe.py /dev/mcu 0 0 --baud 460800
+The MCU boots in TEXT, so the port is opened with the line 'link v2'. Text before the first frame is normal."""
 import argparse, struct, sys, time
 import serial
 
@@ -1897,7 +2097,9 @@ a = ap.parse_args()
 
 cmd = frame(0x01, struct.pack('&lt;hh', int(a.vl * 1000), int(a.vr * 1000)))
 n_imu = {0: 0, 1: 0}                                       # sensor_id 별 수신 개수
+POWER_NAME = ['idle', 'precharge', 'gate', 'relay', 'armed', 'down', 'fault']   # fw-11 power_state_t numbers
 with serial.Serial(a.port, a.baud, timeout=0) as s:
+    s.write(b'\r\nlink v2\r\n')                          # TEXT -&gt; V2 (decision be). Leading CRLF ends any partial line. Re-sending after a reset is in the fw-17 probe
     buf = b''
     t0 = time.time(); next_tx = t0
     try:
@@ -1907,9 +2109,10 @@ with serial.Serial(a.port, a.baud, timeout=0) as s:
             buf += s.read(4096)
             frames, buf = parse(buf)
             for ftype, p in frames:
-                if ftype == 0x81 and len(p) == 17:
-                    L, R, batt, cur, fault, tick = struct.unpack('&lt;iiHHBI', p)
-                    print(f'STATE L={L:8d} R={R:8d} batt={batt/1000:5.2f}V cur={cur:5d}mA fault=0x{fault:02X} t={tick}')
+                if ftype == 0x81 and len(p) == 18:
+                    L, R, batt, cur, fault, tick, pw = struct.unpack('&lt;iiHHBIB', p)
+                    pname = POWER_NAME[pw] if pw &lt; len(POWER_NAME) else '?'
+                    print(f'STATE L={L:8d} R={R:8d} batt={batt/1000:5.2f}V cur={cur:5d}mA fault=0x{fault:02X} power={pname} t={tick}')
                 elif ftype == 0x82 and len(p) == 17:
                     sid, ax, ay, az, gx, gy, gz, tick = struct.unpack('&lt;BhhhhhhI', p)
                     n_imu[sid] = n_imu.get(sid, 0) + 1
@@ -1919,6 +2122,8 @@ with serial.Serial(a.port, a.baud, timeout=0) as s:
                     code, detail, tick = struct.unpack('&lt;BHI', p)
                     name = {1: 'low-batt', 2: 'over-current', 3: 'tilt', 4: 'watchdog', 5: 'imu-fail', 0x10: 'recovered', 0x20: 'calib'}.get(code, '?')
                     print(f'EVENT {name} code={code} detail={detail} t={tick}')     # 06a 4-2 표 + 학습자 확장 0x20
+                elif ftype == 0x90 and len(p) == 1:
+                    print('TEXT-ACK ' + ('switching to TEXT' if p[0] == 0 else 'refused (armed)'))
             time.sleep(0.002)
     finally:
         s.write(frame(0x01, struct.pack('&lt;hh', 0, 0)))     # 반드시 정지
@@ -2144,18 +2349,19 @@ ros2 topic echo /odometry/filtered --field pose.pose.position      # x 가 /odom
         <li>WT901 설정 · 캘리브레이션</li>
         <li>BNO055 오프셋 저장 · 복원</li>
       </ul>
-      <p class="small">이 항목들을 받을 쪽은 MCU 펌웨어 가이드의 <a href="fw-17-link-v2.html">fw-17</a> · <a href="fw-19-bench-acceptance.html">fw-19</a> · <a href="fw-14-wt901.html">fw-14</a> · <a href="fw-16-flash-store.html">fw-16</a>이다. 같은 주장이 그 쪽들의 체크포인트로 나타난다. §3-6 을 그대로 따라 하는 사람은 확인 절차로 §3-6-8 의 "확인할 것 ①~⑦"을 쓴다.</p>
+      <p class="small">이 항목들을 받을 쪽은 MCU 펌웨어 가이드의 <a href="fw-17-link-v2.html">fw-17</a> · <a href="fw-19-bench-acceptance.html">fw-19</a> · <a href="fw-14-wt901.html">fw-14</a>이다(fw-16 은 제거됨). 같은 주장이 그 쪽들의 체크포인트로 나타난다. §3-6 을 그대로 따라 하는 사람은 확인 절차로 §3-6-8 의 "확인할 것 ①~⑦"을 쓴다.</p>
       <ul class="checklist">
         <li><label><input type="checkbox" data-key="cp0"><span>차동 구동 역·정운동학을 종이에 유도하고, 중점법 적분이 왜 시작점 heading 보다 정확한지 설명할 수 있다</span></label></li>
         <li><label><input type="checkbox" data-key="cp1"><span>계약 v2 의 프레임 구조·TYPE 표·단위(mm/s, mg, 0.1 °/s, tick_ms)·CRC·보드레이트·워치독을 06a §4 표와 대조해 같음을 확인했다</span></label></li>
-        <li><label><input type="checkbox" data-key="cp2"><span><code>protocol_check</code> 출력이 기대 출력과 <strong>바이트 단위로</strong> 같다 (crc8=15, imu gz=0.08727 rad/s, frames=2 dropped=2 bad_crc=1)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp2"><span><code>protocol_check</code> 출력이 기대 출력과 <strong>바이트 단위로</strong> 같다 (crc8=15, state frame 23 B 의 끝 <code>04 36</code>, power(on) <code>aa 55 10 01 01 b0</code>, imu gz=0.08727 rad/s, frames=3 dropped=2 bad_crc=1)</span></label></li>
         <li><label><input type="checkbox" data-key="nominal-values-filled"><span><code>robot_params.yaml</code> 의 <code>wheel_radius</code> · <code>wheel_separation</code> · <code>encoder_cpr</code> 에 0 이 아닌 값을 넣고 <strong>값과 같은 줄에</strong> 상태(<code>NOMINAL(&lt;출처&gt;, …)</code>)를 적었다. <code>scripts/check_nominal.sh</code> 의 표에서 세 줄이 EMPTY 가 아니고, 어느 줄이 <code>fake</code> 인지(있다면) 말할 수 있다</span></label></li>
         <li><label><input type="checkbox" data-key="cp4"><span><code>simulate:=true</code> 에서 <code>/odom</code> 50 Hz, <code>/imu/data_raw</code> 100 Hz, 정지 시 az ≈ 9.807, 각속도 명령 0.5 rad/s 에 gz ≈ 0.5 가 나온다</span></label></li>
         <li><label><input type="checkbox" data-key="cp5"><span>같은 <code>cmd_vel</code> 시퀀스에 Python 판(<code>rpi5_mcu_bridge</code>)과 C++ 판의 <code>/odom</code> 이 같은 값을 낸다</span></label></li>
+        <li><label><input type="checkbox" data-key="power-service-sim"><span><code>simulate:=true</code> 에서 <code>ros2 service call /mcu_bridge/power std_srvs/srv/SetBool "{data: true}"</code> 를 부르면 노드 로그에 <code>MCU 전원 idle -&gt; armed</code> 가, <code>false</code> 로 부르면 <code>armed -&gt; idle</code> 이 찍힌다. 서비스의 <code>success</code> 가 "켜졌다"가 아니라 "보냈다"인 이유를 말할 수 있다</span></label></li>
         <li><label><input type="checkbox" data-key="bridge-watchdog-sim"><span><code>cmd_vel</code> 발행을 멈추면 0.5 s 뒤 <code>/odom</code> 의 <code>twist.twist.linear.x</code> 가 0 이 된다. 이것은 브리지(Pi 쪽) 워치독이다. MCU 의 200 ms 명령 워치독은 아직 확인하지 못했다는 것도 안다</span></label></li>
         <li><label><input type="checkbox" data-key="joint-names-match-urdf"><span><code>use_fake_joints:=false</code> 로 띄운 <code>view_frames</code> 에 <code>odom → base_footprint → base_link</code> 와 바퀴 링크 4개가 하나의 트리로 연결돼 있다. <code>/joint_states</code> 의 <code>name</code> 네 개가 05 의 xacro 관절 이름과 같다</span></label></li>
         <li><label><input type="checkbox" data-key="cp16"><span><code>ekf.yaml</code> 을 작성하고 <code>publish_tf:=false</code> 로 브리지를 띄운다(<code>simulate:=true</code> 로 충분하다). <code>/tf</code> 발행자 목록에 <code>ekf_filter_node</code> 가 있고 <code>mcu_bridge</code> 는 없다. 즉 <code>odom → base_footprint</code> 를 발행하는 노드가 하나다. <code>tf2_echo odom base_footprint</code> 가 값을 출력한다</span></label></li>
-        <li><label><input type="checkbox" data-key="fake-mcu-limits"><span>가짜 MCU 가 검증하지 못한 것 여섯 가지(termios, 실제 스트림의 파서 재동기, fault · event 경로, <code>tick_ms</code> 시각 환산, <code>sensor_id = 1</code>, MCU 의 명령 워치독)를 표를 보지 않고 말할 수 있다. 각각이 왜 SIM 에서 실행되지 않는지, §3-4 코드의 어느 가지 때문인지 짚을 수 있다</span></label></li>
+        <li><label><input type="checkbox" data-key="fake-mcu-limits"><span>가짜 MCU 가 검증하지 못한 것 일곱 가지(termios, 모드 진입과 실물 전원 시퀀스, 실제 스트림의 파서 재동기, fault · event 경로, <code>tick_ms</code> 시각 환산, <code>sensor_id = 1</code>, MCU 의 명령 워치독)를 표를 보지 않고 말할 수 있다. 각각이 왜 SIM 에서 실행되지 않는지, §3-4 코드의 어느 가지 때문인지 짚을 수 있다</span></label></li>
       </ul>
       <p class="progress-line"></p>
       <div class="progress-bar"><span></span></div>
@@ -2194,10 +2400,12 @@ ros2 topic echo /odometry/filtered --field pose.pose.position      # x 가 /odom
         <div class="ans">루프 주기는 <strong>가장 빠른 응답이 필요한 것</strong>이 정한다: 속도 PID 와 과전류 차단이다. 모터 전류는 수 ms 안에 한계를 넘을 수 있고, PID 의 dt 가 짧을수록 응답이 빠르다. 단 미분항은 오차의 차이를 dt 로 나누므로, dt 가 짧을수록 측정 잡음을 더 크게 증폭한다(fw-13 §2-2 — 그래서 속도 루프의 D 는 흔히 0 이다). IMU 는 그 루프가 매 주기 <em>읽기만</em> 하는 최신값이다(5~10 주기 동안 같은 값). 200 Hz 로 낮추면 PID 가 느려지고 과전류 검출이 5 ms 늦어진다 — IMU 와는 무관하다. 반대로 IMU 를 1 kHz 로 올릴 필요도 없다.</div></details>
       <details class="quiz"><summary>13. EKF 를 켤 때 브리지의 <code>publish_tf</code> 를 <code>false</code> 로 하는 이유는? 둘 다 켜면 오류가 나는가?</summary>
         <div class="ans">오류는 나지 않는다. 그래서 위험하다. 두 노드가 <code>odom → base_footprint</code> 를 번갈아 발행하면 tf2 는 마지막 값을 쓰므로 로봇 위치가 두 추정치 사이를 50 Hz 로 오가고, SLAM 지도가 번지고, Nav2 가 진동한다. <code>ros2 topic info /tf -v</code> 의 발행자 목록에서 <code>odom → base_footprint</code> 를 발행하는 노드(<code>ekf_filter_node</code> · <code>mcu_bridge</code>)가 정확히 하나인지 확인한다. <code>robot_state_publisher</code> 는 바퀴 관절 TF 때문에 함께 보이는 것이 정상이다. <code>/odom</code> 토픽 자체는 계속 발행해야 한다. <code>/odom</code> 은 EKF 의 입력이다.</div></details>
-      <details class="quiz"><summary>14. 두 IMU 모두 자력계가 있는데 주행 중 방위(heading)에 쓰지 않는 이유는? 그런데도 WT901 의 자력계를 기동 시에는 한 번 쓰는 이유는?</summary>
-        <div class="ans">실내는 철골·콘크리트 철근·모터·스피커 자석·전선 때문에 자기장이 장소마다 수십 도씩 왜곡된다. 자력계 heading 을 EKF 에 절대 방위로 넣으면 로봇이 책상 옆을 지날 때마다 yaw 가 갑자기 바뀐다. 실내 로봇의 절대 방위는 SLAM(라이다 스캔 정합, 09)으로 얻는다. 자이로는 상대 회전만 재지만 드리프트가 느리고 왜곡이 없어 EKF 의 vyaw 로 쓴다. BNO055 는 그래서 NDOF 가 아니라 IMU 모드로 둔다. 기동 시에는 사정이 다르다 — 모터 전류가 없으므로 그 자기장이 빠지고, 로봇 자신의 철 · 자석은 자기 캘리브레이션으로 지운다. 남는 것은 그 자리의 건물 자기장 왜곡뿐이고, 이것은 0x54 원시값의 복각 · 크기 비로 검사할 수 있다. 그래서 WT901 의 yaw 를 그때 한 번만 자북 방위로 읽고, 검사에 통과했을 때만 쓴다.</div></details>
+      <details class="quiz"><summary>14. 두 IMU 모두 자력계가 있는데 주행 중 방위(heading)에 쓰지 않는 이유는? 기동 시 한 번만 쓰는 안은 왜 폐기됐는가(결정 bf)?</summary>
+        <div class="ans">실내는 철골·콘크리트 철근·모터·스피커 자석·전선 때문에 자기장이 장소마다 수십 도씩 왜곡된다. 자력계 heading 을 EKF 에 절대 방위로 넣으면 로봇이 책상 옆을 지날 때마다 yaw 가 갑자기 바뀐다. 실내 로봇의 절대 방위는 SLAM(라이다 스캔 정합, 09)으로 얻는다. 자이로는 상대 회전만 재지만 드리프트가 느리고 왜곡이 없어 EKF 의 vyaw 로 쓴다. BNO055 는 그래서 NDOF 가 아니라 IMU 모드로 둔다. 기동 시 모터 전류가 없을 때 한 번만 읽는 안도 시험했지만, 로봇에 단 채로는 보정이 되풀이되지 않았고 같은 방향으로 50 cm 만 옮겨도 수평 자기장이 26 % 바뀌었다 — 건물 자기장의 왜곡은 보정으로 지울 수 없다. 그래서 그 안도 폐기했다(결정 bf, fw-14 §2-14).</div></details>
       <details class="quiz"><summary>15. IMU 프레임의 각속도 단위가 0.1 °/s 다. 0.01 °/s 로 더 정밀하게 담으면 안 되는 이유는?</summary>
         <div class="ans"><code>int16</code> 은 ±32767 이다. 0.01 °/s 단위면 ±327 °/s 에서 포화되어 센서 범위(±2000 °/s)의 대부분을 잘라 버린다 — 로봇을 손으로 빠르게 돌리거나 충돌하면 값이 한계에 고정된다. 0.1 °/s 면 ±3276 °/s 로 센서 범위를 다 담고, 해상도 0.1 °/s(0.0017 rad/s)는 자이로 노이즈(§3-7 std)보다 작아 잃는 것이 없다. 단위는 "범위 ÷ 65536" 으로 정하고, 06a §4-3 표에 적어 두 트랙이 같은 수로 나눈다.</div></details>
+      <details class="quiz"><summary>16. 실물 MCU 가 주행 중에 리셋됐다. 브리지가 프레임이 끊긴 뒤에도 <code>0x01</code> 을 50 Hz 로 계속 보낸다면, 다시 보낸 <code>link v2</code> 가 왜 통하지 않는가?</summary>
+        <div class="ans">리셋된 MCU 는 TEXT 모드다. TEXT 의 명령 창은 찍을 수 있는 바이트를 한 줄에 쌓는다. 속도 프레임의 헤더 <code>0x55</code> 는 글자 <code>U</code> 이므로, 프레임이 올 때마다 줄 앞에 글자가 붙는다. 그 뒤에 <code>link v2</code> 가 오면 MCU 가 읽는 줄은 <code>UUU…link v2</code> 이고, 이것은 명령어가 아니다. 그래서 브리지는 프레임이 1 s 넘게 없으면 <code>0x01</code> 을 멈추고(<code>link_up()</code>), 글자 줄이 보이면 1 s 에 한 번까지 <code>link v2</code> 를 다시 보낸다. 멈추기 전에 쌓인 글자 때문에 첫 재요청이 실패해도, 그 줄은 <code>link v2</code> 끝의 줄바꿈에서 끝난다. 그래서 다음 재요청은 빈 줄에서 시작한다.</div></details>
 
       <div class="callout tip"><span class="ct">다음 행선지</span>
         <ul>

@@ -56,7 +56,7 @@
       <pre class="diagram"><code>주소         영역 (ld 이름) · 크기     DMA1/DMA2 가 닿는가    여기에 두는 것
 ──────────────────────────────────────────────────────────────────────────────────────────────────────
 0x0000_0000  ITCM (ITCMRAM) 64 KB      못 온다 (CPU·MDMA)    (비어 둔다)
-0x0800_0000  FLASH 1 MB                온다                   코드 · fw-16 의 저장 섹터
+0x0800_0000  FLASH 1 MB                온다                   코드                     
 0x2000_0000  DTCM (DTCMRAM) 128 KB     못 온다 (CPU·MDMA)    변수 전부 = .data .bss 힙 스택 (기본 ld)
 0x2400_0000  AXI SRAM (RAM_D1) 320 KB  온다                   (비어 둔다)
 0x3000_0000  SRAM1+2 (RAM_D2) 32 KB    온다                   .dma_buf = DMA 버퍼 전부 (이 쪽)
@@ -272,7 +272,7 @@ grep -n "&gt;DTCMRAM\|_estack" STM32H723xG_flash.ld   # 어느 섹션이 DTCM �
         <li>DMA 스트림을 중단시킨다(<code>HAL_DMA_Abort_IT</code>).</li>
         <li>그 완료 콜백 <code>UART_DMAAbortOnError</code> 에서 <code>HAL_UART_ErrorCallback()</code> 을 부른다.</li>
       </ol>
-      <p>"Circular 은 한 번 시작하면 멈추지 않는다"는 하드웨어 이야기다. HAL 위에서는 틀리다. 오류 콜백에서 다시 걸지 않으면 그 UART 는 리셋까지 오류 표시 없이 멈춰 있다. <strong>fw-08 부터 fw-16 까지 모터 · 전원 잡음 속에서 유일한 관측 수단이 CLI 다.</strong> CLI 가 오류 표시 없이 멈추면 증상은 "방금 고친 모터 코드가 이상하다"로 보인다.</p>
+      <p>"Circular 은 한 번 시작하면 멈추지 않는다"는 하드웨어 이야기다. HAL 위에서는 틀리다. 오류 콜백에서 다시 걸지 않으면 그 UART 는 리셋까지 오류 표시 없이 멈춰 있다. <strong>fw-08 부터 fw-15 까지 모터 · 전원 잡음 속에서 유일한 관측 수단이 CLI 다.</strong> CLI 가 오류 표시 없이 멈추면 증상은 "방금 고친 모터 코드가 이상하다"로 보인다.</p>
       <p>오류 콜백이 지킬 것은 fw-05 의 셋에 하나를 더한 넷이다.</p>
       <ul>
         <li>① 센다(<code>uart_err</code> · <code>last_err</code> — HAL 을 부르기 <strong>전에</strong>).</li>
@@ -285,7 +285,7 @@ grep -n "&gt;DTCMRAM\|_estack" STM32H723xG_flash.ld   # 어느 섹션이 DTCM �
       <div class="callout note"><span class="ct">DMA 수신에서는 ORE 가 잘 나지 않는다 — 기한을 지키는 것이 바뀌었기 때문</span>
         <p>fw-05 의 실습 C 는 ISR 을 일부러 늦춰 ORE 를 냈다. ORE 의 기한은 한 바이트 시간 <strong>21.7 µs</strong> 다.<sup class="fn"><a href="#fn-49" id="fnref-49">49</a></sup> RDR 의 앞 바이트를 다음 바이트가 다 들어올 때까지 꺼내지 않으면 앞 바이트를 잃는다.
         fw-05 에서는 그 기한을 <strong>ISR 이</strong> 지켰다. DMA 수신에서는 RDR 이 차는 순간 DMA 요청이 나서 <strong>하드웨어가</strong> 옮긴다. ISR 이 얼마나 늦든 RDR 은 비워진다. 그래서 붙여넣기로는 ORE 가 잘 나지 않는다.
-        남는 ORE 의 경로는 DMA 요청 자체가 막힌 경우다: 오류로 DMA 가 멈춘 뒤 다시 걸기 전까지의 짧은 틈(위 ②가 지우는 것), 그리고 버스가 막힐 만큼 긴 일(플래시 섹터 지우기 — <a href="fw-16-flash-store.html">fw-16</a> 이 다룬다).</p>
+        남는 ORE 의 경로는 DMA 요청 자체가 막힌 경우다: 오류로 DMA 가 멈춘 뒤 다시 걸기 전까지의 짧은 틈(위 ②가 지우는 것), 그리고 버스가 막힐 만큼 긴 일(예: 플래시 섹터 지우기 — 이 펌웨어는 하지 않는다, fw-16 제거).</p>
         <p>대신 새 유실 조건이 생긴다. <strong>버퍼 한 바퀴(256 B ≈ 5.6 ms at 46 kB/s) 동안 콜백이 한 번도 실행되지 못하는 것</strong>이다. 이 유실은 ORE 로 보이지 않는다. <code>feed()</code> 가 받는 바이트가 오류 표시 없이 덮어쓰인 채 온다. 우선순위(b)와 fw-06 의 <code>exec_us_max</code> 가 그 여유를 지킨다.</p>
       </div>
       <p>이 쪽은 Circular 방식으로 쓴다. 본편 06 쪽의 옛 코드(Normal 방식)와 다른 점은 셋이다.<sup class="fn"><a href="#fn-50" id="fnref-50">50</a></sup></p>
@@ -1352,7 +1352,7 @@ grep -rln "HAL_UART_TxCpltCallback" $FW_H7/Projects/NUCLEO-H723ZG | head     # �
         <code>pos == N</code> 을 0 으로 정리하면, HAL 이 TC 뒤에 한 번 더 알리는 IDLE(역시 <code>Size = N</code>)<sup class="fn"><a href="#fn-83" id="fnref-83">83</a></sup>에서 <code>N &gt; 0</code> 이 되어 <strong>버퍼 전체를 다시 입력한다</strong>. 256 바이트가 두 번 들어온다. 그대로 <code>N</code> 으로 두면 규칙 1(<code>pos == old_pos</code> → 돌아간다)이 그 중복 알림을 걸러 내고, 다음 콜백은 되감기 가지로 바르게 간다. 호스트 시험의 <code>s.old_pos == 256u</code> 벡터가 이 실수를 채점한다.</p></div></details>
       <details class="quiz"><summary>5. 수신 콜백 하나를 두 인터럽트가 부른다. 둘의 선점 우선순위가 다르면 무엇이 깨지는가? 그리고 오류 콜백에서 다시 걸지 않으면 무엇이 멈추는가?</summary>
         <div class="ans"><p>IDLE 은 <code>USART3_IRQHandler</code> 로, HT · TC 는 DMA 스트림 핸들러로 온다(§2-8 (b)). 값이 다르면 높은 쪽이 낮은 쪽을 <strong>콜백 도중에</strong> 선점할 수 있고, 그러면 <code>old_pos</code> 를 읽은 뒤 갱신하기 전에 같은 코드가 다시 돌아 같은 바이트가 두 번 입력되거나 한 구간이 통째로 빠진다. 값이 같으면 하나가 끝나야 다음이 오므로 그런 시간 구간이 없다.
-        다시 걸기는 다른 이야기다. HAL 은 수신 오류 하나(PE · FE · NE · ORE)에 DMA 수신을 <strong>끝내 버린다</strong>(DMA 수신 중에는 모든 오류가 blocking 이다).<sup class="fn"><a href="#fn-84" id="fnref-84">84</a></sup> Circular 이어도 그렇다. 오류 콜백에서 다시 걸지 않으면 그 UART 는 리셋까지 오류 표시 없이 멈춰 있다. fw-08 부터 fw-16 까지 <strong>유일한 관측 수단</strong>이 그 명령 창이다. 증상은 "방금 고친 모터 코드가 이상하다"처럼 보인다.</p></div></details>
+        다시 걸기는 다른 이야기다. HAL 은 수신 오류 하나(PE · FE · NE · ORE)에 DMA 수신을 <strong>끝내 버린다</strong>(DMA 수신 중에는 모든 오류가 blocking 이다).<sup class="fn"><a href="#fn-84" id="fnref-84">84</a></sup> Circular 이어도 그렇다. 오류 콜백에서 다시 걸지 않으면 그 UART 는 리셋까지 오류 표시 없이 멈춰 있다. fw-08 부터 fw-15 까지 <strong>유일한 관측 수단</strong>이 그 명령 창이다. 증상은 "방금 고친 모터 코드가 이상하다"처럼 보인다.</p></div></details>
       <details class="quiz"><summary>6. 32 바이트 정렬을 안 지킨 버퍼에 <code>SCB_InvalidateDCache_by_Addr()</code> 를 실행하면, 왜 <strong>이웃 변수</strong>가 옛 값으로 돌아가는가? 이 쪽의 구성에서는 왜 그 함수를 한 번도 부르지 않는가?</summary>
         <div class="ans"><p>캐시의 단위가 32 바이트 라인이고<sup class="fn"><a href="#fn-85" id="fnref-85">85</a></sup> 정비 연산도 라인 단위이기 때문이다 — 주소의 하위 5 비트는 무시된다.<sup class="fn"><a href="#fn-86" id="fnref-86">86</a></sup> 버퍼가 경계에 맞지 않으면 첫 라인과 끝 라인에 이웃 변수가 같이 들어 있고, Invalidate 는 그 라인을 통째로 버린다. 그 라인에 CPU 가 쓰기만 하고 아직 메모리에 기록하지 않은 이웃 변수의 값이 있었다면 그 값이 사라진다 — 증상이 나는 자리가 원인이 있는 자리와 다르다.
         이 가이드는 해법 (나)(MPU 비캐시)를 골랐으므로 그 영역의 접근이 아예 캐시를 거치지 않는다 — 버릴 라인도, 부를 함수도 없다(§2-5). 그래도 <code>DMA_BUF</code> 가 32 정렬과 32 배수를 강제하는 이유는 §2-4 의 마지막 문단에 있다: 나중에 해법을 (다)로 바꾸거나 버퍼 하나를 다른 자리에 두는 날에도 같은 선언이 그대로 안전하다.</p></div></details>

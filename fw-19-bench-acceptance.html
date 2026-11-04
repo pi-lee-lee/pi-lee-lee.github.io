@@ -16,7 +16,7 @@
       <p class="kicker">F19 · 모듈 정리와 벤치 수용 시험</p>
       <h1>책상 위에서 통과시킬 수 있는 것을 전부 통과시켰다고 말할 수 있게 한다</h1>
       <p class="lead">이 쪽은 <strong>새로 만드는 것이 없다.</strong> 앞의 열아홉 쪽이 각자 통과시킨 것을 한 자리에 모아, 서로 어긋나지 않는지 보고, 한 번 더 직접 실행해 기록한다.
-      모으는 것은 셋이다 — 두 모듈의 <strong>경계</strong>(grep 으로 검사한다), <code>.ioc</code> 와 표 두 장(NVIC 우선순위 · 워치독 예산)의 <strong>최종판</strong>, 그리고 <strong>DoD-Bench 22행</strong>. DoD-Bench 는 책상 위에서 참임을 보일 수 있는 사실의 목록이다(§1 의 용어 표).
+      모으는 것은 셋이다 — 두 모듈의 <strong>경계</strong>(grep 으로 검사한다), <code>.ioc</code> 와 표 두 장(NVIC 우선순위 · 워치독 예산)의 <strong>최종판</strong>, 그리고 <strong>DoD-Bench 21행</strong>(B1 ~ B22 가운데 B16 은 제거됨). DoD-Bench 는 책상 위에서 참임을 보일 수 있는 사실의 목록이다(§1 의 용어 표).
       여기를 지나야 조립이 시작된다. 조립한 뒤에는 "펌웨어가 문제인가 기계가 문제인가"를 가르기가 훨씬 비싸지기 때문이다.</p>
 
       <div class="goal">
@@ -32,7 +32,7 @@
         <p><strong>이 쪽에 필요한 것</strong></p>
         <ul>
           <li>지금까지의 부품 전부(NUCLEO-H723ZG · IBT-2 · 모터 · 엔코더 · INA226 ×2 · 배터리와 사전충전 회로 · ACS758 · IMU) · DMM · Mac.</li>
-          <li>DoD-Bench 의 B10 · B12 · B13 과 B16 의 한 키(<code>save-refused-when-armed</code>), 그리고 수용 시험의 ① ② ⑤ 는 <strong>모터 전원을 넣는다</strong>(바퀴는 공중). <a href="fw-11-power-sequence.html">fw-11</a> 의 전원 구성이 그대로 필요하다.</li>
+          <li>DoD-Bench 의 B10 · B12 · B13, 그리고 수용 시험의 ① ② ⑤ 는 <strong>모터 전원을 넣는다</strong>(바퀴는 공중). <a href="fw-11-power-sequence.html">fw-11</a> 의 전원 구성이 그대로 필요하다.</li>
         </ul>
         <p><strong>없으면</strong></p>
         <ul>
@@ -61,7 +61,7 @@
  fw-02..fw-15 .ioc  ---&gt;  (B) 설정 원장 대조 + 표 두 장의 최종판  ----&gt;  fw-20 조립 후 마무리
  fw-06 NVIC/워치독 초판                                                  (부하 재튜닝 - 슬립 억제
                                                                            - 임계값 확정)
- 각 쪽의 체크 기록  ----&gt;  (C) DoD-Bench 22행을 내 손으로 다시
+ 각 쪽의 체크 기록  ----&gt;  (C) DoD-Bench 21행을 내 손으로 다시
                           (D) 남은 임시값 세기
 
  이 쪽에서 새로 켜는 주변장치: 없음.  새로 쓰는 코드: 없음.  새로 정하는 수치: 없음.</code></pre>
@@ -101,7 +101,7 @@
       <div class="tbl"><table class="compact">
         <thead><tr><th>#</th><th>참이어야 하는 것</th><th>거짓이면 무엇이 깨지는가</th></tr></thead>
         <tbody>
-          <tr><td>1</td><td><code>comm_frame.c</code> 안의 <code>control_</code> 호출이 다섯 함수 안에 든다. 다섯 함수는 <code>control_set_target</code> · <code>control_get_state</code> · <code>control_fault_flags</code> · <code>control_get_imu</code> · <code>control_pop_event</code> 다</td><td>통신 모듈이 제어 모듈의 내부 함수를 부른다 → 교체할 때 통신 모듈만 바꿔서는 끝나지 않는다</td></tr>
+          <tr><td>1</td><td><code>comm_frame.c</code> 안의 <code>control_</code> 호출이 여덟 함수 안에 든다. 여덟 함수는 <code>control_set_target</code> · <code>control_get_state</code> · <code>control_fault_flags</code> · <code>control_get_imu</code> · <code>control_pop_event</code>, 그리고 fw-17 이 더한 <code>control_power_state</code> · <code>control_power_request</code> · <code>control_cmd_stale</code> 다</td><td>통신 모듈이 제어 모듈의 내부 함수를 부른다 → 교체할 때 통신 모듈만 바꿔서는 끝나지 않는다</td></tr>
           <tr><td>2</td><td><code>comm_frame.c</code> 가 <code>control_post_event</code> 를 부르지 않는다</td><td>이벤트를 <strong>내는 쪽</strong>과 <strong>가져가는 쪽</strong>이 한 파일에 섞인다. 큐가 무엇을 뜻하는지가 흐려진다</td></tr>
           <tr><td>3</td><td><code>comm_frame.c</code> 가 <code>_dbg_</code> 함수를 부르지 않는다</td><td>벤치 관측용 값(바퀴별 카운트 · 듀티 · PID 내부값)이 빌드 경고 없이 계약에 섞여 들어간다 — 계약 v2 에는 그런 필드가 없다(06a §4-2)</td></tr>
           <tr><td>4</td><td>제어·안전 쪽 파일 어디에도 <code>comm_frame</code> · <code>frame_build</code> · <code>tx_enqueue</code> 가 없다</td><td>방향이 양쪽이 된다. "통신 → 제어" 단방향이라는 말이 거짓이 된다</td></tr>
@@ -130,19 +130,19 @@
         <li><strong>모듈이 하나 더 있다.</strong> 06a 의 그림은 "제어·안전 모듈 + 통신 모듈" 둘인데, 실제 소스에는 벤치용 명령 창 코드(<code>cli.c</code> · 각 모듈의 <code>*_cli_register()</code> · <code>cmd_*()</code>)이 셋째로 있다. 코드 크기와 읽을 것이 그만큼 는다.</li>
         <li><strong>두 모드는 동시에 돌지 않는다.</strong> TEXT 로 바꾸면 계약 v2 링크가 끊기므로 Pi 쪽 브리지를 먼저 멈춰야 한다. 또 부팅이 TEXT 라서, 운영 중에 MCU 가 리셋되면 브리지가 V2 진입을 다시 요청해야 한다.</li>
         <li><strong>V2 에서는 CLI 가 없다.</strong> 그래서 V2 모드에서의 관측 수단은 <code>scripts/mcu_probe.py</code> 의 출력과 gdb 로 읽는 카운터 변수 둘뿐이다. 이 쪽의 실습 C-2 가 V2 행을 확인할 때 이 두 수단을 그대로 쓴다.</li>
-        <li><strong>대신 얻은 것</strong>: 제어·안전 모듈은 두 모드에서 <strong>같은 코드</strong>다. 코드가 다른 곳은 <strong>둘</strong>이다 — <code>app.c</code>(초기화와 주 루프)와 <code>tick.c</code>(1 kHz 콜백 안의 한 줄, <a href="fw-17-link-v2.html#s2-10">fw-17 §2-10</a>). <code>tick.c</code> 가 더해진 것은 콜백의 정의가 그 파일에 있기 때문이고, 설계가 달라진 것이 아니다. TEXT 에서 본 제어 동작이 V2 에서도 같은 코드로 실행된다. 그래서 벤치에서 적은 기록을 조립 뒤까지 그대로 가져갈 수 있다.</li>
+        <li><strong>대신 얻은 것</strong>: 제어·안전 모듈은 두 모드에서 <strong>같은 코드</strong>다. 모드에 따라 갈리는 곳은 <strong>셋</strong>이다 — <code>app.c</code>(받은 바이트를 명령 창과 프레임 파서 중 어디로 보내는가), <code>console.c</code>(V2 에서 <code>_write()</code> 가 글자를 버린다 — <a href="fw-17-link-v2.html#s2-7">fw-17 §2-7</a>), <code>comm_frame.c</code>(1 kHz 틱이 V2 에서만 프레임을 보낸다). <code>tick.c</code> 는 <code>comm_frame_step_1khz()</code> 를 모드와 상관없이 부른다(<a href="fw-17-link-v2.html#s2-10">fw-17 §2-10</a>). TEXT 에서 본 제어 동작이 V2 에서도 같은 코드로 실행된다. 그래서 벤치에서 적은 기록을 조립 뒤까지 그대로 가져갈 수 있다.</li>
       </ul>
       <p>이 비용을 줄이는 방법(예: 벤치용 명령 창 코드를 컴파일 대상에서 전부 빼는 빌드, 계약에 진단 TYPE 을 더하기)은 여기서 고르지 않는다. 계약을 넓히는 것은 06a 가 정할 일이고, 벤치용 명령 창 코드를 빼면 조립 뒤에 관측 수단이 없어진다.
       <strong>지금 할 일은 비용을 아는 것</strong>이고, 이 소절이 그 비용을 적었다.</p>
 
       <h3 id="s2-3">2-3. 표 두 장을 한 자리에 모으는 이유 — 숫자는 선택이고, 제약이 사실이다</h3>
       <p><a href="fw-06-tick-watchdog.html#s2-8">fw-06 §2-8</a> 이 NVIC 우선순위 표의 초판을, <a href="fw-06-tick-watchdog.html#s2-6">fw-06 §2-6</a> 이 워치독 예산표의 v1 을 만들었다.
-      그 뒤 두 무리의 쪽이 각자 "표에 더하는 행" 상자를 두었다. 인터럽트를 새로 켠 쪽은 fw-07 · fw-10 · fw-11 · fw-12 · fw-14 · fw-15 이고, 긴 대기가 생긴 쪽은 fw-10 · fw-12 · fw-13 · fw-14 · fw-16 이다.
+      그 뒤 두 무리의 쪽이 각자 "표에 더하는 행" 상자를 두었다. 인터럽트를 새로 켠 쪽은 fw-07 · fw-10 · fw-11 · fw-12 · fw-14 · fw-15 이고, 긴 대기가 생긴 쪽은 fw-10 · fw-12 · fw-13 · fw-14 이다.
       쪽 하나 = 실습 하나였기 때문에 <strong>더할 때는 옆 행이 보이지 않는다.</strong> 그래서 이 쪽에서 한 장으로 모은다.</p>
       <p>모아 놓고 보면 비로소 보이는 것이 두 종류다.</p>
       <ul>
         <li><strong>짝이 어긋난 것</strong> — "서로 같은 값이어야 하는" 두 행이 다른 숫자를 갖고 있는 경우. 이 어긋남은 <strong>빌드 오류나 경고 없이 동작을 깨뜨린다</strong>(§2-3 아래의 제약 ②).</li>
-        <li><strong>합이 넘는 것</strong> — 워치독 예산표의 최장 구간들을 모두 적어 놓고 보니 IWDG 주기로 설정할 수 있는 값이 없는 경우. 이때는 주기를 늘리는 것이 아니라 <strong>가장 긴 구간을 쪼개는</strong> 것이 답이다(그래서 fw-16 이 예산표를 확정한다).</li>
+        <li><strong>합이 넘는 것</strong> — 워치독 예산표의 최장 구간들을 모두 적어 놓고 보니 IWDG 주기로 설정할 수 있는 값이 없는 경우. 이때는 주기를 늘리는 것이 아니라 <strong>가장 긴 구간을 쪼개는</strong> 것이 답이다(그래서 예산표는 행을 낸 쪽이 아니라 이 쪽 §3-2 의 (다)에서 확정한다).</li>
       </ul>
       <p>표의 <strong>숫자는 설계 선택</strong>이다 — 이 가이드가 전 쪽에 같은 숫자를 쓰게 하려고 [제안] 예시값으로 고정해 둔 것이고, 다른 숫자가 맞는 경우가 있다.
       바꿀 수 없는 것은 숫자가 아니라 <strong>제약 셋</strong>이고, 이것은 사실이다.</p>
@@ -155,7 +155,7 @@
         </tbody>
       </table></div>
       <div class="callout note"><span class="ct">최종판 표는 IWDG 의 <strong>주기 숫자</strong>를 싣지 않는다</span>
-        <p>워치독 예산표의 목적은 "kick 과 kick 사이가 가장 길어지는 구간이 어디이고 몇 ms 인가"를 모으는 것이다. IWDG 주기는 그 표에서 <strong>내가 도출하는 값</strong>이다(fw-06 §2-6 · fw-16 에서 확정된다).
+        <p>워치독 예산표의 목적은 "kick 과 kick 사이가 가장 길어지는 구간이 어디이고 몇 ms 인가"를 모으는 것이다. IWDG 주기는 그 표에서 <strong>내가 도출하는 값</strong>이다(fw-06 §2-6 에서 시작해 이 쪽 §3-2 의 (다)에서 확정된다).
         그래서 이 쪽의 최종판 표에도 주기 숫자 칸이 없다. 이 쪽이 확인하는 것은 <strong>표가 완성됐는가</strong>(빈 행이 없는가)와 <strong>내가 쓴 주기가 표의 가장 긴 구간보다 큰가</strong> 둘뿐이다.</p>
       </div>
 
@@ -230,7 +230,7 @@
         <thead><tr><th>#</th><th>초안(06 §3-6)의 서술</th><th>무엇이 문제였나</th><th>해소한 쪽</th><th>이 쪽에서 확인되는가</th></tr></thead>
         <tbody>
           <tr><td>R1</td><td>BNO055 를 "I2C1 … DMA RX" 로 읽는다</td><td>IT 로 갈지 DMA 로 갈지가 근거 없이 정해져 있었다. <strong>정정</strong>: 흔히 말하는 "쓰기 위상 NACK 에서 DMA 가 BUSY 로 남는다"는 HAL 소스에서 <strong>참이 아니다</strong><sup class="fn"><a href="#fn-3" id="fnref-3">3</a></sup> — 실제 고장 모드는 BERR · ARLO · OVR 쪽이다</td><td>fw-15</td><td><strong>예</strong> — B15 · 실습 B (가) 12행</td></tr>
-          <tr><td>R2</td><td>"IWDG ~500 ms" · <code>HAL_Delay(700)</code> · 저장 TODO</td><td>주기를 <strong>고른 값</strong>처럼 적었다. 예산표에서 <strong>나오는</strong> 값이다. 그리고 <code>HAL_IWDG_Init</code> 호출이 곧 IWDG 시작이다</td><td>fw-16</td><td><strong>예</strong> — B3 · B16 · 실습 B (다)</td></tr>
+          <tr><td>R2</td><td>"IWDG ~500 ms" · <code>HAL_Delay(700)</code> · 저장 TODO</td><td>주기를 <strong>고른 값</strong>처럼 적었다. 예산표에서 <strong>나오는</strong> 값이다. 그리고 <code>HAL_IWDG_Init</code> 호출이 곧 IWDG 시작이다. 저장 TODO 는 fw-16 제거(결정 bd)로 없어졌다</td><td>fw-06 · 이 쪽</td><td><strong>예</strong> — B3 · 실습 B (다)</td></tr>
           <tr><td>R3</td><td>표는 "DMA RX Circular + IDLE", 코드는 Normal(매번 다시 시작하는) 방식</td><td>표와 코드가 모순. <code>Size</code> 는 길이가 아니라 <strong>위치</strong>이고, 수신 오류 하나에 HAL 이 DMA 를 멈춘다</td><td>fw-14</td><td><strong>예</strong> — B4 · B14 · 실습 B (가) 5 · 11행</td></tr>
           <tr><td>R4</td><td><code>DRV_FAULT_PIN</code>(드라이버의 nFAULT)을 읽는다</td><td>IBT-2 모듈에 그런 핀이 <strong>없다.</strong> 남은 후보는 IS 핀의 <strong>error flag</strong> 하나였고, IS 는 배선하지 않기로 정했다(2026-10-14). 드라이버 래치는 속도 오차로 간접적으로만 드러난다. <strong>낱말 정정</strong>은 표 아래 R4 에 적었다</td><td>fw-18</td><td><strong>부분</strong> — "IS 미결선이라 그 fault 의 출처가 없다(0 고정)"를 확인하는 것까지. B19 는 다른 fault 로 통과시킨다</td></tr>
           <tr><td>R5</td><td><code>imu-&gt;gz * 0.1f</code></td><td>와이어 구조체에 <code>gz</code> 라는 필드가 <strong>없다</strong>(<code>gz_ddps</code> 다). 전역 <code>imu_latest</code> 공유도 같은 문제다</td><td>fw-20</td><td><strong>아니오</strong> — 슬립 억제를 켜는 곳이 조립 뒤다(§2-6)</td></tr>
@@ -261,12 +261,12 @@
       <div class="tbl"><table class="compact">
         <thead><tr><th>#</th><th>검사</th><th>기대</th><th>내 출력 (줄 수)</th><th>판정</th></tr></thead>
         <tbody>
-          <tr><td>1</td><td><code>comm_frame.c</code> 가 부르는 <code>control_*</code> 의 목록</td><td>다섯 함수의 <strong>부분집합</strong></td><td>____</td><td>____</td></tr>
+          <tr><td>1</td><td><code>comm_frame.c</code> 가 부르는 <code>control_*</code> 의 목록</td><td>여덟 함수의 <strong>부분집합</strong></td><td>____</td><td>____</td></tr>
           <tr><td>2</td><td><code>comm_frame.c</code> 안의 <code>control_post_event</code></td><td>0 줄</td><td>____</td><td>____</td></tr>
           <tr><td>3</td><td><code>comm_frame.c</code> 안의 <code>_dbg_</code></td><td>0 줄</td><td>____</td><td>____</td></tr>
           <tr><td>4</td><td>제어·안전 쪽 파일 안의 <code>comm_frame</code> · <code>frame_build</code> · <code>tx_enqueue</code></td><td>0 줄</td><td>____</td><td>____</td></tr>
           <tr><td>5</td><td>제어·안전 쪽 파일 안의 <code>event_send</code> · <code>imu_send</code></td><td>0 줄</td><td>____</td><td>____</td></tr>
-          <tr><td>6</td><td><code>comm_frame.h</code> 를 포함하는 파일</td><td><code>comm_frame.c</code> · <code>app.c</code> · <code>tick.c</code> <strong>셋</strong> (<code>tick.c</code> 는 1 kHz 콜백의 정의가 거기 있어서다 — <a href="fw-17-link-v2.html#s2-10">fw-17 §2-10</a>)</td><td>____</td><td>____</td></tr>
+          <tr><td>6</td><td><code>comm_frame.h</code> 를 포함하는 파일</td><td><code>comm_frame.c</code> · <code>app.c</code> · <code>tick.c</code> · <code>console.c</code> <strong>넷</strong> (<code>tick.c</code> 는 1 kHz 콜백의 정의가 거기 있어서, <code>console.c</code> 는 <code>_write()</code> 가 <code>comm_link_mode()</code> 를 묻기 때문이다 — <a href="fw-17-link-v2.html#s2-7">fw-17 §2-7</a>)</td><td>____</td><td>____</td></tr>
         </tbody>
       </table></div>
 
@@ -286,12 +286,11 @@ grep -n "_dbg_"              Src/Comm/comm_frame.c
 grep -n "comm_frame\|frame_build\|tx_enqueue\|event_send\|imu_send" \
   Src/Control/control.c Src/Control/safety.c Src/Control/protect.c Src/Control/pid.c Src/Control/power.c \
   Src/Periph/motor.c Src/Periph/encoder.c Src/Periph/adc.c \
-  Src/Device/ina226.c Src/Device/wt901.c Src/Device/wt901_parse.c Src/Device/bno055.c \
-  Src/System/nvstore.c
+  Src/Device/ina226.c Src/Device/wt901.c Src/Device/wt901_parse.c Src/Device/bno055.c
 
 # 6) 포함(include) 으로 한 번 더 — 같은 것을 다른 각도에서 본다
 grep -rn "comm_frame.h" Inc Src</code></pre>
-      <p class="small">4) 5) 의 파일 목록을 폴더로 읽으면 <code>Control/</code> · <code>Periph/</code> · <code>Device/</code> 의 파일 전부와 <code>System/nvstore.c</code> 다(<code>traction.c</code> 는 fw-20 이 만들므로 아직 없다). 폴더 규칙은 <a href="fw-02-toolchain.html#s2-2-1">fw-02 §2-2-1</a> 에 있다. 폴더째(<code>grep -rn … Src/Control</code>)로 치지 않고 파일 이름을 적는 이유는 둘이다.
+      <p class="small">4) 5) 의 파일 목록을 폴더로 읽으면 <code>Control/</code> · <code>Periph/</code> · <code>Device/</code> 의 파일 전부다(<code>traction.c</code> 는 fw-20 이 만들므로 아직 없다). 폴더 규칙은 <a href="fw-02-toolchain.html#s2-2-1">fw-02 §2-2-1</a> 에 있다. 폴더째(<code>grep -rn … Src/Control</code>)로 치지 않고 파일 이름을 적는 이유는 둘이다.
       아직 없는 파일이 오류 없이 빠져 "0 줄", 곧 통과처럼 읽힌다(아래 상자의 첫 경우). 그리고 <code>System/</code> 을 통째로 넣으면 <code>tick.c</code> 가 검색 결과에 나온다 — 1 kHz 콜백이 통신 모듈의 프레임 단계를 부르는 것은 설계다(6) 의 기대 출력).</p>
       <p>1) 의 출력은 <strong>이름의 목록</strong>이므로 눈으로 비교한다. 나머지는 <strong>줄 수가 0 인가</strong>만 본다 — 줄 수를 세고 싶으면 <code>grep -c</code> 로 바꾸거나 뒤에 <code>| wc -l</code> 을 붙인다.</p>
       <div class="callout note"><span class="ct"><code>grep</code> 이 답을 낼 수 없는 경우 둘</span>
@@ -301,26 +300,29 @@ grep -rn "comm_frame.h" Inc Src</code></pre>
       </div>
 
       <h4 id="s3-1-4">3-1-4. 보고 판정하기</h4>
-      <p><strong>1) 의 기대 출력</strong> — 다섯 이름의 부분집합이다. 다섯이 다 나오지 않아도 된다(예: 이벤트 경로를 아직 연결하지 않았으면 <code>control_pop_event</code> 가 없다).</p>
-      <pre><code class="lang-text">control_fault_flags
+      <p><strong>1) 의 기대 출력</strong> — 여덟 이름의 부분집합이다. 여덟이 다 나오지 않아도 된다(예: 이벤트 경로를 아직 연결하지 않았으면 <code>control_pop_event</code> 가 없다).</p>
+      <pre><code class="lang-text">control_cmd_stale
+control_fault_flags
 control_get_imu
 control_get_state
 control_pop_event
+control_power_request
+control_power_state
 control_set_target
-  (이 다섯 밖의 이름이 한 줄이라도 나오면 실패다.
+  (이 여덟 밖의 이름이 한 줄이라도 나오면 실패다.
    control_step_1khz · control_init · control_cli_register 가 여기 보이면
    통신 모듈이 제어 모듈의 배선·박자에 손을 대고 있다는 뜻이다)</code></pre>
       <p><strong>2)~5) 의 기대 출력</strong> — 아무것도 찍히지 않는다. 한 줄이라도 나오면 그 줄이 곧 고칠 자리다. 고치는 방향은 늘 같다: <strong>직접 호출을 없애고, 필요한 것을 공개 API 로 가져가게 바꾼다.</strong>
       예를 들어 <code>safety.c</code> 에서 <code>event_send(...)</code> 가 나오면 그 호출을 <code>control_post_event(code, detail)</code> 로 바꾼다. 그러면 통신 모듈이 <code>control_pop_event()</code> 로 이벤트를 꺼내 간다.</p>
-      <p><strong>6) 의 기대 출력</strong> — 여기만 <strong>0 줄이 아니다.</strong> <code>#include "Comm/comm_frame.h"</code> 가 다음 <strong>세 파일</strong>에서 나와야 한다.</p>
+      <p><strong>6) 의 기대 출력</strong> — 여기만 <strong>0 줄이 아니다.</strong> <code>#include "Comm/comm_frame.h"</code> 가 다음 <strong>네 파일</strong>에서 나와야 한다.</p>
       <ul>
         <li><code>Src/Comm/comm_frame.c</code>(자기 헤더)</li>
         <li><code>Src/app.c</code>(초기화와 주 루프)</li>
         <li><code>Src/System/tick.c</code>(1 kHz 콜백의 한 줄)</li>
+        <li><code>Src/Tools/console.c</code>(<code>_write()</code> 가 V2 에서 글자를 버린다)</li>
       </ul>
-      <p><strong>네 번째 파일이 나오면</strong> 그 파일이 고칠 자리다. 특히 그 파일이 제어 · 안전 쪽 파일이면 4행 · 5행과 같은 위반이다.</p>
-      <p><code>tick.c</code> 가 목록에 드는 이유는 설계가 아니라 <strong>콜백의 정의가 그 파일에 있기 때문</strong>이고, 그래서 모드에 따라 코드가 다른 곳도 둘이 된다(<a href="#s2-2">§2-2</a>).
-      <a href="fw-17-link-v2.html#s2-10">fw-17 §2-10</a> 이 제시한 대체안은 TEXT 모드에서 헤더가 빈 <code>static inline</code> 을 내놓고 <code>tick.c</code> 는 조건 없이 부르는 방법이다. 이 대체안을 골랐어도 <strong>포함하는 파일은 같은 셋</strong>이고, 달라지는 것은 <code>#if</code> 의 위치뿐이다.</p>
+      <p><strong>다섯 번째 파일이 나오면</strong> 그 파일이 고칠 자리다. 특히 그 파일이 제어 · 안전 쪽 파일이면 4행 · 5행과 같은 위반이다.</p>
+      <p><code>tick.c</code> 가 목록에 드는 이유는 <strong>1 kHz 콜백의 정의가 그 파일에 있기 때문</strong>이고, <code>console.c</code> 는 V2 에서 글자를 막는 자리가 <code>_write()</code> 하나이기 때문이다(<a href="#s2-2">§2-2</a>).</p>
       <p>판정표의 여섯 줄이 모두 <strong>통과</strong>면 체크 항목 <code>module-boundary-grep-clean</code> 을 통과시킨다. 출력(또는 "0 줄")과 날짜를 노트에 그대로 붙인다 — DoD 의 B21 이 이 기록을 가리킨다.</p>
       <div class="callout note"><span class="ct">고르지 않은 선택지(사실만) — (다)였다면 바뀌었을 기준</span>
         <p>§2-1 의 경로는 (가) 끌어가기로 정했다(2026-09-23). 그래서 이 프로젝트의 판정은 위 판정표 그대로다. 아래는 고르지 않은 <strong>(다) 초안 그대로</strong>의 사실이다.
@@ -356,7 +358,7 @@ control_set_target
           <tr><td>10</td><td>fw-12</td><td>ADC3 IN6 Single-ended · 외부 트리거 <code>T1_TRGO2</code> · Sync ÷4 · 내가 고른 SMP. DMA Circular · <code>ContinuousConvMode</code> DISABLE · TIM1 TRGO2 = Update</td><td><code>ADC3.</code> · <code>Dma.ADC3</code> · <code>TIM1.TIM_MasterOutputTrigger2</code> (생성 후 확인)</td><td>____</td></tr>
           <tr><td>11</td><td>fw-14</td><td>USART6 (PG14/PG9) · DMA RX Circular · IRQ 둘 · PG9 풀업</td><td><code>USART6.</code> · <code>Dma.USART6_RX</code> · <code>NVIC.USART6_IRQn</code> (생성 후 확인)</td><td>____</td></tr>
           <tr><td>12</td><td>fw-15</td><td>I2C1 RX DMA — <strong>DMA 를 고른 경우에만</strong>. IT 를 골랐으면 이 행은 "없는 것이 맞다"</td><td><code>Dma.I2C1_RX</code> (생성 후 확인)</td><td>____</td></tr>
-          <tr><td>13</td><td>fw-07 · fw-16</td><td>링커 스크립트: <code>.dma_buf</code> → RAM_D2 · 저장 섹터 예약</td><td><code>.ioc</code> 가 아니라 <code>STM32H723xG_flash.ld</code> 를 본다</td><td>____</td></tr>
+          <tr><td>13</td><td>fw-07</td><td>링커 스크립트: <code>.dma_buf</code> → RAM_D2 (저장 섹터 예약은 없다 — fw-16 제거됨)</td><td><code>.ioc</code> 가 아니라 <code>STM32H723xG_flash.ld</code> 를 본다</td><td>____</td></tr>
           <tr><td>14</td><td>—</td><td><strong>예약만 하고 켜지 않은 것</strong>: USART2(PD5/PD6) · TIM8_BKIN(PG2) · USB 7핀 · 예비 ADC3 채널. RMII 8핀은 Reset_State</td><td>이 이름들이 <code>.ioc</code> 에 <strong>없어야</strong> 한다</td><td>____</td></tr>
         </tbody>
       </table></div>
@@ -386,7 +388,7 @@ control_set_target
           <tr><td>CLI 의 긴 덤프(<code>step</code> 의 CSV)</td><td>산술</td><td>행 수 × 한 행의 글자 수 × 1000 ÷ 46 080 (460800 8N1)</td><td>덤프 루프 안에서 kick · 덤프는 <strong>EN 네 핀이 모두 LOW 일 때만</strong></td><td>fw-13</td><td>____ ms</td></tr>
           <tr><td>WT901 설정 절차의 정착 대기 · USART6 속도 전환</td><td>매뉴얼에 수치 없음 — 관찰</td><td><code>WT_CFG_SETTLE_MS</code> × 대기 횟수 / <code>DeInit</code>+<code>Init</code> 실측</td><td>비블로킹 상태기계(조각 대기 + kick)</td><td>fw-14</td><td>____ ms</td></tr>
           <tr><td>BNO055 POR · 모드 전환</td><td>데이터시트</td><td>POR 650 ms · CONFIG 전환 19 ms · 모드 전환 7 ms</td><td>전부 상태기계의 상태로 — 주 루프를 블로킹하지 않는다(<strong>더할 블로킹이 없다</strong>)</td><td>fw-15</td><td>____ ms</td></tr>
-          <tr><td>내장 플래시 섹터 지우기</td><td>typ 1.1~2 s / <strong>max 2.2~4 s</strong></td><td>데이터시트<sup class="fn"><a href="#fn-7" id="fnref-7">7</a></sup></td><td><strong>EN 네 핀이 모두 LOW 일 때만</strong> + IWDG 와의 공존 방식(fw-16 이 정한다)</td><td>fw-16</td><td>____ ms</td></tr>
+          <tr><td>내장 플래시 섹터 지우기</td><td><strong>행 없음</strong></td><td>—(제거 전 값: typ 1.1~2 s / max 2.2~4 s, 데이터시트<sup class="fn"><a href="#fn-7" id="fnref-7">7</a></sup>)</td><td>펌웨어가 플래시를 쓰지 않는다 — fw-16 제거(결정 bd). 굽기는 도구로</td><td>fw-16(제거됨)</td><td>—</td></tr>
           <tr><td>전원 시퀀스(사전충전 ≈ 수 초)</td><td><strong>행 없음</strong></td><td>—</td><td>상태기계가 비블로킹이다(<code>power.c</code> 에 <code>HAL_Delay</code> 0줄)</td><td>fw-11(설명만)</td><td>—</td></tr>
           <tr><td>옵션 바이트 쓰기</td><td><strong>행 없음</strong></td><td>—</td><td>펌웨어가 쓰지 않는다 — 도구로 한 번</td><td>fw-03(설명만)</td><td>—</td></tr>
         </tbody>
@@ -419,7 +421,7 @@ grep -n "dma_buf\|RAM_D2" STM32H723xG_flash.ld</code></pre>
       <pre><code class="lang-bash">grep -n "MX_.*_Init(void)" Core/Src/main.c | head -20      # 초기화 함수가 전부 있는가
 grep -n "HAL_NVIC_SetPriority" Core/Src/*.c | head -20     # 실제로 걸린 우선순위 (둘째 인자)
 grep -n "MPU_Config\|SCB_EnableDCache" Core/Src/main.c
-grep -n "&lt;모드 변수&gt;" User/Src/app.c User/Src/System/tick.c # 모드로 갈리는 자리가 이 둘뿐인가 (2-2). 변수 이름은 fw-17 에서 정한 것</code></pre>
+grep -rn "comm_link_mode" User/Src                          # 모드로 갈리는 자리: app.c · console.c · comm_frame.c 뿐인가 (2-2)</code></pre>
 
       <h4 id="s3-2-4">3-2-4. 보고 판정하기</h4>
       <p><strong>(가)</strong> — 14행이 모두 "원장과 같다"여야 한다. 다른 행이 나오면 <strong>어느 쪽이 맞는지부터 정한다</strong>: 내가 설계를 바꿨으면 원장이 낡은 것이고(노트에 사유를 적는다), 내가 실수로 바꿨으면 CubeMX 를 열어 되돌리고 <strong>다시 생성</strong>한다.
@@ -429,9 +431,9 @@ grep -n "&lt;모드 변수&gt;" User/Src/app.c User/Src/System/tick.c # 모드�
       <p>세 표를 노트에 남기면 체크 항목 셋(<code>ioc-final-audit</code> · <code>nvic-final-table-written</code> · <code>wdg-final-table-written</code>)을 통과시킨다.</p>
 
       <h3 id="s3-3">3-3. 실습 C-1 — DoD-Bench, 전원을 넣지 않고 통과시키는 행</h3>
-      <p>DoD-Bench 는 <strong>22행</strong>이다. 그 가운데 <strong>셋(B10 · B12 · B13)과 B16 의 한 키(<code>save-refused-when-armed</code>), 그리고 수용 시험의 ① ② ⑤</strong> 만 모터 전원을 넣는다 — 이 행들은 다음 절(C-2)에서 다룬다. 여기서는 나머지를 통과시킨다.</p>
+      <p>DoD-Bench 는 <strong>B1 ~ B22</strong> 이고, B16 은 제거됐다(fw-16 제거 — 번호는 그대로 둔다). 그 가운데 <strong>셋(B10 · B12 · B13)과 수용 시험의 ① ② ⑤</strong> 만 모터 전원을 넣는다 — 이 행들은 다음 절(C-2)에서 다룬다. 여기서는 나머지를 통과시킨다.</p>
       <p><strong>"다시 돌린다"의 뜻</strong>: 앞 쪽에서 이미 본 것을 <strong>같은 빌드에서 한 번에</strong> 다시 본다는 뜻이다. 앞 쪽들은 각자 다른 시점의 다른 빌드에서 통과됐다 —
-      그 사이에 고친 코드가 앞의 결과를 깨뜨렸을 수 있고, 그렇게 깨진 것을 여기서 찾지 못하면 조립한 뒤에 찾게 된다. <strong>지금 굽는 이 빌드 하나</strong>가 22행 전부를 통과해야 한다.</p>
+      그 사이에 고친 코드가 앞의 결과를 깨뜨렸을 수 있고, 그렇게 깨진 것을 여기서 찾지 못하면 조립한 뒤에 찾게 된다. <strong>지금 굽는 이 빌드 하나</strong>가 21행 전부를 통과해야 한다.</p>
 
       <h4 id="s3-3-2">3-3-2. 빈 표 — DoD-Bench (B1 ~ B22)</h4>
       <p>합격 <strong>수치</strong> 칸은 전부 빈칸이다. 앞 쪽에서 적어 둔 내 기록을 보고 내가 정한다(§2-4). "미룰 수 있는가"가 <strong>불가</strong>인 행은 미통과로 둔 채 조립으로 넘어가지 않는다.</p>
@@ -453,7 +455,7 @@ grep -n "&lt;모드 변수&gt;" User/Src/app.c User/Src/System/tick.c # 모드�
           <tr><td>B13<br><strong>(C-2)</strong></td><td>엔코더 선을 뽑으면 FEEDBACK_LOST 가, A/B 를 바꾸면 FEEDBACK_SIGN 이 트립한다. 급가속에서는 <strong>오트립하지 않는다.</strong> <strong>STALL 은 경로만</strong> — 발동은 fw-20(이유는 표 아래 B13)</td><td>발동 + 경로</td><td>명령 창 · 호스트 시험</td><td><code>fw-13:fblost-trips-on-unplug</code> · <code>fw-13:fbsign-trips-on-swap</code> · <code>fw-13:no-false-trip-fast-accel</code> · <code>fw-13:stall-path-host-only</code></td><td>불가</td><td>____</td></tr>
           <tr><td>B14</td><td>WT901 이 200 Hz(주기 5 ms)로 오고, 10분 동안 유실 0 이고, 선을 뽑았다 꽂으면 복구되며, 반시계 회전에서 <code>gz</code> 가 <strong>+</strong> 다</td><td>경로 + 발동</td><td><code>wt stat</code> 의 카운터</td><td><code>fw-14:wt-10min-no-loss</code> · <code>fw-14:wt-unplug-recovers</code> · <code>fw-14:wt-gz-ccw-positive</code></td><td><strong>가능</strong> — 내가 <strong>기본 IMU 로 고른</strong> 센서는 불가. 고르지 않은 쪽은 "보유 시"</td><td>____</td></tr>
           <tr><td>B15</td><td>BNO055 이 100 Hz(주기 10 ms)로 세어지고, 선을 뽑았다 꽂으면 복구되며, POR 이 워치독 예산 안이다</td><td>경로 + 발동</td><td><code>bno stat</code></td><td><code>fw-15:bno-100hz-counted</code> · <code>fw-15:bno-unplug-recovers</code> · <code>fw-15:bno-por-inside-budget</code></td><td>B14 와 같다</td><td>____</td></tr>
-          <tr><td>B16<br><strong>(일부 C-2)</strong></td><td>저장 → 리셋 → 복원이 된다. ARMED 상태에서는 저장을 <strong>거부</strong>한다. 지우기와 IWDG 가 공존한다. <strong>가운데 하나(<code>save-refused-when-armed</code>)는 C-2 에서 통과시킨다</strong>(이유는 표 아래 B16)</td><td>경로 + 발동</td><td>명령 창 (그 한 키만 전원 시퀀스)</td><td><code>fw-16:save-restores-after-reset</code> · <code>fw-16:save-refused-when-armed</code> · <code>fw-16:iwdg-survives-erase</code></td><td>불가</td><td>____</td></tr>
+          <tr class="removed"><td>B16</td><td><strong>제거됨</strong> — 플래시 저장(fw-16)이 제거되어 이 행이 없다(결정 bd). 번호는 뒤 행을 그대로 두려고 남겼다</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
           <tr><td>B17</td><td>세 구현(C · Python · Pi 쪽 C++)의 CRC 가 같고, 보낸 프레임 수 == 받은 수, BAD CRC 0, 끊겼다 이어도 복구된다</td><td>경로 + 발동</td><td>호스트 시험 · probe · gdb</td><td><code>fw-17:crc-three-impl</code> · <code>fw-17:frames-ok-equals-sent</code> · <code>fw-17:probe-bad-crc-zero</code> · <code>fw-17:link-recovers-after-break</code></td><td>불가</td><td>____</td></tr>
           <tr><td>B18</td><td>명령 워치독 <strong>200 ms</strong> 가 <strong>MCU 의 tick 으로</strong> 판정된다 (TEXT 에서의 첫 발동은 <code>step … once</code>, 계약 경로에서의 판정은 probe 의 <code>--mute-after</code>)</td><td>발동</td><td><code>step</code> 의 CSV · probe</td><td><code>fw-13:step-once-target-zeroed</code> · <code>fw-18:cmd-watchdog-by-mcu-tick</code></td><td>불가</td><td>____</td></tr>
           <tr><td>B19</td><td>fault 를 주입하면 이벤트가 <strong>한 번</strong> 오고 비트는 <strong>유지</strong>되다가, 조건이 풀리면 복구 이벤트가 온다</td><td>발동</td><td>probe / <code>fault</code></td><td><code>fw-18:event-once-bit-held</code> · <code>fw-18:recover-after-hold</code></td><td>불가</td><td>____</td></tr>
@@ -467,29 +469,28 @@ grep -n "&lt;모드 변수&gt;" User/Src/app.c User/Src/System/tick.c # 모드�
       <p class="small">B9 — 버스 전압은 INA226 으로 읽기로 정했다(2026-10-12). 고르지 않은 ADC 분압 경로였다면 <code>fw-12:battv-divider-checked-before-pin</code> 과 그 선택 절의 DMM 대조 기록이 이 행을 <strong>대체</strong>했다.</p>
       <p class="small">B10 — <strong>ARMED</strong>: fw-11 전원 상태기계의 상태로, <code>PRECHARGE</code> → <code>GATE</code> → <code>RELAY</code> 다음에 오며 구동이 가능해지는 시점이다. <strong>K1</strong>: 배터리와 모터 버스 사이의 주 접촉기다. 코일 드라이버를 <code>RELAY_EN</code>(PG3)으로 켠다.</p>
       <p class="small">B13 — 벤치에서는 바퀴를 붙잡지 않는다.</p>
-      <p class="small">B16 — <code>save-refused-when-armed</code> 는 EN 네 핀 중 하나라도 HIGH 인 동안을 보는 항목이라 C-2 에서 통과시킨다. <code>en 1</code> 은 <a href="fw-11-power-sequence.html">fw-11</a> 이 <code>POWER_ARMED</code> 전에는 <code>ERR en not-ready</code> 로 막아 두었다(핀을 손으로 HIGH 로 만들어 흉내 내지 않는다).</p>
 
       <h4 id="s3-3-3">3-3-3. 채우기 — 순서</h4>
       <p>순서가 있다. 뒤집으면 앞의 결과를 다시 돌려야 한다.</p>
       <ol class="steps">
-        <li><strong>펌웨어를 한 번 굽는다.</strong> <code>firmware/tools/flash.sh</code>(부팅은 TEXT 모드). 이 빌드의 <strong>배너 <code>build</code> 줄</strong>을 노트 맨 위에 적는다 — 22행 전부가 <strong>이 식별자</strong>의 기록이다.</li>
+        <li><strong>펌웨어를 한 번 굽는다.</strong> <code>firmware/tools/flash.sh</code>(부팅은 TEXT 모드). 이 빌드의 <strong>배너 <code>build</code> 줄</strong>을 노트 맨 위에 적는다 — 21행 전부가 <strong>이 식별자</strong>의 기록이다.</li>
         <li><strong>호스트 시험을 전부 돌린다</strong>(보드와 무관하다). 각 쪽의 <code>host_tests/test_*.c</code> 를 값 채점 줄과 <code>-fsanitize=undefined</code> 진단 줄 <strong>두 벌</strong>로. 진단 줄은 <strong>진단 메시지가 하나도 없는 것</strong>이 합격이다.</li>
         <li><strong>배너 · <code>grep</code> 으로 통과되는 행</strong>: B1 · B3(<code>iwdg-start-order-grep</code>) · B4(<code>.map</code>) · B21 · B22.</li>
-        <li><strong>명령 창만으로 통과되는 행</strong>: B2 · B3(<code>hang</code> 둘) · B4(<code>mem</code>) · B11 · B14 · B15 · B16. 다만 B16 의 <code>fw-16:save-refused-when-armed</code> 는 <strong>여기서 통과되지 않는다.</strong> EN 이 HIGH 여야 하고 <code>en 1</code> 은 <code>POWER_ARMED</code> 전에 거부되므로 <strong>C-2 의 2단계</strong>에서 통과시킨다(<a href="fw-16-flash-store.html">fw-16</a> 도 같은 내용을 적는다).</li>
+        <li><strong>명령 창만으로 통과되는 행</strong>: B2 · B3(<code>hang</code> 둘) · B4(<code>mem</code>) · B11 · B14 · B15.</li>
         <li><strong>DMM 이 필요한 행</strong>(전원은 아직 넣지 않는다): B5 · B6 · B7 · <strong>B9</strong>. B9 는 INA226 의 <code>vbus_mv</code> 를 <strong>DMM 과 견주어</strong> 차이를 적는 행이다. 그래서 표의 판정 수단이 <code>ina</code> · DMM 이다.</li>
-        <li><strong>V2 모드로 전환한다</strong>(전환 수단은 <a href="fw-17-link-v2.html">fw-17</a> 에서 정한 것. 다시 굽지 않는다). 여기서 B17 · B18 의 probe 쪽 · B19 · B20 과 <strong>수용 시험 ③ ④ ⑥ ⑦</strong>(모터 전원이 필요 없는 넷)을 통과시킨다. <strong>V2 에는 CLI 가 없다</strong> — 관측은 probe 출력과 gdb 로 읽는 카운터뿐이다(§2-2).
+        <li><strong>V2 로 들어간다</strong> — probe 가 시작할 때 <code>link v2</code> 를 보낸다(<a href="fw-17-link-v2.html">fw-17</a>, 다시 굽지 않는다). 여기서 B17 · B18 의 probe 쪽 · B19 · B20 과 <strong>수용 시험 ③ ④ ⑥ ⑦</strong>(모터 전원이 필요 없는 넷)을 통과시킨다. <strong>V2 에는 CLI 가 없다</strong> — 관측은 probe 출력과 gdb 로 읽는 카운터뿐이다(§2-2).
         probe 의 <strong>명령줄</strong>과 ⑦ · B18 의 <strong>두 번 돌리는 절차</strong>는 <a href="#s3-4-2">§3-4-2</a> 의 상자에 있다. 그 절차는 <code>--mute-after</code> 로 송신만 끊고, 두 번째 실행의 <code>--sec</code> 을 내가 정한 <code>RELEASE_HOLD_MS</code> 보다 크게 하는 것이다. <strong>바퀴를 돌리지 않는 여기서는 <code>vl</code> · <code>vr</code> 을 0 으로</strong> 두고 그대로 쓴다. <kbd>Ctrl</kbd>+<kbd>C</kbd> 로 강제 종료해서는 워치독을 볼 수 없다.</li>
-        <li>남은 셋(B10 · B12 · B13)과 B16 의 <code>save-refused-when-armed</code>, 그리고 수용 시험 ① ② ⑤ 는 <strong>C-2</strong> 에서. 그 절은 모터 전원을 넣는다.</li>
+        <li>남은 셋(B10 · B12 · B13)과 수용 시험 ① ② ⑤ 는 <strong>C-2</strong> 에서. 그 절은 모터 전원을 넣는다.</li>
       </ol>
       <div class="callout note"><span class="ct">두 모드를 보는데 "같은 빌드 하나"인가</span>
-        <p>그렇다. TEXT 와 V2 는 <strong>같은 바이너리</strong> 안의 두 모드다(§2-2). 그래서 22행 전부가 배너의 <code>build</code> 줄 하나의 기록이다. 제어·안전 모듈은 두 모드에서 같은 코드이므로, TEXT 에서 본 제어 동작은 V2 에서도 같다.
+        <p>그렇다. TEXT 와 V2 는 <strong>같은 바이너리</strong> 안의 두 모드다(§2-2). 그래서 21행 전부가 배너의 <code>build</code> 줄 하나의 기록이다. 제어·안전 모듈은 두 모드에서 같은 코드이므로, TEXT 에서 본 제어 동작은 V2 에서도 같다.
         중간에 소스를 고쳐 다시 구웠으면 <strong>고친 뒤의 것으로 앞의 행도 다시 돌린다.</strong></p>
       </div>
 
       <h4 id="s3-3-4">3-3-4. 보고 판정하기</h4>
       <p>표의 "내 기록 · 날짜" 칸이 <strong>전부 채워지는 것</strong>이 이 실습의 관찰이다. 빈칸이 남았으면 두 경우뿐이다.</p>
       <ul>
-        <li><strong>C-2 에서 통과시키는 행</strong>(B10 · B12 · B13 과 B16 의 <code>save-refused-when-armed</code>) — 다음 절에서 통과시킨다.</li>
+        <li><strong>C-2 에서 통과시키는 행</strong>(B10 · B12 · B13) — 다음 절에서 통과시킨다. 제거된 B16 은 빈칸이 아니다.</li>
         <li><strong>부품이 없어 미룬 행</strong>(B8 · B11 · B14 · B15 중 해당하는 것) — 사유와 "언제 통과시키는가"를 같이 적는다. 그 넷 밖의 행이 비어 있으면 <strong>이 쪽은 끝나지 않았다.</strong></li>
       </ul>
       <p>여기까지 오면 체크 항목 <code>dod-bench-all-rows-recorded</code> 를 통과시킬 준비가 된 것이다 — 다만 <strong>C-2 를 마친 뒤</strong>에 통과시킨다(세 행이 아직 비어 있다).</p>
@@ -510,8 +511,8 @@ grep -n "&lt;모드 변수&gt;" User/Src/app.c User/Src/System/tick.c # 모드�
           <li><strong>USB 를 뽑는 시험(B20)은 이 절에서 하지 않는다.</strong> B20 은 전원 상실 시험이고, 바퀴가 도는 동안 하는 것이 아니다 — <strong>모터 전원을 넣지 않은 상태</strong>에서, C-1 의 6단계(V2 모드)와 같은 자리에서 따로 한다(§2-4).</li>
         </ol>
       </div>
-      <p>여기서 통과시키는 것은 다섯이다: <strong>DoD 의 B10 · B12 · B13</strong>, <strong>B16 의 한 키</strong>(<code>save-refused-when-armed</code>), 그리고 <strong>수용 시험 ①~⑦</strong>.
-      B16 의 그 키는 ARMED 상태에서만 볼 수 있어 C-1 에서 미뤄 둔 것이고, 수용 시험 가운데 ① ② ⑤ 가 바퀴를 돌린다.</p>
+      <p>여기서 통과시키는 것은 넷이다: <strong>DoD 의 B10 · B12 · B13</strong>, 그리고 <strong>수용 시험 ①~⑦</strong>.
+      수용 시험 가운데 ① ② ⑤ 가 바퀴를 돌린다.</p>
 
       <h4 id="s3-4-2">3-4-2. 빈 표 — 수용 시험 ①~⑦ (probe 로 Pi 없이)</h4>
       <p><code>scripts/mcu_probe.py</code> 는 Mac 에서 도는 <strong>가짜 상위</strong>다. Pi 와 ROS 2 없이 계약 v2 의 양쪽을 다 볼 수 있게 하려고 만든 것이고, 일곱 줄이 이 프로젝트의 "받는 사람 자리에서 본 수용 시험"이다.</p>
@@ -560,24 +561,24 @@ python3 scripts/mcu_probe.py /dev/cu.usbmodem&lt;네 번호&gt; 0 0 --sec &lt;n&
         <pre><code class="lang-bash">grep -rn "DBGMCU_FREEZE" firmware/h723zg/User/Src firmware/h723zg/Core/Src
 # 기대: TIM1 과 TIM8 둘 다 나온다. 한쪽만 나오면 그 타이머의 4채널이 멈춘 동안 계속 나간다</code></pre>
         그리고 <strong>실물로 한 번 더</strong>: 모터 전원 없이 <code>pwm fl 200</code> 을 치고 DMM 을 RPWM_FL 핀에 댄 채 gdb 로 중단시킨다. 전압이 <strong>0 으로 떨어지면</strong> 동결이 동작하는 것이다. 떨어지지 않으면 <strong>여기서 멈추고</strong> <a href="fw-08-pwm-safe-output.html#s2-7">fw-08 §2-7</a> 로 돌아간다 — 이 절의 나머지를 할 수 없다.</li>
-        <li><strong>전원 올리기 (B10)</strong> — TEXT 모드. <code>pwr stat</code> 으로 상태를 보면서 <code>relay 1</code> 을 <strong>사전충전 전에</strong> 한 번 쳐 본다(<code>ERR relay precharge-not-done</code> 이 나와야 한다). 그 다음 <code>pwr up</code> 으로 정상 순서를 밟고, <code>pwr down</code> 으로 내리며 <strong>EN 이 먼저 내려가는지</strong>를 DMM 으로 확인한다.
-        <strong>내리기 전, ARMED 인 동안에 <code>save</code> 를 한 번 친다.</strong> <code>ERR save motor-en-high</code> 가 나오면 C-1 에서 미뤄 둔 B16 의 한 키(<code>fw-16:save-refused-when-armed</code>)가 여기서 통과된다. 이것이 그 항목을 실물로 일으킬 수 있는 <strong>유일한 자리</strong>다(<a href="fw-16-flash-store.html">fw-16</a>).</li>
+        <li><strong>전원 올리기 (B10)</strong> — TEXT 모드. <code>pwr stat</code> 으로 상태를 보면서 <code>relay 1</code> 을 <strong>사전충전 전에</strong> 한 번 쳐 본다(<code>ERR relay precharge-not-done</code> 이 나와야 한다). 그 다음 <code>pwr up</code> 으로 정상 순서를 밟고, <code>pwr down</code> 으로 내리며 <strong>EN 이 먼저 내려가는지</strong>를 DMM 으로 확인한다.</li>
         <li><strong>계단 응답 (B12)</strong> — <code>step &lt;바퀴&gt; &lt;목표&gt; &lt;ms&gt;</code> 로 CSV 를 뽑아 노트에 붙인다. 앞서 fw-13 에서 적은 기록과 <strong>같은 모양인지</strong> 본다. 다르면 그 사이에 바뀐 것이 있다는 뜻이고, 무엇이 바뀌었는지 찾는 것이 이 행을 두는 이유다.</li>
         <li><strong>보호 3종 (B13)</strong> — 엔코더 선 하나를 뽑아 FEEDBACK_LOST, A/B 를 바꿔 FEEDBACK_SIGN, 그리고 <strong>급가속에서 오트립하지 않는 것</strong>까지. <strong>STALL 은 호스트 시험의 경로 통과로만</strong> 확인한다 — 바퀴를 붙잡지 않는다.</li>
         <li><strong>전원을 내린다.</strong> <code>pwr down</code> → DMM 으로 버스 전압이 내려가는 것을 본다(블리더가 없으므로 전하가 남는다 — 배선을 만지기 전에 한 번 더 잰다).</li>
-        <li><strong>V2 모드로 전환하고 ① ② ⑤ 를 본다.</strong> 전환(fw-17 에서 정한 수단) → 전원이 내려가 있으면 다시 올린다 → 아래 한 줄.
+        <li><strong>V2 로 들어가 ① ② ⑤ 를 본다.</strong> 전원을 내린 상태(<code>pwr down</code> 뒤)에서 아래 한 줄을 친다. probe 가 <code>link v2</code> 로 V2 에 들어가고, 첫 상태 프레임 뒤 <code>--power on</code> 으로 <code>0x10</code> 을 보내 전원을 올린다. ARMED 중에는 <code>link v2</code> 가 거부되므로(<code>ERR link armed</code>, 결정 be) 이 순서를 지킨다. <code>power=armed</code> 가 찍힌 뒤에 바퀴가 돈다.
         <pre><code class="lang-bash">ls /dev/cu.usbmodem*                                  # 포트 번호를 먼저 확인한다
-python3 scripts/mcu_probe.py /dev/cu.usbmodem&lt;네 번호&gt; &lt;vl&gt; &lt;vr&gt; --sec &lt;n&gt; --mute-after &lt;s&gt;</code></pre>
+python3 scripts/mcu_probe.py /dev/cu.usbmodem&lt;네 번호&gt; &lt;vl&gt; &lt;vr&gt; --sec &lt;n&gt; --mute-after &lt;s&gt; --power on</code></pre>
         <code>port</code> · <code>vl</code> · <code>vr</code> 은 <strong>필수 위치 인자</strong>다(<a href="fw-17-link-v2.html#s3-2-3">fw-17 §3-2-3</a>) — 빼고 치면 probe 가 그 자리에서 끝난다.
         <code>vl</code> · <code>vr</code> 의 단위는 <strong>m/s</strong> 이고, <strong>0 을 주면 바퀴가 돌지 않아 ① ② ⑤ 를 하나도 볼 수 없다.</strong> 얼마로 할지는 <strong>내가 정한다</strong> — STOP 리스트 8번의 <code>DUTY_LIMIT_BENCH_PERMILLE</code> 안에서 <strong>작은 값부터</strong> 올린다.
         <code>--mute-after</code> 로 ⑤ 까지 한 실행에서 보는 이유는 <a href="#s3-4-2">§3-4-2</a> 의 상자에 있다.
+        뮤트 뒤의 시간(<code>--sec</code> − <code>--mute-after</code>)이 <strong>10 s</strong> 를 넘으면 MCU 가 전원을 내린다 — V2 · ARMED 에서 명령이 10 s 끊기면 내리는 규칙이다(결정 be). probe 가 끝난 뒤에도 같은 규칙으로 10 s 뒤 전원이 내려간다. 다음 실행은 다시 <code>--power on</code> 으로 시작한다.
         <strong>V2 에는 명령 창이 없다.</strong> 지금 보이는 것은 probe 의 출력과 LD2 뿐이다. LD2 는 EN 표시다(넷 다 HIGH 면 상시 점등 · 1~3 개면 점멸 · 0 개면 소등). 카운터를 더 보려면 gdb 로 변수를 읽는다(그래서 0단계가 먼저였다).</li>
         <li><strong>③ ④ ⑥ ⑦ 은 모터 전원이 필요 없다.</strong> C-1 의 6단계(V2 모드)에서 이미 볼 수 있으므로 그 단계에서 통과시키고(⑦ 의 <strong>두 번 돌리는 절차와 명령줄</strong>은 <a href="#s3-4-2">§3-4-2</a> 의 상자에 있다), 여기서는 <strong>①②⑤ 만</strong> 채운다. ⑤ 를 여기에 둔 이유는 ⑤ 가 "<strong>바퀴가 멈추는 것</strong>"을 보는 행이기 때문이다. 바퀴가 돌고 있어야 멈추는 것을 볼 수 있다.</li>
         <li><strong>끝나면 전원을 내리고</strong> 케이블을 정리한다. 배선을 만지기 전에 버스 전압을 다시 잰다.</li>
       </ol>
 
       <h4 id="s3-4-4">3-4-4. 보고 판정하기</h4>
-      <p>DoD 표의 B10 · B12 · B13 과 B16 의 <code>save-refused-when-armed</code>, 그리고 수용 시험 표의 ①~⑦ 이 모두 채워졌으면 체크 항목 둘을 통과시킨다. 두 항목은 <code>probe-acceptance</code> 와 <code>dod-bench-all-rows-recorded</code> 다.</p>
+      <p>DoD 표의 B10 · B12 · B13, 그리고 수용 시험 표의 ①~⑦ 이 모두 채워졌으면 체크 항목 둘을 통과시킨다. 두 항목은 <code>probe-acceptance</code> 와 <code>dod-bench-all-rows-recorded</code> 다.</p>
       <p>②에서 한쪽 카운트가 <strong>감소</strong>하면 여기서 고칠 것은 하나다: <strong>배선 또는 CubeMX 의 엔코더 극성.</strong> 펌웨어의 부호(<code>ENC_SIGN_*</code>)로 덮지 않는다 —
       그 부호는 "바퀴 전진 = 카운트 +" 를 맞추는 자리이고, 좌우 대칭이 깨진 것을 덮는 자리가 아니다. 덮으면 조립한 뒤 오도메트리에서 다시 나타난다.</p>
       <p>⑤ 에서 0.2 초가 <strong>대략 맞는다는 것만으로</strong> 통과시키지 않는다. 눈으로 본 "멈췄다"는 관찰이고, <strong>판정은 MCU 의 tick 으로</strong> 한다(B18). 재는 법 둘은 <a href="fw-18-safety-fsm.html#s2-12">fw-18 §2-12</a> 가 정해 두었다(그 쪽의 ① ② — 여기서는 수용 시험 번호와 헷갈리지 않게 <strong>(가) (나)</strong> 로 부른다).</p>
@@ -632,7 +633,7 @@ grep -rn "TODO(you)" firmware/h723zg/User | wc -l            # 코드가 비어 
       <h2 id="checkpoints">✅ 검증 체크포인트</h2>
       <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.</p>
       <ul class="checklist">
-        <li><label><input type="checkbox" data-key="module-boundary-grep-clean"><span><strong>경로 통과</strong> — 판정표 여섯 줄이 모두 통과다. <code>comm_frame.c</code> 가 부르는 <code>control_*</code> 이 다섯 함수의 부분집합이다. <code>control_post_event</code> · <code>_dbg_</code> 가 0 줄이다. 제어 · 안전 쪽 파일에 <code>comm_frame</code> · <code>frame_build</code> · <code>tx_enqueue</code> · <code>event_send</code> · <code>imu_send</code> 가 0 줄이다. <code>comm_frame.h</code> 를 포함하는 파일이 <strong>셋</strong>(<code>comm_frame.c</code> · <code>app.c</code> · <code>tick.c</code>)이다
+        <li><label><input type="checkbox" data-key="module-boundary-grep-clean"><span><strong>경로 통과</strong> — 판정표 여섯 줄이 모두 통과다. <code>comm_frame.c</code> 가 부르는 <code>control_*</code> 이 여덟 함수의 부분집합이다. <code>control_post_event</code> · <code>_dbg_</code> 가 0 줄이다. 제어 · 안전 쪽 파일에 <code>comm_frame</code> · <code>frame_build</code> · <code>tx_enqueue</code> · <code>event_send</code> · <code>imu_send</code> 가 0 줄이다. <code>comm_frame.h</code> 를 포함하는 파일이 <strong>셋</strong>(<code>comm_frame.c</code> · <code>app.c</code> · <code>tick.c</code>)이다
           <span class="sub">판정 수단: <code>grep</code> 출력 · §3-1-4 · 출력(또는 "0 줄")을 날짜와 함께 노트에 붙였다 · 경로는 (가) 끌어가기로 정했으므로(2026-09-23) 5행의 기준은 판정표 그대로다(§2-1)</span></span></label></li>
         <li><label><input type="checkbox" data-key="ioc-final-audit"><span><strong>경로 통과</strong> — CubeMX 에서 <strong>TIM2 · TIM5 · TIM23 · TIM24 엔코더 ×4</strong>(TIM5 의 PA1 은 <strong>SB57 OFF</strong>), <strong>TIM1 PWM</strong>(이 구성에서는 TIM8 까지 <strong>8채널</strong>) 을 설정했다. <strong>TIM6 1 kHz(주기 1 ms)</strong>, <strong>USART3 460800 DMA + IDLE</strong>, <strong>USART6</strong>(WT901), <strong>I2C1 400 kHz</strong>(INA226 · BNO055), <strong>ADC3</strong>, <strong>IWDG1</strong> 도 설정했다. <strong>DMA 버퍼는 non-cacheable SRAM</strong>(RAM_D2 + MPU 비캐시 리전)에 두었다. 그리고 <code>.ioc</code> 를 설정 원장과 <strong>한 줄씩 대조해</strong> 어긋난 행이 0 이다
           <span class="sub">판정 수단: <code>grep</code> 출력 · §3-2-3 · §3-2-4 · 대조표 14행을 모두 채웠다 · 어긋난 행은 CubeMX 에서 고치고 다시 생성했다</span></span></label></li>
@@ -663,7 +664,7 @@ grep -rn "TODO(you)" firmware/h723zg/User | wc -l            # 코드가 비어 
           <tr><td><code>HAL_NVIC_SetPriority</code> 의 값이 <code>.ioc</code> 의 값과 다르다</td><td>생성이 안 됐거나, 내 코드가 나중에 덮어썼다</td><td><code>grep -rn "HAL_NVIC_SetPriority" Core/Src User/Src</code></td><td>§3-2-3 — 덮어쓴 줄을 지우고 CubeMX 로 일원화</td></tr>
           <tr><td>V2 모드에서 배너도 CLI 도 반응이 없다</td><td><strong>설계다.</strong> V2 에서는 VCP 가 이진 프레임 전용이고 <code>LOG_*</code> · 배너 글자가 USART3 에 나가지 않게 막혀 있다</td><td>배너가 안 보이는 것 자체 · probe 를 연결하면 프레임이 온다</td><td>고칠 것이 없다 (§2-2) — 관측은 probe 와 gdb</td></tr>
           <tr><td>gdb 로 멈췄는데 <strong>바퀴가 계속 돈다</strong></td><td>디버그 동결이 없는 빌드다. 멈춘 동안 마지막 듀티가 그대로 나간다</td><td>바로 전원을 내리고 <code>grep -rn "DBGMCU_FREEZE" User/Src Core/Src</code></td><td>§3-4-3 의 0단계 · <a href="fw-08-pwm-safe-output.html#s2-7">fw-08 §2-7</a></td></tr>
-          <tr><td><code>step</code> 의 CSV 모양이 fw-13 때 적어 둔 것과 다르다</td><td>그 사이에 소스가 바뀌었다. <strong>이런 변화를 찾으려고 22행을 같은 빌드에서 다시 돌린다</strong></td><td>두 CSV 를 나란히 놓고 본다 · <code>git diff</code></td><td>§3-3-3 의 상자 — 바뀐 것을 찾고, 찾은 뒤 앞의 행도 다시 돌린다</td></tr>
+          <tr><td><code>step</code> 의 CSV 모양이 fw-13 때 적어 둔 것과 다르다</td><td>그 사이에 소스가 바뀌었다. <strong>이런 변화를 찾으려고 21행을 같은 빌드에서 다시 돌린다</strong></td><td>두 CSV 를 나란히 놓고 본다 · <code>git diff</code></td><td>§3-3-3 의 상자 — 바뀐 것을 찾고, 찾은 뒤 앞의 행도 다시 돌린다</td></tr>
           <tr><td><code>./scripts/check_nominal.sh</code> 는 깨끗한데 실습 D 의 <code>grep</code> 에서 줄이 나온다</td><td>스크립트는 <code>firmware/</code> 아래의 <strong><code>*.h</code> 만</strong> 본다 — <code>.c</code> 의 <code>TODO(you)</code> 는 세지 않는다</td><td>두 출력을 견준다</td><td>고칠 것이 없다 (§3-5-3 의 상자) — 둘 다 돌린다</td></tr>
           <tr><td>probe 의 ② 에서 한쪽 카운트가 <strong>감소</strong>한다</td><td>그 바퀴의 엔코더 A/B 가 반대로 연결됐거나 CubeMX 의 극성이 반대다</td><td>probe 의 <code>STATE</code> 줄 <code>L=</code> · <code>R=</code> · <code>enc</code>(TEXT 모드)</td><td>§3-4-4 — 배선이나 <code>.ioc</code> 를 고친다. <strong><code>ENC_SIGN_*</code> 로 덮지 않는다</strong></td></tr>
           <tr><td>⑦ 에서 워치독 이벤트는 오는데 <strong>복구 이벤트가 안 온다</strong></td><td>해제 정책이 "자동 해제"가 아니거나, 복구 조건의 유지 시간을 아직 넘기지 않았다</td><td>probe 를 <strong>다시 한 번 돌려</strong>(§3-4-2 의 상자) 내가 정한 <code>RELEASE_HOLD_MS</code> 보다 오래 기다려 본다 · <code>fault stat</code>(TEXT 모드)</td><td>해제 정책은 <strong>내가 정한 것</strong>이다 — 정한 대로 동작하는지를 본다(fw-18)</td></tr>
@@ -716,7 +717,7 @@ grep -rln "&lt;CB&gt;" $FW_H7/Projects/NUCLEO-H723ZG/Examples    # (4) 이 보�
           <li>(2) 두 모드는 <strong>동시에 돌지 않는다</strong> — TEXT 로 바꾸면 계약 v2 링크가 끊겨 브리지를 먼저 멈춰야 하고, 부팅이 TEXT 라 리셋 뒤에는 브리지가 V2 진입을 다시 요청해야 한다.</li>
           <li>(3) V2 에서는 CLI 가 없어 <strong>관측 수단이 둘</strong>(probe 출력 · gdb 로 읽는 변수)로 준다.</li>
         </ul>
-        <p><strong>얻은 것</strong>: 제어 · 안전 모듈이 두 모드에서 <strong>같은 코드</strong>라는 것이다(코드가 다른 곳은 <code>app.c</code> 와 <code>tick.c</code> <strong>둘</strong>뿐이다 — fw-17 §2-10). 그래서 TEXT 에서 본 계단 응답 · 보호 트립 · 워치독 동작이 V2 에서도 같은 코드의 동작이고,
+        <p><strong>얻은 것</strong>: 제어 · 안전 모듈이 두 모드에서 <strong>같은 코드</strong>라는 것이다(모드에 따라 갈리는 곳은 <code>app.c</code> · <code>console.c</code> · <code>comm_frame.c</code> <strong>셋</strong>뿐이다 — fw-17 §2-7 · §2-10). 그래서 TEXT 에서 본 계단 응답 · 보호 트립 · 워치독 동작이 V2 에서도 같은 코드의 동작이고,
         벤치에서 적은 기록을 조립 뒤까지 그대로 가져갈 수 있다. 관측 수단을 계약 쪽에 만들었다면(계약에 진단 TYPE 을 더했다면) 계약이 넓어졌을 것이다. 계약을 넓히는 것은 06a 의 결정이지 펌웨어의 결정이 아니다.</p></div></details>
       <details class="quiz"><summary>4. USART6 의 IRQ 와 그 RX DMA 스트림 IRQ 에 <strong>다른</strong> 선점 우선순위를 주면 무엇이 깨지는가? 왜 그 고장이 "가끔"만 보이는가?</summary>
         <div class="ans"><p>Circular DMA 수신에서 콜백은 <strong>두 경로</strong>로 들어온다 — IDLE 은 USART 자신의 IRQ 로, HT(반) · TC(끝)는 DMA 스트림의 IRQ 로. 두 경로가 <strong>같은 콜백</strong>에 도착하고, 그 콜백은 "지난번에 어디까지 읽었는가"(<code>old_pos</code>)를 고쳐 쓴다.</p>
@@ -740,7 +741,7 @@ grep -rln "&lt;CB&gt;" $FW_H7/Projects/NUCLEO-H723ZG/Examples    # (4) 이 보�
         반대로 TIM6 의 <code>CNT</code> 로 재는 방법을 골랐으면 한 칸이 1 µs 가 아니라 약 0.945 µs 인데, 이 한 칸을 1 µs 로 읽으므로 <strong>딱 1000 으로 나온다</strong> — <strong>안 보인다.</strong>
         그리고 어느 시계든, 합격선을 "최대 − 최소 가 작으면 통과"(지터만)로 적었으면 <strong>둘 다 통과한다</strong> — 지터는 여전히 작기 때문이다.
         그래서 합격선을 적을 때 <strong>"1000 µs 에서 얼마나 벗어나는가"까지 적어 두는 것</strong>이 이 오류를 잡는 유일한 장치다. B12 의 계단 응답은 어느 쪽이든 "그럴듯한 모양"으로 나온다.</p>
-        <p>그래서 순서가 A → B → C 다. <strong>설정이 어긋난 채로 돌린 관찰은 관찰이 아니다.</strong> 이것이 실습 B 를 DoD 앞에 둔 이유이고, 22행을 <strong>같은 빌드 하나</strong>로 돌리는 이유이기도 하다.</p></div></details>
+        <p>그래서 순서가 A → B → C 다. <strong>설정이 어긋난 채로 돌린 관찰은 관찰이 아니다.</strong> 이것이 실습 B 를 DoD 앞에 둔 이유이고, 21행을 <strong>같은 빌드 하나</strong>로 돌리는 이유이기도 하다.</p></div></details>
       <details class="quiz"><summary>7. (안전) "USB 를 뽑아 봤더니 바퀴가 멈췄다 — 워치독이 되는군" 이 왜 틀린 결론인가? 그리고 STALL 을 벤치에서 발동시키지 않는 이유는?</summary>
         <div class="ans"><p><strong>USB</strong>: 지금 Nucleo 는 ST-LINK 의 USB 로 급전된다(UM2407 의 JP2 기본 = 5V_USB_STLK). 케이블을 뽑으면 <strong>MCU 자체가 꺼진다</strong> — 워치독이 동작할 기회조차 없다.
         그때 시험된 것은 "전원이 사라졌을 때 EN 네트 넷이 LOW 로 떨어지는가"이고, 그 답을 내는 것은 펌웨어가 아니라 <strong>IBT-2 모듈의 풀다운</strong>이다. 그래서 B20 은 <strong>전원 상실 시험</strong>이고 B18(명령 워치독)과 별개다.
