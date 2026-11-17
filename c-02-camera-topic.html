@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C2 · 컨테이너에서 영상 토픽 — libcamera 와 camera_ros — 카메라 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="c-02">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">C2 · 컨테이너에서 영상 토픽</p>
+      <h1>컨테이너에서 영상 토픽 — libcamera 와 camera_ros</h1>
+<p class="lead">호스트에서 동작하는 카메라를 컨테이너의 ROS 2 노드(<code>camera_ros</code>)가 열어 <code>/stereo/left/image_raw</code> 를 발행하게 한다.
+넘어야 할 것은 둘이다. 장치 파일을 컨테이너에 전달하는 것과, libcamera 를 호스트와 같은 판으로 컨테이너에 빌드하는 것이다.
+이 가이드에서 시간이 가장 오래 걸리는 쪽이다(이미지 빌드 20 ~ 40 분).</p>
+<div class="goal">
+<span class="label">이 쪽이 끝나면 보이는 것</span>
+<ul>
+  <li>컨테이너 안에서 <code>/dev/video*</code> · <code>/dev/media*</code> · <code>/dev/dma_heap</code> 이 보인다.</li>
+  <li>컨테이너의 libcamera 가 호스트와 같은 판으로 빌드되어 <code>cam -l</code> 에 <code>imx708</code> 두 대가 나온다.</li>
+  <li><code>camera_ros</code> 가 빌드되고, 패키지 <code>rpi5_vision</code> 의 런치 파일 하나로 카메라 노드가 뜬다.</li>
+  <li><code>/stereo/left/image_raw</code> 가 30 fps(주기 33 ms), 인코딩 <code>bgr8</code>, 프레임 id <code>stereo_left_optical_link</code> 로 발행되고 Foxglove 에 영상이 보인다.</li>
+</ul>
+<p><strong>필요한 것</strong> — C1 에서 정한 센서 모드와 렌즈 위치 값, 학습 단계 02 의 컨테이너 이미지.</p>
+</div>
+<div class="meta">
+<div><span class="k">환경</span><span class="tag pi">Pi 호스트</span> <span class="tag cli">컨테이너</span> <span class="tag bench">벤치</span></div>
+<div><span class="k">선행</span><a href="c-01-host-camera.html">C1</a>, 학습 단계 <a href="02-docker-ros2.html">02</a></div>
+<div><span class="k">만드는 것</span><code>docker/Dockerfile</code> 의 libcamera 블록, <code>ros2_ws/src/drivers.repos</code>, 패키지 <code>ros2_ws/src/rpi5_vision</code>(런치 · 설정 파일)</div>
+<div><span class="k">적는 곳</span>없음</div>
+</div>
+<h2 id="overview">1. 개요</h2>
+<p>컨테이너 안의 경로는 이렇다. 아래 두 층은 호스트 커널의 것이고, 위 두 층을 이 쪽에서 만든다.</p>
+<pre class="diagram"><code>컨테이너   camera_ros 노드  ──►  /stereo/left/image_raw · /stereo/left/image_raw/compressed · /stereo/left/camera_info
+컨테이너   libcamera (Raspberry Pi 판, 소스 빌드 — 호스트 패키지와 같은 태그)
+호스트     커널 드라이버 imx708 · PiSP
+호스트     /dev/media*  /dev/video*  /dev/dma_heap   ← compose 의 장치 규칙으로 컨테이너에 연다</code></pre>
+<p>이 쪽이 만드는 파일은 넷이다.</p>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w40"><col class="w60"></colgroup>
+<thead><tr><th>파일</th><th>하는 일</th></tr></thead>
+<tbody>
+<tr><td><code>docker/Dockerfile</code> 의 libcamera 블록</td><td>컨테이너 이미지에 libcamera 를 호스트와 같은 판으로 빌드해 넣는다</td></tr>
+<tr><td><code>ros2_ws/src/drivers.repos</code></td><td>외부 소스(<code>camera_ros</code>)의 주소를 적는 파일. <code>vcs import</code> 가 읽는다. 소스 자체는 저장소에 넣지 않는다</td></tr>
+<tr><td><code>rpi5_vision/launch/camera.launch.py</code></td><td>카메라 노드를 네임스페이스 <code>stereo</code>, 이름 <code>left</code> 로 띄운다(스테레오의 왼쪽 카메라)</td></tr>
+<tr><td><code>rpi5_vision/config/camera.yaml</code></td><td>해상도 · 센서 모드 · 색 형식 · 초점 · 프레임 id. 뒤 쪽은 이 파일만 고친다</td></tr>
+</tbody></table></div>
+<h2 id="why">2. 원리</h2>
+<h3 id="s2-1">2-1. 장치 파일 셋과 장치 규칙</h3>
+<p>compose 는 <code>/dev</code> 전체를 컨테이너에 마운트한다. 그래도 장치 규칙(<code>device_cgroup_rules</code> — 컨테이너가 쓸 수 있는 장치를 제한하는 리눅스 기능의 설정)에 그 장치의 major 번호가 없으면 열 수 없다.</p>
+<ul>
+  <li><code>/dev/video*</code> 의 major 는 81 로 고정이다.</li>
+  <li><code>/dev/media*</code> 와 <code>/dev/dma_heap</code> 의 major 는 커널이 부팅 때 빈 번호에서 골라 주므로 부팅마다 바뀔 수 있다(이 프로젝트의 Pi 에서 media 가 511 · 237 · 238). 그래서 compose 는 번호 대신 <code>docker/.env</code> 의 <code>MEDIA_MAJOR</code> · <code>DMA_HEAP_MAJOR</code> 를 읽고, 그 값은 부팅 때 <code>docker/majors.sh</code> 가 적는다(02 §2-3).</li>
+  <li><code>/dev/dma_heap</code> 은 카메라 영상 버퍼를 할당하는 장치다. Pi 5 에서 이것이 없으면 libcamera 가 카메라를 열지 못한다. 컨테이너에서만 카메라가 안 보일 때 첫 번째로 의심한다.</li>
+  <li><code>/run/udev</code> 를 읽기 전용으로 마운트하는 줄도 compose 에 있다. libcamera 가 장치를 찾을 때 쓴다.</li>
+</ul>
+<h3 id="s2-2">2-2. libcamera 를 소스로 빌드하는 이유</h3>
+<ul>
+  <li>컨테이너의 Ubuntu 22.04 가 apt 로 주는 libcamera 는 Pi 5 의 영상 처리기(PiSP)를 모른다. Raspberry Pi 가 관리하는 판을 써야 한다.</li>
+  <li>호스트 패키지 판 <code>0.7.2+rpt20260817-1</code> 에서 뒤의 <code>-1</code> 을 뗀 <code>v0.7.2+rpt20260817</code> 이 소스 태그다. 태그를 추측해서 넣지 않는다. 호스트 커널 드라이버와 다른 세대의 libcamera 는 카메라를 열지 못한다.</li>
+  <li>libcamera 가 함께 빌드하는 <code>libpisp</code> 도 호스트 판(<code>v1.7.0</code>)으로 맞춘다. 태그의 기본 설정은 v1.5.0 을 가리키므로 빌드 전에 바꾼다.</li>
+  <li>Ubuntu 22.04 의 meson(0.61)은 이 빌드에 부족하다. pip 로 최신 meson 을 넣는다.</li>
+</ul>
+<h3 id="s2-3">2-3. RGB888 을 요청했는데 인코딩은 bgr8 이다</h3>
+<p>libcamera 의 형식 이름은 32비트 값 안의 순서(<code>R:G:B</code>)로 짓고, ROS 와 OpenCV 는 메모리에 놓이는 바이트 순서로 짓는다. 같은 데이터가 메모리에서는 B, G, R 순서라 ROS 인코딩은 <code>bgr8</code> 이 된다. 버그가 아니고, OpenCV 의 기본 순서와 같아서 C4 에서 변환 없이 쓴다.</p>
+<h3 id="s2-4">2-4. 노드 이름이 토픽 이름을 정한다</h3>
+<p><code>camera_ros</code> 는 <code>~/image_raw</code> 처럼 노드의 전체 이름(네임스페이스 + 노드 이름)을 접두어로 발행한다. 네임스페이스가 <code>stereo</code>, 노드 이름이 <code>left</code> 면 <code>/stereo/left/image_raw</code> 다. 파라미터 파일(YAML)의 맨 위 키도 그 전체 이름(<code>/stereo/left</code>)이어야 한다. 키가 다르면 파라미터가 오류 표시 없이 무시된다.</p>
+<p>이 로봇의 카메라는 Camera Module 3 일반 모델 두 대를 좌우로 나란히 둔 스테레오 한 쌍이다. 이 쪽은 <strong>왼쪽 카메라(CAM0) 하나</strong>만 띄운다. 오른쪽(CAM1, 이름 <code>right</code>)을 함께 띄우는 일은 뒤에 이어지는 스테레오 쪽에서 다룬다.</p>
+<h3 id="s2-5">2-5. 전송량</h3>
+<p>640 × 480 × 3 바이트 × 30 장 = 초당 약 27 MB 다. 유선이 아닌 Wi-Fi 로는 보내지 못한다. 노드가 JPEG 로 압축한 <code>/stereo/left/image_raw/compressed</code> 를 함께 발행하므로, Mac 의 Foxglove 는 그 토픽을 본다. Pi 안의 노드끼리는 압축 없는 <code>/stereo/left/image_raw</code> 를 쓴다.</p>
+<h2 id="lab">3. 실습</h2>
+<h3 id="s3-1">3-1. 장치 파일이 컨테이너에 보이는가 <span class="tag pi">Pi 호스트</span></h3>
+<pre><code class="lang-bash">ls -l /dev/dma_heap/ /dev/media0 /dev/video0
+#   쉼표 앞 숫자가 major. video 는 81 고정, 나머지는 부팅마다 바뀔 수 있다
+cd ~/ros2_rpi5/docker &amp;&amp; ./majors.sh --check
+#   ✓ .env 의 major 번호가 지금 값과 같다   ← 다르다고 나오면 ./majors.sh 를 실행한다
+
+cd ~/ros2_rpi5/docker &amp;&amp; docker compose run --rm dev ls -l /dev/video0 /dev/media0 /dev/dma_heap/
+#   컨테이너 안에서 같은 파일이 보이면 된다</code></pre>
+<h3 id="s3-2">3-2. Dockerfile 에 libcamera 빌드 블록을 넣는다 <span class="tag mac">Mac</span> <span class="tag pi">Pi 호스트</span></h3>
+<p>Mac 에서 <code>docker/Dockerfile</code> 을 연다. <code># ── 4. 비root 사용자</code> 블록 <strong>앞</strong>에 아래 블록을 넣는다(root 로 설치돼야 한다). 태그 두 개는 C1 §3-5 에서 대조한 호스트 값이다.</p>
+<pre><code class="lang-text"># ── 3-C. libcamera (Raspberry Pi fork) built from source — camera guide C2 ──────────
+#  Tags must match the host packages (hardware/INVENTORY.md section 4). Re-check after a host upgrade.
+ARG LIBCAMERA_TAG=v0.7.2+rpt20260817
+ARG LIBPISP_TAG=v1.7.0
+RUN apt-get update &amp;&amp; apt-get install -y --no-install-recommends \
+      python3-jinja2 python3-yaml python3-ply python3-pip \
+      libssl-dev openssl libdw-dev libunwind-dev \
+      libudev-dev libyaml-dev pkg-config \
+      libgnutls28-dev libtiff-dev libevent-dev \
+    &amp;&amp; rm -rf /var/lib/apt/lists/*
+
+# jammy's apt meson (0.61) is too old for this build; take the current one from pip.
+RUN pip3 install --no-cache-dir --upgrade meson ninja
+
+RUN git clone --depth 1 -b ${LIBCAMERA_TAG} \
+      https://github.com/raspberrypi/libcamera.git /tmp/libcamera \
+ &amp;&amp; cd /tmp/libcamera \
+ &amp;&amp; sed -i "s/^revision = .*/revision = ${LIBPISP_TAG}/" subprojects/libpisp.wrap \
+ &amp;&amp; meson setup build --buildtype=release \
+      -Dpipelines=rpi/vc4,rpi/pisp -Dipas=rpi/vc4,rpi/pisp \
+      -Dv4l2=true -Dgstreamer=disabled -Dtest=false -Dlc-compliance=disabled \
+      -Dcam=enabled -Dqcam=disabled -Ddocumentation=disabled \
+ &amp;&amp; ninja -C build install &amp;&amp; ldconfig \
+ &amp;&amp; rm -rf /tmp/libcamera
+
+# camera_ros build/run dependency. Installed in the image: rosdep inside a `docker compose run --rm`
+# container installs it into that container only, and it is gone when the container exits.
+RUN apt-get update &amp;&amp; apt-get install -y --no-install-recommends \
+      ros-humble-camera-info-manager \
+    &amp;&amp; rm -rf /var/lib/apt/lists/*</code></pre>
+<p>Pi 로 보내고 이미지를 다시 빌드한다. 빌드 중에는 다른 일을 한다.</p>
+<pre><code class="lang-bash"># Mac
+./scripts/sync-to-pi.sh
+# Pi 호스트
+cd ~/ros2_rpi5/docker &amp;&amp; docker compose build          # 20 ~ 40 분
+docker compose run --rm dev cam -l                      # 컨테이너의 libcamera 가 카메라를 보는가
+#   Available cameras:            ← 두 대가 다 보여야 한다 (경로 부분은 줄였다)
+#   1: 'imx708' (…/i2c@88000/imx708@1a)
+#   2: 'imx708' (…)
+docker compose run --rm dev find / -name 'imx708.json' 2&gt;/dev/null
+#   /usr/local/share/libcamera/ipa/rpi/pisp/imx708.json   ← 튜닝 파일. 없으면 카메라가 열리지 않는다</code></pre>
+<h3 id="s3-3">3-3. camera_ros 소스를 받는다 <span class="tag mac">Mac</span> <span class="tag cli">컨테이너</span></h3>
+<p>Mac 에서 <code>ros2_ws/src/drivers.repos</code> 를 만든다. 이 파일만 저장소에 넣고, 받은 소스는 넣지 않는다.</p>
+<pre><code class="lang-yaml">repositories:
+  camera_ros:
+    type: git
+    url: https://github.com/christianrauch/camera_ros.git
+    version: 0.8.1           # tag — pin a tag, not a branch (main moves)</code></pre>
+<pre><code class="lang-bash"># Mac
+echo 'ros2_ws/src/camera_ros/' &gt;&gt; .gitignore
+./scripts/sync-to-pi.sh</code></pre>
+<p>컨테이너에서 받고 의존 패키지를 확인한다. <code>--skip-keys=libcamera</code> 가 중요하다. 이것이 없으면 apt 의 libcamera 가 설치되어 3-2 에서 빌드한 것과 섞인다. 빌드 · 실행에 필요한 <code>camera_info_manager</code> 는 3-2 의 Dockerfile 블록이 이미지에 넣었다. <code>docker compose run --rm</code> 컨테이너에서 rosdep 이 설치한 것은 컨테이너를 닫으면 사라지기 때문이다.</p>
+<pre><code class="lang-bash"># Pi 호스트 → 컨테이너
+cd ~/ros2_rpi5/docker &amp;&amp; docker compose run --rm dev
+# 컨테이너 안
+cd /ros2_ws
+vcs import src &lt; src/drivers.repos
+rosdep install --from-paths src --ignore-src -r -y --skip-keys=libcamera</code></pre>
+<p><code>sync-to-pi.sh</code> 는 <code>drivers.repos</code> 에 적힌 이름의 디렉터리를 보내지도 지우지도 않는다. 그래서 Pi 에만 있는 <code>camera_ros</code> 소스가 다음 동기화에서 지워지지 않는다.</p>
+<h3 id="s3-4">3-4. camera_ros 빌드 <span class="tag cli">컨테이너</span></h3>
+<pre><code class="lang-bash">cd /ros2_ws
+export PKG_CONFIG_PATH=/usr/local/lib/aarch64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
+pkg-config --modversion libcamera                      # 0.7.2 가 나와야 한다 (3-2 에서 /usr/local 에 설치됐다)
+colcon build --symlink-install --packages-select camera_ros --parallel-workers 2
+source install/setup.bash</code></pre>
+<p><code>pkg-config</code> 가 값을 내지 않으면 <code>ldconfig</code> 가 실행됐는지, <code>/usr/local/lib/aarch64-linux-gnu/pkgconfig/libcamera.pc</code> 가 있는지 본다.</p>
+<h3 id="s3-5">3-5. 패키지 rpi5_vision — 런치와 설정 파일 <span class="tag cli">컨테이너</span></h3>
+<p>이 가이드의 노드가 전부 들어갈 패키지를 만든다. 지금은 런치와 설정 파일만 있고, C4 부터 C++ 노드가 들어간다.</p>
+<pre><code class="lang-bash">cd /ros2_ws/src
+ros2 pkg create rpi5_vision --build-type ament_cmake --license Apache-2.0
+mkdir -p rpi5_vision/launch rpi5_vision/config</code></pre>
+<p><code>rpi5_vision/CMakeLists.txt</code> 를 아래 내용으로 바꾼다.</p>
+<pre><code class="lang-cmake">cmake_minimum_required(VERSION 3.8)
+project(rpi5_vision)
+
+find_package(ament_cmake REQUIRED)
+
+install(DIRECTORY launch config
+  DESTINATION share/${PROJECT_NAME})
+
+ament_package()</code></pre>
+<p><code>rpi5_vision/package.xml</code> 을 아래 내용으로 바꾼다. 이름과 메일은 자기 것으로 바꾼다.</p>
+<pre><code class="lang-xml">&lt;?xml version="1.0"?&gt;
+&lt;?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?&gt;
+&lt;package format="3"&gt;
+  &lt;name&gt;rpi5_vision&lt;/name&gt;
+  &lt;version&gt;0.1.0&lt;/version&gt;
+  &lt;description&gt;Camera guide: camera launch, OpenCV node, YOLO detector, overlay&lt;/description&gt;
+  &lt;maintainer email="you@example.com"&gt;you&lt;/maintainer&gt;
+  &lt;license&gt;Apache-2.0&lt;/license&gt;
+
+  &lt;buildtool_depend&gt;ament_cmake&lt;/buildtool_depend&gt;
+
+  &lt;exec_depend&gt;camera_ros&lt;/exec_depend&gt;
+  &lt;exec_depend&gt;ros2launch&lt;/exec_depend&gt;
+
+  &lt;export&gt;
+    &lt;build_type&gt;ament_cmake&lt;/build_type&gt;
+  &lt;/export&gt;
+&lt;/package&gt;</code></pre>
+<p><code>rpi5_vision/launch/camera.launch.py</code>:</p>
+<pre><code class="lang-python">"""Camera node launch (camera guide C2).
+
+    ros2 launch rpi5_vision camera.launch.py
+
+Namespace 'stereo' + node name 'left' (left camera of the stereo pair) makes the topics
+/stereo/left/image_raw, /stereo/left/image_raw/compressed and /stereo/left/camera_info.
+The YAML file's top-level key must be the full name /stereo/left.
+"""
+from launch import LaunchDescription
+from launch.substitutions import PathJoinSubstitution
+from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
+
+
+def generate_launch_description():
+    params = PathJoinSubstitution([FindPackageShare('rpi5_vision'), 'config', 'camera.yaml'])
+    camera = Node(
+        package='camera_ros',
+        executable='camera_node',
+        namespace='stereo',
+        name='left',
+        output='screen',
+        parameters=[params],
+    )
+    return LaunchDescription([camera])</code></pre>
+<p><code>rpi5_vision/config/camera.yaml</code>. 센서 모드와 렌즈 위치는 C1 에서 정한 값이다.</p>
+<pre><code class="lang-yaml">/stereo/left:                    # must equal namespace + name in camera.launch.py
+  ros__parameters:
+    camera: 0                    # camera index (CAM0 connector = left)
+    width: 640
+    height: 480
+    format: "RGB888"             # ROS encoding becomes bgr8 (section 2-3)
+    sensor_mode: "2304:1296"     # full field of view, 56 fps limit (C1 section 2-2)
+    frame_id: "stereo_left_optical_link"
+    camera_info_url: ""          # filled in C3
+    jpeg_quality: 80             # /stereo/left/image_raw/compressed for Foxglove over Wi-Fi
+
+    # libcamera controls are parameters with the same names
+    AfMode: 0                    # 0 = manual focus (C1 section 2-3)
+    LensPosition: 0.5            # dioptres: focus at 2 m
+    AeEnable: true
+    AwbEnable: true
+    FrameDurationLimits: [33333, 33333]   # fixed 30 fps (microseconds per frame)</code></pre>
+<h3 id="s3-6">3-6. 빌드 · 실행 · 확인 <span class="tag cli">컨테이너</span> <span class="tag mac">Mac</span></h3>
+<pre><code class="lang-bash">cd /ros2_ws
+colcon build --symlink-install --packages-select rpi5_vision
+source install/setup.bash
+ros2 launch rpi5_vision camera.launch.py</code></pre>
+<p>기동 로그를 읽는다. 카메라 목록, 형식 목록, 그리고 libcamera 의 <code>Selected sensor format: 2304x1296-...</code> 줄이 보여야 한다. 다른 터미널에서 컨테이너에 하나 더 들어가(<code>docker compose run --rm dev</code>) 확인한다.</p>
+<pre><code class="lang-bash">ros2 topic list | grep stereo
+#   /stereo/left/camera_info   /stereo/left/image_raw   /stereo/left/image_raw/compressed
+ros2 topic hz /stereo/left/image_raw                                   # average rate: 30.0 근처
+ros2 topic echo /stereo/left/image_raw --field encoding --once         # bgr8
+ros2 topic echo /stereo/left/image_raw --field header.frame_id --once  # stereo_left_optical_link
+ros2 topic bw /stereo/left/image_raw                                   # 약 27 MB/s
+ros2 param get /stereo/left AfMode                                # Integer value is: 0
+ros2 param get /stereo/left LensPosition                          # Double value is: 0.5
+ros2 param get /stereo/left sensor_mode                           # String value is: 2304:1296</code></pre>
+<p>Mac 의 Foxglove 에서 <strong>Image</strong> 패널을 추가하고 토픽을 <code>/stereo/left/image_raw/compressed</code> 로 고른다. 패널 설정의 전송 품질(QoS)을 <strong>Best Effort</strong> 로 둔다. 카메라 앞에서 손을 흔들어 영상이 움직이는지 본다.</p>
+<div class="callout note"><span class="ct">카메라 노드는 이 뒤의 모든 쪽에서 이 명령으로 띄운다</span>
+<p><code>ros2 launch rpi5_vision camera.launch.py</code> — C3 이후 쪽은 이 노드가 떠 있다고 전제한다. 카메라는 한 프로세스만 열 수 있으므로 호스트의 <code>rpicam</code> 명령을 쓸 때는 이 노드를 먼저 끝낸다(Ctrl-C).</p></div>
+<h3 id="s3-7">3-7. (선택) 좌표 트리에 연결되는가 <span class="tag cli">컨테이너</span></h3>
+<p>학습 단계 05 를 끝냈으면 로봇 형상(URDF)을 발행하는 런치를 함께 띄워, 프레임 id 가 좌표 트리에 이어지는지 본다. 이 가이드의 나머지 쪽은 이 확인 없이 진행된다.</p>
+<pre><code class="lang-bash">ros2 launch rpi5_description description.launch.py use_fake_joints:=true   # 다른 터미널
+ros2 run tf2_ros tf2_echo base_link stereo_left_optical_link                     # 값이 나오면 트리에 이어진 것</code></pre>
+<p>평행이동 값은 아직 뜻이 없다. 카메라가 차체에 달려 있지 않기 때문이다. 여기서 보는 것은 이름이 맞아 트리에 이어졌는가 하나다.</p>
+<h2 id="checkpoints">✅ 검증 체크포인트</h2>
+<p>직접 실행해서 확인한 것만 체크한다. 체크 기록은 이 브라우저에만 저장된다.</p>
+<ul class="checklist">
+  <li><label><input type="checkbox" data-key="c02-devices-in-container"><span>컨테이너 안에서 <code>/dev/video0</code> · <code>/dev/media0</code> · <code>/dev/dma_heap</code> 이 보이고, <code>./majors.sh --check</code> 가 "같다" 를 출력한다<span class="sub">§3-1</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c02-libcamera-built"><span>Dockerfile 블록으로 빌드한 뒤 컨테이너의 <code>cam -l</code> 에 <code>imx708</code> 두 대가 나오고 튜닝 파일이 있다<span class="sub">§3-2</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c02-camera-ros-built"><span><code>drivers.repos</code> + <code>vcs import</code> + <code>rosdep --skip-keys=libcamera</code> 로 <code>camera_ros</code> 가 빌드됐다<span class="sub">§3-3 · §3-4</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c02-launch-30fps"><span><code>ros2 launch rpi5_vision camera.launch.py</code> 로 <code>/stereo/left/image_raw</code> 가 30 fps 근처로 나온다<span class="sub">§3-6</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c02-sensor-mode-selected"><span>노드 로그의 <code>Selected sensor format</code> 이 2304x1296 이다<span class="sub">§3-6</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c02-encoding-frameid"><span>인코딩이 <code>bgr8</code>, 프레임 id 가 <code>stereo_left_optical_link</code> 다<span class="sub">§3-6</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c02-focus-params"><span><code>ros2 param get</code> 으로 <code>AfMode</code> 0 과 <code>LensPosition</code> 값이 읽힌다<span class="sub">§3-6</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c02-foxglove-image"><span>Foxglove Image 패널(Best Effort)에서 <code>/stereo/left/image_raw/compressed</code> 영상이 움직인다<span class="sub">§3-6</span></span></label></li>
+</ul>
+<p class="progress-line"></p>
+<div class="progress-bar"><span></span></div>
+<h2 id="symptoms">증상과 원인</h2>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w30"><col class="w30"><col class="w40"></colgroup>
+<thead><tr><th>증상</th><th>원인</th><th>조치</th></tr></thead>
+<tbody>
+<tr><td>호스트에서는 보이는데 컨테이너에서만 카메라가 안 열린다</td><td><code>/dev/dma_heap</code> 규칙 누락, 또는 major 번호가 다르다</td><td>§3-1. <code>./majors.sh --check</code> 가 다르다고 하면 <code>./majors.sh</code> 를 실행하고 컨테이너를 다시 만든다</td></tr>
+<tr><td><code>Failed to acquire camera</code></td><td>다른 프로세스가 카메라를 열고 있다</td><td>호스트의 <code>rpicam</code> 프로세스나 다른 카메라 노드를 끝낸다</td></tr>
+<tr><td>노드가 심볼 오류로 끝나거나 "pipeline" 을 못 찾는다</td><td>컨테이너 libcamera 판이 호스트와 다르다</td><td>Dockerfile 의 <code>LIBCAMERA_TAG</code> 를 C1 §3-5 의 호스트 값에 맞춰 다시 빌드한다</td></tr>
+<tr><td><code>camera_ros</code> 빌드가 libcamera 헤더를 못 찾는다</td><td><code>pkg-config</code> 가 <code>/usr/local</code> 을 모른다</td><td>§3-4 의 <code>PKG_CONFIG_PATH</code> 줄. <code>ldconfig</code> 가 실행됐는지 확인</td></tr>
+<tr><td>토픽이 <code>/camera_node/image_raw</code> 로 나온다</td><td>네임스페이스 · 노드 이름이 기본값이다</td><td>런치의 <code>namespace='stereo', name='left'</code>. YAML 키도 <code>/stereo/left:</code></td></tr>
+<tr><td>YAML 의 값이 적용되지 않는다</td><td>YAML 의 맨 위 키가 노드의 전체 이름과 다르다</td><td>키를 <code>/stereo/left:</code> 로. 오류 표시 없이 무시되는 종류의 문제다</td></tr>
+<tr><td><code>AfMode</code> 파라미터가 없다고 한다</td><td>이 카메라가 그 제어를 내놓지 않거나 이름이 다르다</td><td><code>ros2 param list /stereo/left | grep -i -E 'af|lens'</code> 로 실제 이름을 보고 YAML 을 맞춘다</td></tr>
+<tr><td>Foxglove 영상이 끊긴다</td><td>Wi-Fi 로 압축 없는 토픽을 보고 있다</td><td><code>/stereo/left/image_raw/compressed</code> 를 고른다. 그래도 부족하면 <code>jpeg_quality</code> 를 낮춘다</td></tr>
+<tr><td>얼굴이 파랗게 나온다</td><td>색 순서를 잘못 가정했다</td><td>인코딩을 <code>--field encoding</code> 으로 확인한다(2-3). 이 카메라는 <code>bgr8</code> 이다</td></tr>
+</tbody></table></div>
+<h2 id="quiz">🤔 이해 확인</h2>
+<p>이 쪽에서 설명한 내용만으로 답할 수 있다. 답을 펼치기 전에 먼저 말로 답해 본다.</p>
+<details class="quiz"><summary>1. 호스트에서는 카메라가 보이는데 컨테이너에서만 안 열린다. 가장 먼저 의심할 것은 무엇인가.</summary>
+  <div class="ans"><p><code>/dev/dma_heap</code> 이 컨테이너에 전달되지 않은 것이다. Pi 5 는 카메라 버퍼를 이 장치로 할당한다. major 번호가 부팅 때 배정되므로 compose 의 장치 규칙이 이번 부팅의 값(<code>.env</code> 의 <code>DMA_HEAP_MAJOR</code>)을 써야 한다.</p></div></details>
+<details class="quiz"><summary>2. 설정에 <code>format: RGB888</code> 을 줬는데 인코딩이 <code>bgr8</code> 로 나온다. 버그인가.</summary>
+  <div class="ans"><p>아니다. libcamera 는 32비트 값 안의 순서로, ROS 와 OpenCV 는 메모리의 바이트 순서로 이름을 짓는다. 같은 데이터가 메모리에서는 B, G, R 순서라 <code>bgr8</code> 이 맞다. OpenCV 의 기본 순서와 같아서 C4 에서 변환 없이 쓴다.</p></div></details>
+<details class="quiz"><summary>3. 노드를 네임스페이스 <code>stereo</code>, 이름 <code>left</code> 로 두는 이유는 무엇이고, 설정 파일에는 어떤 영향이 있는가.</summary>
+  <div class="ans"><p><code>camera_ros</code> 는 노드의 전체 이름을 접두어로 토픽을 발행하므로 <code>stereo</code> · <code>left</code> 여야 <code>/stereo/left/image_raw</code> 가 된다 — 스테레오 한 쌍의 왼쪽이라는 구조가 이름에 드러난다. 파라미터 YAML 은 맨 위 키를 노드의 전체 이름과 맞춰 적용하므로 키도 <code>/stereo/left:</code> 여야 한다. 어긋나면 오류 표시 없이 무시된다.</p></div></details>
+<details class="quiz"><summary>4. Mac 의 Foxglove 가 압축 없는 영상을 받으면 왜 끊기는가. 해법은 무엇인가.</summary>
+  <div class="ans"><p>640 × 480 × 3 바이트 × 30 장 = 초당 약 27 MB 라 Wi-Fi 의 전송량을 넘는다. 노드가 직접 발행하는 <code>/stereo/left/image_raw/compressed</code>(JPEG)를 보면 10 ~ 20 배 줄어든다. Pi 안의 노드는 압축 없는 토픽을 그대로 쓴다.</p></div></details>
+<h2 id="next">다음</h2>
+<div class="callout tip"><span class="ct">여기까지 했으면</span>
+<ul>
+  <li>번호순 다음은 <a href="c-03-calibration.html">C3 카메라 보정</a> 이다. 체커보드 사진으로 초점거리와 주점을 구해 <code>camera.yaml</code> 의 <code>camera_info_url</code> 을 채운다.</li>
+  <li>보정 없이 영상 처리만 먼저 보고 싶으면 <a href="c-04-opencv-node.html">C4</a> 로 바로 가도 된다. C4 ~ C8 은 <code>camera_info</code> 를 쓰지 않는다. 다만 C3 은 학습 단계 08d(거리 추정)의 전제이므로 돌아와서 한다.</li>
+</ul>
+</div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

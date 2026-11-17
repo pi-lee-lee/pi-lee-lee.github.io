@@ -59,8 +59,9 @@
  │                               │  │ planner_server   (전역 경로)    │ │
  │  ┌── 운용 계층 ─────────────┐ │  │ controller_server(지역 추종)    │ │
  │  │ foxglove_bridge  :8765   │◄┴──│ behavior_server  (복구)         │ │
- │  │ rosbag2 (선택)           │    └───────────────┬─────────────────┘ │
- │  └──────────────────────────┘                    │ /cmd_vel          │
+ │  │ rosbag2 (선택)           │    │                                 │ │
+ │  └──────────────────────────┘    └───────────────┬─────────────────┘ │
+ │                                                  │ /cmd_vel          │
  │                                                  ▼                   │
  │                                           mcu_bridge ──► MCU ──► 모터│
  └──────────────────────────────────────────────────────────────────────┘
@@ -75,13 +76,13 @@
         <thead><tr><th>계층</th><th>원칙</th></tr></thead>
         <tbody>
           <tr><td>센서</td><td>하드웨어를 표준 메시지로 <strong>번역만</strong> 한다. 판단하지 않는다</td></tr>
-          <tr><td>형상</td><td>TF 로 모든 것을 <strong>공간적으로 묶는다</strong></td></tr>
+          <tr><td>형상</td><td>TF(좌표계 사이의 변환을 발행하고 조회하는 ROS 2 의 체계, 05 단계)로 모든 것을 <strong>공간적으로 묶는다</strong></td></tr>
           <tr><td>인지</td><td>센서를 해석해 "세상이 어떤가"를 만든다</td></tr>
           <tr><td>계획/제어</td><td>"어떻게 갈 것인가"를 정하고 <code>/cmd_vel</code> 로 표현한다. <strong>감독</strong>은 그 위에서 "무엇을, 어느 순서로, 언제 포기할 것인가"를 정한다</td></tr>
           <tr><td>운용</td><td>관측·기록. <strong>로봇 동작에 관여하지 않는다</strong></td></tr>
         </tbody>
       </table></div>
-      <p><strong>각 계층은 아래 계층의 구현에 의존하지 않는다.</strong> 라이다를 바꿔도 SLAM 은 그대로, MCU 를 바꿔도 Nav2 는 그대로, 검출기를 YOLO 에서 Hailo 로 바꿔도 감독 노드는 그대로다.
+      <p><strong>각 계층은 아래 계층의 구현에 의존하지 않는다.</strong> 라이다를 바꿔도 SLAM 은 그대로, MCU 를 바꿔도 Nav2 는 그대로, 검출기를 YOLO(물체 검출 신경망, 08b)에서 Hailo(신경망 가속기, 08c)로 바꿔도 감독 노드는 그대로다.
       이것이 03 단계에서 배운 "느슨한 결합"의 완성형이다.</p>
 
       <div class="callout why"><span class="ct">당신의 추상 구조 ⑤ 가 여기서 코드가 된다</span>
@@ -101,19 +102,21 @@
 ├── navigation.launch.py    ← Nav2                                    [★ 직접 작성]
 └── autonomy.launch.py      ← 위 셋 + 감독 노드를 포함하는 최상위          [★ 직접 작성]</code></pre>
       <p>★ 표시된 세 개는 저장소에 아직 없다. 04 단계에서 배운 런치 문법과 <code>ros2_ws/src/rpi5_bringup/launch/robot.launch.py</code> 를 본보기로 삼는다.
-      <strong>이 세 파일을 직접 짜는 것이 이 단계의 첫 실습이다</strong> — 시스템의 구조를 스스로 표현할 수 있는지가 이 실습에서 드러난다.</p>
+      <strong>이 세 파일을 직접 짜는 것이 이 단계의 첫 실습이다</strong> — 시스템의 구조를 직접 표현할 수 있는지가 이 실습에서 드러난다.</p>
 
       <h3>2-2. 안전은 기능이 아니라 요구사항이다 — 3단 방어</h3>
-      <pre class="diagram"><code>   ① MCU 워치독 (하드웨어)     N ms 무명령 → 즉시 정지
-      ↑ Pi 가 멈춰도 동작. 최후의 보루                       (06a·06 에서 펌웨어에 넣었다)
+      <pre class="diagram"><code>   ① MCU 명령 워치독 (펌웨어)  200 ms 무명령 → 목표 0
+      ↑ Pi 가 멈춰도 동작. 최후의 보루                        (계약 06a · 펌웨어 fw-13)
 
-   ② mcu_bridge 워치독 (ROS)   cmd_timeout_s 초과 → 0 발행
+   ② 브리지 명령 워치독 (ROS)  cmd_timeout_s 0.5 s 초과 → 0 발행
       ↑ 상위 노드가 비정상 종료되거나 멈췄을 때               (06 의 C++ 브리지)
 
    ③ 속도 제한 (파라미터)       max_linear_vel / max_angular_vel
       ↑ Nav2 튜닝 실수로 큰 값이 와도 하드웨어 보호            (robot_params.yaml)</code></pre>
+      <p>①과 별개로 MCU 에는 하드웨어 워치독(IWDG)이 있다. 펌웨어 자체가 멈추면 칩을 리셋한다(<a href="fw-06-tick-watchdog.html">fw-06</a>).</p>
       <p>세 가지가 <strong>독립적으로</strong> 동작해야 한다. 하나가 멈춰도 나머지가 남는다. 감독 노드의 "사람 앞에서 멈춤"은 이 세 겹 <em>위에</em> 얹는 네 번째 층이지,
       아래 세 층을 대신하지 않는다. 그리고 물리 E-stop 버튼(모터 전원 차단)은 이 모든 소프트웨어와 무관하게 있어야 한다.</p>
+      <p class="small">라이다(스캔 평면 높이 h<sub>L</sub>)와 카메라가 보지 못하는 위험 두 가지는 이 세 층과 별도로 다룬다. 바닥이 끊긴 낭떠러지와 0.5 m 안쪽에 갑자기 나타난 물체는 <strong>별도의 근접 · 낭떠러지 센서</strong>가 독립된 구조로 맡는다(이 가이드의 범위 밖). 경사 위의 가짜 벽은 경사 가이드 <a href="10a-slope.html#s3-4">10a §3-4</a> 에서 다룬다.</p>
 
       <h3>2-3. 감독(supervision)이란 무엇인가 — Nav2 가 이미 하는 것과 하지 않는 것</h3>
       <p>Nav2 의 <code>bt_navigator</code> 는 행동 트리(BT)로 "경로를 못 찾으면 재계획, 막히면 제자리 회전·후진·대기"까지 <strong>자동으로 복구</strong>한다.
@@ -125,7 +128,8 @@
           <tr><td>진전이 없는 상태가 얼마나 오래 지속되는가 — 포기할 것인가</td><td>복구 행동을 반복할 뿐</td><td>피드백의 <code>distance_remaining</code> 을 시간 구간 단위로 관찰 → 정체 판정</td></tr>
           <tr><td>실패했을 때 몇 번 재시도하고 언제 건너뛰는가</td><td>ABORTED 로 끝</td><td><code>max_retries</code> 정책</td></tr>
           <tr><td>사람이 바로 앞에 있으면?</td><td>코스트맵의 장애물일 뿐 — <em>사람</em>인지 구분하지 않는다</td><td><code>/detections</code> 로 일시정지, 사라지면 재개</td></tr>
-          <tr><td>지금 임무가 어떤 상태인가를 밖에 알린다</td><td>액션 클라이언트에게만</td><td><code>/mission/state</code> 토픽 (Foxglove, rosbag)</td></tr>
+          <tr><td>경사가 한계(짐 없는 차체 기준 40°)를 넘었다 — 계속 가면 넘어지거나 미끄러진다</td><td>모른다 — 2D 지도에는 기울기가 없다</td><td><code>/mcu/drive_state</code> 의 주행 불가 → 목표 취소 → 올라온 길을 직진으로 내려와 평지에서 멈춤 — 경사 가이드 <a href="10a-slope.html#s2-3">10a §2-3</a> 에서 더한다</td></tr>
+          <tr><td>지금 임무가 어떤 상태인가를 밖에 알린다</td><td>액션 클라이언트에게만</td><td><code>/mission/state</code> 토픽 (Foxglove — 토픽을 화면에 그리는 시각화 프로그램, rosbag — 토픽을 시간과 함께 파일에 기록하고 재생하는 도구)</td></tr>
         </tbody>
       </table></div>
       <p><strong>정체(stall) 판정 규칙의 뼈대</strong>는 다음 셋이다.</p>
@@ -151,6 +155,7 @@
       05 단계의 "하나의 좌표계에는 부모가 하나"와 같은 종류의 문제다.</p>
       <p>그래서 멈추는 수단은 <strong>목표 취소(goal cancel)</strong> 뿐이다. 취소하면 Nav2 가 자동으로 속도 0 을 발행하고 멈춘다. 발행자는 여전히 하나다.
       정말로 여러 소스(조이스틱, 감독, Nav2)의 속도를 중재해야 한다면 중재를 전담하는 노드(<code>twist_mux</code>, 우선순위 기반)를 <em>따로</em> 둔다 — §3-8 확장 항목이다.</p>
+      <p>이 규칙의 예외는 경사에서의 두 가지다 — 경사 한계에서 내려오기와 경사 정렬. 둘 다 Nav2 의 목표를 취소하고 <code>/cmd_vel</code> 이 조용해진 뒤에만 낸다. 경사 가이드 <a href="10a-slope.html#s2-3">10a §2-3</a> · <a href="10a-slope.html#s2-4">§2-4</a> 에서 다룬다.</p>
 
       <h3>2-5. 상태기계와 상태 토픽</h3>
       <pre class="diagram"><code>            start                          결과 SUCCEEDED (마지막 wp)
@@ -164,6 +169,7 @@
                       │  재시도 한도 초과 / ABORTED 반복 / 'abort'
                       ▼
                     FAILED</code></pre>
+      <p class="small">경사 한계에서 내려오는 상태 <code>DESCENDING</code> 과 경사를 건너는 상태 <code>CROSSING</code> 은 경사 가이드 <a href="10a-slope.html#s2-3">10a §2-3</a> · <a href="10a-slope.html#s2-4">§2-4</a> 에서 더한다.</p>
       <p>상태를 <code>/mission/state</code> 로 매초 발행하는 이유는 두 가지다. ① Foxglove 의 Raw Messages 패널에 표시해 두면 로봇이 <em>왜</em> 멈췄는지 화면에서 읽을 수 있다.
       ② rosbag 에 같이 기록되면 "그때 감독 노드는 무엇을 판단하고 있었는가"를 재생하며 확인할 수 있다.</p>
       <p><strong>판단은 로그가 아니라 토픽으로 낸다</strong> — 로그는 그 순간에만 보이고, 토픽은 기록되고 그려진다.</p>
@@ -176,8 +182,8 @@
       <p><a href="09b-frontier-explore.html">09b</a> §2-8 의 다섯 걸음(저장 → <code>slam_toolbox</code> 종료 → <code>map_server</code> + <code>amcl</code> 기동 → 초기 위치 → 목표)을 09b 는 손으로 했다. 이 절은 같은 순서를 자동으로 한다.
       일을 나누는 기준은 하나다 — <strong>프로세스를 끝내고 띄우는 일은 런치가, ROS 인터페이스로 할 수 있는 일은 노드가 한다.</strong></p>
       <ul>
-        <li>Humble 의 <code>slam_toolbox</code> 는 lifecycle 노드가 아니다(<code>class SlamToolbox : public rclcpp::Node</code>). 감독 노드가 서비스로 비활성화할 수 없으므로, 프로세스를 끝내는 일은 런치가 한다.</li>
-        <li>AMCL 이 active 인지 묻고 <code>/initialpose</code> 를 보내는 일은 서비스와 토픽으로 할 수 있다. 그래서 감독 노드가 한다.</li>
+        <li>Humble 의 <code>slam_toolbox</code> 는 lifecycle 노드(configure → activate 를 거쳐야 동작하는 노드, 09 §2-7)가 아니다.<sup class="fn"><a href="#fn-1" id="fnref-1">1</a></sup> 감독 노드가 서비스로 비활성화할 수 없으므로, 프로세스를 끝내는 일은 런치가 한다.</li>
+        <li>AMCL(저장한 지도 위에서 위치 후보 점 여럿으로 로봇 위치를 추정하는 Nav2 노드, 09 단계)이 active 인지 묻고 <code>/initialpose</code> 를 보내는 일은 서비스와 토픽으로 할 수 있다. 그래서 감독 노드가 한다.</li>
       </ul>
       <p>ROS 2 런치에는 이 일을 위한 도구가 셋 있다.</p>
       <ul>
@@ -363,13 +369,13 @@ def generate_launch_description():
     ])</code></pre>
 
       <div class="callout note"><span class="ct">지도 파일의 경로 — 컨테이너 안에서 유지되는 곳에</span>
-        <p>초안 문서에 있던 <code>/ros2_ws/../maps</code> 는 컨테이너 안에서 <code>/maps</code> 이고, <strong>마운트되어 있지 않으면 컨테이너가 끝날 때 지도도 사라진다.</strong>
+        <p>지도는 컨테이너 안의 <code>/maps</code> 에 둔다.<sup class="fn"><a href="#fn-2" id="fnref-2">2</a></sup> 이 경로가 <strong>마운트되어 있지 않으면 컨테이너가 끝날 때 지도도 사라진다.</strong>
         09 단계에서 <code>docker/docker-compose.yml</code> 의 <code>volumes:</code> 에 <code>../maps:/maps</code> 를 추가했어야 한다. 그러면 호스트의 <code>~/ros2_rpi5/maps/</code> 가 컨테이너의 <code>/maps/</code> 다.
         이 쪽의 명령은 그 경로를 전제한다.</p>
       </div>
 
       <p><strong>계층별로 따로 실행해 본다.</strong> 계층별로 실행할 수 있어야 문제가 생겼을 때 원인 계층을 좁힐 수 있다. <span class="tag cli">컨테이너</span></p>
-      <pre><code class="lang-bash"># 하드웨어만 (센서 확인: /scan /odom /camera/image_raw 가 나오는가)
+      <pre><code class="lang-bash"># 하드웨어만 (센서 확인: /scan /odom /stereo/left/image_raw 가 나오는가)
 ros2 launch rpi5_bringup robot.launch.py use_lidar:=true
 
 # 하드웨어 + 인지 (SLAM 확인: /map 이 그려지는가)
@@ -507,18 +513,18 @@ public:
     auto sensor_qos = rclcpp::QoS(1).best_effort();
     sub_det_ = create_subscription&lt;vision_msgs::msg::Detection2DArray&gt;(
       "detections", sensor_qos,
-      std::bind(&amp;MissionSupervisor::on_detections, this, std::placeholders::_1));
+      [this](const vision_msgs::msg::Detection2DArray &amp; msg) { on_detections(msg); });
     sub_front_ = create_subscription&lt;std_msgs::msg::Float32&gt;(
       "scan_front_min", sensor_qos,
       [this](const std_msgs::msg::Float32 &amp; msg) { front_min_m_ = msg.data; front_stamp_ = now(); });
     sub_cmd_ = create_subscription&lt;std_msgs::msg::String&gt;(
       "mission/command", 10,
-      std::bind(&amp;MissionSupervisor::on_command, this, std::placeholders::_1));
+      [this](const std_msgs::msg::String &amp; msg) { on_command(msg); });
 
     pub_state_ = create_publisher&lt;std_msgs::msg::String&gt;("mission/state", 10);
 
-    tick_timer_ = create_wall_timer(500ms, std::bind(&amp;MissionSupervisor::tick, this));      // 상태기계 2 Hz
-    state_timer_ = create_wall_timer(1s, std::bind(&amp;MissionSupervisor::publish_state, this)); // 상태 보고 1 Hz
+    tick_timer_ = create_wall_timer(500ms, [this]() { tick(); });        // 상태기계 2 Hz
+    state_timer_ = create_wall_timer(1s, [this]() { publish_state(); }); // 상태 보고 1 Hz
 
     RCLCPP_INFO(get_logger(), "mission_supervisor 시작: waypoint %zu 개, autostart=%d  ('start' 명령으로 출발)",
                 waypoints_.size() / 3, autostart_ ? 1 : 0);
@@ -551,11 +557,11 @@ private:
 
     auto options = rclcpp_action::Client&lt;NavigateToPose&gt;::SendGoalOptions();
     options.goal_response_callback =
-      std::bind(&amp;MissionSupervisor::on_goal_response, this, std::placeholders::_1);
+      [this](GoalHandle::SharedPtr handle) { on_goal_response(handle); };
     options.feedback_callback =
-      std::bind(&amp;MissionSupervisor::on_feedback, this, std::placeholders::_1, std::placeholders::_2);
+      [this](GoalHandle::SharedPtr handle, const std::shared_ptr&lt;const NavigateToPose::Feedback&gt; fb) { on_feedback(handle, fb); };
     options.result_callback =
-      std::bind(&amp;MissionSupervisor::on_result, this, std::placeholders::_1);
+      [this](const GoalHandle::WrappedResult &amp; result) { on_result(result); };
 
     best_distance_m_ = std::numeric_limits&lt;double&gt;::infinity();
     last_progress_time_ = now();
@@ -823,7 +829,7 @@ int main(int argc, char ** argv)
       </div>
 
       <div class="callout warn"><span class="ct">TODO(you): MCU 의 안전 상태를 감독에 넣는다 — <code>/mcu/fault</code></span>
-        <p>06 의 브리지는 MCU 가 보고하는 fault 비트를 <code>/mcu/fault</code>(<code>std_msgs/UInt8</code>)로 발행한다. MCU 는 저전압·과전류·과경사에서 <em>스스로</em> 출력을 끊으므로 로봇은 이미 멈춰 있다. 그러나 이 차단은 Nav2 에 전달되지 않으므로 Nav2 는 계속 <code>/cmd_vel</code> 을 보낸다.
+        <p>06 의 브리지는 MCU 가 보고하는 fault 비트를 <code>/mcu/fault</code>(<code>std_msgs/UInt8</code>)로 발행한다. MCU 는 저전압·과전류·명령 끊김에서 <em>스스로</em> 출력을 끊으므로 로봇은 이미 멈춰 있다. 그러나 이 차단은 Nav2 에 전달되지 않으므로 Nav2 는 계속 <code>/cmd_vel</code> 을 보낸다.
         감독 노드가 이 토픽을 구독해 0 이 아니면 <code>cancel_and_pause("mcu_fault")</code> 로 목표를 취소하고, 래치된 비상정지(전원 차단)라면 <code>FAILED</code> 로 끝내 사람에게 알려야 한다. 구독 한 줄과 <code>tick()</code> 의 안전 조건 한 줄을 직접 추가해 보십시오 — <code>/scan_front_min</code> 과 같은 패턴이다.</p>
       </div>
       <p>정책 값은 <code>ros2_ws/src/rpi5_bringup/config/mission_params.yaml</code> 에 둔다 (<code>autonomy.launch.py</code> 가 읽는다):</p>
@@ -889,7 +895,7 @@ ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{...}" 
 # ③ 속도 0 을 한 번 쏘는 것 — Nav2 가 주행 중이면 다음 10 Hz 주기에 덮어써진다. 즉 "Nav2 가 쏘지 않을 때만" 정지다.
 ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{}"
 
-# ④ 런치를 Ctrl+C — mcu_bridge 가 종료 시 정지 프레임을 보내고, 그 뒤엔 MCU 워치독이 지킨다</code></pre>
+# ④ 런치를 Ctrl+C — mcu_bridge 가 종료 시 정지 프레임을 보내고, 그 뒤엔 MCU 명령 워치독이 지킨다</code></pre>
       <p>③ 의 속도 0 이 다음 주기에 덮어써지는 이유가 2-4 의 논리다. 그래서 정지의 정석은 <strong>goal cancel</strong>(①②)이고, 최후 수단은 물리 E-stop 이다.</p>
 
       <h3>3-6. 자동 기동 (systemd) <span class="tag pi">Pi 호스트</span></h3>
@@ -939,7 +945,7 @@ ls -l /dev/lidar /dev/mcu /dev/hailo0 # 장치 3종
 
 # ── 기동 후 (컨테이너) ──
 ros2 node list                        # 모든 노드가 떴는가
-ros2 topic hz /scan /odom /camera/image_raw /detections   # 주파수
+ros2 topic hz /scan /odom /stereo/left/image_raw /detections   # 주파수
 ros2 run tf2_tools view_frames        # TF 트리 완결성 (map → odom → base_footprint → 센서)
 ros2 topic echo /battery_state --once # 배터리
 ros2 lifecycle get /bt_navigator      # active
@@ -950,7 +956,9 @@ ros2 topic echo /scan_front_min --once   # 전방 거리 (inf 가 아니어야 �
 ros2 topic hz /cmd_vel                # 명령이 나가는가
 htop                                  # CPU 여유 (Hailo 를 쓰면 50% 미만이어야 한다)
 ros2 topic echo /mcu/fault --once     # 0 이어야 한다 (06 의 MCU 안전 상태)
-ros2 bag record -o rosbag2_run_$(date +%s) /scan /odom /odometry/filtered /imu/data_raw /mcu/fault /tf /tf_static /cmd_vel /detections /tracks /objects /mission/state /plan</code></pre>
+ros2 topic echo /mcu/drive_state --once   # 평지에서는 0 (bit0 경사 · bit1 주행 불가 · bit2 들림 · bit3 버팀)
+ros2 topic hz /mcu/control                # 50 Hz - MCU 가 출력을 어떻게 바꿨나 (0x85, fw-20 실습 H 부터)
+ros2 bag record -o rosbag2_run_$(date +%s) /scan /odom /odometry/filtered /imu/data_raw /mcu/fault /mcu/drive_state /mcu/control /tf /tf_static /cmd_vel /detections /tracks /objects /mission/state /plan</code></pre>
 
       <h3>3-8. 다음으로 확장할 것들</h3>
       <div class="tbl"><table>
@@ -962,7 +970,7 @@ ros2 bag record -o rosbag2_run_$(date +%s) /scan /odom /odometry/filtered /imu/d
           <tr><td><strong>속도 소스 중재</strong></td><td><code>twist_mux</code> — 조이스틱/감독/Nav2 의 <code>/cmd_vel</code> 을 우선순위로 중재</td><td>2-4 의 "두 발행자" 문제의 정식 해법</td></tr>
           <tr><td><strong>경로 순회</strong></td><td><code>nav2_waypoint_follower</code> — 우리 감독 노드의 waypoint 순회를 Nav2 가 제공하는 것으로 대체·비교</td><td>순찰 로봇</td></tr>
           <tr><td><strong>다중 로봇</strong></td><td>네임스페이스 분리</td><td>협동 주행</td></tr>
-          <tr><td><strong>Jazzy 이전</strong></td><td>베이스 이미지 교체</td><td>LTS 수명 연장</td></tr>
+          <tr><td><strong>Jazzy 로 옮기기</strong></td><td>베이스 이미지 교체</td><td>LTS(장기 지원판 — 수정을 받는 기간이 긴 배포판) 수명 연장</td></tr>
         </tbody>
       </table></div>
 
@@ -1146,8 +1154,13 @@ double sigma_xy_ = 0.0, sigma_yaw_ = 0.0;
 bool pose_pending_ = false, amcl_active_ = false, state_request_pending_ = false;
 rclcpp::Publisher&lt;geometry_msgs::msg::PoseWithCovarianceStamped&gt;::SharedPtr pub_initialpose_;
 rclcpp::Client&lt;lifecycle_msgs::srv::GetState&gt;::SharedPtr amcl_state_;</code></pre>
-      <p><strong>빌드 의존</strong> — <code>CMakeLists.txt</code> 의 <code>find_package</code> 들에 <code>find_package(lifecycle_msgs REQUIRED)</code> 를, <code>ament_target_dependencies(mission_supervisor …)</code> 에 <code>lifecycle_msgs</code> 를 더한다. <code>package.xml</code> 에는 <code>&lt;depend&gt;lifecycle_msgs&lt;/depend&gt;</code> 를 더한다.</p>
-      <p class="small">런치 파일은 집필 환경(Mac)에서 <code>python3 -m py_compile</code> 로 문법만, 감독 노드의 추가분은 ROS 타입을 흉내 낸 가짜 헤더로 문법만 확인했다. 실제 API 와 맞는지는 Pi 컨테이너의 첫 빌드와 실행이 확인한다.</p>
+      <p><strong>빌드 의존</strong> — <code>CMakeLists.txt</code> 의 두 자리에 더한다.</p>
+      <ul>
+        <li><code>find_package</code> 들에 <code>find_package(lifecycle_msgs REQUIRED)</code></li>
+        <li><code>ament_target_dependencies(mission_supervisor …)</code> 에 <code>lifecycle_msgs</code></li>
+      </ul>
+      <p><code>package.xml</code> 에는 <code>&lt;depend&gt;lifecycle_msgs&lt;/depend&gt;</code> 를 더한다.</p>
+      <p class="small">런치 파일과 감독 노드의 추가분은 집필 환경에서 문법만 확인했다.<sup class="fn"><a href="#fn-3" id="fnref-3">3</a></sup> 실제 API 와 맞는지는 Pi 컨테이너의 첫 빌드와 실행이 확인한다.</p>
 
       <h4 id="s3-9-3">3-9-3. 실행과 관찰</h4>
       <div class="callout warn"><span class="ct">이 런치는 시작하자마자 로봇을 움직인다</span>
@@ -1167,11 +1180,22 @@ ros2 topic echo /explore/state                     # … → DONE … reason=reg
 ros2 node list | grep -E "slam_toolbox|amcl"       # 전환 전 /slam_toolbox, 전환 뒤 /amcl
 ros2 topic echo /mission/state                     # IDLE (start 를 보내면 NAVIGATING)</code></pre>
       <ul>
-        <li>터미널 2 의 로그가 <code>map_saver_cli</code> 의 출력 → <code>map saved, slam_toolbox gone - starting localization</code> → 감독 노드의 <code>initial pose sent: (…)</code> 순서로 찍힌다.</li>
+        <li>터미널 2 의 로그가 아래 순서로 찍힌다.
+          <ol>
+            <li><code>map_saver_cli</code> 의 출력</li>
+            <li><code>map saved, slam_toolbox gone - starting localization</code></li>
+            <li>감독 노드의 <code>initial pose sent: (…)</code></li>
+          </ol></li>
         <li><code>/maps/region.pgm</code> · <code>region.yaml</code> · <code>region.exits.yaml</code> 이 생긴다.</li>
         <li>Foxglove 에서 <code>/scan</code> 이 지도의 벽과 겹치고, <code>/particle_cloud</code> 가 로봇 둘레에 퍼진 채로 시작해 주행하면 모인다.</li>
         <li><strong>일부러 일으켜 본다</strong> — 탐사 중에 <code>stop</code> 을 보내면 <code>explorer ended with code 4 - no handover</code> 가 찍히고 <code>/slam_toolbox</code> 가 그대로 남는다.</li>
       </ul>
+
+      <h3 id="s3-10">3-10. 경사 한계 — 10a 로 옮김</h3>
+      <p>주행 불가에서 직진으로 내려오는 감독 노드의 추가분은 경사 가이드 <a href="10a-slope.html#s3-3">10a §3-3</a> 에 있다. §3-3 의 감독 노드는 경사 처리 없이 완결된 코드다.</p>
+
+      <h3 id="s3-11">3-11. 경사 위의 스캔 — 10a 로 옮김</h3>
+      <p>스캔을 두 갈래로 나누는 노드 <code>scan_gate</code> 와 그것을 잇는 <code>navigation.launch.py</code> 는 경사 가이드 <a href="10a-slope.html#s3-4">10a §3-4</a> 에 있다. 이 쪽의 <code>navigation.launch.py</code>(§3-1)는 <code>/scan</code> 하나를 그대로 쓴다.</p>
 
       <h2>✅ 검증 체크포인트</h2>
       <p>이 프로젝트의 완성 기준이다.</p>
@@ -1192,8 +1216,8 @@ ros2 topic echo /mission/state                     # IDLE (start 를 보내면 N
         <li><label><input type="checkbox" data-key="cp13"><span>Foxglove 에서 목표점을 지정하면 로봇이 자동으로 그 지점까지 주행한다</span></label></li>
         <li><label><input type="checkbox" data-key="cp14"><span>주행 중 장애물이 나타나면 피하거나 멈춘다</span></label></li>
         <li><label><input type="checkbox" data-key="cp15"><span>Hailo 추론이 실행되는 동안에도 주행이 끊기지 않는다 (CPU 여유 확인)</span></label></li>
-        <li><label><input type="checkbox" data-key="cp16"><span><strong>안전</strong> — Wi-Fi 를 끊으면 로봇이 정지한다 (브리지 워치독)</span></label></li>
-        <li><label><input type="checkbox" data-key="cp17"><span>USB 를 뽑으면 로봇이 정지한다 (MCU 워치독)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp16"><span><strong>안전</strong> — Wi-Fi 를 끊으면 로봇이 정지한다 (브리지 명령 워치독, <code>cmd_timeout_s</code> 0.5 s)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp17"><span>USB 를 뽑으면 로봇이 정지한다 (MCU 명령 워치독, 200 ms)</span></label></li>
         <li><label><input type="checkbox" data-key="cp18"><span>속도 제한이 동작한다 (큰 <code>cmd_vel</code> 을 줘도 제한됨)</span></label></li>
         <li><label><input type="checkbox" data-key="cp19"><span><code>pause</code>/<code>abort</code> 명령으로 주행 중 로봇을 멈출 수 있다</span></label></li>
         <li><label><input type="checkbox" data-key="cp20"><span><strong>운용</strong> — systemd 로 자동 기동된다 (원할 때; 개발 중에는 enable 하지 않았다)</span></label></li>
@@ -1217,15 +1241,15 @@ ros2 topic echo /mission/state                     # IDLE (start 를 보내면 N
           <li>③ 장착 위치가 바뀌었다면 URDF 의 <code>lidar_*</code> 속성</li>
         </ul>
         <p><strong>SLAM, Nav2, mcu_bridge, 감독 노드는 건드리지 않는다.</strong> 이것이 노드 분리의 효과다.</p></div></details>
-      <details class="quiz"><summary>2. <code>map → odom → base_link</code> 세 좌표계를 각각 누가 발행하며, 왜 나뉘어 있는가?</summary>
-        <div class="ans"><code>map→odom</code> 은 SLAM/AMCL(불연속 보정), <code>odom→base_link</code> 는 mcu_bridge 또는 EKF(연속적, 누적오차 있음). 나눠 두면 제어기는 부드러운 odom 을 쓰고 경로계획은 정확한 map 을 쓸 수 있다.
+      <details class="quiz"><summary>2. <code>map → odom → base_footprint</code> 세 좌표계를 각각 누가 발행하며, 왜 나뉘어 있는가?</summary>
+        <div class="ans"><code>map→odom</code> 은 SLAM/AMCL(불연속 보정), <code>odom→base_footprint</code> 는 EKF(EKF 를 끄면 mcu_bridge, 연속적, 누적오차 있음). 나눠 두면 제어기는 부드러운 odom 을 쓰고 경로계획은 정확한 map 을 쓸 수 있다.
         합치면 위치 보정 때마다 로봇의 위치 값이 불연속으로 바뀌어 제어가 폭주한다.</div></details>
       <details class="quiz"><summary>3. Nav2 가 <code>/cmd_vel</code> 을 보냈는데 로봇이 안 움직인다. 어떤 순서로 확인하는가?</summary>
         <div class="ans"><ul>
           <li>① <code>ros2 topic hz /cmd_vel</code> — 실제로 발행되는가</li>
           <li>② <code>ros2 topic echo /cmd_vel</code> — 값이 0 이 아닌가</li>
           <li>③ <code>ros2 node info /mcu_bridge</code> — 구독하고 있는가(토픽 이름/네임스페이스)</li>
-          <li>④ mcu_bridge 로그 — 워치독이 동작했는가, 시리얼 오류인가</li>
+          <li>④ mcu_bridge 로그 — 브리지 명령 워치독이 동작했는가, 시리얼 오류인가</li>
           <li>⑤ MCU 원시 바이트 — 프레임이 나가는가</li>
         </ul>
         <p><strong>그래프 → 데이터 → 하드웨어 순으로 좁힌다.</strong></p></div></details>
@@ -1263,14 +1287,22 @@ ros2 topic echo /mission/state                     # IDLE (start 를 보내면 N
         <p>여기까지 왔다면 아래를 할 수 있게 된 것이다.</p>
         <ul>
           <li>ROS 2 의 통신 구조(토픽/서비스/액션)를 <strong>언제 무엇을 쓸지 판단</strong>하며 설계</li>
-          <li>TF 트리를 구성하고 <strong>좌표 변환 문제를 스스로 진단</strong></li>
+          <li>TF 트리를 구성하고 <strong>좌표 변환 문제를 직접 진단</strong></li>
           <li>하드웨어를 ROS 표준 인터페이스로 <strong>번역하는 노드를 C++ 로 직접 작성</strong></li>
           <li>영상을 OpenCV 로 다루고, YOLO 검출을 <strong>표준 메시지로 내고, 가속기로 옮기며 인터페이스를 유지</strong></li>
           <li>SLAM 과 Nav2 를 <strong>구조를 이해한 채로</strong> 튜닝하고, 그 위 계층의 <strong>임무 감독 노드</strong>를 작성</li>
         </ul>
         <p><strong>이 중 어느 것도 "명령어를 외운 것"이 아니다.</strong> 외우지 않고 이해해서 할 수 있게 되는 것이 이 커리큘럼의 목표였다. 이제 당신의 로봇에 필요한 다음 노드는 당신이 설계한다.
-        → <a href="rosproject.html">로드맵으로 돌아가기</a> · 막히면 <a href="99-troubleshooting.html">99 · 트러블슈팅</a><br>구역이 여러 개인 공간과 여러 층으로 넓히려면 → <a href="11-multi-map.html">11 · 다중 지도</a>.</p>
+        → <a href="rosproject.html">로드맵으로 돌아가기</a> · 막히면 <a href="99-troubleshooting.html">99 · 트러블슈팅</a><br>경사가 있는 공간을 다니려면 → <a href="10a-slope.html">10a · 경사 대응</a>(평지에서는 동작하지 않는 기능 묶음).<br>구역이 여러 개인 공간과 여러 층으로 넓히려면 → <a href="11-multi-map.html">11 · 다중 지도</a>.</p>
       </div>
+
+      <h2 id="footnotes">각주</h2>
+      <p class="small">본문의 작은 번호를 누르면 여기로 온다. 근거 소스 · 문서 이력 · 문법만 확인한 방법을 모았다. ↩ 를 누르면 본문으로 돌아간다.</p>
+      <ol class="footnotes">
+          <li id="fn-1">Humble 판 <code>slam_toolbox</code> 의 클래스 선언은 <code>class SlamToolbox : public rclcpp::Node</code> 다. <a class="fn-back" href="#fnref-1" aria-label="본문으로">↩</a></li>
+          <li id="fn-2">초안 문서에 있던 경로 <code>/ros2_ws/../maps</code> 는 컨테이너 안에서 <code>/maps</code> 와 같다. <a class="fn-back" href="#fnref-2" aria-label="본문으로">↩</a></li>
+          <li id="fn-3">런치 파일은 집필 환경(Mac)에서 <code>python3 -m py_compile</code> 로, 감독 노드의 추가분은 ROS 타입을 흉내 낸 가짜 헤더로 문법만 확인했다. <a class="fn-back" href="#fnref-3" aria-label="본문으로">↩</a></li>
+      </ol>
 
       <div class="pager"></div>
     </div>

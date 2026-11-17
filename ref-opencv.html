@@ -182,7 +182,7 @@ while True:
       </div>
       <div class="callout warn"><span class="ct">Pi 5 의 IMX708 은 <code>cv::VideoCapture(0)</code> 로 열지 않는다</span>
         <p>08 단계에서 본 대로 이 카메라는 libcamera 전용이다. V4L2 로 <code>/dev/video0</code> 을 열면 ISP 를 거치지 않은 raw Bayer 가 나온다.
-        영상을 얻는 경로는 두 가지만이다: <strong>호스트에서</strong> <code>picamera2</code> → numpy 배열 → <code>cv2</code>, 또는 <strong>ROS 에서</strong> <code>camera_ros</code> → <code>/camera/image_raw</code> → <code>cv_bridge</code>.
+        영상을 얻는 경로는 두 가지만이다: <strong>호스트에서</strong> <code>picamera2</code> → numpy 배열 → <code>cv2</code>, 또는 <strong>ROS 에서</strong> <code>camera_ros</code> → <code>/stereo/left/image_raw</code> → <code>cv_bridge</code>.
         Mac 에서 알고리즘을 실험할 때만 웹캠 <code>VideoCapture(0)</code> 을 쓴다.</p>
       </div>
       <p><strong>색 순서는 BGR 이 기본</strong>이다. <code>imread</code>, <code>imshow</code>, <code>rectangle</code> 의 <code>cv::Scalar(b, g, r)</code> 전부 BGR 이다. matplotlib 나 RGB 기반 라이브러리로 넘길 때 <code>cvtColor(…, COLOR_BGR2RGB)</code> 를 잊으면 파란 얼굴이 된다.</p>
@@ -312,7 +312,7 @@ img[mask &gt; 0] = (0, 0, 255)</code></pre></div>
       <div class="tbl"><table class="compact">
         <thead><tr><th>ROS 인코딩</th><th>Mat 타입</th><th>비고</th></tr></thead>
         <tbody>
-          <tr><td><code>bgr8</code></td><td>CV_8UC3</td><td>OpenCV 관례. <strong>우리 카메라(camera_ros, <code>format: RGB888</code>)가 <code>/camera/image_raw</code> 로 발행하는 인코딩</strong>이다. camera_ros 는 libcamera 포맷을 DRM fourcc 리틀엔디안 규칙으로 매핑하므로 <code>RGB888</code> → <code>bgr8</code>, <code>BGR888</code> → <code>rgb8</code> 이 된다(이름이 반대로 보인다)</td></tr>
+          <tr><td><code>bgr8</code></td><td>CV_8UC3</td><td>OpenCV 관례. <strong>우리 카메라(camera_ros, <code>format: RGB888</code>)가 <code>/stereo/left/image_raw</code> 로 발행하는 인코딩</strong>이다. camera_ros 는 libcamera 포맷을 DRM fourcc 리틀엔디안 규칙으로 매핑하므로 <code>RGB888</code> → <code>bgr8</code>, <code>BGR888</code> → <code>rgb8</code> 이 된다(이름이 반대로 보인다)</td></tr>
           <tr><td><code>rgb8</code></td><td>CV_8UC3</td><td>바이트 순서만 다름. <code>toCvShare(msg, "bgr8")</code> 로 받으면 변환 복사가 일어난다</td></tr>
           <tr><td><code>bgra8</code> / <code>rgba8</code></td><td>CV_8UC4</td><td>camera_ros <code>XRGB8888</code> → <code>bgra8</code></td></tr>
           <tr><td><code>mono8</code></td><td>CV_8UC1</td><td>그레이. Canny 결과를 발행할 때</td></tr>
@@ -323,7 +323,7 @@ img[mask &gt; 0] = (0, 0, 255)</code></pre></div>
         </tbody>
       </table></div>
       <div class="callout tip"><span class="ct">실제 인코딩은 추측하지 말고 확인한다</span>
-        <p><code>ros2 topic echo /camera/image_raw --field encoding --once</code> 한 줄로 확인한다. 이 값이 <code>bgr8</code> 이면 <code>toCvShare(msg, "bgr8")</code> 는 <strong>복사 없이 공유</strong>되고, 다른 값이면 요청한 인코딩으로 변환하느라 한 번 복사한다.
+        <p><code>ros2 topic echo /stereo/left/image_raw --field encoding --once</code> 한 줄로 확인한다. 이 값이 <code>bgr8</code> 이면 <code>toCvShare(msg, "bgr8")</code> 는 <strong>복사 없이 공유</strong>되고, 다른 값이면 요청한 인코딩으로 변환하느라 한 번 복사한다.
         처리 시간이 기대보다 몇 ms 길면 먼저 이 인코딩 값을 확인한다.</p>
       </div>
       <div class="two">

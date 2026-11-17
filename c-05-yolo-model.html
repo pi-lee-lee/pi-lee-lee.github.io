@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C5 · YOLO 모델 준비 — Mac 에서 정답을 만들고 ONNX 로 내보낸다 — 카메라 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="c-05">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">C5 · YOLO 모델 준비 (Mac)</p>
+      <h1>YOLO 모델 준비 — Mac 에서 정답을 만들고 ONNX 로 내보낸다</h1>
+<p class="lead">YOLO(You Only Look Once)는 영상 한 장을 신경망에 한 번 통과시켜 화면 안의 물체 박스와 종류를 한꺼번에 출력하는 검출 모델이다.
+이 쪽은 Mac 에서 한다. 공개 모델 <code>yolov8n</code> 을 받아 사진 한 장으로 정답을 확인하고, Pi 의 C++ 노드(C6)가 읽을 ONNX 형식 파일로 내보내고, 그 파일의 입출력 모양과 클래스 이름 파일을 만든다.</p>
+<div class="goal">
+<span class="label">이 쪽이 끝나면 보이는 것</span>
+<ul>
+  <li>Mac 에서 <code>yolov8n.pt</code> 로 시험 사진을 검출한 결과(클래스 · 점수 · 좌표)를 적었다. 이것이 C6 가 재현해야 할 정답이다.</li>
+  <li><code>yolov8n.onnx</code> 를 만들고 입력 <code>[1, 3, 640, 640]</code> · 출력 <code>[1, 84, 8400]</code> 을 확인했다.</li>
+  <li>클래스 이름 파일 <code>coco.names</code>(80 줄)가 있다.</li>
+  <li>Python 참조 파서가 ultralytics 와 같은 박스를 낸다. 두 파일이 Pi 의 <code>rpi5_vision/models/</code> 에 있다.</li>
+</ul>
+<p><strong>필요한 것</strong> — Mac, 인터넷(모델 파일 내려받기), C1 의 시험 사진 <code>/tmp/test.jpg</code>(사람이나 의자가 있는 장면).</p>
+</div>
+<div class="meta">
+<div><span class="k">환경</span><span class="tag mac">Mac</span> <span class="tag py">Python</span></div>
+<div><span class="k">선행</span><a href="c-03-calibration.html">C3</a> 의 파이썬 가상환경 <code>~/camtools</code>(없으면 §3-1 에서 만든다)</div>
+<div><span class="k">만드는 것</span><code>rpi5_vision/models/yolov8n.onnx</code>, <code>rpi5_vision/models/coco.names</code>, Mac 의 <code>~/yolo/</code> 작업 폴더</div>
+<div><span class="k">적는 곳</span>노트 — 기준 검출 결과(§3-3)</div>
+</div>
+<h2 id="overview">1. 개요</h2>
+<pre class="diagram"><code>Mac (Python, ultralytics)                        Pi 컨테이너 (C++, OpenCV DNN) — C6
+yolov8n.pt 로 사진 한 장 검출  ← 정답              /stereo/left/image_raw
+ONNX 로 내보내기 (opset 12)   ──── scp ────►       yolo_detector: 레터박스 → 추론 → 후처리
+입출력 모양 확인 [1,84,8400]                       /detections</code></pre>
+<p>Mac 에서 하는 이유는 둘이다. ultralytics 는 PyTorch 를 함께 설치해 수 GB 를 차지하고, Pi 의 CPU 로 PyTorch 추론을 하면 C6 의 검출기보다도 느리다. 모델을 고르고 확인하고 내보내는 일은 Mac 이 빠르고, Pi 에는 결과 파일만 보낸다.</p>
+<p>모델은 <code>yolov8n</code>(n = nano, 가장 작은 판)이다. COCO 데이터셋의 80 종류(person, bicycle, car, …, chair, couch, dog, cat …)로 학습되어 있다. 실내 주행에 필요한 사람 · 의자 · 반려동물은 들어 있다. Hailo 쪽(C7 · C8)도 같은 계열(yolov8)의 모델을 쓴다.</p>
+<h2 id="why">2. 원리 — C6 의 코드를 읽는 데 필요한 네 가지</h2>
+<h3 id="s2-1">2-1. 입력 — 레터박스</h3>
+<p>모델의 입력은 640 × 640 정사각형이고 카메라 영상은 640 × 480 이다. 세로를 늘려 맞추면 학습 때 보지 못한 찌그러진 물체가 되어 점수가 떨어진다. 비율을 유지한 채 넣고 남는 곳을 회색(114)으로 채우는 것이 레터박스다. 박스를 원본 좌표로 되돌릴 때 같은 숫자를 거꾸로 쓴다.</p>
+<pre class="diagram"><code>scale = min(S / w, S / h)           S = 640, 원본 640 × 480 → scale = 1.0
+new_w = w · scale,  new_h = h · scale                     → 640 × 480
+pad_x = (S − new_w) / 2,  pad_y = (S − new_h) / 2          → 0, 80
+
+원본 좌표 복원:  x_orig = (x_model − pad_x) / scale      y_orig = (y_model − pad_y) / scale
+                 w_orig =  w_model / scale                h_orig =  h_model / scale</code></pre>
+<p>그 다음 세 가지 변환이 더 있다. 픽셀 값을 0 ~ 255 에서 0 ~ 1 로, 바이트 순서를 BGR 에서 RGB 로, 배열 배치를 [높이][너비][채널] 에서 [1][3][640][640] 으로. OpenCV 의 <code>blobFromImage</code> 한 번이 셋을 다 한다. 셋 중 하나만 틀려도 오류 없이 점수만 낮아진다.</p>
+<h3 id="s2-2">2-2. 출력 — [1, 84, 8400] 의 뜻</h3>
+<pre class="diagram"><code>8400 = 80×80 + 40×40 + 20×20      640 입력을 8 · 16 · 32 픽셀 격자로 나눈 세 격자의 칸 수 (작은 물체 · 중간 · 큰 물체)
+  84 = 4 (cx, cy, w, h)  +  80 (종류별 점수 0 ~ 1)        좌표는 640 × 640 레터박스 기준 픽셀
+
+메모리 배치 [84][8400] : 한 후보의 84 개 값이 8400 칸씩 떨어져 있다 → [8400][84] 로 전치해야 한 행 = 한 후보</code></pre>
+<p>후보 8400 개가 전부 나온다. 대부분은 점수가 0.01 아래다. 후처리는 ① 각 행의 최대 점수가 임계값 이상인 것만 남기고 ② 남은 것 중 서로 겹치는 박스를 정리하는 일이다.</p>
+<h3 id="s2-3">2-3. 겹친 박스 정리 (NMS)</h3>
+<p>한 사람 위에 이웃한 칸 여러 개가 각자 박스를 낸다. NMS(Non-Maximum Suppression)는 점수 순으로 정렬한 뒤, 가장 높은 박스를 남기고 그 박스와 겹침 비율이 임계값 이상인 박스를 지우는 일을 반복한다.</p>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w28"><col class="w36"><col class="w36"></colgroup>
+<thead><tr><th>값</th><th>낮추면</th><th>높이면</th></tr></thead>
+<tbody>
+<tr><td><code>conf_threshold</code> (0.25)</td><td>희미한 것도 검출. 오검출과 NMS 부하가 는다</td><td>확실한 것만. 먼 사람을 놓친다</td></tr>
+<tr><td><code>nms_threshold</code> (0.45)</td><td>조금만 겹쳐도 지운다 → 붙어 선 두 사람이 하나로</td><td>많이 겹쳐야 지운다 → 한 사람에 박스 두 개</td></tr>
+</tbody></table></div>
+<h3 id="s2-4">2-4. ONNX 내보내기 옵션</h3>
+<p>컨테이너의 OpenCV 는 4.5.4 다. 최신 연산자 집합으로 내보낸 파일은 이 판이 읽지 못할 수 있다. 그래서 <code>opset=12</code>, <code>simplify=True</code>, <code>dynamic=False</code> 로 고정한다. 그래도 로드에 실패하면 C6 의 표를 본다.</p>
+<h2 id="lab">3. 실습</h2>
+<h3 id="s3-1">3-1. 환경 <span class="tag mac">Mac</span></h3>
+<pre><code class="lang-bash">source ~/camtools/bin/activate            # C3 에서 만든 가상환경. 없으면: python3 -m venv ~/camtools
+pip install ultralytics onnxruntime       # torch 가 함께 들어온다 (수 분)
+mkdir -p ~/yolo &amp;&amp; cd ~/yolo
+scp pi5:/tmp/test.jpg .                   # C1 의 시험 사진. 지웠으면 C1 §3-2 로 다시 찍는다</code></pre>
+<h3 id="s3-2">3-2. 첫 검출 — 명령 한 줄 <span class="tag mac">Mac</span></h3>
+<pre><code class="lang-bash">yolo predict model=yolov8n.pt source=test.jpg conf=0.25 save=True
+#   처음 실행하면 yolov8n.pt (약 6 MB) 를 내려받는다
+#   결과 그림: runs/detect/predict/test.jpg  → open runs/detect/predict/test.jpg</code></pre>
+<h3 id="s3-3">3-3. 기준 검출 결과를 적는다 <span class="tag py">Python</span></h3>
+<p><code>~/yolo/predict.py</code> 로 저장하고 실행한다. 출력된 숫자가 C6 의 C++ 노드가 재현해야 할 정답이다. 노트에 적는다.</p>
+<pre><code class="lang-python"># predict.py -- reference detections on one photo (camera guide C5)
+from ultralytics import YOLO
+import cv2
+
+model = YOLO('yolov8n.pt')
+results = model('test.jpg', conf=0.25)
+r = results[0]
+for box in r.boxes:
+    x1, y1, x2, y2 = box.xyxy[0].tolist()
+    print(f'{model.names[int(box.cls)]:12s} {float(box.conf):.2f}  '
+          f'x={x1:.0f} y={y1:.0f} w={x2 - x1:.0f} h={y2 - y1:.0f}')
+cv2.imwrite('test_out.jpg', r.plot())       # the photo with boxes drawn</code></pre>
+<pre><code class="lang-bash">python3 predict.py
+#   person       0.89  x=212 y=95 w=180 h=420     ← 이런 줄이 물체 수만큼</code></pre>
+<h3 id="s3-4">3-4. ONNX 로 내보내고 모양을 확인한다 <span class="tag py">Python</span></h3>
+<p><code>~/yolo/export.py</code>:</p>
+<pre><code class="lang-python"># export.py -- export yolov8n to ONNX for OpenCV 4.5.4 and check the tensor shapes (camera guide C5)
+from ultralytics import YOLO
+import onnxruntime as ort
+
+model = YOLO('yolov8n.pt')
+model.export(format='onnx', imgsz=640, opset=12, simplify=True, dynamic=False)   # -&gt; yolov8n.onnx
+
+sess = ort.InferenceSession('yolov8n.onnx', providers=['CPUExecutionProvider'])
+for i in sess.get_inputs():
+    print('input ', i.name, i.shape, i.type)     # images [1, 3, 640, 640] tensor(float)
+for o in sess.get_outputs():
+    print('output', o.name, o.shape, o.type)     # output0 [1, 84, 8400] tensor(float)
+
+# class names, one per line, in the model's output order (= column order of the 80 scores)
+with open('coco.names', 'w') as f:
+    for k in range(len(model.names)):
+        f.write(model.names[k] + '\n')</code></pre>
+<pre><code class="lang-bash">python3 export.py
+wc -l coco.names        # 80
+head -3 coco.names      # person  bicycle  car</code></pre>
+<p>출력 모양이 <code>[1, 84, 8400]</code> 이 아니면 그 값을 적어 둔다. C6 의 파서는 첫 프레임에 이 모양을 로그로 찍고, <code>[1, 84, 8400]</code>(YOLOv8 · v11)과 <code>[1, 25200, 85]</code>(YOLOv5) 두 가지를 처리한다.</p>
+<h3 id="s3-5">3-5. Python 참조 파서 — C6 의 C++ 과 같은 계산 <span class="tag py">Python</span></h3>
+<p>C++ 파서가 맞는지 확인하는 수단이다. 같은 사진에 같은 ONNX 파일을 다른 구현으로 실행해 비교한다. <code>~/yolo/parse_onnx.py</code>:</p>
+<pre><code class="lang-python"># parse_onnx.py -- run yolov8n.onnx with onnxruntime and do the same post-processing as the C++ node (C6)
+import cv2
+import numpy as np
+import onnxruntime as ort
+
+sess = ort.InferenceSession('yolov8n.onnx', providers=['CPUExecutionProvider'])
+inp = sess.get_inputs()[0]
+S = inp.shape[2]                                            # 640
+names = [l.strip() for l in open('coco.names') if l.strip()]
+
+img = cv2.imread('test.jpg')                                # BGR
+h, w = img.shape[:2]
+scale = min(S / w, S / h)
+nw, nh = round(w * scale), round(h * scale)
+pad_x, pad_y = (S - nw) // 2, (S - nh) // 2
+canvas = np.full((S, S, 3), 114, np.uint8)                  # letterbox, same formula as C++
+canvas[pad_y:pad_y + nh, pad_x:pad_x + nw] = cv2.resize(img, (nw, nh))
+blob = cv2.dnn.blobFromImage(canvas, 1 / 255.0, (S, S), swapRB=True)   # (1, 3, S, S) float32
+
+out = sess.run(None, {inp.name: blob})[0]                   # (1, 84, 8400)
+rows = out[0].T                                             # (8400, 84)  &lt;- transpose
+boxes, confs, cls = [], [], []
+for r in rows:
+    c = int(np.argmax(r[4:]))
+    s = float(r[4 + c])
+    if s &lt; 0.25:
+        continue
+    cx, cy, bw, bh = (r[0] - pad_x) / scale, (r[1] - pad_y) / scale, r[2] / scale, r[3] / scale
+    boxes.append([int(cx - bw / 2), int(cy - bh / 2), int(bw), int(bh)])
+    confs.append(s)
+    cls.append(c)
+keep = cv2.dnn.NMSBoxes(boxes, confs, 0.25, 0.45)
+for i in np.array(keep).flatten():                          # [[i]] or [i] depending on the OpenCV version
+    x, y, bw, bh = boxes[i]
+    print(f'{names[cls[i]]:12s} {confs[i]:.2f}  x={x} y={y} w={bw} h={bh}')</code></pre>
+<pre><code class="lang-bash">python3 parse_onnx.py</code></pre>
+<p>3-3 의 결과와 같은 물체가 몇 픽셀 안에서 같은 자리에 나오면 파서의 계산이 맞다. C6 에서 C++ 노드에 같은 사진을 넣어 세 번째 결과를 얻는다.</p>
+<h3 id="s3-6">3-6. Pi 로 보낸다 <span class="tag mac">Mac</span></h3>
+<pre><code class="lang-bash">mkdir -p ~/ros2_rpi5/ros2_ws/src/rpi5_vision/models
+cp ~/yolo/yolov8n.onnx ~/yolo/coco.names ~/ros2_rpi5/ros2_ws/src/rpi5_vision/models/
+cp ~/yolo/test.jpg ~/ros2_rpi5/ros2_ws/src/rpi5_vision/models/      # C6 의 test_image 파라미터로 쓴다
+cd ~/ros2_rpi5
+echo '*.onnx' &gt;&gt; .gitignore                       # 12 MB 바이너리는 저장소에 넣지 않는다
+./scripts/sync-to-pi.sh</code></pre>
+<p><code>rpi5_vision</code> 패키지가 Mac 에도 있어야 동기화된다. C2 에서 패키지를 컨테이너 안에서 만들었다면 Mac 에는 아직 없다. 먼저 Pi 의 패키지를 Mac 으로 가져온다. 동기화 스크립트는 Pi 에만 있는 패키지를 지우려 할 때 멈추고 같은 명령을 안내한다.</p>
+<pre><code class="lang-bash"># Mac — 패키지를 컨테이너 안에서 만든 경우에만
+rsync -av pi5:~/ros2_rpi5/ros2_ws/src/rpi5_vision/ ~/ros2_rpi5/ros2_ws/src/rpi5_vision/</code></pre>
+<h2 id="checkpoints">✅ 검증 체크포인트</h2>
+<p>직접 실행해서 확인한 것만 체크한다. 체크 기록은 이 브라우저에만 저장된다.</p>
+<ul class="checklist">
+  <li><label><input type="checkbox" data-key="c05-predict-ok"><span><code>yolo predict</code> 결과 그림에서 박스를 눈으로 확인했다<span class="sub">§3-2</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c05-reference-written"><span><code>predict.py</code> 의 클래스 · 점수 · 좌표를 노트에 적었다<span class="sub">§3-3</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c05-onnx-shapes"><span><code>yolov8n.onnx</code> 의 입력 <code>[1, 3, 640, 640]</code> · 출력 <code>[1, 84, 8400]</code> 을 확인했다(다르면 그 값을 적었다)<span class="sub">§3-4</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c05-names-80"><span><code>coco.names</code> 가 80 줄이고 첫 줄이 <code>person</code> 이다<span class="sub">§3-4</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c05-parser-matches"><span><code>parse_onnx.py</code> 의 결과가 <code>predict.py</code> 와 같은 물체 · 비슷한 좌표다<span class="sub">§3-5</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c05-synced"><span>두 파일과 시험 사진이 Pi 의 <code>rpi5_vision/models/</code> 에 있다. <code>*.onnx</code> 는 <code>.gitignore</code> 에 넣었다<span class="sub">§3-6</span></span></label></li>
+</ul>
+<p class="progress-line"></p>
+<div class="progress-bar"><span></span></div>
+<h2 id="symptoms">증상과 원인</h2>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w30"><col class="w30"><col class="w40"></colgroup>
+<thead><tr><th>증상</th><th>원인</th><th>조치</th></tr></thead>
+<tbody>
+<tr><td><code>export</code> 가 <code>onnxslim</code> 을 찾는다며 멈춘다</td><td><code>simplify=True</code> 가 쓰는 패키지가 없다</td><td><code>pip install onnxslim</code> 뒤 다시. 인터넷이 필요하다</td></tr>
+<tr><td>출력 모양이 <code>[1, 84, 8400]</code> 이 아니다</td><td>모델 세대나 입력 크기가 다르다</td><td>모양을 적어 둔다. <code>[1, N, 6]</code> 이면 <code>nms=True</code> 로 내보낸 것 — 이 가이드는 쓰지 않는다. 다시 내보낸다</td></tr>
+<tr><td><code>coco.names</code> 가 80 줄이 아니다</td><td>다른 모델을 내보냈다</td><td><code>yolov8n.pt</code> 로 다시</td></tr>
+<tr><td><code>parse_onnx.py</code> 결과가 <code>predict.py</code> 와 다르다</td><td>레터박스 · <code>swapRB</code> · 전치 중 하나가 빠졌다</td><td>세 줄을 2-1 · 2-2 와 대조한다. 점수만 조금 낮으면 색 순서(<code>swapRB</code>)다</td></tr>
+<tr><td>동기화 스크립트가 멈춘다</td><td>Pi 에만 있는 패키지를 지우려 한다</td><td>§3-6 의 <code>rsync</code> 로 먼저 Mac 으로 가져온다</td></tr>
+</tbody></table></div>
+<h2 id="quiz">🤔 이해 확인</h2>
+<p>이 쪽에서 설명한 내용만으로 답할 수 있다. 답을 펼치기 전에 먼저 말로 답해 본다.</p>
+<details class="quiz"><summary>1. 출력의 8400 은 어디서 나오는 숫자인가. 입력을 320 으로 바꾸면 몇이 되는가.</summary>
+  <div class="ans"><p>640 입력을 8 · 16 · 32 픽셀 격자로 나눈 세 격자 80 × 80 + 40 × 40 + 20 × 20 = 8400 칸이다. 칸마다 후보 박스 하나를 낸다. 320 이면 40² + 20² + 10² = 2100 이다. 검출 수가 아니라 후보 수다.</p></div></details>
+<details class="quiz"><summary>2. 레터박스로 넣은 640 × 480 영상에서 모델이 (320, 300)에 박스 중심을 냈다. 원본 좌표는 어디인가.</summary>
+  <div class="ans"><p>scale = 1.0, pad_x = 0, pad_y = 80 이므로 x = 320, y = 300 − 80 = 220 이다. 폭과 높이는 scale 로만 나눈다.</p></div></details>
+<details class="quiz"><summary>3. NMS 를 생략하면 무엇이 보이는가. <code>nms_threshold</code> 를 0.9 로 올리면?</summary>
+  <div class="ans"><p>한 사람 위에 이웃 칸들이 낸 박스 수십 개가 겹쳐 그려진다. 0.9 로 올리면 거의 완전히 겹치는 것만 지우므로 한 사람에 박스가 여러 개 남는다. 너무 낮추면 붙어 선 두 사람이 하나로 합쳐진다.</p></div></details>
+<h2 id="next">다음</h2>
+<div class="callout tip"><span class="ct">여기까지 했으면</span>
+<ul>
+  <li>번호순 다음은 <a href="c-06-yolo-node.html">C6 YOLO 추론 노드</a> 다. 여기서 만든 두 파일을 Pi 의 C++ 노드가 읽는다.</li>
+  <li>모델을 바꾸고 싶으면(yolov8s, YOLO11n) 이 쪽을 그 모델로 다시 한다. 출력 모양이 같으면 C6 의 코드는 그대로다. 부록 <a href="ref-yolo.html">C · YOLO 사용법</a> 에 모델 계열과 커스텀 학습의 개요가 있다.</li>
+</ul>
+</div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

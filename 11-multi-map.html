@@ -33,7 +33,7 @@
         <p><strong>이 쪽에 필요한 것</strong></p>
         <ul>
           <li>09b 전부 — 특히 실습 B(출구 판정). 출구가 확정되어야 구역이 나뉜다</li>
-          <li><a href="10-autonomy.html">10</a> §3-9 권장 — AMCL 이 active 인지 확인하고 초기 위치를 주는 방법이 같다</li>
+          <li><a href="10-autonomy.html">10</a> §3-9 권장 — AMCL(저장한 지도 위에서 위치 후보 점 여럿으로 로봇 위치를 추정하는 Nav2 노드, 09 단계)이 active 인지 확인하고 초기 위치를 주는 방법이 같다</li>
           <li>시험 구역 — 판으로 나눈 두 구역, 그 사이에 로봇이 지나갈 수 있는 틈 하나, 틈 옆의 표시 물체(09b §3-8 과 같은 것)</li>
           <li>실습 D 만 — 서로 떨어진 방 둘(두 층 대신)</li>
         </ul>
@@ -49,7 +49,7 @@
         <div><span class="k">전제</span>09b 100 % · 10 §3-9 권장 · 09b 의 <code>rpi5_explore</code> 패키지와 <code>explore_core.hpp</code></div>
         <div><span class="k">수행 환경</span><span class="tag asm">조립 후</span> · <span class="tag pi">Pi 호스트</span> <span class="tag cli">컨테이너</span> · 순수 헤더 시험만 <span class="tag mac">Mac</span> 또는 컨테이너</div>
         <div><span class="k">언어</span><span class="tag cpp">C++</span> 구역 관리 노드 · 순수 헤더</div>
-        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h (학습 노트에 적는다 — 이 쪽은 입력을 저장하지 않는다)</div>
+        <div><span class="k">소요</span>예상 ____ h · 학습자가 실제로 걸린 시간 ____ h (학습 노트에 적는다 — 이 쪽은 입력을 저장하지 않는다)</div>
       </div>
 
       <h2 id="overview">1. 개요 — 층, 구역, 간선</h2>
@@ -87,7 +87,7 @@
       </table></div>
       <div class="callout note"><span class="ct">09b 와 같은 것, 다른 것</span>
         <ul>
-          <li><strong>같은 것</strong> — 구역 하나 안의 탐사 규칙. 프런티어, 출구 판정(틈 + 표시), 제외 목록, 완성 유지 시간은 09b 노드의 함수를 그대로 옮겨 쓴다. 09b 노드 자체는 고치지 않는다.</li>
+          <li><strong>같은 것</strong> — 구역 하나 안의 탐사 규칙. 프런티어(아는 빈 칸과 모르는 칸의 경계, 09b), 출구 판정(틈 + 표시), 제외 목록, 완성 유지 시간은 09b 노드의 함수를 그대로 옮겨 쓴다. 09b 노드 자체는 고치지 않는다.</li>
           <li><strong>다른 것</strong> — 구역이 완성되면 출발점이 아니라 다음 출구로 간다. 층의 출구 목록을 처음부터 끝까지 들고 있어서, 모든 구역의 확정 출구가 늘 벽이다. 층이 끝나면 구역 지도와 그래프 파일을 쓴다.</li>
         </ul>
       </div>
@@ -104,7 +104,7 @@
       <h3 id="s2-1">2-1. 층마다 SLAM 하나 — 그리고 관리 노드를 따로 두는 이유</h3>
       <p>층과 층 사이에서는 SLAM 을 이어서 실행할 수 없다. 이유는 둘이다.</p>
       <ul>
-        <li>엘리베이터 안에서 라이다는 카 내부만 보고, 카가 움직이는 동안 바퀴는 멈춰 있어 <code>/odom</code> 이 0 이다. 문이 열리면 같은 자세에서 다른 층이 보인다. SLAM 이 이 스캔을 원래 층 지도에 맞추려 하면 지도가 망가진다.</li>
+        <li>엘리베이터 안에서 라이다는 카(엘리베이터에서 사람이 타는 칸) 내부만 보고, 카가 움직이는 동안 바퀴는 멈춰 있어 <code>/odom</code> 이 0 이다. 문이 열리면 같은 자세에서 다른 층이 보인다. SLAM 이 이 스캔을 원래 층 지도에 맞추려 하면 지도가 망가진다.</li>
         <li>2D 격자 지도에는 높이 축이 없다. 두 층은 같은 x-y 위에 겹쳐 있어서, 한 지도에 그리면 두 층의 벽이 같은 칸에 찍힌다.</li>
       </ul>
       <p>그래서 층마다 SLAM 세션 하나, 좌표계 하나를 둔다. 같은 층 안에서는 출구를 걸어서 지나가므로 SLAM 이 이어진다 — 층 안의 구역 지도는 모두 같은 좌표계를 쓴다. 이 사실이 두 가지를 쉽게 만든다.</p>
@@ -154,12 +154,12 @@
       <p>겹침 띠가 필요한 이유는 둘이다.</p>
       <ul>
         <li>벽이 지도에 들어가야 AMCL 이 스캔을 맞춘다.</li>
-        <li>지도를 바꾸는 자리(출구의 옆 점)가 두 구역 지도 모두에 들어가야 한다. 바꾸기 직전의 위치가 새 지도 안에 있어야 그 지도에서 초기 위치를 줄 수 있다. 그래서 <code>band_m</code> 은 <code>side_m</code> 보다 넉넉히 크게 정한다(내가 정하는 값, 출발값 1.0 m).</li>
+        <li>지도를 바꾸는 자리(출구의 옆 점)가 두 구역 지도 모두에 들어가야 한다. 바꾸기 직전의 위치가 새 지도 안에 있어야 그 지도에서 초기 위치를 줄 수 있다. 그래서 <code>band_m</code> 은 <code>side_m</code> 보다 넉넉히 크게 정한다(학습자가 정하는 값, 출발값 1.0 m).</li>
       </ul>
-      <p>저장은 Nav2 의 map_saver 가 한다. 자른 격자를 <code>regions/region_map</code> 토픽에 TRANSIENT_LOCAL 로 내고, <code>/map_saver/save_map</code> 서비스(Humble <code>SaveMap.srv</code>)에 그 토픽을 저장하게 한다.
+      <p>저장은 Nav2 의 map_saver 가 한다. 자른 격자를 <code>regions/region_map</code> 토픽에 TRANSIENT_LOCAL 로 내고, <code>/map_saver/save_map</code> 서비스(Humble <code>SaveMap.srv</code>)에 그 토픽을 저장하게 한다. TRANSIENT_LOCAL 은 구독 전에 발행된 마지막 값도 받게 하는 QoS 설정이다(03 §2-7).
       요청의 필드는 <code>map_topic</code> · <code>map_url</code> · <code>image_format</code> · <code>map_mode</code> · <code>free_thresh</code> · <code>occupied_thresh</code> 이고, 응답은 <code>result</code>(bool) 하나다.
       09 의 <code>map_saver_cli</code> 와 같은 저장 코드를 쓰므로 <code>.pgm</code> · <code>.yaml</code> 의 형식과 문턱(0.25 · 0.65)이 09 §3-5 와 같다.</p>
-      <p><code>map_saver_server</code> 는 lifecycle 노드다. lifecycle_manager 가 active 로 올려야 서비스가 응답한다. Humble <code>nav2_bringup</code> 의 <code>slam_launch.py</code> 도 같은 구성(<code>map_saver_server</code> + <code>node_names: ['map_saver']</code> 인 lifecycle_manager)을 쓴다.</p>
+      <p><code>map_saver_server</code> 는 lifecycle 노드(configure → activate 를 거쳐야 동작하는 노드, 09 §2-7)다. lifecycle_manager 가 active 로 올려야 서비스가 응답한다.<sup class="fn"><a href="#fn-1" id="fnref-1">1</a></sup></p>
 
       <h3 id="s2-5">2-5. 지도 사이 이동 — load_map 과 /initialpose</h3>
       <p>목표가 다른 구역에 있으면 구역 그래프에서 간선 수가 가장 적은 경로를 찾는다(너비 우선 탐색, T4). 간선에는 방향이 있다 — 출구 하나에서 간선이 둘 나오는 이유다. 간선 하나를 지나는 순서는 다음과 같다.</p>
@@ -169,7 +169,7 @@
         <li><code>/initialpose</code> 로 간선의 <code>pose_to</code> 를 공분산과 함께 준다(09b §2-7).</li>
         <li><code>relocalize_s</code> 동안 기다린 뒤 다음 간선이나 목표로 간다.</li>
       </ol>
-      <p>3 이 필요한 이유는 AMCL 의 동작에 있다. Humble 의 <code>amcl_node.cpp</code> 는 새 지도를 받아도 파티클을 다시 초기화하지 않는다. 같은 층이면 좌표가 같아서 파티클이 그대로 맞지만, 층이 바뀌면 옛 층의 좌표를 그대로 들고 있게 된다.
+      <p>3 이 필요한 이유는 AMCL 의 동작에 있다. Humble 의 AMCL 은 새 지도를 받아도 파티클(위치 후보 점)을 다시 초기화하지 않는다.<sup class="fn"><a href="#fn-2" id="fnref-2">2</a></sup> 같은 층이면 좌표가 같아서 파티클이 그대로 맞지만, 층이 바뀌면 옛 층의 좌표를 그대로 들고 있게 된다.
       그래서 같은 층에서도 늘 다시 준다 — 층 사이와 같은 절차를 한 가지로 쓰기 위해서다.</p>
       <p>global_costmap 의 <code>static_layer</code> 도 새 <code>/map</code> 을 받아 격자 크기를 바꾼다. 그래서 지도는 진행 중인 목표가 없을 때, 로봇이 멈춰 있는 동안 바꾼다.</p>
       <p>엘리베이터 간선은 <code>pose_from</code>(층 1 지도)과 <code>pose_to</code>(층 B1 지도)가 서로 다른 좌표계에 있다. 절차는 같고, 1 과 2 사이에 상태 <code>AWAIT_ELEVATOR</code> 가 들어간다. 지금은 사람이 로봇을 다른 층의 엘리베이터 앞으로 옮긴 뒤 <code>arrived</code> 를 보낸다.
@@ -179,7 +179,7 @@
       <p><code>ask_user</code> 가 참이면 구역이 끝날 때 상태가 <code>AWAIT_USER</code> 가 된다. 이때 사용자에게 두 가지를 보인다.</p>
       <ul>
         <li><code>/regions/state</code> 의 <code>options=0:f1/r0-&gt;?,1:…</code> — 건널 곳의 번호와 그 출구가 있는 구역</li>
-        <li><code>/regions/crossings</code> — 건널 곳마다 가까운 옆 점 위에 <code>go k</code> 글자 마커. Foxglove 3D 에서 어느 출구가 몇 번인지 본다</li>
+        <li><code>/regions/crossings</code> — 건널 곳마다 가까운 옆 점 위에 <code>go k</code> 글자 마커. Foxglove(토픽을 화면에 그리는 시각화 프로그램)의 3D 패널에서 어느 출구가 몇 번인지 본다</li>
       </ul>
       <p>사용자는 <code>regions/command</code> 에 <code>go &lt;k&gt;</code>(그 출구를 건넌다) 또는 <code>finish</code>(층 탐사를 끝낸다)를 보낸다. 묻는 이유는 탐사 범위를 사람이 정하게 하기 위해서다 — 계단 쪽 출구나 들어가면 안 되는 방을 건너지 않게 할 수 있다.
       <code>ask_user</code> 가 거짓이면 가장 가까운 건널 곳을 고른다. 고르는 규칙은 09b 의 목표 고르기와 같은 질문이라 <code>TODO(you)</code> 로 남겼다.</p>
@@ -210,13 +210,30 @@
      │  relocalize_s 뒤: 간선이 남았으면 TO_EDGE, 아니면
      ▼
  TO_GOAL      목표 자세까지 → IDLE</code></pre>
-      <p>종료 코드는 09b 와 같은 규칙에 둘을 더했다. 0 = DONE(층 완성), 1 = DONE 전에 끝남(Ctrl+C), 2 = 시간 한도(층 전체), 3 = 출발점 복귀 실패, 4 = <code>stop</code>, 5 = 그래프 파일 쓰기 실패, 6 = map_saver 저장 실패, 7 = <code>graph_file</code> 을 읽지 못함. <code>exit_on_done</code> 이 참일 때만 프로세스가 끝난다.</p>
+      <p>종료 코드는 09b 와 같은 규칙에 둘을 더했다.</p>
+      <ul>
+        <li>0 = DONE(층 완성)</li>
+        <li>1 = DONE 전에 끝남(Ctrl+C)</li>
+        <li>2 = 시간 한도(층 전체)</li>
+        <li>3 = 출발점 복귀 실패</li>
+        <li>4 = <code>stop</code></li>
+        <li>5 = 그래프 파일 쓰기 실패</li>
+        <li>6 = map_saver 저장 실패</li>
+        <li>7 = <code>graph_file</code> 을 읽지 못함</li>
+      </ul>
+      <p><code>exit_on_done</code> 이 참일 때만 프로세스가 끝난다.</p>
 
       <h2 id="lab">3. 실습</h2>
       <p>코드(§3-1 ~ §3-4)를 먼저 갖춘 뒤 실습 A(§3-5) · B(§3-6) · C(§3-7) · D(§3-8)를 차례로 한다. 멈추는 순서는 09b §3-1 과 같다 — 먼저 <code>stop</code>, 상태와 Nav2 로그로 취소를 확인한 다음 Ctrl+C. 명령 토픽만 <code>regions/command</code> 로 바뀐다.</p>
 
       <h3 id="s3-1">3-1. 09b 패키지에 더하기 <span class="tag cpp">C++</span> <span class="tag mac">Mac</span></h3>
-      <p>새 패키지를 만들지 않고 09b 의 <code>rpi5_explore</code> 에 파일 셋을 더한다 — 순수 헤더 <code>include/rpi5_explore/region_core.hpp</code>, 시험 <code>test/test_region_core.cpp</code>, 노드 <code>src/region_manager.cpp</code>. 같은 패키지라 <code>explore_core.hpp</code> 를 그대로 include 한다.</p>
+      <p>새 패키지를 만들지 않고 09b 의 <code>rpi5_explore</code> 에 파일 셋을 더한다.</p>
+      <ul>
+        <li>순수 헤더 <code>include/rpi5_explore/region_core.hpp</code></li>
+        <li>시험 <code>test/test_region_core.cpp</code></li>
+        <li>노드 <code>src/region_manager.cpp</code></li>
+      </ul>
+      <p>같은 패키지라 <code>explore_core.hpp</code> 를 그대로 include 한다.</p>
       <p><code>CMakeLists.txt</code> 에 더하는 줄(<code>ament_package()</code> 앞):</p>
       <pre><code class="lang-cmake">find_package(lifecycle_msgs REQUIRED)         # GetState: is AMCL active?
 find_package(yaml_cpp_vendor REQUIRED)        # yaml-cpp, the way nav2_map_server uses it
@@ -230,7 +247,7 @@ ament_target_dependencies(region_manager
   lifecycle_msgs yaml_cpp_vendor)
 
 install(TARGETS region_manager DESTINATION lib/${PROJECT_NAME})</code></pre>
-      <p><code>package.xml</code> 에는 <code>&lt;depend&gt;lifecycle_msgs&lt;/depend&gt;</code> 와 <code>&lt;depend&gt;yaml_cpp_vendor&lt;/depend&gt;</code> 를 더한다. yaml-cpp 는 그래프 파일을 읽는 데 쓴다. Humble 의 <code>nav2_map_server</code> 도 <code>yaml_cpp_vendor</code> 를 <code>ament_target_dependencies</code> 에 넣는 같은 방법으로 쓴다.</p>
+      <p><code>package.xml</code> 에는 <code>&lt;depend&gt;lifecycle_msgs&lt;/depend&gt;</code> 와 <code>&lt;depend&gt;yaml_cpp_vendor&lt;/depend&gt;</code> 를 더한다. yaml-cpp(YAML 파일을 읽고 쓰는 C++ 라이브러리 — YAML 은 들여쓰기로 구조를 적는 설정 파일 형식)는 그래프 파일을 읽는 데 쓴다.<sup class="fn"><a href="#fn-3" id="fnref-3">3</a></sup></p>
       <p>파라미터 파일을 새로 만든다 — <code>ros2_ws/src/rpi5_bringup/config/regions_params.yaml</code>. 09b 의 <code>explore_params.yaml</code> 은 노드 이름 <code>frontier_explorer</code> 아래에 있으므로 이 노드에는 적용되지 않는다. 09b 값은 옮겨 적는다.</p>
       <pre><code class="lang-yaml">region_manager:
   ros__parameters:
@@ -486,7 +503,7 @@ c++ -std=c++17 -Wall -Wextra -g -fsanitize=undefined,address -Iinclude test/test
         <li>T3 — <code>crop()</code>. 경계 상자, 원점 옮기기, 남기지 않는 칸은 -1.</li>
         <li>T4 — <code>region_path()</code>. 구역 단위 너비 우선 탐색과 되짚기.</li>
       </ol>
-      <p>아래 표는 집필자가 완결 코드를 T1 부터 차례로 끼워 넣으며 실제로 실행한 결과다(2026-10-12 · Mac · <code>clang++ -std=c++17</code>). 잘못된 구현 아홉 가지도 일부러 만들어 실행했다 — 여덟은 실패를 출력했고, 하나(T4 에서 <code>seen</code> 을 빼는 것)는 시험이 끝나지 않았다.</p>
+      <p>아래 표는 집필자가 완결 코드를 T1 부터 차례로 끼워 넣으며 실제로 실행한 결과다.<sup class="fn"><a href="#fn-4" id="fnref-4">4</a></sup> 진단 빌드는 위 명령의 마지막 줄이다 — 실행 중에 정의되지 않은 동작과 메모리 오류를 검사하는 빌드다.</p>
       <div class="tbl"><table class="compact fixed">
         <colgroup><col class="w20"><col class="w35"><col class="w45"></colgroup>
         <thead><tr><th>채운 자리</th><th>마지막 줄</th><th>처음 나오는 실패</th></tr></thead>
@@ -695,7 +712,7 @@ inline std::vector&lt;int&gt; region_path(int n_regions, const std::vector&lt;Ed
       <h3 id="s3-4">3-4. 구역 관리 노드 <code>region_manager.cpp</code> <span class="tag cpp">C++</span> <span class="tag cli">컨테이너</span></h3>
       <p><code>ros2_ws/src/rpi5_explore/src/region_manager.cpp</code>. 새로 쓰는 열여덟 묶음(①~⑱)과, 09b 노드에서 그대로 옮겨 오는 함수들로 이루어진다. 정책 한 곳(건널 곳 고르기)은 <code>TODO(you)</code> 로 남겼다.</p>
       <div class="callout note"><span class="ct">이 노드의 빌드 상태</span>
-        <p>09b 노드와 같다 — 집필 환경(Mac)에는 ROS 가 없어 ROS 타입과 yaml-cpp 를 흉내 낸 가짜 헤더로 문법만 확인했다(<code>-Wall -Wextra -Wpedantic</code>, 경고 0). 실제 API 와 맞는지는 Pi 컨테이너의 첫 <code>colcon build</code> 가 확인한다.
+        <p>09b 노드와 같다 — 집필 환경(Mac)에는 ROS 가 없어 ROS 타입과 yaml-cpp 를 흉내 낸 가짜 헤더로 문법만 확인했다.<sup class="fn"><a href="#fn-5" id="fnref-5">5</a></sup> 실제 API 와 맞는지는 Pi 컨테이너의 첫 <code>colcon build</code> 가 확인한다.
         순수 헤더(§3-2)는 Mac 에서 시험 35 case 와 진단 빌드를 실제로 통과시켰다.</p>
       </div>
       <p><strong>09b 노드에서 그대로 옮겨 오는 것</strong> — 09b §3-6 의 블록에서 아래 함수를 글자 그대로 옮긴다. 이 함수들이 쓰는 멤버 이름은 이 노드에도 같은 이름으로 있다(⑱).</p>
@@ -855,10 +872,10 @@ public:
       [this](const nav_msgs::msg::OccupancyGrid &amp; m) { cost_ = to_grid(m); have_cost_ = true; });
     sub_scan_ = create_subscription&lt;sensor_msgs::msg::LaserScan&gt;(
       "scan", rclcpp::SensorDataQoS(),
-      std::bind(&amp;RegionManager::on_scan, this, std::placeholders::_1));
+      [this](const sensor_msgs::msg::LaserScan &amp; msg) { on_scan(msg); });
     sub_obj_ = create_subscription&lt;vision_msgs::msg::Detection3DArray&gt;(
       "objects", rclcpp::QoS(1).best_effort(),
-      std::bind(&amp;RegionManager::on_objects, this, std::placeholders::_1));
+      [this](const vision_msgs::msg::Detection3DArray &amp; msg) { on_objects(msg); });
     sub_cmd_ = create_subscription&lt;std_msgs::msg::String&gt;(
       "regions/command", 10,
       [this](const std_msgs::msg::String &amp; m) { on_command(m.data); });
@@ -871,7 +888,7 @@ public:
     load_client_ = create_client&lt;nav2_msgs::srv::LoadMap&gt;("map_server/load_map");
     amcl_state_ = create_client&lt;lifecycle_msgs::srv::GetState&gt;("amcl/get_state");
     client_ = rclcpp_action::create_client&lt;NavigateToPose&gt;(this, "navigate_to_pose");
-    timer_ = create_wall_timer(1s, std::bind(&amp;RegionManager::tick, this));   // state machine, 1 Hz
+    timer_ = create_wall_timer(1s, [this]() { tick(); });   // state machine, 1 Hz
 
     if (mode_ == "navigate") {
       if (load_graph()) { state_ = State::LOCALIZING; }
@@ -1638,10 +1655,20 @@ edges:
       <div class="callout tip"><span class="ct">여기까지 했으면</span>
         <ul>
           <li><strong>엘리베이터</strong> → 그 뒤 단계(작성 예정). 이 쪽의 <code>AWAIT_ELEVATOR</code> 자리에 엘리베이터 탑승과 층 판별(위를 보는 카메라로 층 표시 읽기 → 내린 뒤 주변 확인 → 틀리면 다시 탑승)이 들어간다.</li>
-          <li><strong>탐사에서 항법으로 자동 전환</strong>이 필요하면 → <a href="10-autonomy.html">10</a> §3-9 의 연쇄에서 탐사 노드 자리에 <code>region_manager</code>(<code>exit_on_done:=true</code>)를 넣고, 항법 구성의 지도를 그래프 파일의 <code>end_region</code> 지도로 한다.</li>
+          <li><strong>탐사에서 항법으로 자동 전환</strong>이 필요하면 → <a href="10-autonomy.html">10</a> §3-9 의 연쇄에서 탐사 노드 자리에 <code>region_manager</code>(<code>exit_on_done:=true</code>)를 넣는다. 항법 구성의 지도는 그래프 파일의 <code>end_region</code> 지도로 한다.</li>
           <li>이 쪽에서 정한 값(<code>band_m</code>, <code>side_m</code> 을 바꿨다면 그 값, 엘리베이터 앞 자세)과 그 근거를 학습 노트에 적었는가.</li>
         </ul>
       </div>
+
+      <h2 id="footnotes">각주</h2>
+      <p class="small">본문의 작은 번호를 누르면 여기로 온다. 근거 소스 · 확인한 날짜와 기계 · 문법 확인 옵션을 모았다. ↩ 를 누르면 본문으로 돌아간다.</p>
+      <ol class="footnotes">
+          <li id="fn-1">Humble <code>nav2_bringup</code> 의 <code>slam_launch.py</code> 도 같은 구성(<code>map_saver_server</code> + <code>node_names: ['map_saver']</code> 인 lifecycle_manager)을 쓴다. <a class="fn-back" href="#fnref-1" aria-label="본문으로">↩</a></li>
+          <li id="fn-2">근거는 Humble 의 <code>amcl_node.cpp</code> 다. <a class="fn-back" href="#fnref-2" aria-label="본문으로">↩</a></li>
+          <li id="fn-3">Humble 의 <code>nav2_map_server</code> 도 <code>yaml_cpp_vendor</code> 를 <code>ament_target_dependencies</code> 에 넣는 같은 방법으로 쓴다. <a class="fn-back" href="#fnref-3" aria-label="본문으로">↩</a></li>
+          <li id="fn-4">2026-10-12 · Mac · <code>clang++ -std=c++17</code> 로 실행했다. Mac 의 <code>c++</code> 는 같은 Apple clang 이다(<code>c++ --version</code> → Apple clang 21.0.0, 2026-11-10 확인). 잘못된 구현 아홉 가지도 일부러 만들어 실행했다 — 여덟은 실패를 출력했고, 하나(T4 에서 <code>seen</code> 을 빼는 것)는 시험이 끝나지 않았다. <a class="fn-back" href="#fnref-4" aria-label="본문으로">↩</a></li>
+          <li id="fn-5">문법 확인의 컴파일 옵션은 <code>-Wall -Wextra -Wpedantic</code> 이고, 경고는 0 이었다. <a class="fn-back" href="#fnref-5" aria-label="본문으로">↩</a></li>
+      </ol>
 
       <div class="pager"></div>
     </div>

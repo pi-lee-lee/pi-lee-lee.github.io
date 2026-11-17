@@ -132,8 +132,8 @@ int main(int argc, char ** argv)
           <tr><td><code>-p name:=value</code></td><td><code>-p rate_hz:=5.0 -p port:=/dev/mcu</code></td><td>파라미터 덮어쓰기(YAML 보다 우선)</td></tr>
           <tr><td><code>--params-file f.yaml</code></td><td><code>--params-file robot_params.yaml</code></td><td>노드 이름 키 아래 값을 주입</td></tr>
           <tr><td><code>-r old:=new</code></td><td><code>-r /cmd_vel:=/cmd_vel_nav</code></td><td>토픽·서비스 리매핑</td></tr>
-          <tr><td><code>-r __node:=name</code></td><td><code>-r __node:=camera</code></td><td>노드 이름 변경(08 의 camera_ros)</td></tr>
-          <tr><td><code>-r __ns:=/ns</code></td><td><code>-r __ns:=/robot1</code></td><td>네임스페이스</td></tr>
+          <tr><td><code>-r __node:=name</code></td><td><code>-r __node:=left</code></td><td>노드 이름 변경(08 의 camera_ros)</td></tr>
+          <tr><td><code>-r __ns:=/ns</code></td><td><code>-r __ns:=/stereo</code></td><td>네임스페이스(08 의 camera_ros — 위와 함께 <code>/stereo/left</code>)</td></tr>
           <tr><td><code>--log-level L</code></td><td><code>--log-level debug</code>, <code>--log-level mcu_bridge:=debug</code></td><td>로그 레벨(전체 또는 노드별)</td></tr>
         </tbody>
       </table></div>
@@ -252,14 +252,14 @@ auto qos_map  = rclcpp::QoS(1).reliable().transient_local();         // 늦게 �
 auto qos_all  = rclcpp::QoS(rclcpp::KeepAll()).reliable();
 
 // 프리셋
-rclcpp::SensorDataQoS()          // best_effort + volatile + keep_last(5)  ← /scan, /camera/* 구독
+rclcpp::SensorDataQoS()          // best_effort + volatile + keep_last(5)  ← /scan, /stereo/left/* 구독
 rclcpp::SystemDefaultsQoS()      // rmw 기본
 rclcpp::ParametersQoS(), rclcpp::ServicesQoS()
 
 // image_transport 처럼 rmw 프로파일을 요구하는 API
 rmw_qos_profile_t p = rmw_qos_profile_sensor_data;
 p.depth = 1;
-image_transport::create_subscription(this, "/camera/image_raw", cb, "raw", p);
+image_transport::create_subscription(this, "/stereo/left/image_raw", cb, "raw", p);
 
 // rmw 프로파일 → rclcpp::QoS
 rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(p), p);</code></pre>
@@ -282,7 +282,7 @@ rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(p), p);</code></pre>
         <thead><tr><th>토픽</th><th>발행 QoS</th><th>구독 시</th><th>이유</th></tr></thead>
         <tbody>
           <tr><td><code>/scan</code></td><td>BEST_EFFORT (드라이버)</td><td><code>SensorDataQoS()</code></td><td>재전송된 옛 스캔은 쓸모없다</td></tr>
-          <tr><td><code>/camera/image_raw</code></td><td>BEST_EFFORT</td><td><code>rmw_qos_profile_sensor_data</code>, depth 1</td><td>최신 프레임만</td></tr>
+          <tr><td><code>/stereo/left/image_raw</code></td><td>BEST_EFFORT</td><td><code>rmw_qos_profile_sensor_data</code>, depth 1</td><td>최신 프레임만</td></tr>
           <tr><td><code>/detections</code></td><td>BEST_EFFORT, depth 1</td><td><code>QoS(1).best_effort()</code></td><td>결과도 프레임과 같은 성질</td></tr>
           <tr><td><code>/odom</code></td><td><strong>RELIABLE</strong></td><td>RELIABLE</td><td>Nav2·EKF 구독자가 RELIABLE 을 요구한다</td></tr>
           <tr><td><code>/cmd_vel</code></td><td>RELIABLE</td><td>RELIABLE</td><td>명령은 유실되면 안 된다</td></tr>
@@ -361,7 +361,7 @@ tf_listener_ = std::make_shared&lt;tf2_ros::TransformListener&gt;(*tf_buffer_);
 
 // 조회 ① 가장 최근 값
 try {
-  auto tf = tf_buffer_-&gt;lookupTransform("base_link", "camera_optical_link", tf2::TimePointZero);
+  auto tf = tf_buffer_-&gt;lookupTransform("base_link", "stereo_left_optical_link", tf2::TimePointZero);
   //                                     target(기준)   source(변환할 것)
   double yaw = tf2::getYaw(tf.transform.rotation);
 } catch (const tf2::TransformException &amp; ex) {
@@ -540,7 +540,7 @@ infer_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusiv
 rclcpp::SubscriptionOptions opts;
 opts.callback_group = infer_group_;
 sub_ = create_subscription&lt;sensor_msgs::msg::Image&gt;(
-  "/camera/image_raw", rclcpp::SensorDataQoS().keep_last(1),
+  "/stereo/left/image_raw", rclcpp::SensorDataQoS().keep_last(1),
   [this](sensor_msgs::msg::Image::ConstSharedPtr msg) { infer(msg); }, opts);
 
 // 타이머도 그룹을 받는다 (세 번째 인자)

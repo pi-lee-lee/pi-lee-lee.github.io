@@ -19,10 +19,12 @@
       <strong>전원을 넣고 650 ms 를 기다려야</strong> 통신할 수 있다. 설정을 바꾸려면 <strong>모드를 바꿨다가 되돌려야</strong> 한다. 같은 버스에 이미 주인이 있어서 <strong>완료 콜백을 나눠 써야</strong> 한다.
       세 가지 모두 "기다리는 동안 무엇을 할 것인가" 라는 한 물음으로 모인다.
       이 쪽의 답은 워치독 예산표(주 루프를 막는 구간과 그 최장 시간을 모은 표, <a href="fw-06-tick-watchdog.html#s2-6">fw-06 §2-6</a>)에 행 하나로 남는다.
-      여기서 읽은 샘플은 <a href="fw-17-link-v2.html">fw-17</a> 의 통신 모듈이 계약 v2(Pi 와 MCU 사이의 프레임 규약, 06a)의 <code>0x82</code> 프레임에 담아 보낸다.</p>
+      이 쪽은 <strong>보유 센서 시험(선택)</strong>이다. 이 로봇의 IMU 는 WT901 하나다(<a href="fw-14-wt901.html">fw-14</a>).
+      여기서 읽은 샘플은 Pi 로 보내지 않고, 다른 쪽은 이 쪽 결과에 기대지 않는다.</p>
 
       <div class="goal">
         <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p><strong>보유 센서 시험(선택)</strong> — 이 로봇의 IMU 는 WT901 하나다. 다른 쪽은 이 쪽 결과에 기대지 않으므로, 건너뛰어도 <a href="fw-17-link-v2.html">fw-17</a> 이후를 그대로 진행한다.</p>
         <p>이 쪽이 끝나면 다음 셋이 명령 창에서 보인다.</p>
         <ul>
           <li>명령 창에 <code>bno stat</code> 을 치면 <code>state=run</code> 과 함께 가속도 · 각속도가 나오고 <code>reads_1s</code> 가 100 근처를 유지한다(100 Hz = 주기 10 ms).</li>
@@ -46,8 +48,8 @@
       <div class="meta">
         <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag mx">CubeMX</span> <span class="tag mac">Mac</span></div>
         <div><span class="k">선행</span><a href="fw-10-i2c-ina226.html#s2-5">fw-10 §2-5</a> — 블로킹 · IT · DMA 비교와 이 쪽으로 넘긴 물음 · <a href="fw-10-i2c-ina226.html#s3-1">fw-10 §3-1</a> — 풀업 재는 법 · <a href="fw-06-tick-watchdog.html#s2-6">fw-06 §2-6</a> — 워치독 예산표와 <code>wdg_service_main()</code> · <a href="fw-06-tick-watchdog.html#s2-5">fw-06 §2-5</a> — <code>tick_get_ms()</code> · (§2-7 에서 DMA 를 고르면) <a href="fw-07-memory-dma.html#s2-1">fw-07 §2-1</a> — <code>DMA_BUF</code> 와 RAM_D2</div>
-        <div><span class="k">채우는 INVENTORY 칸</span>2절 IMU 표의 <strong>BNO055 열</strong> — 배선 상태 · 축 방향 · 부호 · 모듈 풀업 실측(<code>____</code>). <strong>값은 내가 적는다</strong></div>
-        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
+        <div><span class="k">채우는 INVENTORY 칸</span>2절 IMU 표의 <strong>BNO055 열</strong> — 배선 상태 · 축 방향 · 부호 · 모듈 풀업 실측(<code>____</code>). <strong>값은 학습자가 적는다</strong></div>
+        <div><span class="k">소요</span>예상 ____ h · 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
       </div>
 
       <h2 id="overview">1. 개요 — 같은 두 가닥, 장치 하나 더</h2>
@@ -102,15 +104,15 @@
           <li>이 인터럽트는 <strong>소프트웨어 판 03.14 이상</strong>에서만 있다.<sup class="fn"><a href="#fn-4" id="fnref-4">4</a></sup></li>
           <li>출고 때 들어 있는 소프트웨어 판은 <strong>3.11</strong> 이다.<sup class="fn"><a href="#fn-5" id="fnref-5">5</a></sup></li>
         </ul>
-        <p>즉 <strong>내 개체가 어느 판인지 읽어 보기 전에는 INT 핀이 데이터 준비를 낼 수 있는지 알 수 없다.</strong> 그래서 이 쪽은 다음 둘을 한다.</p>
+        <p>즉 <strong>가진 개체가 어느 판인지 읽어 보기 전에는 INT 핀이 데이터 준비를 낼 수 있는지 알 수 없다.</strong> 그래서 이 쪽은 다음 둘을 한다.</p>
         <ol>
           <li>폴링을 쓴다.</li>
-          <li>부팅 로그에 <code>SW_REV_ID</code>(<code>0x04</code> LSB · <code>0x05</code> MSB)를 찍어 <strong>내 개체의 판을 기록</strong>한다.</li>
+          <li>부팅 로그에 <code>SW_REV_ID</code>(<code>0x04</code> LSB · <code>0x05</code> MSB)를 찍어 <strong>이 개체의 판을 기록</strong>한다.</li>
         </ol>
         <p>본편 06(<a href="06-mcu-bridge.html">06 · MCU 브리지</a> 쪽 — 그 쪽의 3-6 절이 NUCLEO-H723ZG 펌웨어 트랙이다)도 폴링으로 읽는다. 06 은 "INT 핀은 모션 이벤트용이라 '데이터 준비' 인터럽트로 쓸 수 없다" 고 적었다.
         이 쪽은 그 결론을 다시 도출했다 — 결론(폴링)은 같지만 <strong>이유가 다르고, 이유가 조건부</strong>다.</p>
         <p class="small">덧붙여, 설령 DRDY 가 있어도 이 쪽에서 얻을 것이 크지 않다. 100 Hz 는 1 kHz 제어 박자의 1/10 이고, 폴링 주기를 10 ms 로 두면 늦어야 한 주기(10 ms)만큼 늦는다.
-        핀 하나와 EXTI 하나를 더 써서 그 10 ms 를 줄일 가치가 있는지는 <strong>내가 판단한다</strong>. 판단하려면 먼저 내 개체의 판을 알아야 한다.</p>
+        핀 하나와 EXTI 하나를 더 써서 그 10 ms 를 줄일 가치가 있는지는 <strong>학습자가 판단한다</strong>. 판단하려면 먼저 이 개체의 판을 알아야 한다.</p>
       </div>
 
       <h3 id="s2-2">2-2. POR 650 ms — 06 의 <code>HAL_Delay(700)</code> 은 어디서 왔는가</h3>
@@ -128,7 +130,7 @@
       <p>표를 보면 06 의 세 값이 각각 <strong>650 · 19 · 7 에 여유를 더한 것</strong>임을 알 수 있다.</p>
       <p>그러나 <strong>세 값 모두 typ(전형값)이고 max 칸이 비어 있다</strong>는 점이 중요하다. 데이터시트가 상한을 보증하지 않았으므로 "650 ms 면 반드시 끝난다" 고 쓸 수 없다.</p>
       <p>이 쪽이 상태기계를 쓰는 이유가 여기에도 있다. <strong>끝났는지를 시간이 아니라 응답으로 판정</strong>할 수 있기 때문이다.</p>
-      <div class="callout note"><span class="ct">등급 — 확정(데이터시트) + 추정(내 해석)</span>
+      <div class="callout note"><span class="ct">등급 — 확정(데이터시트) + 추정(이 가이드의 해석)</span>
         <ul>
           <li><strong>확정</strong>: 650 · 400 · 19 · 7 은 데이터시트에 적힌 값이다.</li>
           <li><strong>추정</strong>: "POR 이 끝났는지는 chip id 가 <code>0xA0</code> 으로 읽히는 것으로 판정할 수 있다." 데이터시트가 "chip id 를 읽을 수 있으면 POR 이 끝난 것" 이라고 말하지는 않았다.</li>
@@ -140,14 +142,14 @@
           <li>응답은 <em>다음 상태로 넘어갈지</em>를 정한다.</li>
         </ul>
       </div>
-      <p><strong>그리고 여기가 이 쪽의 핵심이다.</strong> 650 ms 는 <a href="fw-06-tick-watchdog.html">fw-06</a> 에서 내가 정한 IWDG 주기와 견주면 짧지 않다. IWDG 는 정해진 시간 안에 갱신을 받지 못하면 칩을 리셋하는 하드웨어 워치독이다.</p>
+      <p><strong>그리고 여기가 이 쪽의 핵심이다.</strong> 650 ms 는 <a href="fw-06-tick-watchdog.html">fw-06</a> 에서 학습자가 정한 IWDG 주기와 견주면 짧지 않다. IWDG 는 정해진 시간 안에 갱신을 받지 못하면 칩을 리셋하는 하드웨어 워치독이다.</p>
       <p>더 중요한 것은 <strong>POR 이 부팅 때 한 번만 일어나지 않는다</strong>는 점이다.</p>
       <ul>
         <li>센서의 VCC 가 한 번 끊겼다 다시 공급되면 센서는 POR 을 <strong>다시</strong> 겪는다. 그때는 IWDG 가 이미 동작 중이다.</li>
         <li>재-POR 을 기다리는 자리에서 <code>HAL_Delay(700)</code> 을 부르면 주 루프가 700 ms 동안 멈추고, 워치독이 보드를 리셋한다.</li>
       </ul>
       <p>실습 D 가 이 리셋을 일부러 일으켜 확인한다.</p>
-      <div class="callout warn"><span class="ct">부팅 때의 700 ms 대기에서 IWDG 가 트립할 수도, 안 할 수도 있다 — 내가 fw-06 에서 무엇을 골랐는가에 달렸다</span>
+      <div class="callout warn"><span class="ct">부팅 때의 700 ms 대기에서 IWDG 가 트립할 수도, 안 할 수도 있다 — fw-06 에서 무엇을 골랐는가에 달렸다</span>
         <p><a href="fw-06-tick-watchdog.html#s2-7">fw-06 §2-7</a> 은 IWDG 를 언제 시작할지 두 방법 가운데에서 고르게 했다.</p>
         <ul>
           <li><strong>(가) 초기화가 다 끝난 뒤 시작</strong>: <code>app_init()</code> 안의 700 ms 블로킹은 IWDG 가 시작되기 전이라 리셋을 일으키지 않는다. 부팅이 0.7 초 늦어질 뿐이다.</li>
@@ -182,7 +184,7 @@
           <tr><td>이 쪽이 읽는 18 B 블록</td><td colspan="2">가속도 · 자기 · 각속도 원시값은 <strong>어느 모드에서든 같은 주소</strong>에 있다(<code>0x08</code>~<code>0x19</code>). 모드는 <strong>융합 결과</strong>(오일러 · 쿼터니언)에만 영향을 준다 — <strong>동일</strong></td></tr>
         </tbody>
       </table></div>
-      <p>이 프로젝트가 IMU 에서 실제로 쓰는 값은 <strong>가속도 3축 · 각속도 3축</strong>이다. 계약 v2 의 <code>0x82</code> 프레임에 들어가는 값이고(06a §4-2), 둘 다 융합 결과가 아니라 원시값이다.</p>
+      <p>이 프로젝트가 IMU 에서 실제로 쓰는 값은 <strong>가속도 3축 · 각속도 3축</strong>이다. 계약 v2 의 <code>TYPE_IMU</code> (0x82) 프레임에 들어가는 값이고(06a §4-2), 둘 다 융합 결과가 아니라 원시값이다.</p>
       <p>그러니 <strong>모드 선택이 이 쪽의 체크포인트를 바꾸지 않는다.</strong> 모드에 따라 달라지는 것은 둘이다.</p>
       <ul>
         <li>CALIB_STAT 의 MAG 칸을 채워야 하는가(§2-6)</li>
@@ -192,10 +194,10 @@
         <p>확인된 사실은 셋이다.</p>
         <ul>
           <li><strong>모터와 전선이 자기장을 만든다.</strong> 이 로봇은 24 V 계에 4개의 브러시 모터를 싣고, 그 전류가 센서 근처를 지난다. 데이터시트도 자력계의 배치에 따로 주의를 요구한다.<sup class="fn"><a href="#fn-15" id="fnref-15">15</a></sup></li>
-          <li><strong>1세대에서 실내 자기 캘리브레이션을 성공시킨 기록은 없다.</strong> 1세대는 이 프로젝트 이전에 같은 부품 일부로 만든 첫 로봇이다. 그래서 이 가이드는 "실내에서는 안 된다" 고도 "된다" 고도 쓰지 않는다. 내 자리에서 재 보기 전에는 알 수 없다.</li>
+          <li><strong>1세대에서 실내 자기 캘리브레이션을 성공시킨 기록은 없다.</strong> 1세대는 이 프로젝트 이전에 같은 부품 일부로 만든 첫 로봇이다. 그래서 이 가이드는 "실내에서는 안 된다" 고도 "된다" 고도 쓰지 않는다. 주행할 자리에서 재 보기 전에는 알 수 없다.</li>
           <li><strong>차이가 없는 항목</strong>: 원시 가속도 · 각속도의 속도와 스케일은 두 모드가 같다 — <strong>동일</strong>하다.<sup class="fn"><a href="#fn-16" id="fnref-16">16</a></sup></li>
         </ul>
-        <p><strong>이 프로젝트의 운용은 <code>IMU</code> 모드다</strong> — BNO055 의 자력계는 쓰지 않는다.<sup class="fn"><a href="#fn-17" id="fnref-17">17</a></sup> WT901 의 기동 시 자북 판정도 폐기됐다(결정 bf, 06a §2-8 · fw-14 §2-14) — 이 프로젝트는 자력계를 쓰지 않는다.
+        <p><strong>이 프로젝트의 운용은 <code>IMU</code> 모드다</strong> — BNO055 의 자력계는 쓰지 않는다.<sup class="fn"><a href="#fn-17" id="fnref-17">17</a></sup> WT901 의 기동 시 자북 판정도 폐기됐다(06a §2-8 · fw-14 §2-14) — 이 프로젝트는 자력계를 쓰지 않는다.
         그 결과 실습 E 의 CALIB_STAT 은 <strong>8자 동작 없이</strong> 3 까지 올라간다.</p>
         <p><code>bno mode ndof</code> 는 두 모드의 차이를 관찰하는 실습 명령으로 남는다. NDOF 모드에서는 실습 E 의 판정 조건이 달라진다(MAG 칸도 3 이 되어야 한다).</p>
       </div>
@@ -208,7 +210,7 @@
         <tbody>
           <tr><td><code>0x00</code></td><td><code>CHIP_ID</code></td><td>R</td><td><code>0xA0</code></td><td><strong>"정말 BNO055 인가" 의 증명.</strong> §4.3.1(60쪽) — <em>"read-only fixed value 0xA0"</em></td></tr>
           <tr><td><code>0x01</code>~<code>0x03</code></td><td><code>ACC_ID</code> · <code>MAG_ID</code> · <code>GYR_ID</code></td><td>R</td><td><code>0xFB</code> · <code>0x32</code> · <code>0x0F</code></td><td>(참고) 속에 든 세 칩의 id</td></tr>
-          <tr><td><code>0x04</code> · <code>0x05</code></td><td><code>SW_REV_ID_LSB</code> · <code>_MSB</code></td><td>R</td><td><code>0x11</code> · <code>0x03</code></td><td><strong>내 개체의 펌웨어 판.</strong> DRDY 인터럽트가 있는지가 이 값으로 정해진다(§2-1). 부팅 로그에 찍는다</td></tr>
+          <tr><td><code>0x04</code> · <code>0x05</code></td><td><code>SW_REV_ID_LSB</code> · <code>_MSB</code></td><td>R</td><td><code>0x11</code> · <code>0x03</code></td><td><strong>이 개체의 펌웨어 판.</strong> DRDY 인터럽트가 있는지가 이 값으로 정해진다(§2-1). 부팅 로그에 찍는다</td></tr>
           <tr><td><code>0x06</code></td><td><code>BL_Rev_ID</code></td><td>R</td><td><code>0x15</code></td><td>(참고) 부트로더 판</td></tr>
           <tr><td><code>0x07</code></td><td><code>Page ID</code></td><td>R/W</td><td><code>0x00</code></td><td><strong>0 인지 확인만 한다.</strong> 1 로 바뀌면 같은 주소가 전혀 다른 레지스터가 된다(Table 4-3, 58쪽)</td></tr>
           <tr><td><code>0x08</code>~<code>0x0D</code></td><td><code>ACC_DATA_X_LSB</code> ~ <code>_Z_MSB</code></td><td>R</td><td><code>0x00</code></td><td><strong>가속도 3축</strong>. 축마다 2 B, <strong>LSB 가 낮은 주소</strong></td></tr>
@@ -222,7 +224,7 @@
           <tr><td><code>0x3D</code></td><td><code>OPR_MODE</code></td><td>R/W</td><td><code>0x10</code>*</td><td><code>0x00</code> CONFIGMODE · <code>0x08</code> IMU · <code>0x0C</code> NDOF (Table 3-5, 22쪽)</td></tr>
           <tr><td><code>0x3E</code></td><td><code>PWR_MODE</code></td><td>R/W</td><td><code>0x00</code></td><td>Normal. 이 쪽에서 바꾸지 않는다</td></tr>
           <tr><td><code>0x3F</code></td><td><code>SYS_TRIGGER</code></td><td>R/W</td><td><code>0x00</code></td><td><code>RST_SYS</code> · <code>RST_INT</code> · <code>CLK_SEL</code> · <code>Self_Test</code> 비트</td></tr>
-          <tr><td><code>0x41</code> · <code>0x42</code></td><td><code>AXIS_MAP_CONFIG</code> · <code>_SIGN</code></td><td>R/W</td><td><code>0x24</code> · <code>0x00</code></td><td>장착 방향에 맞춘 축 재매핑 · 부호. <strong>값은 내가 정한다</strong>(§3-3-3)</td></tr>
+          <tr><td><code>0x41</code> · <code>0x42</code></td><td><code>AXIS_MAP_CONFIG</code> · <code>_SIGN</code></td><td>R/W</td><td><code>0x24</code> · <code>0x00</code></td><td>장착 방향에 맞춘 축 재매핑 · 부호. <strong>값은 학습자가 정한다</strong>(§3-3-3)</td></tr>
           <tr><td><code>0x55</code>~<code>0x6A</code></td><td><code>ACC_OFFSET_X_LSB</code> ~ <code>MAG_RADIUS_MSB</code></td><td>R/W</td><td>대부분 <code>0x00</code></td><td><strong>오프셋 · 반지름 22 B.</strong> <code>0x6A - 0x55 + 1 = 22</code>. §3.11.5(53쪽)의 저장 · 복원 절차</td></tr>
         </tbody>
       </table></div>
@@ -271,7 +273,7 @@
 
       <h3 id="s2-6">2-6. CALIB_STAT 과 오프셋 22 B — 읽는 때가 정해져 있다</h3>
       <p>BNO055 는 <strong>백그라운드에서 자동으로 캘리브레이션한다.</strong> 이 동작은 끌 수 없다.<sup class="fn"><a href="#fn-25" id="fnref-25">25</a></sup>
-      그래서 <code>CALIB_STAT</code> 은 "내가 해야 할 일" 이 아니라 <strong>칩이 지금 매기고 있는 캘리브레이션 점수를 읽는 레지스터</strong>다.</p>
+      그래서 <code>CALIB_STAT</code> 은 "학습자가 해야 할 일" 이 아니라 <strong>칩이 지금 매기고 있는 캘리브레이션 점수를 읽는 레지스터</strong>다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>칸</th><th>3 이 되게 하는 동작</th><th>IMU 모드에서</th></tr></thead>
         <tbody>
@@ -389,7 +391,7 @@ sed -n '6685,6712p' $HAL/Src/stm32h7xx_hal_i2c.c    # I2C_TreatErrorCallback - P
           <li>100 Hz 폴링의 지연도 같다 — 둘 다 읽기를 시작해 두고 바로 돌아온다.</li>
           <li>계약 v2 의 필드도 같다.</li>
         </ul>
-        <p><strong>내가 계산해서 정한다.</strong></p>
+        <p><strong>학습자가 계산해서 정한다.</strong></p>
         <ol>
           <li>18 B 를 400 kHz 로 읽을 때 (가)가 만드는 인터럽트 수를 세 본다(바이트당 하나 + 주소 위상 + STOP).</li>
           <li>그 수에 <strong>100</strong> 을 곱해 초당 몇 번인지 낸다.</li>
@@ -433,7 +435,7 @@ void bno055_on_i2c_done(bool ok);</code></pre>
         <li>NVIC 표 — 인터럽트마다 선점 우선순위를 정한 표(<a href="fw-06-tick-watchdog.html#s2-8">fw-06 §2-8</a>)</li>
         <li>워치독 예산표(<a href="fw-06-tick-watchdog.html#s2-6">§2-6</a>)</li>
       </ul>
-      <p>다른 쪽의 표를 고치지 않고 <strong>내 노트의 표</strong>에 아래 행을 더한다.</p>
+      <p>다른 쪽의 표를 고치지 않고 <strong>학습 노트의 표</strong>에 아래 행을 더한다.</p>
       <div class="callout note"><span class="ct">NVIC 표에 더하는 행 — DMA 를 골랐을 때만</span>
         <div class="tbl"><table class="compact">
           <thead><tr><th>IRQ</th><th>선점 우선순위</th><th>왜 그 자리인가</th><th>같은 값이어야 하는 짝</th></tr></thead>
@@ -449,11 +451,11 @@ void bno055_on_i2c_done(bool ok);</code></pre>
           <tbody>
             <tr><td>BNO055 POR 대기 (부팅 때 한 번 + <strong>VCC 가 끊겼다 다시 공급될 때마다</strong>)</td><td><strong>650 ms</strong> (typ — max 칸이 비어 있다)</td><td>데이터시트 Table 0-2, 14쪽</td><td><strong>비블로킹 상태기계</strong> — 주 루프를 막는 시간은 <strong>0</strong>. 경과 시간만 650 ms 다</td></tr>
             <tr><td>CONFIGMODE ↔ 동작 모드 전환 (부팅 · <code>bno mode</code> · 오프셋 읽기)</td><td><strong>19 ms</strong> + <strong>7 ms</strong></td><td>데이터시트 Table 3-6, 22쪽</td><td>같은 상태기계의 상태 하나씩. <strong>주 루프를 막지 않는다</strong></td></tr>
-            <tr><td>한 번의 18 B 읽기</td><td>400 kHz 에서 <code>____</code> µs — <strong>내가 계산한다</strong>(주소 위상 + 18 B + 오버헤드)</td><td>산술</td><td>IT · DMA 어느 쪽이든 읽기를 시작해 두고 바로 돌아온다 — 블로킹 아님</td></tr>
+            <tr><td>한 번의 18 B 읽기</td><td>400 kHz 에서 <code>____</code> µs — <strong>학습자가 계산한다</strong>(주소 위상 + 18 B + 오버헤드)</td><td>산술</td><td>IT · DMA 어느 쪽이든 읽기를 시작해 두고 바로 돌아온다 — 블로킹 아님</td></tr>
           </tbody>
         </table></div>
         <p>이 세 행의 "처리" 칸이 전부 <strong>비블로킹</strong>인 것이 이 쪽의 설계다. 그래서 검사도 한 줄이다 — <strong><code>bno055.c</code> 안의 <code>HAL_Delay</code> 가 0줄</strong>이어야 한다(fw-11 의 <code>power.c</code> 와 같은 검사).</p>
-        <p>"조각 대기 + kick" 방식도 <a href="fw-06-tick-watchdog.html#s2-6">fw-06 §2-6</a> 이 선택지로 남겨 두었다. 내가 이 방식을 고르면 위 세 행의 최장 시간이 그대로 <strong>주 루프를 막는 시간</strong>이 된다.
+        <p>"조각 대기 + kick" 방식도 <a href="fw-06-tick-watchdog.html#s2-6">fw-06 §2-6</a> 이 선택지로 남겨 두었다. 이 방식을 고르면 위 세 행의 최장 시간이 그대로 <strong>주 루프를 막는 시간</strong>이 된다.
         그때 IWDG 를 갱신하는 곳은 <code>wdg_service_main()</code> 이다 — <code>HAL_IWDG_Refresh()</code> 를 직접 부르지 않는다.</p>
       </div>
       <p class="small"><strong>워치독 예산표는 <a href="fw-19-bench-acceptance.html#s3-2">fw-19</a> 에서 확정된다</strong>. 그때 IWDG 주기가 확정된다. (내장 플래시 섹터 지우기 행은 fw-16 제거로 없다.<sup class="fn"><a href="#fn-35" id="fnref-35">35</a></sup>)</p>
@@ -469,7 +471,7 @@ void bno055_on_i2c_done(bool ok);</code></pre>
           <li>Mac 의 호스트 시험 — <code>PASS bno055 26 cases</code>. <code>-fsanitize=undefined,address</code> 를 붙여도 경고와 오류가 없다.</li>
           <li>이 프로젝트의 펌웨어 빌드 — 링크까지. 실습 B · C · E 의 세 단계를 각각 빌드했다. <code>hi2c1</code> 은 fw-10 의 CubeMX 가 만드는 핸들이라 빌드 사본에서는 임시로 정의했다.</li>
         </ul>
-        <p>보드에서 실제로 동작하는지는 "굽고 보기"에서 내가 확인한다 — chip id 가 읽히는지, <code>reads_1s</code> 가 100 근처를 유지하는지, 세 가닥을 뽑았다 꽂으면 복구되는지.</p>
+        <p>보드에서 실제로 동작하는지는 "굽고 보기"에서 학습자가 확인한다 — chip id 가 읽히는지, <code>reads_1s</code> 가 100 근처를 유지하는지, 세 가닥을 뽑았다 꽂으면 복구되는지.</p>
         <p>붙여 넣는 것으로 끝내지 않는다 — 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
       </div>
       <div class="callout warn"><span class="ct">S2 — 센서 전원은 Nucleo 3V3 에서만 딴다</span>
@@ -486,14 +488,14 @@ void bno055_on_i2c_done(bool ok);</code></pre>
       <h3 id="s3-1">3-1. 실습 A — 꽂기 전에 풀업을 다시 잰다 (코드 없음)</h3>
       <p>방법은 <a href="fw-10-i2c-ina226.html#s3-1">fw-10 §3-1</a> 과 같다 — <strong>USB 를 뽑고</strong>, DMM 을 저항 모드에 두고, <strong>모듈을 하나씩 더 꽂으며</strong> 잰다. 여기서는 BNO055 를 버스에 연결할 때 무엇이 달라지는지만 본다.</p>
       <p><code>hardware/INVENTORY.md</code> 2절의 IMU 표는 BNO055 칸에 <strong>모듈에 풀업이 없다</strong>고 적었다. 그래서 외부 4.7 kΩ 이 필요하다.<sup class="fn"><a href="#fn-41" id="fnref-41">41</a></sup></p>
-      <p>그런데 그 기록은 1세대의 BNO055 개체를 잰 것이고, 지금 가진 모듈이 같은 개체인지는 아직 빈칸(<code>____</code>)이다. <strong>내 모듈에서 다시 재는 것이 이 실습이다.</strong></p>
+      <p>그런데 그 기록은 1세대의 BNO055 개체를 잰 것이고, 지금 가진 모듈이 같은 개체인지는 아직 빈칸(<code>____</code>)이다. <strong>지금 모듈에서 다시 재는 것이 이 실습이다.</strong></p>
       <p class="small">아래 표의 OL 은 DMM 이 측정 범위를 넘었다는 표시다. 저항 측정에서 OL 이면 그 두 점이 끊어져 있다는 뜻이다.</p>
 
       <h4 id="s3-1-2">3-1-2. 빈 표</h4>
       <div class="tbl"><table class="compact">
-        <thead><tr><th>#</th><th>버스에 연결된 것</th><th>재는 곳</th><th>예상</th><th>내 실측</th><th>다르면 무엇을 뜻하는가</th></tr></thead>
+        <thead><tr><th>#</th><th>버스에 연결된 것</th><th>재는 곳</th><th>예상</th><th>실측</th><th>다르면 무엇을 뜻하는가</th></tr></thead>
         <tbody>
-          <tr><td>①</td><td><strong>BNO055 모듈 하나만</strong>(외부 저항 없음)</td><td>SDA ↔ VCC</td><td><strong>OL</strong> — 1세대 기록<sup class="fn"><a href="#fn-42" id="fnref-42">42</a></sup></td><td><code>____</code></td><td>OL 이 아니면 <strong>내 모듈에는 풀업이 있다</strong>. 그러면 외부 4.7 kΩ 을 그대로 달았을 때 합성이 예상보다 낮아진다 — ④를 다시 계산한다</td></tr>
+          <tr><td>①</td><td><strong>BNO055 모듈 하나만</strong>(외부 저항 없음)</td><td>SDA ↔ VCC</td><td><strong>OL</strong> — 1세대 기록<sup class="fn"><a href="#fn-42" id="fnref-42">42</a></sup></td><td><code>____</code></td><td>OL 이 아니면 <strong>이 모듈에는 풀업이 있다</strong>. 그러면 외부 4.7 kΩ 을 그대로 달았을 때 합성이 예상보다 낮아진다 — ④를 다시 계산한다</td></tr>
           <tr><td>②</td><td>①과 같음</td><td>SCL ↔ VCC</td><td>①과 <strong>같아야</strong> 한다</td><td><code>____</code></td><td>한쪽만 다르면 그 선의 풀업 하나가 빠졌거나 모듈이 비대칭이다</td></tr>
           <tr><td>③</td><td>① + 외부 4.7 kΩ × 2</td><td>SDA ↔ 3V3</td><td>①이 OL 이면 <strong>4.7 kΩ</strong></td><td><code>____</code></td><td>OL 이면 저항 다리가 연결되지 않았다. 훨씬 작으면 ①에 풀업이 있었다는 뜻</td></tr>
           <tr><td>④</td><td>③ + INA226 ×2 (있으면)</td><td>SDA ↔ 3V3</td><td>4.7 ∥ 10 ∥ 10 = <strong>2.42 kΩ</strong></td><td><code>____</code></td><td>fw-10 §3-1 의 ④와 같은 값이다 — fw-10 에서 잰 값과 맞는지 견준다</td></tr>
@@ -515,7 +517,7 @@ void bno055_on_i2c_done(bool ok);</code></pre>
       <h4 id="s3-1-4">3-1-4. 보고 판정하기</h4>
       <ol class="steps">
         <li><strong>아래 한계.</strong> 마지막 단계의 합성 저항이 <strong>0.97 kΩ 보다 큰가</strong>. 이 값은 <a href="fw-10-i2c-ina226.html#s2-4">fw-10 §2-4</a> 의 산술로, INA226 의 출력 보증에서 나왔다. BNO055 쪽 한계는 이 쪽이 데이터시트에서 확인하지 못했다 → <code>____</code> · 확인 과제.</li>
-        <li><strong>①이 OL 이었는가.</strong> OL 이면 INVENTORY 2절의 <code>____</code>("1세대 모듈과 같은 개체인지")에 "내 개체도 풀업 없음 — MEASURED(&lt;날짜&gt;, DMM)" 를 적는다. OL 이 아니었으면 그 값을 적고, <strong>외부 풀업을 그대로 달 것인지</strong> 다시 판단한다.</li>
+        <li><strong>①이 OL 이었는가.</strong> OL 이면 INVENTORY 2절의 <code>____</code>("1세대 모듈과 같은 개체인지")에 "이 개체도 풀업 없음 — MEASURED(&lt;날짜&gt;, DMM)" 를 적는다. OL 이 아니었으면 그 값을 적고, <strong>외부 풀업을 그대로 달 것인지</strong> 다시 판단한다.</li>
         <li><strong>SDA 와 SCL 이 같은가.</strong> 다르면 그 선의 풀업 하나가 빠졌다 — 스캔이 되다 말다 하는 가장 흔한 원인이다.</li>
       </ol>
       <p class="small">이 표의 값은 실습 B 에서 <code>i2c scan</code> 이 아무것도 못 찾았을 때 다시 확인할 근거다. "①이 OL 이었나, ③이 4.7 k 였나" 를 알면 원인 후보가 반으로 준다.</p>
@@ -557,7 +559,7 @@ grep -n "DMA.*Stream.*IRQHandler" Core/Src/stm32h7xx_it.c      # 스트림 핸�
    - 이 LINKDMA 가 있어야 2-7-1 의 :3194 가 그 스트림을 건다.
  컨트롤러(DMA1/DMA2)와 스트림 번호는 사람마다 다를 수 있다 - 생성된 이름을 그대로 쓴다.
  IT 를 골랐으면 위 세 grep 이 전부 0줄인 것이 정상이다.)</code></pre>
-      <p class="small">재생성 규칙(fw-02): 생성물은 <code>USER CODE BEGIN/END</code> 사이만 고친다. <code>cmake/stm32cubemx/</code> 는 다시 생성된다. 내 소스는 <code>User/</code> 에 두고 최상위 <code>CMakeLists.txt</code> 의 <code># Add user sources here</code> 에 등록한다.</p>
+      <p class="small">재생성 규칙(fw-02): 생성물은 <code>USER CODE BEGIN/END</code> 사이만 고친다. <code>cmake/stm32cubemx/</code> 는 다시 생성된다. 직접 쓰는 소스는 <code>User/</code> 에 두고 최상위 <code>CMakeLists.txt</code> 의 <code># Add user sources here</code> 에 등록한다.</p>
 
       <h4 id="s3-2-2">3-2-2. 골격</h4>
       <p>새 파일은 <code>User/Inc/Device/bno055.h</code> · <code>User/Src/Device/bno055.c</code> 둘이다. 헤더에는 다음 셋이 들어간다.</p>
@@ -567,7 +569,7 @@ grep -n "DMA.*Stream.*IRQHandler" Core/Src/stm32h7xx_it.c      # 스트림 핸�
         <li><strong>순수한 조각 넷</strong></li>
       </ul>
       <p>헤더는 HAL 을 포함하지 않으므로 Mac 의 <code>cc</code> 로 <code>.c</code> 없이 시험된다. <a href="fw-10-i2c-ina226.html#s3-2-2">fw-10 §3-2-2</a> 의 <code>ina226.h</code> · <a href="fw-09-encoder.html#s2-2">fw-09 §2-2</a> 의 <code>encoder_delta_raw()</code> 와 같은 꼴이다.
-      <strong>환산식과 상태기계의 본문은 내가 쓴다.</strong></p>
+      <strong>환산식과 상태기계의 본문은 학습자가 쓴다.</strong></p>
       <pre><code class="lang-c">/* User/Inc/Device/bno055.h — I2C1 의 BNO055 (ADR/COM3 = LOW -&gt; 7비트 주소 0x28).
    순수 로직: HAL 헤더 없음. 그래서 host_tests/test_bno055.c 가 Mac 에서 이 파일을 컴파일한다.
    레지스터 주소와 리셋값: BST-BNO055-DS000-18 Rev 1.8, Table 4-2 (p.55). */
@@ -653,7 +655,7 @@ static inline int32_t bno055_acc_mg(int16_t raw)
 /* raw -&gt; 0.1 deg/s (계약 단위 gx_ddps), 자이로는 dps 당 16 LSB
  * (Table 3-22 p.35).  ddps = raw * 10 / 16 = raw * 5 / 8
  * 정수 나눗셈은 0 쪽으로 절사한다 (C11 6.5.5p6) — 반올림할지는
- * 내가 정한다. 다만 그러면 아래 벡터 넷이 같이 바뀐다(힌트 T3).
+ * 학습자가 정한다. 다만 그러면 아래 벡터 넷이 같이 바뀐다(힌트 T3).
  * TODO(you) [T3]: raw 를 0.1 deg/s 로 바꾼다 - 힌트 카드 T3
  *   1) raw 를 int32_t 로 넓혀 5 를 곱한다
  *   2) 8 로 나눈다 - 곱이 먼저다(/16 을 먼저 하면 소수부가 먼저 잘려 벡터 9446 -&gt; 5903 이 어긋난다)
@@ -833,7 +835,7 @@ static inline int32_t bno055_acc_mg(int16_t raw)
           <thead><tr><th>쓴 것</th><th>시험이 하는 말</th><th>고치는 법</th></tr></thead>
           <tbody>
             <tr><td><code>(int32_t)raw * 1000 / 981</code> — 9.81 로 어림했다</td><td><code>Assertion failed: (bno055_acc_mg(32767) == 33411), function main, file test_bno055.c, line 32.</code>(이 식은 33401 을 낸다)</td><td>§2-5 의 식 그대로 — <code>* 10000 / 9807</code></td></tr>
-            <tr><td><code>(int32_t)(raw / 100.0 / 9.80665 * 1000.0)</code> — 실수로 계산했다</td><td>같은 줄에서 멈춘다(이 식은 33413 을 낸다 — 9806.65 와 9807 의 차가 끝값에서 2 mg 다)</td><td>정수식으로 — 채점표가 정수식이다. 실수식을 꼭 쓰려면 벡터의 기대값을 내가 다시 계산해 바꾼다(그러면 "채점표를 고쳤다" 를 노트에 적는다)</td></tr>
+            <tr><td><code>(int32_t)(raw / 100.0 / 9.80665 * 1000.0)</code> — 실수로 계산했다</td><td>같은 줄에서 멈춘다(이 식은 33413 을 낸다 — 9806.65 와 9807 의 차가 끝값에서 2 mg 다)</td><td>정수식으로 — 채점표가 정수식이다. 실수식을 꼭 쓰려면 벡터의 기대값을 다시 계산해 바꾼다(그러면 "채점표를 고쳤다" 를 노트에 적는다)</td></tr>
           </tbody>
         </table></div>
         <p><strong>확인</strong> — T1 의 표. T1 · T2 만으로는 아직 <code>line 20</code>(gyr 벡터가 acc 보다 앞이다)이고, T3 까지 채우면 <code>line 34</code> 로 넘어간다.</p>
@@ -884,7 +886,7 @@ static inline bool bno055_elapsed(uint32_t now, uint32_t t0, uint32_t ms)
         <ul>
           <li><code>now - t0</code> — 두 피연산자가 <code>uint32_t</code> 라 뺄셈 자체가 2<sup>32</sup> 모듈로다(C11 6.2.5p9 — 부호 없는 산술은 넘치지 않고 한 바퀴 돈다). <code>now = 0x64</code>, <code>t0 = 0xFFFFFF00</code> 이면 차가 <code>0x164 = 356</code> 으로 바르게 나온다. fw-09 §2-2 의 <code>encoder_delta_raw()</code> 와 같은 방법이다.</li>
           <li>바깥의 <code>(uint32_t)</code> — <code>int</code> 가 32비트보다 넓은 환경이면 두 피연산자가 <code>int</code> 로 승격되어 뺄셈이 음수가 될 수 있다. 그 경우를 막으려고 두는 캐스트다. 이 두 환경에서는 없어도 같은 값 — <strong>다르게 써도 되는 곳</strong>.</li>
-          <li><code>&gt;= ms</code> — "지났다" 는 경계를 포함한다. <code>&gt;</code> 로 써도 26 벡터는 통과하지만(경계 벡터가 없다 — 집필하며 확인) 모든 기다림이 1 ms 늦게 끝난다. 뜻은 내가 정한다 — 이 카드는 <code>&gt;=</code> 다.</li>
+          <li><code>&gt;= ms</code> — "지났다" 는 경계를 포함한다. <code>&gt;</code> 로 써도 26 벡터는 통과하지만(경계 벡터가 없다 — 집필하며 확인) 모든 기다림이 1 ms 늦게 끝난다. 뜻은 학습자가 정한다 — 이 카드는 <code>&gt;=</code> 다.</li>
           <li>골격의 <code>(void)…; return false;</code> 두 줄은 지웠다.</li>
         </ul>
         <p><strong>쓰는 API</strong> — 없다(순수 파일).</p>
@@ -927,7 +929,7 @@ void bno055_on_i2c_done(bool ok)
           <li><code>void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c)</code>(<code>stm32h7xx_hal_i2c.h:700</code>, 약한 기본 구현 <code>stm32h7xx_hal_i2c.c:4837</code>)</li>
           <li><code>void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)</code>(<code>:701</code>, <code>.c:4853</code>)</li>
         </ul>
-        <p>두 콜백 안에서 소유자가 BNO055 일 때 <code>bno055_on_i2c_done(true)</code> / <code>(false)</code> 를 한 줄로 부른다. 그 코드의 자리는 내 선택((가)·(나)·(다))에 따라 다르므로 이 쪽은 쓰지 않는다.</p>
+        <p>두 콜백 안에서 소유자가 BNO055 일 때 <code>bno055_on_i2c_done(true)</code> / <code>(false)</code> 를 한 줄로 부른다. 그 코드의 자리는 학습자의 선택((가)·(나)·(다))에 따라 다르므로 이 쪽은 쓰지 않는다.</p>
         <p><strong>흔한 실수</strong> — 세 경우 모두 컴파일러(arm-gcc <code>-Wall</code>)는 경고와 오류를 내지 않는다(집필하며 확인).</p>
         <div class="tbl"><table class="compact">
           <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
@@ -1144,9 +1146,9 @@ reset &lt;cause&gt;
         <li><strong><code>chip_id=0xA0</code> 인가.</strong> 다르면 무엇이 나왔는지 그대로 적는다 — <code>0x00</code> 이나 <code>0xFF</code> 는 "읽기는 됐는데 값이 없다"(대개 배선), 아예 로그가 없으면 "트랜잭션이 안 끝났다"(대개 풀업 · 주소)다. 증상 표를 본다.</li>
         <li><strong><code>sw_rev</code> 를 적는다.</strong> <code>0x0311</code> 이면 데이터시트에 적힌 3.11 판이고, §2-1 대로 <strong>데이터 준비 인터럽트가 없다.</strong> <code>0x0314</code> 이상이면 있다 — 그래도 이 쪽은 폴링을 쓴다(이유는 §2-1 의 마지막 문단).</li>
         <li><strong><code>page</code> 가 0 인가.</strong> 0 이 아니면 레지스터 주소가 전부 다른 뜻이 된다(Table 4-3).</li>
-        <li><strong><code>i2c scan</code> 을 치기 전에 스캔 범위부터 본다.</strong> <code>i2c scan</code> 은 <a href="fw-10-i2c-ina226.html#s3-2-3">fw-10 §3-2-3</a> 에서 <strong>내가 정한</strong> <code>I2C_SCAN_FIRST</code> ~ <code>I2C_SCAN_LAST</code> 사이만 훑는다(fw-10 골격의 예시 값은 <code>0x40</code> ~ <code>0x4F</code> 였다).
+        <li><strong><code>i2c scan</code> 을 치기 전에 스캔 범위부터 본다.</strong> <code>i2c scan</code> 은 <a href="fw-10-i2c-ina226.html#s3-2-3">fw-10 §3-2-3</a> 에서 <strong>학습자가 정한</strong> <code>I2C_SCAN_FIRST</code> ~ <code>I2C_SCAN_LAST</code> 사이만 훑는다(fw-10 골격의 예시 값은 <code>0x40</code> ~ <code>0x4F</code> 였다).
           조건은 하나다 — <strong><code>0x28</code> 이 그 두 상수 사이에 들어와 있어야 한다.</strong> 안 들어와 있으면 배선이 완벽해도 목록에 뜨지 않는다. 지금 값은 <code>grep -n "I2C_SCAN_FIRST" User/Src/Device/ina226.c</code> 로 보고, 범위가 <code>0x28</code> 을 포함하지 않으면 <code>I2C_SCAN_FIRST</code> 를 낮게 설정해 다시 굽는다.
-          <strong>범위를 넓히면 비용이 있다</strong>: 스캔 한 번의 최악 시간은 <code>(LAST − FIRST + 1) × TRIALS × TIMEOUT_MS</code> 다(fw-10 §3-2-3 의 첫 걸음). 그 곱이 fw-06 에서 내가 정한 IWDG 주기를 넘으면 <strong>스캔 도중에 IWDG 가 보드를 리셋한다.</strong> 넓힌 값으로 그 곱을 다시 계산해 보고, 넘으면 <code>I2C_SCAN_LAST</code> 를 같이 내리거나 <code>TIMEOUT_MS</code> 를 줄인다.</li>
+          <strong>범위를 넓히면 비용이 있다</strong>: 스캔 한 번의 최악 시간은 <code>(LAST − FIRST + 1) × TRIALS × TIMEOUT_MS</code> 다(fw-10 §3-2-3 의 첫 걸음). 그 곱이 fw-06 에서 학습자가 정한 IWDG 주기를 넘으면 <strong>스캔 도중에 IWDG 가 보드를 리셋한다.</strong> 넓힌 값으로 그 곱을 다시 계산해 보고, 넘으면 <code>I2C_SCAN_LAST</code> 를 같이 내리거나 <code>TIMEOUT_MS</code> 를 줄인다.</li>
         <li><p><code>i2c scan</code> 을 쳐 본다. <code>0x28</code> 이 목록에 있어야 한다. <strong>그 줄의 <code>id=</code> 값은 뜻이 없다</strong>.</p>
           <p><code>i2c scan</code> 은 INA226 의 Manufacturer ID 자리(<code>0xFE</code>)를 읽는다. 그런데 BNO055 의 레지스터 맵은 페이지 0 이 <code>0x00</code>~<code>0x7F</code> 에서 끝난다.<sup class="fn"><a href="#fn-47" id="fnref-47">47</a></sup>
           <code>0xFE</code> 는 <strong>그 표에 아예 없는 주소</strong>라 데이터시트에 정의가 없다 — 무엇이 돌아오든 규정되지 않은 값이다.</p>
@@ -1207,7 +1209,7 @@ static const char *bno055_state_name(uint8_t s);   /* "por" "config" "setup" "ru
  *                s_done 이면: bno055_le16 + 스케일 조각 둘로 해독하고, imu_sample_t 로
  *                포화시켜 넣고, s_sample.tick_ms = tick_get_ms(), ++s_seq, ++s_reads.
  *                s_failed 면: s_err++, BNO_RETRY.
- *   BNO_RETRY  : 내가 고른 백오프만큼 기다린 뒤 s_t0_ms = now, BNO_POR.
+ *   BNO_RETRY  : 학습자가 고른 백오프만큼 기다린 뒤 s_t0_ms = now, BNO_POR.
  *                BNO_RUN 이 아니라 BNO_POR 로 돌아가는 것은 일부러다: 선이 빠졌다
  *                다시 꽂혔다면 칩은 방금 자기 전원 투입 리셋을 거쳤다.
  * 여기 어디에도 printf 나 HAL_Delay 를 두지 않는다.
@@ -1271,7 +1273,7 @@ void bno055_cli_register(void)
       <ol class="steps">
         <li><p><strong>먼저 <code>RETRY_BACKOFF_MS</code> 를 채운다 — 비워 두면 빌드가 멈춘다.</strong> <code>BNO_RETRY</code> 에 얼마나 머물 것인가(<code>____</code> ms).
           너무 짧으면 선이 빠진 동안 실패 카운터만 빠르게 오르고, 너무 길면 다시 꽂았을 때 복구되는 것이 늦다. <strong>고른 값과 그 이유를 노트에 적는다.</strong></p>
-          <p>이 값은 <code>robot_params.h</code> 로 가지 않는다. 내 실물에 속한 값이 아니라 <strong>이 모듈이 어떻게 동작할 것인가</strong>를 정하는 정책값이라 <code>bno055.c</code> 안에 둔다(상수를 둘 곳을 정하는 규칙에 따른 것이다).</p>
+          <p>이 값은 <code>robot_params.h</code> 로 가지 않는다. 이 로봇 실물에 속한 값이 아니라 <strong>이 모듈이 어떻게 동작할 것인가</strong>를 정하는 정책값이라 <code>bno055.c</code> 안에 둔다(상수를 둘 곳을 정하는 규칙에 따른 것이다).</p>
           <p><code>0</code> 인 채로 빌드하면 <code>static assertion failed: bno055.c: RETRY_BACKOFF_MS is still EMPTY</code> 에서 멈춘다. <strong>자리표시 0 이 "즉시 다시 시도" 라는 위험한 쪽으로 동작하기 때문에 일부러 막아 뒀다.</strong></p></li>
         <li><p><strong>축 재매핑 값을 정한다.</strong> <code>AXIS_MAP_CONFIG</code> 의 리셋값 <code>0x24</code> · <code>AXIS_MAP_SIGN</code> 의 <code>0x00</code> 을 <strong>그대로 두고 시작해도 된다</strong> —
           이 쪽의 벤치에서는 센서가 책상 위에 놓여 있을 뿐이라 "로봇 기준" 이라는 것이 없다. 조립 뒤에 로봇 좌표계로 맞추는 것이 옳고, 그 값은 <code>hardware/INVENTORY.md</code> 2절 IMU 표의 "축 방향 · 부호" 칸에 적는다.</p>
@@ -1300,7 +1302,7 @@ static bool wr1(uint8_t reg, uint8_t val)     /* 설정 1 B 쓰기 - 블로킹(�
                            I2C_MEMADD_SIZE_8BIT, &amp;val, 1u, BNO055_WR_TIMEOUT_MS) == HAL_OK;
 }
 
-static int16_t sat16(int32_t v)               /* int16 칸에 맞게 자른다 - §3-3-3 ③ 에서 내가 고른 쪽 */
+static int16_t sat16(int32_t v)               /* int16 칸에 맞게 자른다 - §3-3-3 ③ 에서 고른 쪽 */
 {
   if (v &gt; INT16_MAX) { return INT16_MAX; }
   if (v &lt; INT16_MIN) { return INT16_MIN; }
@@ -1371,7 +1373,7 @@ void bno055_service_main(void)
     if (!arm_read(BNO055_REG_ACC_DATA_X_LSB, BNO055_BLOCK_BYTES)) { fail(); break; }
     s_pending = PEND_BLOCK;
     break;
-  case BNO_RETRY:                                        /* 내가 고른 백오프만큼 쉬고 처음부터 */
+  case BNO_RETRY:                                        /* 고른 백오프만큼 쉬고 처음부터 */
     if (!bno055_elapsed(now, s_t0_ms, RETRY_BACKOFF_MS)) { break; }
     s_t0_ms = tick_get_ms();
     s_state = BNO_POR;
@@ -1400,7 +1402,7 @@ void bno055_service_main(void)
           <p><strong>읽기 시작</strong>: <code>(int32_t)(now - s_next_due_ms) &lt; 0</code> 이면 아직 그 시각 전 — <code>break</code>. 이 식의 뜻: <code>now - s_next_due_ms</code> 는 부호 없는 뺄셈(정의됨 — T4 와 같다)이고, 그 결과를 <code>int32_t</code> 로 보면 "due 가 미래" 일 때 음수가 된다. 이 변환은 T1 의 좁힘과 같은 조항(C11 6.3.1.3p3, 구현 정의)이고 GCC 는 2의 보수 모듈로다. T4 의 틀린 판과 다른 점: 저쪽은 <strong>빼기 전에</strong> 부호 있는 캐스트(UB), 이쪽은 <strong>뺀 뒤</strong>다.</p>
           <p><strong>다르게 써도 되는 곳</strong> — 마지막으로 읽기를 시작한 시각을 적어 두고 <code>bno055_elapsed(now, s_last_poll_ms, BNO055_POLL_MS)</code> 로 판정한다. 이 방법에는 캐스트가 없다. 골격의 이름이 <code>s_next_due_ms</code>("다음 읽기 시각")라 이 카드는 그쪽으로 썼다.</p>
           <p>시각이 됐으면 <code>s_next_due_ms = now + BNO055_POLL_MS</code>, 18 B 읽기를 시작하고 <code>PEND_BLOCK</code>. 보류 처리가 읽기 시작보다 <strong>앞</strong>인 이유: 같은 바퀴에서 처리하고 바로 다음 읽기를 시작할 수 있어 10 ms 박자가 밀리지 않는다.</p></li>
-          <li><code>case BNO_RETRY</code> — <code>RETRY_BACKOFF_MS</code>(내가 채운 값 — §3-3-3 ①)가 지나면 <code>s_t0_ms = tick_get_ms(); s_state = BNO_POR;</code>. 이 두 줄은 <code>enter(BNO_POR)</code> 과 같다 — 실습 D 가 "원래의 세 줄" 로 부르는 것이 이 꼴이라 일부러 풀어 썼다. <strong><code>BNO_CONFIG</code> 가 아니라 <code>BNO_POR</code> 로</strong> 가는 이유: 선이 빠졌다 꽂혔으면 센서는 POR 을 다시 겪었다. CONFIG 로 가면 650 ms 를 건너뛰고, 설정도 다시 쓰지 않는다(증상 표 "세 가닥을 다시 꽂았는데 값이 이상하다").</li>
+          <li><code>case BNO_RETRY</code> — <code>RETRY_BACKOFF_MS</code>(학습자가 채운 값 — §3-3-3 ①)가 지나면 <code>s_t0_ms = tick_get_ms(); s_state = BNO_POR;</code>. 이 두 줄은 <code>enter(BNO_POR)</code> 과 같다 — 실습 D 가 "원래의 세 줄" 로 부르는 것이 이 꼴이라 일부러 풀어 썼다. <strong><code>BNO_CONFIG</code> 가 아니라 <code>BNO_POR</code> 로</strong> 가는 이유: 선이 빠졌다 꽂혔으면 센서는 POR 을 다시 겪었다. CONFIG 로 가면 650 ms 를 건너뛰고, 설정도 다시 쓰지 않는다(증상 표 "세 가닥을 다시 꽂았는데 값이 이상하다").</li>
           <li><code>default: enter(BNO_POR);</code> — T6 과 같다.</li>
         </ul>
         <p><strong>쓰는 API</strong></p>
@@ -1440,7 +1442,7 @@ void bno055_service_main(void)
 
       <details class="hint" id="hint-t9"><summary>힌트 T9 — <code>bno055_get_sample()</code> · 샘플을 복사해 내준다</summary>
         <div class="ans">
-        <p><strong>할 일</strong> — 부르는 쪽은 fw-17 의 통신 모듈이다(<code>control_get_imu()</code> 가 이 함수로 샘플을 가져간다). 입력은 출력 인자 <code>out</code>(쓸 자리의 주소). 반환: 샘플이 있으면 복사하고 true, 부팅 뒤 한 번도 해독한 것이 없으면 false(그때 <code>out</code> 은 건드리지 않는다).</p>
+        <p><strong>할 일</strong> — 이 프로젝트에서 이 함수를 부르는 곳은 없다. fw-17 의 <code>control_get_imu()</code> 는 센서 1(BNO055)을 잇지 않는다. WT901 의 <code>wt901_get_sample()</code> 과 같은 꼴로 맞춰 두는 함수다. 입력은 출력 인자 <code>out</code>(쓸 자리의 주소). 반환: 샘플이 있으면 복사하고 true, 부팅 뒤 한 번도 해독한 것이 없으면 false(그때 <code>out</code> 은 건드리지 않는다).</p>
         <p><strong>완결 코드</strong></p>
         <pre><code class="lang-c">/* 완결 코드 T9 - User/Src/Device/bno055.c */
 bool bno055_get_sample(imu_sample_t *out)
@@ -1466,7 +1468,7 @@ bool bno055_get_sample(imu_sample_t *out)
             <tr><td>조건 없이 복사하고 <code>return s_have_sample;</code></td><td>경고와 오류가 없다. 샘플이 없을 때 0 으로 찬 구조체가 복사된다 — "false 면 <code>out</code> 을 건드리지 않는다" 와 다르다</td><td>거절을 먼저. 그 꼴을 택했다면 주석에 적는다 — <strong>다르게 써도 되는 곳</strong>이지 틀린 것은 아니다</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — 이 쪽에서는 보이지 않는다: <code>cmd_bno()</code>(T10)는 <code>s_sample</code> 을 직접 읽는다. fw-17 에서 <code>0x82</code> 프레임이 Pi 에 도착할 때 처음 보인다. 빌드로는 링크까지(경고 0).</p>
+        <p><strong>확인</strong> — 이 쪽에서는 보이지 않는다: <code>cmd_bno()</code>(T10)는 <code>s_sample</code> 을 직접 읽는다. 부르는 곳이 없으므로 빌드로만 확인한다 — 링크까지(경고 0).</p>
         </div></details>
 
       <details class="hint" id="hint-t10"><summary>힌트 T10 — <code>cmd_bno()</code> · 가지 셋을 strcmp 로 가른다</summary>
@@ -1567,7 +1569,7 @@ void bno055_cli_register(void)
         <p>그런데 <code>control.c</code> 는 <strong><a href="fw-13-pid-protection.html">fw-13</a> 이 만든다.</strong> 부품을 기다리느라 이 쪽을 먼저 했으면 그 한 줄은 이렇게 남겨 둔다.</p>
         <pre><code class="lang-c">/* TODO(you): fw-13 이 생긴 뒤, CALIB_STAT 이 바뀌면 한 번 알린다:
    control_post_event(0x20u, (uint16_t)s_calib);
-   코드 0x20 은 06a §4-2 의 이벤트 표에 없다 — 내가 더하는 확장이다.
+   코드 0x20 은 06a §4-2 의 이벤트 표에 없다 — 학습자가 더하는 확장이다.
    그 표(와 Pi 쪽)에 먼저 더하는 것이 먼저고, 펌웨어 줄은 그다음이다. */</code></pre>
         <p><strong>이 쪽의 체크포인트는 그 줄에 의존하지 않는다.</strong> 캘리브레이션 상태는 <code>bno calib</code> 로 확인한다(실습 E).</p>
       </div>
@@ -1590,9 +1592,9 @@ ERR bno bad-arg</code></pre>
           대기 중에도 명령 창이 <code>state=por</code> 으로 답하는 것 — <strong>기다림이 상태로 바뀌었다는 증거</strong> — 은 ⑤ 의 다시 꽂기 시험에서 본다. 그때는 샘플이 이미 있어 <code>bno stat</code> 이 상태를 찍는다.
           같이 볼 것: <code>stat</code> 의 <code>loop_us_max</code> 가 이 쪽을 더하기 전보다 크게 늘지 않았는가(650 ms 가 주 루프를 막았다면 여기에 나타난다). <strong>이것이 <code>bno-por-inside-budget</code> 이다.</strong></li>
         <li><strong><code>reads_1s</code> 가 100 근처인가.</strong> 100 Hz(주기 10 ms)로 폴링하고 있으니 100 언저리여야 한다. 훨씬 낮으면 폴링 주기나 주 루프 한 바퀴가 길다는 뜻이다 — <code>stat</code> 의 <code>loop_us_max</code> 를 같이 본다.
-          <strong>몇이 나왔는지 적는다</strong>: <code>____</code> 회/s. 합격선은 내가 정한다.</li>
+          <strong>몇이 나왔는지 적는다</strong>: <code>____</code> 회/s. 합격선은 학습자가 정한다.</li>
         <li><strong>가만히 놓으면 값이 어떻게 되는가.</strong> 각속도 세 칸은 0 근처, 가속도 한 칸은 중력만큼(≈ 1000 mg) 나와야 한다 — <strong>어느 축인지는 센서를 어떻게 놓았는지가 정한다.</strong>
-          위를 향한 축이 <strong>+</strong> 인지 <strong>−</strong> 인지 적는다(<code>____</code>). 이 부호는 데이터시트만으로는 알 수 없다 — <strong>내 실물의 실측값</strong>이고, INVENTORY 2절의 기록 칸에 적는다.</li>
+          위를 향한 축이 <strong>+</strong> 인지 <strong>−</strong> 인지 적는다(<code>____</code>). 이 부호는 데이터시트만으로는 알 수 없다 — <strong>이 실물의 실측값</strong>이고, INVENTORY 2절의 기록 칸에 적는다.</li>
         <li><strong>반시계로 돌리면 <code>gz_ddps</code> 가 양수인가.</strong> 센서를 책상에 놓고 <strong>위에서 봤을 때 반시계</strong> 로 천천히 돌린다. 양수면 REP-103(ROS 의 오른손 좌표계)과 서술이 맞는다.
           음수면 <strong>축 재매핑 레지스터로 바로잡는다</strong>(§3-3-3 ②) — 환산식의 부호를 뒤집지 않는다. <strong>이것이 <code>bno-gz-ccw-positive</code> 다.</strong></li>
         <li><p><strong>선을 뽑았다 꽂는다 (발동).</strong> <strong>VCC · SDA · SCL 세 가닥을 함께</strong> 뽑는다 — <strong>VCC 한 가닥만 뽑지 않는다.</strong> <strong>GND 는 네 가닥 중 하나로 꽂아 둔 채다</strong>(GND 가 빠지면 기준 전위가 없어져 아래 설명이 전부 성립하지 않는다).</p>
@@ -1625,10 +1627,10 @@ ERR bno bad-arg</code></pre>
           <li><code>SYS_TRIGGER</code> 의 <code>RST_SYS</code> 비트 쓰기</li>
         </ul>
         <p><strong>셋이 일으키는 POR 은 같다(동일).</strong> 이 쪽이 첫째를 절차로 삼은 이유는 우열이 아니라 다음 둘뿐이다.
-        ① 내 모듈이 <code>RST</code> 핀을 내놓는지가 아직 <code>____</code> 이다(<strong>실물 확인 과제</strong>: 모듈의 핀 이름을 눈으로 보고 INVENTORY 2절의 BNO055 칸에 적는다).
+        ① 이 모듈이 <code>RST</code> 핀을 내놓는지가 아직 <code>____</code> 이다(<strong>실물 확인 과제</strong>: 모듈의 핀 이름을 눈으로 보고 INVENTORY 2절의 BNO055 칸에 적는다).
         ② <code>RST_SYS</code> 는 레지스터 쓰기 경로를 하나 더 만들어야 한다. <code>RST</code> 핀이 있으면 그쪽을 써도 된다 — 선을 덜 만진다.</p>
         <p class="small">"VDD 를 VDDIO 보다 먼저(또는 동시에) 올려야 한다" 는 문장은 <strong>이 상자의 규칙과 다른 이야기다</strong>.<sup class="fn"><a href="#fn-55" id="fnref-55">55</a></sup> 이 문장은 칩의 <strong>두 전원 핀 사이</strong>의 순서다.
-        <code>VCC</code> 한 핀만 내놓는 모듈이면 자동으로 지켜진다(내 모듈이 둘을 따로 내놓는지도 <code>____</code> 다).
+        <code>VCC</code> 한 핀만 내놓는 모듈이면 자동으로 지켜진다(이 모듈이 둘을 따로 내놓는지도 <code>____</code> 다).
         위의 ⓐ · ⓑ 는 그 문장이 아니라 <strong>절대 최대 정격 한 줄과 POR 문턱 한 줄</strong>에서 나온다.</p>
       </div>
 
@@ -1665,8 +1667,8 @@ case BNO_RETRY:
       <ol class="steps">
         <li>빌드 · 플래시하고 <code>ver</code> 로 배너를 확인한다 — 이때의 reset cause 를 적어 둔다(<code>____</code>).</li>
         <li><p><strong>신호선 한 가닥(SDA)만 뽑고 그대로 둔다</strong> — 센서는 켜 둔 채로. 읽기가 NACK 으로 실패하고, 실패가 쌓이면 <code>BNO_RETRY</code> 에 들어가고, 그 상태에서 700 ms 동안 주 루프가 멈춘다.</p>
-          <p><strong>이 관찰에 필요한 것은 하나다 — 읽기 실패가 <code>BNO_RETRY</code> 까지 이어져야 한다.</strong> 실패를 몇 번 견디게 만들었는지는 §3-3 에서 <strong>내가 정한 것</strong>이므로 이 쪽이 그 수를 전제하지 않는다. 선을 뽑아 둔 채로 두면 어느 정책이든 결국 <code>BNO_RETRY</code> 에 들어간다.
-          <code>bno stat</code> 의 <code>err</code> 는 오르는데 <code>state</code> 가 <code>retry</code> 로 안 바뀌면 내 실패 정책을 먼저 본다.</p>
+          <p><strong>이 관찰에 필요한 것은 하나다 — 읽기 실패가 <code>BNO_RETRY</code> 까지 이어져야 한다.</strong> 실패를 몇 번 견디게 만들었는지는 §3-3 에서 <strong>학습자가 정한 것</strong>이므로 이 쪽이 그 수를 전제하지 않는다. 선을 뽑아 둔 채로 두면 어느 정책이든 결국 <code>BNO_RETRY</code> 에 들어간다.
+          <code>bno stat</code> 의 <code>err</code> 는 오르는데 <code>state</code> 가 <code>retry</code> 로 안 바뀌면 직접 정한 실패 정책을 먼저 본다.</p>
           <p><strong>여기서는 §3-3-4 ⑤ 와 달리 전원을 건드리지 않는다.</strong> 이 실습이 보려는 것은 재-POR 자체가 아니라 <code>BNO_RETRY</code> 안의 700 ms 블로킹이기 때문이다. 전원을 끊지 않으면 §3-3-4 상자의 ⓐ 문제도 애초에 생기지 않는다.</p></li>
         <li><strong>보드가 자동으로 리셋된다.</strong> 터미널에 부팅 배너가 다시 출력되고, <code>reset</code> 이 <strong><code>IWDG</code></strong> 로 바뀐다. <strong>이것이 <code>blocking-delay-trips-iwdg</code> 다.</strong></li>
         <li><strong>되돌린다 — 검사는 둘이다.</strong> SDA 를 꽂고, §3-4-2 의 <code>case</code> 를 주석에 적힌 <strong>원래 세 줄</strong>로 복구한 뒤 다시 구우면 배너의 reset cause 가 원래대로 돌아온다. 되돌아왔는지는 이렇게 본다.
@@ -1680,7 +1682,7 @@ grep -n -A3 "case BNO_RETRY" User/Src/Device/bno055.c  # 목적지가 BNO_POR �
         <p>그리고 이 상황은 꾸며 낸 것이 아니다. 센서 커넥터가 한 번 흔들리기만 해도 실제로 일어난다. <strong>"초기화는 부팅 때 한 번" 이라는 전제가 이 쪽에서 깨진다</strong>는 것이 이 실습의 핵심이다.</p>
         <p>IWDG 가 트립하지 <strong>않았다면</strong> 원인은 둘 중 하나다. 어느 쪽이었는지 적는다.</p>
         <ol>
-          <li>내가 fw-06 에서 정한 IWDG 주기가 700 ms 보다 길다. 그러면 예산표를 다시 본다.</li>
+          <li>fw-06 에서 정한 IWDG 주기가 700 ms 보다 길다. 그러면 예산표를 다시 본다.</li>
           <li><code>BNO_RETRY</code> 에 실제로 들어가지 않았다. <code>bno stat</code> 의 <code>err</code> 가 오르는지 먼저 본다.</li>
         </ol>
       </div>
@@ -1701,7 +1703,7 @@ grep -n -A3 "case BNO_RETRY" User/Src/Device/bno055.c  # 목적지가 BNO_POR �
  *   2) case BNO_RUN 의 "보류 처리": PEND_BLOCK 이면 decode_block, PEND_CALIB 이면 s_calib = s_rx[0]
  *   3) case BNO_RUN 의 "걸기": 1000 ms 가 지났으면 0x35 한 바이트를, 아니면 18 B 블록을 건다
  *   4) cmd_bno() 의 마지막 "ERR bno bad-arg" 앞에 "calib" 가지: 비트 네 쌍을 (s_calib &gt;&gt; n) &amp; 3u 로 뽑아 한 줄 */</code></pre>
-      <p class="small">읽기 하나를 더 끼워 넣는 방식은 내가 정한다 — 1초마다 한 번 블록 대신 <code>0x35</code> 를 읽어도 되고(그 주기에 IMU 샘플을 한 번 건너뛴다), 별도의 상태를 하나 더 둬도 된다. 어느 쪽이든 <strong>블로킹하지 않는다</strong>는 조건만 지킨다.</p>
+      <p class="small">읽기 하나를 더 끼워 넣는 방식은 학습자가 정한다 — 1초마다 한 번 블록 대신 <code>0x35</code> 를 읽어도 되고(그 주기에 IMU 샘플을 한 번 건너뛴다), 별도의 상태를 하나 더 둬도 된다. 어느 쪽이든 <strong>블로킹하지 않는다</strong>는 조건만 지킨다.</p>
 
       <h4 id="s3-5-3">3-5-3. 직접 채우기 — 그리고 손으로 하는 절차</h4>
       <p>데이터시트가 요구하는 캘리브레이션 동작이다.<sup class="fn"><a href="#fn-56" id="fnref-56">56</a></sup> <strong>IMU 모드에서는 MAG 칸이 0 에 머무는 것이 정상</strong>이다(§2-4).</p>
@@ -1709,7 +1711,7 @@ grep -n -A3 "case BNO_RETRY" User/Src/Device/bno055.c  # 목적지가 BNO_POR �
         <li><strong>GYR</strong> — 센서를 책상에 놓고 <strong>몇 초 완전히 정지</strong>. 센서를 건드리지 않는다. <code>bno calib</code> 을 다시 쳐서 <code>gyr=3</code> 이 되는지 본다.</li>
         <li><strong>ACC</strong> — 센서를 <strong>여섯 자세</strong>로 놓는다(±X · ±Y · ±Z 가 각각 위를 향하게). 자세마다 몇 초 정지하고, <strong>자세 사이는 천천히</strong> 움직인다. <code>acc=3</code> 이 될 때까지.</li>
         <li><strong>SYS</strong> — 위 둘이 3 이 되면 함께 오른다.</li>
-        <li>(<code>bno mode ndof</code> 로 바꿨으면) <strong>MAG</strong> — 공중에 <strong>8자</strong> 를 그린다. <strong>몇 번 만에 됐는지, 안 됐으면 어디까지 갔는지 적는다</strong>(<code>____</code>) — 실내에서 잘 안 오른다면 그 결과가 §2-4 가 말한 "내 자리에서 재 봐야 아는 것" 의 답이다.</li>
+        <li>(<code>bno mode ndof</code> 로 바꿨으면) <strong>MAG</strong> — 공중에 <strong>8자</strong> 를 그린다. <strong>몇 번 만에 됐는지, 안 됐으면 어디까지 갔는지 적는다</strong>(<code>____</code>) — 실내에서 잘 안 오른다면 그 결과가 §2-4 가 말한 "주행할 자리에서 재 봐야 아는 것" 의 답이다.</li>
       </ol>
       <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 1 ~ 4 는 손으로 하는 절차다 — 코드 자리는 T12 하나(걸음에 들어가기 전에 채운다). 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
       <details class="hint" id="hint-t12"><summary>힌트 T12 — <code>bno055_service_main()</code> 의 RUN · <code>cmd_bno()</code> 의 <code>"calib"</code> · 1초에 한 번 CALIB_STAT 을 읽고 찍는다</summary>
@@ -1766,7 +1768,7 @@ static uint32_t s_calib_t0_ms;                /* 마지막으로 CALIB_STAT 을 
             <tr><td><code>HAL_I2C_Mem_Read()</code>(블로킹 판)로 <code>0x35</code> 를 "간단히" 읽었다</td><td>빌드는 된다. <code>bno055.c</code> 에 블로킹 읽기가 생긴다 — 1 s 마다 주 루프가 멈춘다(짧지만 §2-9 의 설계와 어긋난다)</td><td><code>arm_read()</code> 로 시작한다 — 1 B 든 18 B 든 같은 경로</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — §3-5-4: 네 칸이 내가 한 동작에 따라 오른다(체크포인트 <code>bno-calib-stat-read</code>). IMU 모드면 <code>mag=0</code> 이 정상이다(§2-4).</p>
+        <p><strong>확인</strong> — §3-5-4: 네 칸이 직접 한 동작에 따라 오른다(체크포인트 <code>bno-calib-stat-read</code>). IMU 모드면 <code>mag=0</code> 이 정상이다(§2-4).</p>
         <p>빌드로 볼 수 있는 것: 이 단계의 <code>bno055.c</code> 는 링크까지 되고 <code>User/</code> 경고 0 이다 — T8 단계의 <code>s_calib</code> 경고가 여기서 사라진다.</p>
         </div></details>
 
@@ -1774,7 +1776,7 @@ static uint32_t s_calib_t0_ms;                /* 마지막으로 CALIB_STAT 을 
       <pre><code class="lang-text">&gt; bno calib
 bno calib sys=&lt;n&gt; gyr=&lt;n&gt; acc=&lt;n&gt; mag=&lt;n&gt; raw=&lt;n&gt;</code></pre>
       <ol class="steps">
-        <li>네 칸이 <strong>절차에 따라 오르는 것</strong>을 본다. 가만히 두면 GYR 만, 여섯 자세를 거치면 ACC 도. <strong>이것이 <code>bno-calib-stat-read</code> 다</strong> — "전부 3 이 됐다" 가 아니라 <strong>"내가 한 동작에 따라 어느 칸이 오르는지 봤다"</strong> 가 이 항목이다.</li>
+        <li>네 칸이 <strong>절차에 따라 오르는 것</strong>을 본다. 가만히 두면 GYR 만, 여섯 자세를 거치면 ACC 도. <strong>이것이 <code>bno-calib-stat-read</code> 다</strong> — "전부 3 이 됐다" 가 아니라 <strong>"직접 한 동작에 따라 어느 칸이 오르는지 봤다"</strong> 가 이 항목이다.</li>
         <li><strong>각 칸이 3 이 되기까지 걸린 시간을 적는다</strong>(<code>____</code> s). </li>
         <li>전원을 껐다 켜 보면 네 칸이 <strong>다시 0 에서 시작</strong>한다. 오프셋 22 B 를 저장해 두면 다음 부팅에서 되쓸 수 있지만(§2-6), <strong>이 프로젝트는 저장하지 않는다</strong> — BNO055 는 시험용이다.</li>
       </ol>
@@ -1785,13 +1787,13 @@ bno calib sys=&lt;n&gt; gyr=&lt;n&gt; acc=&lt;n&gt; mag=&lt;n&gt; raw=&lt;n&gt;<
         <li><label><input type="checkbox" data-key="bno-pullup-measured"><span><strong>경로 통과</strong> — BNO055 모듈만 꽂고 잰 SDA ↔ VCC · SCL ↔ VCC 저항과, 외부 4.7 kΩ 을 단 뒤의 합성 저항을 표에 적었다
           <span class="sub">판정 수단: DMM (저항 모드, USB 뽑은 상태) · §3-1-4 · 값은 <code>hardware/INVENTORY.md</code> 2절 IMU 표의 BNO055 칸으로</span></span></label></li>
         <li><label><input type="checkbox" data-key="i2c-it-or-dma-decided"><span><strong>경로 통과</strong> — 18 B 블록을 IT 로 읽을지 DMA 로 읽을지 정했고, 초당 인터럽트 수 계산과 고른 이유를 노트에 적었다
-          <span class="sub">판정 수단: 내 노트 + <code>.ioc</code> grep(DMA 를 골랐으면 <code>Dma.Request?=I2C1_RX</code> 한 줄이 있다) · §2-7 · §3-2-3</span></span></label></li>
+          <span class="sub">판정 수단: 학습 노트 + <code>.ioc</code> grep(DMA 를 골랐으면 <code>Dma.Request?=I2C1_RX</code> 한 줄이 있다) · §2-7 · §3-2-3</span></span></label></li>
         <li><label><input type="checkbox" data-key="bno-decode-host-pass"><span><strong>경로 통과</strong> — <code>test_bno055</code> 가 26 케이스를 통과하고, <code>-fsanitize=undefined</code> 를 붙인 둘째 줄에 <code>runtime error:</code> 가 한 줄도 없다
           <span class="sub">판정 수단: 호스트 시험 출력 (<code>PASS bno055 26 cases</code>) · §3-2-3 · <strong>종료 코드가 아니라 출력 줄</strong>을 본다</span></span></label></li>
         <li><label><input type="checkbox" data-key="bno-chip-id-read"><span><strong>경로 통과</strong> — 부팅 로그의 <code>bno055</code> 줄에 <code>chip_id=0xA0</code> 이 찍히고, 같은 줄의 <code>sw_rev</code> 를 적었다
           <span class="sub">판정 수단: 부팅 로그 한 줄 (<code>ver</code> 뒤 NRST) · §3-2-4 · <code>sw_rev</code> 가 DRDY 인터럽트의 유무를 정한다(§2-1)</span></span></label></li>
         <li><label><input type="checkbox" data-key="bno-por-inside-budget"><span><strong>경로 통과</strong> — 650 ms 의 POR 을 기다리는 동안에도 보드가 리셋되지 않고 <code>state</code> 가 <code>por</code> → <code>run</code> 으로 간다. <code>stat</code> 의 <code>loop_us_max</code> 가 이 쪽을 더하기 전보다 크게 늘지 않았다
-          <span class="sub">판정 수단: NRST 뒤 부팅 배너(한 번만 찍히는가 · reset cause) · 이어지는 <code>bno055</code> 로그 줄(<code>[n]</code> 이 650 이상). <code>bno stat</code> 의 <code>state=run</code>(첫 블록 전에는 <code>ERR bno no-sample</code>) · <code>stat</code> · §3-3-4 ①. 합격 수치는 내가 정해 노트에 적는다(<code>____</code> µs 이내)</span></span></label></li>
+          <span class="sub">판정 수단: NRST 뒤 부팅 배너(한 번만 찍히는가 · reset cause) · 이어지는 <code>bno055</code> 로그 줄(<code>[n]</code> 이 650 이상). <code>bno stat</code> 의 <code>state=run</code>(첫 블록 전에는 <code>ERR bno no-sample</code>) · <code>stat</code> · §3-3-4 ①. 합격 수치는 학습자가 정해 노트에 적는다(<code>____</code> µs 이내)</span></span></label></li>
         <li><label><input type="checkbox" data-key="bno-100hz-counted"><span><strong>경로 통과</strong> — <code>bno stat</code> 의 <code>reads_1s</code> 가 100 근처를 유지하고, 그 값을 적었다
           <span class="sub">판정 수단: 명령 창 출력 · §3-3-4 ② · 100 Hz(주기 10 ms)의 근거는 데이터시트 Table 3-14</span></span></label></li>
         <li><label><input type="checkbox" data-key="bno-gz-ccw-positive"><span><strong>경로 통과</strong> — 위에서 봤을 때 반시계로 돌리면 <code>gz_ddps</code> 가 양수다. 아니면 축 재매핑 레지스터로 바로잡았다(환산식의 부호를 뒤집지 않았다)
@@ -1800,7 +1802,7 @@ bno calib sys=&lt;n&gt; gyr=&lt;n&gt; acc=&lt;n&gt; mag=&lt;n&gt; raw=&lt;n&gt;<
           <span class="sub">판정 수단: <code>bno stat</code> 을 되풀이해 치며 관찰 · §3-3-4 ⑤. <strong>VCC 한 가닥만 뽑지 않는다</strong>(§3-3-4 의 상자 — 절대 최대와 역방향 공급). <strong>이 항목은 IT ↔ DMA 를 구별하지 못한다</strong>(§2-7-2)</span></span></label></li>
         <li><label><input type="checkbox" data-key="blocking-delay-trips-iwdg"><span><strong>발동 확인</strong> — 재-POR 자리의 <code>case</code> 를 <code>HAL_Delay(700)</code> 판으로 바꾸고 <strong>신호선 한 가닥(SDA)</strong>을 뽑으면 보드가 자동으로 리셋되고 배너의 reset cause 가 <code>IWDG</code> 로 바뀐다. 되돌린 뒤 <strong>검사 둘이 다 맞는다</strong> — <code>HAL_Delay</code> 가 0줄이고, <code>case BNO_RETRY</code> 의 목적지가 <code>BNO_POR</code> 이다
           <span class="sub">판정 수단: 부팅 배너 3줄 + grep <strong>둘</strong>의 출력 · §3-4-4 의 4번 · 트립하지 않았으면 그 이유(IWDG 주기 · RETRY 진입 여부)를 적는다</span></span></label></li>
-        <li><label><input type="checkbox" data-key="bno-calib-stat-read"><span><strong>경로 통과</strong> — <code>bno calib</code> 의 네 칸이 내가 한 동작(정지 / 여섯 자세)에 따라 오르는 것을 봤고, 각 칸이 3 이 되기까지 걸린 시간을 적었다
+        <li><label><input type="checkbox" data-key="bno-calib-stat-read"><span><strong>경로 통과</strong> — <code>bno calib</code> 의 네 칸이 직접 한 동작(정지 / 여섯 자세)에 따라 오르는 것을 봤고, 각 칸이 3 이 되기까지 걸린 시간을 적었다
           <span class="sub">판정 수단: 명령 창 출력 · §3-5-4 · IMU 모드에서 <code>mag=0</code> 은 정상이다(§2-4). 오프셋 22 B 는 저장하지 않는다(§2-6 의 상자)</span></span></label></li>
       </ul>
       <p class="progress-line"></p>
@@ -1810,7 +1812,7 @@ bno calib sys=&lt;n&gt; gyr=&lt;n&gt; acc=&lt;n&gt; mag=&lt;n&gt; raw=&lt;n&gt;<
       <div class="tbl"><table class="fixed"><colgroup><col class="w22"><col class="w38"><col class="w28"><col class="w12"></colgroup>
         <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
         <tbody>
-          <tr><td><code>i2c scan</code> 에 <code>0x28</code> 이 안 나온다</td><td><strong>먼저 이것부터</strong> — 스캔 범위가 <code>0x28</code> 을 포함하지 않는다(fw-10 에서 내가 정한 <code>I2C_SCAN_FIRST</code> 가 <code>0x28</code> 보다 크다). 범위가 맞는데도 안 나오면, 풀업이 없거나(BNO055 모듈에는 내장 풀업이 없다) ADR 핀이 떠 있어 주소가 <code>0x29</code> 인 것이다</td><td>먼저 <code>grep -n "I2C_SCAN_FIRST" User/Src/Device/ina226.c</code> 로 범위를 본다. 범위가 맞으면 그때 §3-1 의 표 ①③을 다시 재고, ADR ↔ GND 도통을 본다</td><td><a href="fw-10-i2c-ina226.html#s3-2-3">fw-10 §3-2-3</a> 의 두 상수<sup class="fn"><a href="#fn-57" id="fnref-57">57</a></sup> / §3-1</td></tr>
+          <tr><td><code>i2c scan</code> 에 <code>0x28</code> 이 안 나온다</td><td><strong>먼저 이것부터</strong> — 스캔 범위가 <code>0x28</code> 을 포함하지 않는다(fw-10 에서 학습자가 정한 <code>I2C_SCAN_FIRST</code> 가 <code>0x28</code> 보다 크다). 범위가 맞는데도 안 나오면, 풀업이 없거나(BNO055 모듈에는 내장 풀업이 없다) ADR 핀이 떠 있어 주소가 <code>0x29</code> 인 것이다</td><td>먼저 <code>grep -n "I2C_SCAN_FIRST" User/Src/Device/ina226.c</code> 로 범위를 본다. 범위가 맞으면 그때 §3-1 의 표 ①③을 다시 재고, ADR ↔ GND 도통을 본다</td><td><a href="fw-10-i2c-ina226.html#s3-2-3">fw-10 §3-2-3</a> 의 두 상수<sup class="fn"><a href="#fn-57" id="fnref-57">57</a></sup> / §3-1</td></tr>
           <tr><td><code>chip_id</code> 가 <code>0x00</code> 이나 <code>0xFF</code> 로 읽힌다</td><td>SDA · SCL 이 바뀌었거나 한쪽만 풀업이 있다 — 읽기는 끝났는데 값이 안 온다</td><td>§3-1 의 ②(SCL ↔ VCC)와 ⑤(SDA ↔ SCL)를 본다</td><td>배선 / §3-1</td></tr>
           <tr><td>부팅 로그의 <code>bno055</code> 줄이 아예 없다</td><td>트랜잭션이 끝나지 않는다 — EV 인터럽트가 꺼져 있거나 선이 0 에 고정돼 있다</td><td><code>grep -n "I2C1_EV_IRQHandler" Core/Src/stm32h7xx_it.c</code> · <code>bno stat</code> 의 <code>state</code> 가 <code>config</code> 에 멈춰 있는가</td><td><a href="fw-10-i2c-ina226.html#s3-2-1">fw-10 §3-2-1</a> (NVIC) / §3-1</td></tr>
           <tr><td>읽기가 <strong>되다 말다</strong> 한다 (배선에는 문제가 없다)</td><td>CubeMX 의 Clock No Stretch Mode 를 Enable 로 바꿨다. BNO055 는 클럭 스트레칭을 쓴다<sup class="fn"><a href="#fn-58" id="fnref-58">58</a></sup></td><td><code>grep -n "NoStretchMode" Core/Src/main.c</code> → <code>I2C_NOSTRETCH_DISABLE</code> 이어야 한다</td><td>§3-2-1 의 표 아래 줄</td></tr>
@@ -1840,7 +1842,7 @@ grep -rln "HAL_I2C_MemRxCpltCallback" $FW_H7/Projects | head          # ④ ST �
         이 콜백은 다른 보드의 예제 <code>Projects/STM32H743I-EVAL/Examples/I2C/I2C_EEPROM_fast_mode_plus/Src/main.c:324-327</code> 에 있다. 본문은 <strong>플래그 하나를 1 로 설정하는 것뿐</strong>이다. ISR 문맥에서 할 일이 플래그 설정뿐이라는 것을 ST 의 예제가 그대로 보여 준다.)</p></div></details>
       <details class="quiz"><summary>2. (§2-1) 이 쪽은 왜 INT 핀을 쓰지 않고 폴링하는가? "INT 핀은 데이터 준비에 쓸 수 없다" 는 문장의 어디가 정확하지 않은가</summary>
         <div class="ans"><p>(답: 데이터 준비 인터럽트는 <strong>있는데 조건부</strong>다. §3.8.2.1(40쪽)이 <em>"only available on software versions 03.14 and above"</em> 라고 밝혔다. 레지스터 맵의 각주는 출고 판이 3.11 이라고 적었다.
-        그러니 "쓸 수 없다" 가 아니라 <strong>"내 개체의 <code>SW_REV_ID</code> 를 읽기 전에는 알 수 없다"</strong> 가 맞다. 그래서 이 쪽은 ① 조건 없이 도는 폴링을 쓰고 ② 부팅 로그에 <code>sw_rev</code> 를 찍어 내 개체의 판을 기록으로 남긴다.
+        그러니 "쓸 수 없다" 가 아니라 <strong>"이 개체의 <code>SW_REV_ID</code> 를 읽기 전에는 알 수 없다"</strong> 가 맞다. 그래서 이 쪽은 ① 조건 없이 도는 폴링을 쓰고 ② 부팅 로그에 <code>sw_rev</code> 를 찍어 이 개체의 판을 기록으로 남긴다.
         폴링 주기의 근거는 Table 3-14 의 융합 출력 100 Hz 다 — 그보다 자주 읽으면 같은 값을 다시 읽는다.)</p></div></details>
       <details class="quiz"><summary>3. (§2-2) 데이터시트의 650 ms 는 typ 이고 max 칸이 비어 있다. 그 사실이 이 쪽의 설계를 어떻게 바꿨는가</summary>
         <div class="ans"><p>(답: 상한이 없으므로 <strong>"650 ms 를 세면 반드시 준비됐다" 고 단정할 수 없다.</strong> 그래서 상태기계가 시간과 응답을 <strong>나눠 쓴다</strong> — 시간(650 ms)은 <em>언제 첫 시도를 할지</em>만 정하고,
@@ -1861,7 +1863,7 @@ grep -rln "HAL_I2C_MemRxCpltCallback" $FW_H7/Projects | head          # ④ ST �
         구별할 수 있는 정보는 "지금 이 트랜잭션을 누가 시작했는가" 뿐이고, 한 버스에 한 번에 한 트랜잭션만 진행되므로 그 값을 <strong>어딘가에 하나</strong> 두면 된다. 어디에 두는가가 §2-8 의 (가)·(나)·(다)다.
         곁들여 알아 둘 것: 배타 제어는 HAL 이 이미 한다 — 핸들이 READY 가 아니면 <code>HAL_BUSY</code> 로 거절한다. 소유자 칸은 <strong>완료를 누구에게 알릴지</strong>를 위한 것이지 충돌을 막기 위한 것이 아니다.)</p></div></details>
       <details class="quiz"><summary>7. (§3-4) 실습 D 는 왜 <code>app_init()</code> 이 아니라 <strong>재-POR 자리</strong>에 블로킹을 넣게 했는가</summary>
-        <div class="ans"><p>(답: fw-06 에서 <strong>(가) 초기화가 끝난 뒤 IWDG 시작</strong>을 골랐다면 <code>app_init()</code> 안의 700 ms 는 IWDG 가 시작되기 전이라 리셋을 일으키지 않는다 — 부팅이 늦을 뿐이다. 그러면 시험이 <strong>내 선택에 따라 되기도 안 되기도</strong> 한다.
+        <div class="ans"><p>(답: fw-06 에서 <strong>(가) 초기화가 끝난 뒤 IWDG 시작</strong>을 골랐다면 <code>app_init()</code> 안의 700 ms 는 IWDG 가 시작되기 전이라 리셋을 일으키지 않는다 — 부팅이 늦을 뿐이다. 그러면 시험이 <strong>fw-06 의 선택에 따라 되기도 안 되기도</strong> 한다.
         재-POR 자리는 IWDG 가 반드시 돌고 있는 구간이라 (가)·(나) 어느 쪽에서도 트립한다. 그리고 그 자리는 꾸며 낸 상황이 아니다 — 커넥터가 한 번 흔들리면 실제로 지나가는 경로이고,
         <strong>"초기화는 부팅 때 한 번" 이라는 전제가 이 센서에서 깨진다</strong>는 것이 이 실습이 가르치려는 것이다.)</p></div></details>
       <details class="quiz"><summary>8. (안전 규칙 S2) BNO055 와 풀업 저항의 윗단을 왜 Nucleo 의 3V3 에서만 따는가? 별도의 3.3 V 어댑터를 쓰면 무엇이 달라지는가</summary>
@@ -1877,8 +1879,8 @@ grep -rln "HAL_I2C_MemRxCpltCallback" $FW_H7/Projects | head          # ④ ST �
           <li><strong>부품이 다 있으면</strong> → <a href="fw-17-link-v2.html">fw-17</a> — 계약 v2(fw-16 은 제거됨).</li>
           <li><strong>WT901 이 아직이면</strong> → <a href="fw-14-wt901.html">fw-14</a> 를 먼저 해도 된다. 두 센서는 서로 의존하지 않는다 — 다만 <code>imu_sample.h</code> 는 <strong>먼저 하는 쪽이 만든다</strong>(§3-3-2).</li>
           <li><strong>전원부(배터리 · 사전충전)가 아직 없으면</strong> → <a href="fw-13-pid-protection.html">fw-13</a> 은 진행할 수 없다. 그동안 할 수 있는 것은 <a href="fw-17-link-v2.html">fw-17</a> 의 실습 A(호스트 시험)와 본편 <a href="07-lidar.html">07</a> · <a href="08-camera.html">08</a> 계열이다.</li>
-          <li><strong>이 쪽에서 채운 값은 <code>hardware/INVENTORY.md</code> 2절 IMU 표의 BNO055 칸에 적었는가</strong> — 모듈 풀업 실측, 배선 상태, 축 방향과 부호, 그리고 <code>sw_rev</code>. <strong>값은 내가 적는다</strong>(집필자가 채우지 않는다).</li>
-          <li>이 쪽의 샘플을 Pi 로 보내는 경로는 <a href="fw-17-link-v2.html">fw-17</a> 이 만든다 — 통신 모듈이 <code>control_get_imu()</code> 로 <strong>가져간다</strong>. 이 쪽은 <code>bno055_get_sample()</code> 로 샘플을 넘겨주는 데까지다.</li>
+          <li><strong>이 쪽에서 채운 값은 <code>hardware/INVENTORY.md</code> 2절 IMU 표의 BNO055 칸에 적었는가</strong> — 모듈 풀업 실측, 배선 상태, 축 방향과 부호, 그리고 <code>sw_rev</code>. <strong>값은 학습자가 적는다</strong>(집필자가 채우지 않는다).</li>
+          <li>이 쪽의 샘플은 Pi 로 보내지 않는다. <a href="fw-17-link-v2.html">fw-17</a> 의 <code>control_get_imu()</code> 는 WT901(센서 0)만 잇는다 — 이 로봇의 IMU 는 WT901 하나다.</li>
         </ul>
       </div>
 

@@ -15,7 +15,7 @@
 
       <p class="kicker">04 · 워크스페이스와 패키지</p>
       <h1>내 손으로 노드 만들기 — C++ 주, Python 보조</h1>
-      <p class="lead"><a href="03-ros2-concepts.html">03 단계</a>가 "남이 만든 노드를 관찰"이었다면 여기부터는 <strong>내가 만든다.</strong>
+      <p class="lead"><a href="03-ros2-concepts.html">03 단계</a>가 "남이 만든 노드를 관찰"이었다면 여기부터는 <strong>학습자가 직접 만든다.</strong>
       03 에서 개념으로 본 것(<a href="03-ros2-concepts.html#params">파라미터</a>, <a href="03-ros2-concepts.html#qos">QoS</a>, <a href="03-ros2-concepts.html#executor">Executor</a>)이 여기서 코드가 된다 — 막히면 그 절을 다시 읽는다.
       이 단계에서 익히는 패턴(패키지 → 노드 클래스 → 빌드 → 실행)은 06, 08a, 08b, 10 단계에서 그대로 반복된다.</p>
 
@@ -67,7 +67,7 @@ source /ros2_ws/install/setup.bash    # ② overlay:  내 패키지</code></pre>
       <div class="tbl"><table>
         <thead><tr><th>이유</th><th>어느 노드에서 체감하는가</th></tr></thead>
         <tbody>
-          <tr><td><strong>고정 주기 루프의 결정성.</strong> 인터프리터와 GC 가 없어 50 Hz 타이머의 지터가 작다</td><td>06 <code>mcu_bridge</code></td></tr>
+          <tr><td><strong>고정 주기 루프의 결정성.</strong> 인터프리터와 GC(쓰지 않는 메모리를 실행 중에 회수하는 기능)가 없어 50 Hz 타이머의 지터가 작다</td><td>06 <code>mcu_bridge</code></td></tr>
           <tr><td><strong>영상은 복사가 비용이다.</strong> <code>cv_bridge</code> → <code>cv::Mat</code> 이 같은 메모리를 가리킨다. Python 은 numpy 로 한 번 더 감싼다</td><td>08a, 08b</td></tr>
           <tr><td><strong>ROS 2 생태계의 언어.</strong> Nav2·드라이버·tf2·image_transport 가 전부 C++ 이다. 소스를 읽어야 할 때 C++ 을 알아야 한다</td><td>07, 09</td></tr>
           <tr><td><strong>컴포넌트와 프로세스 내 통신.</strong> 노드를 하나의 프로세스에 합쳐 복사 없이 메시지를 넘기는 기능은 C++ 에만 있다</td><td>(10 이후 확장)</td></tr>
@@ -155,6 +155,7 @@ public:
 
     // 타이머: 1초마다 on_timer 를 부른다. std::bind 로 멤버 함수를 콜백으로 넘긴다.
     timer_ = this-&gt;create_wall_timer(1s, std::bind(&amp;HelloPublisher::on_timer, this));
+    // 같은 뜻의 람다: timer_ = this-&gt;create_wall_timer(1s, [this]() { on_timer(); });
   }
 
 private:
@@ -179,6 +180,17 @@ int main(int argc, char ** argv)
   rclcpp::shutdown();                                // ④ 정리
   return 0;
 }</code></pre>
+
+      <div class="callout note"><span class="ct">콜백을 넘기는 두 형태 — <code>std::bind</code> 와 람다</span>
+        <p>멤버 함수 <code>on_timer</code> 를 콜백으로 넘기는 방법은 두 가지이고, 동작은 같다.</p>
+        <ul>
+          <li><code>std::bind(&amp;HelloPublisher::on_timer, this)</code>: ROS 2 공식 튜토리얼이 쓰는 형태다. 다른 사람의 코드에서 자주 보인다.</li>
+          <li><code>[this]() { on_timer(); }</code>: 람다. <code>[this]</code> 는 이 노드 객체를 캡처한다는 뜻이고, 그래서 본문에서 멤버 함수를 부를 수 있다.</li>
+        </ul>
+        <p>이 단계에서는 발행자에 <code>std::bind</code>, 3-5 의 구독자에 람다를 써서 두 형태를 다 본다. <strong>06 단계부터는 람다만 쓴다.</strong>
+        콜백이 인자를 받을 때 <code>std::bind</code> 는 <code>std::placeholders::_1</code> 을 인자 개수만큼 적어야 하고, 개수를 틀리면 컴파일 오류가 수백 줄로 나와 원인을 찾기 어렵다.
+        람다는 인자를 매개변수로 직접 적는다. 비교는 부록 <a href="ref-rclcpp.html">A</a> §1-2.</p>
+      </div>
 
       <h4><code>rclcpp::spin()</code> 이 하는 일</h4>
       <pre class="diagram"><code>   spin() 내부 ─ 무한 루프 (Executor)
@@ -244,10 +256,10 @@ ros2 topic hz /hello           # average rate: 1.000</code></pre>
       <div class="tbl"><table class="compact">
         <thead><tr><th>옵션</th><th>의미</th></tr></thead>
         <tbody>
-          <tr><td><code>--symlink-install</code></td><td>Python 파일·런치·YAML 을 복사하지 않고 링크한다. 고치면 즉시 반영. C++ 은 어차피 재컴파일이므로 무관하지만 <strong>항상 켜 둔다</strong></td></tr>
+          <tr><td><code>--symlink-install</code></td><td>Python 파일·런치·YAML(파라미터 설정 파일)을 복사하지 않고 링크한다. 고치면 즉시 반영. C++ 은 어차피 재컴파일이므로 무관하지만 <strong>항상 켜 둔다</strong></td></tr>
           <tr><td><code>--packages-select</code></td><td>그 패키지만. 전체 빌드는 Pi 에서 오래 걸린다</td></tr>
           <tr><td><code>--packages-up-to X</code></td><td>X 와 X 가 의존하는 것까지</td></tr>
-          <tr><td><code>--parallel-workers 2</code></td><td>Pi 5 의 RAM 보호. 기본값(코어 수 4)이면 큰 패키지에서 OOM 으로 종료된다</td></tr>
+          <tr><td><code>--parallel-workers 2</code></td><td>Pi 5 의 RAM 보호. 기본값(코어 수 4)이면 큰 패키지에서 OOM(메모리 부족)으로 종료된다</td></tr>
           <tr><td><code>--cmake-args -DCMAKE_BUILD_TYPE=Release</code></td><td>최적화. 08b 의 추론 노드부터는 켠다 (Debug 는 OpenCV 코드가 수 배 느리다)</td></tr>
         </tbody>
       </table></div>

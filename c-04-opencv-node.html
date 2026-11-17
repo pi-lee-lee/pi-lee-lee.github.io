@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C4 · OpenCV 전처리 노드 — 영상을 cv::Mat 로 받아 처리하고 다시 내보낸다 — 카메라 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="c-04">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">C4 · OpenCV 전처리 노드</p>
+      <h1>OpenCV 전처리 노드 — 영상을 cv::Mat 로 받아 처리하고 다시 내보낸다</h1>
+<p class="lead"><code>/stereo/left/image_raw</code> 를 C++ 노드 안으로 가져와 OpenCV 로 처리하고 <code>/stereo/left/image_proc</code> 로 다시 내보낸다.
+크기 축소 · 흑백 · 흐림 · 에지 · 윤곽선 다섯 가지를 파라미터로 바꿔 가며 실행하고, 처리 시간을 잰다.
+이 쪽의 받기 → <code>cv::Mat</code> → 처리 → 내보내기 경로를 C6 의 YOLO 노드와 C8 의 Hailo 노드가 그대로 쓴다.</p>
+<div class="goal">
+<span class="label">이 쪽이 끝나면 보이는 것</span>
+<ul>
+  <li>패키지 <code>rpi5_vision</code> 에 C++ 노드 <code>image_proc_node</code> 가 들어가고 Release 로 빌드된다.</li>
+  <li><code>/stereo/left/image_proc</code> 가 입력과 같은 fps 로 발행되고 Foxglove 에서 원본과 나란히 보인다.</li>
+  <li><code>ros2 param set</code> 으로 재빌드 없이 처리 방식이 바뀐다.</li>
+  <li>처리 방식마다 걸린 시간(ms)을 표에 적었다.</li>
+</ul>
+<p><strong>필요한 것</strong> — C2 의 카메라 노드가 뜨는 상태.</p>
+</div>
+<div class="meta">
+<div><span class="k">환경</span><span class="tag cli">컨테이너</span> <span class="tag cpp">C++</span> <span class="tag bench">벤치</span></div>
+<div><span class="k">선행</span><a href="c-02-camera-topic.html">C2</a> — <code>rpi5_vision</code> 패키지와 <code>/stereo/left/image_raw</code></div>
+<div><span class="k">만드는 것</span><code>rpi5_vision/src/image_proc_node.cpp</code>, <code>package.xml</code> · <code>CMakeLists.txt</code> 교체</div>
+<div><span class="k">적는 곳</span>노트 — §3-7 의 처리 시간 표</div>
+</div>
+<h2 id="overview">1. 개요</h2>
+<p>ROS 2 의 영상은 <code>sensor_msgs/msg/Image</code> 라는 바이트 배열 메시지로 흐른다. OpenCV 는 <code>cv::Mat</code>(행렬)을 다룬다. 둘 사이를 두 패키지가 잇는다.</p>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w20"><col class="w48"><col class="w32"></colgroup>
+<thead><tr><th>패키지</th><th>하는 일</th><th>이 쪽에서 쓰는 함수</th></tr></thead>
+<tbody>
+<tr><td><code>cv_bridge</code></td><td><code>Image</code> 메시지 ↔ <code>cv::Mat</code> 변환. 인코딩(<code>bgr8</code> · <code>mono8</code> …)을 맞춰 준다</td><td><code>toCvShare</code>, <code>toCvCopy</code>, <code>CvImage(...).toImageMsg()</code></td></tr>
+<tr><td><code>image_transport</code></td><td>영상 토픽의 발행 · 구독. 압축 토픽(<code>/compressed</code>)을 자동으로 함께 만든다</td><td><code>create_subscription</code>, <code>create_publisher</code></td></tr>
+</tbody></table></div>
+<pre class="diagram"><code>camera ──/stereo/left/image_raw──► image_proc_node ──/stereo/left/image_proc──► Foxglove
+                                    받는다 → cv::Mat → 처리 → 메시지 → 발행    (+ /stereo/left/image_proc/compressed 자동)</code></pre>
+<h2 id="why">2. 원리</h2>
+<h3 id="s2-1">2-1. Image 메시지는 인코딩이 붙은 바이트 배열이다</h3>
+<pre><code class="lang-text">std_msgs/Header header    # stamp = 촬영 시각, frame_id = stereo_left_optical_link
+uint32 height             # 행 수
+uint32 width              # 열 수
+string encoding           # 픽셀 해석법: "bgr8", "rgb8", "mono8" ...
+uint8  is_bigendian
+uint32 step               # 한 행의 바이트 수 (640 × 3 = 1920)
+uint8[] data              # step × height 바이트</code></pre>
+<p>같은 바이트를 <code>rgb8</code> 로 읽으면 빨강이, <code>bgr8</code> 로 읽으면 파랑이 된다. 이 카메라는 <code>bgr8</code> 로 보내고(C2 §2-3), OpenCV 의 기본 순서도 BGR 이다.</p>
+<h3 id="s2-2">2-2. toCvShare 와 toCvCopy — 언제 복사가 일어나는가</h3>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w20"><col class="w40"><col class="w40"></colgroup>
+<thead><tr><th></th><th><code>toCvShare(msg, "bgr8")</code></th><th><code>toCvCopy(msg, "bgr8")</code></th></tr></thead>
+<tbody>
+<tr><td>돌려주는 것</td><td>읽기 전용 <code>CvImageConstPtr</code></td><td>수정 가능한 <code>CvImagePtr</code></td></tr>
+<tr><td>인코딩이 같을 때</td><td>메시지 버퍼를 그대로 가리킨다 — 복사 없음</td><td>새 버퍼로 복사</td></tr>
+<tr><td>인코딩이 다를 때</td><td>변환하며 새 <code>cv::Mat</code> 을 만든다 — 사실상 복사</td><td>변환 + 복사</td></tr>
+<tr><td>쓰는 때</td><td>읽고 계산만 할 때(이 노드, C6 · C8 의 검출기)</td><td>그 위에 그릴 때(C6 의 그리기 노드)</td></tr>
+</tbody></table></div>
+<p>640 × 480 컬러 한 장은 0.9 MB 다. 30 fps 면 초당 27 MB 를 복사하느냐 마느냐가 CPU 몇 % 의 차이다. 카메라 인코딩이 <code>bgr8</code> 이므로 <code>toCvShare(msg, "bgr8")</code> 은 복사가 없다.</p>
+<h3 id="s2-3">2-3. 출력 메시지에 입력의 header 를 복사한다</h3>
+<p><code>stamp</code> 는 촬영 시각이고 <code>frame_id</code> 는 좌표계 이름이다. 뒤의 노드는 "이 영상이 언제 어느 좌표계에서 찍혔는가"를 header 에서 읽는다. 처리 시각으로 바꾸면 로봇이 움직인 만큼 위치 계산이 어긋나고, <code>frame_id</code> 를 비우면 좌표 트리에 이어지지 않는다. 코드로는 한 줄이다.</p>
+<h3 id="s2-4">2-4. 전송 품질 설정과 큐 깊이</h3>
+<ul>
+  <li>센서 데이터는 <strong>BEST_EFFORT</strong>(재전송 없음)로 받는다. 옛 프레임은 재전송받아도 쓸모가 없다. 발행 쪽이 RELIABLE 이든 BEST_EFFORT 든 BEST_EFFORT 구독자는 연결된다. 반대로 RELIABLE 로 구독하면 BEST_EFFORT 발행자와 연결되지 않고 오류 표시도 없다.</li>
+  <li>큐 깊이는 처리 못 한 프레임을 몇 장 쌓아 둘 것인가다. 처리가 프레임 간격(33 ms)보다 빠른 이 노드는 5 여도 큐가 비어 있다. 처리가 수백 ms 인 검출기(C6)는 1 이어야 한다.</li>
+</ul>
+<h3 id="s2-5">2-5. Release 빌드</h3>
+<p>OpenCV 라이브러리 자체는 최적화된 상태지만, 내가 쓴 코드(루프, <code>cv::Mat</code> 접근)는 Debug 빌드에서 최적화가 꺼져 몇 배 느리다. 영상 노드부터는 <code>-DCMAKE_BUILD_TYPE=Release</code> 를 항상 준다.</p>
+<h3 id="s2-6">2-6. 이 노드가 쓰는 OpenCV 함수</h3>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w26"><col class="w30"><col class="w44"></colgroup>
+<thead><tr><th>함수</th><th>하는 일</th><th>비고</th></tr></thead>
+<tbody>
+<tr><td><code>cv::resize</code></td><td>크기 변경</td><td>축소에는 <code>INTER_AREA</code>. 가로 · 세로 절반이면 픽셀 수 1/4, 시간도 약 1/4</td></tr>
+<tr><td><code>cv::cvtColor</code></td><td>색 공간 변환(BGR → 흑백 등)</td><td>에지 · 윤곽선은 1 채널 흑백에서 한다</td></tr>
+<tr><td><code>cv::GaussianBlur</code></td><td>잡음 제거</td><td>Canny 전에 하지 않으면 잡음이 전부 에지가 된다</td></tr>
+<tr><td><code>cv::Canny</code></td><td>에지 검출. 두 임계값</td><td>높은 임계값을 넘는 강한 에지에 이어진 약한 에지만 남긴다</td></tr>
+<tr><td><code>cv::findContours</code></td><td>에지 영상 → 닫힌 윤곽선 목록</td><td><code>RETR_EXTERNAL</code> 은 바깥 윤곽만. 작은 조각은 면적으로 거른다</td></tr>
+<tr><td><code>cv::drawContours</code> · <code>rectangle</code></td><td>그리기</td><td>원본 위에 그리므로 복사본(<code>clone</code>)에 그린다</td></tr>
+</tbody></table></div>
+<p>인자와 다른 함수는 부록 <a href="ref-opencv.html">B · OpenCV 사용법</a> 에 C++ 과 Python 을 나란히 정리해 두었다.</p>
+<h2 id="lab">3. 실습</h2>
+<p>빌드와 실행은 전부 컨테이너 안이다. 카메라 노드는 다른 터미널에서 <code>ros2 launch rpi5_vision camera.launch.py</code> 로 띄워 둔다.</p>
+<h3 id="s3-1">3-1. 의존 패키지 확인 <span class="tag cli">컨테이너</span></h3>
+<pre><code class="lang-bash">ros2 pkg list | grep -E 'cv_bridge|image_transport|vision_msgs'   # 셋 다 있어야 한다
+pkg-config --modversion opencv4                                     # 4.5.4</code></pre>
+<p>없으면 학습 단계 02 §3-3 의 패키지 목록(Dockerfile 2-B 블록)이 빠진 것이다. 이미지를 다시 빌드한다.</p>
+<h3 id="s3-2">3-2. package.xml 교체 <span class="tag cli">컨테이너</span></h3>
+<p>C2 에서 만든 <code>rpi5_vision/package.xml</code> 을 아래로 바꾼다. 이 가이드의 노드 셋(C4 · C6)이 쓰는 의존성이 전부 들어 있다.</p>
+<pre><code class="lang-xml">&lt;?xml version="1.0"?&gt;
+&lt;?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?&gt;
+&lt;package format="3"&gt;
+  &lt;name&gt;rpi5_vision&lt;/name&gt;
+  &lt;version&gt;0.1.0&lt;/version&gt;
+  &lt;description&gt;Camera guide: camera launch, OpenCV node, YOLO detector, overlay&lt;/description&gt;
+  &lt;maintainer email="you@example.com"&gt;you&lt;/maintainer&gt;
+  &lt;license&gt;Apache-2.0&lt;/license&gt;
+
+  &lt;buildtool_depend&gt;ament_cmake&lt;/buildtool_depend&gt;
+
+  &lt;depend&gt;rclcpp&lt;/depend&gt;
+  &lt;depend&gt;sensor_msgs&lt;/depend&gt;
+  &lt;depend&gt;vision_msgs&lt;/depend&gt;
+  &lt;depend&gt;cv_bridge&lt;/depend&gt;
+  &lt;depend&gt;image_transport&lt;/depend&gt;
+  &lt;depend&gt;libopencv-dev&lt;/depend&gt;
+
+  &lt;exec_depend&gt;camera_ros&lt;/exec_depend&gt;
+  &lt;exec_depend&gt;ros2launch&lt;/exec_depend&gt;
+  &lt;exec_depend&gt;image_transport_plugins&lt;/exec_depend&gt;
+
+  &lt;export&gt;
+    &lt;build_type&gt;ament_cmake&lt;/build_type&gt;
+  &lt;/export&gt;
+&lt;/package&gt;</code></pre>
+<h3 id="s3-3">3-3. CMakeLists.txt 교체 <span class="tag cli">컨테이너</span></h3>
+<p>OpenCV 는 ROS 패키지가 아니라 일반 CMake 패키지다. 그래서 <code>ament_target_dependencies</code> 가 아니라 <code>target_link_libraries</code> 로 링크한다.</p>
+<pre><code class="lang-cmake">cmake_minimum_required(VERSION 3.8)
+project(rpi5_vision)
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(vision_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(image_transport REQUIRED)
+find_package(OpenCV REQUIRED)            # plain CMake package, not a ROS package
+
+set(NODE_DEPS rclcpp sensor_msgs vision_msgs cv_bridge image_transport)
+
+add_executable(image_proc_node src/image_proc_node.cpp)
+ament_target_dependencies(image_proc_node ${NODE_DEPS})
+target_include_directories(image_proc_node PUBLIC ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(image_proc_node ${OpenCV_LIBS})
+
+install(TARGETS image_proc_node
+  DESTINATION lib/${PROJECT_NAME})
+
+install(DIRECTORY launch config
+  DESTINATION share/${PROJECT_NAME})
+
+ament_package()</code></pre>
+<h3 id="s3-4">3-4. 노드 소스 <span class="tag cpp">C++</span></h3>
+<p><code>rpi5_vision/src/image_proc_node.cpp</code>. 처리 방식은 파라미터 <code>mode</code> 로 고르고, 콜백마다 파라미터를 읽어 <code>ros2 param set</code> 이 바로 반영되게 한다.</p>
+<pre><code class="lang-cpp">// image_proc_node -- /stereo/left/image_raw -&gt; OpenCV -&gt; /stereo/left/image_proc  (camera guide C4)
+//
+// mode: passthrough | gray | blur | edges | contours   (ros2 param set /image_proc_node mode edges)
+#include &lt;chrono&gt;
+#include &lt;memory&gt;
+#include &lt;string&gt;
+#include &lt;vector&gt;
+
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/image.hpp"
+#include "cv_bridge/cv_bridge.h"                 // Humble uses .h (Jazzy and later: .hpp)
+#include "image_transport/image_transport.hpp"
+#include "opencv2/core.hpp"
+#include "opencv2/imgproc.hpp"
+
+class ImageProcNode : public rclcpp::Node
+{
+public:
+  ImageProcNode()
+  : Node("image_proc_node")
+  {
+    this-&gt;declare_parameter&lt;std::string&gt;("mode", "edges");
+    this-&gt;declare_parameter&lt;double&gt;("scale", 0.5);          // 0.5 = half width and half height
+    this-&gt;declare_parameter&lt;int&gt;("canny_low", 50);
+    this-&gt;declare_parameter&lt;int&gt;("canny_high", 150);
+    this-&gt;declare_parameter&lt;double&gt;("min_contour_area", 200.0);
+
+    // Create the publisher before the subscription: the first callback may run right away.
+    pub_ = image_transport::create_publisher(this, "/stereo/left/image_proc", rmw_qos_profile_sensor_data);
+
+    // The free function takes a raw Node pointer, so it can be used inside the constructor
+    // (image_transport::ImageTransport needs a shared_ptr, which does not exist yet here).
+    sub_ = image_transport::create_subscription(
+      this, "/stereo/left/image_raw",
+      [this](const sensor_msgs::msg::Image::ConstSharedPtr &amp; msg) { on_image(msg); },
+      "raw", rmw_qos_profile_sensor_data);
+
+    RCLCPP_INFO(this-&gt;get_logger(), "image_proc_node: /stereo/left/image_raw -&gt; /stereo/left/image_proc");
+  }
+
+private:
+  void on_image(const sensor_msgs::msg::Image::ConstSharedPtr &amp; msg)
+  {
+    const auto t0 = std::chrono::steady_clock::now();
+
+    // Read the parameters every frame (microseconds) so `ros2 param set` applies immediately.
+    const std::string mode = this-&gt;get_parameter("mode").as_string();
+    const double scale = this-&gt;get_parameter("scale").as_double();
+    const int canny_low = this-&gt;get_parameter("canny_low").as_int();
+    const int canny_high = this-&gt;get_parameter("canny_high").as_int();
+    const double min_area = this-&gt;get_parameter("min_contour_area").as_double();
+
+    cv_bridge::CvImageConstPtr cv_ptr;
+    try {
+      cv_ptr = cv_bridge::toCvShare(msg, "bgr8");   // camera sends bgr8 -&gt; shared buffer, no copy
+    } catch (const cv_bridge::Exception &amp; e) {
+      RCLCPP_ERROR_THROTTLE(this-&gt;get_logger(), *this-&gt;get_clock(), 2000,
+                            "cv_bridge: %s (encoding=%s)", e.what(), msg-&gt;encoding.c_str());
+      return;
+    }
+
+    const cv::Mat src = cv_ptr-&gt;image;     // header only; pixels are shared
+    cv::Mat work;
+    if (scale &gt; 0.0 &amp;&amp; scale != 1.0) {
+      cv::resize(src, work, cv::Size(), scale, scale, cv::INTER_AREA);   // new buffer
+    } else {
+      work = src;                          // shared
+    }
+
+    // Output is always 3-channel bgr8 so Foxglove and later nodes see one encoding.
+    cv::Mat out;
+    if (mode == "passthrough") {
+      out = work;
+    } else if (mode == "gray") {
+      cv::Mat gray;
+      cv::cvtColor(work, gray, cv::COLOR_BGR2GRAY);
+      cv::cvtColor(gray, out, cv::COLOR_GRAY2BGR);
+    } else if (mode == "blur") {
+      cv::GaussianBlur(work, out, cv::Size(9, 9), 0);
+    } else if (mode == "edges") {
+      cv::Mat gray, edges;
+      cv::cvtColor(work, gray, cv::COLOR_BGR2GRAY);
+      cv::GaussianBlur(gray, gray, cv::Size(5, 5), 0);     // in-place is allowed
+      cv::Canny(gray, edges, canny_low, canny_high);
+      cv::cvtColor(edges, out, cv::COLOR_GRAY2BGR);
+    } else if (mode == "contours") {
+      cv::Mat gray, edges;
+      cv::cvtColor(work, gray, cv::COLOR_BGR2GRAY);
+      cv::GaussianBlur(gray, gray, cv::Size(5, 5), 0);
+      cv::Canny(gray, edges, canny_low, canny_high);
+      std::vector&lt;std::vector&lt;cv::Point&gt;&gt; contours;
+      cv::findContours(edges, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+      out = work.clone();                  // drawing modifies pixels: draw on a copy, not on the shared buffer
+      for (const auto &amp; c : contours) {
+        if (cv::contourArea(c) &lt; min_area) {
+          continue;
+        }
+        cv::drawContours(out, std::vector&lt;std::vector&lt;cv::Point&gt;&gt;{c}, -1, cv::Scalar(0, 255, 0), 2);
+        cv::rectangle(out, cv::boundingRect(c), cv::Scalar(0, 0, 255), 1);
+      }
+    } else {
+      RCLCPP_WARN_THROTTLE(this-&gt;get_logger(), *this-&gt;get_clock(), 2000, "unknown mode '%s'", mode.c_str());
+      out = work;
+    }
+
+    // Copy the input header: capture time and frame id must survive for TF lookups downstream.
+    pub_.publish(cv_bridge::CvImage(msg-&gt;header, "bgr8", out).toImageMsg());
+
+    const double ms =
+      std::chrono::duration&lt;double, std::milli&gt;(std::chrono::steady_clock::now() - t0).count();
+    RCLCPP_INFO_THROTTLE(this-&gt;get_logger(), *this-&gt;get_clock(), 2000,
+      "mode=%s  %dx%d -&gt; %dx%d  %.1f ms", mode.c_str(), src.cols, src.rows, out.cols, out.rows, ms);
+  }
+
+  // Subscriber and publisher must be members: a local variable would be destroyed at the end of the constructor.
+  image_transport::Subscriber sub_;
+  image_transport::Publisher pub_;
+};
+
+int main(int argc, char ** argv)
+{
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared&lt;ImageProcNode&gt;());
+  rclcpp::shutdown();
+  return 0;
+}</code></pre>
+<h3 id="s3-5">3-5. 빌드 <span class="tag cli">컨테이너</span></h3>
+<pre><code class="lang-bash">cd /ros2_ws
+colcon build --symlink-install --packages-select rpi5_vision --parallel-workers 2 \
+    --cmake-args -DCMAKE_BUILD_TYPE=Release
+source install/setup.bash</code></pre>
+<p>빌드 종류를 바꾼 뒤에는 <code>build/rpi5_vision</code> 을 지우고 다시 빌드해야 확실히 적용된다.</p>
+<h3 id="s3-6">3-6. 실행 · 확인 <span class="tag cli">컨테이너</span> <span class="tag mac">Mac</span></h3>
+<pre><code class="lang-bash">ros2 run rpi5_vision image_proc_node
+# 다른 터미널
+ros2 topic hz /stereo/left/image_raw              # 카메라 fps
+ros2 topic hz /stereo/left/image_proc             # 같거나 약간 낮아야 한다. 훨씬 낮으면 처리가 병목
+ros2 topic list | grep image_proc            # /stereo/left/image_proc  /stereo/left/image_proc/compressed
+ros2 topic echo /stereo/left/image_proc --field header.frame_id --once   # stereo_left_optical_link (header 복사의 결과)
+ros2 topic echo /stereo/left/image_proc --field encoding --once          # bgr8</code></pre>
+<p>Foxglove 에 Image 패널을 하나 더 만들어 <code>/stereo/left/image_raw/compressed</code> 와 <code>/stereo/left/image_proc/compressed</code> 를 나란히 둔다(둘 다 Best Effort). 압축 토픽은 <code>image_transport</code> 가 자동으로 만든 것이다.</p>
+<p>재빌드 없이 처리 방식을 바꾼다.</p>
+<pre><code class="lang-bash">ros2 param set /image_proc_node mode contours
+ros2 param set /image_proc_node canny_low 30
+ros2 param set /image_proc_node scale 1.0
+ros2 param dump /image_proc_node               # 현재 값 전체</code></pre>
+<h3 id="s3-7">3-7. 처리 시간을 적는다</h3>
+<p>로그의 ms 값을 읽어 표를 채운다. 참고 범위는 640 × 480 입력, Pi 5, Release 빌드 기준이다. 크게 벗어나면 빌드 종류와 입력 해상도부터 본다.</p>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w18"><col class="w17"><col class="w17"><col class="w48"></colgroup>
+<thead><tr><th>mode</th><th>scale 1.0 (ms)</th><th>scale 0.5 (ms)</th><th>참고 범위(scale 1.0)</th></tr></thead>
+<tbody>
+<tr><td>passthrough</td><td>____</td><td>____</td><td>0.5 ~ 2 — 출력 메시지 복사 비용이 거의 전부</td></tr>
+<tr><td>gray</td><td>____</td><td>____</td><td>1 ~ 3</td></tr>
+<tr><td>blur (9 × 9)</td><td>____</td><td>____</td><td>3 ~ 8</td></tr>
+<tr><td>edges</td><td>____</td><td>____</td><td>4 ~ 10</td></tr>
+<tr><td>contours</td><td>____</td><td>____</td><td>6 ~ 15 — 장면에 따라 크게 변한다</td></tr>
+</tbody></table></div>
+<pre><code class="lang-bash">top -p $(pgrep -f image_proc_node)      # 노드의 CPU %. 한 코어 = 100 %</code></pre>
+<p>scale 0.5 가 2 배가 아니라 약 4 배 빠른 이유: 가로 · 세로가 절반이면 픽셀 수가 1/4 이고, 처리 시간은 픽셀 수에 비례한다. C6 에서 검출 입력을 640 에서 320 으로 줄일 때 같은 계산이 적용된다.</p>
+<h2 id="checkpoints">✅ 검증 체크포인트</h2>
+<p>직접 실행해서 확인한 것만 체크한다. 체크 기록은 이 브라우저에만 저장된다.</p>
+<ul class="checklist">
+  <li><label><input type="checkbox" data-key="c04-deps-present"><span>컨테이너에 <code>cv_bridge</code> · <code>image_transport</code> · <code>vision_msgs</code> 가 있고 OpenCV 가 4.5.4 다<span class="sub">§3-1</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c04-release-build"><span><code>rpi5_vision</code> 이 Release 로 빌드됐다<span class="sub">§3-5</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c04-same-fps"><span><code>/stereo/left/image_proc</code> 의 fps 가 <code>/stereo/left/image_raw</code> 와 비슷하다<span class="sub">§3-6</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c04-header-copied"><span>출력의 <code>header.frame_id</code> 가 <code>stereo_left_optical_link</code> 다<span class="sub">§3-6</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c04-two-panels"><span>Foxglove 에서 원본과 처리 결과가 나란히 보인다<span class="sub">§3-6</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c04-param-set"><span><code>ros2 param set</code> 으로 재빌드 없이 <code>contours</code> 로 바뀌는 것을 봤다<span class="sub">§3-6</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c04-timing-table"><span>§3-7 의 표를 내 값으로 채웠다<span class="sub">§3-7</span></span></label></li>
+</ul>
+<p class="progress-line"></p>
+<div class="progress-bar"><span></span></div>
+<h2 id="symptoms">증상과 원인</h2>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w28"><col class="w32"><col class="w40"></colgroup>
+<thead><tr><th>증상</th><th>원인</th><th>조치</th></tr></thead>
+<tbody>
+<tr><td><code>/stereo/left/image_proc</code> 가 없다</td><td>카메라 노드가 안 떠 있거나 토픽 이름이 다르다</td><td><code>ros2 topic list</code> 로 <code>/stereo/left/image_raw</code> 가 있는지 먼저 본다</td></tr>
+<tr><td>fps 가 입력의 절반 아래</td><td>Debug 빌드, 또는 scale 1.0 에 contours</td><td>§3-5 의 Release 빌드. <code>build/rpi5_vision</code> 을 지우고 다시</td></tr>
+<tr><td><code>cv_bridge</code> 예외 로그</td><td>카메라 인코딩이 예상과 다르다</td><td><code>ros2 topic echo /stereo/left/image_raw --field encoding --once</code></td></tr>
+<tr><td>CMake 가 OpenCV 를 못 찾는다</td><td><code>libopencv-dev</code> 가 컨테이너에 없다</td><td>학습 단계 02 의 Dockerfile 2-B 블록 확인 뒤 이미지 재빌드</td></tr>
+<tr><td>Foxglove 에 처리 결과가 안 보인다</td><td>압축 없는 토픽을 골랐거나 QoS 가 Reliable</td><td><code>/stereo/left/image_proc/compressed</code> + Best Effort</td></tr>
+</tbody></table></div>
+<h2 id="quiz">🤔 이해 확인</h2>
+<p>이 쪽에서 설명한 내용만으로 답할 수 있다. 답을 펼치기 전에 먼저 말로 답해 본다.</p>
+<details class="quiz"><summary>1. <code>toCvShare(msg, "bgr8")</code> 은 언제 복사하고 언제 하지 않는가.</summary>
+  <div class="ans"><p>메시지의 인코딩이 요청한 <code>bgr8</code> 과 같을 때만 버퍼를 그대로 가리킨다(복사 없음, 읽기 전용). 다르면(<code>mono8</code> · <code>rgb8</code> 을 요청) 변환하며 새 <code>cv::Mat</code> 을 만들므로 사실상 복사다. 이 카메라는 <code>bgr8</code> 로 보내므로 복사가 없다.</p></div></details>
+<details class="quiz"><summary>2. 출력 메시지에 입력의 header 를 복사하는 이유는 무엇인가.</summary>
+  <div class="ans"><p><code>stamp</code> 는 촬영 시각, <code>frame_id</code> 는 좌표계 이름이다. 뒤의 노드와 좌표 변환은 이 둘로 "언제 어디서 찍혔는가"를 안다. 처리 시각으로 바꾸면 로봇이 움직인 만큼 위치가 어긋나고, <code>frame_id</code> 가 비면 좌표 트리에 이어지지 않는다.</p></div></details>
+<details class="quiz"><summary>3. 이 노드는 큐 깊이 5 로 구독해도 되는데 C6 의 검출기는 왜 1 이어야 하는가.</summary>
+  <div class="ans"><p>처리(몇 ms)가 프레임 간격(33 ms)보다 빠르면 큐가 늘 비어 있어 깊이가 의미 없다. 검출기는 처리(수백 ms)가 느려 큐가 항상 차고, 그러면 큐 길이만큼 옛 프레임을 처리하게 된다. 깊이 1 이면 밀린 프레임은 버려지고 최신 것만 처리한다.</p></div></details>
+<details class="quiz"><summary>4. <code>cv::Mat out = work;</code> 뒤에 <code>out</code> 위에 그리면 <code>work</code> 는 어떻게 되는가.</summary>
+  <div class="ans"><p><code>work</code> 도 함께 바뀐다. 대입은 머리 정보만 복사하고 픽셀 버퍼는 공유하기 때문이다. 원본을 보존하려면 <code>out = work.clone()</code> 이 필요하고, <code>contours</code> 가 그렇게 되어 있다.</p></div></details>
+<h2 id="next">다음</h2>
+<div class="callout tip"><span class="ct">여기까지 했으면</span>
+<ul>
+  <li>번호순 다음은 <a href="c-05-yolo-model.html">C5 YOLO 모델 준비</a> 다. Mac 에서 모델 파일을 만들고 기준 검출 결과를 얻는다.</li>
+  <li>C6 의 YOLO 노드는 이 쪽의 노드와 구조가 같다 — 받는다 → <code>cv::Mat</code> → (전처리 → 추론 → 후처리) → 메시지 → 발행. 가운데 괄호만 다르다.</li>
+</ul>
+</div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

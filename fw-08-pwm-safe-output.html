@@ -23,9 +23,9 @@
         <span class="label">이 쪽이 끝나면 보이는 것</span>
         <p>이 쪽이 끝나면 다음 셋이 DMM 과 명령 창에서 보인다.</p>
         <ul>
-          <li>명령 창에 <code>pwm fl 500</code> 을 치면 FL 의 RPWM 핀(Zio D6)에 DMM 이 약 1.65 V(3.3 V 의 절반)를 읽고, LPWM 핀(D16)은 0 V 다. 부호를 바꾸면 두 핀의 전압이 서로 바뀐다 — D6 이 0 V, D16 이 약 1.65 V 가 된다. <code>500</code> 은 예시다. 내가 정하는 듀티 상한 <code>DUTY_LIMIT_BENCH_PERMILLE</code> 이 500 보다 작으면 그 상한 안의 값으로 바꿔 읽는다(§3-1-3 의 1).</li>
+          <li>명령 창에 <code>pwm fl 500</code> 을 치면 FL 의 RPWM 핀(Zio D6)에 DMM 이 약 1.65 V(3.3 V 의 절반)를 읽고, LPWM 핀(D16)은 0 V 다. 부호를 바꾸면 두 핀의 전압이 서로 바뀐다 — D6 이 0 V, D16 이 약 1.65 V 가 된다. <code>500</code> 은 예시다. 학습자가 정하는 듀티 상한 <code>DUTY_LIMIT_BENCH_PERMILLE</code> 이 500 보다 작으면 그 상한 안의 값으로 바꿔 읽는다(§3-1-3 의 1).</li>
           <li>IBT-2 를 결선한 채 NRST 를 누르고 있어도 EN_FL 네트(이 쪽은 모듈 1장만 단다)는 LOW 다. <strong>그 LOW 가 DMM 의 입력 저항 때문에 0 V 로 보이는 것이 아니라 모듈의 풀다운이 실제로 있어서임을 판정법으로 확인한다.</strong></li>
-          <li>gdb 로 멈추면 PWM 핀이 0 V 로 떨어지고, 명령 창에서 준 듀티는 내가 정한 유지 시간이 지나면 자동으로 0 이 된다.</li>
+          <li>gdb 로 멈추면 PWM 핀이 0 V 로 떨어지고, 명령 창에서 준 듀티는 학습자가 정한 유지 시간이 지나면 자동으로 0 이 된다.</li>
         </ul>
         <p><strong>이 쪽에 필요한 것</strong></p>
         <ul>
@@ -45,8 +45,8 @@
       <div class="meta">
         <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag mx">CubeMX</span> <span class="tag mac">Mac</span></div>
         <div><span class="k">선행</span><a href="fw-05-cli.html">fw-05</a> — <code>cli_register()</code> · <a href="fw-06-tick-watchdog.html">fw-06</a> — 1 kHz 박자(타임아웃 계수) · <a href="fw-04-debugger.html">fw-04</a> — gdb 정지 시험 · <a href="fw-01-pinmap.html#s3-4">fw-01 §3-4</a> — 결선 금지 목록 · <a href="fw-03-clock-console.html#s2-6">fw-03 §2-6</a> — 타이머 클럭 260 MHz</div>
-        <div><span class="k">채우는 INVENTORY 칸</span>6절 드라이버 표 "입력 풀다운(모듈 내장)" 행 — 내 모듈의 RPWM · LPWM · EN ↔ GND 저항을 MEASURED 로 덧붙인다(§3-2). 2절 EN 핀 행(EN_FL … EN_RR)은 값을 바꾸지 않는다</div>
-        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
+        <div><span class="k">채우는 INVENTORY 칸</span>6절 드라이버 표 "입력 풀다운(모듈 내장)" 행 — 보유한 모듈의 RPWM · LPWM · EN ↔ GND 저항을 MEASURED 로 덧붙인다(§3-2). 2절 EN 핀 행(EN_FL … EN_RR)은 값을 바꾸지 않는다</div>
+        <div><span class="k">소요</span>예상 ____ h · 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
       </div>
 
       <h2 id="overview">1. 개요 — 여덟 개의 PWM, 네 개의 EN, 그리고 세 개의 "꺼짐"</h2>
@@ -104,7 +104,7 @@
       </table></div>
       <p>표의 B+ 는 모듈의 모터 전원 입력 단자다. RPWM 에 듀티 d 를 주고 LPWM = 0 이면 오른쪽 단자는 GND 에 연결돼 있다. 왼쪽 단자는 한 주기 중 d 의 비율만큼 B+ 에, 나머지는 GND 에 연결된다. 그래서 모터에 평균 d × V_bus 가 한 방향으로 걸린다. 부호를 바꾸면 두 단자의 역할이 바뀐다. 이것이 <strong>부호-크기</strong>다 — 방향 핀이 따로 없고, "어느 쪽에 듀티가 있는가"가 방향이다.</p>
       <div class="callout why"><span class="ct">불변식 — 한 모듈에서 RPWM 과 LPWM 에 동시에 듀티를 주지 않는다</span>
-        <p>둘 다에 듀티가 있어도 <strong>전원이 단락되지는 않는다</strong> — 두 하프브리지 사이에는 언제나 모터가 있고, 칩 하나 안에서 HSS 와 LSS 가 함께 ON 인 행은 위 진리표에 없다. 대신 <strong>지령이 의도대로 반영되지 않는다</strong>. 두 단자가 각자 B+ 와 GND 사이를 오가므로, 모터에 걸리는 평균 전압은 내가 지령한 방향·크기가 아니라 <strong>두 듀티의 차</strong>로 정해진다. 같은 시각에 한쪽은 HSS ON, 다른 쪽은 LSS ON 인 순간은 정상 구동과 같지만, 그 겹침의 비율은 두 듀티의 산술로 정해질 뿐 의도한 토크가 아니다. 순시 파형은 두 PWM 의 위상 관계에 달렸다. 위상이 고정되는지는 아직 정하지 않고 선택지만 적어 둔 항목, 곧 결정 대기다(§2-10).</p>
+        <p>둘 다에 듀티가 있어도 <strong>전원이 단락되지는 않는다</strong> — 두 하프브리지 사이에는 언제나 모터가 있고, 칩 하나 안에서 HSS 와 LSS 가 함께 ON 인 행은 위 진리표에 없다. 대신 <strong>지령이 의도대로 반영되지 않는다</strong>. 두 단자가 각자 B+ 와 GND 사이를 오가므로, 모터에 걸리는 평균 전압은 지령한 방향·크기가 아니라 <strong>두 듀티의 차</strong>로 정해진다. 같은 시각에 한쪽은 HSS ON, 다른 쪽은 LSS ON 인 순간은 정상 구동과 같지만, 그 겹침의 비율은 두 듀티의 산술로 정해질 뿐 의도한 토크가 아니다. 순시 파형은 두 PWM 의 위상 관계에 달렸다. 위상이 고정되는지는 아직 정하지 않고 선택지만 적어 둔 항목, 곧 결정 대기다(§2-10).</p>
         <p>코드에서 이 불변식은 한 줄로 지킨다: <code>motor_set()</code> 이 <strong>언제나 두 채널을 같이</strong> 쓴다 — 한쪽에 값, 다른 쪽에 0. "필요한 쪽만 고친다"가 이 모듈에서 가장 흔한 버그다(반대쪽에 지난 값이 남는다). §3-1-3 의 호스트 시험이 이 불변식을 모든 벡터에서 검사한다.</p>
       </div>
       <p>1세대(이 프로젝트 이전에 같은 부품 일부로 만든 첫 로봇)의 기록도 같다: "정 = RPWM 에 PWM · LPWM LOW / 역 = 반대".<sup class="fn"><a href="#fn-5" id="fnref-5">5</a></sup> 데드타임은 칩이 자동으로 만든다.<sup class="fn"><a href="#fn-6" id="fnref-6">6</a></sup> 펌웨어가 만들 것이 아니다. 그래서 이 쪽은 TIM1 의 데드타임 생성기(DTG)를 쓰지 않는다.</p>
@@ -192,16 +192,16 @@
           <tr><td><code>MX_GPIO_Init()</code> 뒤</td><td>출력 PP · Initial Low · 내부 풀다운</td><td>MCU 가 구동</td><td>—</td></tr>
         </tbody>
       </table></div>
-      <p>30 kΩ 은 1세대가 DMM 으로 잰 값이다: RPWM ↔ GND = 30 kΩ, LPWM ↔ GND = 30 kΩ, R_EN · L_EN ↔ GND 도 각 30 kΩ.<sup class="fn"><a href="#fn-20" id="fnref-20">20</a></sup> <strong>어느 모듈을 잰 것인지는 기록에 없다.</strong> 그래서 내 모듈에서 다시 재서 MEASURED 로 적는 것이 이 쪽의 INVENTORY 칸이다(§3-2).</p>
+      <p>30 kΩ 은 1세대가 DMM 으로 잰 값이다: RPWM ↔ GND = 30 kΩ, LPWM ↔ GND = 30 kΩ, R_EN · L_EN ↔ GND 도 각 30 kΩ.<sup class="fn"><a href="#fn-20" id="fnref-20">20</a></sup> <strong>어느 모듈을 잰 것인지는 기록에 없다.</strong> 그래서 보유한 모듈에서 다시 재서 MEASURED 로 적는 것이 이 쪽의 INVENTORY 칸이다(§3-2).</p>
       <p>EN 핀 하나에는 모듈 하나의 R_EN · L_EN 이 묶여 걸린다. 그래서 풀다운은 R_EN ‖ L_EN = 15 kΩ 이고, 3.3 V 에서 0.22 mA(산술)다. MCU 핀 하나가 지는 부하는 이것뿐이라 직결로 충분하다. 네 핀의 합은 0.88 mA 다(INVENTORY 7절 3V3 예산의 EN 행). 벤치에 모듈 1장만 달면 EN_FL 네트의 15 kΩ 하나다. 이 값을 §2-6 의 판정법 계산에 쓴다.</p>
-      <p class="small">1세대는 PWM 8선에 외부 10 kΩ 풀다운을 "필수 아님 · 강력 권장"으로 적었다.<sup class="fn"><a href="#fn-21" id="fnref-21">21</a></sup> 납땜 기판 실장을 계획했고 실장 기록은 없다. 외부 풀다운은 무납땜 모듈로도, 인두기 납땜으로도 달 수 있다.<sup class="fn"><a href="#fn-22" id="fnref-22">22</a></sup> 이 프로젝트는 IBT-2 어댑터 기판(<code>hardware/ibt2-adapter/</code>)의 R1 · R2(10 kΩ, RPWM · LPWM ↔ GND)로 달기로 정했다(결정 ⑨, 2026-10-14). 그래서 PWM 입력의 풀다운은 내장 30 kΩ ∥ 10 kΩ = 7.5 kΩ 이다(위 표). EN 에는 달지 않는다 — 이미 15 kΩ 이다. 달지 않으면 "내장 30 kΩ 에 의존"을 노트에 밝힌다. 판정법(§2-6)은 어느 쪽이든 같다.</p>
+      <p class="small">1세대는 PWM 8선에 외부 10 kΩ 풀다운을 "필수 아님 · 강력 권장"으로 적었다.<sup class="fn"><a href="#fn-21" id="fnref-21">21</a></sup> 납땜 기판 실장을 계획했고 실장 기록은 없다. 외부 풀다운은 무납땜 모듈로도, 인두기 납땜으로도 달 수 있다.<sup class="fn"><a href="#fn-22" id="fnref-22">22</a></sup> 이 프로젝트는 IBT-2 어댑터 기판(<code>hardware/ibt2-adapter/</code>)의 R1 · R2(10 kΩ, RPWM · LPWM ↔ GND)로 달기로 정했다. 그래서 PWM 입력의 풀다운은 내장 30 kΩ ∥ 10 kΩ = 7.5 kΩ 이다(위 표). EN 에는 달지 않는다 — 이미 15 kΩ 이다. 달지 않으면 "내장 30 kΩ 에 의존"을 노트에 밝힌다. 판정법(§2-6)은 어느 쪽이든 같다.</p>
 
       <h3 id="s2-6">2-6. DMM 으로 Hi-Z 핀을 재면 0 V 로 보인다 — 그래서 판정법이 필요하다</h3>
       <p>DMM 의 DC 전압 입력은 약 10 MΩ 이다. 아무것도 구동하지 않는 핀(부유)에 프로브를 대면 그 10 MΩ 이 유일한 경로가 되어 핀은 0 V 근처로 읽힌다. 풀다운이 달린 핀도 0 V 다. <strong>두 경우를 DMM 전압 한 번으로는 가를 수 없다</strong> — "NRST 를 누른 채 EN 네트를 쟀더니 0 V 였다"는 풀다운이 실재한다는 증거가 아니다. DMM 의 입력 저항이 풀다운 저항의 역할을 했을 뿐이다.</p>
       <div class="callout warn"><span class="ct">안전 규칙 — "리셋 중 EN = LOW" 는 전압 한 번으로 판정하지 않는다. 판정법은 "풀다운이 실재하는가"를 확인한다</span>
         <p>아래 두 판정법은 <strong>모듈의 대체 수단이 아니다.</strong> 둘 다 <strong>풀다운이 달린 상태</strong>(IBT-2 결선 + 모듈 VCC · GND 에 전원이 있는 상태)가 전제고, 묻는 것은 "그 풀다운이 정말 있는가"다. IBT-2 가 없으면 이 판정은 <strong>할 수 없다.</strong></p>
         <ol>
-          <li><strong>판정법 ① — 약한 풀업을 걸고도 LOW 인가.</strong> EN 네트(이 쪽은 EN_FL)와 3V3 사이에 수백 kΩ~1 MΩ 저항을 걸고, NRST 를 누른 채 그 네트의 전압을 잰다. 풀다운 15 kΩ(모듈 1장, R_EN ‖ L_EN)이 실재하면 분압으로 <strong>여전히 LOW</strong> 다. 예컨대 1 MΩ 이면 3.3 × 15 ÷ (15 + 1000) ≈ 0.05 V, 470 kΩ 이면 ≈ 0.10 V 다. 기대 전압은 내 저항값으로 <strong>내가 계산</strong>해 노트에 먼저 적는다. 풀다운이 없으면 풀업 때문에 전압이 3.3 V 근처까지 올라간다.</li>
+          <li><strong>판정법 ① — 약한 풀업을 걸고도 LOW 인가.</strong> EN 네트(이 쪽은 EN_FL)와 3V3 사이에 수백 kΩ~1 MΩ 저항을 걸고, NRST 를 누른 채 그 네트의 전압을 잰다. 풀다운 15 kΩ(모듈 1장, R_EN ‖ L_EN)이 실재하면 분압으로 <strong>여전히 LOW</strong> 다. 예컨대 1 MΩ 이면 3.3 × 15 ÷ (15 + 1000) ≈ 0.05 V, 470 kΩ 이면 ≈ 0.10 V 다. 기대 전압은 건 저항값으로 <strong>직접 계산</strong>해 노트에 먼저 적는다. 풀다운이 없으면 풀업 때문에 전압이 3.3 V 근처까지 올라간다.</li>
           <li><strong>판정법 ② — 구동되는 노드를 잰다.</strong> 모듈 버퍼(74HC244)의 <strong>출력</strong>(EN 이 들어간 채널의 출력 핀, 칩의 INH 쪽)을 NRST 를 누른 채 잰다. 버퍼 출력은 부유가 아니라 DMM 값이 뜻을 가진다. [추정: 모듈의 버퍼 출력 인에이블(OE)이 상시 활성이라는 전제 — 시트에 없다. 모듈 기판에서 OE 가 GND 에 묶여 있는지 눈으로 확인하고 노트에 적는다]</li>
           <li><strong>판정법 ②′ — 저항과 전압을 짝으로.</strong> 버퍼 출력에 프로브를 댈 수 없을 때(SOIC — 핀 간격이 좁은 표면 실장 패키지) 쓴다. 먼저 <strong>전원을 끈 채</strong> EN 네트 ↔ GND <strong>저항</strong>을 재서 풀다운의 실재를 확인한다(1세대 기록: 입력마다 30 kΩ → 모듈 1장 · R_EN + L_EN 묶음이면 15 kΩ 계). 그 뒤 전원을 켜고 NRST 를 누른 채 전압을 잰다. <strong>두 값을 짝으로</strong> 기록한다 — 저항이 kΩ 계로 나오고 전압이 0 V 근처면 "풀다운이 실재하고 그 풀다운이 LOW 를 만든다"가 성립한다.</li>
         </ol>
@@ -265,7 +265,7 @@
           <tr><td>코드 제공 수준</td><td><strong>전량</strong> — 시간을 세고 LD2 를 표시하는 <code>motor_step_1khz()</code> 와 그 시간을 설정하는 <code>cmd_pwm()</code>(§3-1-2 의 둘째 · 셋째 블록)까지. 인자 파싱 도우미 <code>wheel_range()</code> 와 <code>cmd_en()</code> 은 <strong>골격</strong>이다</td><td>안전 장치는 학습자의 첫 구현 버그에 기대지 않는다 — 이 가이드의 전량 제공 허용 목록 6번. 목록이 가리키는 것은 "타임아웃과 그 시간을 설정하는 순서"라서 같은 파일에 있어도 인자 파싱은 학습자가 채운다</td></tr>
         </tbody>
       </table></div>
-      <p>두 EMPTY 키는 <code>robot_params.h</code> 에 <code>____</code> 상태로 처음 만들어진다. 이 키를 쓰는 <code>motor.c</code> 는 첫머리의 <code>_Static_assert</code> 가드 때문에 <strong>값을 채우기 전에는 빌드되지 않는다</strong> — 자리표시 0 이 "타임아웃 없음 · 상한 없음" 이라는 위험한 쪽으로 동작하는 키라서다. 그래서 §3-1-3 의 첫 걸음이 "두 키에 내 값을 적는다" 이다.
+      <p>두 EMPTY 키는 <code>robot_params.h</code> 에 <code>____</code> 상태로 처음 만들어진다. 이 키를 쓰는 <code>motor.c</code> 는 첫머리의 <code>_Static_assert</code> 가드 때문에 <strong>값을 채우기 전에는 빌드되지 않는다</strong> — 자리표시 0 이 "타임아웃 없음 · 상한 없음" 이라는 위험한 쪽으로 동작하는 키라서다. 그래서 §3-1-3 의 첫 걸음이 "두 키에 값을 정해 적는다" 이다.
       타임아웃은 <strong>계약의 워치독을 대신하지 않는다.</strong> fw-13 이 <code>control_step_1khz()</code> 에 명령 워치독을 넣은 뒤에도 <code>pwm</code> 명령은 벤치 관측용으로 남는다. 두 장치가 막는 대상이 다르다 — 하나는 사람이 친 명령, 하나는 Pi 의 50 Hz(20 ms) 명령 스트림이다.</p>
 
       <h3 id="s2-10">2-10. TIM1 → TIM8 동기는 무엇을 주는가 — 결정 대기</h3>
@@ -302,8 +302,8 @@
           <li>Mac 의 호스트 시험 — <code>PASS motor 10 cases</code>, <code>-fsanitize=undefined,address</code> 까지 경고 없음</li>
           <li>이 프로젝트의 펌웨어 빌드 — 링크까지, <code>User/</code> 경고 0</li>
         </ul>
-        <p>TIM1 · TIM8 의 생성물은 이 저장소의 <code>.ioc</code> 에 있지만, EN 네 핀의 라벨은 아직 없다. 그래서 빌드에서는 <code>EN_FL_*</code> … <code>EN_RR_*</code> 여덟 매크로를 §3-1-1 의 값 표대로 <code>main.h</code> 에 임시 정의해 대신했다. 내 생성물의 이름이 다르면 <code>extern</code> 과 라벨을 그쪽에 맞춘다.</p>
-        <p>완결 코드도 <code>PWM_CMD_HOLD_MS</code> · <code>DUTY_LIMIT_BENCH_PERMILLE</code> 에 <strong>값을 넣지 않는다</strong> — 두 키는 §3-1-3 의 1 에서 내가 정하고, 그 전에는 가드가 빌드를 멈춘다(의도된 것). 보드에서 동작하는 것 — DMM 전압 · 리셋 중 EN · 디버그 정지 · 타임아웃 — 은 "굽고 보기"에서 내가 확인한다.</p>
+        <p>TIM1 · TIM8 의 생성물은 이 저장소의 <code>.ioc</code> 에 있지만, EN 네 핀의 라벨은 아직 없다. 그래서 빌드에서는 <code>EN_FL_*</code> … <code>EN_RR_*</code> 여덟 매크로를 §3-1-1 의 값 표대로 <code>main.h</code> 에 임시 정의해 대신했다. CubeMX 생성물의 이름이 다르면 <code>extern</code> 과 라벨을 그쪽에 맞춘다.</p>
+        <p>완결 코드도 <code>PWM_CMD_HOLD_MS</code> · <code>DUTY_LIMIT_BENCH_PERMILLE</code> 에 <strong>값을 넣지 않는다</strong> — 두 키는 §3-1-3 의 1 에서 학습자가 정하고, 그 전에는 가드가 빌드를 멈춘다(의도된 것). 보드에서 동작하는 것 — DMM 전압 · 리셋 중 EN · 디버그 정지 · 타임아웃 — 은 "굽고 보기"에서 직접 확인한다.</p>
         <p>붙여 넣는 것으로 끝내지 않는다 — 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다. 이 쪽은 모터 전원 구간의 첫 쪽이다: 완결 코드에 오류가 있더라도 그 결과는 언제나 "출력이 꺼지는 쪽"이어야 하고, 카드의 설명이 그 이유를 적는다.</p>
       </div>
 
@@ -358,11 +358,11 @@ grep -n "HAL_TIM_PWM_Start\|__HAL_DBGMCU_FREEZE" Core/Src/*.c                 # 
  main.c 의 MX_TIM1_Init 안에 CounterMode · Period · OCIdleState · OffStateIDLEMode · MasterOutputTrigger 가 값 표와 같은 이름의 상수로 나온다.
  main.h 에 EN_FL_Pin · EN_FL_GPIO_Port … EN_RR_GPIO_Port 여덟 매크로와 여덟 PWM 라벨의 매크로가 있다. MOTOR_EN 매크로는 없다.
  msp.c 에서 핀을 AF 로 잡는 함수가 HAL_TIM_PWM_MspInit 인지 HAL_TIM_MspPostInit 인지는 생성 후에야 안다 — 어느 쪽이든 GPIO_AF1_TIM1 (PE 핀) · GPIO_AF3_TIM8 (PC 핀) 이 있어야 한다.
- 마지막 줄이 비어 있다는 것이 중요하다 — CubeMX 는 PWM 을 "초기화"만 하고 "시작"하지 않고, 동결 비트도 설정하지 않는다. 둘 다 내 코드가 한다.)</code></pre>
+ 마지막 줄이 비어 있다는 것이 중요하다 — CubeMX 는 PWM 을 "초기화"만 하고 "시작"하지 않고, 동결 비트도 설정하지 않는다. 둘 다 직접 쓰는 코드가 한다.)</code></pre>
       <p class="small">재생성 규칙(fw-02):</p>
       <ul class="small">
         <li>생성물은 <code>USER CODE BEGIN/END</code> 사이만 고친다. <code>cmake/stm32cubemx/</code> 는 다시 생성된다.</li>
-        <li>내 소스는 <code>User/</code> 에 두고 최상위 <code>CMakeLists.txt</code> 의 <code># Add user sources here</code> 에 등록한다.</li>
+        <li>직접 쓰는 소스는 <code>User/</code> 에 두고 최상위 <code>CMakeLists.txt</code> 의 <code># Add user sources here</code> 에 등록한다.</li>
         <li>이 쪽은 생성물을 한 줄도 고치지 않는다 — <code>main.c</code> 에 들어가는 것은 fw-02 때의 <code>app_init()</code> · <code>app_loop()</code> 두 줄 그대로다.</li>
       </ul>
 
@@ -377,7 +377,7 @@ grep -n "HAL_TIM_PWM_Start\|__HAL_DBGMCU_FREEZE" Core/Src/*.c                 # 
       <pre><code class="lang-c">/* User/Inc/Config/robot_params.h — 여러 모듈이 함께 쓰는 상수 (물리값, 벤치 한계, 튜닝).
  * 값의 상태는 값과 같은 줄에 적는다:   ____ = EMPTY   NOMINAL(&lt;출처&gt;)   MEASURED(&lt;날짜&gt;, &lt;방법&gt;)
  * EMPTY 키 옆의 0 은 자리표시일 뿐 값이 아니다. EMPTY 키를 쓰는 모듈은 빌드를 거부한다
- * (_Static_assert 를 품고 있다) — 먼저 그 키를 내 값으로 채운다. */
+ * (_Static_assert 를 품고 있다) — 먼저 그 키를 학습자가 정한 값으로 채운다. */
 #ifndef ROBOT_PARAMS_H
 #define ROBOT_PARAMS_H
 
@@ -441,7 +441,7 @@ void motor_cli_register(void);                     /* `pwm` 과 `en` 을 등록�
 #include &lt;stdlib.h&gt;
 #include &lt;string.h&gt;
 
-/* EMPTY 가드: robot_params.h 에 내 값이 들어가기 전에는 이 파일이 빌드되지 않는다 (이 가이드의 규칙 — 여기의 0 은
+/* EMPTY 가드: robot_params.h 에 학습자가 정한 값이 들어가기 전에는 이 파일이 빌드되지 않는다 (이 가이드의 규칙 — 여기의 0 은
  * "타임아웃 없음" / "상한 없음", 곧 위험한 쪽을 뜻하게 된다). */
 _Static_assert((PWM_CMD_HOLD_MS) != 0, "robot_params.h: PWM_CMD_HOLD_MS is still EMPTY");
 _Static_assert((DUTY_LIMIT_BENCH_PERMILLE) &gt; 0 &amp;&amp; (DUTY_LIMIT_BENCH_PERMILLE) &lt;= 1000,
@@ -535,7 +535,7 @@ static bool wheel_range(const char *s, uint8_t *mask)
  * cmd_pwm() 은 듀티를 적용한 뒤에 s_hold_ms 를 설정하고, motor_step_1khz() 가 ISR 에서 그것을 거꾸로 센다.
  * 경쟁 분석 (일부러 잠금 없음): ISR 의 읽기-감소-쓰기가 cmd_pwm() 과 엇갈리면,
  * 저장되는 값은 의도보다 작아질 수만 있다 -&gt; 듀티가 더 일찍 0 이 된다. 늦어지는 일은 없다.
- * LD2(노랑) = EN 표시 (사용자 결정 ac, 2026-10-14): 넷 다 HIGH = 상시 점등, 1~3 개만 HIGH = 점멸, 0 = 소등.
+ * LD2(노랑) = EN 표시 (사용자 결정, 2026-10-14): 넷 다 HIGH = 상시 점등, 1~3 개만 HIGH = 점멸, 0 = 소등.
  * --------------------------------------------------------------------------------------------- */
 #define EN_LED_BLINK_HALF_MS 250u                   /* 점멸 반주기 (2 Hz). 주 루프 심박 LD1(400 ms 토글)과 구별되는 값 */
 static uint8_t  s_led_last = 0xFFu;                 /* 마지막에 본 EN 마스크. 0xFF = 아직 한 번도 안 봤다 */
@@ -628,20 +628,20 @@ void motor_cli_register(void)
   ok = cli_register_help("en", cmd_en, HELP_EN);
   FW_ASSERT(ok);
 }</code></pre>
-      <p class="small"><code>cmd_pwm()</code> 의 인자 검사 순서에 뜻이 있다: 형식(<code>bad-arg</code>) → 범위 −1000..1000 → <strong>내가 정한 상한</strong> <code>DUTY_LIMIT_BENCH_PERMILLE</code> → 유지 시간(0 거부). 거부되는 명령은 듀티를 <strong>건드리지 않는다</strong>.</p>
+      <p class="small"><code>cmd_pwm()</code> 의 인자 검사 순서에 뜻이 있다: 형식(<code>bad-arg</code>) → 범위 −1000..1000 → <strong>학습자가 정한 상한</strong> <code>DUTY_LIMIT_BENCH_PERMILLE</code> → 유지 시간(0 거부). 거부되는 명령은 듀티를 <strong>건드리지 않는다</strong>.</p>
       <p class="small"><code>s_hold_ms</code> 는 듀티를 다 쓴 <strong>뒤에</strong> 설정한다 — 순서를 바꾸면 "듀티는 아직 옛 값인데 시간은 새로 센" 시간 구간이 생겨 ISR 이 그 상태를 볼 수 있다. 출력 꼴은 fw-05 §2-4 의 규약(<code>OK pwm</code> / <code>ERR pwm bad-arg</code>)이다.</p>
       <p class="small">유지 시간의 넘침을 "<code>0xFFFFFFFF</code> 보다 큰가" 로 보지 않는 이유가 있다. 타깃(arm-none-eabi)의 <code>unsigned long</code> 은 32비트다(<code>_Static_assert(sizeof(unsigned long) == 4, "")</code> 가 통과한다). 그래서 그 비교는 <strong>언제나 거짓</strong>이고, 실행되지 않는 분기다. 그런데 <code>-Wall -Wextra</code> 도 이 분기를 경고하지 않는다.<sup class="fn"><a href="#fn-44" id="fnref-44">44</a></sup> 컴파일러가 잡아 주지 않는 종류의 오류다.
       게다가 <code>strtoul</code> 은 넘치면 <code>ULONG_MAX</code> 를 돌려준다. 그 값이 그대로 통과하면 <strong>49일짜리 유지 시간</strong>(4 294 967 295 ms)이 된다 — §2-9 가 막으려던 "타임아웃 없음" 쪽이다. 그래서 <code>errno</code> 를 0 으로 두고 <code>ERANGE</code> 를 본다.</p>
 
       <h4 id="s3-1-3">3-1-3. 직접 채우기</h4>
       <ol class="steps">
-        <li><p><strong>EMPTY 키 둘에 내 값을 적는다.</strong> 대상은 <code>robot_params.h</code> 의 두 키다.</p>
+        <li><p><strong>EMPTY 키 둘에 값을 정해 적는다.</strong> 대상은 <code>robot_params.h</code> 의 두 키다.</p>
         <ul>
           <li><code>PWM_CMD_HOLD_MS</code> — DMM 프로브를 옮겨 읽는 데 나는 몇 초가 걸리는가. 스톱워치로 세 번 재 보고 정한다.</li>
           <li><code>DUTY_LIMIT_BENCH_PERMILLE</code> — fw-11 첫 통전에서도 그대로 쓰는 상한이다. 1세대는 무부하에서 정격 속도까지 돌렸지만, 그 기록은 합격선이 아니다.</li>
         </ul>
-        <p>정한 값의 <strong>같은 줄</strong> 주석에서 <code>____</code> 를 지우고 "내가 정한 값 · 날짜 · 근거"를 적는다(출처 어휘는 아직 정해지지 않았다 — 06b 가 쓰는 <code>NOMINAL(…, 내가 정한 … &lt;날짜&gt;)</code> 꼴을 따르면 된다). <code>____</code> 가 남아 있으면 <code>./scripts/check_nominal.sh</code> 가 EMPTY 로 센다 — 돌려서 이 파일의 행이 사라졌는지 본다. 이 걸음을 건너뛰면 §3-1-4 의 빌드가 <code>static assertion failed … PWM_CMD_HOLD_MS is still EMPTY</code> 에서 멈춘다.</p>
-        <p><strong>상한을 정할 때 이 쪽의 절차를 한 번 본다</strong>: §3-1-4 의 비례 관찰은 250 · 500 · 750 ‰ 세 점을, §3-4-4 는 300 · 200 ‰ 를 예시로 쓴다. 상한을 그보다 낮게 정했으면 <strong>내 상한 안에서 쓸 세 점을 먼저 고르고</strong>, 아래 예시 숫자를 그 값으로 바꿔 읽는다. 상한을 넘는 듀티는 <code>cmd_pwm()</code> 이 <code>ERR pwm bad-arg</code> 로 거부한다 — 고장이 아니라 내가 정한 값이 하는 일이다(증상 표에 그 행이 있다).</p></li>
+        <p>정한 값의 <strong>같은 줄</strong> 주석에서 <code>____</code> 를 지우고 "정한 값 · 날짜 · 근거"를 적는다(출처 어휘는 아직 정해지지 않았다 — 06b 가 쓰는 <code>NOMINAL(…, 학습자가 정한 … &lt;날짜&gt;)</code> 꼴을 따르면 된다). <code>____</code> 가 남아 있으면 <code>./scripts/check_nominal.sh</code> 가 EMPTY 로 센다 — 돌려서 이 파일의 행이 사라졌는지 본다. 이 걸음을 건너뛰면 §3-1-4 의 빌드가 <code>static assertion failed … PWM_CMD_HOLD_MS is still EMPTY</code> 에서 멈춘다.</p>
+        <p><strong>상한을 정할 때 이 쪽의 절차를 한 번 본다</strong>: §3-1-4 의 비례 관찰은 250 · 500 · 750 ‰ 세 점을, §3-4-4 는 300 · 200 ‰ 를 예시로 쓴다. 상한을 그보다 낮게 정했으면 <strong>정한 상한 안에서 쓸 세 점을 먼저 고르고</strong>, 아래 예시 숫자를 그 값으로 바꿔 읽는다. 상한을 넘는 듀티는 <code>cmd_pwm()</code> 이 <code>ERR pwm bad-arg</code> 로 거부한다 — 고장이 아니라 정한 상한이 하는 일이다(증상 표에 그 행이 있다).</p></li>
         <li><strong><code>motor_duty_to_ccr()</code> 부터.</strong> 하드웨어와 무관한 산술이다. 헤더 주석의 식 그대로: 클램프 → 부호로 갈라 → <code>|permille| × arr ÷ 1000</code>(정수 나눗셈, 32비트 곱이 넘치지 않음을 확인: 1000 × 65535 &lt; 2³²). 아래 호스트 시험을 돌려 <code>PASS motor 10 cases</code> 가 나올 때까지 고친다. 시험이 검사하는 것은 값뿐이 아니라 <strong>불변식 둘</strong>(r · l 중 하나는 0, 둘 다 ≤ arr)이다.</li>
         <li><strong><code>motor_set()</code>.</strong> 상한 클램프 → <code>motor_duty_to_ccr(permille, __HAL_TIM_GET_AUTORELOAD(&amp;htim1))</code> → <code>__HAL_TIM_SET_COMPARE()</code> <strong>두 번</strong>.<sup class="fn"><a href="#fn-45" id="fnref-45">45</a></sup> TIM1 채널에 <code>c.r</code> 을, TIM8 의 같은 번호 채널에 <code>c.l</code> 을 쓴다. "필요한 쪽만" 쓰지 않는다(§2-1 의 불변식). 채널 번호는 <code>s_pwm_ch[wheel]</code>.</li>
         <li><strong><code>motor_enable()</code> · <code>motor_enable_all()</code> · <code>motor_enable_mask()</code>.</strong> 셋이 한 카드(T4)다.
@@ -799,7 +799,7 @@ void motor_set(uint8_t wheel, int16_t permille)
         <p><strong>코드 설명</strong></p>
         <ul>
           <li><code>if (wheel &gt;= (uint8_t)NW) { return; }</code> · <code>s_duty_permille[wheel] = permille;</code> — 골격에 있던 두 줄이다. 첫 줄은 배열 밖 인덱스를 막고, 둘째 줄은 "무엇을 요청받았나"를 클램프 <strong>전</strong> 값으로 남긴다.</li>
-          <li><p><code>if (permille &gt;  (int16_t)DUTY_LIMIT_BENCH_PERMILLE) { permille =  (int16_t)DUTY_LIMIT_BENCH_PERMILLE; }</code> 와 음수 쪽 한 줄 — 내가 정한 상한으로 클램프한다.</p>
+          <li><p><code>if (permille &gt;  (int16_t)DUTY_LIMIT_BENCH_PERMILLE) { permille =  (int16_t)DUTY_LIMIT_BENCH_PERMILLE; }</code> 와 음수 쪽 한 줄 — 학습자가 정한 상한으로 클램프한다.</p>
           <p><code>DUTY_LIMIT_BENCH_PERMILLE</code> 는 <code>#define</code> 숫자라 형이 <code>int</code> 다. <code>(int16_t)</code> 는 <code>permille</code> 과 같은 형으로 견주고 대입한다는 뜻을 적은 것이다(없어도 빌드되고 값도 같다 — 다르게 써도 되는 곳 ④). 음수 쪽은 <code>-(int16_t)…</code> 로 캐스트 뒤에 부호를 붙인다.</p>
           <p><code>cmd_pwm()</code> 이 이미 상한 밖을 <code>ERR</code> 로 거부하는데 여기서 또 하는 이유가 있다. fw-13 의 PID 출력은 <code>cmd_pwm()</code> 을 거치지 않는다 — 이 두 줄이 그때의 <strong>이중 안전장치</strong>다.</p></li>
           <li><code>const motor_ccr_t c = motor_duty_to_ccr(permille, __HAL_TIM_GET_AUTORELOAD(&amp;htim1));</code> — T1 을 부른다. ARR 은 상수 6500 이 아니라 <strong>레지스터에서 읽는다</strong>.<sup class="fn"><a href="#fn-50" id="fnref-50">50</a></sup> 그래서 클럭이나 ARR 을 바꿔도 듀티 계산이 맞다(§2-3 의 마지막 행). 매크로가 핸들의 <strong>주소</strong>를 기대하므로 <code>&amp;htim1</code> 이다. <code>const</code> 는 "이 뒤로 <code>c</code> 를 바꾸지 않는다".</li>
@@ -869,7 +869,7 @@ uint8_t motor_enable_mask(void)
           <li><code>if (wheel &gt;= (uint8_t)NW) { return; }</code> — <code>s_en[wheel]</code> 을 읽기 전에 범위를 본다. T3 의 <code>motor_set()</code> 첫 줄과 같은 꼴이다 — 배열 밖을 읽으면 어느 핀이 움직일지 정해져 있지 않다.</li>
           <li><code>HAL_GPIO_WritePin(s_en[wheel].port, s_en[wheel].pin, on ? GPIO_PIN_SET : GPIO_PIN_RESET);</code> — 그 바퀴의 EN 핀 하나. <code>s_en[]</code> 은 골격 위쪽의 표다: 바퀴 순서대로 <code>{ EN_FL_GPIO_Port, EN_FL_Pin }</code> … <code>{ EN_RR_GPIO_Port, EN_RR_Pin }</code>. 여덟 이름은 CubeMX 의 User Label <code>EN_FL</code> … <code>EN_RR</code> 이 <code>Core/Inc/main.h</code> 에 만든 매크로다(§3-1-1 의 값 표 · grep 다섯째 줄). <code>조건 ? 참값 : 거짓값</code> 은 fw-07 의 T2 에서 나온 삼항 연산자 — <code>bool</code> 을 HAL 의 열거형으로 바꾼다. 이 한 줄이 움직이는 것은 모듈 하나의 R_EN · L_EN(모듈 안에서 묶여 15 kΩ 풀다운, §2-5)이다.</li>
           <li><code>void motor_enable_all(bool on) { for (…) { motor_enable(i, on); } }</code> — 네 바퀴에 같은 값. fw-11 의 상태기계와 T2 의 <code>motor_init()</code> 이 부르는 것은 이 함수다.</li>
-          <li><code>if (HAL_GPIO_ReadPin(s_en[i].port, s_en[i].pin) == GPIO_PIN_SET) { mask |= (uint8_t)(1u &lt;&lt; i); }</code> — 핀 넷을 <strong>읽는다</strong>. 출력 핀도 <code>HAL_GPIO_ReadPin()</code> 으로 지금 나가 있는 레벨이 읽힌다(IDR 은 출력 모드에서도 핀의 레벨을 보인다). <code>1u &lt;&lt; i</code> 는 1 을 <code>i</code> 칸 왼쪽으로 민 수 — <code>i</code> = 0 · 1 · 2 · 3 에서 1 · 2 · 4 · 8 이고, <code>|=</code> 로 그 비트를 켠다. <code>(uint8_t)</code> 는 <code>1u &lt;&lt; i</code>(형은 <code>unsigned int</code>)를 <code>mask</code> 와 같은 8 비트로 맞춘다는 뜻이다(없어도 값은 같다). 변수가 아니라 핀을 읽는 이유는 할 일 칸에 있다 — "내가 <code>en 1</code> 을 안 쳤으니까" 는 근거가 아니다.</li>
+          <li><code>if (HAL_GPIO_ReadPin(s_en[i].port, s_en[i].pin) == GPIO_PIN_SET) { mask |= (uint8_t)(1u &lt;&lt; i); }</code> — 핀 넷을 <strong>읽는다</strong>. 출력 핀도 <code>HAL_GPIO_ReadPin()</code> 으로 지금 나가 있는 레벨이 읽힌다(IDR 은 출력 모드에서도 핀의 레벨을 보인다). <code>1u &lt;&lt; i</code> 는 1 을 <code>i</code> 칸 왼쪽으로 민 수 — <code>i</code> = 0 · 1 · 2 · 3 에서 1 · 2 · 4 · 8 이고, <code>|=</code> 로 그 비트를 켠다. <code>(uint8_t)</code> 는 <code>1u &lt;&lt; i</code>(형은 <code>unsigned int</code>)를 <code>mask</code> 와 같은 8 비트로 맞춘다는 뜻이다(없어도 값은 같다). 변수가 아니라 핀을 읽는 이유는 할 일 칸에 있다 — "<code>en 1</code> 을 안 쳤으니까" 는 근거가 아니다.</li>
           <li>이 세 함수에 <code>if</code>(허락 조건)가 없는 이유 — 골격 주석 그대로다: fw-11 은 "전원 시퀀스가 허락할 때만"을 사람이 치는 <code>cmd_en()</code> 쪽에 더한다. 상태기계가 ARMED 로 들어가며 자동으로 <code>motor_enable_all(true)</code> 를 부르므로, 여기에 가드를 두면 상태기계의 마지막 걸음을 막는다(§3-1-3 의 4). 골격의 <code>(void)</code> 줄과 <code>return 0u;</code> 자리표시는 지웠다.</li>
           <li><strong>다르게 써도 되는 곳</strong> — ① 네 핀을 <code>HAL_GPIO_WritePin(EN_FL_GPIO_Port, EN_FL_Pin, …)</code> 처럼 하나씩 풀어 써도 동일하다. 표 <code>s_en[]</code> 은 바퀴 번호로 고르기 위한 것이다. ② <code>HAL_GPIO_WritePin(…, on)</code> 처럼 <code>bool</code> 을 그대로 넘겨도 빌드되고 동작도 같다. <code>GPIO_PIN_RESET = 0U</code> · <code>GPIO_PIN_SET</code> = 1 이라서다.<sup class="fn"><a href="#fn-52" id="fnref-52">52</a></sup> 다만 그 답은 "열거형의 숫자가 0 · 1 이다"에 기대고, 완결 코드는 그 전제를 쓰지 않는다.</li>
         </ul>
@@ -1082,7 +1082,7 @@ OK pwm</code></pre>
       </ul>
 
       <h3 id="s3-2">3-2. 실습 B — EN 과 "리셋 중 LOW" 의 판정: IBT-2 를 처음 결선한다</h3>
-      <p>CubeMX 는 열지 않고(EN 네 핀은 A 에서 켰다), 코드도 새로 없다(<code>cmd_en()</code> 은 A 의 골격에서 채웠다). 이 실습의 내용은 <strong>결선과 측정</strong>이고, 판정의 논리는 §2-5 · §2-6 이다. 결선 전에 <a href="fw-01-pinmap.html#s3-4">fw-01 §3-4</a> 에서 내가 쓴 결선 금지 목록을 책상에 펴 둔다.</p>
+      <p>CubeMX 는 열지 않고(EN 네 핀은 A 에서 켰다), 코드도 새로 없다(<code>cmd_en()</code> 은 A 의 골격에서 채웠다). 이 실습의 내용은 <strong>결선과 측정</strong>이고, 판정의 논리는 §2-5 · §2-6 이다. 결선 전에 <a href="fw-01-pinmap.html#s3-4">fw-01 §3-4</a> 에서 쓴 결선 금지 목록을 책상에 펴 둔다.</p>
 
       <h4 id="s3-2-3">3-2-3. 직접 채우기 — 결선 (USB 를 뽑은 채)</h4>
       <ol class="steps">
@@ -1090,7 +1090,7 @@ OK pwm</code></pre>
         <li><strong>모듈 VCC ← Nucleo 3V3(CN8-7).</strong> CN8-7 의 <strong>바로 아래 CN8-9 가 5 V</strong> 다 — 핀을 CN8-3(IOREF) · CN8-5(NRST) · CN8-7(3V3) · CN8-9(5 V) 순으로 손가락으로 세고 꽂는다. <strong>모듈 GND ← Nucleo GND.</strong></li>
         <li><strong>R_EN · L_EN 둘(모듈 안에서 묶는다) ← EN_FL(PD13, Zio D28 = CN10-19).</strong> 이웃은 위 CN10-17 = GND · 짝 CN10-20 = PE7(빈 핀)이라, 한 칸 옆 핀에 잘못 꽂아도 HIGH 가 되지는 않는다(§2-8). 그래도 꽂은 뒤 눈으로 한 번 본다. 2026-10-14 이전 배정의 점퍼(D7 = CN10-2)가 꽂혀 있으면 뽑는다. 모듈 1장에 두 EN 을 함께 연결하면 R_EN ‖ L_EN 이므로 저항은 30 kΩ 의 절반이다. 모듈이 넷이면 EN_FR = D29(CN10-21) · EN_RL = D30(CN10-23) · EN_RR = D40(CN10-24) — 이 쪽은 1장만 단다.</li>
         <li><strong>(선택) RPWM · LPWM ← D6 · D16(fl).</strong> 이 실습에는 필요 없지만 연결해 두면 fw-11 의 결선이 된다. 연결했다면 B+ · B− · M+ · M− 이 <strong>비어 있는지</strong> 다시 본다.</li>
-        <li><strong>전원을 넣기 전, 저항을 잰다(판정법 ②′ 의 앞 절반이자 INVENTORY 칸).</strong> DMM 저항 모드로 모듈 헤더에서 — RPWM ↔ GND, LPWM ↔ GND, R_EN ↔ GND, L_EN ↔ GND(EN 둘을 묶었으면 묶음 ↔ GND 한 번 더). 1세대 기록은 각 30 kΩ(NOMINAL(gen1-record, 2026-07-14)). 내 값을 <code>hardware/INVENTORY.md</code> 6절 "입력 풀다운(모듈 내장)" 행에 <code>MEASURED(날짜, DMM 저항 모드 · 모듈 #n)</code> 로 <strong>덧붙인다</strong>. 1세대 값은 지우지 않는다 — 어느 모듈을 잰 것인지 모르는 기록 옆에 내 모듈의 값을 나란히 적는다. 모듈이 4장이면 4장 다 재고 장마다 적는다. 어댑터를 끼운 채 재면 RPWM · LPWM ↔ GND 는 30 kΩ ∥ 10 kΩ ≈ 7.5 kΩ 으로 읽힌다. "모듈 내장" 칸에는 어댑터를 뺀 값을 적는다.</li>
+        <li><strong>전원을 넣기 전, 저항을 잰다(판정법 ②′ 의 앞 절반이자 INVENTORY 칸).</strong> DMM 저항 모드로 모듈 헤더에서 — RPWM ↔ GND, LPWM ↔ GND, R_EN ↔ GND, L_EN ↔ GND(EN 둘을 묶었으면 묶음 ↔ GND 한 번 더). 1세대 기록은 각 30 kΩ(NOMINAL(gen1-record, 2026-07-14)). 잰 값을 <code>hardware/INVENTORY.md</code> 6절 "입력 풀다운(모듈 내장)" 행에 <code>MEASURED(날짜, DMM 저항 모드 · 모듈 #n)</code> 로 <strong>덧붙인다</strong>. 1세대 값은 지우지 않는다 — 어느 모듈을 잰 것인지 모르는 기록 옆에 보유한 모듈의 값을 나란히 적는다. 모듈이 4장이면 4장 다 재고 장마다 적는다. 어댑터를 끼운 채 재면 RPWM · LPWM ↔ GND 는 30 kΩ ∥ 10 kΩ ≈ 7.5 kΩ 으로 읽힌다. "모듈 내장" 칸에는 어댑터를 뺀 값을 적는다.</li>
       </ol>
 
       <h4 id="s3-2-4">3-2-4. 굽고 보기 — 전압은 저항과 짝으로</h4>
@@ -1104,7 +1104,7 @@ OK en                 EN_FL 네트: 약 3.3 V (VOH).  LD2 점멸(FL 만 HIGH).  
 
 [2] 리셋 중 — NRST(검정 B2 버튼)를 누른 채 (판정법 ①, ② 또는 ②′ 중 하나 이상 — §2-6)
     ②′  전원 OFF 에서 잰 저항(위 5) 이 kΩ 계였고, 지금 EN_FL 네트가 0 V 근처다  → 두 값을 짝으로 노트에.
-    ①   EN_FL 네트 ↔ 3V3 에 R_pu (____ kΩ) 를 건 채 NRST 를 누른다. 기대 = 3.3 x 15 / (15 + R_pu) V (내가 계산한 값 ____ V).
+    ①   EN_FL 네트 ↔ 3V3 에 R_pu (____ kΩ) 를 건 채 NRST 를 누른다. 기대 = 3.3 x 15 / (15 + R_pu) V (계산한 값 ____ V).
          읽은 값 ____ V.  전압이 HIGH 쪽으로 올라갔다면 풀다운이 없다 — 모듈 VCC · GND 결선을 다시 본다.
     ②   모듈 74HC244 의 출력(EN 채널) 에 프로브를 댈 수 있으면 NRST 를 누른 채 그 핀: 0 V 근처.  OE 가 GND 에 묶인 것을 눈으로 확인했는가 ____.
 
@@ -1156,7 +1156,7 @@ OK pwm                                D6: 약 1.65 V
 
       <h4 id="s3-4-4">3-4-4. 굽고 보기</h4>
       <pre><code class="lang-text">&gt; pwm fl 300
-OK pwm                D6: 약 1.0 V  → PWM_CMD_HOLD_MS (내 값 ____ ms) 뒤 0 V.  스톱워치로 잰 시간 ____ s
+OK pwm                D6: 약 1.0 V  → PWM_CMD_HOLD_MS (정한 값 ____ ms) 뒤 0 V.  스톱워치로 잰 시간 ____ s
 &gt; pwm fl 300 3000
 OK pwm                3 s 뒤 0 V
 &gt; pwm fl 300 0
@@ -1175,12 +1175,12 @@ OK pwm                여덟 핀 중 RPWM 넷이 약 0.66 V, LPWM 넷 0 V.  5 s 
         <li><label><input type="checkbox" data-key="ioc-tim1-tim8-center-arr"><span><strong>경로 통과</strong> — <code>.ioc</code> 와 <code>main.c</code> 에 TIM1 · TIM8 의 센터 정렬 · ARR 6500 · CH Idle State Reset · OSSI Enable 이 있다. <code>main.h</code> 에는 열두 라벨의 매크로(EN 여덟 개 포함)가 있다
           <span class="sub">판정 수단: <code>grep</code> 출력 · §3-1-1 · <code>.ioc</code> 를 다시 생성할 때마다 다시 실행한다</span></span></label></li>
         <li><label><input type="checkbox" data-key="duty-dmm-proportional"><span><strong>경로 통과</strong> — 한 RPWM 핀에서 듀티 3점 이상(예: 250 · 500 · 750 ‰)의 DMM 전압이 직선에 놓이고, 500 ‰ 의 값을 노트에 적었다
-          <span class="sub">판정 수단: DMM DC 전압 · §3-1-4 · 합격선은 직선성이고 절대값은 내가 적는다(500 ‰ 에서 ____ V)</span></span></label></li>
+          <span class="sub">판정 수단: DMM DC 전압 · §3-1-4 · 합격선은 직선성이고 절대값은 잰 값을 적는다(500 ‰ 에서 ____ V)</span></span></label></li>
         <li><label><input type="checkbox" data-key="rl-never-both"><span><strong>경로 통과</strong> — 어느 듀티(양 · 음 · 부호 바꿈 직후)에서도 같은 바퀴의 RPWM · LPWM 두 핀 중 하나는 0 V 근처다. 호스트 시험 <code>PASS motor 10 cases</code> 도 통과했다
           <span class="sub">판정 수단: DMM + 호스트 시험 출력 · §3-1-3 · §3-1-4</span></span></label></li>
-        <li><label><input type="checkbox" data-key="zio-d3-d4-order-checked"><span><strong>경로 통과</strong> — <code>pwm rl</code> 은 D3(CN10-10)을, <code>pwm rr</code> 은 D4(CN10-8)를 움직인다 — 헤더 순서와 채널 순서가 엇갈린 것을 내 눈으로 확인했다
+        <li><label><input type="checkbox" data-key="zio-d3-d4-order-checked"><span><strong>경로 통과</strong> — <code>pwm rl</code> 은 D3(CN10-10)을, <code>pwm rr</code> 은 D4(CN10-8)를 움직인다 — 헤더 순서와 채널 순서가 엇갈린 것을 직접 확인했다
           <span class="sub">판정 수단: DMM · §3-1-4</span></span></label></li>
-        <li><label><input type="checkbox" data-key="module-pulldown-measured"><span><strong>경로 통과</strong> — 내 IBT-2 의 RPWM · LPWM · R_EN · L_EN ↔ GND 저항을 전원 OFF 에서 쟀다. 그 값을 <code>hardware/INVENTORY.md</code> 6절 "입력 풀다운(모듈 내장)" 행에 MEASURED 로 덧붙였다
+        <li><label><input type="checkbox" data-key="module-pulldown-measured"><span><strong>경로 통과</strong> — 보유한 IBT-2 의 RPWM · LPWM · R_EN · L_EN ↔ GND 저항을 전원 OFF 에서 쟀다. 그 값을 <code>hardware/INVENTORY.md</code> 6절 "입력 풀다운(모듈 내장)" 행에 MEASURED 로 덧붙였다
           <span class="sub">판정 수단: DMM 저항 모드 · §3-2-3 · 1세대 기록 30 kΩ 은 지우지 않는다 · IBT-2 가 없으면 통과시킬 수 없다</span></span></label></li>
         <li><label><input type="checkbox" data-key="en-low-in-reset-judged"><span><strong>발동 확인</strong> — IBT-2 를 결선한 채(모듈 VCC · GND 에 전원이 있는 상태) NRST 를 누르고 판정법 ① 또는 ② / ②′ 로 "EN_FL 네트 LOW = 풀다운이 실재" 를 판정했다. 어느 법인지와 읽은 값(전압, ②′ 면 저항도)이 노트에 있다
           <span class="sub">판정 수단: DMM (전압 + 저항 짝) · §3-2-4 [2] · §2-6 · IBT-2 가 없으면 통과시킬 수 없다 — 모듈 없이 한 ①은 "시연"으로만 적는다</span></span></label></li>
@@ -1188,8 +1188,8 @@ OK pwm                여덟 핀 중 RPWM 넷이 약 0.66 V, LPWM 넷 0 V.  5 s 
           <span class="sub">판정 수단: DMM · §3-2-4 [3] · <code>pinmap-h723.md</code> §6 B9 · 관문 09a 에서 조립 상태로 다시 잰다</span></span></label></li>
         <li><label><input type="checkbox" data-key="halt-turns-pwm-off"><span><strong>발동 확인</strong> — 동결 줄이 없는 빌드는 중단점에서 듀티가 계속 나가고, 동결 줄을 넣은 빌드는 0 V 로 떨어진다. 두 번 다 <code>0x5C00104C</code> 의 bit 0 · 1 을 읽어 적었고, <code>continue</code> 뒤 듀티가 되돌아오는 것도 봤다
           <span class="sub">판정 수단: DMM + gdb <code>x/wx</code> · §3-3-4 · fw-04 가 선행</span></span></label></li>
-        <li><label><input type="checkbox" data-key="pwm-timeout-fires"><span><strong>발동 확인</strong> — <code>pwm fl 300</code> 뒤 <code>PWM_CMD_HOLD_MS</code> 가 지나면 핀이 자동으로 0 V 가 되고, <code>pwm … 0</code> 은 거부된다. 내 유지 시간과 상한 값이 <code>robot_params.h</code> 에 같은 줄 표기로 적혀 있다
-          <span class="sub">판정 수단: DMM + 시계 · §3-4-4 · 내 값: 유지 ____ ms · 상한 ____ ‰</span></span></label></li>
+        <li><label><input type="checkbox" data-key="pwm-timeout-fires"><span><strong>발동 확인</strong> — <code>pwm fl 300</code> 뒤 <code>PWM_CMD_HOLD_MS</code> 가 지나면 핀이 자동으로 0 V 가 되고, <code>pwm … 0</code> 은 거부된다. 정한 유지 시간과 상한 값이 <code>robot_params.h</code> 에 같은 줄 표기로 적혀 있다
+          <span class="sub">판정 수단: DMM + 시계 · §3-4-4 · 정한 값: 유지 ____ ms · 상한 ____ ‰</span></span></label></li>
       </ul>
       <p class="progress-line"></p>
       <div class="progress-bar"><span></span></div>
@@ -1199,7 +1199,7 @@ OK pwm                여덟 핀 중 RPWM 넷이 약 0.66 V, LPWM 넷 0 V.  5 s 
         <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
         <tbody>
           <tr><td>빌드가 <code>static assertion failed … PWM_CMD_HOLD_MS is still EMPTY</code>(또는 <code>DUTY_LIMIT_BENCH_PERMILLE …</code>)로 멈춘다</td><td><code>robot_params.h</code> 의 EMPTY 키를 채우지 않았다 — 의도된 멈춤</td><td>메시지에 키 이름이 있다</td><td>§3-1-3 의 1 · §2-9</td></tr>
-          <tr><td>형식이 맞는 <code>pwm fl 500</code> 인데 <code>ERR pwm bad-arg</code> 가 난다</td><td>둘 중 하나다: ① 내가 정한 <code>DUTY_LIMIT_BENCH_PERMILLE</code> 이 500 보다 작다(거부는 설계대로다) · ② <code>wheel_range()</code> 가 아직 골격이라 늘 false 다</td><td><code>pwm fl 1</code> 도 거부되면 ②, 통과하면 ① — <code>robot_params.h</code> 의 상한 값을 읽어 본다</td><td>§3-1-3 의 1(상한) · §3-1-3 의 6(<code>wheel_range()</code>)</td></tr>
+          <tr><td>형식이 맞는 <code>pwm fl 500</code> 인데 <code>ERR pwm bad-arg</code> 가 난다</td><td>둘 중 하나다: ① 학습자가 정한 <code>DUTY_LIMIT_BENCH_PERMILLE</code> 이 500 보다 작다(거부는 설계대로다) · ② <code>wheel_range()</code> 가 아직 골격이라 늘 false 다</td><td><code>pwm fl 1</code> 도 거부되면 ②, 통과하면 ① — <code>robot_params.h</code> 의 상한 값을 읽어 본다</td><td>§3-1-3 의 1(상한) · §3-1-3 의 6(<code>wheel_range()</code>)</td></tr>
           <tr><td><code>pwm</code> 을 쳐도 여덟 핀 전부 0 V</td><td><code>HAL_TIM_PWM_Start()</code> 를 부르지 않았다(CubeMX 는 시작하지 않는다) · <code>motor_init()</code> 이 <code>app_init()</code> 에 없다</td><td><code>grep -rn "PWM_Start" User/Src</code></td><td>§3-1-3 의 5 · 7</td></tr>
           <tr><td>RPWM 넷은 되는데 LPWM 넷이 0 V</td><td>TIM8 이 Trigger 슬레이브라 <strong>TIM1 의 Update TRGO 가 와야</strong> 카운터가 켜진다(<code>hal_tim.c:1488-1499</code>). TIM1 을 시작하지 않았거나, 슬레이브 설정만 있고 TIM1 TRGO 가 Reset(기본)인 경우다. <strong>두 시작 호출의 순서는 원인이 아니다</strong>(§2-10)</td><td><code>grep -n "TRGO\|SLAVEMODE" Core/Src/main.c</code> · gdb 로 TIM1 의 CR1 CEN 이 1 인가</td><td>§2-10 · §3-1-1 의 5 · 6</td></tr>
           <tr><td>부호를 바꿨는데 반대쪽 핀이 0 으로 안 떨어진다</td><td><code>motor_set()</code> 이 한 채널만 쓴다 — 지난 값이 남았다(불변식 위반)</td><td>호스트 시험은 통과했는데 DMM 에서 난다 → <code>__HAL_TIM_SET_COMPARE</code> 호출이 두 번인가</td><td>§2-1 · §3-1-3 의 3</td></tr>
@@ -1223,7 +1223,7 @@ grep -n "__weak.*PWM_MspInit" $HAL/Src/stm32h7xx_hal_tim.c                 # ②
 grep -n "PWM_MspInit(htim)" $HAL/Src/stm32h7xx_hal_tim.c                   # ③ 누가 언제 부르는가
 grep -rln "HAL_TIM_PWM_MspInit" $FW_H7/Projects/NUCLEO-H723ZG/Examples | head   # ④ ST 예제</code></pre>
         <p>① <code>stm32h7xx_hal_tim.h:2241</code> — <code>void HAL_TIM_PWM_MspInit(TIM_HandleTypeDef *htim)</code>. 인자는 핸들 하나라 TIM1 · TIM8 이 같은 함수로 들어오고 안에서 <code>htim-&gt;Instance</code> 로 가른다.
-        ② <code>stm32h7xx_hal_tim.c:1425</code> 의 <code>__weak</code> 빈 함수다. CubeMX 가 <code>Core/Src/stm32h7xx_hal_msp.c</code> 에 같은 이름을 생성해 이 빈 함수를 덮는다. 생성물이 덮는 콜백이라 내가 <code>User/</code> 에 또 정의하면 중복 정의다 — fw-06 의 <code>PeriodElapsedCallback</code> 과 다른 점이다.
+        ② <code>stm32h7xx_hal_tim.c:1425</code> 의 <code>__weak</code> 빈 함수다. CubeMX 가 <code>Core/Src/stm32h7xx_hal_msp.c</code> 에 같은 이름을 생성해 이 빈 함수를 덮는다. 생성물이 덮는 콜백이라 <code>User/</code> 에 또 정의하면 중복 정의다 — fw-06 의 <code>PeriodElapsedCallback</code> 과 다른 점이다.
         ③ <code>:1354</code> — <code>HAL_TIM_PWM_Init()</code>(<code>:1322</code> 에서 시작) 안, <strong><code>htim-&gt;State == HAL_TIM_STATE_RESET</code> 일 때만</strong> 한 번 불린다. 그래서 클럭 · GPIO · NVIC 은 첫 Init 에서만 설정되고, Init 을 다시 불러도 다시 설정되지 않는다.
         ④ <code>Projects/NUCLEO-H723ZG/Examples/TIM/TIM_DMA/Src/stm32h7xx_hal_msp.c:52</code> 다. 이 예제는 TIM1 CH3 의 핀을 <code>GPIO_MODE_AF_PP</code> · <code>GPIO_AF_TIMx</code> 로 설정하고 DMA 를 연결한다. CubeMX 생성물에서는 핀 AF 설정이 이 함수가 아니라 <code>HAL_TIM_MspPostInit</code> 에 있을 수 있다 — §3-1-1 의 grep 이 어느 쪽인지 알려 준다.</p></div></details>
       <details class="quiz"><summary>2. <code>motor_set(FL, 500)</code> 다음에 <code>motor_set(FL, -300)</code> 을 불렀다. RPWM_FL 과 LPWM_FL 의 CCR 은 각각 얼마여야 하고, "필요한 쪽만 고치는" 구현이라면 무엇이 남는가? 그때 모터에는 무슨 일이 생기는가?</summary>
@@ -1247,7 +1247,7 @@ grep -rln "HAL_TIM_PWM_MspInit" $FW_H7/Projects/NUCLEO-H723ZG/Examples | head   
           <li><strong>INA226 이 있으면</strong> → <a href="fw-10-i2c-ina226.html">fw-10</a> — I2C 와 INA226. 사전충전 완료 판정(§2-8)에 쓰는 측정 수단이 여기서 생긴다. fw-09 · fw-10 · 이 쪽이 끝나야 <a href="fw-11-power-sequence.html">fw-11</a> 첫 통전으로 간다.</li>
           <li><strong>IBT-2 가 아직 없으면</strong> → fw-09 로 갈 수 있다. 이때 체크 셋은 미통과로 둔다: <code>module-pulldown-measured</code> · <code>en-low-in-reset-judged</code> · <code>en-zero-when-usb-unplugged</code>. 모듈이 오면 §3-2 로 돌아와 통과시킨다 — fw-11 의 STOP 리스트가 이 셋을 본다.</li>
           <li><strong>Nucleo 와 USB 만 있으면</strong> → <a href="fw-07-memory-dma.html">fw-07</a> 을 아직 안 했다면 fw-07 이 먼저다(번호 순서가 진행 순서다 — 이 쪽은 부품을 기다리는 동안 할 수 있는 대안이었다).</li>
-          <li>이 쪽에서 채운 값은 <code>hardware/INVENTORY.md</code> 6절 "입력 풀다운(모듈 내장)" 행의 MEASURED 다. 내 노트에는 셋이 있는가: 500 ‰ 의 DMM 전압, 판정법과 읽은 값의 짝, <code>PWM_CMD_HOLD_MS</code> · <code>DUTY_LIMIT_BENCH_PERMILLE</code> 를 그렇게 정한 이유.</li>
+          <li>이 쪽에서 채운 값은 <code>hardware/INVENTORY.md</code> 6절 "입력 풀다운(모듈 내장)" 행의 MEASURED 다. 학습 노트에는 셋이 있는가: 500 ‰ 의 DMM 전압, 판정법과 읽은 값의 짝, <code>PWM_CMD_HOLD_MS</code> · <code>DUTY_LIMIT_BENCH_PERMILLE</code> 를 그렇게 정한 이유.</li>
         </ul>
       </div>
 
@@ -1275,7 +1275,7 @@ grep -rln "HAL_TIM_PWM_MspInit" $FW_H7/Projects/NUCLEO-H723ZG/Examples | head   
           <li id="fn-19">RM0468 Rev 3 §11.3.1. 원문: "During and just after reset, the alternate functions are not active and most of the I/O ports are configured in analog mode". <a class="fn-back" href="#fnref-19" aria-label="본문으로">↩</a></li>
           <li id="fn-20">출처 등급은 NOMINAL(gen1-record, 2026-07-14 · 07-18)이다. <code>~/ros2/hardware/circuit_ai.md:273,336-337</code>, INVENTORY 6절 "입력 풀다운(모듈 내장)" 행. <a class="fn-back" href="#fnref-20" aria-label="본문으로">↩</a></li>
           <li id="fn-21">30 kΩ → 합성 7.5 kΩ, HIGH 오인에 필요한 주입 전류 77 µA → 308 µA. <code>circuit_ai.md:335-343</code>. <a class="fn-back" href="#fnref-21" aria-label="본문으로">↩</a></li>
-          <li id="fn-22">사용자 결정 3e(2026-10-29 개정 — 인두기 보유, 2026-10-09 SB57 직접 제거). 결정 ⑨ 의 근거: <code>hardware/ibt2-adapter/README.md</code> §2-3. <a class="fn-back" href="#fnref-22" aria-label="본문으로">↩</a></li>
+          <li id="fn-22">사용자 결정, 2026-09-22(2026-10-29 개정 — 인두기 보유, 2026-10-09 SB57 직접 제거). 어댑터 기판에 PWM 풀다운 10 kΩ 을 다는 것은 사용자 결정, 2026-10-14 — 근거: <code>hardware/ibt2-adapter/README.md</code> §2-3. <a class="fn-back" href="#fnref-22" aria-label="본문으로">↩</a></li>
           <li id="fn-23"><code>pinmap-h723.md</code> §6 B9. <a class="fn-back" href="#fnref-23" aria-label="본문으로">↩</a></li>
           <li id="fn-24">RM0468 Rev 3 §43.3.29 "Debug mode", 1614쪽. 원문: "For safety purposes, when the counter is stopped, the outputs are disabled (as if the MOE bit was reset)". <a class="fn-back" href="#fnref-24" aria-label="본문으로">↩</a></li>
           <li id="fn-25">TIMx_BDTR bit 10, RM0468 §43.4.20. <a class="fn-back" href="#fnref-25" aria-label="본문으로">↩</a></li>
@@ -1296,7 +1296,7 @@ grep -rln "HAL_TIM_PWM_MspInit" $FW_H7/Projects/NUCLEO-H723ZG/Examples | head   
           <li id="fn-40">꼴은 보드 프리셋 PB0 의 두 줄과 같다. 풀다운 · 초기 레벨 · 속도의 키 이름은 생성 후 확인한다. <a class="fn-back" href="#fnref-40" aria-label="본문으로">↩</a></li>
           <li id="fn-41">파일은 <code>TIM1_8H7-gptimer2_v3_x_Cube_Modes.xml</code> 이다. 옮긴 이름: "Counter Mode" · "Center Aligned mode1" · "CH Idle State" · "Off State Selection for Idle Mode (OSSI)". 그리고 "Trigger Event Selection TRGO" · "Slave Mode Controller" · "PWM Generation CH1". <a class="fn-back" href="#fnref-41" aria-label="본문으로">↩</a></li>
           <li id="fn-42">2026-10-14, LD2 표시를 더한 판. <a class="fn-back" href="#fnref-42" aria-label="본문으로">↩</a></li>
-          <li id="fn-43">사용자 결정 ac, 2026-10-14. <a class="fn-back" href="#fnref-43" aria-label="본문으로">↩</a></li>
+          <li id="fn-43">사용자 결정, 2026-10-14. <a class="fn-back" href="#fnref-43" aria-label="본문으로">↩</a></li>
           <li id="fn-44">2026-09-22, <code>arm-none-eabi-gcc</code> 로 확인. <a class="fn-back" href="#fnref-44" aria-label="본문으로">↩</a></li>
           <li id="fn-45"><code>__HAL_TIM_GET_AUTORELOAD()</code> 는 <code>stm32h7xx_hal_tim.h:1502</code>, <code>__HAL_TIM_SET_COMPARE()</code> 는 <code>:1590</code>. <a class="fn-back" href="#fnref-45" aria-label="본문으로">↩</a></li>
           <li id="fn-46"><code>stm32h7xx_hal.h:892-893</code>. <a class="fn-back" href="#fnref-46" aria-label="본문으로">↩</a></li>
@@ -1306,7 +1306,7 @@ grep -rln "HAL_TIM_PWM_MspInit" $FW_H7/Projects/NUCLEO-H723ZG/Examples | head   
           <li id="fn-50"><code>stm32h7xx_hal_tim.h:1502</code>: <code>(__HANDLE__)-&gt;Instance-&gt;ARR</code>. <a class="fn-back" href="#fnref-50" aria-label="본문으로">↩</a></li>
           <li id="fn-51">같은 헤더의 <code>:1590</code>. <a class="fn-back" href="#fnref-51" aria-label="본문으로">↩</a></li>
           <li id="fn-52"><code>stm32h7xx_hal_gpio.h:67-71</code>. <a class="fn-back" href="#fnref-52" aria-label="본문으로">↩</a></li>
-          <li id="fn-53">사용자 결정 ab, 2026-10-14. <a class="fn-back" href="#fnref-53" aria-label="본문으로">↩</a></li>
+          <li id="fn-53">사용자 결정, 2026-10-14. <a class="fn-back" href="#fnref-53" aria-label="본문으로">↩</a></li>
           <li id="fn-54">DS13313 표 52: VDD − 0.4 V 이상 @ 8 mA. <a class="fn-back" href="#fnref-54" aria-label="본문으로">↩</a></li>
       </ol>
 

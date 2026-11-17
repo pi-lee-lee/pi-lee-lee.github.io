@@ -33,11 +33,12 @@
     { id: '09', file: '09-slam-nav2.html', num: '09', title: 'SLAM과 Nav2', group: 'main' },
     { id: '09b', file: '09b-frontier-explore.html', num: '09b', title: '프런티어 탐사 — 지도 완성 판정', group: 'main' },
     { id: '10', file: '10-autonomy.html', num: '10', title: '자율주행 노드 구성', group: 'main' },
+    { id: '10a', file: '10a-slope.html', num: '10a', title: '경사 대응 — 평지에서는 동작하지 않는 기능', group: 'main' },
     { id: '11', file: '11-multi-map.html', num: '11', title: '다중 지도 — 구역 관리와 지도 전환', group: 'main' },
     { id: '99', file: '99-troubleshooting.html', num: '99', title: '트러블슈팅', group: 'main' },
     // MCU 펌웨어 A-Z 가이드 (fw 그룹) — fw_style §1-1 의 id·num·file·title. 있는 쪽만 등록한다(2026-09-22: fw-00~fw-06)
     { id: 'fw-00', file: 'fw-00-map.html', num: 'F0', title: '지도와 준비', group: 'fw' },
-    { id: 'fw-01', file: 'fw-01-pinmap.html', num: 'F1', title: '핀맵과 내 보드 확인', group: 'fw' },
+    { id: 'fw-01', file: 'fw-01-pinmap.html', num: 'F1', title: '핀맵과 보드 확인', group: 'fw' },
     { id: 'fw-02', file: 'fw-02-toolchain.html', num: 'F2', title: '툴체인과 빈 프로젝트', group: 'fw' },
     { id: 'fw-03', file: 'fw-03-clock-console.html', num: 'F3', title: '클럭 520 MHz 와 VCP 콘솔', group: 'fw' },
     { id: 'fw-04', file: 'fw-04-debugger.html', num: 'F4', title: '디버거', group: 'fw' },
@@ -57,7 +58,12 @@
     { id: 'fw-17', file: 'fw-17-link-v2.html', num: 'F17', title: '계약 v2 링크', group: 'fw' },
     { id: 'fw-18', file: 'fw-18-safety-fsm.html', num: 'F18', title: '안전 상태기계', group: 'fw' },
     { id: 'fw-19', file: 'fw-19-bench-acceptance.html', num: 'F19', title: '모듈 정리와 벤치 수용 시험', group: 'fw' },
-    { id: 'fw-20', file: 'fw-20-after-assembly.html', num: 'F20', title: '조립 후 마무리', group: 'fw' },
+    // fw-20 은 실습이 많아 다섯 쪽으로 나눴다(2026-11-17). 실습 글자 · 절 번호는 묶음 전체에서 이어진다.
+    { id: 'fw-20a', file: 'fw-20a-route-gain-traction.html', num: 'F20a', title: '조립 후 — 동선 · 게인 · 슬립 억제', group: 'fw' },
+    { id: 'fw-20b', file: 'fw-20b-slope-mix.html', num: 'F20b', title: '경사 출력 조정', group: 'fw' },
+    { id: 'fw-20c', file: 'fw-20c-yaw-rate.html', num: 'F20c', title: '회전 속도 되먹임', group: 'fw' },
+    { id: 'fw-20d', file: 'fw-20d-roll.html', num: 'F20d', title: '기울기 대응(롤)', group: 'fw' },
+    { id: 'fw-20e', file: 'fw-20e-thresholds.html', num: 'F20e', title: '임계값 확정과 마무리', group: 'fw' },
     { id: 'l-00', file: 'l-00-map.html', num: 'L0', title: '지도와 준비', group: 'lidar' },
     { id: 'l-01', file: 'l-01-link.html', num: 'L1', title: '응답하는가', group: 'lidar' },
     { id: 'l-02', file: 'l-02-device-id.html', num: 'L2', title: '기기에게 묻는다', group: 'lidar' },
@@ -76,10 +82,20 @@
     { id: 'l-15', file: 'l-15-illusions.html', num: 'L15', title: '착시 셋과 재질', group: 'lidar' },
     { id: 'l-16', file: 'l-16-node.html', num: 'L16', title: '도구를 노드로', group: 'lidar' },
     { id: 'l-17', file: 'l-17-acceptance.html', num: 'L17', title: '라이다 벤치 수용', group: 'lidar' },
+    // 카메라 가이드 (camera 그룹) — 카메라 → OpenCV 전처리 → YOLO 추론 → Hailo 적용. 코드 전량 · 짧은 설명 (2026-11-09)
+    { id: 'c-00', file: 'c-00-map.html', num: 'C0', title: '지도와 준비', group: 'camera' },
+    { id: 'c-01', file: 'c-01-host-camera.html', num: 'C1', title: '호스트에서 카메라 확인', group: 'camera' },
+    { id: 'c-02', file: 'c-02-camera-topic.html', num: 'C2', title: '컨테이너에서 영상 토픽', group: 'camera' },
+    { id: 'c-03', file: 'c-03-calibration.html', num: 'C3', title: '카메라 보정과 camera_info', group: 'camera' },
+    { id: 'c-04', file: 'c-04-opencv-node.html', num: 'C4', title: 'OpenCV 전처리 노드', group: 'camera' },
+    { id: 'c-05', file: 'c-05-yolo-model.html', num: 'C5', title: 'YOLO 모델 준비 (Mac)', group: 'camera' },
+    { id: 'c-06', file: 'c-06-yolo-node.html', num: 'C6', title: 'YOLO 추론 노드 (CPU)', group: 'camera' },
+    { id: 'c-07', file: 'c-07-hailo-setup.html', num: 'C7', title: 'Hailo 준비 — 버전과 모델', group: 'camera' },
+    { id: 'c-08', file: 'c-08-hailo-node.html', num: 'C8', title: 'Hailo 추론 노드', group: 'camera' },
     { id: 'ref-rclcpp', file: 'ref-rclcpp.html', num: 'A', title: 'rclcpp 레퍼런스', group: 'ref' },
     { id: 'ref-opencv', file: 'ref-opencv.html', num: 'B', title: 'OpenCV 사용법', group: 'ref' },
     { id: 'ref-yolo', file: 'ref-yolo.html', num: 'C', title: 'YOLO 사용법', group: 'ref' },
-    { id: 'ref-abbr', file: 'ref-abbr.html', num: 'D', title: '약어 모음 — MCU · 펌웨어', group: 'ref' },
+    { id: 'ref-abbr', file: 'ref-abbr.html', num: 'D', title: '약어 모음 — 본편 · 펌웨어', group: 'ref' },
     { id: 'ref-abbr-lidar', file: 'ref-abbr-lidar.html', num: 'E', title: '약어 모음 — 라이다 L 쪽', group: 'ref' }
   ];
 
@@ -88,6 +104,7 @@
     { id: 'main', label: '학습 단계' },
     { id: 'fw', label: 'MCU 펌웨어 가이드' },
     { id: 'lidar', label: '라이다 가이드' },
+    { id: 'camera', label: '카메라 가이드' },
     { id: 'ref', label: '부록 · 레퍼런스' }
   ];
 
@@ -107,6 +124,9 @@
     '05:cp2': null,
     '05:cp3': null,
     '05:cp7': null,
+    // 05: 치수 기입 항목을 뺐다 — 05 는 임의 값으로 진행하고 실제 값은 06b · 09a 에서 넣는다(2026-11-10).
+    '05:inventory-nominal-filled': null,
+    '05:xacro-nominal-applied': null,
     // 06: 펌웨어 항목 다섯 개 — 받을 fw 쪽(fw-14·16·17·19)이 생기면 null 을 그쪽 키로 바꾼다(보관함에서 되살아난다)
     '06:cp3': null,
     '06:cp6': null,
@@ -138,6 +158,29 @@
     'fw-14:wt-north-gate-k1': null,
     'fw-20:wt-mag-cal-constant': null,
     'fw-20:wt-north-judged': null,
+    // fw-20: 다섯 쪽으로 나눴다(2026-11-17). 항목은 그대로, 쪽만 옮겼다.
+    'fw-20:reflash-route-rehearsed': 'fw-20a:reflash-route-rehearsed',
+    'fw-20:nucleo-supply-recorded': 'fw-20a:nucleo-supply-recorded',
+    'fw-20:pid-load-retuned-recorded': 'fw-20a:pid-load-retuned-recorded',
+    'fw-20:track-width-measured-before-traction': 'fw-20a:track-width-measured-before-traction',
+    'fw-20:traction-host-pass': 'fw-20a:traction-host-pass',
+    'fw-20:traction-on-spin-observed': 'fw-20a:traction-on-spin-observed',
+    'fw-20:slope-host-pass': 'fw-20b:slope-host-pass',
+    'fw-20:slope-off-unchanged': 'fw-20b:slope-off-unchanged',
+    'fw-20:slope-keys-measured': 'fw-20b:slope-keys-measured',
+    'fw-20:slope-ramp-hold': 'fw-20b:slope-ramp-hold',
+    'fw-20:lift-two-sided': 'fw-20b:lift-two-sided',
+    'fw-20:nogo-straight-down': 'fw-20b:nogo-straight-down',
+    'fw-20:yaw-rate-loop-floor': 'fw-20c:yaw-rate-loop-floor',
+    'fw-20:roll-host-pass': 'fw-20d:roll-host-pass',
+    'fw-20:roll-off-unchanged': 'fw-20d:roll-off-unchanged',
+    'fw-20:roll-keys-measured': 'fw-20d:roll-keys-measured',
+    'fw-20:roll-flat-room': 'fw-20d:roll-flat-room',
+    'fw-20:integ-eq-host-floor': 'fw-20d:integ-eq-host-floor',
+    'fw-20:thresholds-measured-saved': 'fw-20e:thresholds-measured-saved',
+    'fw-20:stall-trips-under-conditions': 'fw-20e:stall-trips-under-conditions',
+    'fw-20:wt-north-deprecated-record': 'fw-20e:wt-north-deprecated-record',
+    'fw-20:nominal-gate-zero': 'fw-20e:nominal-gate-zero',
     // 08c: C++ 판으로 바뀌었다(2026-11-03). 옛 Python 판은 08c-1 로 복사됐고 data-key(cp0~cp12)를 그대로 갖는다.
     //   언어에 매인 항목은 08c-1 로, 하드웨어 사실(장치 인식·HEF·parse-hef·INVENTORY)은 08c 의 새 키로 잇는다.
     '08c:cp0': '08c-1:cp0',
@@ -155,7 +198,14 @@
     '08c:cp12': '08c:hailo-inventory',
     // 08d: 깊이 노드 hailo_depth 가 C++ 로 바뀌었다(2026-11-03). Python 판은 08d-1 로 복사됐고 data-key 를 그대로 갖는다.
     //   언어에 매인 항목은 가짜 백엔드 확인(cp6) 하나다. 나머지 키는 08d 에 그대로 남는다.
-    '08d:cp6': '08d-1:cp6'
+    '08d:cp6': '08d-1:cp6',
+    // 10a: 경사 대응을 별도 쪽(10a)으로 뗐다(2026-11-16). 평지에서만 시험할 수 있어서다. 키는 그대로 두고 쪽만 바뀐다.
+    '07:slope-floor-hit': '10a:slope-floor-hit',
+    '09b:slope-core-pass': '10a:slope-core-pass',
+    '09b:slope-pause-plank': '10a:slope-pause-plank',
+    '09b:slope-foot-check': '10a:slope-foot-check',
+    '10:no-go-descends-straight': '10a:no-go-descends-straight',
+    '10:scan-gate-split': '10a:scan-gate-split'
   };
 
   // JSON 이 객체가 아닌 것(null·숫자·배열)을 담고 있어도 뒤의 코드가 죽지 않게 형태를 확인한다.
@@ -605,7 +655,7 @@
 
   // ── 약어 자동 링크 ────────────────────────────────────────────────────
   // 사전은 둘이다(생성물 — scripts/gen_abbr_js.py 가 만든다).
-  //   assets/abbr.js       ← ref-abbr.html        : fw · 06 · 06a · 06b · ref-abbr
+  //   assets/abbr.js       ← ref-abbr.html        : fw · 본편(group 'main', 2026-11-10) · ref-abbr
   //   assets/abbr-lidar.js ← ref-abbr-lidar.html  : 라이다 L 쪽(group 'lidar') · ref-abbr-lidar
   // 같은 약어라도 L 쪽에서는 L 쪽의 뜻(풍선)과 L 쪽 약어 쪽의 줄로 간다.
   // 본문의 약어를 약어 쪽의 그 줄로 가는 링크로 바꾼다. 쪽의 HTML 은 고치지 않는다.
@@ -615,7 +665,7 @@
   var ABBR_MCU = { src: 'assets/abbr.js', list: 'RPI5_ABBR', page: 'ref-abbr.html' };
   var ABBR_L = { src: 'assets/abbr-lidar.js', list: 'RPI5_ABBR_L', pageVar: 'RPI5_ABBR_L_PAGE', page: 'ref-abbr-lidar.html' };
   var ABBR_STAGES = { '06': ABBR_MCU, '06a': ABBR_MCU, '06b': ABBR_MCU, 'ref-abbr': ABBR_MCU, 'ref-abbr-lidar': ABBR_L };
-  var ABBR_GROUPS = { fw: ABBR_MCU, lidar: ABBR_L };
+  var ABBR_GROUPS = { fw: ABBR_MCU, main: ABBR_MCU, lidar: ABBR_L };
 
   function loadAbbr(stage) {
     var cfg = stage && (ABBR_GROUPS[stage.group] || ABBR_STAGES[stage.id]);
@@ -684,11 +734,11 @@
     });
   }
 
-  // ── 절 들여쓰기 (2026-10-28, fw 쪽만) ─────────────────────────────────
+  // ── 절 들여쓰기 (2026-10-28 fw 쪽, 10-29 L 쪽, 11-10 본편 01 ~ 99) ──────────
   // 쪽 HTML 은 제목과 본문이 형제로 나란히 있다. 제목(h2~h4) 뒤의 본문을 다음 같은 단계 이상의
   // 제목 앞까지 div.sec 로 묶어 한 단계씩 들여쓴다. .pager 는 묶지 않는다.
   function wrapSections(stageId) {
-    if (stageId.indexOf('fw-') !== 0 && stageId.indexOf('l-') !== 0) return;
+    if (stageId.indexOf('fw-') !== 0 && stageId.indexOf('l-') !== 0 && !/^\d\d/.test(stageId)) return;
     var root = document.querySelector('.content');
     if (!root) return;
     function isStop(n, level) {

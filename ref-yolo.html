@@ -331,7 +331,7 @@ yolo export  model=runs/detect/train/weights/best.pt format=onnx opset=12 simpli
           <tr><td>모델 크기 × 입력 크기</td><td>n@640 이 기본. CPU 라면 n@320 이 4배 가까이 빠르지만 작은/먼 물체를 놓친다. Hailo 에서는 n@640 이 실시간이므로 굳이 줄이지 않는다. <strong>실측 표를 만든다</strong>(08b §3-4)</td></tr>
           <tr><td>클래스 필터</td><td>주행 안전에는 <code>person</code>(과 반려동물)만 보면 된다. 필터는 파서 뒤가 아니라 <em>NMS 앞</em>에서 한다. 그래야 다른 클래스 박스가 남길 클래스의 박스를 억제하지 않는다</td></tr>
           <tr><td>시간적 안정화</td><td>검출 결과는 프레임마다 나타났다 사라지기도 한다. 감독 노드는 "연속 N 프레임(예: 3) 검출 시 인정, M 프레임 미검출 시 해제"로 히스테리시스를 둔다(10 단계 정책). 검출 노드는 raw 를 내고 판단은 감독 노드가 한다</td></tr>
-          <tr><td>노출과 NoIR</td><td>역광·어두운 복도에서 recall 이 떨어진다. NoIR 은 낮에 색이 붉어도 검출에는 큰 영향이 없고, 밤에는 IR 조명이 있어야 한다. 노출 안정(AeEnable)이 색보다 중요</td></tr>
+          <tr><td>노출</td><td>역광·어두운 복도에서 recall 이 떨어진다. 이 로봇의 카메라(일반 모델)는 적외선 차단 필터가 있어 빛이 없는 곳에서는 찍히지 않는다. 노출 안정(AeEnable)이 색보다 중요</td></tr>
           <tr><td>검출 → 거리</td><td>① <strong>라이다 융합</strong>(정석): 박스 중심 u → θ = atan((u−cx)/fx) → 그 방위의 <code>/scan</code> 거리. 08d §2-3 은 이 계산을 반대 방향으로 한다(라이다 점을 사진에 투영한다). ② 근사: 사람 키 H(≈1.7 m) 가 h 픽셀이면 Z ≈ fy·H/h. 정밀도는 낮지만 라이다 사각(높이)에 있는 물체에 유용</td></tr>
           <tr><td>평가</td><td>실제 주행 환경에서 5분 rosbag 을 기록하고 오검출(FP)·미검출(FN)을 세어 본다. mAP 보다 "우리 복도에서 사람을 몇 번 놓쳤나"가 중요하다</td></tr>
           <tr><td>프레임 드롭</td><td>추론이 카메라보다 느리면 최신 프레임만 처리(08b). 큐를 쌓으면 1분 뒤 30초 전 영상을 보고 판단한다</td></tr>
@@ -384,7 +384,7 @@ def on_detections(dets):      # dets: 이 프레임의 Detection2DArray
           <tr><td>C++ 가 Python 보다 검출이 적다</td><td>원인은 프레임 드롭(Release 가 아니라서 느림)이 아니라 임계값 차이(<code>conf</code>/<code>nms</code>) 또는 클래스 무관 NMS 차이다</td><td>임계값을 똑같이 두고 같은 사진으로 비교</td></tr>
           <tr><td>Pi 에서 1 FPS 미만</td><td>Debug 빌드, 입력 640, 4스레드 경합</td><td>Release, 320 실험, <code>cv::setNumThreads(2)</code>. 근본 해결은 08c</td></tr>
           <tr><td>Hailo 결과와 CPU 결과가 다르다</td><td>양자화(INT8)·다른 학습 체크포인트·NMS 온칩 파라미터</td><td>같은 장면에서 정성 비교. 소수점 일치는 기대하지 않는다</td></tr>
-          <tr><td>야간에 사람이 검출되지 않는다</td><td>NoIR 이라도 광원이 없으면 영상이 없다</td><td>IR 조명 추가, 노출 시간 상향(대신 모션 블러가 늘어난다)</td></tr>
+          <tr><td>야간에 사람이 검출되지 않는다</td><td>광원이 없으면 영상이 없다(적외선 차단 필터가 있는 카메라라 적외선 조명도 쓸 수 없다)</td><td>가시광 조명 추가, 노출 시간 상향(대신 모션 블러가 늘어난다)</td></tr>
         </tbody>
       </table></div>
 

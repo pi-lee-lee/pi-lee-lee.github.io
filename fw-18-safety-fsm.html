@@ -16,30 +16,30 @@
       <p class="kicker">F18 · 안전 상태기계</p>
       <h1>일부러 고장을 내고, 이벤트가 정확히 한 번 오는 것을 본다</h1>
       <p class="lead"><a href="fw-13-pid-protection.html">fw-13</a> 은 바퀴 하나의 되먹임이 끊기는 것을 검출했고, 그때 "넷을 다 정지시킬 것인가, EN 까지 내릴 것인가"를 이 쪽으로 넘겼다.
-      <a href="fw-17-link-v2.html">fw-17</a> 은 이벤트 프레임 0x83 을 만들었지만 <strong>0x83 이벤트를 내는 코드가 아직 없어서</strong> 0건이 정상이었다. 이 쪽은 두 쪽이 남긴 일을 함께 마무리하고, 그러려고 두 가지를 만든다.
-      하나는 전압 · 전류 · 기울기 · 명령 끊김 · IMU 침묵을 보고 <strong>Pi 에게 묻지 않고</strong> 출력을 끊는 상태기계이고, 다른 하나는 그 결과를 상태 비트와 이벤트로 내보내는 경로다.
-      여기서 정한 임계값은 벤치의 임시값이고, 실측으로 확정하는 것은 <a href="fw-20-after-assembly.html">fw-20</a> 이다.</p>
+      <a href="fw-17-link-v2.html">fw-17</a> 은 이벤트 프레임 <code>TYPE_EVENT</code> (0x83) 를 만들었지만 <strong><code>TYPE_EVENT</code> 이벤트를 내는 코드가 아직 없어서</strong> 0건이 정상이었다. 이 쪽은 두 쪽이 남긴 일을 함께 마무리하고, 그러려고 두 가지를 만든다.
+      하나는 전압 · 전류 · 명령 끊김 · IMU 침묵 · 바퀴 보호 트립을 보고 <strong>Pi 에게 묻지 않고</strong> 출력을 끊는 상태기계이고, 다른 하나는 그 결과를 상태 비트와 이벤트로 내보내는 경로다.
+      여기서 정한 임계값은 벤치의 임시값이고, 실측으로 확정하는 것은 <a href="fw-20e-thresholds.html">fw-20e</a> 이다.</p>
 
       <div class="goal">
         <span class="label">이 쪽이 끝나면 보이는 것</span>
         <p>이 쪽이 끝나면 다음 셋을 직접 확인할 수 있다.</p>
         <ul>
-          <li>TEXT 모드에서 <code>fault inject tilt</code> 를 치면 LD3 가 켜지고 <code>fault stat</code> 이 <strong>이벤트 한 줄</strong>을 꺼내 보여 준다. 같은 명령을 다시 쳐도 이벤트는 더 늘지 않고 비트만 유지된다.</li>
-          <li><code>fault clear</code> 뒤 내가 정한 유지 시간이 지나면 복구 이벤트가 한 줄 더 온다.</li>
-          <li>V2 모드에서 probe 의 송신만 멈추면(<code>--mute-after</code>) 0x83 이벤트가 온다. 그 <code>detail</code> 에 적힌 <strong>MCU 자신의 ms</strong> 를 계약값 200 과 비교한다.</li>
+          <li>TEXT 모드에서 <code>fault inject imu</code> 를 치면 LD3 가 켜지고 <code>fault stat</code> 이 <strong>이벤트 한 줄</strong>을 꺼내 보여 준다. 같은 명령을 다시 쳐도 이벤트는 더 늘지 않고 비트만 유지된다.</li>
+          <li><code>fault clear</code> 뒤 학습자가 정한 유지 시간이 지나면 복구 이벤트가 한 줄 더 온다.</li>
+          <li>V2 모드에서 probe 의 송신만 멈추면(<code>--mute-after</code>) <code>TYPE_EVENT</code> (0x83) 이벤트가 온다. 그 <code>detail</code> 에 적힌 <strong>MCU 자신의 ms</strong> 를 계약값 200 과 비교한다.</li>
         </ul>
         <p class="small">TEXT 모드와 V2 모드는 빌드 인자 하나로 고르는 두 통신 방식이다. TEXT 는 명령 창(CLI)으로 글자를 주고받고, V2 는 계약 v2 프레임만 주고받는다(CLI 없음).
-        probe 는 <code>scripts/mcu_probe.py</code> 다. Mac 에서 실행하는 가짜 상위로, Pi 대신 MCU 와 프레임을 주고받는다.</p>
+        probe 는 <code>firmware/scripts/mcu_probe.py</code> 다. Mac 에서 실행하는 가짜 상위로, Pi 대신 MCU 와 프레임을 주고받는다.</p>
         <p><strong>이 쪽에 필요한 것</strong></p>
         <ul>
           <li>NUCLEO-H723ZG, USB 케이블, Mac(python3 + pyserial), fw-17 까지 끝낸 프로젝트, DMM</li>
           <li>실습 C-2: 배터리 · 사전충전 회로 · 모터(<a href="fw-11-power-sequence.html">fw-11</a> 의 구성 그대로)</li>
-          <li>실습 C-1: WT901 또는 BNO055 가운데 내가 기본으로 고른 센서</li>
+          <li>실습 C-1: WT901(이 로봇의 IMU, <a href="fw-14-wt901.html">fw-14</a>)</li>
         </ul>
         <p><strong>없으면</strong></p>
         <ul>
           <li>실습 A(호스트 시험 + TEXT 논리)는 Nucleo 와 Mac 만으로 끝난다.</li>
-          <li>센서가 없으면 <code>imu-unplug-raises-fault</code> · <code>tilt-by-hand-raises-fault</code> 를 남긴다.</li>
+          <li>센서가 없으면 <code>imu-unplug-raises-fault</code> · <code>tilt-by-hand-no-fault</code> 를 남긴다.</li>
           <li>배터리가 없으면 <code>lowbatt-path-by-raised-threshold</code> · <code>trip-scope-observed</code> 를 남긴다.</li>
           <li>나머지 여섯 항목은 부품 없이 통과된다.</li>
         </ul>
@@ -47,9 +47,9 @@
 
       <div class="meta">
         <div><span class="k">환경</span><span class="tag bench">벤치</span> <span class="tag power">모터 전원</span> <span class="tag mac">Mac</span></div>
-        <div><span class="k">선행</span><a href="fw-17-link-v2.html">fw-17</a> — 0x83 이벤트 프레임 · <code>scripts/mcu_probe.py</code> · <a href="fw-13-pid-protection.html#s2-14">fw-13 §2-14</a> — <code>control_*</code> 공개 API 와 이벤트 큐의 빈 골격 · <a href="fw-11-power-sequence.html#s2-5">fw-11 §2-5</a> — 차단 순서와 <code>power_get_state()</code> · <a href="fw-10-i2c-ina226.html">fw-10</a> — <code>ina226_get_vbus_mv()</code> · <a href="fw-12-adc.html">fw-12</a> — <code>adc_get_batt_ma()</code> · <a href="fw-14-wt901.html">fw-14</a> 또는 <a href="fw-15-bno055.html">fw-15</a> — <code>control_get_imu()</code> 가 받아 오는 샘플</div>
-        <div><span class="k">채우는 INVENTORY 칸</span>없음 (임계값은 벤치의 임시값이고 확정은 <a href="fw-20-after-assembly.html">fw-20</a> 이다)</div>
-        <div><span class="k">소요</span>예상 ____ h · 내가 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
+        <div><span class="k">선행</span><a href="fw-17-link-v2.html">fw-17</a> — <code>TYPE_EVENT</code> (0x83) 이벤트 프레임 · <code>firmware/scripts/mcu_probe.py</code> · <a href="fw-13-pid-protection.html#s2-14">fw-13 §2-14</a> — <code>control_*</code> 공개 API 와 이벤트 큐의 빈 골격 · <a href="fw-11-power-sequence.html#s2-5">fw-11 §2-5</a> — 차단 순서와 <code>power_get_state()</code> · <a href="fw-10-i2c-ina226.html">fw-10</a> — <code>ina226_get_vbus_mv()</code> · <a href="fw-12-adc.html">fw-12</a> — <code>adc_get_batt_ma()</code> · <a href="fw-14-wt901.html">fw-14</a> 또는 <a href="fw-15-bno055.html">fw-15</a> — <code>control_get_imu()</code> 가 받아 오는 샘플</div>
+        <div><span class="k">채우는 INVENTORY 칸</span>없음 (임계값은 벤치의 임시값이고 확정은 <a href="fw-20e-thresholds.html">fw-20e</a> 이다)</div>
+        <div><span class="k">소요</span>예상 ____ h · 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
       </div>
 
       <h2 id="overview">1. 개요 — 거부권을 코드로 옮긴다</h2>
@@ -58,43 +58,44 @@
       지금까지 이 거부권은 그림에만 있었다. 이 쪽에서 거부권을 <code>safety.c</code> 라는 파일 하나로 구현한다.</p>
       <p>이 쪽이 하는 일은 셋이다.</p>
       <ul>
-        <li>① 일곱 가지 위험 조건을 1 kHz(주기 1 ms)로 판정해 <strong>래치</strong>한다.</li>
+        <li>① 여섯 가지 위험 조건을 1 kHz(주기 1 ms)로 판정해 <strong>래치</strong>한다.</li>
         <li>② 래치가 0 에서 1 로 바뀌는 <strong>엣지</strong>마다 이벤트를 한 번 낸다.</li>
-        <li>③ 조건마다 내가 정한 만큼 <strong>끊는다</strong> — 듀티까지인가, EN 네 핀까지인가, 릴레이까지인가.</li>
+        <li>③ 조건마다 학습자가 정한 만큼 <strong>끊는다</strong> — 듀티까지인가, EN 네 핀까지인가, 릴레이까지인가.</li>
       </ul>
       <pre class="diagram"><code> 입력이 모이는 곳 (main 문맥, app_loop 한 바퀴에 한 번)
    ina226_get_vbus_mv()   -&gt; batt_mv   (fw-10)
    adc_get_batt_ma()      -&gt; current_ma (fw-12)
-   control_get_imu()      -&gt; tilt_ddeg, ms_since_imu  (fw-14 / fw-15)
+   control_get_imu()      -&gt; ms_since_imu  (fw-14)
                           |
                           v   safety_service_main() 이 s_in 에 적어 둔다
  판정이 도는 곳 (1 kHz ISR, control_step_1khz 안)
    safety_step()
-     -&gt; safety_fsm_step()  : 조건 7개 -&gt; 래치 cond -&gt; 계약 바이트 fault, 끊는 레벨 cut
+     -&gt; safety_fsm_step()  : 조건 6개 -&gt; 래치 cond -&gt; 계약 바이트 fault, 끊는 레벨 cut
      -&gt; 올라간 비트마다     control_post_event(code, detail)     &lt;- event_send() 가 아니다
                           |
         +-----------------+------------------+
         v                                    v
    출력을 끊는다                         이벤트가 나가는 길 (소비자는 모드당 하나)
      듀티 0 (네 바퀴)                      TEXT : fault stat 이 큐를 꺼내 찍는다
-     + EN 네 핀 LOW   (내 선택)            V2   : comm_frame.c 가 끌어가 0x83 으로
-     + RELAY_EN LOW   (내 선택)                  (fw-17)</code></pre>
+     + EN 네 핀 LOW   (선택)               V2   : comm_frame.c 가 끌어가 0x83 으로
+     + RELAY_EN LOW   (선택)                     (fw-17)</code></pre>
+      <p class="small">0x83 은 <code>TYPE_EVENT</code> 이다.</p>
       <p>새로 나오는 용어를 먼저 한 줄씩 정의해 둔다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>용어</th><th>이 가이드에서의 뜻</th></tr></thead>
         <tbody>
-          <tr><td>조건(condition)</td><td>이 상태기계가 보는 위험 하나. 일곱 개다 — 명령 워치독 · 저전압 · 과전류 · 과경사 · IMU 침묵 · 드라이버 fault · 보호 3종 트립</td></tr>
+          <tr><td>조건(condition)</td><td>이 상태기계가 보는 위험 하나. 여섯 개다 — 명령 워치독 · 저전압 · 과전류 · IMU 침묵 · 드라이버 fault · 보호 3종 트립. 기울기는 조건이 아니다(§2-5)</td></tr>
           <tr><td>래치(latch)</td><td>조건이 사라져도 유지되는 기록. 상태 프레임의 <code>fault</code> 비트가 이것이다</td></tr>
           <tr><td>엣지(rising edge)</td><td>래치가 0 → 1 로 바뀌는 그 한 틱. <strong>이벤트는 여기서만</strong> 난다(§2-2)</td></tr>
-          <tr><td>안쪽 비트 / 바깥 비트</td><td>안쪽 = <code>SAFE_BIT(SAFE_I_*)</code>, 이 모듈이 조건을 세는 번호. 바깥 = 계약의 <code>fault u8</code> 비트. <strong>둘은 다른 것</strong>이고 사이의 표는 내가 만든다(§2-3)</td></tr>
+          <tr><td>안쪽 비트 / 바깥 비트</td><td>안쪽 = <code>SAFE_BIT(SAFE_I_*)</code>, 이 모듈이 조건을 세는 번호. 바깥 = 계약의 <code>fault u8</code> 비트. <strong>둘은 다른 것</strong>이고 사이의 표는 학습자가 만든다(§2-3)</td></tr>
           <tr><td>끊는 범위(cut)</td><td>fault 비트가 1 이 되었을 때 출력을 어디까지 내리는가 — 듀티 / + EN 네 핀 / + RELAY_EN. 조건마다 다르게 고를 수 있다(§2-9)</td></tr>
-          <tr><td>해제 정책</td><td>조건이 사라진 뒤 래치를 어떻게 푸는가 — 자동 / 횟수 래치 / 영구 래치. <strong>내가 정한다</strong>(§2-4)</td></tr>
+          <tr><td>해제 정책</td><td>조건이 사라진 뒤 래치를 어떻게 푸는가 — 자동 / 횟수 래치 / 영구 래치. <strong>학습자가 정한다</strong>(§2-4)</td></tr>
         </tbody>
       </table></div>
       <p>이 쪽이 남기는 것은 뒤에서 다음 셋이 쓴다.</p>
       <ul>
-        <li><code>control_fault_flags()</code> 가 돌려주는 계약 바이트를 fw-17 의 통신 모듈이 0x81 상태 프레임에 싣는다.</li>
-        <li>같은 통신 모듈이 이벤트 큐에서 <code>control_pop_event()</code> 로 이벤트를 꺼내 0x83 프레임으로 만든다.</li>
+        <li><code>control_fault_flags()</code> 가 돌려주는 계약 바이트를 fw-17 의 통신 모듈이 <code>TYPE_STATE</code> (0x81) 상태 프레임에 싣는다.</li>
+        <li>같은 통신 모듈이 이벤트 큐에서 <code>control_pop_event()</code> 로 이벤트를 꺼내 <code>TYPE_EVENT</code> (0x83) 프레임으로 만든다.</li>
         <li><a href="fw-19-bench-acceptance.html">fw-19</a> 의 DoD-Bench 는 이 쪽에서 B19 · B20 두 행과 B18 의 절반을 받아 간다. DoD-Bench 는 책상 위에서 참임을 보일 수 있는 사실의 목록이다.</li>
       </ul>
 
@@ -111,8 +112,8 @@
       </div>
 
       <h3 id="s2-2">2-2. 이벤트는 엣지에서 한 번, 상태는 비트로 유지</h3>
-      <p>계약 v2 의 표(06a §4-2)가 두 TYPE 을 이렇게 갈라 놓았다. <strong>0x81 상태</strong>는 50 Hz(20 ms)로 <em>상시</em> 나가고 그 안의 <code>fault u8</code> 이 지금 상태다.
-      <strong>0x83 이벤트</strong>는 "상태가 <em>바뀔 때</em> 1회"다. 왜 둘 다 필요한가를 먼저 도출해 둔다.</p>
+      <p>계약 v2 의 표(06a §4-2)가 두 TYPE 을 이렇게 갈라 놓았다. <strong><code>TYPE_STATE</code> (0x81) 상태</strong>는 50 Hz(20 ms)로 <em>상시</em> 나가고 그 안의 <code>fault u8</code> 이 지금 상태다.
+      <strong><code>TYPE_EVENT</code> (0x83) 이벤트</strong>는 "상태가 <em>바뀔 때</em> 1회"다. 왜 둘 다 필요한가를 먼저 도출해 둔다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th></th><th>비트만 있다면</th><th>이벤트만 있다면</th><th>둘 다 있으면</th></tr></thead>
         <tbody>
@@ -128,7 +129,7 @@
         <p><code>rising</code> 대신 <code>now</code> 로 이벤트를 내면 조건이 참인 <strong>동안 매 밀리초마다</strong> 이벤트가 하나씩 난다. 1 kHz 이므로 초당 1000개다.
         링크 대역폭보다 이벤트 <strong>큐</strong>가 먼저 넘친다(§2-11). 큐 깊이가 몇십이면 수십 밀리초 만에 큐가 가득 찬다.</p>
         <p>링크의 부담도 크다. 이벤트 프레임은 헤더 2 + TYPE 1 + LEN 1 + PAYLOAD 7 + CRC 1 = <strong>12 B</strong> 이므로 초당 12 kB 다.
-        fw-17 §2-5 가 이미 센 정상 트래픽 9 950 B/s 에 이 12 kB/s 가 더해지면 합계가 실효 46 080 B/s 의 <strong>절반 가까이</strong>가 된다. 조건 하나의 이벤트만으로 그만큼 늘어난다.</p>
+        fw-17 §2-5 가 이미 센 정상 트래픽 10 450 B/s 에 이 12 kB/s 가 더해지면 합계가 실효 46 080 B/s 의 <strong>절반 가까이</strong>가 된다. 조건 하나의 이벤트만으로 그만큼 늘어난다.</p>
         <p>이 쪽의 호스트 시험 벡터 3 이 바로 이 실수(<code>now</code> 로 이벤트를 내는 것)를 검출한다. 같은 입력을 1000 틱 동안 넣고 <code>rising == 0</code> 을 요구한다.</p>
       </div>
 
@@ -138,22 +139,23 @@
       <p><a href="fw-13-pid-protection.html">fw-13</a> 이 이미 같은 일을 했다. <code>protect.h</code> 의 <code>PROT_STALL</code> · <code>PROT_FBLOST</code> · <code>PROT_FBSIGN</code> 은 <strong>계약의 fault 비트가 아니다.</strong> protect 모듈 안에서 세 판정에 매긴 번호일 뿐이다.
       이 쪽도 같다. <code>SAFE_I_WATCHDOG</code> … <code>SAFE_I_PROTECT</code> 는 <strong>조건의 색인</strong>이다. 각 색인이 계약의 어느 비트 · 어느 코드가 되는지는 <code>safety_cfg_t</code> 의 표 세 줄(<code>bit[]</code> · <code>code[]</code> · <code>code_recover</code>)이 정한다.</p>
       <div class="tbl"><table class="compact">
-        <thead><tr><th>안쪽 (이 모듈)</th><th>뜻</th><th>06a §4-2 의 <strong>(제안)</strong></th><th>내가 적을 칸</th></tr></thead>
+        <thead><tr><th>안쪽 (이 모듈)</th><th>뜻</th><th>06a §4-2 의 <strong>(제안)</strong></th><th>학습자가 적을 칸</th></tr></thead>
         <tbody>
-          <tr><td><code>SAFE_I_WATCHDOG</code></td><td>명령이 <code>CMD_WATCHDOG_MS</code> 넘게 없다</td><td>bit0 · code <code>0x04</code>(detail = 끊긴 ms)</td><td><code>bit[0]</code> · <code>code[0]</code></td></tr>
-          <tr><td><code>SAFE_I_LOWBATT</code></td><td>버스 전압이 <code>BATT_MIN_MV</code> 아래</td><td>bit1 · code <code>0x01</code></td><td><code>bit[1]</code> · <code>code[1]</code></td></tr>
-          <tr><td><code>SAFE_I_OVERCURR</code></td><td>배터리 전류가 <code>CURR_MAX_MA</code> 를 넘는다</td><td>bit2 · code <code>0x02</code>(detail = mA)</td><td><code>bit[2]</code> · <code>code[2]</code></td></tr>
-          <tr><td><code>SAFE_I_TILT</code></td><td>기울기가 <code>TILT_MAX_DDEG</code> 를 넘는다</td><td>bit3 · code <code>0x03</code>(detail = 0.1°)</td><td><code>bit[3]</code> · <code>code[3]</code></td></tr>
-          <tr><td><code>SAFE_I_IMU</code></td><td>기본 IMU 가 <code>IMU_TIMEOUT_MS</code> 넘게 침묵</td><td>bit4 · code <code>0x05</code>(detail = sensor_id)</td><td><code>bit[4]</code> · <code>code[4]</code></td></tr>
-          <tr><td><code>SAFE_I_DRIVER</code></td><td>드라이버 fault 입력 — <strong>출처가 없다</strong>(§2-6)</td><td>bit5</td><td><code>bit[5]</code> — 배정할 것인가부터</td></tr>
-          <tr><td><code>SAFE_I_PROTECT</code></td><td>어느 바퀴든 보호 3종이 트립했다(fw-13)</td><td><strong>표에 없다</strong></td><td><code>bit[6]</code> — 기존 비트에 함께 배정할지, 와이어에 올리지 않을지</td></tr>
-          <tr><td>복구</td><td>모든 조건이 풀렸다</td><td>code <code>0x10</code>(detail = 풀린 비트)</td><td><code>code_recover</code></td></tr>
+          <tr><td><code>SAFE_I_WATCHDOG</code></td><td>명령이 <code>CMD_WATCHDOG_MS</code> 넘게 없다</td><td>bit0 · code <code>EVT_WATCHDOG</code> (0x04, detail = 끊긴 ms)</td><td><code>bit[0]</code> · <code>code[0]</code></td></tr>
+          <tr><td><code>SAFE_I_LOWBATT</code></td><td>버스 전압이 <code>BATT_MIN_MV</code> 아래</td><td>bit1 · code <code>EVT_LOW_BATT</code> (0x01)</td><td><code>bit[1]</code> · <code>code[1]</code></td></tr>
+          <tr><td><code>SAFE_I_OVERCURR</code></td><td>배터리 전류가 <code>CURR_MAX_MA</code> 를 넘는다</td><td>bit2 · code <code>EVT_OVERCURR</code> (0x02, detail = mA)</td><td><code>bit[2]</code> · <code>code[2]</code></td></tr>
+          <tr><td><code>SAFE_I_IMU</code></td><td>기본 IMU 가 <code>IMU_TIMEOUT_MS</code> 넘게 침묵</td><td>bit4 · code <code>EVT_IMU_FAIL</code> (0x05, detail = sensor_id)</td><td><code>bit[3]</code> · <code>code[3]</code></td></tr>
+          <tr><td><code>SAFE_I_DRIVER</code></td><td>드라이버 fault 입력 — <strong>출처가 없다</strong>(§2-6)</td><td>bit5</td><td><code>bit[4]</code> — 배정할 것인가부터</td></tr>
+          <tr><td><code>SAFE_I_PROTECT</code></td><td>어느 바퀴든 보호 3종이 트립했다(fw-13)</td><td><strong>표에 없다</strong></td><td><code>bit[5]</code> — 기존 비트에 함께 배정할지, 와이어에 올리지 않을지</td></tr>
+          <tr><td>(조건 없음)</td><td>과경사 정지 — 이 프로젝트는 두지 않는다(§2-5)</td><td>bit3 · code 0x03</td><td>없다 — <strong>예약</strong>. 다른 뜻으로 다시 쓰지 않는다</td></tr>
+          <tr><td>복구</td><td>모든 조건이 풀렸다</td><td>code <code>EVT_RECOVER</code> (0x10, detail = 풀린 비트)</td><td><code>code_recover</code></td></tr>
         </tbody>
       </table></div>
-      <p class="small">조건 행의 마지막 둘(<code>SAFE_I_DRIVER</code> · <code>SAFE_I_PROTECT</code>)이 중요하다. <strong>일곱째 조건에는 계약의 자리가 없다</strong> — 06a 의 표는 여섯 비트만 제안했고 보호 3종은 그 뒤(fw-13)에 생겼다.
-      빈 비트(bit6 · bit7)에 새로 배정할 수도 있고, bit5 를 "드라이버 계열"로 넓혀 쓸 수도 있고, 와이어에는 올리지 않고 벤치의 <code>fault stat</code> 에서만 볼 수도 있다. 어느 쪽이든 <strong>브리지 쪽 표와 같아야</strong> 한다는 것만이 계약의 요구다.</p>
+      <p class="small">마지막 칸의 번호는 <strong>조건의 색인</strong>이다. 계약 비트 번호와 다르다 — 과경사 칸이 빠져서 <code>SAFE_I_IMU</code> 의 색인은 3 이고, 계약 비트는 그대로 bit4 다. 지정 초기화(<code>[SAFE_I_IMU] = …</code>)로 쓰면 이 둘을 헷갈릴 일이 없다.</p>
+      <p class="small">조건 행의 마지막 둘(<code>SAFE_I_DRIVER</code> · <code>SAFE_I_PROTECT</code>)이 중요하다. <strong>여섯째 조건에는 계약의 자리가 없다</strong> — 06a 의 표는 bit0 ~ bit5 여섯 비트만 제안했고(그중 bit3 은 쓰지 않는다) 보호 3종은 그 뒤(fw-13)에 생겼다.
+      빈 비트 bit6 에 새로 배정할 수도 있고(bit7 은 Pi 브리지가 링크 끊김 표시로 예약했다 — <a href="06a-mcu-protocol.html#s4-6">06a §4-6</a>), bit5 를 "드라이버 계열"로 넓혀 쓸 수도 있고, 와이어에는 올리지 않고 벤치의 <code>fault stat</code> 에서만 볼 수도 있다. 어느 쪽이든 <strong>브리지 쪽 표와 같아야</strong> 한다는 것만이 계약의 요구다.</p>
       <p>배정하지 않은 조건(<code>bit[i] == 0</code>)은 어떻게 되는가 — <strong>로봇은 그래도 멈춘다.</strong> 끊는 것은 <code>cut[]</code> 이 하고, <code>cut[]</code> 은 <code>bit[]</code> 을 거치지 않는다. 다만 <strong>와이어에는 "이상 없음"으로 나간다.</strong>
-      이것이 의도한 기본값이다. 어느 비트가 무슨 뜻인지 내가 아직 정하지 않았으므로 계약 바이트의 어떤 비트도 1 이 되지 않는다. 호스트 시험 벡터 15 가 이 성질을 채점한다.</p>
+      이것이 의도한 기본값이다. 어느 비트가 무슨 뜻인지 아직 정하지 않았으므로 계약 바이트의 어떤 비트도 1 이 되지 않는다. 호스트 시험 벡터 15 가 이 성질을 채점한다.</p>
 
       <h3 id="s2-4">2-4. 해제 정책 — 세 가지가 있고, 조건마다 다를 수 있다</h3>
       <p>조건이 사라졌다. 래치를 풀 것인가. 본편 06 §3-6-7 의 주석이 세 가지를 나열해 두었다. 본편 06 은 Pi 에서 MCU 와 통신하는 브리지 노드를 다룬 쪽이다.
@@ -166,8 +168,8 @@
           <tr><td><strong>영구 래치</strong></td><td>다시 부팅하거나 명시적 명령(<code>fault clear</code>)이 올 때까지 안 푼다</td><td>사람이 개입해야 한다. 자율 주행 중이면 그 자리에 멈춘 채로 있다</td><td><code>latched</code> 비트마스크</td></tr>
         </tbody>
       </table></div>
-      <p>06 의 주석이 실제로 제안한 배정은 이랬다 — <strong>기록으로만 옮긴다</strong>: 워치독 · 과경사 · IMU 실패 · 드라이버는 자동 해제, 과전류는 자동 해제하되 횟수를 세어 래치, 저전압은 래치.
-      그럴듯하지만 근거가 적혀 있지 않다. 내가 직접 정할 때 쓸 수 있는 <strong>사실</strong>은 다음과 같다.</p>
+      <p>06 의 주석이 실제로 제안한 배정은 이랬다 — <strong>기록으로만 옮긴다</strong>: 워치독 · IMU 실패 · 드라이버는 자동 해제, 과전류는 자동 해제하되 횟수를 세어 래치, 저전압은 래치.
+      그럴듯하지만 근거가 적혀 있지 않다. 직접 정할 때 쓸 수 있는 <strong>사실</strong>은 다음과 같다.</p>
       <ul class="steps">
         <li><strong>저전압은 저절로 회복하는 것처럼 보인다.</strong> 부하를 끊으면 배터리 전압이 올라간다. 모터를 멈춘 것 자체가 저전압 조건을 없앤다. 자동 해제면 "멈췄다가 다시 달리다가 또 멈춘다"가 된다.
         1세대(이 프로젝트 이전에 같은 부품 일부로 만든 첫 로봇)가 소프트 종료 20.0 V 와 하드컷 19.8 V 를 <strong>두 단으로</strong> 둔 것도 이 성질 때문이다.<sup class="fn"><a href="#fn-1" id="fnref-1">1</a></sup></li>
@@ -175,30 +177,23 @@
         <li><strong>명령 워치독은 성질이 다르다.</strong> 조건이 사라진다는 것은 곧 <strong>상위가 다시 명령을 보냈다</strong>는 뜻이다. 여기서 자동 해제를 하지 않으면 링크가 한 번 끊길 때마다 사람이 와야 한다.</li>
         <li><strong>IMU 침묵</strong>은 선이 헐거우면 연결과 끊김을 되풀이하므로 생겼다 사라졌다 한다. 자동 해제로 두면 그 반복이 이벤트 폭풍(짧은 시간에 쏟아지는 이벤트)이 된다. 그래서 §2-11 의 큐 깊이와 직결된다.</li>
       </ul>
-      <p class="small">고른 정책과 그 이유를 <strong>노트에 적는다.</strong> 이 쪽의 체크 항목 <code>recover-after-hold</code> 는 "내가 고른 정책대로 실제로 동작하는 것을 봤다"이지 특정 정책을 요구하지 않는다.</p>
+      <p class="small">고른 정책과 그 이유를 <strong>노트에 적는다.</strong> 이 쪽의 체크 항목 <code>recover-after-hold</code> 는 "고른 정책대로 실제로 동작하는 것을 봤다"이지 특정 정책을 요구하지 않는다.</p>
 
-      <h3 id="s2-5">2-5. IMU 가 고장 나면 기울기 값도 쓸 수 없다 — 판정의 순서가 곧 설계다</h3>
-      <p>기울기는 가속도 벡터가 z 축에서 얼마나 벗어났는가로 잰다. 정지해 있거나 등속일 때 그 벡터는 중력이다.</p>
-      <pre><code class="lang-c">/* 0.1 deg 단위. atan2(|xy|, z): 0 = 똑바로 섬, 900 = 옆으로 누움, 1800 = 뒤집힘 */
-static inline int32_t safety_tilt_ddeg(int16_t ax_mg, int16_t ay_mg, int16_t az_mg)
-{
-  const float ax = (float)ax_mg, ay = (float)ay_mg, az = (float)az_mg;
-  const float d = atan2f(sqrtf(ax * ax + ay * ay), az) * 572.958f;   /* rad -&gt; 0.1 deg 환산 */
-  return (int32_t)(d + (d &gt;= 0.0f ? 0.5f : -0.5f));
-}</code></pre>
-      <p>이 함수에 <code>(0, 0, 0)</code> 을 넣으면 <strong>0 이 나온다</strong> — 완벽하게 수평이라는 뜻이다. 그런데 세 축이 모두 0 인 가속도는 자유낙하가 아니면 <strong>센서가 고장 난 것</strong>이다.
-      값만 보고는 그 둘을 가를 수 없다. 그래서 판정의 순서가 이렇게 된다.</p>
-      <pre><code class="lang-c">if (IMU 가 IMU_TIMEOUT_MS 넘게 조용하다)  -&gt; SAFE_I_IMU
-else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
-      <p><code>else</code> 가 핵심이다. IMU 가 침묵하는 동안에는 기울기를 <strong>판정하지 않는다</strong> — 참이라고도, 거짓이라고도 하지 않는다.
-      06 의 코드도 같은 구조였다.<sup class="fn"><a href="#fn-2" id="fnref-2">2</a></sup>
-      호스트 시험 벡터 9 · 10 이 이 <code>else</code> 한 단어를 채점한다. 같은 90° 를 넣고 IMU 샘플의 나이만 바꾼다.</p>
-      <div class="callout note"><span class="ct">등급 — 추정</span>
-        <p>정지 상태의 가속도 벡터가 중력이라는 전제는 <strong>가속하는 동안 성립하지 않는다.</strong> 급가속 · 급제동 중에는 관성이 더해져 기울기가 실제보다 크게 나온다.
-        1세대는 이 각도를 실제로 쓴 기록이 없어 얼마나 커지는지 <strong>확인하지 못했다.</strong><sup class="fn"><a href="#fn-3" id="fnref-3">3</a></sup>
-        그래서 이 쪽은 값을 정하지 않고, <a href="fw-20-after-assembly.html">fw-20</a> 이 바닥에서 계단 응답을 돌릴 때 같이 보도록 남긴다.</p>
-        <p>⚠ <strong>다만 <code>fault stat</code> 에서 읽히는 것은 각도가 아니라 <code>tilt=&lt;0|1&gt;</code> 비트 하나다</strong> — 기울기 <em>값</em>을 남기려면 IMU 쪽에서 따로 읽어 적는다. 벤치(바퀴 공중)에서는 이 오차가 생기지 않는다.</p>
-      </div>
+      <h3 id="s2-5">2-5. 기울기는 끊는 조건이 아니다 — IMU 는 침묵만 판정한다</h3>
+      <p>06a §4-2 의 (제안) 표는 bit3 과 이벤트 코드 0x03 에 과경사 정지를 두었다. <strong>이 프로젝트는 그 조건을 두지 않는다</strong>(2026-11-11 결정). bit3 · 0x03 은 <strong>예약</strong>으로 남기고 다른 뜻으로 다시 쓰지 않는다.</p>
+      <p>이유는 경사에서 출력을 끊었을 때 생기는 일에 있다.</p>
+      <ul>
+        <li>이 로봇이 다니는 길에는 짧은 경사가 늘 있다.</li>
+        <li>이 로봇의 감속기는 바퀴 쪽에서 돌릴 수 있는 일반 감속기다(웜기어가 아니다).</li>
+        <li>듀티를 0 으로 만들면 EN 이 HIGH 인 채 두 PWM 입력이 0 이 되어 모터의 두 단자가 서로 이어지고, 바퀴가 돌 때 제동 전류가 흐른다. 이 제동력은 바퀴가 빨리 돌수록 커지므로 차체를 경사 위에 붙잡아 두지 못한다.</li>
+      </ul>
+      <p>그래서 짐을 실은 로봇이 경사에서 끊기면 <strong>제어 없이 천천히 내려간다.</strong> 기울기는 출력을 끊는 입력이 아니라 <strong>출력을 조정하는 입력</strong>으로 쓴다 — 하중이 옮겨 간 만큼 앞뒤 바퀴의 출력 몫을 나누고, 정한 각도 이상에서는 더 오르지 않고 멈춰 버틴다.
+      이 층은 차체를 조립한 뒤 <a href="fw-20b-slope-mix.html">fw-20b</a> 에서 만든다. 1세대에도 기울기로 출력을 끊는 각도를 잰 기록은 없다.<sup class="fn"><a href="#fn-3" id="fnref-3">3</a></sup></p>
+      <p>이 상태기계에 남는 IMU 판정은 하나다 — <strong>샘플이 끊겼는가.</strong></p>
+      <pre><code class="lang-c">if (imu_timeout_ms != 0 &amp;&amp; ms_since_imu &gt; imu_timeout_ms)   -&gt; SAFE_I_IMU</code></pre>
+      <p>샘플의 <em>값</em>은 보지 않고 <em>나이</em>만 본다. 값으로는 고장을 가를 수 없기 때문이다 — 세 축이 모두 0 인 가속도는 센서 고장일 수도 있고, 샘플이 한 번도 오지 않은 자리의 기본값일 수도 있다.
+      그래서 "샘플이 한 번도 없었다" 는 <code>seq == 0</code> 으로 따로 표시하고(fw-13 의 <code>control.h</code>), 이 모듈은 그때 나이를 <code>UINT32_MAX</code> 로 둔다(§3-1-3 의 T3 · T4). 본편 06 의 초안 코드도 IMU 나이를 따로 판정한다.<sup class="fn"><a href="#fn-2" id="fnref-2">2</a></sup></p>
+      <p>호스트 시험 벡터 9 ~ 11 이 이 판정을 채점한다 — 문턱보다 1 ms 긴 나이, 문턱과 같은 나이, 한 번도 오지 않은 샘플.</p>
 
       <h3 id="s2-6">2-6. FAULT_DRIVER(bit5)의 출처가 없다 — 06 의 <code>DRV_FAULT_PIN</code> 은 이 하드웨어에 없는 핀이다</h3>
       <p>06 §3-6-7 의 코드에 이런 줄이 있다.</p>
@@ -217,7 +212,7 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
         <code>SAFE_I_DRIVER</code> 는 <strong>늘 거짓</strong>이고 <code>safety_in_t.driver_fault</code> 는 늘 <code>false</code> 다. 과전류 감시는 ACS758 의 배터리 전류 하나로만 한다. 배터리 전류 하나로는 <em>모듈 하나가</em> 이상한 것을 가려내지 못한다.</p>
         <p><strong>(나) 배선 — 고르지 않은 선택지(사실만)</strong> — 모듈마다 IS → 병렬 저항 → ADC3 채널, GND 기준 클램프와 커패시터가 함께 필요하다(무납땜 4세트). ADC 채널 4개를 더 쓴다. 그 채널의 CubeMX 설정 걸음이 <a href="fw-12-adc.html">fw-12</a> 의 선택 절(§3-5)에 읽을거리로 있다.
         얻는 것: 모듈별 전류와 포화 감지. 잃는 것: 부품 · 배선 · 채널.</p>
-        <p>차이가 없는 축(<strong>동일</strong>): 계약의 비트 폭 · 이 쪽의 상태기계 구조 · 나머지 여섯 조건 · 이 쪽의 체크포인트 여덟 · 실습 절차.</p>
+        <p>차이가 없는 축(<strong>동일</strong>): 계약의 비트 폭 · 이 쪽의 상태기계 구조 · 나머지 다섯 조건 · 이 쪽의 체크포인트 여덟 · 실습 절차.</p>
         <p>(가)에서 이 쪽이 하는 일은 <strong>조건의 자리를 비워 두고 그 사실을 적는 것</strong>이다. <code>driver_fault</code> 를 <code>false</code> 로 고정하므로, <code>bit[SAFE_I_DRIVER]</code> 를 배정하든 말든 그 비트는 1 이 되지 않는다.
         "자리를 지우지 않는" 이유는 이 결정을 다시 다루게 되어도 상태기계를 고치지 않아도 되게 하려는 것이다. 호스트 시험 벡터 17 이 "(가)에서는 이 조건이 1 이 되지 않는다"를 채점한다.</p>
         <p>골격 코드의 주석에 남은 "기본 진행" 은 이 결정 (가)를 가리킨다.</p>
@@ -268,30 +263,29 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
           <tr><td>1세대 운전 중 하한</td><td>18.0 V (200 ms 디바운스)</td><td>1세대 펌웨어가 실제로 쓰던 값</td><td>1세대 펌웨어<sup class="fn"><a href="#fn-13" id="fnref-13">13</a></sup></td><td><strong>기록</strong></td></tr>
         </tbody>
       </table></div>
-      <p>세 숫자 모두 <strong>"기록"이지 합격선이 아니다.</strong> 내 문턱은 부하 상태의 <strong>전압 강하</strong>와 <strong>측정 오차</strong>보다 위에 있어야 하는데, 둘 다 내 실물에서 아직 재지 않았다.</p>
+      <p>세 숫자 모두 <strong>"기록"이지 합격선이 아니다.</strong> 고른 문턱은 부하 상태의 <strong>전압 강하</strong>와 <strong>측정 오차</strong>보다 위에 있어야 하는데, 둘 다 실물에서 아직 재지 않았다.</p>
       <p>1세대 벤치 기록에 그 재료가 있다.<sup class="fn"><a href="#fn-14" id="fnref-14">14</a></sup></p>
       <ul>
         <li>무부하(공중) 4모터 100 % 에서 총전류 1.3~1.7 A, 버스 23.63 V(−100 mV)였다.</li>
         <li>0 → 최대 급지령에서는 피크 1969 mA 에 버스 23.456 V 였다.</li>
       </ul>
-      <p><strong>부하 상태의 강하는 잰 적이 없다.</strong> 그러니 순서는 다음과 같다: <strong>재고 → 적고 → 그 기록을 보고 문턱을 정한다.</strong> 이 쪽은 경로만 확인하고(실습 C-2), 값은 <a href="fw-20-after-assembly.html">fw-20</a> 이 바닥에서 확정한다.</p>
-      <p class="small">두 단으로 두는 이유도 기록에 있다: 20.0 V 는 MCU 가 <em>알고</em> 끊는 선이고 19.8 V 는 MCU 가 멈춰도 XH-M609 가 끊는 선이다. 내 문턱이 19.8 V 보다 <strong>낮으면</strong> 내 코드는 한 번도 발동하지 않는다. 하드웨어가 먼저 끊기 때문이다. 이것이 "값을 고를 때 제약이 되는 사실"이다.</p>
+      <p><strong>부하 상태의 강하는 잰 적이 없다.</strong> 그러니 순서는 다음과 같다: <strong>재고 → 적고 → 그 기록을 보고 문턱을 정한다.</strong> 이 쪽은 경로만 확인하고(실습 C-2), 값은 <a href="fw-20e-thresholds.html">fw-20e</a> 이 바닥에서 확정한다.</p>
+      <p class="small">두 단으로 두는 이유도 기록에 있다: 20.0 V 는 MCU 가 <em>알고</em> 끊는 선이고 19.8 V 는 MCU 가 멈춰도 XH-M609 가 끊는 선이다. 고른 문턱이 19.8 V 보다 <strong>낮으면</strong> 그 코드는 한 번도 발동하지 않는다. 하드웨어가 먼저 끊기 때문이다. 이것이 "값을 고를 때 제약이 되는 사실"이다.</p>
 
       <h3 id="s2-8">2-8. 0 이 "안 정했다"인가 "정해서 0"인가 — <code>_Static_assert</code> 가 표현하지 못하는 것</h3>
       <p><a href="fw-13-pid-protection.html#s3-3-3">fw-13 §3-3-3</a> 이 이 문제를 처음 드러냈다. 빈칸 키는 자리표시 <code>0</code> 과 같은 줄의 <code>/* ____ */</code> 로 만들어지고, 그 키를 쓰는 <code>.c</code> 는 첫머리에서 <code>_Static_assert((키) != 0, …)</code> 로 빌드를 멈춘다.
       그런데 <strong>0 이 뜻 있는 선택인 키</strong>에는 그 가드가 틀린 판정을 낸다. 학습자가 "여기는 0 이 맞다"고 <em>정했는데</em> 빌드는 "아직 안 정했다"는 오류로 멈춘다.</p>
-      <p>이 쪽의 다섯 키가 각각 어느 쪽인지를 먼저 적고 시작한다.</p>
+      <p>이 쪽의 네 키가 각각 어느 쪽인지를 먼저 적고 시작한다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>키</th><th>0 이면 무슨 일이 일어나는가</th><th>0 이 뜻 있는 선택인가</th><th>가드</th></tr></thead>
         <tbody>
           <tr><td><code>BATT_MIN_MV</code></td><td>저전압을 <strong>전혀 판정하지 않는다</strong></td><td>아니다 — 배터리가 있는 로봇에서 "저전압 감시를 끈다"는 선택은 성립하지만, 그 선택이 <em>빈칸과 구별되지 않는다</em></td><td><strong>둔다</strong></td></tr>
           <tr><td><code>CURR_MAX_MA</code></td><td>과전류를 전혀 판정하지 않는다</td><td>아니다 — 위와 같다</td><td><strong>둔다</strong></td></tr>
-          <tr><td><code>TILT_MAX_DDEG</code></td><td>과경사를 전혀 판정하지 않는다</td><td>아니다</td><td><strong>둔다</strong></td></tr>
-          <tr><td><code>IMU_TIMEOUT_MS</code></td><td>IMU 침묵을 판정하지 않는다 — <strong>그리고 기울기 판정이 고장 난 센서 값을 그대로 받아들이게 된다</strong>(§2-5 의 <code>else</code>)</td><td>아니다</td><td><strong>둔다</strong></td></tr>
+          <tr><td><code>IMU_TIMEOUT_MS</code></td><td>IMU 침묵을 판정하지 않는다 — 센서 선이 빠져도 아무 일도 일어나지 않는다</td><td>아니다</td><td><strong>둔다</strong></td></tr>
           <tr><td><code>RELEASE_HOLD_MS</code></td><td>조건이 사라진 <strong>첫 틱에</strong> 해제한다</td><td><strong>그렇다</strong> — "즉시 해제"는 §2-4 의 세 정책 가운데 하나다</td><td><strong>두지 않는다</strong></td></tr>
         </tbody>
       </table></div>
-      <p>넷은 <strong>0 이 위험한 쪽으로 동작하므로</strong> 가드를 둔다. 다섯째는 <strong>0 이 안전한 쪽으로도 위험한 쪽으로도 치우치지 않는 정책값</strong>이라 가드를 두지 않는다.
+      <p>셋은 <strong>0 이 위험한 쪽으로 동작하므로</strong> 가드를 둔다. 넷째는 <strong>0 이 안전한 쪽으로도 위험한 쪽으로도 치우치지 않는 정책값</strong>이라 가드를 두지 않는다.
       대신 <a href="fw-11-power-sequence.html#s3-1-2">fw-11 §3-1-2</a> 가 <code>MOTOR_SIGN_*</code> 에 쓴 문장을 그대로 쓴다: <strong>빌드는 나를 막아 주지 않는다.</strong> 그 키가 빈칸인지는 <code>./scripts/check_nominal.sh</code> 와 이 쪽의 체크 항목이 확인한다.</p>
       <div class="callout note"><span class="ct">일반화 — 세 종류의 0</span>
         <ol>
@@ -299,8 +293,8 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
           <li><strong>정해서 0</strong>(정책). "즉시 해제", "blind band 없음", "기본 IMU = 0번(WT901)" 같은 것. 가드를 두면 <strong>표현할 수 없게 된다.</strong></li>
           <li><strong>길이가 0</strong>(불가능). 배열 크기 · 큐 깊이. C 가 허용하지 않으므로 가드가 아니라 컴파일러가 막는다.</li>
         </ol>
-        <p>소스에서 ①과 ②를 가르는 수단은 결국 <strong>같은 줄의 주석</strong>뿐이다 — <code>/* ____ … */</code> 가 남아 있으면 ①, 내가 고쳐 쓴 문장이면 ②다.
-        그래서 이 쪽은 ②를 고를 때 <strong>주석을 반드시 바꾸라</strong>고 요구한다: <code>/* 0 = release immediately - chosen 2026-__-__, reason: … */</code>. 주석을 안 바꾸면 반년 뒤의 내가 그 0 을 빈칸으로 읽는다.</p>
+        <p>소스에서 ①과 ②를 가르는 수단은 결국 <strong>같은 줄의 주석</strong>뿐이다 — <code>/* ____ … */</code> 가 남아 있으면 ①, 학습자가 고쳐 쓴 문장이면 ②다.
+        그래서 이 쪽은 ②를 고를 때 <strong>주석을 반드시 바꾸라</strong>고 요구한다: <code>/* 0 = release immediately - chosen 2026-__-__, reason: … */</code>. 주석을 안 바꾸면 반년 뒤에는 그 0 을 빈칸으로 잘못 읽는다.</p>
       </div>
 
       <h3 id="s2-9">2-9. 끊는 범위 — <a href="fw-13-pid-protection.html#s3-3-4">fw-13 §3-3-4</a> 가 넘긴 질문을 여기서 다룬다</h3>
@@ -325,10 +319,10 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
         <strong>이 쪽의 골격은 그 함수를 부르지 않는다.</strong> 없는 함수를 부르면 빌드가 첫 줄에서 멈춘다. 골격에는 <code>TODO(you)</code> 로 자리만 있고, 레벨 1 · 2 를 고른 사람이 fw-11 의 모듈에 입구를 만들어 연결한다.
         <strong>레벨 0 만 쓰면 이 작업은 필요 없다.</strong></p>
       </div>
-      <p>그리고 fw-13 의 보호 3종은 이 표에 <strong>일곱째 조건</strong>으로 들어온다. <code>protect_t.tripped</code> 가 어느 바퀴든 0 이 아니면 <code>SAFE_I_PROTECT</code> 가 1 이 된다.
+      <p>그리고 fw-13 의 보호 3종은 이 표에 <strong>여섯째 조건</strong>으로 들어온다. <code>protect_t.tripped</code> 가 어느 바퀴든 0 이 아니면 <code>SAFE_I_PROTECT</code> 가 1 이 된다.
       그러면 하나의 표(<code>cut[]</code>)가 <strong>모든 fault 의 범위를 정하게 된다.</strong> 저전압도, 되먹임 상실도 같은 자리에서 같은 형식으로 범위가 정해진다.
       fw-13 이 "그 바퀴 하나"로 둔 것은 그대로 남는다(그 바퀴 하나의 차단은 PID 루프 안에서 한다). 이 쪽은 그 위에 "차량 전체를 어떻게 할 것인가"를 더하는 것이고, 둘은 층이 다르다.</p>
-      <p class="small">주의: 06a §4-2 의 (제안) 표에는 <strong>보호 3종을 위한 비트가 없다</strong>(§2-3 표의 <code>SAFE_I_PROTECT</code> 행). 와이어에 올릴지, 올린다면 어느 비트인지는 내 배정이다.</p>
+      <p class="small">주의: 06a §4-2 의 (제안) 표에는 <strong>보호 3종을 위한 비트가 없다</strong>(§2-3 표의 <code>SAFE_I_PROTECT</code> 행). 와이어에 올릴지, 올린다면 어느 비트인지는 학습자가 배정한다.</p>
 
       <h3 id="s2-10">2-10. 판정은 1 kHz 에서, 모으는 일은 주 루프에서</h3>
       <p><a href="fw-13-pid-protection.html#s2-10">fw-13 §2-10</a> 이 1 kHz 콜백 안의 순서를 <strong>단조 연쇄</strong> 규칙으로 정했다 — 뒤에 오는 단계는 앞 단계의 출력을 <strong>줄이기만</strong> 하고 키우지 못한다.
@@ -344,24 +338,23 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
 }</code></pre>
       <p><code>control_step_1khz()</code> 안에서의 자리는 06 이 이미 그려 두었다 — ① 명령 워치독 → ② <code>safety_step()</code> → ③ 조건 비트가 하나라도 1 이면 출력 차단 → ④ 바퀴별 PID.
       ①의 구현은 fw-13 이 했고, ②③ 이 이 쪽이다. <strong>판정을 PID 앞에 두는 이유</strong>는 단조 연쇄로 설명된다: 이 상태기계의 입력 가운데 <strong>이번 틱의 듀티에 의존하는 것이 하나도 없다.</strong>
-      전압 · 전류 · 기울기 · 명령 나이 · IMU 나이 · 보호 래치 — 전부 이번 틱보다 먼저 정해진 값이다. 그러니 앞에 두어도 단조 연쇄 규칙이 지켜지고, 앞에 두면 <strong>같은 틱의 포획 행(<code>duty_permille</code>)이 이미 판정을 반영한 값</strong>이 된다.</p>
+      전압 · 전류 · 명령 나이 · IMU 나이 · 보호 래치 — 전부 이번 틱보다 먼저 정해진 값이다. 그러니 앞에 두어도 단조 연쇄 규칙이 지켜지고, 앞에 두면 <strong>같은 틱의 포획 행(<code>duty_permille</code>)이 이미 판정을 반영한 값</strong>이 된다.</p>
       <p class="small">대가가 하나 있다. <code>protect_bits</code> 는 바퀴 루프 <em>안</em>의 <code>protect_step()</code> 이 만드는데 <code>safety_step()</code> 은 그 앞에 있으므로, 이 상태기계가 이번 틱에 보는 보호 래치는 <strong>지난 틱의 것</strong>이다.
       트립한 그 바퀴는 fw-13 이 같은 틱에 끊지만, <strong>나머지 세 바퀴까지 끊기는 데는 1 ms 가 더 걸린다</strong>(§3-4-4 ⑤). 단조 연쇄의 순서를 뒤집는 대신 그 1 ms 를 받아들인 것이고, 그 1 ms 가 단조 연쇄를 지키는 대가다.</p>
-      <p>더 중요한 것은 <strong>무엇이 ISR 밖에 있어야 하는가</strong>다. 입력 셋은 ISR 이 직접 읽으면 안 된다.</p>
+      <p>더 중요한 것은 <strong>무엇이 ISR 밖에 있어야 하는가</strong>다. 입력 둘은 ISR 이 직접 읽으면 안 된다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>입력</th><th>왜 1 kHz ISR 에서 읽으면 안 되는가</th></tr></thead>
         <tbody>
           <tr><td>버스 전압 (INA226)</td><td>I2C 트랜잭션이다. TIM6(선점 1) 안에서는 SysTick(15)이 실행되지 못해 <code>HAL_GetTick()</code> 이 멈추고 HAL 의 타임아웃 루프가 끝나지 않는다. <a href="fw-11-power-sequence.html#s2-6">fw-11 §2-6</a> 이 같은 함정을 이미 다루었다</td></tr>
           <tr><td>IMU 샘플</td><td>센서 ISR 은 선점 5 · 7 이고 1 kHz ISR 은 1 이다. <strong>1 kHz 가 센서 ISR 을 선점한다</strong> → 여러 칸짜리 구조체를 그 안에서 읽으면 반쯤 갱신된 값을 볼 수 있다</td></tr>
-          <tr><td>기울기 계산</td><td><code>atan2f</code> · <code>sqrtf</code> 다. 매 틱 <code>exec_us_max</code> 를 소비할 이유가 없다. 센서는 100~200 Hz(10~5 ms)라 1 ms 마다 다시 계산해도 값이 같다</td></tr>
         </tbody>
       </table></div>
-      <p>그래서 <a href="fw-11-power-sequence.html">fw-11</a> 과 <strong>같은 분할 방식</strong>을 쓴다: <code>safety_service_main()</code> 이 주 루프에서 셋을 모아 <code>s_in</code> 에 적어 두고, <code>safety_step()</code> 은 ISR 에서 <code>s_in</code> 을 <strong>읽기만</strong> 한다.
-      그 결과 이 모듈이 판정에 쓰는 입력은 최대 "주 루프 한 바퀴"만큼 지난 값일 수 있다. 그 최대 지연이 fw-06 의 <code>stat</code> 에 있는 <code>loop_us_max</code> 다. 내 보드의 <code>loop_us_max</code> 를 노트에 적고, 그 지연이 내가 고른 임계값의 반응 시간에 더해진다는 것을 알아 둔다.</p>
+      <p>그래서 <a href="fw-11-power-sequence.html">fw-11</a> 과 <strong>같은 분할 방식</strong>을 쓴다: <code>safety_service_main()</code> 이 주 루프에서 입력(전압 · 전류 · IMU 나이)을 모아 <code>s_in</code> 에 적어 두고, <code>safety_step()</code> 은 ISR 에서 <code>s_in</code> 을 <strong>읽기만</strong> 한다.
+      그 결과 이 모듈이 판정에 쓰는 입력은 최대 "주 루프 한 바퀴"만큼 지난 값일 수 있다. 그 최대 지연이 fw-06 의 <code>stat</code> 에 있는 <code>loop_us_max</code> 다. 이 보드의 <code>loop_us_max</code> 를 노트에 적고, 그 지연이 고른 임계값의 반응 시간에 더해진다는 것을 알아 둔다.</p>
       <div class="callout note"><span class="ct">단일 소유 표 둘에 더하는 행 — <strong>없다</strong></span>
         <p><strong>NVIC 우선순위 표</strong>: 이 쪽은 인터럽트를 하나도 새로 켜지 않는다. 판정은 fw-06 의 TIM6 ISR 안에서 실행되고, 입력은 앞 쪽들이 이미 켠 ISR 이 만들어 둔 값을 <strong>읽기만</strong> 한다.</p>
         <p><strong>워치독 예산표</strong>: 더하는 블로킹이 없다. <code>safety_service_main()</code> 은 이미 들어와 있는 값을 읽어 옮기기만 한다(I2C 트랜잭션을 시작하는 것은 <a href="fw-10-i2c-ina226.html">fw-10</a> 의 <code>ina226_service_main()</code> 이다). <code>safety_step()</code> 은 산술뿐이다.
-        <code>fault stat</code> 의 여러 줄 출력만은 큐에 쌓인 만큼 길어질 수 있다. 그 줄 수의 상한이 곧 내가 정한 큐 깊이다. 그러므로 깊이를 정할 때 그 줄 수를 <code>460800 8N1</code> 로 보내는 데 얼마나 걸리는지도 같이 계산한다(fw-13 이 <code>step</code> CSV 에서 한 것과 같은 산술이다).</p>
+        <code>fault stat</code> 의 여러 줄 출력만은 큐에 쌓인 만큼 길어질 수 있다. 그 줄 수의 상한이 곧 학습자가 정한 큐 깊이다. 그러므로 깊이를 정할 때 그 줄 수를 <code>460800 8N1</code> 로 보내는 데 얼마나 걸리는지도 같이 계산한다(fw-13 이 <code>step</code> CSV 에서 한 것과 같은 산술이다).</p>
       </div>
       <p class="small">명령 나이(<code>ms_since_cmd</code>)와 보호 래치(<code>protect_bits</code>)는 예외다 — 둘 다 이미 ISR 안에 있는 값이라 그대로 넘긴다.</p>
 
@@ -375,15 +368,15 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
           <tr><td>함수</td><td><code>control_post_event(code, detail)</code></td><td><code>control_pop_event(&amp;ev)</code></td></tr>
           <tr><td>문맥</td><td>1 kHz ISR — 블로킹 금지, 글자 출력 금지</td><td>주 루프</td></tr>
           <tr><td>TEXT 모드</td><td>같다</td><td><code>fault stat</code> 이 빌 때까지 꺼내 출력한다</td></tr>
-          <tr><td>V2 모드</td><td>같다</td><td><code>comm_frame_step_1khz()</code> 가 빌 때까지 꺼내 0x83 프레임으로 보낸다(fw-17)</td></tr>
+          <tr><td>V2 모드</td><td>같다</td><td><code>comm_frame_step_1khz()</code> 가 빌 때까지 꺼내 <code>TYPE_EVENT</code> (0x83) 프레임으로 보낸다(fw-17)</td></tr>
         </tbody>
       </table></div>
       <p><strong><code>event_send()</code> 를 직접 부르지 않는다.</strong> 06 §3-6-7 의 코드는 <code>safety_step()</code> 안에서 통신 함수를 직접 불렀는데, 그 호출은 제어 쪽이 통신 쪽에 의존하는 <strong>역방향</strong>이고 06a §2-5 가 정한 단방향과 어긋난다.
       <a href="fw-19-bench-acceptance.html">fw-19</a> 의 경계 grep 이 제어 · 안전 쪽 파일에서 <code>event_send</code> · <code>tx_enqueue</code> · <code>comm_frame</code> 이 0건인지 검사한다. 이 쪽의 코드도 그 검사를 통과해야 한다.</p>
-      <p>큐의 <strong>깊이</strong>와 <strong>넘칠 때의 정책</strong>은 내가 정한다. 재료는 다음 넷이다.</p>
+      <p>큐의 <strong>깊이</strong>와 <strong>넘칠 때의 정책</strong>은 학습자가 정한다. 재료는 다음 넷이다.</p>
       <ul class="steps">
-        <li><strong>한 번에 몇 개가 들어올 수 있는가.</strong> 최악은 일곱 조건이 같은 틱에 동시에 1 이 되는 경우다. 그러면 이벤트가 일곱 개 들어온다. 복구 이벤트는 한 개다(모든 조건이 함께 풀리므로).</li>
-        <li><strong>얼마나 빨리 비워지는가.</strong> V2 에서는 <code>comm_frame_step_1khz()</code> 가 빌 때까지 꺼내므로 사실상 한 틱이다. TEXT 에서는 <strong>내가 <code>fault stat</code> 을 치기 전까지 아무도 꺼내지 않는다.</strong> 그동안 큐는 계속 찬다.</li>
+        <li><strong>한 번에 몇 개가 들어올 수 있는가.</strong> 최악은 여섯 조건이 같은 틱에 동시에 1 이 되는 경우다. 그러면 이벤트가 여섯 개 들어온다. 복구 이벤트는 한 개다(모든 조건이 함께 풀리므로).</li>
+        <li><strong>얼마나 빨리 비워지는가.</strong> V2 에서는 <code>comm_frame_step_1khz()</code> 가 빌 때까지 꺼내므로 사실상 한 틱이다. TEXT 에서는 <strong><code>fault stat</code> 을 치기 전까지 아무도 꺼내지 않는다.</strong> 그동안 큐는 계속 찬다.</li>
         <li><strong>버릴 때 무엇을 버리는가.</strong> 오래된 것을 버리면 "무엇 때문에 처음 멈췄는가"를 잃는다(진단에서 가장 값진 한 줄). 새것을 버리면 첫 사건은 남지만 이후 전개를 잃는다.</li>
         <li><strong>버렸다는 사실을 세는가.</strong> 세지 않으면 "이벤트가 안 왔다"와 "이벤트를 버렸다"를 가를 수 없다. 이 골격은 <code>s_ev_dropped</code> 를 두고 <code>fault stat</code> 이 그 값을 출력한다. 카운터 하나로 "안 왔다"와 "버렸다"를 가를 수 있다.</li>
       </ul>
@@ -391,7 +384,7 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
       이 값을 작게 정하면 실습 A 의 넘침 확인이 쉬워지고, 크게 정하면 RAM 을 더 차지한다. <code>sizeof(event_t)</code> 를 직접 계산해 보고 정한다.</p>
 
       <h3 id="s2-12">2-12. 200 ms 를 <em>MCU 의 시계로</em> 잰다 — Mac 의 시계는 답이 아니다</h3>
-      <p>계약은 이렇게 적혀 있다(06a §4-3): <strong>"MCU: 200 ms 동안 워치독을 되감는 프레임이 없으면 → 정지 (= 50 Hz 명령 10개 결손)"</strong>.
+      <p>계약은 이렇게 적혀 있다(06a §4-3): <strong>"MCU: 200 ms 동안 유효한 <code>TYPE_VELOCITY</code> (0x01) 가 없으면 → 정지 (= 50 Hz 명령 10개 결손)"</strong>.
       구현은 fw-13 이 이미 했다 — <code>control_set_target()</code> 이 명령 시각을 갱신하고 <code>control_step_1khz()</code> 가 나이를 세어 <code>CMD_WATCHDOG_MS</code> 를 넘으면 목표를 0 으로 만든다.
       이 쪽이 더하는 것은 둘이다: 그 나이를 <strong>fault 비트 · 이벤트</strong>로 만드는 것, 그리고 200 ms 를 <strong>계약 경로에서 재는 방법</strong>.</p>
       <p>재는 방법이 왜 문제인가. probe 를 Mac 에서 돌리고 "송신을 멈춘 뒤 0.2 초쯤 지나 이벤트가 왔다"를 Mac 의 시계로 재면, 그 숫자에는 다음 네 가지가 섞여 있다.</p>
@@ -401,24 +394,22 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
         <li>파이썬의 스케줄링</li>
         <li>MCU 쪽 DMA 송신 큐의 대기</li>
       </ul>
-      <p>어느 것도 <strong>내가 재려는 것</strong>이 아니다. 그래서 판정은 <strong>MCU 자신이 기록한 tick 으로만</strong> 한다.</p>
+      <p>어느 것도 <strong>재려는 것</strong>이 아니다. 그래서 판정은 <strong>MCU 자신이 기록한 tick 으로만</strong> 한다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>재는 법</th><th>어떻게</th><th>정밀도</th></tr></thead>
         <tbody>
           <tr><td><strong>①</strong> 이벤트의 <code>detail</code></td><td>워치독 이벤트를 낼 때 <code>detail</code> 에 그 순간의 명령 나이(ms)를 넣는다. 06a §4-2 의 (제안)도 "detail = 끊긴 ms" 다</td><td><strong>1 ms</strong> — 판정한 바로 그 틱의 값이다. 기대값은 <code>CMD_WATCHDOG_MS</code> 바로 다음 정수(<code>&gt;</code> 로 판정하면 201)</td></tr>
-          <tr><td><strong>②</strong> tick 의 차</td><td>0x83 의 <code>tick_ms</code> − 마지막 0x01 이 MCU 에 닿은 tick. 뒤엣것은 probe 가 자기 마지막 송신 직후에 받은 <strong>0x81 상태 프레임의 <code>tick_ms</code></strong> 로 근사한다</td><td><strong>±20 ms</strong> — 상태가 50 Hz(20 ms)라 그 주기만큼 거칠다</td></tr>
+          <tr><td><strong>②</strong> tick 의 차</td><td><code>TYPE_EVENT</code> (0x83) 의 <code>tick_ms</code> − 마지막 <code>TYPE_VELOCITY</code> (0x01) 가 MCU 에 닿은 tick. 뒤엣것은 probe 가 자기 마지막 송신 직후에 받은 <strong><code>TYPE_STATE</code> (0x81) 상태 프레임의 <code>tick_ms</code></strong> 로 근사한다</td><td><strong>±20 ms</strong> — 상태가 50 Hz(20 ms)라 그 주기만큼 거칠다</td></tr>
         </tbody>
       </table></div>
       <p>①이 정밀하고 ②는 계약에 이미 있는 것만으로 되는 대신 거칠다. <strong>둘 다 MCU 의 시각축 위에 있다</strong>는 것이 핵심이고, 그래서 두 값을 비교하는 것 자체가 좋은 확인이 된다.
       두 숫자를 노트에 적고, ②가 ① ± 20 ms 안에 들어오는지 본다. 안 들어오면 두 방법 중 하나를 잘못 이해한 것이다.</p>
-      <div class="callout note"><span class="ct">결정 대기 — 무엇이 200 ms 워치독을 되감는가</span>
-        <p>워치독을 되감는 것이 "명령"인가 "프레임"인가에 따라 규칙이 둘로 갈린다.<sup class="fn"><a href="#fn-18" id="fnref-18">18</a></sup></p>
-        <p><strong>(가) 유효한 0x01(속도 명령)만</strong> 되감는다 — "상위가 명령을 보내고 있는가"를 본다. 되감는 자리가 <code>control_set_target()</code> 안이라 통신 모듈은 워치독을 몰라도 된다.</p>
-        <p><strong>(나) CRC 를 통과한 모든 프레임</strong>이 되감는다 — "링크가 유지되는가"를 본다. 되감는 자리는 프레임 파서(통신 모듈)다.</p>
-        <p>이 쪽에서 <strong>갈리는 것</strong>: probe 를 어떻게 멈춰야 워치독이 발동하는가다. (가)면 <code>--mute-after</code>(0x01 송신만 멈춤)로 충분하고, (나)면 <code>--mute-after</code> 로는 <strong>아무 일도 일어나지 않는다</strong> — 0x01 이 끊겨도 다른 프레임이 오면 되감기기 때문이다.
-        지금 계약에서 Pi → MCU 프레임은 0x01 하나뿐이라 <strong>지금은 두 규칙의 동작이 같다</strong>(동일) — 0x02 설정 프레임을 구현하는 날 갈린다.</p>
-        <p>차이가 없는 축(<strong>동일</strong>): 200 ms 라는 값 · 이 쪽의 fault 비트 · 이벤트 · 재는 방법 ①② · Pi 쪽 0.5 s 워치독 · CRC 가 틀린 프레임은 어느 쪽에서도 되감지 않는다.
-        이 가이드의 <strong>기본 진행은 (가)</strong> 다 — fw-13 의 구현이 그 꼴이기 때문이고 <strong>권고가 아니다.</strong> (나)로 가면 되감는 줄이 fw-17 의 파서로 옮겨 가고, 이 쪽의 실습 B 는 "probe 를 통째로 종료한다"로 바뀐다.</p>
+      <div class="callout note"><span class="ct">결정됨 — 200 ms 워치독은 유효한 속도 명령만 되감는다</span>
+        <p>워치독을 되감는 것이 "명령"인가 "프레임"인가를 두고 규칙이 둘 있었고, 06a §4-3 은 (가) 로 정했다.<sup class="fn"><a href="#fn-18" id="fnref-18">18</a></sup></p>
+        <p><strong>(가) 유효한 <code>TYPE_VELOCITY</code> (0x01, 속도 명령)만</strong> 되감는다 — "상위가 명령을 보내고 있는가"를 본다. 되감는 자리가 <code>control_set_target()</code> 안이라 통신 모듈은 워치독을 몰라도 된다. fw-13 의 구현이 이 꼴이다.</p>
+        <p>(나) <strong>CRC 를 통과한 모든 프레임</strong>이 되감는 규칙은 채택하지 않았다. 설정 프레임(0x02)을 구현한 뒤 설정 프레임만 오고 속도 명령이 멈추면, MCU 가 마지막 목표를 유지한 채 계속 달리기 때문이다.</p>
+        <p>이 쪽에 주는 결과: probe 의 <code>--mute-after</code>(<code>TYPE_VELOCITY</code> 0x01 송신만 멈춤)로 워치독이 발동한다. 실습 B 가 이 방법을 쓴다.
+        전원 명령(0x10)도 <code>control_set_target()</code> 을 부르지 않으므로 되감지 않는다(fw-17 의 <code>comm_frame.c</code>). CRC 가 틀린 프레임도 되감지 않는다.</p>
       </div>
 
       <h3 id="s2-13">2-13. USB 를 뽑는 시험은 워치독 시험이 아니다 — 전원 상실 시험이다</h3>
@@ -428,7 +419,7 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
       <div class="tbl"><table class="compact">
         <thead><tr><th>시험</th><th>무엇을 끊는가</th><th>무엇이 로봇을 정지시키는가</th><th>판정 수단</th><th>이 쪽의 실습</th></tr></thead>
         <tbody>
-          <tr><td>명령 워치독</td><td>0x01 송신만 (probe <code>--mute-after</code>)</td><td>MCU 안의 <code>control_step_1khz()</code> — 동작 중이다</td><td>0x83 이벤트의 <code>detail</code> · tick 차</td><td>B</td></tr>
+          <tr><td>명령 워치독</td><td><code>TYPE_VELOCITY</code> (0x01) 송신만 (probe <code>--mute-after</code>)</td><td>MCU 안의 <code>control_step_1khz()</code> — 동작 중이다</td><td><code>TYPE_EVENT</code> (0x83) 이벤트의 <code>detail</code> · tick 차</td><td>B</td></tr>
           <tr><td>전원 상실</td><td>USB 케이블 — MCU 전원이 끊긴다</td><td>IBT-2 모듈의 30 kΩ 풀다운</td><td>DMM (판정법은 <a href="fw-08-pwm-safe-output.html#s2-6">fw-08 §2-6</a>)</td><td>D</td></tr>
           <tr><td>하드웨어 워치독(IWDG)</td><td>펌웨어의 진행 — <code>hang</code></td><td>IWDG 가 칩을 리셋한다</td><td>부팅 배너의 reset 줄</td><td>이 쪽에 없다 — <a href="fw-06-tick-watchdog.html">fw-06</a></td></tr>
         </tbody>
@@ -441,11 +432,10 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
         <p>그래도 <strong>풀다운이 실재하는지</strong>는 따로 확인해 둘 값이 있다 — 조립 후에는 상황이 달라지기 때문이다. fw-08 의 판정법 ②′ 그대로 <strong>두 값을 짝으로</strong> 기록한다:
         전원을 끈 채 EN 네트 넷 각각 ↔ GND <strong>저항</strong>(1세대 기록: 입력마다 30 kΩ → 모듈 한 장의 R_EN + L_EN 묶음이라 네트마다 15 kΩ 계), 그 뒤 USB 를 뽑은 상태의 <strong>전압</strong>(네트 넷).</p>
         <p><strong>조립 후에는 이 문장이 달라진다.</strong> 지금은 모듈 VCC 도 Nucleo 의 3V3 에서 나오므로 USB 를 뽑으면 MCU 와 모듈 전원이 <em>함께</em> 끊긴다.
-        조립 뒤 Nucleo 를 무엇으로 급전할지는 <strong>결정 대기</strong>다. 후보는 USB(셀프 파워 허브 경유) / E5V / VIN 세 가지다.
-        로봇 자체의 레일에서 급전하면 "USB 를 뽑는다"가 더 이상 전원 상실이 아니게 된다.
-        허브를 거쳐도, 업스트림(Pi)이 사라진 뒤에도 포트 전원을 유지하는 허브라면 Pi 쪽 케이블을 뽑았을 때 MCU 전원이 유지된다. 허브 모델에 따라 다르므로 확인이 필요하다.
+        조립 뒤 Nucleo 를 무엇으로 급전할지는 <strong>결정 대기</strong>다. 후보는 USB(Pi 5 의 USB 포트에 직결, 허브를 거치지 않는다) / E5V / VIN 세 가지다.
+        로봇 자체의 레일(E5V · VIN)에서 급전하면 "USB 를 뽑는다"가 더 이상 전원 상실이 아니게 된다.
         그러면 이 시험은 "MCU 는 동작 중인데 상위만 사라진 경우" = <strong>명령 워치독 시험</strong>으로 바뀐다. 같은 동작이 다른 것을 시험하게 되는 것이다.
-        급전 방식의 본문은 <a href="09a-assembly-gate.html">09a</a> 가 싣고, <a href="fw-20-after-assembly.html">fw-20</a> 이 그 결정을 기록한다. 지금 적을 것은 <strong>"내가 시험한 날의 급전 구성"</strong> 한 줄이다.</p>
+        급전 방식의 본문은 <a href="09a-assembly-gate.html">09a</a> 가 싣고, <a href="fw-20a-route-gain-traction.html">fw-20a</a> 이 그 결정을 기록한다. 지금 적을 것은 <strong>"시험한 날의 급전 구성"</strong> 한 줄이다.</p>
       </div>
       <p>끊는 순서도 여기서 한 번 더 분명히 해 둔다. 소프트웨어가 내리는 경우든 사람이 내리는 경우든 <strong>EN 이 먼저다</strong> — H-브리지를 끈 뒤에 접점을 연다(§2-9).
       반대로 하면 접점이 전류를 끊는 일을 하게 되고, K1 의 주접점은 그 일을 반복하도록 만든 부품이 아니다.</p>
@@ -456,17 +446,17 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
       <ul>
         <li><strong>A</strong> 상태기계를 Mac 에서 먼저 맞추고 TEXT 로 논리를 본다.</li>
         <li><strong>B</strong> 계약 경로에서 200 ms 를 MCU tick 으로 잰다.</li>
-        <li><strong>C-1</strong> 실물 센서로 IMU 침묵과 기울기를 일으킨다.</li>
-        <li><strong>C-2</strong> <span class="tag power">모터 전원</span> 저전압 경로와 내가 정한 끊는 범위를 본다.</li>
+        <li><strong>C-1</strong> 실물 센서로 IMU 침묵을 일으킨다.</li>
+        <li><strong>C-2</strong> <span class="tag power">모터 전원</span> 저전압 경로와 학습자가 정한 끊는 범위를 본다.</li>
         <li><strong>D</strong> USB 를 뽑아 전원 상실을 본다.</li>
       </ul>
       <p>A 는 Nucleo 와 Mac 만으로 끝난다.</p>
       <div class="callout tip"><span class="ct">채울 자리마다 힌트 카드가 있다 — 읽는 순서</span>
         <p>골격의 채울 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 붙어 있고(이 쪽은 T1 ~ T9 — 전부 실습 A 의 골격에 있다), 그 주석 안에 <strong>번호 걸음</strong>이 있다. 먼저 걸음을 보고 직접 써 본다.
         막히면 §3-1-3 "직접 채우기"에서 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인.</p>
-        <p>완결 코드는 두 검사를 통과한 코드다.<sup class="fn"><a href="#fn-20" id="fnref-20">20</a></sup> 하나는 Mac 의 호스트 시험이다(<code>PASS safety 45 cases</code>, <code>-fsanitize=undefined,address</code> 를 더해도 경고와 오류가 없다). 다른 하나는 이 프로젝트의 펌웨어 빌드다(링크까지 — <code>User/</code> 경고 0, <code>m</code> 을 더한 링크).
-        그 빌드에서 이웃 모듈(fw-08 · fw-10 · fw-12 · fw-13 의 <code>motor</code> · <code>ina226</code> · <code>adc</code> · <code>control</code> 본문)은 <strong>선언만 맞춘 임시 정의</strong>였다. 이웃 모듈의 완결 코드는 각자의 쪽에 있다. 보드에서 실행되는 동작(LD3, <code>fault stat</code> 의 줄, 모터 전원 구간)은 "굽고 보기"에서 내가 확인한다.</p>
-        <p><strong>내가 정하는 값은 카드에도 없다.</strong> T2 의 <code>latched</code> · <code>bit[]</code> · <code>code[]</code> · <code>code_recover</code> · <code>cut[]</code> 은 완결 코드에서도 <code>0</code>(배정 안 함) · <code>SAFE_CUT_DUTY</code> 와 <code>____</code> 로 남아 있다. §2-3 · §2-4 · §2-9 의 표를 채운 뒤 그 줄을 내가 고친다. 임계값 다섯은 <code>robot_params.h</code> 의 키 이름으로만 나온다.</p>
+        <p>완결 코드는 두 검사를 통과한 코드다.<sup class="fn"><a href="#fn-20" id="fnref-20">20</a></sup> 하나는 Mac 의 호스트 시험이다(<code>PASS safety 39 cases</code>, <code>-fsanitize=undefined,address</code> 를 더해도 경고와 오류가 없다). 다른 하나는 이 프로젝트의 펌웨어 빌드다(링크까지 — <code>User/</code> 경고 0).
+        그 빌드에서 이웃 모듈(fw-08 · fw-10 · fw-12 · fw-13 의 <code>motor</code> · <code>ina226</code> · <code>adc</code> · <code>control</code> 본문)은 <strong>선언만 맞춘 임시 정의</strong>였다. 이웃 모듈의 완결 코드는 각자의 쪽에 있다. 보드에서 실행되는 동작(LD3, <code>fault stat</code> 의 줄, 모터 전원 구간)은 "굽고 보기"에서 확인한다.</p>
+        <p><strong>학습자가 정하는 값은 카드에도 없다.</strong> T2 의 <code>latched</code> · <code>bit[]</code> · <code>code[]</code> · <code>code_recover</code> · <code>cut[]</code> 은 완결 코드에서도 <code>0</code>(배정 안 함) · <code>SAFE_CUT_DUTY</code> 와 <code>____</code> 로 남아 있다. §2-3 · §2-4 · §2-9 의 표를 채운 뒤 그 줄을 직접 고친다. 임계값 넷은 <code>robot_params.h</code> 의 키 이름으로만 나온다.</p>
         <p>붙여 넣는 것으로 끝내지 않는다. 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
       </div>
 
@@ -474,15 +464,14 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
 
       <h4 id="s3-1-2">3-1-2. 골격</h4>
       <p>새 파일은 셋이다: <code>User/Inc/Control/safety.h</code> · <code>User/Src/Control/safety.c</code> · <code>firmware/host_tests/test_safety.c</code>(§3-1-3).
-      그리고 <code>robot_params.h</code> 에 다섯 줄, <code>control.c</code> 에 이벤트 큐의 본문과 호출 한 줄이 는다.
-      <strong>다섯 키에 내 값을 적고 큐 깊이를 정한 뒤에는 이 골격이 그대로 빌드된다.</strong> 그 전에는 <code>_Static_assert</code> 가 빌드를 멈춘다(§2-8).</p>
+      그리고 <code>robot_params.h</code> 에 네 줄, <code>control.c</code> 에 이벤트 큐의 본문과 호출 한 줄이 는다.
+      <strong>네 키에 정한 값을 적고 큐 깊이를 정한 뒤에는 이 골격이 그대로 빌드된다.</strong> 그 전에는 <code>_Static_assert</code> 가 빌드를 멈춘다(§2-8).</p>
       <pre><code class="lang-c">/* ---- fw-18: 안전 임계값. 전부 EMPTY(빈칸) - 06 의 3S 예시값은 이 로봇의 것이 아니다 (2-7) -- */
 #define BATT_MIN_MV      0   /* ____ 버스 전압이 이보다 낮으면 LOWBATT [mV]  (6S: 19.8-25.2 V) */
 #define CURR_MAX_MA      0   /* ____ 배터리 전류가 이를 넘으면 OVERCURR [mA] */
-#define TILT_MAX_DDEG    0   /* ____ 기울기가 이를 넘으면 TILT [0.1 deg] */
 #define IMU_TIMEOUT_MS   0   /* ____ 기본 IMU 가 이보다 오래 침묵하면 IMU [ms] */
 #define RELEASE_HOLD_MS  0   /* ____ 전부 풀린 채 이만큼 지나면 -&gt; 해제. 0 = 즉시 해제 (2-4/2-8) */</code></pre>
-      <p class="small">앞의 넷에는 <code>control.c</code> 에 가드를 두고 다섯째에는 두지 않는다(§2-8 의 표). 다섯째에 <strong>정말 0 을 쓰기로 했으면 그 줄의 주석을 바꾼다</strong> — <code>____</code> 가 남아 있으면 그 0 은 "안 정한 0" 이다.</p>
+      <p class="small">앞의 셋에는 <code>control.c</code> 에 가드를 두고 넷째에는 두지 않는다(§2-8 의 표). 넷째에 <strong>정말 0 을 쓰기로 했으면 그 줄의 주석을 바꾼다</strong> — <code>____</code> 가 남아 있으면 그 0 은 "안 정한 0" 이다.</p>
       <p><strong><code>User/Inc/Control/safety.h</code></strong> — 셋으로 나눠 싣는다. 첫 블록은 <strong>조건과 자료형</strong>이다.</p>
       <pre><code class="lang-c">/* User/Inc/Control/safety.h - 안전 상태기계. 순수: HAL 도 robot_params.h 도 없다 -
  * 임계값은 전부 safety_cfg_t 로 들어온다. protect.h 가 protect_cfg_t 를 받는 것과 똑같다
@@ -492,15 +481,14 @@ else if (|tilt_ddeg| &gt; TILT_MAX_DDEG)     -&gt; SAFE_I_TILT</code></pre>
 #define SAFETY_H
 #include &lt;stdint.h&gt;
 #include &lt;stdbool.h&gt;
-#include &lt;math.h&gt;   /* atan2f / sqrtf 는 libm.a 에만 있다 - 링크에 `m` 을 더한다 (3-1-3, 6 번) */
+#include &lt;stddef.h&gt;  /* NULL - safety_fsm_step() 의 cleared_out */
 
-/* 일곱 조건의 색인이다. 계약의 fault 비트가 아니다: 06a 4-2 는 그 표에 "(제안)" 이라
- * 적었고 배정은 내 몫이다. 대응표는 아래 safety_cfg_t 에 있다 (2-3). */
+/* 여섯 조건의 색인이다. 계약의 fault 비트가 아니다: 06a 4-2 는 그 표에 "(제안)" 이라
+ * 적었고 배정은 학습자가 한다. 대응표는 아래 safety_cfg_t 에 있다 (2-3). */
 typedef enum {
   SAFE_I_WATCHDOG = 0,  /* 속도 명령이 cfg-&gt;cmd_timeout_ms 동안 없다                          */
   SAFE_I_LOWBATT,       /* 버스 전압이 cfg-&gt;batt_min_mv 아래                                  */
   SAFE_I_OVERCURR,      /* 배터리 전류가 cfg-&gt;curr_max_ma 를 넘는다                           */
-  SAFE_I_TILT,          /* 기울기가 cfg-&gt;tilt_max_ddeg 를 넘는다 - IMU 가 동작 중일 때만 판정 */
   SAFE_I_IMU,           /* 기본 IMU 가 cfg-&gt;imu_timeout_ms 넘게 침묵                          */
   SAFE_I_DRIVER,        /* 드라이버 fault 입력 - 기본 진행에는 출처가 없다 (2-6)              */
   SAFE_I_PROTECT,       /* 어느 바퀴든 보호 래치 (fw-13) - 06a 에 그 비트가 없다 (2-9)        */
@@ -516,13 +504,12 @@ typedef struct {
   uint32_t cmd_timeout_ms;    /* CMD_WATCHDOG_MS - 계약의 200 (fw-13) */
   int32_t  batt_min_mv;       /* 0 이면 이 조건이 꺼진다 - control.c 의 가드를 본다 */
   int32_t  curr_max_ma;       /* 0 = 끔 */
-  int32_t  tilt_max_ddeg;     /* 0 = 끔 */
   uint32_t imu_timeout_ms;    /* 0 = 끔 */
   uint32_t release_hold_ms;   /* 0 = 풀린 첫 틱에 해제 (진짜 정책, 2-4) */
   uint8_t  latched;           /* 자동 해제하지 않는 조건들의 SAFE_BIT(..) (2-4) */
-  uint8_t  bit[SAFE_NCOND];   /* 내 배정: 조건마다 계약 fault 비트. 0 = 배정 안 함 */
-  uint8_t  code[SAFE_NCOND];  /* 내 배정: 조건마다 계약 이벤트 코드. 0 = 아무것도 안 낸다 */
-  uint8_t  code_recover;      /* 내 배정: "정상 복귀" 이벤트 코드. 0 = 아무것도 안 낸다 */
+  uint8_t  bit[SAFE_NCOND];   /* 직접 배정: 조건마다 계약 fault 비트. 0 = 배정 안 함 */
+  uint8_t  code[SAFE_NCOND];  /* 직접 배정: 조건마다 계약 이벤트 코드. 0 = 아무것도 안 낸다 */
+  uint8_t  code_recover;      /* 직접 배정: "정상 복귀" 이벤트 코드. 0 = 아무것도 안 낸다 */
   uint8_t  cut[SAFE_NCOND];   /* 조건마다 SAFE_CUT_* (2-9) */
 } safety_cfg_t;
 
@@ -531,7 +518,6 @@ typedef struct {
   uint32_t ms_since_imu;   /* 기본 IMU 샘플의 나이 [ms]. UINT32_MAX = 한 번도 없었다 */
   int32_t  batt_mv;   bool batt_valid;   /* valid == false 는 0 mV 가 아니다 (fw-11 의 교훈) */
   int32_t  current_ma; bool curr_valid;
-  int32_t  tilt_ddeg;                    /* 기본 IMU 의 safety_tilt_ddeg() [0.1 deg] */
   bool     driver_fault;                 /* 기본 진행에서는 false (2-6) */
   uint8_t  protect_bits;                 /* 네 바퀴 protect_t.tripped 의 OR (fw-13) */
   uint8_t  inject;                       /* `fault inject` 가 이 조건들을 강제로 1 로 설정한다 */
@@ -543,22 +529,12 @@ typedef struct {
   uint8_t  cut;        /* 지금 요구되는 SAFE_CUT_* = 비트가 1 인 조건들 가운데 최대 */
   uint32_t clear_ms;   /* 모든 조건이 함께 풀린 채 지난 시간 */
 } safety_t;</code></pre>
-      <p>둘째 블록은 <strong>완성된 순수 함수 셋</strong>이다 — 재사용 가능한 산술이라 그대로 쓴다.</p>
+      <p>둘째 블록은 <strong>완성된 순수 함수 둘</strong>이다 — 재사용 가능한 산술이라 그대로 쓴다.</p>
       <pre><code class="lang-c">/* 모든 int32 에 대해 정의된 |v|, INT32_MIN 포함. 어떻게 써도 좋다 - 다만 3-1-3 의
- * 둘째 컴파일 줄이 내 방식이 정의되지 않은 동작인지 알려 준다. */
+ * 둘째 컴파일 줄이 고른 방식이 정의되지 않은 동작인지 알려 준다. */
 static inline uint32_t safety_mag(int32_t v)
 {
   return (v &lt; 0) ? (0u - (uint32_t)v) : (uint32_t)v;
-}
-
-/* 중력 벡터가 +z 에서 기운 각, 0.1 deg 단위. 0 = 똑바로 섬, 900 = 옆으로 누움, 1800 =
- * 뒤집힘. 주의: (0,0,0) 은 0 - "완벽한 수평" - 을 돌려준다. 그래서 침묵한 IMU 는 각도보다
- * 먼저 판정해야 하고, 각도로 판정해서는 안 된다 (2-5). */
-static inline int32_t safety_tilt_ddeg(int16_t ax_mg, int16_t ay_mg, int16_t az_mg)
-{
-  const float ax = (float)ax_mg, ay = (float)ay_mg, az = (float)az_mg;
-  const float d = atan2f(sqrtf(ax * ax + ay * ay), az) * 572.958f;   /* rad -&gt; 0.1 deg 환산 */
-  return (int32_t)(d + (d &gt;= 0.0f ? 0.5f : -0.5f));
 }
 
 static inline void safety_reset(safety_t *s)
@@ -584,7 +560,7 @@ static inline uint8_t safety_fsm_step(safety_t *s, const safety_cfg_t *c,
         - WATCHDOG : ms_since_cmd &gt; cmd_timeout_ms
         - LOWBATT / OVERCURR : 짝이 되는 *_valid 가 참일 때만, 그리고 임계값이 0 이 아닐
           때만 (임계값 0 은 "이 조건을 꺼 두었다" 는 뜻)
-        - IMU 먼저, TILT 는 ELSE 안에 - 이 순서가 2-5 의 요점 전부다
+        - IMU : imu_timeout_ms 가 0 이 아니고 ms_since_imu &gt; imu_timeout_ms (2-5) - 값이 아니라 나이만 본다
         - DRIVER : in-&gt;driver_fault      PROTECT : in-&gt;protect_bits != 0
      2) rising = now &amp; ~s-&gt;cond   (2-2), 그 다음 s-&gt;cond |= now
      3) clear_ms: 무엇이든 참이면 0, 전부 풀린 틱마다 +1. fw-13 의 보호 지속 시간처럼
@@ -605,7 +581,7 @@ void    safety_service_main(void);  /* app_loop() 에서 한 바퀴에 한 번: 
 uint8_t safety_step(uint32_t ms_since_cmd, uint8_t protect_bits);
                                     /* 1 kHz ISR, control_step_1khz() 에서 부른다. 래치된 조건
                                        비트(SAFE_BIT)를 돌려준다. 계약 바이트가 아니다 - 끊기는
-                                       내 bit[] 배정에 기대면 안 된다 (2-3).
+                                       학습자의 bit[] 배정에 기대면 안 된다 (2-3).
                                        이 둘은 s_in 이 아니라 인자로 들어온다 (2-10) */
 uint8_t safety_fault_byte(void);    /* 계약 바이트: control_fault_flags() 가 돌려주는 것 */
 void    safety_cli_register(void);  /* "fault" 를 등록한다 */
@@ -628,9 +604,8 @@ void    safety_cli_register(void);  /* "fault" 를 등록한다 */
 #include "Tools/log.h"
 #include &lt;stdio.h&gt;
 
-#define SAFETY_IMU_PRIMARY  0u   /* ____ 0 = WT901, 1 = BNO055. 브리지의 imu_primary 와
-                                    같아야 한다. 0 도 유효한 값이라 어떤 가드도 "골랐다" 와
-                                    "빈칸" 을 가르지 못한다 - 고르면 이 주석을 바꾼다 */
+#define SAFETY_IMU_PRIMARY  0u   /* 0 = WT901 - 이 프로젝트의 IMU 는 WT901 하나다(BNO055 는 실제 경로에 없다).
+                                    브리지의 imu_primary 와 같아야 한다 */
 
 static safety_t          s_fsm;
 static volatile safety_in_t s_in;      /* main 이 쓰고 1 kHz ISR 이 읽는다 (2-10) */
@@ -639,9 +614,9 @@ static volatile uint16_t s_posted;     /* 이 모듈이 요청한 이벤트 수.
 
 static const safety_cfg_t s_cfg = {
   /* TODO(you) [T2]: 지정 초기화로 표 한 벌을 채운다 - 힌트 카드 T2
-     1) .cmd_timeout_ms = CMD_WATCHDOG_MS, 임계값 다섯은 robot_params.h 의 키 이름 그대로
+     1) .cmd_timeout_ms = CMD_WATCHDOG_MS, 임계값 넷은 robot_params.h 의 키 이름 그대로
      2) .latched = 자동 해제하지 않기로 정한 조건들의 SAFE_BIT(..) 를 | 로 묶은 것 (2-4)
-     3) .bit[] / .code[] / .code_recover = 06a 4-2 를 보고 정한 내 배정 (2-3) - [SAFE_I_..] = 값 꼴로 칸을 이름으로 짚는다
+     3) .bit[] / .code[] / .code_recover = 06a 4-2 를 보고 정한 배정 (2-3) - [SAFE_I_..] = 값 꼴로 칸을 이름으로 짚는다
      4) .cut[] = 조건마다 어디까지 끊는가 (2-9)
      bit[] 한 칸을 0 으로 두면 그 조건은 그래도 로봇을 정지시키지만 와이어에는 아무 말도 안 한다 -
      고장이 아니라 정직한 것이다. 채우기 시작하면 아래 줄(빌드용 자리표시 0)은 지운다. */
@@ -664,8 +639,7 @@ void safety_service_main(void)  /* app_loop() 에서 한 바퀴에 한 번. 모�
      2) adc_get_batt_ma()        -&gt; current_ma / curr_valid  (fw-12 는 유효성을 따로 주지 않는다:
         아직 블록 없음 = adc_get_raw() 가 0 = 무효)
      3) control_get_imu(&amp;imu, SAFETY_IMU_PRIMARY) -&gt; imu.seq == 0 은 "샘플이 한 번도 없었다" = UINT32_MAX;
-        아니면 tilt_ddeg = safety_tilt_ddeg(imu.ax_mg, imu.ay_mg, imu.az_mg) 를 먼저,
-        ms_since_imu = (uint32_t)(tick_get_ms() - imu.tick_ms) 를 나중에   &lt;- 한 바퀴 돌아도(wrap) 안전
+        아니면 ms_since_imu = (uint32_t)(tick_get_ms() - imu.tick_ms)   &lt;- 한 바퀴 돌아도(wrap) 안전
      4) driver_fault = false (2-6)
      1 kHz 쪽이 반쯤 갱신된 그림을 볼 수 없는 순서로 칸을 쓴다 - "값 먼저, 유효성 · 나이 나중":
      어느 칸이 한 틱 먼저 도착하면 fault 를 가릴 수 있는가? 답을 적어 둔다. 자리표시는 없다. */
@@ -684,7 +658,7 @@ uint8_t safety_step(uint32_t ms_since_cmd, uint8_t protect_bits)  /* 1 kHz ISR (
   /* TODO(you) [T5]: 새로 선(rising) 비트마다 이벤트 하나, `cleared` 가 0 이 아니면 복구 이벤트 하나 - 힌트 카드 T5
      1) for 로 i = 0 .. SAFE_NCOND - 1: (rising &amp; SAFE_BIT(i)) 가 1 이고 s_cfg.code[i] != 0 이면
         control_post_event(s_cfg.code[i], detail) 하고 ++s_posted  - 코드 0 은 "배정하지 않았다" -&gt; 아무것도 안 낸다
-     2) detail 은 조건마다 다르다: 워치독은 in.ms_since_cmd (2-12), 과전류는 mA, 기울기는 0.1 deg -
+     2) detail 은 조건마다 다르다: 워치독은 in.ms_since_cmd (2-12), 과전류는 mA, IMU 는 sensor_id -
         switch 하나짜리 도우미 함수를 이 함수 위에 둔다
      3) cleared != 0 이고 s_cfg.code_recover != 0 이면 control_post_event(code_recover, cleared) 하고 ++s_posted
      control_post_event() 만. printf 도, LOG_* 도, 막는 것은 무엇이든 안 된다 (2-11).
@@ -705,7 +679,7 @@ uint8_t safety_fault_byte(void) { return s_fsm.fault; }   /* control_fault_flags
       <code>s_fsm</code> 은 ISR 만 고치고 main 은 읽기만 하는데, <a href="fw-11-power-sequence.html#s3-1-2">fw-11 §3-1-2</a> 의 <code>s_fsm</code> 과 <strong>사정이 다르다</strong>: fw-11 에서는 읽는 쪽이 다른 파일이라 함수 호출이 컴파일러의 캐싱을 막아 줬지만,
       여기서는 <code>cmd_fault()</code> 가 <strong>같은 파일 안</strong>에 있다. 지금 골격처럼 한 번만 읽고 끝나면 문제가 없지만, 그 값을 기다리는 루프를 쓰는 순간 달라진다 — <strong>어느 변수를 누가 쓰는지 모르면 <code>volatile</code> 을 붙일지도 정할 수 없다.</strong></p>
       <p>마지막 블록은 <strong>명령 창</strong>이다. <code>fault</code> 한 명령이 세 가지 인자를 받는다(<a href="fw-05-cli.html">fw-05</a> 의 규약: 명령 하나 = 등록 함수 하나, 하위 동작은 둘째 인자).</p>
-      <pre><code class="lang-c">static const char *const s_cond_name[SAFE_NCOND] = { "wdg","batt","curr","tilt","imu","drv","prot" };
+      <pre><code class="lang-c">static const char *const s_cond_name[SAFE_NCOND] = { "wdg","batt","curr","imu","drv","prot" };
 
 static void cmd_fault(int argc, char *argv[])   /* main 문맥 */
 {
@@ -713,20 +687,20 @@ static void cmd_fault(int argc, char *argv[])   /* main 문맥 */
      1) "fault stat"  -&gt; 한 줄, 그 뒤 큐에 쌓인 이벤트를 한 줄에 하나씩 두 칸 들여 쓴다.
                       `i2c scan` 의 꼴이다 (fw-10) - 이 가이드에서 여러 줄로 찍는 꼴은
                       help / i2c / mem / step 뿐이고, 이것은 i2c 쪽이다.
-         fault wdg=&lt;0|1&gt; batt=&lt;0|1&gt; curr=&lt;0|1&gt; tilt=&lt;0|1&gt; imu=&lt;0|1&gt; drv=&lt;0|1&gt; prot=&lt;0|1&gt; \
+         fault wdg=&lt;0|1&gt; batt=&lt;0|1&gt; curr=&lt;0|1&gt; imu=&lt;0|1&gt; drv=&lt;0|1&gt; prot=&lt;0|1&gt; \
                byte=&lt;n&gt; cut=&lt;n&gt; clear_ms=&lt;n&gt; posted=&lt;n&gt; dropped=&lt;n&gt;
            code=&lt;n&gt; detail=&lt;n&gt; tick_ms=&lt;n&gt;          &lt;- control_pop_event() 가 false 를 돌려줄 때까지
-        s_fsm 은 사본 하나로 읽고, 일곱 칸은 s_cond_name[i] 로 for 를 돈다. dropped 는 control.c 의 것이다 (T8)
-     2) "fault inject &lt;wdg|batt|curr|tilt|imu|drv|prot&gt;" -&gt; s_cond_name[] 에서 찾아 s_inject 에 그 비트를 1 로 설정한다, "OK fault"
+        s_fsm 은 사본 하나로 읽고, 여섯 칸은 s_cond_name[i] 로 for 를 돈다. dropped 는 control.c 의 것이다 (T8)
+     2) "fault inject &lt;wdg|batt|curr|imu|drv|prot&gt;" -&gt; s_cond_name[] 에서 찾아 s_inject 에 그 비트를 1 로 설정한다, "OK fault"
         "fault inject none" -&gt; s_inject = 0, 그 밖에는 아무것도 안 한다 - 조건이 거짓이 되고
-                      그 다음은 내 해제 정책이 정한다. RELEASE_HOLD_MS 와 복구 이벤트를
+                      그 다음은 고른 해제 정책이 정한다. RELEASE_HOLD_MS 와 복구 이벤트를
                       이렇게 지켜본다 (3-1-4). "OK fault"
      3) "fault clear"  -&gt; s_inject = 0 그리고 safety_reset(&amp;s_fsm): 비상구. 정책을 거치지 않고
                       래치를 내리므로 복구 이벤트는 나지 않는다.
                       일부러 서로 다른 두 길이다 - 합치지 않는다. "OK fault"
      4) 그 밖의 것 -&gt; "ERR fault bad-arg"
      값은 정수다 (fw-05). 06a 4-2 는 코드를 16진수로 적는다 - 이 줄을 그것과 맞춰 읽는
-     수단이 내 배정표다. 이 가이드에서 16진수를 찍는 것은 `mem` 과 `i2c` 뿐이다.
+     수단이 학습자의 배정표다. 이 가이드에서 16진수를 찍는 것은 `mem` 과 `i2c` 뿐이다.
      strcmp 를 쓰려면 파일 위쪽에 #include &lt;string.h&gt; 가 있어야 한다. 채우기 시작하면 아래 줄(빌드용 자리표시)은 지운다. */
   (void)argc; (void)argv;
 }
@@ -734,8 +708,8 @@ static void cmd_fault(int argc, char *argv[])   /* main 문맥 */
 void safety_cli_register(void) { FW_ASSERT(cli_register("fault", cmd_fault)); }</code></pre>
       <p class="small">왜 <code>fault stat</code> 이 큐를 <strong>꺼내</strong> 출력하는가(들여다보고 두지 않고): 소비자가 <strong>모드당 하나</strong>여야 하기 때문이다(§2-11).
       TEXT 에서 이 명령이 꺼내지 않으면 큐는 계속 차 있고 넘침 카운터만 는다. 꺼내는 순간 그 이벤트는 큐에서 사라진다. 이벤트는 <strong>한 번만 보이므로</strong> 보면서 노트에 적어야 한다.</p>
-      <p><strong><code>User/Src/Control/control.c</code> 에 더하는 것</strong> — 셋이다. 이벤트 큐의 본문, 가드 넷, 그리고 호출 한 줄.</p>
-      <pre><code class="lang-c">/* --- 1) fw-13 이 비워 둔 큐 (2-11). 깊이는 내 몫: 길이 0 짜리 배열은 C 가 아니다. --- */
+      <p><strong><code>User/Src/Control/control.c</code> 에 더하는 것</strong> — 셋이다. 이벤트 큐의 본문, 가드 셋, 그리고 호출 한 줄.</p>
+      <pre><code class="lang-c">/* --- 1) fw-13 이 비워 둔 큐 (2-11). 깊이는 학습자가 정한다: 길이 0 짜리 배열은 C 가 아니다. --- */
 #define CONTROL_EVENT_Q_DEPTH  0   /* ____ 이벤트 [개] */
 _Static_assert((CONTROL_EVENT_Q_DEPTH) &gt; 0, "control.c: CONTROL_EVENT_Q_DEPTH is still EMPTY");
 
@@ -755,7 +729,7 @@ void control_post_event(uint8_t code, uint16_t detail)   /* 1 kHz ISR. 막지 �
   (void)code; (void)detail;
 }
 
-bool control_pop_event(event_t *out)   /* main 문맥: `fault stat` 또는 comm_frame.c 가운데 하나, 둘 다는 절대 아니다 */
+bool control_pop_event(event_t *out)   /* main 문맥: `fault stat` 또는 통신 모듈 가운데 하나, 둘 다는 절대 아니다 */
 {
   /* TODO(you) [T9]: tail 쪽에서 하나 꺼낸다 - 힌트 카드 T9
      1) out == NULL 이거나 s_ev_tail == s_ev_head (비었다) 이면 false
@@ -766,47 +740,44 @@ bool control_pop_event(event_t *out)   /* main 문맥: `fault stat` 또는 comm_
   (void)out; return false;
 }
 
-/* --- 2) EMPTY(빈칸) 임계값 키의 가드 넷. RELEASE_HOLD_MS 에는 두지 않는다 (2-8) --- */
+/* --- 2) EMPTY(빈칸) 임계값 키의 가드 셋. RELEASE_HOLD_MS 에는 두지 않는다 (2-8) --- */
 _Static_assert((BATT_MIN_MV)    != 0, "robot_params.h: BATT_MIN_MV is still EMPTY");
 _Static_assert((CURR_MAX_MA)    != 0, "robot_params.h: CURR_MAX_MA is still EMPTY");
-_Static_assert((TILT_MAX_DDEG)  != 0, "robot_params.h: TILT_MAX_DDEG is still EMPTY");
 _Static_assert((IMU_TIMEOUT_MS) != 0, "robot_params.h: IMU_TIMEOUT_MS is still EMPTY");
 
 /* --- 3) control_step_1khz() 안, 명령 워치독과 바퀴 루프 사이 (2-10) --- */
 /*    const uint8_t cond = safety_step(cmd_age_ms, prot_or);    &lt;- 둘 다 이미 여기 있다          */
-/*    ... 그리고 바퀴 루프 안, protect_step() 뒤에: if (cond) { duty = 0; pid_reset(...); }      */
+/*    ... 그리고 바퀴 루프 안, protect_step() 앞에: if (cond) { duty = 0; pid_reset(...); }      */
+/*    앞이어야 한다 - 뒤에 두면 보호가 PID 의 요구 듀티를 보고 "밀었는데 안 돈다"로 래치한다      */
+/*    같은 if 에 둘을 더 건다: power_get_state() != POWER_ARMED, 그리고 이 바퀴의                 */
+/*    EN 핀이 LOW((motor_enable_mask() &amp; (1u &lt;&lt; i)) == 0u). EN 이 꺼져 있으면 듀티는 모터에       */
+/*    닿지 않는다 - 사전충전 중 받은 명령으로 네 바퀴가 FBLOST 로 래치됐다                          */
 /*    계약 바이트가 아니라 `cond`: bit[] 가 전부 0 이어도 게이트는 걸려야 한다 (2-3)             */
 /* --- 4) control_fault_flags() 가 더는 0 만 돌려주지 않는다 ------------------------------------*/
 /*    uint8_t control_fault_flags(void) { return safety_fault_byte(); }                          */</code></pre>
       <p><strong>3번의 게이트가 <code>cond</code> 라는 것이 이 골격에서 가장 틀리기 쉬운 한 단어다.</strong> 계약 바이트(<code>safety_fault_byte()</code>)를 게이트 조건으로 쓰면 <code>bit[]</code> 을 하나도 배정하지 않은 기본 상태에서 그 바이트가 <strong>늘 0</strong> 이라 듀티가 끊기지 않는다.
-      그러면 저전압 · 과전류 · 과경사 · IMU 침묵 · 드라이버 다섯이 판정만 하고 출력을 끊지 않게 된다. §2-3 의 "배정하지 않아도 로봇은 멈춘다", 호스트 시험 벡터 15, 이해 확인 4 의 답이 전부 이 한 단어에 달려 있다.
+      그러면 저전압 · 과전류 · IMU 침묵 · 드라이버 넷이 판정만 하고 출력을 끊지 않게 된다. §2-3 의 "배정하지 않아도 로봇은 멈춘다", 호스트 시험 벡터 15, 이해 확인 4 의 답이 전부 이 한 단어에 달려 있다.
       <strong>끊는 판단은 안쪽 비트(<code>cond</code>)로, 와이어에 보고하는 것은 바깥 비트(<code>fault</code>)로 한다.</strong> 그래서 <code>safety_step()</code> 과 <code>safety_fault_byte()</code> 가 <strong>서로 다른 것</strong>을 돌려준다.</p>
-      <p class="small">가드 넷이 <code>control.c</code> 에 있는 이유는 fw-13 이 보호 문턱 열 개에 적용한 이유와 같다. <code>safety.c</code> 는 문턱을 <code>robot_params.h</code> 에서 읽지 않고 <code>s_cfg</code> 로 받으므로,
+      <p class="small">가드 셋이 <code>control.c</code> 에 있는 이유는 fw-13 이 보호 문턱 열 개에 적용한 이유와 같다. <code>safety.c</code> 는 문턱을 <code>robot_params.h</code> 에서 읽지 않고 <code>s_cfg</code> 로 받으므로,
       <strong>그 키를 실제로 쓰는 <code>.c</code></strong> 는 <code>s_cfg</code> 를 채우는 파일이다. 여기서는 그 파일이 <code>safety.c</code> 이므로 가드를 <code>safety.c</code> 에 둘 수도 있다. fw-13 의 열 가드와 <strong>한 곳에 모으고 싶으면</strong> <code>control.c</code> 에 둔다. 어느 쪽이든 <strong>한 곳에만</strong> 둔다.</p>
 
       <h4 id="s3-1-3">3-1-3. 직접 채우기</h4>
       <ol class="steps">
         <li><strong>결정을 먼저 종이에 적는다.</strong> 코드보다 결정이 먼저다. §2-3 의 표(안쪽 조건 ↔ 계약 비트 · 이벤트 코드)를 직접 채우고, §2-4 의 해제 정책을 조건마다 고르고, §2-9 의 끊는 레벨을 조건마다 고른다.
-        일곱 줄짜리 표 하나다. <strong>이 표가 없으면 <code>s_cfg</code> 를 채울 수 없다.</strong> 이 점이 결정을 먼저 적는 이유다.</li>
-        <li><strong>빈칸 여섯을 채운다.</strong> <code>robot_params.h</code> 의 다섯과 <code>control.c</code> 의 <code>CONTROL_EVENT_Q_DEPTH</code>. 저전압 · 과전류는 §2-7 의 기록을 읽고 <strong>시작점</strong>으로 고른다. 실습 C-2 에서 다시 확인한다.
-        IMU 타임아웃은 내 센서의 출력 주기(<a href="fw-14-wt901.html">fw-14</a> 200 Hz = 5 ms / <a href="fw-15-bno055.html">fw-15</a> 100 Hz = 10 ms)에서 <strong>몇 샘플을 잃으면 고장 난 것으로 볼지</strong>로 도출한다.
-        기울기 문턱 <code>TILT_MAX_DDEG</code> 는 각도라 출력 주기에서 나오지 않는다. 여기서 고른 값은 벤치 값이고, 확정은 <a href="fw-20-after-assembly.html">fw-20</a> 이 한다(§2-5 의 상자).</li>
+        여섯 줄짜리 표 하나다. <strong>이 표가 없으면 <code>s_cfg</code> 를 채울 수 없다.</strong> 이 점이 결정을 먼저 적는 이유다.</li>
+        <li><strong>빈칸 다섯을 채운다.</strong> <code>robot_params.h</code> 의 넷과 <code>control.c</code> 의 <code>CONTROL_EVENT_Q_DEPTH</code>. 저전압 · 과전류는 §2-7 의 기록을 읽고 <strong>시작점</strong>으로 고른다. 실습 C-2 에서 다시 확인한다.
+        IMU 타임아웃은 WT901 의 출력 주기(<a href="fw-14-wt901.html">fw-14</a>, 200 Hz = 5 ms)에서 <strong>몇 샘플을 잃으면 고장 난 것으로 볼지</strong>로 도출한다.</li>
         <li><strong><code>safety_fsm_step()</code> 의 다섯 걸음.</strong> 막히기 쉬운 곳은 두 군데다. 3번(연속 카운트)은 fw-13 의 <code>protect_step()</code> 에서 이미 한 번 했다. 5번(매 틱 다시 만들기)은 "증분 갱신"으로 쓰고 싶어지는 자리다.
         비트를 하나씩 더하고 빼는 코드를 쓰면 S4 · S5 가 <strong>성립하지 않는 경로가 생긴다</strong>(래치가 풀릴 때 <code>fault</code> 에서 비트를 빼는 것을 잊는 식으로).</li>
         <li><strong>아래 시험을 실행한다. 두 줄 다.</strong></li>
         <li>통과하면 <code>safety.c</code> 의 <code>TODO(you)</code> 를 채우고 <code>app.c</code> 에 세 줄을 더한다. <code>app_init()</code> 에 <code>safety_init();</code>(<code>control_init()</code> 뒤)를, <code>app_loop()</code> 에 <code>safety_service_main();</code> 을 더한다.
         <code>safety_cli_register();</code> 는 <strong><code>app.c</code> 의 TEXT 갈래에</strong> 둔다. V2 모드에는 CLI 가 아예 없으므로 V2 쪽에서 등록하면 아무도 쓸 수 없는 명령이 하나 는다.</li>
-        <li><p><strong>수학 라이브러리를 링크에 더한다 — 이 쪽이 처음이다.</strong> <code>safety_tilt_ddeg()</code> 가 <code>&lt;math.h&gt;</code> 의 <code>atan2f</code> · <code>sqrtf</code> 를 쓴다. 이 둘은 <code>libm.a</code> 에만 있다(<code>--specs=nano.specs</code> 가 주는 <code>libc_nano.a</code> 에도, <code>libc.a</code> 에도 없다).</p>
-        <p>고치는 곳은 최상위 <code>CMakeLists.txt</code> 의 <strong>네 번째 자리</strong>다. <a href="fw-02-toolchain.html#s2-2">fw-02 §2-2</a> 가 세 자리(소스 · 포함 경로 · 매크로)를 알려 줬고, 이번에 쓰는 것은 그 아래
-        <code>target_link_libraries(${CMAKE_PROJECT_NAME} …)</code> 블록의 <code># Add user defined libraries</code> 줄이다. 그 주석 줄 아래에 <code>m</code> 한 줄을 더한다.</p>
-        <p><strong>안 더하면 컴파일은 경고와 오류 없이 지나가고 링크에서 <code>undefined reference to 'atan2f'</code> 로 멈춘다</strong>(집필 중 이 툴체인에서 그대로 재현했다 — 증상표의 그 행).
-        Mac 의 호스트 시험은 <strong>통과한다</strong>: macOS 는 수학 함수가 표준 C 라이브러리 안에 있어서 이 문제가 드러나지 않는다. 호스트에서 되는 것이 보드에서 된다는 뜻이 아닌 자리가 여기다.</p></li>
         <li><strong>선택 과제.</strong> §2-4 의 "횟수 래치"는 골격에 없다. 넣으려면 <code>safety_t</code> 에 조건별 횟수 칸이, <code>safety_cfg_t</code> 에 상한이 필요하다. <strong>그리고 호스트 시험에 벡터가 는다.</strong> 벡터 없이 넣지 않는다.</li>
       </ol>
       <p class="small">위 걸음과 골격의 번호가 이렇게 짝을 이룬다: 걸음 3 = T1 · 걸음 5 = T2 ~ T7(<code>safety.c</code>)과 T8 · T9(<code>control.c</code> 의 큐 — 걸음 2 의 깊이를 정한 뒤). 막힌 자리의 카드를 연다 — 카드는 접혀 있을 뿐 잠겨 있지 않다.</p>
       <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>safety_fsm_step()</code> · 한 틱의 판정 다섯 걸음</summary>
         <div class="ans">
-        <p><strong>할 일</strong> — 입력은 이번 틱의 입력값 <code>in</code>(전압 · 전류 · 기울기 · 나이 · 주입)과 표 <code>c</code>(임계값 · 래치 · 배정)다. 출력은 셋이다: 반환값 <code>rising</code>(이번 틱에 <strong>새로</strong> 1 이 된 비트), <code>*cleared_out</code>(이번 틱에 해제된 비트), 그리고 <code>s</code> 의 네 칸(<code>cond</code> · <code>fault</code> · <code>cut</code> · <code>clear_ms</code>).
+        <p><strong>할 일</strong> — 입력은 이번 틱의 입력값 <code>in</code>(전압 · 전류 · 나이 · 주입)과 표 <code>c</code>(임계값 · 래치 · 배정)다. 출력은 셋이다: 반환값 <code>rising</code>(이번 틱에 <strong>새로</strong> 1 이 된 비트), <code>*cleared_out</code>(이번 틱에 해제된 비트), 그리고 <code>s</code> 의 네 칸(<code>cond</code> · <code>fault</code> · <code>cut</code> · <code>clear_ms</code>).
         끝났을 때 S1 ~ S6 이 참이어야 한다(골격 위 주석). 부르는 쪽은 <code>safety_step()</code>(1 kHz ISR)과 <code>test_safety.c</code>(Mac)이다. HAL 도 <code>robot_params.h</code> 도 쓰지 않는 순수 함수라 Mac 에서 먼저 채점한다.</p>
         <p><strong>완결 코드</strong></p>
         <pre><code class="lang-c">/* 완결 코드 T1 - User/Inc/Control/safety.h */
@@ -823,9 +794,7 @@ static inline uint8_t safety_fsm_step(safety_t *s, const safety_cfg_t *c,
     now |= SAFE_BIT(SAFE_I_OVERCURR);                /* 크기다 - 회생 제동(음수)도 과전류 */
   }
   if (c-&gt;imu_timeout_ms != 0u &amp;&amp; in-&gt;ms_since_imu &gt; c-&gt;imu_timeout_ms) {
-    now |= SAFE_BIT(SAFE_I_IMU);                     /* IMU 먼저 */
-  } else if (c-&gt;tilt_max_ddeg &gt; 0 &amp;&amp; safety_mag(in-&gt;tilt_ddeg) &gt; (uint32_t)c-&gt;tilt_max_ddeg) {
-    now |= SAFE_BIT(SAFE_I_TILT);                    /* 기울기는 else 안 - 고장 난 센서의 각도는 판정하지 않는다 (2-5) */
+    now |= SAFE_BIT(SAFE_I_IMU);                     /* 0 = 끔. 값이 아니라 나이만 본다 (2-5) */
   }
   if (in-&gt;driver_fault)       { now |= SAFE_BIT(SAFE_I_DRIVER); }
   if (in-&gt;protect_bits != 0u) { now |= SAFE_BIT(SAFE_I_PROTECT); }
@@ -863,12 +832,12 @@ static inline uint8_t safety_fsm_step(safety_t *s, const safety_cfg_t *c,
           <li><code>in-&gt;ms_since_cmd &gt; c-&gt;cmd_timeout_ms</code> — <code>&gt;</code> 이지 <code>&gt;=</code> 가 아니다: 200 은 아직 계약 안이고 201 부터다(벡터 2, §2-12).</li>
           <li><code>in-&gt;batt_valid &amp;&amp; c-&gt;batt_min_mv &gt; 0 &amp;&amp; in-&gt;batt_mv &lt; c-&gt;batt_min_mv</code> — 세 조건이 <code>&amp;&amp;</code> 로 이어져 있고 <strong>왼쪽부터</strong> 본다. 못 읽었으면(<code>valid</code> 거짓) 값을 보지 않고, 임계값이 0(꺼 둠)이면 역시 보지 않는다. "0 mV 를 읽었다"와 "못 읽었다"를 가르는 것이 <code>valid</code> 다(벡터 7, fw-11 의 교훈).</li>
           <li><code>safety_mag(in-&gt;current_ma) &gt; (uint32_t)c-&gt;curr_max_ma</code> — 전류는 <strong>크기</strong>로 본다(회생 제동은 음수다, 벡터 12). <code>safety_mag()</code> 는 <code>INT32_MIN</code> 에서도 정의된 절댓값이라 S6 이 성립한다. 비교 양쪽의 형을 맞추려고 임계값을 <code>(uint32_t)</code> 로 바꿨다 — 바로 윗줄에서 <code>&gt; 0</code> 을 확인했으므로 안전한 변환이다.</li>
-          <li><strong><code>if (IMU) … else if (TILT)</code></strong> — 이 쪽의 요점이 되는 한 단어(<code>else</code>). IMU 가 침묵하면 기울기는 <strong>판정하지 않는다</strong>(참도 거짓도 아니다). <code>else</code> 를 빼면 벡터 9 에서 시험이 멈춘다(§2-5). <code>ms_since_imu</code> 가 <code>UINT32_MAX</code>("한 번도 없었다", T3)이면 어떤 타임아웃보다 크므로 자연히 IMU 조건이 성립한다.</li>
+          <li><strong>IMU</strong> — <code>c-&gt;imu_timeout_ms != 0u</code> 가 "꺼 두지 않았다", <code>in-&gt;ms_since_imu &gt; c-&gt;imu_timeout_ms</code> 가 "샘플이 문턱보다 오래 안 왔다"다. 샘플의 값은 보지 않는다(§2-5). <code>&gt;</code> 이므로 문턱과 같은 나이는 아직 침묵이 아니다(벡터 10). <code>ms_since_imu</code> 가 <code>UINT32_MAX</code>("한 번도 없었다", T3)이면 어떤 타임아웃보다 크므로 자연히 IMU 조건이 성립한다(벡터 11).</li>
           <li><strong>2) 엣지.</strong> <code>now &amp; ~s-&gt;cond</code> — <code>~</code> 는 비트 뒤집기, <code>&amp;</code> 는 비트 AND: "지금 참이면서 아직 래치에 <strong>없는</strong>" 비트만 남는다(§2-2). 그 다음 <code>s-&gt;cond |= now</code> 로 래치에 더한다. <strong>순서가 거꾸로면 <code>rising</code> 이 늘 0 이다.</strong> <code>(uint8_t)</code> 캐스트는 C 가 <code>~</code> · <code>&amp;</code> 를 <code>int</code> 로 계산하기 때문에 다시 바이트로 줄이는 것이다 — 없어도 두 컴파일러 다 경고하지 않지만(확인), 뜻을 코드에 적어 두는 표기다.</li>
           <li><strong>3) <code>clear_ms</code>.</strong> 하나라도 참이면 <code>0</code>, 전부 풀린 틱에만 <code>+1</code> — 그래서 "연속" 이 된다(벡터 5). <code>&lt; UINT32_MAX</code> 는 49 일 뒤의 되감김을 막는 포화(saturation)다(<strong>다르게 써도 되는 곳</strong> — 빼도 벡터는 통과한다).</li>
           <li><strong>4) 해제.</strong> 조건이 둘이다: <code>now == 0u</code>(지금 아무것도 참이 아니다) <strong>그리고</strong> <code>clear_ms &gt;= release_hold_ms</code>. <code>release_hold_ms</code> 가 0 이면 풀린 첫 틱에 참이 된다(벡터 18, §2-8 의 "정해서 0"). 내리는 비트는 <code>s-&gt;cond &amp; ~c-&gt;latched</code> — 래치 대상은 <strong>빼고</strong>(벡터 6, S3). <code>cleared_out</code> 의 <code>NULL</code> 검사는 골격의 자리표시에 있던 그 줄이다 — 부르는 쪽이 해제 비트가 필요 없으면 <code>NULL</code> 을 넘길 수 있게 둔다.</li>
           <li><strong>5) 다시 만들기.</strong> <code>fault</code> 와 <code>cut</code> 을 0 으로 지우고 <code>cond</code> 의 비트마다 <code>bit[i]</code> 를 OR, <code>cut[i]</code> 의 최대를 구한다. 증분 갱신(새로 1 이 된 비트만 더하기)으로 쓰면 해제 때 <code>fault</code> 에서 비트를 빼는 코드가 따로 필요하고, 그 코드를 빠뜨리면 벡터 4 의 둘째 줄이 검출한다(아래 표). <code>for (unsigned i …)</code> 에서 <code>SAFE_BIT(i)</code> 는 <code>1u &lt;&lt; i</code> 다.</li>
-          <li><strong>다르게 써도 되는 곳</strong> — ① 임계값의 "0 = 끔" 검사를 <code>!= 0</code> 으로 써도 된다(이 코드는 음수도 끔으로 보려고 <code>&gt; 0</code>). ② 1) 의 일곱 줄 순서는 IMU → TILT 의 <code>else</code> 만 지키면 바꿔도 같다(동일). ③ <code>clear_ms</code> 의 포화. ④ 4) 를 "해제된 뒤 <code>clear_ms</code> 를 0 으로" 되돌려도 벡터는 같다 — 그러면 <code>fault stat</code> 의 <code>clear_ms</code> 가 해제 뒤 다시 0 부터 센다는 차이만 보인다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① 임계값의 "0 = 끔" 검사를 <code>!= 0</code> 으로 써도 된다(이 코드는 음수도 끔으로 보려고 <code>&gt; 0</code>). ② 1) 의 여섯 줄 순서는 바꿔도 같다(동일) — 서로 다른 비트를 <code>now</code> 에 OR 할 뿐이다. ③ <code>clear_ms</code> 의 포화. ④ 4) 를 "해제된 뒤 <code>clear_ms</code> 를 0 으로" 되돌려도 벡터는 같다 — 그러면 <code>fault stat</code> 의 <code>clear_ms</code> 가 해제 뒤 다시 0 부터 센다는 차이만 보인다.</li>
         </ul>
         <p><strong>쓰는 API</strong> — 없다(순수 파일). 같은 헤더의 <code>safety_mag()</code> · <code>SAFE_BIT()</code> 만 쓴다. <code>UINT32_MAX</code> 는 <code>&lt;stdint.h&gt;</code>.</p>
         <p><strong>흔한 실수</strong> — 컴파일러가 검출하는 것은 첫 행뿐이고, 나머지는 호스트 시험이 검출한다. <code>FAIL line</code> 의 번호는 §3-1-3 의 다섯 블록을 빈 줄 하나씩 두고 차례로 붙였을 때의 것이다 — 번호가 다르면 뒤의 <code>CHECK</code> 문자열로 찾는다.</p>
@@ -876,7 +845,7 @@ static inline uint8_t safety_fsm_step(safety_t *s, const safety_cfg_t *c,
           <thead><tr><th>쓴 것</th><th>컴파일러 · <code>/tmp/test_safety</code> 가 하는 말</th><th>고치는 법</th></tr></thead>
           <tbody>
             <tr><td><code>in.ms_since_cmd</code> (포인터에 점)</td><td>Mac: <code>error: member reference type 'const safety_in_t *' is a pointer; did you mean to use '-&gt;'?</code><br>arm-gcc: <code>error: 'in' is a pointer; did you mean to use '-&gt;'?</code></td><td><code>in-&gt;ms_since_cmd</code></td></tr>
-            <tr><td>IMU 의 <code>else if</code> 를 <code>if</code> 로</td><td><code>FAIL line 101: run(&amp;s, &amp;CFG, in, 1, 0) == SAFE_BIT(SAFE_I_IMU)</code> (벡터 9 — IMU 와 TILT 가 함께 1 이 됐다)</td><td><code>else</code></td></tr>
+            <tr><td>IMU 의 <code>&gt;</code> 를 <code>&gt;=</code> 로</td><td><code>FAIL line 107: run(&amp;s, &amp;CFG, in, 1000, 0) == 0u &amp;&amp; s.cond == 0u</code> (벡터 10 — 문턱과 같은 나이를 침묵으로 봤다)</td><td><code>&gt;</code></td></tr>
             <tr><td><code>return now;</code> (<code>rising</code> 대신)</td><td><code>warning: unused variable 'rising'</code> 그리고 <code>FAIL line 56: run(&amp;s, &amp;CFG, in, 1000, 0) == 0u</code> (벡터 3 — 틱마다 이벤트)</td><td><code>return rising;</code></td></tr>
             <tr><td><code>s-&gt;cond = now;</code> (<code>|=</code> 대신)</td><td><code>FAIL line 64: cl == 0u &amp;&amp; s.cond == SAFE_BIT(SAFE_I_WATCHDOG)</code> (벡터 4 — 조건이 사라지자 래치도 사라졌다)</td><td><code>|=</code></td></tr>
             <tr><td>참인 틱에 <code>clear_ms</code> 를 0 으로 되돌리지 않는다</td><td>같은 <code>FAIL line 64</code> — 래치 중에 세어 둔 시간으로 첫 틱에 풀린다</td><td>3) 의 <code>if (now != 0u) { s-&gt;clear_ms = 0u; }</code></td></tr>
@@ -895,10 +864,10 @@ static inline uint8_t safety_fsm_step(safety_t *s, const safety_cfg_t *c,
             <tr><td>1) 2)</td><td><code>FAIL line 59: s.fault == 1u</code></td><td>벡터 3 의 S4 — 계약 바이트가 비어 있다</td></tr>
             <tr><td>1) 2) 5)</td><td><code>FAIL line 67: cl == SAFE_BIT(SAFE_I_WATCHDOG) &amp;&amp; s.cond == 0u &amp;&amp; s.fault == 0u</code></td><td>벡터 4 — 해제가 없다</td></tr>
             <tr><td>1) 2) 3) 5)</td><td>같은 <code>FAIL line 67</code></td><td>세기만 하고 내리지 않는다</td></tr>
-            <tr><td>다섯 걸음 전부</td><td><code>PASS safety 45 cases</code> — 둘째 줄(sanitizer)도 경고와 오류가 없다</td><td>체크 항목 <code>safety-host-pass</code></td></tr>
+            <tr><td>다섯 걸음 전부</td><td><code>PASS safety 39 cases</code> — 둘째 줄(sanitizer)도 경고와 오류가 없다</td><td>체크 항목 <code>safety-host-pass</code></td></tr>
           </tbody>
         </table></div>
-        <p class="small">알아 둘 것 하나 — 벡터 7 · 8 은 <strong>마지막 틱의 반환값</strong>만 본다. 그래서 <code>*_valid</code> 검사를 빼먹은 구현도 <code>PASS</code> 가 나온다(집필 중 확인: <code>cond == 2</code> 인데 1000 번째 틱의 <code>rising</code> 은 0 이다). 벡터 7 의 <code>CHECK</code> 에 <code>&amp;&amp; s.cond == 0u</code> 를 더하면 <code>FAIL line 90</code> 으로 바로 보인다. "임계값 0 = 끔" 을 빼먹은 것은 그렇게 해도 벡터 8 이 검출하지 못한다. <code>batt_mv</code> 가 0 이라 <code>0 &lt; 0</code> 이 거짓이어서 LOWBATT 는 어차피 1 이 되지 않고, 크기로 비교하는 OVERCURR · TILT(0 이 아닌 값이면 전부 "넘는다")에는 그 벡터가 없다. 그 줄이 맞는지는 실습 C-1 · C-2 의 실물로 확인한다(2026-10-04, Mac <code>cc</code> 로 둘 다 실행해 확인).</p>
+        <p class="small">알아 둘 것 하나 — 벡터 7 · 8 은 <strong>마지막 틱의 반환값</strong>만 본다. 그래서 <code>*_valid</code> 검사를 빼먹은 구현도 <code>PASS</code> 가 나온다(집필 중 확인: <code>cond == 2</code> 인데 1000 번째 틱의 <code>rising</code> 은 0 이다). 벡터 7 의 <code>CHECK</code> 에 <code>&amp;&amp; s.cond == 0u</code> 를 더하면 <code>FAIL line 90</code> 으로 바로 보인다. "임계값 0 = 끔" 을 빼먹은 것은 그렇게 해도 벡터 8 이 검출하지 못한다. <code>batt_mv</code> 가 0 이라 <code>0 &lt; 0</code> 이 거짓이어서 LOWBATT 는 어차피 1 이 되지 않고, 크기로 비교하는 OVERCURR(0 이 아닌 값이면 전부 "넘는다")에는 그 벡터가 없다. 그 줄이 맞는지는 실습 C-1 · C-2 의 실물로 확인한다(2026-10-04, Mac <code>cc</code> 로 둘 다 실행해 확인).</p>
         </div></details>
 
       <details class="hint" id="hint-t2"><summary>힌트 T2 — <code>s_cfg</code> · 표 한 벌을 지정 초기화로</summary>
@@ -906,56 +875,55 @@ static inline uint8_t safety_fsm_step(safety_t *s, const safety_cfg_t *c,
         <p><strong>할 일</strong> — <code>safety_fsm_step()</code> 이 읽을 표 하나를 <strong>컴파일 시점에</strong> 채운다. 들어가는 값의 출처는 셋뿐이다.</p>
         <ul>
           <li>계약값 <code>CMD_WATCHDOG_MS</code></li>
-          <li><code>robot_params.h</code> 의 임계값 다섯(이름으로)</li>
-          <li><strong>내 결정</strong> — §3-1-3 걸음 1 의 일곱 줄 표(래치 · 비트 · 코드 · 끊는 레벨)</li>
+          <li><code>robot_params.h</code> 의 임계값 넷(이름으로)</li>
+          <li><strong>학습자의 결정</strong> — §3-1-3 걸음 1 의 여섯 줄 표(래치 · 비트 · 코드 · 끊는 레벨)</li>
         </ul>
         <p>끝났을 때 <code>s_cfg</code> 는 <code>const</code> 라 플래시에 놓이고 실행 중에는 어떤 코드도 고치지 못한다.</p>
-        <p><strong>완결 코드</strong> — 내 결정이 들어갈 다섯 칸은 <code>0</code> · <code>SAFE_CUT_DUTY</code> 와 <code>____</code> 로 남겨 두었다. 이 상태로도 빌드되고 로봇은 멈춘다(§2-3). 표를 채운 뒤 그 줄들을 내가 고치고 <code>____</code> 를 지운다.</p>
+        <p><strong>완결 코드</strong> — 학습자의 결정이 들어갈 다섯 칸은 <code>0</code> · <code>SAFE_CUT_DUTY</code> 와 <code>____</code> 로 남겨 두었다. 이 상태로도 빌드되고 로봇은 멈춘다(§2-3). 표를 채운 뒤 그 줄들을 직접 고치고 <code>____</code> 를 지운다.</p>
         <pre><code class="lang-c">/* 완결 코드 T2 - User/Src/Control/safety.c */
 static const safety_cfg_t s_cfg = {
-  .cmd_timeout_ms  = CMD_WATCHDOG_MS,      /* 계약값 200 (fw-13) - 내가 정하는 값이 아니다 */
-  .batt_min_mv     = BATT_MIN_MV,          /* 다섯 임계값은 robot_params.h 의 키 이름으로만 - 숫자를 여기 쓰지 않는다 */
+  .cmd_timeout_ms  = CMD_WATCHDOG_MS,      /* 계약값 200 (fw-13) - 학습자가 정하는 값이 아니다 */
+  .batt_min_mv     = BATT_MIN_MV,          /* 네 임계값은 robot_params.h 의 키 이름으로만 - 숫자를 여기 쓰지 않는다 */
   .curr_max_ma     = CURR_MAX_MA,
-  .tilt_max_ddeg   = TILT_MAX_DDEG,
   .imu_timeout_ms  = IMU_TIMEOUT_MS,
   .release_hold_ms = RELEASE_HOLD_MS,
   .latched         = 0u,                   /* ____ 영구 래치로 정한 조건들의 SAFE_BIT(..) 를 | 로 묶는다 (2-4). 0 = 전부 자동 해제 */
-  .bit  = { [SAFE_I_WATCHDOG] = 0u, [SAFE_I_LOWBATT] = 0u, [SAFE_I_OVERCURR] = 0u, [SAFE_I_TILT] = 0u,
-            [SAFE_I_IMU]      = 0u, [SAFE_I_DRIVER]  = 0u, [SAFE_I_PROTECT]  = 0u },   /* ____ 계약 fault 비트 (2-3). 0 = 배정 안 함 */
-  .code = { [SAFE_I_WATCHDOG] = 0u, [SAFE_I_LOWBATT] = 0u, [SAFE_I_OVERCURR] = 0u, [SAFE_I_TILT] = 0u,
-            [SAFE_I_IMU]      = 0u, [SAFE_I_DRIVER]  = 0u, [SAFE_I_PROTECT]  = 0u },   /* ____ 계약 이벤트 코드 (2-3). 0 = 안 낸다 */
+  .bit  = { [SAFE_I_WATCHDOG] = 0u, [SAFE_I_LOWBATT] = 0u, [SAFE_I_OVERCURR] = 0u,
+            [SAFE_I_IMU]      = 0u, [SAFE_I_DRIVER]  = 0u, [SAFE_I_PROTECT]  = 0u },   /* ____ 계약 fault 비트 (2-3). 0 = 배정 안 함. bit3 은 예약 */
+  .code = { [SAFE_I_WATCHDOG] = 0u, [SAFE_I_LOWBATT] = 0u, [SAFE_I_OVERCURR] = 0u,
+            [SAFE_I_IMU]      = 0u, [SAFE_I_DRIVER]  = 0u, [SAFE_I_PROTECT]  = 0u },   /* ____ 계약 이벤트 코드 (2-3). 0 = 안 낸다. 0x03 은 예약 */
   .code_recover    = 0u,                   /* ____ "정상 복귀" 이벤트 코드 (2-3). 0 = 안 낸다 */
   .cut  = { [SAFE_I_WATCHDOG] = SAFE_CUT_DUTY, [SAFE_I_LOWBATT] = SAFE_CUT_DUTY, [SAFE_I_OVERCURR] = SAFE_CUT_DUTY,
-            [SAFE_I_TILT]     = SAFE_CUT_DUTY, [SAFE_I_IMU]     = SAFE_CUT_DUTY, [SAFE_I_DRIVER]   = SAFE_CUT_DUTY,
+            [SAFE_I_IMU]      = SAFE_CUT_DUTY, [SAFE_I_DRIVER]  = SAFE_CUT_DUTY,
             [SAFE_I_PROTECT]  = SAFE_CUT_DUTY }   /* ____ 조건마다 어디까지 끊는가 (2-9). DUTY 는 바닥이지 빈칸이 아니다 - 고르면 이 주석을 바꾼다 */
 };</code></pre>
         <p><strong>코드 설명</strong></p>
         <ul>
           <li><code>.cmd_timeout_ms = CMD_WATCHDOG_MS,</code> — <strong>지정 초기화</strong>(designated initializer): <code>.칸이름 = 값</code> 으로 구조체의 칸을 이름으로 지정한다. 순서를 안 지켜도 되고, 적지 않은 칸은 0 이 된다. 골격의 자리표시 <code>0</code> 은 "첫 칸만 0, 나머지도 0" 이었다 — 그래서 빌드는 됐다.</li>
-          <li>임계값 다섯은 <strong>매크로 이름 그대로</strong>다. 숫자를 여기 적으면 값이 <code>robot_params.h</code> 와 여기, 두 곳에 있게 된다. <code>control.c</code> 의 <code>_Static_assert</code> 가 검사하는 것은 그 헤더의 키다. 여기에 숫자를 쓰면 가드가 검사하는 값과 실제로 쓰는 값이 달라진다.</li>
+          <li>임계값 넷은 <strong>매크로 이름 그대로</strong>다. 숫자를 여기 적으면 값이 <code>robot_params.h</code> 와 여기, 두 곳에 있게 된다. <code>control.c</code> 의 <code>_Static_assert</code> 가 검사하는 것은 그 헤더의 키다. 여기에 숫자를 쓰면 가드가 검사하는 값과 실제로 쓰는 값이 달라진다.</li>
           <li><code>.latched = 0u</code> — 자동 해제하지 않을 조건들을 <code>SAFE_BIT(SAFE_I_LOWBATT) | SAFE_BIT(SAFE_I_OVERCURR)</code> 처럼 <code>|</code> 로 묶어 적는 자리다. 0 은 "전부 자동 해제" — §2-4 의 세 정책 가운데 하나이지 빈칸이 아니다. 그래서 <code>____</code> 가 붙어 있다: 고르고 나서 주석을 바꾸는 것이 §2-8 의 규칙이다.</li>
-          <li><code>.bit = { [SAFE_I_WATCHDOG] = 0u, … }</code> — 배열도 지정 초기화가 된다: <code>[색인] = 값</code>. 색인에 <code>enum</code> 이름을 쓰면 <strong>어느 칸이 어느 조건인지 읽힌다</strong>. 값은 전부 0 = "배정 안 함": 와이어에는 "이상 없음"으로 나가고 로봇은 그래도 멈춘다(벡터 15). <code>[SAFE_NCOND]</code>(여덟째)를 적으면 아래 표의 둘째 행.</li>
+          <li><code>.bit = { [SAFE_I_WATCHDOG] = 0u, … }</code> — 배열도 지정 초기화가 된다: <code>[색인] = 값</code>. 색인에 <code>enum</code> 이름을 쓰면 <strong>어느 칸이 어느 조건인지 읽힌다</strong>. 값은 전부 0 = "배정 안 함": 와이어에는 "이상 없음"으로 나가고 로봇은 그래도 멈춘다(벡터 15). <code>[SAFE_NCOND]</code>(일곱째)를 적으면 아래 표의 둘째 행.</li>
           <li><code>.code</code> · <code>.code_recover</code> — 같은 꼴. 0 = "이 조건의 이벤트는 내지 않는다"(T5 가 그 0 을 본다).</li>
           <li><code>.cut = { … SAFE_CUT_DUTY … }</code> — 레벨 0 은 모든 fault 의 최소 동작이다(§2-9). 모든 fault 가 최소한 듀티는 끊으므로 <code>SAFE_CUT_DUTY</code> 는 "정해서 0" 이 될 수 있는 값이다. 레벨 1 · 2 로 올리면 T6 에 줄이 하나 늘고 fw-11 에 입구가 하나 는다(§2-9 의 상자).</li>
-          <li><strong>다르게 써도 되는 곳</strong> — ① 색인 없이 <code>{ 0u, 0u, 0u, 0u, 0u, 0u, 0u }</code> 로 차례대로 적어도 같은 표다(동일). 다만 칸 수가 모자라도 컴파일러는 경고 없이 나머지를 0 으로 채운다(여섯 개만 적은 것을 arm-gcc 로 확인 — 경고 없음). ② 06 의 기록(§2-4: 워치독 · 과경사 · IMU · 드라이버 자동, 과전류 횟수 래치, 저전압 래치)을 그대로 옮기는 것도 하나의 표다 — 근거가 적혀 있지 않다는 것만 알고 쓴다. ③ 06a §4-2 의 (제안) 비트 · 코드를 그대로 쓰면 probe 의 이름표와 바로 맞는다(§3-2-3 의 3). 브리지 표와 같기만 하면 그 배정도 "내 배정" 이다.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① 색인 없이 <code>{ 0u, 0u, 0u, 0u, 0u, 0u }</code> 로 차례대로 적어도 같은 표다(동일). 다만 칸 수가 모자라도 컴파일러는 경고 없이 나머지를 0 으로 채운다(모자라게 적은 것을 arm-gcc 로 확인 — 경고 없음). 차례대로 적을 때는 칸의 차례가 <strong>조건의 색인</strong>이지 계약 비트 번호가 아니라는 것도 기억한다(넷째 칸 = <code>SAFE_I_IMU</code>). ② 06 의 기록(§2-4: 워치독 · IMU · 드라이버 자동, 과전류 횟수 래치, 저전압 래치)을 그대로 옮기는 것도 하나의 표다 — 근거가 적혀 있지 않다는 것만 알고 쓴다. ③ 06a §4-2 의 (제안) 비트 · 코드를 그대로 쓰면 probe 의 이름표와 바로 맞는다(§3-2-3 의 3). 브리지 표와 같기만 하면 그 배정도 "학습자가 정한 배정" 이다.</li>
         </ul>
-        <p><strong>쓰는 API</strong> — 없다. 매크로 여섯은 <code>robot_params.h</code>(fw-13 이 <code>CMD_WATCHDOG_MS</code>, 이 쪽이 다섯), 색인 · 레벨 이름은 <code>safety.h</code>.</p>
+        <p><strong>쓰는 API</strong> — 없다. 매크로 다섯은 <code>robot_params.h</code>(fw-13 이 <code>CMD_WATCHDOG_MS</code>, 이 쪽이 넷), 색인 · 레벨 이름은 <code>safety.h</code>.</p>
         <p><strong>흔한 실수</strong></p>
         <div class="tbl"><table class="compact">
           <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
           <tbody>
             <tr><td><code>.latch = 0u,</code> (칸 이름 오타)</td><td><code>error: 'safety_cfg_t' has no member named 'latch'; did you mean 'latched'?</code></td><td>헤더의 칸 이름 그대로</td></tr>
-            <tr><td><code>[SAFE_NCOND] = 0u</code> 를 더했다(여덟째 칸)</td><td><code>error: array index in initializer exceeds array bounds</code> · <code>note: (near initialization for 's_cfg.bit')</code></td><td>칸은 <code>SAFE_NCOND</code>(7) 개 — 색인은 0 ~ 6</td></tr>
+            <tr><td><code>[SAFE_NCOND] = 0u</code> 를 더했다(일곱째 칸)</td><td><code>error: array index in initializer exceeds array bounds</code> · <code>note: (near initialization for 's_cfg.bit')</code></td><td>칸은 <code>SAFE_NCOND</code>(6) 개 — 색인은 0 ~ 5</td></tr>
             <tr><td>임계값에 숫자를 직접 적었다</td><td>아무 말도 없다. <code>robot_params.h</code> 의 가드는 통과하는데 실제 판정은 다른 수로 한다</td><td>키 이름으로</td></tr>
-            <tr><td>다섯 키를 아직 안 채웠다</td><td><code>error: static assertion failed: "robot_params.h: BATT_MIN_MV is still EMPTY"</code>(증상표 첫 행 — <code>control.c</code> 에서 난다)</td><td>§3-1-3 걸음 2</td></tr>
+            <tr><td>네 키를 아직 안 채웠다</td><td><code>error: static assertion failed: "robot_params.h: BATT_MIN_MV is still EMPTY"</code>(증상표 첫 행 — <code>control.c</code> 에서 난다)</td><td>§3-1-3 걸음 2</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — 빌드가 되고, §3-1-4 의 <code>fault stat</code> 첫 줄에서 <code>byte=0</code> · <code>cut=0</code> 이 나온다. <code>bit[]</code> · <code>cut[]</code> 을 아직 0 으로 두었으니 그 값이 맞다. 표를 채운 뒤에는 <code>fault inject tilt</code> 의 <code>byte=</code> 가 내가 <code>bit[SAFE_I_TILT]</code> 에 적은 수가 된다(벡터 13 의 보드판).</p>
+        <p><strong>확인</strong> — 빌드가 되고, §3-1-4 의 <code>fault stat</code> 첫 줄에서 <code>byte=0</code> · <code>cut=0</code> 이 나온다. <code>bit[]</code> · <code>cut[]</code> 을 아직 0 으로 두었으니 그 값이 맞다. 표를 채운 뒤에는 <code>fault inject imu</code> 의 <code>byte=</code> 가 <code>bit[SAFE_I_IMU]</code> 에 적은 수가 된다(벡터 13 의 보드판).</p>
         </div></details>
 
       <details class="hint" id="hint-t3"><summary>힌트 T3 — <code>safety_init()</code> · "아직 아무것도 모른다"로 시작한다</summary>
         <div class="ans">
-        <p><strong>할 일</strong> — 부팅 때 한 번, <code>control_init()</code> 뒤에 main 이 부른다. 상태기계를 0 으로 되돌리고(골격에 있다), <code>s_in</code> 을 <strong>"없음"</strong> 으로 채운다. 끝났을 때 참이어야 하는 것: 첫 1 kHz 틱이 이 입력값을 보고 <strong>IMU 조건 비트를 1 로 설정하되</strong>(샘플이 없으니까) 전압 · 전류 · 기울기는 판정하지 않는다.</p>
+        <p><strong>할 일</strong> — 부팅 때 한 번, <code>control_init()</code> 뒤에 main 이 부른다. 상태기계를 0 으로 되돌리고(골격에 있다), <code>s_in</code> 을 <strong>"없음"</strong> 으로 채운다. 끝났을 때 참이어야 하는 것: 첫 1 kHz 틱이 이 입력값을 보고 <strong>IMU 조건 비트를 1 로 설정하되</strong>(샘플이 없으니까) 전압 · 전류는 판정하지 않는다.</p>
         <p><strong>완결 코드</strong></p>
         <pre><code class="lang-c">/* 완결 코드 T3 - User/Src/Control/safety.c */
 void safety_init(void)          /* main 에서 한 번, control_init() 뒤 */
@@ -965,7 +933,6 @@ void safety_init(void)          /* main 에서 한 번, control_init() 뒤 */
   s_in.ms_since_imu = UINT32_MAX; /* "샘플이 한 번도 없었다". 0 이면 "방금 왔다" 라 부팅 직후의 거짓말이 된다 */
   s_in.batt_mv      = 0;   s_in.batt_valid = false;   /* 아직 못 읽었다 - 0 mV 가 아니다 (fw-11 의 교훈) */
   s_in.current_ma   = 0;   s_in.curr_valid = false;
-  s_in.tilt_ddeg    = 0;                              /* IMU 가 "없음" 이라 어차피 판정되지 않는다 (2-5) */
   s_in.driver_fault = false;                          /* 기본 진행에는 출처가 없다 (2-6) */
   s_in.protect_bits = 0u;         /* 쓰이지 않는 칸 - 인자로 들어온다 */
   s_in.inject       = 0u;
@@ -974,7 +941,7 @@ void safety_init(void)          /* main 에서 한 번, control_init() 뒤 */
 }</code></pre>
         <p><strong>코드 설명</strong></p>
         <ul>
-          <li><code>s_in.ms_since_imu = UINT32_MAX;</code> — 이 함수의 요점 한 줄. <code>static</code> 변수는 0 으로 초기화되는데, 이 칸의 0 은 "샘플이 <strong>방금</strong> 왔다" 라는 뜻이라 사실과 다르다. <code>UINT32_MAX</code>(<code>&lt;stdint.h&gt;</code>, 4 294 967 295)는 어떤 <code>imu_timeout_ms</code> 보다 크므로 T1 의 1) 에서 IMU 조건 비트가 1 이 된다. 그리고 <code>else</code> 덕분에 기울기 0 은 "완벽한 수평" 으로 읽히지 않는다(§2-5).</li>
+          <li><code>s_in.ms_since_imu = UINT32_MAX;</code> — 이 함수의 요점 한 줄. <code>static</code> 변수는 0 으로 초기화되는데, 이 칸의 0 은 "샘플이 <strong>방금</strong> 왔다" 라는 뜻이라 사실과 다르다. <code>UINT32_MAX</code>(<code>&lt;stdint.h&gt;</code>, 4 294 967 295)는 어떤 <code>imu_timeout_ms</code> 보다 크므로 T1 의 1) 에서 IMU 조건 비트가 1 이 된다(벡터 11).</li>
           <li><code>batt_valid = false</code> · <code>curr_valid = false</code> — "못 읽었다" 다. 값 칸의 0 은 그래서 아무 뜻이 없다(fw-11 의 교훈). T4 가 첫 바퀴에 바로 덮어쓴다.</li>
           <li>나머지 칸 — 0 · <code>false</code> 로 처음 만들어진 값과 같지만 <strong>적어 둔다</strong>: 어느 칸이 "0 이면 안 되는가"를 고민한 흔적이 이 함수의 내용이다. <code>ms_since_cmd</code> · <code>protect_bits</code> 는 <code>safety_step()</code> 이 인자로 덮어쓰므로 여기 값은 쓰이지 않는다(§2-10).</li>
           <li><code>s_in</code> 은 <code>volatile</code> 구조체다 — 칸마다 쓰는 <code>s_in.x = …</code> 꼴은 그대로 된다. 쓰는 동안 1 kHz ISR 이 끼어들어 반쯤 쓴 값을 볼 수 있지만, 이때 보이는 것은 "전부 0" 이거나 "일부 채움" 이고 어느 쪽도 <strong>한 틱</strong>짜리다. 다음 틱에 <code>UINT32_MAX</code> 가 보인다.</li>
@@ -985,16 +952,16 @@ void safety_init(void)          /* main 에서 한 번, control_init() 뒤 */
         <div class="tbl"><table class="compact">
           <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
           <tbody>
-            <tr><td>비워 뒀다(<code>ms_since_imu</code> 가 0)</td><td>빌드는 된다. 벤치에서는 거의 안 보인다 — 지금 꼴의 T4 가 첫 바퀴에 <code>seq == 0</code> 을 보고 <code>UINT32_MAX</code> 로 덮어쓰기 때문이다. 그 전의 틱 몇 개만 "샘플이 방금 왔다" 로 보고 <code>tilt_ddeg</code> 0 을 "수평" 으로 판정한다. T4 를 "새 샘플이 왔을 때만 쓴다" 꼴로 바꾸는 순간 그 0 이 계속 남아, 센서를 안 꽂았는데 <code>imu=0</code> 이 된다</td><td>그 한 줄 — 시작값을 T4 에 의존하지 않는다</td></tr>
+            <tr><td>비워 뒀다(<code>ms_since_imu</code> 가 0)</td><td>빌드는 된다. 벤치에서는 거의 안 보인다 — 지금 꼴의 T4 가 첫 바퀴에 <code>seq == 0</code> 을 보고 <code>UINT32_MAX</code> 로 덮어쓰기 때문이다. 그 전의 틱 몇 개만 "샘플이 방금 왔다" 로 보고 IMU 침묵을 판정하지 않는다. T4 를 "새 샘플이 왔을 때만 쓴다" 꼴로 바꾸는 순간 그 0 이 계속 남아, 센서를 안 꽂았는데 <code>imu=0</code> 이 된다</td><td>그 한 줄 — 시작값을 T4 에 의존하지 않는다</td></tr>
             <tr><td><code>s_in.ms_since_imu = -1;</code></td><td>빌드는 된다(부호 없는 칸에 -1 은 <code>UINT32_MAX</code> 로 바뀐다). 뜻이 코드에 드러나지 않을 뿐이다</td><td><code>UINT32_MAX</code> 라고 적는다</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — IMU 를 꽂지 않은 채 부팅 → <code>fault stat</code> 에 <code>wdg=1 … imu=1</code>, <code>tilt=0</code>(§3-1-4 의 마지막 문단과 §3-3-3 ①). IMU 를 꽂으면 T4 의 첫 샘플 뒤 <code>imu</code> 비트가 내 해제 정책대로 0 이 된다.</p>
+        <p><strong>확인</strong> — IMU 를 꽂지 않은 채 부팅 → <code>fault stat</code> 에 <code>wdg=1 … imu=1</code>(§3-1-4 의 마지막 문단과 §3-3-3 ①). IMU 를 꽂으면 T4 의 첫 샘플 뒤 <code>imu</code> 비트가 고른 해제 정책대로 0 이 된다.</p>
         </div></details>
 
       <details class="hint" id="hint-t4"><summary>힌트 T4 — <code>safety_service_main()</code> · 모듈에서 모아 <code>s_in</code> 에 적는다</summary>
         <div class="ans">
-        <p><strong>할 일</strong> — 주 루프 한 바퀴에 한 번. 세 모듈에서 값을 <strong>읽어 옮기기만</strong> 한다 — I2C 트랜잭션을 시작하거나 기다리는 일은 없다(§2-10 의 표). 끝났을 때 <code>s_in</code> 의 전압 · 전류 · 기울기 · IMU 나이가 지금 값이고, 칸마다 유효성이 같이 적혀 있다. 판정은 1 kHz 의 <code>safety_step()</code> 이 한다.</p>
+        <p><strong>할 일</strong> — 주 루프 한 바퀴에 한 번. 세 모듈에서 값을 <strong>읽어 옮기기만</strong> 한다 — I2C 트랜잭션을 시작하거나 기다리는 일은 없다(§2-10 의 표). 끝났을 때 <code>s_in</code> 의 전압 · 전류 · IMU 나이가 지금 값이고, 칸마다 유효성이 같이 적혀 있다. 판정은 1 kHz 의 <code>safety_step()</code> 이 한다.</p>
         <p><strong>완결 코드</strong></p>
         <pre><code class="lang-c">/* 완결 코드 T4 - User/Src/Control/safety.c */
 void safety_service_main(void)  /* app_loop() 에서 한 바퀴에 한 번. 모으기만 하고 판정하지 않는다 (2-10) */
@@ -1013,13 +980,11 @@ void safety_service_main(void)  /* app_loop() 에서 한 바퀴에 한 번. 모�
   s_in.current_ma = adc_get_batt_ma();
   s_in.curr_valid = curr_ok;
 
-  /* 기본 IMU: seq == 0 은 "샘플이 한 번도 없었다" (control.h). 각도를 먼저, 나이를 나중에 -
-     나이가 "방금" 인데 각도가 옛것이면 fault 가 한 바퀴 가려진다 */
+  /* 기본 IMU: seq == 0 은 "샘플이 한 번도 없었다" (control.h). 여기서 보는 것은 나이뿐이다 */
   control_get_imu(&amp;imu, SAFETY_IMU_PRIMARY);
   if (imu.seq == 0u) {
     s_in.ms_since_imu = UINT32_MAX;
   } else {
-    s_in.tilt_ddeg    = safety_tilt_ddeg(imu.ax_mg, imu.ay_mg, imu.az_mg);
     s_in.ms_since_imu = (uint32_t)(tick_get_ms() - imu.tick_ms);   /* 한 바퀴 돌아도(wrap) 안전한 뺄셈 */
   }
 
@@ -1028,10 +993,9 @@ void safety_service_main(void)  /* app_loop() 에서 한 바퀴에 한 번. 모�
         <p><strong>코드 설명</strong></p>
         <ul>
           <li><code>int32_t mv = 0; imu_sample_t imu;</code> — 값을 받을 변수 둘. <code>ina226_get_vbus_mv(&amp;mv)</code> 는 <strong>출력 인자</strong> 꼴이다: 값은 <code>mv</code> 에 쓰고 반환값은 "읽은 적이 있는가"(fw-10 의 T10). <code>&amp;mv</code> 는 변수의 주소 — 함수가 그 자리에 쓸 수 있게 넘긴다(fw-05 와 같다).</li>
-          <li><strong>값 먼저, 유효성 나중.</strong> <code>s_in.batt_mv = mv;</code> 다음에 <code>s_in.batt_valid = batt_ok;</code> — 두 줄 사이에 1 kHz ISR 이 끼어들면 ISR 은 "새 값 + 옛 유효성" 을 본다. 옛 유효성이 참이면 새 값을 판정하고(맞는 값이다), 거짓이면 한 틱 동안 판정하지 않는다. <strong>거꾸로 쓰면</strong> "참 + 옛 값" 을 보는 틱이 생긴다. 주 루프 한 바퀴 전의 값으로 판정하는 것인데, 그 값도 실제로 읽은 값이다(§2-10 의 "주 루프 한 바퀴만큼 지난 값일 수 있다"). 그래서 이 순서는 <strong>어느 쪽이 덜 나쁜가</strong>의 선택이고, 골격의 질문("어느 칸이 한 틱 먼저 도착하면 fault 를 가릴 수 있는가")의 답은 아래 IMU 쪽에 있다.</li>
+          <li><strong>값 먼저, 유효성 나중.</strong> <code>s_in.batt_mv = mv;</code> 다음에 <code>s_in.batt_valid = batt_ok;</code> — 두 줄 사이에 1 kHz ISR 이 끼어들면 ISR 은 "새 값 + 옛 유효성" 을 본다. 옛 유효성이 참이면 새 값을 판정하고(맞는 값이다), 거짓이면 한 틱 동안 판정하지 않는다. <strong>거꾸로 쓰면</strong> "참 + 옛 값" 을 보는 틱이 생긴다. 주 루프 한 바퀴 전의 값으로 판정하는 것인데, 그 값도 실제로 읽은 값이다(§2-10 의 "주 루프 한 바퀴만큼 지난 값일 수 있다"). 그래서 이 순서는 <strong>어느 쪽이 덜 나쁜가</strong>의 선택이다. 골격의 질문("어느 칸이 한 틱 먼저 도착하면 fault 를 가릴 수 있는가")의 답도 여기 있다 — 값 칸과 유효성 칸 가운데 어느 쪽이 먼저 도착해도 가려지는 것은 <strong>한 틱</strong>이다. 값을 먼저 쓰면 그 한 틱이 "판정하지 않음" 으로, 유효성을 먼저 쓰면 "한 바퀴 지난 값으로 판정" 으로 나타난다.</li>
           <li><code>adc_get_raw(ADC_R_BATT_I) != 0u</code> — fw-12 의 <code>adc_get_batt_ma()</code> 는 유효성을 돌려주지 않는다. 대신 "아직 블록이 하나도 오지 않았으면 raw 가 0" 이라는 그 헤더에 적힌 규약을 유효성으로 쓴다. ACS758 의 0 A 는 코드 2048 근처라 동작 중인 센서가 0 을 내지는 않는다.</li>
-          <li><code>control_get_imu(&amp;imu, SAFETY_IMU_PRIMARY)</code> — 구조체를 통째로 받는다. <code>imu.seq == 0u</code> 가 "샘플이 한 번도 없었다"(fw-13 의 <code>control.h</code> 주석). 그때는 <code>ms_since_imu = UINT32_MAX</code> — T3 와 같은 값이고, <code>tilt_ddeg</code> 는 건드리지 않는다(어차피 판정되지 않는다).</li>
-          <li><strong>각도 먼저, 나이 나중</strong> — 여기가 골격의 질문에 대한 답이다. 나이(<code>ms_since_imu</code>)를 먼저 "방금" 으로 쓰고 ISR 이 끼어들면, ISR 은 <strong>옛 각도를 새 샘플의 것</strong>으로 간주한다. 로봇이 막 기울었는데 주 루프 한 바퀴 동안 더 "수평" 으로 읽는 것이다. 각도를 먼저 쓰면 ISR 이 끼어들어도 "새 각도 + 옛 나이" 라, 틀리더라도 "한 틱 더 IMU 침묵으로 본다" 쪽이다. 즉 안전한 쪽으로 틀린다.</li>
+          <li><code>control_get_imu(&amp;imu, SAFETY_IMU_PRIMARY)</code> — 구조체를 통째로 받는다. <code>imu.seq == 0u</code> 가 "샘플이 한 번도 없었다"(fw-13 의 <code>control.h</code> 주석). 그때는 <code>ms_since_imu = UINT32_MAX</code> — T3 와 같은 값이다. IMU 쪽은 칸이 <code>ms_since_imu</code> 하나뿐이라 쓰는 순서를 따질 것이 없다.</li>
           <li><code>(uint32_t)(tick_get_ms() - imu.tick_ms)</code> — 부호 없는 뺄셈. tick 카운터가 넘쳐 0 으로 돌아가도(49 일) 차는 맞다(fw-06 과 같은 꼴).</li>
           <li><code>s_in.driver_fault = false;</code> — IS 를 배선하지 않기로 정했으므로(결정 (가)) 출처가 없다(§2-6). IBT-2 에는 fault 핀이 없으므로 <code>HAL_GPIO_ReadPin()</code> 으로 읽을 것도 없다. 고르지 않은 (나)였다면 이 줄이 "IS 의 ADC 값이 포화인가" 판정이 됐을 것이다 — 그 채널과 문턱은 <a href="fw-12-adc.html#s3-5">fw-12 §3-5</a> 에 비교한 사실로 남아 있다.</li>
           <li><strong>다르게 써도 되는 곳</strong> — 세 가지다. ① <code>curr_valid</code> 를 늘 <code>true</code> 로 두어도 된다(블록이 없을 때의 0 mA 를 "전류 없음" 으로 받아들이면 과전류 판정에 해가 없다). ② fw-12 의 <code>adc.c</code> 에 "블록이 왔는가" 접근 함수를 하나 더해 그 함수를 써도 된다(이름은 fw_style.md 4-9절 의 규칙대로 그 쪽에 등재한다). ③ 세 묶음의 순서는 서로 독립이라 바꿔도 같다(동일).</li>
@@ -1042,7 +1006,7 @@ uint16_t adc_get_raw(uint8_t rank);                        /* fw-12 adc.h: 아�
 int32_t  adc_get_batt_ma(void);                            /* fw-12 adc.h: 최신 배터리 전류 [mA], 방전이 양 */
 void     control_get_imu(imu_sample_t *out, uint8_t sensor_id);   /* fw-13 control.h: out-&gt;seq == 0 은 "샘플 없음" */
 uint32_t tick_get_ms(void);                                /* fw-06 User/Inc/System/tick.h - tick_init() 바로 아래 선언 */</code></pre>
-        <p><code>imu_sample_t</code> 의 칸(<code>ax_mg</code> · <code>ay_mg</code> · <code>az_mg</code> · <code>tick_ms</code> · <code>seq</code>)은 fw-13 의 <code>Device/imu_sample.h</code> 가 정본이다. <code>control.h</code> 가 그 헤더를 포함하므로 여기서 따로 포함할 것은 없다.</p>
+        <p><code>imu_sample_t</code> 의 칸(여기서 쓰는 것은 <code>tick_ms</code> · <code>seq</code> 둘)은 fw-13 의 <code>Device/imu_sample.h</code> 가 정본이다. <code>control.h</code> 가 그 헤더를 포함하므로 여기서 따로 포함할 것은 없다.</p>
         <p><strong>흔한 실수</strong></p>
         <div class="tbl"><table class="compact">
           <thead><tr><th>쓴 것</th><th>컴파일러 · 보드가 하는 말</th><th>고치는 법</th></tr></thead>
@@ -1051,10 +1015,9 @@ uint32_t tick_get_ms(void);                                /* fw-06 User/Inc/Sys
             <tr><td><code>control_get_imu(imu, …)</code> (구조체를 그대로)</td><td><code>error: incompatible type for argument 1 of 'control_get_imu'</code> · <code>note: expected 'imu_sample_t *' but argument is of type 'imu_sample_t'</code></td><td><code>&amp;imu</code></td></tr>
             <tr><td><code>imu-&gt;seq</code> (구조체인데 화살표)</td><td><code>error: invalid type argument of '-&gt;' (have 'imu_sample_t')</code></td><td><code>imu.seq</code> — 포인터가 아니라 변수다</td></tr>
             <tr><td><code>imu_sample imu;</code> (형 이름의 <code>_t</code> 를 뺐다)</td><td><code>error: unknown type name 'imu_sample'; did you mean 'imu_sample_t'?</code></td><td>헤더의 이름 그대로</td></tr>
-            <tr><td>나이를 각도보다 먼저 썼다</td><td>아무 말도 없다. 센서를 급히 기울인 첫 바퀴에 <code>tilt</code> 이 한 틱 늦게 1 이 된다 — 눈으로는 안 보인다</td><td>위 순서</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — §3-3-3 ①: IMU 선을 뽑으면 <code>wt stat</code> / <code>bno stat</code> 의 <code>age_ms</code> 가 는다. 그리고 <code>fault stat</code> 의 <code>imu=1</code>, 그 동안 <code>tilt=0</code> 이다(체크 항목 <code>imu-unplug-raises-fault</code>). §3-4-4 ①: 문턱을 올린 빌드에서 <code>batt=1</code>(<code>lowbatt-path-by-raised-threshold</code>).</p>
+        <p><strong>확인</strong> — §3-3-3 ①: IMU 선을 뽑으면 <code>wt stat</code> 의 <code>age_ms</code> 가 는다. 그리고 <code>fault stat</code> 의 <code>imu=1</code> 이다(체크 항목 <code>imu-unplug-raises-fault</code>). §3-4-4 ①: 문턱을 올린 빌드에서 <code>batt=1</code>(<code>lowbatt-path-by-raised-threshold</code>).</p>
         </div></details>
 
       <details class="hint" id="hint-t5"><summary>힌트 T5 — <code>safety_step()</code> 의 이벤트 블록 · 새로 1 이 된 비트마다 하나, 복구는 하나</summary>
@@ -1068,7 +1031,6 @@ static uint16_t detail_for(uint8_t i, const safety_in_t *in)   /* 조건마다 �
     case SAFE_I_WATCHDOG: return (uint16_t)in-&gt;ms_since_cmd;            /* 끊긴 ms - 2-12 의 재는 법 ① */
     case SAFE_I_LOWBATT:  return (uint16_t)in-&gt;batt_mv;                 /* [mV]   */
     case SAFE_I_OVERCURR: return (uint16_t)safety_mag(in-&gt;current_ma);  /* [mA]   */
-    case SAFE_I_TILT:     return (uint16_t)safety_mag(in-&gt;tilt_ddeg);   /* [0.1 deg] */
     case SAFE_I_IMU:      return (uint16_t)SAFETY_IMU_PRIMARY;          /* 어느 센서가 고장 났나 */
     default:              return 0u;                                    /* DRIVER · PROTECT: 담을 값이 없다 */
   }
@@ -1090,12 +1052,13 @@ static uint16_t detail_for(uint8_t i, const safety_in_t *in)   /* 조건마다 �
           <li><code>static uint16_t detail_for(uint8_t i, const safety_in_t *in)</code> — <code>switch (i)</code> 로 조건 색인마다 다른 값을 돌려준다. <code>case … : return …;</code> 는 <code>return</code> 이 곧 빠져나가므로 <code>break</code> 가 필요 없다. <code>default</code> 는 나머지 전부(DRIVER · PROTECT — 담을 값이 없다 → 0).</li>
           <li><code>(uint16_t)in-&gt;ms_since_cmd</code> — 명령 워치독의 <code>detail</code> 은 끊긴 ms(§2-12 의 재는 법 ①). 계약의 <code>detail</code> 은 16 비트라 자른다: 201 은 들어간다. 전압 25 200 mV 도 들어간다(65 535 까지). µA 였다면 넘친다 — 단위를 바꾸면 이 캐스트를 다시 본다.</li>
           <li><code>(uint16_t)SAFETY_IMU_PRIMARY</code> — IMU 가 고장 났을 때 "어느 센서인가" 를 보낸다(06a §4-2 의 (제안)이 <code>detail = sensor_id</code>).</li>
-          <li><code>for (unsigned i = 0u; i &lt; (unsigned)SAFE_NCOND; i++)</code> — 일곱 조건을 차례로 검사한다. <code>(rising &amp; SAFE_BIT(i)) != 0u</code> 가 "이 조건이 이번 틱에 새로 1 이 됐다", <code>&amp;&amp; s_cfg.code[i] != 0u</code> 가 "코드를 배정했다" — 둘 다일 때만 낸다. 0 은 "안 정한 것을 가이드가 대신 정하지 않는다" 의 코드판이다(§2-3).</li>
+          <li><code>for (unsigned i = 0u; i &lt; (unsigned)SAFE_NCOND; i++)</code> — 여섯 조건을 차례로 검사한다. <code>(rising &amp; SAFE_BIT(i)) != 0u</code> 가 "이 조건이 이번 틱에 새로 1 이 됐다", <code>&amp;&amp; s_cfg.code[i] != 0u</code> 가 "코드를 배정했다" — 둘 다일 때만 낸다. 0 은 "안 정한 것을 가이드가 대신 정하지 않는다" 의 코드판이다(§2-3).</li>
           <li><code>control_post_event(s_cfg.code[i], detail_for((uint8_t)i, &amp;in));</code> — <code>in</code> 은 <code>safety_step()</code> 안의 지역 변수(스냅샷)라 <code>&amp;in</code> 으로 주소를 넘긴다. <code>tick_ms</code> 는 넘기지 않는다 — T8 이 안에서 기록한다.</li>
           <li><code>++s_posted;</code> — <strong>실제로 넣은 뒤에만</strong>. 큐가 가득 차 버려진 것은 T8 의 <code>s_ev_dropped</code> 가 센다 — 둘을 비교하면 "낸 것 − 버린 것 = 보일 것" 이다(§3-2-4 의 상자).</li>
-          <li><code>if (cleared != 0u &amp;&amp; s_cfg.code_recover != 0u)</code> — 복구는 <strong>한 번</strong>이고 <code>detail</code> 에 해제된 비트들을 통째로 담는다(06a §4-2 의 <code>0x10</code> 제안이 그 꼴). 비트마다 하나씩 내는 것은 아래 "다르게".</li>
+          <li><code>if (cleared != 0u &amp;&amp; s_cfg.code_recover != 0u)</code> — 복구는 <strong>한 번</strong>이고 <code>detail</code> 에 해제된 비트들을 통째로 담는다(06a §4-2 의 <code>EVT_RECOVER</code> (0x10) 제안이 그 꼴). 비트마다 하나씩 내는 것은 아래 "다르게".</li>
           <li><strong>다르게 써도 되는 곳</strong> — ① <code>detail</code> 을 전부 0 으로 두고 <code>fault</code> 비트만 쓰는 것도 성립한다(계약은 <code>detail</code> 의 뜻을 정하지 않는다) — 그러면 §2-12 의 재는 법 ①이 없어지고 ②만 남는다. ② 복구를 비트마다 내면 이벤트 수가 늘고 큐 깊이가 더 필요하다(§2-11 의 재료). ③ <code>code[i] == 0</code> 일 때 기본 코드로 대체하는 것 — 위는 하지 않는다. ④ <code>detail_for()</code> 를 <code>safety.h</code> 의 <code>static inline</code> 으로 올리면 Mac 에서도 벡터로 채점할 수 있다 — 지금은 벡터가 없어서 <code>.c</code> 에 뒀다.</li>
         </ul>
+        <p class="small"><strong>이 프로젝트:</strong><sup class="fn"><a href="#fn-21" id="fnref-21">21</a></sup> <code>EVT_PROTECT</code> 의 <code>detail</code> 에 바퀴와 원인을 담는다. <code>protect_bits</code> 를 <code>uint16_t</code> 로 넓히고, <code>control.c</code> 가 바퀴 <code>i</code> 의 <code>tripped</code>(3 비트)를 <code>3*i</code> 비트에 놓아 넘긴다 (<code>prot_bits |= (uint16_t)((s_prot[i].tripped &amp; 0x7u) &lt;&lt; (3u * i));</code>). <code>detail_for()</code> 는 <code>case SAFE_I_PROTECT: return in-&gt;protect_bits;</code>. 예: RL(바퀴 2) 의 FBLOST(2) = <code>2 &lt;&lt; 6</code> = 0x0080. 이벤트는 엣지 틱에 한 번이므로 <code>detail</code> 은 <strong>처음 트립한 순간의 스냅샷</strong>이다 — 뒤따라 트립한 바퀴는 이벤트를 다시 내지 않는다. 이 카드의 OR 판(<code>uint8_t</code>)도 판정 · 끊기는 똑같이 동작한다.</p>
         <p><strong>쓰는 API</strong> — <code>void control_post_event(uint8_t code, uint16_t detail)</code>. fw-13 의 <code>control.h</code> "모듈 내부" 묶음에 있고, 1 kHz 에서 불러도 안전하다(블로킹 · <code>printf</code> 없음). 본문은 T8.</p>
         <p><strong>흔한 실수</strong></p>
         <div class="tbl"><table class="compact">
@@ -1107,7 +1070,7 @@ static uint16_t detail_for(uint8_t i, const safety_in_t *in)   /* 조건마다 �
             <tr><td>여기서 <code>printf</code> · <code>LOG_*</code></td><td>빌드는 된다. ISR 안의 블로킹 송신 — 박자가 늦어지고 fw-19 의 경계 grep 에서 검출된다</td><td>큐에만 넣는다</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — §3-1-4 ①: <code>fault inject tilt</code> 뒤 첫 <code>fault stat</code> 에 이벤트 한 줄, 둘째에는 없다(<code>event-once-bit-held</code>). <strong><code>code[SAFE_I_TILT]</code> 를 아직 0 으로 두었으면 이벤트 줄은 없고 <code>posted=0</code> 이다.</strong> 이벤트 줄이 없는 것도 설계대로다(§2-3). 실습 B 에서는 명령 워치독 이벤트의 <code>detail</code> 이 201 근처(<code>cmd-watchdog-by-mcu-tick</code>).</p>
+        <p><strong>확인</strong> — §3-1-4 ①: <code>fault inject imu</code> 뒤 첫 <code>fault stat</code> 에 이벤트 한 줄, 둘째에는 없다(<code>event-once-bit-held</code>). <strong><code>code[SAFE_I_IMU]</code> 를 아직 0 으로 두었으면 이벤트 줄은 없고 <code>posted=0</code> 이다.</strong> 이벤트 줄이 없는 것도 설계대로다(§2-3). 실습 B 에서는 명령 워치독 이벤트의 <code>detail</code> 이 201 근처(<code>cmd-watchdog-by-mcu-tick</code>).</p>
         </div></details>
 
       <details class="hint" id="hint-t6"><summary>힌트 T6 — <code>safety_step()</code> 의 끊기 블록 · 레벨대로 끊고 LD3 로 표시한다</summary>
@@ -1138,7 +1101,7 @@ static uint16_t detail_for(uint8_t i, const safety_in_t *in)   /* 조건마다 �
             <tr><td>레벨 1 · 2 를 <code>cut[]</code> 에 적어 두고 입구를 안 만들었다</td><td><code>fault stat</code> 의 <code>cut=</code> 은 1 · 2 인데 <code>pwr stat</code> 의 <code>en=</code> 이 안 바뀐다(증상표)</td><td>§2-9 의 상자</td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — §3-1-4 ①: <code>fault inject tilt</code> 에 LD3 가 켜지고, ②③ 의 해제 · <code>fault clear</code> 에 꺼진다. §3-4-4 ③: <code>cut=</code> 과 <code>pwr stat</code> · DMM 이 내가 적은 레벨과 같다(<code>trip-scope-observed</code>).</p>
+        <p><strong>확인</strong> — §3-1-4 ①: <code>fault inject imu</code> 에 LD3 가 켜지고, ②③ 의 해제 · <code>fault clear</code> 에 꺼진다. §3-4-4 ③: <code>cut=</code> 과 <code>pwr stat</code> · DMM 이 적어 둔 레벨과 같다(<code>trip-scope-observed</code>).</p>
         </div></details>
 
       <details class="hint" id="hint-t7"><summary>힌트 T7 — <code>cmd_fault()</code> · <code>stat</code> · <code>inject</code> · <code>clear</code> 세 갈래</summary>
@@ -1167,7 +1130,7 @@ static void cmd_fault(int argc, char *argv[])   /* main 문맥 */
     return;
   }
   if (argc == 3 &amp;&amp; strcmp(argv[1], "inject") == 0) {
-    if (strcmp(argv[2], "none") == 0) {             /* 주입만 끈다. 래치는 내 해제 정책이 푼다 */
+    if (strcmp(argv[2], "none") == 0) {             /* 주입만 끈다. 래치는 고른 해제 정책이 푼다 */
       s_inject = 0u;
       printf("OK fault\r\n");
       return;
@@ -1193,15 +1156,15 @@ static void cmd_fault(int argc, char *argv[])   /* main 문맥 */
         <p><strong>코드 설명</strong></p>
         <ul>
           <li><code>if (argc == 2 &amp;&amp; strcmp(argv[1], "stat") == 0)</code> — <code>argv[0]</code> 은 <code>fault</code> 자체, <code>argv[1]</code> 이 둘째 낱말, <code>argc</code> 는 낱말 수. <code>strcmp()</code> 는 같을 때 0 이다(fw-05 와 같다 — <code>== 0</code> 을 빼면 뜻이 뒤집힌다). 갈래마다 <code>argc</code> 를 먼저 보는 것은 없는 칸(<code>argv[2]</code>)을 읽지 않기 위해서다.</li>
-          <li><code>const safety_t f = s_fsm;</code> — 구조체를 <strong>통째로 한 번</strong> 복사한다. ISR 이 틱마다 <code>s_fsm</code> 을 고치므로 칸을 따로따로 읽으면 서로 다른 틱의 값이 섞인다. 사본 하나로 읽으면 적어도 한 줄 안의 일곱 칸은 같은 순간이다(복사 중에 ISR 이 끼어들 수는 있다 — 그 틱 하나의 어긋남까지 막으려면 인터럽트를 잠깐 끄는데, 벤치 명령에는 그럴 필요가 없다).</li>
-          <li><code>printf("fault");</code> 그리고 <code>for</code> 로 <code>" %s=%u"</code> 일곱 번 — 한 줄을 여러 번의 <code>printf</code> 로 이어 쓴다. <code>\r\n</code> 은 마지막 조각에만. <code>s_cond_name[i]</code> 가 fw_style.md 4-4절 의 일곱 낱말 <code>wdg batt curr tilt imu drv prot</code> — 철자가 곧 규약이다. <code>%s</code> 에는 문자열 포인터, <code>%u</code> 에는 <code>unsigned</code>.</li>
+          <li><code>const safety_t f = s_fsm;</code> — 구조체를 <strong>통째로 한 번</strong> 복사한다. ISR 이 틱마다 <code>s_fsm</code> 을 고치므로 칸을 따로따로 읽으면 서로 다른 틱의 값이 섞인다. 사본 하나로 읽으면 적어도 한 줄 안의 여섯 칸은 같은 순간이다(복사 중에 ISR 이 끼어들 수는 있다 — 그 틱 하나의 어긋남까지 막으려면 인터럽트를 잠깐 끄는데, 벤치 명령에는 그럴 필요가 없다).</li>
+          <li><code>printf("fault");</code> 그리고 <code>for</code> 로 <code>" %s=%u"</code> 여섯 번 — 한 줄을 여러 번의 <code>printf</code> 로 이어 쓴다. <code>\r\n</code> 은 마지막 조각에만. <code>s_cond_name[i]</code> 가 여섯 낱말 <code>wdg batt curr imu drv prot</code> — 철자가 곧 규약이다(fw_style.md 4-4절 의 일곱 낱말에서 <code>tilt</code> 가 빠졌다). <code>%s</code> 에는 문자열 포인터, <code>%u</code> 에는 <code>unsigned</code>.</li>
           <li><code>(unsigned long)f.clear_ms</code> + <code>%lu</code> — <code>uint32_t</code> 를 출력하는 fw-05 의 T9 와 같은 규칙(arm-gcc 에서 <code>uint32_t</code> 는 <code>long unsigned int</code>). 바이트 칸들은 <code>(unsigned)</code> + <code>%u</code>.</li>
           <li><code>control_dbg_event_dropped()</code> — <code>dropped=</code> 의 출처는 <code>control.c</code> 의 <code>static</code> 변수라 접근 함수가 하나 필요하다. 이름은 이름표 fw_style.md 4-3절 의 벤치 관측용 규칙(<code>&lt;모듈&gt;_dbg_&lt;대상&gt;()</code>, CLI 만 부른다) — 본문과 <code>control.h</code> 의 선언 한 줄은 T8 에 있다.</li>
           <li><code>while (control_pop_event(&amp;ev))</code> — <code>false</code> 가 올 때까지 꺼내 출력한다. 꺼낸 이벤트는 큐에서 사라진다. 이벤트가 <strong>한 번만 보이므로</strong> TEXT 모드의 소비자는 이 명령 하나여야 한다(§2-11). <code>&amp;ev</code> 는 출력 인자(T4 와 같다).</li>
-          <li><code>inject</code> — <code>"none"</code> 을 <strong>먼저</strong> 본다(일곱 이름에 없는 낱말이라 순서는 뜻이 없지만, 읽는 사람에게 "끄는 방법" 이 따로 있음을 보인다). 그 다음 <code>s_cond_name[]</code> 을 차례로 검사하며 같은 낱말의 색인 <code>i</code> 를 찾아 <code>s_inject |= SAFE_BIT(i)</code> — <code>|=</code> 라 이미 1 인 주입 비트에 하나를 더한다. <code>s_inject</code> 는 <code>volatile</code> 이지만 <code>|=</code> 는 그대로 된다(읽고-고치고-쓰기 한 번 — ISR 은 읽기만 하므로 겹쳐도 해가 없다).</li>
+          <li><code>inject</code> — <code>"none"</code> 을 <strong>먼저</strong> 본다(여섯 이름에 없는 낱말이라 순서는 뜻이 없지만, 읽는 사람에게 "끄는 방법" 이 따로 있음을 보인다). 그 다음 <code>s_cond_name[]</code> 을 차례로 검사하며 같은 낱말의 색인 <code>i</code> 를 찾아 <code>s_inject |= SAFE_BIT(i)</code> — <code>|=</code> 라 이미 1 인 주입 비트에 하나를 더한다. <code>s_inject</code> 는 <code>volatile</code> 이지만 <code>|=</code> 는 그대로 된다(읽고-고치고-쓰기 한 번 — ISR 은 읽기만 하므로 겹쳐도 해가 없다).</li>
           <li><code>clear</code> — <code>s_inject = 0u</code> 뒤 <code>safety_reset(&amp;s_fsm)</code>. 정책을 건너뛰므로 복구 이벤트가 나지 않는 것이 <strong>맞다</strong>(§3-1-4 ③). main 이 <code>s_fsm</code> 을 고치는 유일한 자리다. ISR 이 같은 틱에 네 칸을 다시 만들어도 다음 틱에는 전부 0 에서 다시 시작하므로 어긋남은 한 틱이다.</li>
           <li>갈래마다 <code>return</code> 으로 나가고, 마지막 <code>printf("ERR fault bad-arg\r\n")</code> 가 "그 밖의 것" 전부다 — <code>fault</code> 만 치거나 <code>fault inject</code> 처럼 인자가 모자라도 여기로 온다.</li>
-          <li><strong>다르게 써도 되는 곳</strong> — ① <code>inject</code> 를 <code>|=</code> 가 아니라 <code>=</code> 로(한 번에 하나만 주입)도 되는 설계다 — §3-1-4 ④의 왕복에는 차이가 없다(동일). ② 일곱 칸을 <code>for</code> 대신 한 번의 <code>printf</code> 에 일곱 인자로 써도 같은 줄이다(동일). ③ <code>stat</code> 이 큐를 꺼내지 않고 들여다보기만 하는 꼴은 이 설계에서 <strong>안 된다</strong> — §3-1-2 의 작은 글씨.</li>
+          <li><strong>다르게 써도 되는 곳</strong> — ① <code>inject</code> 를 <code>|=</code> 가 아니라 <code>=</code> 로(한 번에 하나만 주입)도 되는 설계다 — §3-1-4 ④의 왕복에는 차이가 없다(동일). ② 여섯 칸을 <code>for</code> 대신 한 번의 <code>printf</code> 에 여섯 인자로 써도 같은 줄이다(동일). ③ <code>stat</code> 이 큐를 꺼내지 않고 들여다보기만 하는 꼴은 이 설계에서 <strong>안 된다</strong> — §3-1-2 의 작은 글씨.</li>
         </ul>
         <p><strong>쓰는 API</strong> — HAL 은 부르지 않는다. <code>cli_fn_t</code> · <code>cli_register()</code> 는 fw-05 가 만든 <code>User/Inc/Tools/cli.h</code> 에 있다(<code>cli_fn_t</code> 는 상수 셋 바로 아래의 <code>typedef</code>, <code>cli_register()</code> 는 <code>:20</code>). 등록은 골격의 <code>safety_cli_register()</code> 가 이미 한다. <code>bool control_pop_event(event_t *out)</code> 는 fw-13 의 <code>control.h</code>(본문 T9), <code>strcmp()</code> 는 <code>&lt;string.h&gt;</code>, <code>printf()</code> 는 <code>&lt;stdio.h&gt;</code>(골격이 포함했다).</p>
         <p><strong>흔한 실수</strong></p>
@@ -1215,7 +1178,7 @@ static void cmd_fault(int argc, char *argv[])   /* main 문맥 */
             <tr><td><code>strcmp(…)</code> 에 <code>== 0</code> 을 안 붙였다</td><td>빌드는 된다. <code>fault stat</code> 이 <code>ERR fault bad-arg</code>, <code>fault 아무거나</code> 가 상태 줄을 출력한다 — 조건이 뒤집혔다</td><td><code>== 0</code></td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — §3-1-4 의 표 ①~④ 전부가 이 명령으로 보인다. ①의 이벤트 줄과 <code>posted=1</code> 은 <code>code[SAFE_I_TILT]</code> 를 배정한 뒤의 모습이다 — 0 인 채면 줄이 없고 <code>posted=0</code>. ②의 <code>clear_ms</code> 가 늘어나는 것은 <code>wdg</code> 를 포함한 일곱 칸이 전부 0 일 때뿐이다(증상표 "clear_ms 가 늘지 않는다").</p>
+        <p><strong>확인</strong> — §3-1-4 의 표 ①~④ 전부가 이 명령으로 보인다. ①의 이벤트 줄과 <code>posted=1</code> 은 <code>code[SAFE_I_IMU]</code> 를 배정한 뒤의 모습이다 — 0 인 채면 줄이 없고 <code>posted=0</code>. ②의 <code>clear_ms</code> 가 늘어나는 것은 <code>wdg</code> 를 포함한 여섯 칸이 전부 0 일 때뿐이다(증상표 "clear_ms 가 늘지 않는다").</p>
         </div></details>
 
       <details class="hint" id="hint-t8"><summary>힌트 T8 — <code>control_post_event()</code> · 링 버퍼의 head 에 하나 넣는다</summary>
@@ -1240,7 +1203,7 @@ uint16_t control_dbg_event_dropped(void) { return s_ev_dropped; }   /* 벤치 �
 /* 선언은 fw-13 의 control.h "모듈 내부" 묶음에 이미 있다:  uint16_t control_dbg_event_dropped(void); */</code></pre>
         <p><strong>코드 설명</strong></p>
         <ul>
-          <li><code>next = (s_ev_head + 1u) % CONTROL_EVENT_Q_DEPTH</code> — 다음 칸, 끝에 닿으면 0 으로. fw-05 의 링은 <code>&amp; (N - 1)</code> 을 썼는데 그 방식은 N 이 2 의 거듭제곱일 때만 맞다. 큐 깊이는 내가 정하는 수라 어떤 수든 맞는 <code>%</code> 를 쓴다. 비용은 나눗셈 한 번 — 1 kHz 에서 이벤트가 날 때만이라 무시할 수 있다.</li>
+          <li><code>next = (s_ev_head + 1u) % CONTROL_EVENT_Q_DEPTH</code> — 다음 칸, 끝에 닿으면 0 으로. fw-05 의 링은 <code>&amp; (N - 1)</code> 을 썼는데 그 방식은 N 이 2 의 거듭제곱일 때만 맞다. 큐 깊이는 학습자가 정하는 수라 어떤 수든 맞는 <code>%</code> 를 쓴다. 비용은 나눗셈 한 번 — 1 kHz 에서 이벤트가 날 때만이라 무시할 수 있다.</li>
           <li><code>if (next == s_ev_tail)</code> — "head 가 한 칸 더 가면 tail 과 겹친다" = 가득. 이 꼴의 링은 <strong>칸 하나를 늘 비워 둔다</strong> — 깊이 N 에 N − 1 개가 든다(<code>head == tail</code> 을 "비었다" 로 쓰기 위해서). 깊이를 정할 때 그 하나를 센다.</li>
           <li><code>s_ev_dropped++; return;</code> — <strong>새것을 버린다.</strong> 처음 일어난 사건(진단에서 가장 값진 한 줄)은 남고 이후 전개를 잃는다(§2-11). 다른 쪽(오래된 것을 버리기)은 아래 "다르게".</li>
           <li>세 칸을 채운 <strong>뒤에</strong> <code>s_ev_head = next;</code> — 소비자는 <code>head</code> 를 보고 "읽을 것이 있다" 고 판단한다. <code>head</code> 를 먼저 옮기면 main 이 반쯤 채워진 칸을 읽을 수 있다. 쓰기 순서가 곧 이 자료구조의 안전이다.</li>
@@ -1259,7 +1222,7 @@ uint16_t control_dbg_event_dropped(void) { return s_ev_dropped; }   /* 벤치 �
             <tr><td>가득 찼을 때 그냥 <code>return</code>(세지 않았다)</td><td><code>dropped=</code> 가 계속 0 — §3-1-4 ④가 끝나지 않는다</td><td><code>s_ev_dropped++</code></td></tr>
           </tbody>
         </table></div>
-        <p><strong>확인</strong> — §3-1-4 ④: <code>fault inject tilt</code> → <code>fault inject none</code> 을 <code>fault stat</code> 없이 되풀이하면 왕복마다 이벤트 둘(발생 + 복구 — 둘 다 코드를 배정했을 때)이 쌓인다. (깊이 − 1) 개를 넘는 순간 <code>dropped</code> 가 0 이 아니게 된다(<code>event-queue-overflow-counted</code>). 그 뒤 <code>fault stat</code> 에 출력되는 줄은 <strong>처음</strong> 깊이 − 1 개다. 새것을 버렸기 때문이다.</p>
+        <p><strong>확인</strong> — §3-1-4 ④: <code>fault inject imu</code> → <code>fault inject none</code> 을 <code>fault stat</code> 없이 되풀이하면 왕복마다 이벤트 둘(발생 + 복구 — 둘 다 코드를 배정했을 때)이 쌓인다. (깊이 − 1) 개를 넘는 순간 <code>dropped</code> 가 0 이 아니게 된다(<code>event-queue-overflow-counted</code>). 그 뒤 <code>fault stat</code> 에 출력되는 줄은 <strong>처음</strong> 깊이 − 1 개다. 새것을 버렸기 때문이다.</p>
         </div></details>
 
       <details class="hint" id="hint-t9"><summary>힌트 T9 — <code>control_pop_event()</code> · tail 에서 하나 꺼낸다</summary>
@@ -1267,7 +1230,7 @@ uint16_t control_dbg_event_dropped(void) { return s_ev_dropped; }   /* 벤치 �
         <p><strong>할 일</strong> — main 문맥(TEXT 에서는 <code>fault stat</code>, V2 에서는 <code>comm_frame_step_1khz()</code> — 모드당 하나). 비었으면 <code>false</code>, 아니면 <code>tail</code> 칸을 <code>*out</code> 에 복사하고 <code>tail</code> 을 한 칸 옮긴 뒤 <code>true</code>. <code>head</code> 는 건드리지 않는다.</p>
         <p><strong>완결 코드</strong></p>
         <pre><code class="lang-c">/* 완결 코드 T9 - User/Src/Control/control.c */
-bool control_pop_event(event_t *out)   /* main 문맥: `fault stat` 또는 comm_frame.c 가운데 하나, 둘 다는 절대 아니다 */
+bool control_pop_event(event_t *out)   /* main 문맥: `fault stat` 또는 통신 모듈 가운데 하나, 둘 다는 절대 아니다 */
 {
   if (out == NULL || s_ev_tail == s_ev_head) { return false; }   /* 비었다 (head == tail) */
   *out = s_ev[s_ev_tail];                                        /* 사본을 넘긴다 - 칸은 곧 다시 쓰인다 */
@@ -1307,20 +1270,20 @@ static int cases = 0;
    bit[]/code[]/cut[] 는 계약 배정 자리다 - 여기서는 S4/S5 를 증명하려고 서로 다르게만 했다. */
 static const safety_cfg_t CFG = {
   .cmd_timeout_ms = 200u,
-  .batt_min_mv = 20000, .curr_max_ma = 6000, .tilt_max_ddeg = 300,
+  .batt_min_mv = 20000, .curr_max_ma = 6000,
   .imu_timeout_ms = 100u, .release_hold_ms = 5u,
   .latched = 0u,
-  .bit  = { 1u, 2u, 4u, 8u, 16u, 32u, 64u },
-  .code = { 4u, 1u, 2u, 3u, 5u, 6u, 7u },
+  .bit  = { 1u, 2u, 4u, 16u, 32u, 64u },
+  .code = { 4u, 1u, 2u, 5u, 6u, 7u },
   .code_recover = 16u,
-  .cut  = { SAFE_CUT_DUTY, SAFE_CUT_RELAY, SAFE_CUT_EN, SAFE_CUT_DUTY,
+  .cut  = { SAFE_CUT_DUTY, SAFE_CUT_RELAY, SAFE_CUT_EN,
             SAFE_CUT_DUTY, SAFE_CUT_DUTY, SAFE_CUT_DUTY }
 };
 
 /* 건강한 틱: 어디에도 이상이 없다 */
 static safety_in_t ok_in(void)
 {
-  safety_in_t in = { 0u, 0u, 24000, true, 1000, true, 0, false, 0u, 0u };
+  safety_in_t in = { 0u, 0u, 24000, true, 1000, true, false, 0u, 0u };
   return in;
 }
 
@@ -1364,7 +1327,7 @@ static uint8_t run(safety_t *s, const safety_cfg_t *c, safety_in_t in, int n, ui
   CHECK(run(&amp;s, &amp;CFG, in, 1, &amp;cl) == 0u);
   CHECK(cl == SAFE_BIT(SAFE_I_WATCHDOG) &amp;&amp; s.cond == 0u &amp;&amp; s.fault == 0u);
 </code></pre>
-      <p>셋째 묶음은 <strong>지속이 연속이어야 한다는 것</strong>, <strong>영구 래치</strong>, <strong>못 읽은 것과 0 의 차이</strong>, <strong>꺼 둔 조건</strong>, 그리고 <strong>IMU 가 기울기를 가리는 것</strong>이다(§2-5 · §2-8).</p>
+      <p>셋째 묶음은 <strong>지속이 연속이어야 한다는 것</strong>, <strong>영구 래치</strong>, <strong>못 읽은 것과 0 의 차이</strong>, <strong>꺼 둔 조건</strong>, 그리고 <strong>IMU 침묵의 경계</strong>다(§2-5 · §2-8).</p>
       <pre><code class="lang-c">  /* 5. 유지는 연속이어야 한다: 중간에 나쁜 틱 하나면 처음부터 다시 센다 */
   safety_reset(&amp;s);
   in = ok_in(); in.ms_since_cmd = 201u; run(&amp;s, &amp;CFG, in, 1, 0);
@@ -1394,21 +1357,21 @@ static uint8_t run(safety_t *s, const safety_cfg_t *c, safety_in_t in, int n, ui
     in = ok_in(); in.batt_mv = 0;
     CHECK(run(&amp;s, &amp;c, in, 1000, 0) == 0u); }
 
-  /* 9. 침묵한 IMU 는 기울기 판정을 가린다: 고장 난 센서의 각도는 믿을 수 없다 (2-5) */
+  /* 9. IMU 침묵: imu_timeout_ms 를 넘으면 IMU 비트가 1 이 된다 (2-5) */
   safety_reset(&amp;s);
-  in = ok_in(); in.ms_since_imu = 101u; in.tilt_ddeg = 900;
+  in = ok_in(); in.ms_since_imu = 101u;
   CHECK(run(&amp;s, &amp;CFG, in, 1, 0) == SAFE_BIT(SAFE_I_IMU));
-  CHECK((s.cond &amp; SAFE_BIT(SAFE_I_TILT)) == 0u);
+  CHECK(s.fault == 16u);
 
-  /* 10. IMU 가 동작 중이면 같은 각도가 TILT 비트를 1 로 설정한다 */
+  /* 10. 문턱과 같거나 짧은 나이는 침묵이 아니다 */
   safety_reset(&amp;s);
-  in = ok_in(); in.ms_since_imu = 99u; in.tilt_ddeg = 900;
-  CHECK(run(&amp;s, &amp;CFG, in, 1, 0) == SAFE_BIT(SAFE_I_TILT));
+  in = ok_in(); in.ms_since_imu = 100u;
+  CHECK(run(&amp;s, &amp;CFG, in, 1000, 0) == 0u &amp;&amp; s.cond == 0u);   /* 마지막 틱의 rising 만 보면 래치를 놓친다 */
 
-  /* 11. 기울기는 크기다: 반대쪽으로 기울어도 같은 각도다 */
+  /* 11. "한 번도 없었다"(UINT32_MAX)도 침묵이다 - 부팅 직후 IMU 가 안 붙으면 이 값이다 */
   safety_reset(&amp;s);
-  in = ok_in(); in.tilt_ddeg = -900;
-  CHECK(run(&amp;s, &amp;CFG, in, 1, 0) == SAFE_BIT(SAFE_I_TILT));
+  in = ok_in(); in.ms_since_imu = UINT32_MAX;
+  CHECK(run(&amp;s, &amp;CFG, in, 1, 0) == SAFE_BIT(SAFE_I_IMU));
 </code></pre>
       <p>넷째 묶음은 <strong>정의되지 않은 동작</strong>(S6), <strong>주입</strong>, 그리고 <strong>배정하지 않은 비트</strong>다(§2-3). 벡터 15 가 "로봇은 멈추지만 와이어 바이트는 0 이다"를 채점한다.</p>
       <pre><code class="lang-c">  /* 12. S6: 어떤 int32 에도 정의돼야 한다. 순진한 |v| 는 INT32_MIN 에서 정의되지 않은 동작이다 */
@@ -1424,27 +1387,27 @@ static uint8_t run(safety_t *s, const safety_cfg_t *c, safety_in_t in, int n, ui
 
   /* 13. inject 는 실제 입력이 하나도 안 바뀌어도 조건을 강제로 1 로 설정한다 (3-1) */
   safety_reset(&amp;s);
-  in = ok_in(); in.inject = SAFE_BIT(SAFE_I_TILT);
-  CHECK(run(&amp;s, &amp;CFG, in, 1, 0) == SAFE_BIT(SAFE_I_TILT));
-  CHECK(s.fault == 8u);
+  in = ok_in(); in.inject = SAFE_BIT(SAFE_I_IMU);
+  CHECK(run(&amp;s, &amp;CFG, in, 1, 0) == SAFE_BIT(SAFE_I_IMU));
+  CHECK(s.fault == 16u);
 
   /* 14. S5: cut 은 비트가 1 인 조건들 가운데 최대(max), S4: fault 는 그 비트들의 OR */
   safety_reset(&amp;s);
-  in = ok_in(); in.inject = (uint8_t)(SAFE_BIT(SAFE_I_TILT) | SAFE_BIT(SAFE_I_LOWBATT));
+  in = ok_in(); in.inject = (uint8_t)(SAFE_BIT(SAFE_I_IMU) | SAFE_BIT(SAFE_I_LOWBATT));
   run(&amp;s, &amp;CFG, in, 1, 0);
   CHECK(s.cut == SAFE_CUT_RELAY);
-  CHECK(s.fault == (8u | 2u));
+  CHECK(s.fault == (16u | 2u));
 
   /* 15. 배정하지 않은 계약 비트는 cond 비트가 1 이어도 와이어 바이트를 0 으로 둔다 (2-3).
         그래도 로봇은 멈춘다 - cut 은 bit[] 을 거치지 않는다 */
-  { safety_cfg_t c = CFG; c.bit[SAFE_I_TILT] = 0u; c.cut[SAFE_I_TILT] = SAFE_CUT_EN;
+  { safety_cfg_t c = CFG; c.bit[SAFE_I_IMU] = 0u; c.cut[SAFE_I_IMU] = SAFE_CUT_EN;
     safety_reset(&amp;s);
-    in = ok_in(); in.inject = SAFE_BIT(SAFE_I_TILT);
+    in = ok_in(); in.inject = SAFE_BIT(SAFE_I_IMU);
     run(&amp;s, &amp;c, in, 1, 0);
-    CHECK(s.cond == SAFE_BIT(SAFE_I_TILT) &amp;&amp; s.fault == 0u &amp;&amp; s.cut == SAFE_CUT_EN); }
+    CHECK(s.cond == SAFE_BIT(SAFE_I_IMU) &amp;&amp; s.fault == 0u &amp;&amp; s.cut == SAFE_CUT_EN); }
 </code></pre>
-      <p>다섯째 묶음은 <strong>일곱째 조건</strong>(§2-9), 드라이버 조건이 1 이 되지 않는다는 것(§2-6), 즉시 해제(§2-8), 그리고 기울기 벡터다. 기울기 벡터의 기대값은 <code>python3</code> 의 <code>atan2</code> 로 따로 계산해 넣었다 — 암산하지 않았다.</p>
-      <pre><code class="lang-c">  /* 16. fw-13 의 보호 래치가 일곱째 조건이다 - 06a 4-2 에는 그 비트가 없다 (2-9) */
+      <p>다섯째 묶음은 <strong>여섯째 조건</strong>(§2-9), 드라이버 조건이 1 이 되지 않는다는 것(§2-6), 그리고 즉시 해제(§2-8)다.</p>
+      <pre><code class="lang-c">  /* 16. fw-13 의 보호 래치가 여섯째 조건이다 - 06a 4-2 에는 그 비트가 없다 (2-9) */
   safety_reset(&amp;s);
   in = ok_in(); in.protect_bits = 2u;           /* 바퀴 하나의 PROT_FBLOST */
   CHECK(run(&amp;s, &amp;CFG, in, 1, 0) == SAFE_BIT(SAFE_I_PROTECT));
@@ -1458,19 +1421,10 @@ static uint8_t run(safety_t *s, const safety_cfg_t *c, safety_in_t in, int n, ui
   /* 18. release_hold_ms == 0 은 "풀린 첫 틱에 해제" - 빈칸이 아니라 진짜 정책이다 */
   { safety_cfg_t c = CFG; c.release_hold_ms = 0u;
     safety_reset(&amp;s);
-    in = ok_in(); in.inject = SAFE_BIT(SAFE_I_TILT); run(&amp;s, &amp;c, in, 1, 0);
+    in = ok_in(); in.inject = SAFE_BIT(SAFE_I_IMU); run(&amp;s, &amp;c, in, 1, 0);
     in.inject = 0u;
     CHECK(run(&amp;s, &amp;c, in, 1, &amp;cl) == 0u);
-    CHECK(cl == SAFE_BIT(SAFE_I_TILT) &amp;&amp; s.cond == 0u); }
-
-  /* 19. 기울기 도우미: 벡터는 python3 의 atan2 로 계산했다 (본문 참고) */
-  CHECK(safety_tilt_ddeg(0, 0, 1000) == 0);
-  CHECK(safety_tilt_ddeg(1000, 0, 0) == 900);
-  CHECK(safety_tilt_ddeg(0, 0, -1000) == 1800);
-  CHECK(safety_tilt_ddeg(500, 0, 866) == 300);
-  CHECK(safety_tilt_ddeg(300, 400, 866) == 300);
-  /* 그리고 정말 중요한 하나: 전부 0 이면 완벽한 수평으로 보인다 (2-5) */
-  CHECK(safety_tilt_ddeg(0, 0, 0) == 0);
+    CHECK(cl == SAFE_BIT(SAFE_I_IMU) &amp;&amp; s.cond == 0u); }
 
   printf("PASS safety %d cases\n", cases);
   return 0;
@@ -1480,18 +1434,18 @@ static uint8_t run(safety_t *s, const safety_cfg_t *c, safety_in_t in, int n, ui
 cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_safety.c -o /tmp/test_safety &amp;&amp; /tmp/test_safety
 # 진단 — 값이 맞아도 정의되지 않은 동작이 있으면 여기서 runtime error 가 뜬다
 cc -std=c11 -Wall -Wextra -fsanitize=undefined -Ih723zg/User/Inc host_tests/test_safety.c -o /tmp/test_safety_ub &amp;&amp; /tmp/test_safety_ub</code></pre>
-      <pre><code class="lang-text">PASS safety 45 cases</code></pre>
+      <pre><code class="lang-text">PASS safety 39 cases</code></pre>
       <p><code>.c</code> 파일이 명령줄에 없는 것을 눈여겨본다 — 시험이 <strong><code>safety.h</code> 만</strong> 포함하기 때문이다. <a href="fw-11-power-sequence.html#s3-1-2">fw-11 §3-1-2</a> 의 <code>power.h</code> 와 같은 꼴이다. "순수하게 만들어 두면 보드 없이 채점된다"는 장점이 여기서 나온다.</p>
       <div class="callout why"><span class="ct">둘째 줄이 실제로 무엇을 검출하는가 — 집필 중에 확인한 것</span>
         <p><code>safety_mag()</code> 를 <code>(uint32_t)((v &lt; 0) ? -v : v)</code> 로 쓴 구현을 만들어 두 줄을 다 실행해 봤다(2026-09-23, Mac <code>cc</code>). 결과:</p>
         <pre><code class="lang-text">$ /tmp/test_safety          # 값 채점
-PASS safety 45 cases                                &lt;- 45개가 전부 통과한다
+PASS safety 39 cases                                &lt;- 39개가 전부 통과한다
 
 $ /tmp/test_safety_ub       # 진단
-safety.h:55:31: runtime error: negation of -2147483648 cannot be represented in type 'int32_t'
+safety.h:61:31: runtime error: negation of -2147483648 cannot be represented in type 'int32_t'
   (aka 'int'); cast to an unsigned type to negate this value to itself
-SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior safety.h:55:31
-PASS safety 45 cases                                &lt;- 그래도 PASS 는 찍힌다</code></pre>
+SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior safety.h:61:31
+PASS safety 39 cases                                &lt;- 그래도 PASS 는 찍힌다</code></pre>
         <p>왜 값이 맞는가: 이 Mac 에서는 <code>-INT32_MIN</code> 이 <code>INT32_MIN</code> 으로 감기고 감긴 값을 <code>uint32_t</code> 로 바꾸면 2147483648 — <strong>우연히 맞는 답</strong>이다.
         컴파일러가 바뀌거나 최적화 수준이 바뀌면 같은 코드가 다른 답을 낼 수 있다. 이렇게 결과가 보장되지 않는 것이 "정의되지 않은 동작"의 뜻이다.
         <strong>둘째 줄의 합격 조건은 마지막의 <code>PASS</code> 가 아니라 그 위에 진단 메시지가 하나도 없는 것</strong>이다. <a href="fw-13-pid-protection.html#s3-3-3">fw-13 §3-3-3</a> 이 <code>protect.c</code> 의 <code>mag()</code> 에서 같은 것을 보였고, 이 쪽이 <strong>세 번째</strong>다.
@@ -1503,18 +1457,18 @@ PASS safety 45 cases                                &lt;- 그래도 PASS 는 찍
 firmware/tools/flash.sh</code></pre>
       <p>모터 전원은 넣지 않는다. 이 걸음에서 보는 것은 <strong>상태기계의 논리</strong>이고, 상태기계의 논리는 배터리 없이 전부 확인할 수 있다.</p>
       <pre><code class="lang-text">&gt; fault stat
-fault wdg=&lt;n&gt; batt=&lt;n&gt; curr=&lt;n&gt; tilt=&lt;n&gt; imu=&lt;n&gt; drv=&lt;n&gt; prot=&lt;n&gt; byte=&lt;n&gt; cut=&lt;n&gt; clear_ms=&lt;n&gt; posted=&lt;n&gt; dropped=&lt;n&gt;
-&gt; fault inject tilt
+fault wdg=&lt;n&gt; batt=&lt;n&gt; curr=&lt;n&gt; imu=&lt;n&gt; drv=&lt;n&gt; prot=&lt;n&gt; byte=&lt;n&gt; cut=&lt;n&gt; clear_ms=&lt;n&gt; posted=&lt;n&gt; dropped=&lt;n&gt;
+&gt; fault inject imu
 OK fault
 &gt; fault stat
-fault wdg=&lt;n&gt; batt=&lt;n&gt; curr=&lt;n&gt; tilt=1 imu=&lt;n&gt; drv=&lt;n&gt; prot=&lt;n&gt; byte=&lt;n&gt; cut=&lt;n&gt; clear_ms=0 posted=1 dropped=0
+fault wdg=&lt;n&gt; batt=&lt;n&gt; curr=&lt;n&gt; imu=1 drv=&lt;n&gt; prot=&lt;n&gt; byte=&lt;n&gt; cut=&lt;n&gt; clear_ms=0 posted=1 dropped=0
   code=&lt;n&gt; detail=&lt;n&gt; tick_ms=&lt;n&gt;
 &gt; fault stat
-fault wdg=&lt;n&gt; batt=&lt;n&gt; curr=&lt;n&gt; tilt=1 imu=&lt;n&gt; drv=&lt;n&gt; prot=&lt;n&gt; byte=&lt;n&gt; cut=&lt;n&gt; clear_ms=0 posted=1 dropped=0
+fault wdg=&lt;n&gt; batt=&lt;n&gt; curr=&lt;n&gt; imu=1 drv=&lt;n&gt; prot=&lt;n&gt; byte=&lt;n&gt; cut=&lt;n&gt; clear_ms=0 posted=1 dropped=0
 &gt; fault inject none
 OK fault
 &gt; fault stat
-fault wdg=&lt;n&gt; batt=&lt;n&gt; curr=&lt;n&gt; tilt=0 imu=&lt;n&gt; drv=&lt;n&gt; prot=&lt;n&gt; byte=&lt;n&gt; cut=&lt;n&gt; clear_ms=&lt;n&gt; posted=2 dropped=0
+fault wdg=&lt;n&gt; batt=&lt;n&gt; curr=&lt;n&gt; imu=0 drv=&lt;n&gt; prot=&lt;n&gt; byte=&lt;n&gt; cut=&lt;n&gt; clear_ms=&lt;n&gt; posted=2 dropped=0
   code=&lt;n&gt; detail=&lt;n&gt; tick_ms=&lt;n&gt;
 &gt; fault clear
 OK fault</code></pre>
@@ -1522,72 +1476,73 @@ OK fault</code></pre>
       <div class="tbl"><table class="compact">
         <thead><tr><th>#</th><th>하는 일</th><th>보이는 것</th><th>틀렸으면</th></tr></thead>
         <tbody>
-          <tr><td>①</td><td><code>fault inject tilt</code> 뒤 <code>fault stat</code> 을 <strong>두 번</strong></td><td>첫 번째에 이벤트 한 줄, <strong>두 번째에는 없다</strong>. <code>tilt=1</code> 과 <code>posted=1</code> 은 그대로. <strong>LD3(빨강)가 켜진다</strong></td><td>매번 이벤트가 나오면 <code>rising</code> 이 아니라 <code>now</code> 로 내고 있다(§2-2). 두 번째에도 나오는데 <code>posted</code> 가 안 늘면 <code>pop</code> 이 큐를 안 비운다</td></tr>
-          <tr><td>②</td><td><code>fault inject none</code> 뒤 <code>fault stat</code> 을 되풀이</td><td>조건이 거짓이 되므로 <code>clear_ms</code> 가 늘어나기 시작하고, 내가 정한 <code>RELEASE_HOLD_MS</code> 에 닿으면 <code>tilt=0</code> · <code>byte=0</code> · <strong>복구 이벤트 한 줄</strong> · LD3 꺼짐. <strong>영구 래치</strong>로 정한 조건이면 아무리 기다려도 안 풀린다 — 안 풀리는 것도 통과다</td><td><code>clear_ms</code> 가 0 에서 안 늘면 다른 조건 비트가 하나 1 인 것이다 — <code>stat</code> 줄의 일곱 칸을 본다(대개 <code>wdg=1</code>: 명령을 보낸 적이 없다)</td></tr>
+          <tr><td>①</td><td><code>fault inject imu</code> 뒤 <code>fault stat</code> 을 <strong>두 번</strong></td><td>첫 번째에 이벤트 한 줄, <strong>두 번째에는 없다</strong>. <code>imu=1</code> 과 <code>posted=1</code> 은 그대로. <strong>LD3(빨강)가 켜진다</strong></td><td>매번 이벤트가 나오면 <code>rising</code> 이 아니라 <code>now</code> 로 내고 있다(§2-2). 두 번째에도 나오는데 <code>posted</code> 가 안 늘면 <code>pop</code> 이 큐를 안 비운다</td></tr>
+          <tr><td>②</td><td><code>fault inject none</code> 뒤 <code>fault stat</code> 을 되풀이</td><td>조건이 거짓이 되므로 <code>clear_ms</code> 가 늘어나기 시작하고, 학습자가 정한 <code>RELEASE_HOLD_MS</code> 에 닿으면 <code>imu=0</code> · <code>byte=0</code> · <strong>복구 이벤트 한 줄</strong> · LD3 꺼짐. <strong>영구 래치</strong>로 정한 조건이면 아무리 기다려도 안 풀린다 — 안 풀리는 것도 통과다</td><td><code>clear_ms</code> 가 0 에서 안 늘면 다른 조건 비트가 하나 1 인 것이다 — <code>stat</code> 줄의 여섯 칸을 본다(대개 <code>wdg=1</code>: 명령을 보낸 적이 없다)</td></tr>
           <tr><td>③</td><td><code>fault clear</code> 를 대신 쳐 본다</td><td>기다림 없이 <strong>즉시</strong> 모든 칸이 0 이 되고 <strong>복구 이벤트는 오지 않는다</strong>. 정책을 거치지 않았기 때문이다</td><td>여기서 복구 이벤트가 오면 <code>fault clear</code> 가 해제 경로를 거치고 있다 — 둘은 다른 경로여야 한다(§3-1-2 의 <code>cmd_fault</code> 주석)</td></tr>
-          <tr><td>④</td><td><code>fault inject tilt</code> → <code>fault inject none</code> 을 <code>fault stat</code> <strong>없이</strong> 되풀이</td><td>왕복마다 이벤트 둘(발생 + 복구)이 쌓인다. <code>dropped</code> 가 0 이 아니게 되는 순간이 온다 — 그 횟수가 내 큐 깊이와 맞는가</td><td>계속 0 이면 넘침 처리가 카운터를 늘리지 않는 것이다. <strong>세지 않으면 "안 왔다"와 "버렸다"를 가를 수 없다</strong>(§2-11)</td></tr>
+          <tr><td>④</td><td><code>fault inject imu</code> → <code>fault inject none</code> 을 <code>fault stat</code> <strong>없이</strong> 되풀이</td><td>왕복마다 이벤트 둘(발생 + 복구)이 쌓인다. <code>dropped</code> 가 0 이 아니게 되는 순간이 온다 — 그 횟수가 정한 큐 깊이와 맞는가</td><td>계속 0 이면 넘침 처리가 카운터를 늘리지 않는 것이다. <strong>세지 않으면 "안 왔다"와 "버렸다"를 가를 수 없다</strong>(§2-11)</td></tr>
         </tbody>
       </table></div>
-      <p class="small">④의 되풀이 간격은 내가 정한 <code>RELEASE_HOLD_MS</code> 를 따른다 — 복구 이벤트는 해제가 실제로 일어나야 나기 때문이다. 즉시 해제(0)를 골랐으면 한 번 왕복에 이벤트 둘, 1 초를 골랐으면 왕복마다 1 초 이상이 든다. 영구 래치로 정한 조건으로는 이 확인을 할 수 없다. 자동 해제로 둔 조건 하나를 골라 쓴다.
+      <p class="small">④의 되풀이 간격은 학습자가 정한 <code>RELEASE_HOLD_MS</code> 를 따른다 — 복구 이벤트는 해제가 실제로 일어나야 나기 때문이다. 즉시 해제(0)를 골랐으면 한 번 왕복에 이벤트 둘, 1 초를 골랐으면 왕복마다 1 초 이상이 든다. 영구 래치로 정한 조건으로는 이 확인을 할 수 없다. 자동 해제로 둔 조건 하나를 골라 쓴다.
       큐 깊이를 크게 정했으면 이 확인이 오래 걸린다. 이 점도 깊이를 정할 때의 재료다.</p>
       <p><strong>부팅 직후 <code>wdg=1</code> 이 정상</strong>이라는 것을 알아 둔다. 상위가 아직 아무 명령도 보내지 않았으므로 명령 나이가 무한대다. <a href="fw-13-pid-protection.html#s3-2-2">fw-13 §3-2-2</a> 의 <code>control_init()</code> 이 "부팅 때 워치독이 <strong>이미</strong> 만료돼 있게" 하라고 요구했던 그 결과다.
       바퀴가 도는 것은 상위가 명령을 보낸 뒤부터여야 한다.</p>
+      <p class="small">이 프로젝트 보드의 값(2026-11-07, Pi 호스트의 <code>/dev/mcu</code>, 모터 전원 없음). <strong>과경사 조건을 없애기 전의 기록이다</strong> — 그때는 조건이 일곱이었고 bit3 이 기울기, <code>fault inject tilt</code> 가 있었다. 지금은 같은 확인을 <code>fault inject imu</code> 로 한다. 그때 이 보드의 배정 — bit0 워치독 · bit3 기울기 · bit4 IMU: 부팅 직후 <code>fault stat</code> 은 <code>wdg=1 imu=1 byte=17</code> 에 이벤트 둘(<code>code=4 detail=202 tick_ms=1</code> · <code>code=5 detail=0 tick_ms=1</code>) — 첫 틱에는 WT901 샘플이 아직 없어 IMU 조건도 선다(<code>ms_since_imu</code> = "한 번도 없었다"). ① <code>fault inject tilt</code> 뒤 첫 <code>fault stat</code> 에만 <code>code=3 detail=1</code>(가만히 둔 보드의 기울기 0.1°), 두 번째에는 이벤트 없이 <code>tilt=1 byte=25 posted=3</code> 그대로. ② <code>fault inject none</code> 뒤 1.5 s 가 지나도 <code>tilt=1 clear_ms=0</code> — 명령이 없어 <code>wdg=1</code> 이라 해제되지 않았다(위 표의 "틀렸으면" 칸이 말하는 경우). 해제는 V2 에서 보았다(§3-2-4). ③ <code>fault clear</code> 뒤 복구 이벤트 없음, 다음 틱에 워치독이 다시 서서 <code>wdg=1 byte=1</code> 과 <code>code=4</code> 한 줄(detail 은 마지막 명령 뒤의 ms — 이 보드는 그 뒤 65535 에서 멈추게(포화) 고쳤고, 부팅 뒤 수 분이 지난 보드에서 <code>detail=65535</code> 를 확인했다). ④ <code>fault clear</code> + <code>fault inject tilt</code> 열 번(이벤트 20 개) → 15 줄 · <code>dropped=5</code> — 깊이 16 의 링 버퍼는 15 개를 담는다. 같은 때 <code>pwr stat</code> 의 <code>vbus_mv=22073</code>, <code>adc</code> 의 <code>i_ma</code> 는 전류 0 에서 −1464 ~ +1831 mA 로 흔들렸다 — 영점은 맞고(<code>adc spread 400</code> 평균 2013 · 부팅 영점 2014) 표본 하나의 잡음(±20 코드, 한 코드 약 122 mA)이다. 과전류 문턱 40 A 와는 거리가 멀다. 이 보드는 그 뒤 영점을 400 표본(퍼짐이 큰 블록은 건너뜀)으로, 전류를 최신 블록 16 표본 평균으로 바꿨다 — 다시 잰 값: 부팅 영점 2024 = 400 표본 평균 2024, <code>adc zero</code> 다섯 번 2024 ~ 2025, 전류 0 에서 <code>i_ma</code> −411 ~ +366 mA. 영점은 부팅마다 달랐다(2013 → 2030 → 2024).</p>
 
       <h3 id="s3-2">3-2. 실습 B — 계약 경로에서 200 ms 를 MCU 의 시계로 잰다</h3>
       <p>같은 상태기계를 <strong>V2 모드</strong>로 바꿔, 이번에는 명령 창이 아니라 계약 프레임으로 본다. <strong>V2 모드에는 CLI 가 없다</strong>.
-      그래서 이 실습의 관측 수단은 둘뿐이다: <code>scripts/mcu_probe.py</code> 의 출력과 gdb 로 읽는 변수. V2 모드에는 <code>fault stat</code> 명령이 없다.</p>
+      그래서 이 실습의 관측 수단은 둘뿐이다: <code>firmware/scripts/mcu_probe.py</code> 의 출력과 gdb 로 읽는 변수. V2 모드에는 <code>fault stat</code> 명령이 없다.</p>
 
       <h4 id="s3-2-3">3-2-3. 직접 채우기</h4>
       <ol class="steps">
         <li><strong>고칠 코드가 없다.</strong> 제어 · 안전 모듈은 두 모드에서 <strong>같은 코드</strong>다 — 바꾸는 것은 빌드 인자 하나다. 이것이 이 구조의 장점이고, 이 실습이 그 장점을 확인하는 자리다.</li>
         <li>워치독 이벤트의 <code>detail</code> 에 <strong>명령 나이(ms)</strong> 가 들어가는지 <code>safety_step()</code> 의 이벤트 블록에서 확인한다(§2-12 의 ①). 안 넣었으면 지금 넣는다 — 이것이 이 실습의 판정 수단이다.</li>
-        <li>내가 배정한 <strong>워치독 이벤트 코드</strong>를 노트에서 꺼내 바로 볼 수 있게 둔다. probe 는 이벤트 코드를 <strong>16진수</strong>로 출력한다(<code>code=0x&lt;xx&gt;</code>) — 내 표를 10진수로 적어 두었으면 지금 16진수를 나란히 적어 둔다.
-        이름 자리(<code>EVENT &lt;이름&gt;</code>)는 probe 안의 표가 만든다. 내가 06a 의 (제안)과 다른 코드를 배정했으면 이름 자리에 <code>?</code> 가 출력된다 — <strong>틀린 것이 아니라 아직 전파하지 않은 것</strong>이다(fw-17 이 적은 세 곳: 06a 표 · <code>frames.h</code> · probe 의 표).</li>
-        <li><strong>이 실습이 성립하는 전제를 먼저 확인한다 — 내가 §2-4 에서 고른 정책에 달렸다.</strong> 부팅 직후 <code>wdg</code> 는 <strong>이미 1 이고</strong>(§3-1-4 의 마지막 문단), probe 의 첫 0x01 이 그 비트를 푼다.
-        즉 워치독 조건을 <strong>자동 해제</strong>로 두었을 때만 뮤트가 <em>새</em> 엣지를 만든다. <strong>영구 래치</strong>로 정했으면 그 비트는 <code>cond</code> 에 남아 있어 <code>rising</code> 이 0 이고, 뮤트해도 이벤트가 나지 않는다 — 고장이 아니라 내 정책이다.
+        <li>직접 배정한 <strong>워치독 이벤트 코드</strong>를 노트에서 꺼내 바로 볼 수 있게 둔다. probe 는 이벤트 코드를 <strong>16진수</strong>로 출력한다(<code>code=0x&lt;xx&gt;</code>) — 배정표를 10진수로 적어 두었으면 지금 16진수를 나란히 적어 둔다.
+        이름 자리(<code>EVENT &lt;이름&gt;</code>)는 probe 안의 표가 만든다. 06a 의 (제안)과 다른 코드를 배정했으면 이름 자리에 <code>?</code> 가 출력된다 — <strong>틀린 것이 아니라 아직 전파하지 않은 것</strong>이다(fw-17 이 적은 세 곳: 06a 표 · <code>frames.h</code> · probe 의 표).</li>
+        <li><strong>이 실습이 성립하는 전제를 먼저 확인한다 — §2-4 에서 고른 정책에 달렸다.</strong> 부팅 직후 <code>wdg</code> 는 <strong>이미 1 이고</strong>(§3-1-4 의 마지막 문단), probe 의 첫 <code>TYPE_VELOCITY</code> (0x01) 가 그 비트를 푼다.
+        즉 워치독 조건을 <strong>자동 해제</strong>로 두었을 때만 뮤트가 <em>새</em> 엣지를 만든다. <strong>영구 래치</strong>로 정했으면 그 비트는 <code>cond</code> 에 남아 있어 <code>rising</code> 이 0 이고, 뮤트해도 이벤트가 나지 않는다 — 고장이 아니라 고른 정책대로다.
         그 경우 이 실습은 <strong>정책을 확인하는 실습</strong>이 된다(아무 이벤트도 오지 않는 것이 통과). 200 ms 를 재고 싶으면 그 조건만 자동 해제로 바꾼 빌드를 하나 굽고, 왜 본 빌드에서는 래치로 두는지를 노트에 적는다.</li>
       </ol>
 
       <h4 id="s3-2-4">3-2-4. 굽고 보기</h4>
       <pre><code class="lang-bash">firmware/tools/flash.sh                   # 부팅은 TEXT 모드
 # probe 가 시작할 때 link v2 를 보내 V2 로 들어간다 (fw-17)
-python3 scripts/mcu_probe.py /dev/cu.usbmodem&lt;n&gt; 0 0 --sec &lt;충분히 긴 값&gt; --mute-after &lt;s&gt;</code></pre>
+python3 firmware/scripts/mcu_probe.py /dev/cu.usbmodem&lt;n&gt; 0 0 --sec &lt;충분히 긴 값&gt; --mute-after &lt;s&gt;</code></pre>
       <p>인자 셋(<code>port</code> · <code>vl</code> · <code>vr</code>)은 <strong>위치 인자라 생략할 수 없다</strong>(fw-17 §3-2-3 의 <code>main()</code>). 바퀴를 돌릴 일이 없으므로 목표는 <code>0 0</code> 이다.
       그리고 <strong><code>--sec</code> 이 <code>--mute-after</code> 보다 충분히 커야 한다</strong> — <code>--sec</code> 의 기본값은 5 초이고, 그 시간이 끝나면 probe 가 종료한다. 뮤트 뒤의 200 ms 와 그 뒤의 몇 초를 보려면 여유를 둔다.</p>
-      <p><code>--mute-after</code> 는 <strong>0x01 송신만</strong> 멈추고 수신은 계속한다 — 링크는 유지되고 명령만 끊긴 상태다. 이것이 실습 D 와 갈리는 지점이다(§2-13).
-      <strong>뮤트 시각은 화면에 출력되지 않는다</strong>(probe 는 그 줄을 내지 않는다). 뮤트 시각은 내가 <code>--mute-after</code> 로 정한 그 초다.</p>
-      <pre><code class="lang-text">(기대하는 모양 — 값은 내 보드의 것이고, 꼴은 fw-17 의 probe 가 찍는 그대로다)
+      <p><code>--mute-after</code> 는 <strong><code>TYPE_VELOCITY</code> (0x01) 송신만</strong> 멈추고 수신은 계속한다 — 링크는 유지되고 명령만 끊긴 상태다. 이것이 실습 D 와 갈리는 지점이다(§2-13).
+      <strong>뮤트 시각은 화면에 출력되지 않는다</strong>(probe 는 그 줄을 내지 않는다). 뮤트 시각은 학습자가 <code>--mute-after</code> 로 정한 그 초다.</p>
+      <pre><code class="lang-text">(기대하는 모양 — 값은 보드마다 다르고, 꼴은 fw-17 의 probe 가 찍는 그대로다)
 EVENT &lt;이름|?&gt; code=0x&lt;xx&gt; detail=&lt;n&gt; t=&lt;n&gt;    &lt;- 자동 해제라면: 부팅 때 1 이던 wdg 가 풀린 복구
-STATE L=        0 R=        0 batt=&lt;n&gt;mV cur=&lt;n&gt;mA fault=0x00 t=&lt;n&gt;
+STATE FL=        0 FR=        0 RL=        0 RR=        0 batt=&lt;n&gt;mV cur=&lt;n&gt;mA fault=0x00 t=&lt;n&gt;
 ...                                          &lt;- 여기까지 fault 는 0x00 이어야 한다
                                              &lt;- 뮤트 시각에는 아무 줄도 찍히지 않는다
 EVENT &lt;이름|?&gt; code=0x&lt;xx&gt; detail=&lt;n&gt; t=&lt;n&gt;    &lt;- 워치독 이벤트, 한 번만
-STATE L=        0 R=        0 batt=&lt;n&gt;mV cur=&lt;n&gt;mA fault=0x&lt;xx&gt; t=&lt;n&gt;
+STATE FL=        0 FR=        0 RL=        0 RR=        0 batt=&lt;n&gt;mV cur=&lt;n&gt;mA fault=0x&lt;xx&gt; t=&lt;n&gt;
 ...                                          &lt;- 이 뒤로 fault 비트가 유지된다
 sent=&lt;n&gt; + stop 1 = &lt;n&gt; frames  (corrupt 0)  state=&lt;n&gt;  imu=&lt;…&gt;  event=&lt;n&gt;
 bad_crc=0  bad_len=0  junk_bytes=0            &lt;- 마지막 두 줄은 끝날 때의 요약이다</code></pre>
-      <p class="small">둘이 내 배정에 달렸다. <strong>첫 EVENT 줄</strong>은 워치독을 자동 해제로 두고 <code>code_recover</code> 를 배정했을 때만 온다 — 그래서 요약의 <code>event=</code> 는 1 이 아니라 <strong>내 정책이 정하는 수</strong>다.
+      <p class="small">둘이 학습자의 배정에 달렸다. <strong>첫 EVENT 줄</strong>은 워치독을 자동 해제로 두고 <code>code_recover</code> 를 배정했을 때만 온다 — 그래서 요약의 <code>event=</code> 는 1 이 아니라 <strong>고른 정책이 정하는 수</strong>다.
       <strong>마지막 STATE 의 <code>fault=</code></strong> 는 <code>bit[SAFE_I_WATCHDOG]</code> 을 배정했을 때만 <code>0x00</code> 에서 바뀐다(§2-3). 배정하지 않았으면 끝까지 <code>0x00</code> 이고 <strong>그래도 이벤트는 온다.</strong>
       그 경우 "비트는 유지된다"를 눈으로 보는 것은 TEXT 의 <code>fault stat</code> 으로 한다(<code>event-once-bit-held</code>).</p>
       <p>적을 숫자는 셋이다.</p>
       <ol class="steps">
         <li><strong>이벤트의 <code>detail</code>.</strong> 이것이 §2-12 의 ① — MCU 가 판정한 그 틱의 명령 나이다. 계약값 200 과 비교한다. <code>&gt;</code> 로 판정했으면 201 이 나온다.</li>
-        <li><strong>이벤트 줄의 <code>t=</code> − 마지막 0x01 직후에 받은 STATE 줄의 <code>t=</code>.</strong> 이것이 ② — <strong>±20 ms</strong> 거칠다(상태가 50 Hz(20 ms)). 둘 다 <strong>MCU 의 tick</strong> 이다.</li>
-        <li><strong>①과 ②의 차.</strong> ②가 ① ± 20 ms 안에 들어오면 두 방법이 서로를 확인한 것이다. 벗어나면 두 방법 중 하나를 잘못 이해한 것이다. 대개 "마지막 0x01 직후"를 probe 의 어느 줄로 정했는가의 문제다.</li>
+        <li><strong>이벤트 줄의 <code>t=</code> − 마지막 <code>TYPE_VELOCITY</code> (0x01) 직후에 받은 STATE 줄의 <code>t=</code>.</strong> 이것이 ② — <strong>±20 ms</strong> 거칠다(상태가 50 Hz(20 ms)). 둘 다 <strong>MCU 의 tick</strong> 이다.</li>
+        <li><strong>①과 ②의 차.</strong> ②가 ① ± 20 ms 안에 들어오면 두 방법이 서로를 확인한 것이다. 벗어나면 두 방법 중 하나를 잘못 이해한 것이다. 대개 "마지막 <code>TYPE_VELOCITY</code> 직후"를 probe 의 어느 줄로 정했는가의 문제다.</li>
       </ol>
       <p>그리고 <strong>이벤트가 한 번만 오는가</strong>를 본다. 송신을 멈춘 채 몇 초를 두어도 <strong>뮤트 뒤의</strong> EVENT 줄은 하나여야 한다. 상태 프레임의 <code>fault</code> 비트가 그 동안 계속 유지되는 것이 "비트는 상태, 이벤트는 사건"의 실물 증명이다(§2-2).
       요약 줄의 <code>event=</code> 가 같은 내용을 숫자로 보여 준다. 뮤트 뒤의 워치독 이벤트는 그 수에 <strong>하나만</strong> 더해야 한다.</p>
       <div class="callout note"><span class="ct"><strong>뮤트 뒤</strong>의 복구는 이 실행에서 볼 수 없다 — 볼 수 있는 복구는 첫머리의 것뿐이다</span>
-        <p>probe 에는 <strong>뮤트를 도중에 푸는 수단이 없다.</strong> 한 번 멈추면 <code>--sec</code> 이 끝날 때까지 멈춘 채다. 끝날 때 <code>finally</code> 가 정지 프레임(0x01, 0 0)을 한 장 보내므로 명령 워치독은 그때 풀리지만,
+        <p>probe 에는 <strong>뮤트를 도중에 푸는 수단이 없다.</strong> 한 번 멈추면 <code>--sec</code> 이 끝날 때까지 멈춘 채다. 끝날 때 <code>finally</code> 가 정지 프레임(<code>TYPE_VELOCITY</code> 0x01, 0 0)을 한 장 보내므로 명령 워치독은 그때 풀리지만,
         그 줄이 나가는 순간 probe 는 포트를 닫는다. 뒤이어 나올 <strong>복구 이벤트를 받을 프로그램이 없다.</strong> probe 를 다시 띄워도 이미 풀린 뒤라 그 이벤트는 오지 않는다.</p>
-        <p>대신 <strong>실행 첫머리</strong>의 복구는 볼 수 있다(자동 해제로 둔 경우): 부팅 때 1 이던 <code>wdg</code> 래치를 probe 의 첫 0x01 이 푸는 그 이벤트다. 위 블록의 첫 줄이 그 복구 이벤트이고, 이 줄이 내 해제 정책의 <strong>V2 쪽 증거</strong>다.
+        <p>대신 <strong>실행 첫머리</strong>의 복구는 볼 수 있다(자동 해제로 둔 경우): 부팅 때 1 이던 <code>wdg</code> 래치를 probe 의 첫 <code>TYPE_VELOCITY</code> (0x01) 가 푸는 그 이벤트다. 위 블록의 첫 줄이 그 복구 이벤트이고, 이 줄이 고른 해제 정책의 <strong>V2 쪽 증거</strong>다.
         다만 <code>RELEASE_HOLD_MS</code> 를 직접 재는 것(<code>recover-after-hold</code>)은 <strong>TEXT 의 §3-1-4 ②③</strong> 에서 한다. TEXT 에서는 <code>clear_ms</code> 가 늘어나는 것까지 보인다.
         <strong>모드마다 볼 수 있는 것이 다르다</strong>는 것이 이 두 실습을 나눈 이유이고, 그 자체가 관측 수단이 둘뿐인 V2 의 성질이다(§3-2 머리).</p>
       </div>
       <div class="callout note"><span class="ct">V2 에서 무언가 안 보일 때 — 관측 수단이 둘뿐이라는 뜻</span>
         <p>이벤트가 아예 안 오면 네 군데를 본다.</p>
         <ul>
-          <li>① 내가 <code>code[SAFE_I_WATCHDOG]</code> 를 배정했는가 — 0 이면 <strong>일부러 아무 이벤트도 내지 않는다</strong>(§2-3).</li>
+          <li>① <code>code[SAFE_I_WATCHDOG]</code> 를 배정했는가 — 0 이면 <strong>일부러 아무 이벤트도 내지 않는다</strong>(§2-3).</li>
           <li>② <strong>워치독 조건을 <code>latched</code> 에 넣었는가</strong> — 부팅 때 이미 1 인 래치가 풀리지 않으므로 뮤트해도 <code>rising</code> 이 0 이다(§3-2-3 의 4). 이것이 가장 흔한 "고장이 아닌 침묵"이다.</li>
           <li>③ 큐가 비워지고 있는가 — V2 의 소비자는 <code>comm_frame_step_1khz()</code> 다(fw-17).</li>
           <li>④ 그래도 모르면 gdb 로 <code>s_posted</code> 와 <code>s_ev_dropped</code> 를 읽는다(<a href="fw-04-debugger.html">fw-04</a> 의 접속 그대로).</li>
@@ -1595,44 +1550,43 @@ bad_crc=0  bad_len=0  junk_bytes=0            &lt;- 마지막 두 줄은 끝날 
         <p><strong>"안 왔다"에는 세 가지 뜻이 있다</strong> — 안 만들었다 / 만들었는데 버려졌다 / 만들어 보냈는데 probe 가 못 읽었다. 카운터 둘이 그 셋을 가른다.</p>
       </div>
 
-      <h3 id="s3-3">3-3. 실습 C-1 — 실물 신호로: IMU 를 침묵시키고, 손으로 기울인다</h3>
+      <p class="small">이 프로젝트 보드의 값(2026-11-07, Pi 호스트, <code>--sec 8 --mute-after 4</code> 두 번): 첫 상태 프레임 <code>fault=0x01</code> → 명령이 흐르고 약 1 s 뒤 <code>EVENT recovered code=0x10 detail=1</code> 과 <code>fault=0x00</code>(그때 RELEASE_HOLD_MS 1000 — 그 1 s 동안 듀티는 0 이다. 지금은 500) → 송신을 멈춘 뒤 <code>EVENT watchdog code=0x04 detail=201</code> 이 <strong>두 번 모두 201 ms</strong>, 이어 <code>fault=0x01</code> 이 끝까지 유지. 요약 줄은 <code>event=2</code> · <code>bad_crc=0</code>.</p>
+      <h3 id="s3-3">3-3. 실습 C-1 — 실물 신호로: IMU 를 침묵시키고, 기울여도 fault 가 없는 것을 본다</h3>
       <p>여기부터는 <strong>주입이 아니라 진짜 신호</strong>다. 주입으로 확인한 것은 상태기계의 논리이고, 여기서 확인하는 것은 <strong>입력을 모으는 경로가 실제로 연결돼 있는가</strong>다. 둘은 다른 시험이다.
       배터리는 필요 없다. TEXT 모드로 전환해 <code>fault stat</code> 으로 본다.</p>
 
       <h4 id="s3-3-3">3-3-3. 만들고 재기 (코드 없음)</h4>
-      <p>두 고장을 손으로 만든다. 순서를 지킨다 — <strong>선을 뽑고 꽂는 일은 모터 전원이 없는 상태에서</strong>, 그리고 센서 전원은 언제나 Nucleo 의 3V3 에서만 딴다(별도 레일 금지).</p>
+      <p>고장 하나와 비교 하나를 손으로 만든다. 순서를 지킨다 — <strong>선을 뽑고 꽂는 일은 모터 전원이 없는 상태에서</strong>, 그리고 센서 전원은 언제나 Nucleo 의 3V3 에서만 딴다(별도 레일 금지).</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>#</th><th>만드는 고장</th><th>절차</th><th>보이는 것</th></tr></thead>
         <tbody>
           <tr><td>①</td><td><strong>IMU 침묵</strong></td>
-              <td>기본 센서(<code>SAFETY_IMU_PRIMARY</code> 로 고른 쪽)의 <strong>신호선</strong>을 뽑는다 — <a href="fw-14-wt901.html">fw-14</a> 면 USART6 RX, <a href="fw-15-bno055.html">fw-15</a> 면 I2C 의 SDA 또는 SCL.
-              먼저 <code>wt stat</code> / <code>bno stat</code> 의 <code>age_ms</code> 가 늘기 시작하는 것을 확인하고, 그 다음 <code>fault stat</code></td>
-              <td><code>imu=1</code> 로 바뀌고 이벤트 한 줄. <strong>같은 순간 <code>tilt</code> 은 0 에서 움직이지 않는다</strong> — §2-5 의 <code>else</code> 가 실물에서 보이는 자리다. 선을 다시 꽂으면 해제 정책대로</td></tr>
-          <tr><td>②</td><td><strong>과경사</strong></td>
-              <td>센서를 <strong>손으로 들어 기울인다.</strong> 모듈이 섀시에 고정돼 있지 않은 벤치 단계이므로 모듈만 집어 올리면 된다. 천천히 기울이며 <code>fault stat</code> 을 되풀이해 친다</td>
-              <td>내가 정한 <code>TILT_MAX_DDEG</code> 를 넘는 각도에서 <code>tilt=1</code> 과 이벤트. 이벤트의 <code>detail</code> 이 그때의 0.1° 값이면 <strong>얼마나 넘었을 때 판정됐는지</strong>까지 보인다</td></tr>
+              <td>WT901(<code>SAFETY_IMU_PRIMARY</code> = 0)의 <strong>신호선</strong>을 뽑는다 — <a href="fw-14-wt901.html">fw-14</a> 의 USART6 RX.
+              먼저 <code>wt stat</code> 의 <code>age_ms</code> 가 늘기 시작하는 것을 확인하고, 그 다음 <code>fault stat</code></td>
+              <td><code>imu=1</code> 로 바뀌고 이벤트 한 줄. 선을 다시 꽂으면 해제 정책대로</td></tr>
+          <tr><td>②</td><td><strong>기울기 (비교)</strong></td>
+              <td>선을 꽂은 채 센서를 <strong>손으로 들어 기울인다.</strong> 모듈이 섀시에 고정돼 있지 않은 벤치 단계이므로 모듈만 집어 올리면 된다. 옆으로 눕힐 때까지 천천히 기울이며 <code>fault stat</code> 과 <code>wt stat</code> 을 되풀이해 친다</td>
+              <td><code>wt stat</code> 의 <code>ax_mg</code> · <code>ay_mg</code> · <code>az_mg</code> 는 따라 바뀌지만 <code>fault stat</code> 의 여섯 칸은 <strong>바뀌지 않는다</strong> — 기울기는 끊는 조건이 아니다(§2-5)</td></tr>
         </tbody>
       </table></div>
-      <p class="small">②에서 각도를 알고 싶으면 먼저 눕혀 보는 것이 빠르다 — 모듈을 완전히 옆으로 세우면 <code>safety_tilt_ddeg()</code> 는 900(90.0°) 근처를 낸다(§2-5 의 벡터).
-      그 값과 <code>wt stat</code> / <code>bno stat</code> 의 <code>ax_mg</code> · <code>ay_mg</code> · <code>az_mg</code> 를 함께 적어 두면, 내 문턱이 실제로 몇 도인지를 숫자 둘로 확인할 수 있다.</p>
+      <p class="small">②에서 눕힌 각도의 가속도 세 축을 적어 둔다. 이 값은 <a href="fw-20b-slope-mix.html">fw-20b</a> 의 경사 출력 조정이 쓰는 입력과 같은 숫자다.</p>
       <div class="callout warn"><span class="ct">센서 배선의 규칙 — 이 실습에서도 그대로다</span>
         <p>센서 · 모듈의 3.3 V 는 <strong>Nucleo 의 3V3 에서만</strong> 딴다(별도 레일 금지). 3V3 · GND 점퍼는 <strong>전원을 끈 채</strong> 꽂고, 켠 뒤 3V3 ↔ GND 를 먼저 잰다.
         선을 뽑았다 꽂는 이 실습에서 특히 그렇다 — 뽑는 김에 전원선을 건드리면 다음에 켤 때 무슨 일이 생길지 모른 채 켜게 된다.</p>
       </div>
 
       <h4 id="s3-3-4">3-3-4. 보고 판정하기</h4>
-      <p>두 고장 모두에서 같은 것을 확인한다: <strong>비트가 1 이 되는가 · 이벤트가 한 번인가 · 내가 정한 대로 풀리는가.</strong> 그리고 하나 더 — <strong>기울기가 IMU 침묵에 가려지는가.</strong></p>
-      <p>①을 하는 동안 <code>fault stat</code> 의 <code>tilt</code> 칸을 계속 본다. 선을 뽑아 둔 채 센서를 기울여도 <code>tilt</code> 은 0 이어야 한다 — 값이 없으니 판정하지 않는 것이다.
-      만약 <code>tilt=1</code> 이 함께 나타나면 둘 중 하나다. <code>else</code> 를 안 썼거나, <code>control_get_imu()</code> 가 샘플이 없을 때 <strong>옛 값을 그대로 돌려주고 있다</strong>(<code>seq == 0</code> 규약을 <code>safety_service_main()</code> 이 확인하지 않는다).</p>
+      <p>①에서 확인한다: <strong>비트가 1 이 되는가 · 이벤트가 한 번인가 · 정한 대로 풀리는가.</strong> ②에서는 <strong>아무 비트도 1 이 되지 않는 것</strong>을 확인한다.</p>
+      <p>①에서 <code>imu</code> 가 0 에 머물면 둘 중 하나다. <code>imu_timeout_ms</code> 를 0(끔)으로 두었거나, <code>control_get_imu()</code> 가 샘플이 없을 때 <strong>옛 샘플을 그대로 돌려주고 있다</strong>(<code>wt stat</code> 의 <code>age_ms</code> 는 느는데 <code>safety_service_main()</code> 이 보는 나이가 늘지 않는다).</p>
       <p>선을 다시 꽂은 뒤 <strong>네 가지가 원래대로인지</strong> 확인하고 넘어간다.</p>
       <ul>
-        <li><code>wt stat</code> / <code>bno stat</code> 의 <code>age_ms</code> 가 다시 작아진다.</li>
+        <li><code>wt stat</code> 의 <code>age_ms</code> 가 다시 작아진다.</li>
         <li>부호가 그대로다.</li>
-        <li><code>fault stat</code> 의 일곱 칸이 전부 0 이다.</li>
+        <li><code>fault stat</code> 의 여섯 칸이 전부 0 이다.</li>
         <li>LD3 가 꺼졌다.</li>
       </ul>
 
-      <h3 id="s3-4">3-4. 실습 C-2 — 저전압 경로와 내가 정한 끊는 범위 <span class="tag power">모터 전원</span></h3>
+      <h3 id="s3-4">3-4. 실습 C-2 — 저전압 경로와 학습자가 정한 끊는 범위 <span class="tag power">모터 전원</span></h3>
       <div class="callout warn"><span class="ct">STOP — 하나라도 "아니오"면 전원을 넣지 않는다</span>
         <ol>
           <li><a href="fw-11-power-sequence.html#s3-2">fw-11 §3-2</a> 의 <strong>열 항목을 그대로 다시 지난다.</strong> 이 절은 그 목록을 줄여 쓰지 않는다.
@@ -1649,7 +1603,7 @@ bad_crc=0  bad_len=0  junk_bytes=0            &lt;- 마지막 두 줄은 끝날 
               <li>제어 헤더 GND 를 로직에 따로 잇지 않았다</li>
             </ul></li>
           <li>이 절 고유 — <strong><code>safety_fsm_step()</code> 의 호스트 시험 45개가 통과한 빌드</strong>다. 채우지 않은 상태기계로 모터 전원을 넣지 않는다.</li>
-          <li>이 절 고유 — <strong>내가 고른 끊는 레벨을 알고 있다.</strong> 레벨 1 · 2 를 골랐으면 fault 가 1 이 되는 순간 EN 또는 K1 이 <strong>내려간다</strong> — 그 소리와 그 뒤의 재시작 절차(사전충전부터 수 초)를 미리 알고 시작한다.</li>
+          <li>이 절 고유 — <strong>고른 끊는 레벨을 알고 있다.</strong> 레벨 1 · 2 를 골랐으면 fault 가 1 이 되는 순간 EN 또는 K1 이 <strong>내려간다</strong> — 그 소리와 그 뒤의 재시작 절차(사전충전부터 수 초)를 미리 알고 시작한다.</li>
           <li>이 절 고유 — <strong>임계값을 일부러 올렸다가 되돌리는 실습이다.</strong> 되돌릴 값(원래의 <code>BATT_MIN_MV</code>)을 <strong>먼저 노트에 적었다.</strong> 올린 채로 잊고 다음 쪽에 가면 로봇이 계속 저전압으로 판정된다.</li>
           <li>이 절 고유 — <strong>커넥터를 뽑고 꽂는 일(⑤의 엔코더 선)은 전부 <code>pwr down</code> 에서</strong> 한다. 도는 바퀴 옆에서 커넥터를 만지지 않는다 — fw-13 §3-3-4 가 같은 문장을 쓴다.</li>
           <li><strong>디버그 동결</strong>(TIM1 · TIM8)이 활성인 빌드다(<a href="fw-08-pwm-safe-output.html#s3-3">fw-08 §3-3</a>). 동결이 없으면 중단점에서 멈춘 순간 <strong>PWM 이 마지막 듀티로 계속 나간다</strong> — 바퀴가 도는 채로 코어만 멈추는 것이다. 이 쪽에서는 특히 중요하다: <strong>V2 모드에는 CLI 가 없어서 관측 수단이 probe 출력과 gdb 둘뿐이고</strong>(§3-2), probe 에 나오지 않는 값은 gdb 로만 읽는다. 그래서 모터 전원이 들어간 채로 중단점을 쓰게 될 확률이 앞 쪽들보다 높다.</li>
@@ -1663,7 +1617,7 @@ bad_crc=0  bad_len=0  junk_bytes=0            &lt;- 마지막 두 줄은 끝날 
         <li><strong>원래 값을 노트에 적는다.</strong> <code>BATT_MIN_MV</code> 의 지금 값과 그 줄의 주석 전체를.</li>
         <li><code>ina</code> 를 쳐서 <strong>지금 버스 전압</strong>을 읽는다(<code>vbus_mv</code>). 그리고 DMM 으로 같은 지점을 잰다. 두 값의 차이가 <a href="fw-10-i2c-ina226.html">fw-10</a> 에서 적어 둔 그 차이와 같은지 확인한다.
         <strong>이 확인이 먼저인 이유</strong>: 문턱을 올려 트립시켰는데 INA226 이 엉뚱한 값을 읽고 있었다면 시험한 것이 아무것도 없다.</li>
-        <li><code>BATT_MIN_MV</code> 를 <strong>지금 전압보다 조금 위</strong>로 고치고 굽는다. 얼마나 위인지는 내가 정한다. 너무 가깝게 정하면 전압 요동에 따라 조건이 풀렸다 다시 1 이 되기를 되풀이한다(그 되풀이도 볼 만한 관찰이다).
+        <li><code>BATT_MIN_MV</code> 를 <strong>지금 전압보다 조금 위</strong>로 고치고 굽는다. 얼마나 위인지는 학습자가 정한다. 너무 가깝게 정하면 전압 요동에 따라 조건이 풀렸다 다시 1 이 되기를 되풀이한다(그 되풀이도 볼 만한 관찰이다).
         주석은 <code>/* temporary for fw-18 3-4: original is &lt;n&gt; */</code> 처럼 <strong>임시라는 것과 원래 값</strong>을 적는다.</li>
         <li>전원 시퀀스를 올린다 — <code>pwr up</code> → <code>pwr stat</code> 가 <code>armed</code> 가 될 때까지. 이 실습에서 바퀴를 돌릴 것이므로 <strong>공중에 떠 있는지 한 번 더 눈으로</strong> 본다.</li>
       </ol>
@@ -1675,26 +1629,26 @@ bad_crc=0  bad_len=0  junk_bytes=0            &lt;- 마지막 두 줄은 끝날 
         <tbody>
           <tr><td>①</td><td>올린 문턱 그대로 <code>pwr up</code></td>
               <td>ARMED 에 닿는 순간(또는 그 전에) 저전압 fault 가 1 이 된다 — <code>batt=1</code>, LD3, 이벤트 한 줄. <code>en</code> 이 올라가지 못하거나 곧 내려간다</td>
-              <td>이벤트의 <code>detail</code>(내가 mV 를 넣었다면 그 전압)</td></tr>
+              <td>이벤트의 <code>detail</code>(mV 를 넣었다면 그 전압)</td></tr>
           <tr><td>②</td><td>문턱을 <strong>원래대로</strong> 되돌려 굽고 <code>pwr up</code>. <strong>먼저</strong> <code>fault inject batt</code> 로 주입하고 <code>fault stat</code> 으로 <code>batt=1</code> 을 확인한 뒤 <code>step &lt;바퀴&gt; &lt;목표&gt; &lt;ms&gt;</code></td>
               <td><strong>바퀴가 아예 돌지 않는다.</strong> CSV 의 <code>duty_permille</code> 열이 <strong>0행부터</strong> 0 이다. LD3 는 켜진 채. 레벨 1 · 2 를 골라 EN 이 이미 내려갔으면 <code>step</code> 자체가 <code>ERR step not-ready</code> 로 거부된다 — 거부되는 것도 관찰이다</td>
               <td>0 이 아닌 <code>duty_permille</code> 행이 하나라도 있는가(없어야 한다) · 거부됐다면 그 줄 그대로</td></tr>
           <tr><td>③</td><td>②의 직후, <strong>무엇이 내려가 있는가</strong>를 본다 — <code>fault stat</code> 의 <code>cut=</code>, <code>pwr stat</code> 의 <code>state=</code> · <code>en=</code> · <code>relay=</code>, 그리고 DMM 으로 EN 네트 넷</td>
-              <td><strong>내가 <code>cut[SAFE_I_LOWBATT]</code> 에 적은 그대로</strong>여야 한다. 레벨 0 이면 <code>en=1111</code> 인 채 듀티만 0, 레벨 1 이면 <code>en=0000</code>, 레벨 2 면 <code>relay=0</code> 이고 버스가 내려간다</td>
-              <td>세 값의 조합과 내가 적은 레벨</td></tr>
+              <td><strong><code>cut[SAFE_I_LOWBATT]</code> 에 적은 그대로</strong>여야 한다. 레벨 0 이면 <code>en=1111</code> 인 채 듀티만 0, 레벨 1 이면 <code>en=0000</code>, 레벨 2 면 <code>relay=0</code> 이고 버스가 내려간다</td>
+              <td>세 값의 조합과 적어 둔 레벨</td></tr>
           <tr><td>④</td><td><code>fault clear</code> 뒤 다시 달릴 수 있는가</td>
               <td>레벨 0 이면 래치가 풀리는 즉시. 레벨 1 이면 <code>pwr up</code> 이 다시 필요하다. 레벨 2 면 <strong>사전충전부터 전부</strong>(수 초)</td>
               <td>다시 달리기까지의 시간</td></tr>
           <tr><td>⑤</td><td><strong>돌고 있는 바퀴가 멈추는 것</strong>은 실제 고장으로 본다 — <code>pwr down</code> → 한 바퀴의 <strong>엔코더 커넥터를 뽑는다</strong>(<a href="fw-13-pid-protection.html#s3-3-4">fw-13 §3-3-4</a> 의 ①) → <code>pwr up</code> → 그 바퀴로 <code>step</code></td>
-              <td>바퀴가 <strong>돌기 시작했다가</strong> 보호가 트립하는 순간 멈춘다. CSV 의 <code>prot</code> 열이 1 이 되는 행이 있고 그 행부터 <code>duty_permille</code> 이 0 이다(그 바퀴는 fw-13 이 같은 틱에 끊는다). 그 <strong>1 ms 뒤</strong>, 이 쪽의 <code>SAFE_I_PROTECT</code> 가 1 이 되면서 <strong>나머지 세 바퀴</strong>도 내가 <code>cut[SAFE_I_PROTECT]</code> 에 적은 범위대로 내려간다(§2-10 의 마지막 줄)</td>
+              <td>바퀴가 <strong>돌기 시작했다가</strong> 보호가 트립하는 순간 멈춘다. CSV 의 <code>prot</code> 열이 1 이 되는 행이 있고 그 행부터 <code>duty_permille</code> 이 0 이다(그 바퀴는 fw-13 이 같은 틱에 끊는다). 그 <strong>1 ms 뒤</strong>, 이 쪽의 <code>SAFE_I_PROTECT</code> 가 1 이 되면서 <strong>나머지 세 바퀴</strong>도 <code>cut[SAFE_I_PROTECT]</code> 에 적은 범위대로 내려간다(§2-10 의 마지막 줄)</td>
               <td><code>prot</code> 이 1 이 된 행 번호 · 나머지 세 바퀴가 실제로 멈췄는가(눈) · 그때의 <code>fault stat</code> 의 <code>cut=</code></td></tr>
         </tbody>
       </table></div>
       <p class="small">②가 "돌고 있는 바퀴에 주입"이 아닌 이유는 둘이다. 관측 수단은 <strong>VCP 한 줄뿐</strong>이라 터미널 창 두 개를 띄울 수 없다. 그리고 <code>step</code> 은 포획이 끝날 때까지 주 루프에서 스핀하므로 그 동안 <strong>무엇을 쳐도 받지 않는다</strong>(<a href="fw-13-pid-protection.html#s3-2-2">fw-13 §3-2-2</a>).
       주입으로는 "애초에 안 돈다"까지만 볼 수 있고, "돌다가 멈춘다"는 ⑤처럼 <strong>실제로 일어나는 고장</strong>으로만 볼 수 있다. 시험 수단이 관측 수단을 정하는 자리다.</p>
-      <p>③과 ⑤가 이 실습의 본론이다. <a href="fw-13-pid-protection.html#s3-3-4">fw-13 §3-3-4</a> 가 남긴 질문 — "그 바퀴 하나만 끊는 것이 최종 답인가" — 에 대한 <strong>내 답이 실물에서 그대로 보이는가</strong>를 확인하는 자리다.
+      <p>③과 ⑤가 이 실습의 본론이다. <a href="fw-13-pid-protection.html#s3-3-4">fw-13 §3-3-4</a> 가 남긴 질문 — "그 바퀴 하나만 끊는 것이 최종 답인가" — 에 대한 <strong>학습자의 답이 실물에서 그대로 보이는가</strong>를 확인하는 자리다.
       적은 것과 보이는 것이 다르면 <code>cut[]</code> 을 잘못 채웠거나, 레벨 1 · 2 를 골라 놓고 전원 시퀀스에 연결하는 줄(§2-9 의 상자)을 안 만든 것이다.</p>
-      <p>⑤가 <strong>한 바퀴의 보호가 차량 전체를 어떻게 하는가</strong>에 대한 내 답이다. fw-13 이 "그 바퀴 하나"로 둔 것 위에 <code>cut[SAFE_I_PROTECT]</code> 가 더해진다. 확인이 끝나면 <code>pwr down</code> 상태에서 <strong>선을 원래대로 돌려놓고</strong> <code>enc</code> 로 네 부호를 다시 본다.</p>
+      <p>⑤가 <strong>한 바퀴의 보호가 차량 전체를 어떻게 하는가</strong>에 대한 학습자의 답이다. fw-13 이 "그 바퀴 하나"로 둔 것 위에 <code>cut[SAFE_I_PROTECT]</code> 가 더해진다. 확인이 끝나면 <code>pwr down</code> 상태에서 <strong>선을 원래대로 돌려놓고</strong> <code>enc</code> 로 네 부호를 다시 본다.</p>
       <p class="small">끝내기 전에 <strong>임시로 올렸던 <code>BATT_MIN_MV</code> 가 원래대로인지</strong> 소스에서 확인하고, 그 줄의 임시 주석을 지운다. <code>grep -n "temporary" firmware/h723zg/User/Inc/Config/robot_params.h</code> 가 0줄이면 됐다.</p>
 
       <h3 id="s3-5">3-5. 실습 D — USB 를 뽑는다: 이것은 전원 상실 시험이다</h3>
@@ -1715,34 +1669,34 @@ bad_crc=0  bad_len=0  junk_bytes=0            &lt;- 마지막 두 줄은 끝날 
         <tbody>
           <tr><td>kΩ 계 (15 kΩ 근처)</td><td>0 V 근처</td><td><strong>통과</strong> — 풀다운이 실재하고, MCU 전원이 끊겨도 EN 을 HIGH 로 올릴 것이 없다</td></tr>
           <tr><td>MΩ 계 · OL</td><td>0 V 근처</td><td><strong>판정 불가</strong> — 0 V 는 DMM 자신이 만든 것일 수 있다(<a href="fw-08-pwm-safe-output.html#s2-6">fw-08 §2-6</a>). 하네스가 모듈에 꽂혀 있는지, 모듈 GND 가 이어져 있는지부터 본다</td></tr>
-          <tr><td>아무 값</td><td>0 V 가 아니다</td><td><strong>불합격</strong> — 무언가가 그 EN 네트의 전압을 올리고 있다. EN 핀 넷 중 하나가 3V3 에 닿았는지(점퍼 · 납땜 브리지)부터 눈으로 본다. 새 핀의 이웃은 GND 와 빈 핀이라, 점퍼를 한 칸 옆 핀에 잘못 꽂아도 HIGH 가 되지 않는다.<sup class="fn"><a href="#fn-21" id="fnref-21">21</a></sup></td></tr>
+          <tr><td>아무 값</td><td>0 V 가 아니다</td><td><strong>불합격</strong> — 무언가가 그 EN 네트의 전압을 올리고 있다. EN 핀 넷 중 하나가 3V3 에 닿았는지(점퍼 · 납땜 브리지)부터 눈으로 본다. 새 핀의 이웃은 GND 와 빈 핀이라, 점퍼를 한 칸 옆 핀에 잘못 꽂아도 HIGH 가 되지 않는다.<sup class="fn"><a href="#fn-22" id="fnref-22">22</a></sup></td></tr>
         </tbody>
       </table></div>
       <p>그리고 이 기록 옆에 <strong>한 문장</strong>을 같이 적는다: <em>"이것은 명령 워치독 시험이 아니다."</em>
       같은 케이블을 뽑는 동작이 <strong>조립 후에는 다른 것을 시험하게 된다.</strong> Nucleo 를 로봇 자체의 레일에서 급전하면 USB 를 뽑아도 MCU 는 계속 동작하고, 그때는 실습 B 와 같은 시험이 된다(§2-13).
-      그 급전 방식은 아직 정해지지 않았다(<a href="09a-assembly-gate.html">09a</a> · <a href="fw-20-after-assembly.html">fw-20</a>). 그래서 이 기록에는 <strong>날짜와 급전 구성</strong>이 함께 적혀 있어야 한다.</p>
+      그 급전 방식은 아직 정해지지 않았다(<a href="09a-assembly-gate.html">09a</a> · <a href="fw-20a-route-gain-traction.html">fw-20a</a>). 그래서 이 기록에는 <strong>날짜와 급전 구성</strong>이 함께 적혀 있어야 한다.</p>
       <p class="small">뽑았다 다시 꽂으면 보드는 부팅 배너부터 다시 시작한다 — <code>ver</code> 의 reset 줄이 <code>POR</code> 또는 <code>BOR</code> 인지 보고 넘어간다. reset 줄이 IWDG 였다면 이 실습과 무관한 다른 일이 일어난 것이다(<a href="fw-06-tick-watchdog.html">fw-06</a>).</p>
 
       <h2 id="checkpoints">✅ 검증 체크포인트</h2>
-      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다. 이 쪽에는 <strong>내가 고른 정책이 그대로 보이는가</strong>를 묻는 항목이 여럿입니다 — 특정 정책을 요구하지 않습니다.</p>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다. 이 쪽에는 <strong>고른 정책이 그대로 보이는가</strong>를 묻는 항목이 여럿입니다 — 특정 정책을 요구하지 않습니다.</p>
       <ul class="checklist">
-        <li><label><input type="checkbox" data-key="safety-host-pass"><span><strong>경로 통과</strong> — <code>test_safety</code> 가 <code>PASS safety 45 cases</code> 를 출력하고, <code>-fsanitize=undefined</code> 를 더한 둘째 줄에 <strong>진단 메시지가 하나도 없다</strong>
+        <li><label><input type="checkbox" data-key="safety-host-pass"><span><strong>경로 통과</strong> — <code>test_safety</code> 가 <code>PASS safety 39 cases</code> 를 출력하고, <code>-fsanitize=undefined</code> 를 더한 둘째 줄에 <strong>진단 메시지가 하나도 없다</strong>
           <span class="sub">판정 수단: Mac 터미널 · §3-1-3 · <code>PASS</code> 아래가 아니라 <strong>위</strong>를 본다. <code>.c</code> 없이 <code>safety.h</code> 만으로 빌드된다</span></span></label></li>
         <li><label><input type="checkbox" data-key="event-once-bit-held"><span><strong>발동 확인</strong> — fault 를 일으키면 이벤트가 <strong>한 줄만</strong> 오고, 그 뒤로 조건이 계속 참이어도 이벤트는 늘지 않으며 비트는 <strong>유지</strong>된다
           <span class="sub">판정 수단: TEXT 는 <code>fault stat</code> 두 번(§3-1-4 ①) · V2 는 probe 의 EVENT 줄 수와 STATE 의 <code>fault</code>(§3-2-4) · 둘 다에서 확인했으면 더 좋다</span></span></label></li>
-        <li><label><input type="checkbox" data-key="recover-after-hold"><span><strong>발동 확인</strong> — 조건이 사라진 뒤 <strong>내가 고른 해제 정책대로</strong> 복구 이벤트가 오거나(자동) 오지 않는다(래치). 고른 정책과 이유를 노트에 적었다
-          <span class="sub">판정 수단: <code>fault stat</code> 의 <code>clear_ms</code> 와 복구 이벤트 줄 · §3-1-4 ②③. 조건을 없애는 것은 <code>fault inject none</code> 이고, <code>fault clear</code> 는 정책을 <strong>건너뛰는</strong> 다른 경로다. <code>RELEASE_HOLD_MS</code> 는 <code>____</code> 이고 내가 적는다</span></span></label></li>
-        <li><label><input type="checkbox" data-key="event-queue-overflow-counted"><span><strong>발동 확인</strong> — 꺼내지 않은 채 이벤트를 쌓아 <code>dropped</code> 가 0 이 아니게 만들었고, 넘칠 때 무엇을 버리는지(오래된 것 / 새것)를 <strong>내가 정해</strong> 적었다
-          <span class="sub">판정 수단: <code>fault stat</code> 의 <code>dropped=</code> · §3-1-4 ④ · 큐 깊이 <code>CONTROL_EVENT_Q_DEPTH</code> 는 <code>____</code> 이고 내가 정한다</span></span></label></li>
-        <li><label><input type="checkbox" data-key="cmd-watchdog-by-mcu-tick"><span><strong>발동 확인</strong> — probe 의 0x01 송신만 멈추면 명령 워치독 이벤트가 오고, 그 <code>detail</code> 과 tick 차 <strong>두 숫자</strong>를 적었다. 계약값 <strong>200 ms</strong> 와 비교했다
+        <li><label><input type="checkbox" data-key="recover-after-hold"><span><strong>발동 확인</strong> — 조건이 사라진 뒤 <strong>고른 해제 정책대로</strong> 복구 이벤트가 오거나(자동) 오지 않는다(래치). 고른 정책과 이유를 노트에 적었다
+          <span class="sub">판정 수단: <code>fault stat</code> 의 <code>clear_ms</code> 와 복구 이벤트 줄 · §3-1-4 ②③. 조건을 없애는 것은 <code>fault inject none</code> 이고, <code>fault clear</code> 는 정책을 <strong>건너뛰는</strong> 다른 경로다. <code>RELEASE_HOLD_MS</code> 는 <code>____</code> 이고 학습자가 적는다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="event-queue-overflow-counted"><span><strong>발동 확인</strong> — 꺼내지 않은 채 이벤트를 쌓아 <code>dropped</code> 가 0 이 아니게 만들었고, 넘칠 때 무엇을 버리는지(오래된 것 / 새것)를 <strong>직접 정해</strong> 적었다
+          <span class="sub">판정 수단: <code>fault stat</code> 의 <code>dropped=</code> · §3-1-4 ④ · 큐 깊이 <code>CONTROL_EVENT_Q_DEPTH</code> 는 <code>____</code> 이고 학습자가 정한다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="cmd-watchdog-by-mcu-tick"><span><strong>발동 확인</strong> — probe 의 <code>TYPE_VELOCITY</code> (0x01) 송신만 멈추면 명령 워치독 이벤트가 오고, 그 <code>detail</code> 과 tick 차 <strong>두 숫자</strong>를 적었다. 계약값 <strong>200 ms</strong> 와 비교했다
           <span class="sub">판정 수단: probe 출력 · §3-2-4 · <strong>MCU 의 tick 으로만</strong> 판정한다 — Mac 의 시계로 재지 않는다. ②는 ±20 ms 거칠다 · <strong>전제</strong>: 워치독 조건이 자동 해제일 때 뮤트가 새 엣지를 만든다(§3-2-3 의 4) — 영구 래치로 정했으면 그 사실을 적는 것이 이 항목의 통과다</span></span></label></li>
-        <li><label><input type="checkbox" data-key="imu-unplug-raises-fault"><span><strong>발동 확인</strong> — 기본 IMU 의 신호선을 뽑으면 <code>imu=1</code> 이 되고 이벤트가 온다. <strong>그 동안 <code>tilt</code> 은 0 에서 움직이지 않는다</strong>(기울여도)
-          <span class="sub">판정 수단: <code>fault stat</code> + <code>wt stat</code> / <code>bno stat</code> 의 <code>age_ms</code> · §3-3-3 ① · 선을 다시 꽂고 네 가지를 되돌렸다</span></span></label></li>
-        <li><label><input type="checkbox" data-key="tilt-by-hand-raises-fault"><span><strong>발동 확인</strong> — 센서를 손으로 기울여 <code>tilt=1</code> 을 일으켰고, 그때의 <code>detail</code>(0.1°)과 가속도 세 축을 함께 적었다
-          <span class="sub">판정 수단: <code>fault stat</code> + <code>wt stat</code> / <code>bno stat</code> · §3-3-3 ② · <code>TILT_MAX_DDEG</code> 는 <code>____</code> 이고 벤치 값이다 — 확정은 <a href="fw-20-after-assembly.html">fw-20</a></span></span></label></li>
+        <li><label><input type="checkbox" data-key="imu-unplug-raises-fault"><span><strong>발동 확인</strong> — 기본 IMU 의 신호선을 뽑으면 <code>imu=1</code> 이 되고 이벤트가 온다
+          <span class="sub">판정 수단: <code>fault stat</code> + <code>wt stat</code> 의 <code>age_ms</code> · §3-3-3 ① · 선을 다시 꽂고 네 가지를 되돌렸다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="tilt-by-hand-no-fault"><span><strong>경로 통과</strong> — 센서를 손으로 옆으로 눕힐 때까지 기울여도 <code>fault stat</code> 의 여섯 칸이 바뀌지 않았고, 그때의 가속도 세 축을 적었다
+          <span class="sub">판정 수단: <code>fault stat</code> + <code>wt stat</code> · §3-3-3 ② · 기울기를 쓰는 출력 조정은 <a href="fw-20b-slope-mix.html">fw-20b</a></span></span></label></li>
         <li><label><input type="checkbox" data-key="lowbatt-path-by-raised-threshold"><span><strong>경로 통과</strong> — 문턱을 지금 버스 전압 위로 <strong>잠시</strong> 올려 저전압 경로가 실행되는 것을 봤고, <strong>원래 값으로 되돌린 것</strong>을 소스에서 확인했다
           <span class="sub">판정 수단: <code>fault stat</code> + <code>ina</code> + <code>grep -n "temporary" …/robot_params.h</code> 가 0줄 · §3-4-3 · §3-4-4 ① · 배터리를 방전시켜 일으키지 않는다</span></span></label></li>
-        <li><label><input type="checkbox" data-key="trip-scope-observed"><span><strong>발동 확인</strong> — fault 가 1 이 됐을 때 <strong>내가 <code>cut[]</code> 에 적은 범위 그대로</strong> 내려갔다(듀티만 / + EN 네 핀 / + RELAY_EN). 그리고 <strong>돌고 있던 바퀴가 멈추는 것</strong>을 엔코더 커넥터를 뽑은 실물 고장으로 봤다. 다시 달리기까지의 시간도 적었다
+        <li><label><input type="checkbox" data-key="trip-scope-observed"><span><strong>발동 확인</strong> — fault 가 1 이 됐을 때 <strong><code>cut[]</code> 에 적은 범위 그대로</strong> 내려갔다(듀티만 / + EN 네 핀 / + RELAY_EN). 그리고 <strong>돌고 있던 바퀴가 멈추는 것</strong>을 엔코더 커넥터를 뽑은 실물 고장으로 봤다. 다시 달리기까지의 시간도 적었다
           <span class="sub">판정 수단: <code>fault stat</code> 의 <code>cut=</code> + <code>pwr stat</code> 의 <code>en=</code> · <code>relay=</code> + DMM + <code>step</code> CSV 의 <code>prot</code> · <code>duty_permille</code> 열 · §3-4-4 ③④⑤. <strong>주입으로는 "안 돈다"까지만 보인다</strong>(<code>step</code> 이 실행되는 동안 CLI 가 명령을 받지 않는다). fw-13 §3-3-4 가 넘긴 질문의 답이 여기서 확정된다</span></span></label></li>
         <li><label><input type="checkbox" data-key="usb-unplug-is-power-loss"><span><strong>발동 확인</strong> — USB 를 뽑고 EN 네트 넷을 쟀다. <strong>저항과 전압 두 값을 짝으로</strong> 기록했고, 그 옆에 "이것은 명령 워치독 시험이 아니다"와 <strong>그날의 급전 구성</strong>을 적었다
           <span class="sub">판정 수단: DMM 두 번(저항 · 전압) · §3-5-3 · §3-5-4 의 표 · 위 <code>cmd-watchdog-by-mcu-tick</code> 과 <strong>따로</strong> 기록한다</span></span></label></li>
@@ -1754,16 +1708,15 @@ bad_crc=0  bad_len=0  junk_bytes=0            &lt;- 마지막 두 줄은 끝날 
       <div class="tbl"><table>
         <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
         <tbody>
-          <tr><td>빌드가 <code>static assertion failed … robot_params.h: BATT_MIN_MV is still EMPTY</code> 로 멈춘다</td><td>임계값 넷 가운데 하나를 아직 안 정했다. 0 이면 그 조건은 <strong>전혀 판정하지 않는다</strong></td><td>메시지에 나온 키 이름</td><td>§3-1-3 의 2 — §2-7 의 기록을 읽고 시작점을 고른다</td></tr>
-          <tr><td>컴파일은 다 되는데 <strong>링크</strong>가 <code>undefined reference to 'atan2f'</code>(또는 <code>sqrtf</code>)로 멈춘다</td><td>이 둘은 <code>libm.a</code> 에만 있고 <code>--specs=nano.specs</code> 가 주는 <code>libc_nano.a</code> 에는 없다. 링크에 <code>m</code> 이 빠졌다 — 호스트 시험은 이 누락을 검출하지 못한다(macOS 는 표준 라이브러리에 들어 있다)</td><td>메시지가 <strong>링크 단계</strong>에서 났는가(컴파일 오류가 아니다). <code>grep -n "libraries" CMakeLists.txt</code> 아래 블록에 <code>m</code> 이 있는가</td><td>§3-1-3 의 6 — 최상위 <code>CMakeLists.txt</code> 의 <code># Add user defined libraries</code></td></tr>
+          <tr><td>빌드가 <code>static assertion failed … robot_params.h: BATT_MIN_MV is still EMPTY</code> 로 멈춘다</td><td>임계값 셋 가운데 하나를 아직 안 정했다. 0 이면 그 조건은 <strong>전혀 판정하지 않는다</strong></td><td>메시지에 나온 키 이름</td><td>§3-1-3 의 2 — §2-7 의 기록을 읽고 시작점을 고른다</td></tr>
           <tr><td>빌드가 <code>static assertion failed … control.c: CONTROL_EVENT_Q_DEPTH is still EMPTY</code> 로 멈춘다</td><td>큐 깊이를 아직 안 정했다. 길이 0 짜리 배열은 C 가 아니다</td><td>메시지</td><td>§2-11 의 마지막 문단 — <code>sizeof(event_t)</code> 를 계산해 보고 정한다</td></tr>
-          <tr><td>빌드는 되는데 <code>RELEASE_HOLD_MS</code> 가 0 인 채다</td><td><strong>가드가 없다</strong> — 0 이 뜻 있는 선택(즉시 해제)이라 일부러 두지 않았다(§2-8)</td><td><code>grep -n "____" …/robot_params.h</code> · <code>./scripts/check_nominal.sh</code></td><td>정해서 0 이면 <strong>그 줄의 주석을 바꾼다.</strong> 안 바꾸면 반년 뒤의 내가 빈칸으로 읽는다</td></tr>
+          <tr><td>빌드는 되는데 <code>RELEASE_HOLD_MS</code> 가 0 인 채다</td><td><strong>가드가 없다</strong> — 0 이 뜻 있는 선택(즉시 해제)이라 일부러 두지 않았다(§2-8)</td><td><code>grep -n "____" …/robot_params.h</code> · <code>./scripts/check_nominal.sh</code></td><td>정해서 0 이면 <strong>그 줄의 주석을 바꾼다.</strong> 안 바꾸면 반년 뒤에 빈칸으로 잘못 읽는다</td></tr>
           <tr><td><code>fault stat</code> 을 칠 때마다 이벤트가 또 나온다</td><td><code>rising</code> 이 아니라 <code>now</code> 로 이벤트를 내고 있다 — 1 kHz 이므로 초당 1000개다</td><td><code>posted=</code> 가 초당 1000 씩 는다 · 호스트 시험 벡터 3 이 실패한다</td><td>§2-2 · <code>safety_fsm_step()</code> 의 2번 걸음</td></tr>
           <tr><td>부팅하자마자 <code>wdg=1</code> 이고 LD3 가 켜져 있다</td><td><strong>정상이다.</strong> 상위가 아직 아무 명령도 보내지 않았다</td><td><code>fault stat</code> 의 <code>wdg=1</code> 과 나머지 0</td><td>고칠 것 없음 — <a href="fw-13-pid-protection.html#s3-2-2">fw-13 §3-2-2</a> 의 <code>control_init()</code> 이 그렇게 만든 것이다</td></tr>
-          <tr><td>조건이 사라졌는데 <code>clear_ms</code> 가 0 에서 늘지 않는다</td><td>다른 조건이 하나 더 1 이다 — 대개 <code>wdg=1</code>(TEXT 에서 아무도 목표를 안 보낸다)</td><td><code>fault stat</code> 의 일곱 칸을 하나씩</td><td>§2-4 — 해제는 <strong>모든</strong> 조건이 사라져야 시작된다. 그 설계를 바꿀지도 내 선택이다</td></tr>
-          <tr><td>IMU 선을 뽑았는데 <code>tilt</code> 도 같이 1 이 된다</td><td><code>else</code> 를 안 썼거나, <code>safety_service_main()</code> 이 <code>seq == 0</code>(샘플 없음)을 확인하지 않고 옛 값을 계속 쓴다</td><td>선을 뽑아 둔 채 센서를 기울여 본다 — <code>tilt</code> 이 따라 움직이면 옛 값을 쓰는 것이다</td><td>§2-5 · <code>safety_fsm_step()</code> 의 1번 걸음과 <code>safety_service_main()</code></td></tr>
+          <tr><td>조건이 사라졌는데 <code>clear_ms</code> 가 0 에서 늘지 않는다</td><td>다른 조건이 하나 더 1 이다 — 대개 <code>wdg=1</code>(TEXT 에서 아무도 목표를 안 보낸다)</td><td><code>fault stat</code> 의 여섯 칸을 하나씩</td><td>§2-4 — 해제는 <strong>모든</strong> 조건이 사라져야 시작된다. 그 설계를 바꿀지도 학습자가 고른다</td></tr>
+          <tr><td>IMU 선을 뽑았는데 <code>imu</code> 가 0 에 머문다</td><td><code>IMU_TIMEOUT_MS</code> 가 0(끔)이거나, <code>safety_service_main()</code> 이 <code>seq == 0</code>(샘플 없음)을 확인하지 않고 옛 샘플의 나이를 계속 쓴다</td><td><code>wt stat</code> 의 <code>age_ms</code> 가 느는지 본다 — 늘면 센서 쪽은 맞고 이 모듈이 나이를 못 받는 것이다</td><td>§2-5 · <code>safety_fsm_step()</code> 의 1번 걸음과 <code>safety_service_main()</code></td></tr>
           <tr><td>V2 에서 이벤트가 하나도 안 온다 (<code>fault</code> 비트는 STATE 에 보인다)</td><td>그 조건의 <code>code[i]</code> 를 0 으로 두었다(= 이벤트를 안 내기로 한 것) · 또는 큐가 안 비워진다</td><td>gdb 로 <code>s_posted</code> · <code>s_ev_dropped</code> 를 읽는다. V2 에는 CLI 가 없다</td><td>§2-3 의 배정표 · §3-2-4 의 상자</td></tr>
-          <tr><td>V2 에서 <code>fault</code> 가 늘 0 인데 로봇은 멈춘다</td><td><strong>설계대로다</strong> — <code>bit[i]</code> 를 배정하지 않았다. 끊는 것은 <code>cut[]</code> 이 하고 <code>bit[]</code> 을 거치지 않는다</td><td>TEXT 모드로 전환해 <code>fault stat</code> 의 일곱 칸을 본다 — TEXT 에서는 보인다</td><td>§2-3 — 배정할 것인가부터가 내 결정이다</td></tr>
+          <tr><td>V2 에서 <code>fault</code> 가 늘 0 인데 로봇은 멈춘다</td><td><strong>설계대로다</strong> — <code>bit[i]</code> 를 배정하지 않았다. 끊는 것은 <code>cut[]</code> 이 하고 <code>bit[]</code> 을 거치지 않는다</td><td>TEXT 모드로 전환해 <code>fault stat</code> 의 여섯 칸을 본다 — TEXT 에서는 보인다</td><td>§2-3 — 배정할 것인가부터 학습자가 정한다</td></tr>
           <tr><td>조건이 1 인데(<code>fault stat</code> 의 칸이 1) 바퀴가 <strong>안 멈춘다</strong></td><td>게이트 줄이 빠졌거나, <strong><code>safety_step()</code> 의 반환값 대신 계약 바이트를 게이트 조건으로 썼다</strong> — <code>bit[]</code> 을 아직 배정하지 않았으면 그 바이트는 늘 0 이다</td><td><code>step</code> CSV 의 <code>duty_permille</code> 열이 트립 뒤에도 0 이 아니다. <code>fault stat</code> 의 칸은 1 인데 <code>byte=0</code> 이면 이 경우다</td><td>§3-1-2 의 <code>control.c</code> 블록 3번 — <code>if (cond)</code> 이지 <code>if (fault)</code> 가 아니다. 자리는 <code>protect_step()</code> <strong>뒤</strong>(단조 연쇄)</td></tr>
           <tr><td>레벨 1 · 2 를 골랐는데 EN · RELAY 가 안 내려간다</td><td>전원 시퀀스에 연결하는 줄이 없다. fw-11 의 <code>req_down</code> 을 1 로 설정하는 곳은 아직 CLI 뿐이다</td><td><code>fault stat</code> 의 <code>cut=</code> 은 맞는데 <code>pwr stat</code> 의 <code>en=</code> 이 안 바뀐다</td><td>§2-9 의 상자 — <code>power.c</code> 에 입구를 만들어 연결한다(이 쪽의 골격은 그 줄을 쓰지 않는다)</td></tr>
           <tr><td>USB 를 뽑았더니 EN 네트 하나가 0 V 가 아니다</td><td>무언가가 그 EN 의 전압을 올리고 있다 — EN 핀 넷 중 하나가 3V3 에 닿았다(점퍼 · 납땜 브리지). 새 핀의 이웃은 GND 와 빈 핀이라, 점퍼를 한 칸 옆 핀에 잘못 꽂아도 HIGH 가 되지 않는다</td><td>눈으로 커넥터, 그리고 전원을 끈 채 그 EN ↔ 3V3 저항</td><td>§3-5-4 의 표 셋째 행 · <code>hardware/pinmap-h723.md</code> §5-5</td></tr>
@@ -1785,41 +1738,37 @@ grep -rln "HAL_TIMEx_BreakCallback" $FW_H7/Projects | head       # (4) ST 예제
         가장 가까운 것은 <code>Projects/NUCLEO-H743ZI/Examples/TIM/TIM_ComplementarySignals/</code> 다. 그 예제가 하는 일은 두 가지까지다. 첫째, <code>main.c:187-195</code> 에서 <code>HAL_TIMEx_ConfigBreakDeadTime()</code> 로 브레이크를 설정한다. 넣는 값은 <code>BreakState = TIM_BREAK_ENABLE</code> · <code>BreakPolarity</code> · <code>AutomaticOutput</code> 이다.
         둘째, <code>stm32h7xx_hal_msp.c:65,102</code> 에서 BKIN 핀(PB12, TIM1_BKIN)을 설정한다. <strong>콜백은 구현하지 않는다.</strong> 보드도 H743 이라 우리 것과 다르다.</p>
         <p>그 사실 자체가 답이다: <strong>브레이크는 소프트웨어가 아니라 하드웨어가 하는 일</strong>이다. BKIN 이 활성이 되는 순간 타이머의 출력은 <em>MOE 가 지워져</em> 꺼지고, 콜백은 "그 일이 일어났다"는 <strong>사후 통지</strong>일 뿐이다.
-        이 쪽의 상태기계는 1 ms 마다 실행되지만 브레이크는 클럭 몇 개 안에 동작한다. E-STOP 을 <code>hardware/pinmap-h723.md</code> §1-2 N3 의 <code>TIM1_BKIN</code>(PE15, AF1)으로 연결한다는 것은 그 시간 차이를 얻는 것이다. <strong>이 프로젝트는 그 방법을 쓰지 않는다.</strong><sup class="fn"><a href="#fn-22" id="fnref-22">22</a></sup> E-STOP 은 NC 접점이 K1 코일과 로직 피드를 직접 끊고, 그 뒤의 재투입 방지는 fw-11 의 ARMED 감시가 맡는다. 이 절은 브레이크 기능이 무엇인지 아는 것까지다.
+        이 쪽의 상태기계는 1 ms 마다 실행되지만 브레이크는 클럭 몇 개 안에 동작한다. E-STOP 을 <code>hardware/pinmap-h723.md</code> §1-2 N3 의 <code>TIM1_BKIN</code>(PE15, AF1)으로 연결한다는 것은 그 시간 차이를 얻는 것이다. <strong>이 프로젝트는 그 방법을 쓰지 않는다.</strong><sup class="fn"><a href="#fn-23" id="fnref-23">23</a></sup> E-STOP 은 NC 접점이 K1 코일과 로직 피드를 직접 끊고, 그 뒤의 재투입 방지는 fw-11 의 ARMED 감시가 맡는다. 이 절은 브레이크 기능이 무엇인지 아는 것까지다.
         그리고 (3)에서 본 <code>Break2</code> 와 같은 이유로 <strong>타이머가 둘</strong>이라는 점도 고려해야 한다. 여덟 채널을 다 끄려면 TIM1 과 TIM8 둘 다에 브레이크가 필요하다. 핀맵에 <code>TIM8_BKIN</code>(PG2, AF3)이 <strong>예약</strong>으로 남아 있는 것도 이 때문이다.</p></div></details>
       <details class="quiz"><summary>2. 같은 조건이 3 초 동안 참이면 이벤트는 몇 개인가. 왜 그래야 하는가</summary>
         <div class="ans"><p>하나다. 이벤트는 <code>rising = now &amp; ~cond</code> 에서만 나고, 두 번째 틱부터는 이미 <code>cond</code> 에 있어 <code>rising</code> 이 0 이다(§2-2).</p>
         <p>왜 그래야 하는가는 산술로 나온다. 1 kHz 이므로 "참인 동안 계속" 내면 초당 1000개다. 이벤트 프레임은 헤더 2 + TYPE 1 + LEN 1 + PAYLOAD 7 + CRC 1 = <strong>12 B</strong> 이므로 초당 12 kB 다.
-        이 12 kB/s 혼자 460800 8N1 의 실효 46 080 B/s 의 4분의 1 넘게 차지한다(fw-17 §2-5 가 센 정상 트래픽 9 950 B/s 을 더하면 절반 가까이다). 무엇보다 <strong>큐가 첫 몇십 밀리초에 넘친다.</strong>
+        이 12 kB/s 혼자 460800 8N1 의 실효 46 080 B/s 의 4분의 1 넘게 차지한다(fw-17 §2-5 가 센 정상 트래픽 10 450 B/s 을 더하면 절반 가까이다). 무엇보다 <strong>큐가 첫 몇십 밀리초에 넘친다.</strong>
         그러면 <strong>정작 중요한 첫 이벤트가 버려질 수도 있다.</strong></p>
-        <p>대신 "지금 어떤가"는 0x81 상태 프레임의 <code>fault</code> 비트가 50 Hz(20 ms)로 계속 알려 준다. <strong>사건은 이벤트, 상태는 비트</strong> — 이 분업이 계약 표의 두 줄에 이미 적혀 있었다.</p></div></details>
-      <details class="quiz"><summary>3. IMU 타임아웃과 기울기 판정의 <code>if / else if</code> 를 <code>if / if</code> 로 바꾸면 무엇이 보이는가 (일부러 틀리기)</summary>
-        <div class="ans"><p>센서 선을 뽑은 상태에서 <strong>IMU 와 TILT 가 함께 1 이 되거나, 함께 되지 않는다</strong> — 어느 쪽이 될지는 <code>control_get_imu()</code> 가 샘플이 없을 때 무엇을 돌려주느냐에 달렸다.</p>
-        <p>옛 샘플을 그대로 돌려주면 기울기는 마지막 값에 고정된다. 그 값이 문턱 아래였으면 로봇이 넘어져도 <strong>TILT 는 1 이 되지 않는다</strong>. 0 으로 채워 돌려주면 <code>safety_tilt_ddeg(0,0,0) == 0</code> 이라 역시 "완벽히 수평"이 된다(§2-5 의 벡터).
-        두 경우 모두 <strong>고장 난 센서의 값이 "정상"으로 판정되는</strong> 꼴이다.</p>
-        <p><code>else</code> 하나가 이 문제를 막는다: IMU 가 침묵하면 기울기는 <strong>판정하지 않는다</strong>(참도 거짓도 아니다). 그리고 그때 IMU 조건이 성립하므로 로봇은 어차피 멈춘다 — 안전한 쪽으로 틀리는 것이다.
-        호스트 시험 벡터 9 · 10 이 같은 90° 를 넣고 IMU 샘플의 나이만 바꿔 이 <code>else</code> 한 단어를 채점한다.</p></div></details>
+        <p>대신 "지금 어떤가"는 <code>TYPE_STATE</code> (0x81) 상태 프레임의 <code>fault</code> 비트가 50 Hz(20 ms)로 계속 알려 준다. <strong>사건은 이벤트, 상태는 비트</strong> — 이 분업이 계약 표의 두 줄에 이미 적혀 있었다.</p></div></details>
+      <details class="quiz"><summary>3. 이 상태기계는 왜 기울기로 출력을 끊지 않는가. 그러면 IMU 에 대해서는 무엇을 판정하는가</summary>
+        <div class="ans"><p>경사에서 출력을 끊으면 로봇이 <strong>제어 없이 내려가기</strong> 때문이다(§2-5). 이 로봇의 감속기는 바퀴 쪽에서 돌릴 수 있고, 듀티 0 의 제동은 바퀴가 빨리 돌수록 커지는 성질이라 차체를 경사 위에 붙잡지 못한다. 그래서 기울기는 끊는 조건이 아니라 출력을 조정하는 입력이 되고, 그 층은 fw-20 에서 만든다.</p>
+        <p>IMU 에 대해서는 <strong>샘플의 나이</strong>만 본다 — <code>ms_since_imu</code> 가 <code>imu_timeout_ms</code> 를 넘으면 IMU 조건이 1 이 된다. 값으로는 "센서 고장"과 "샘플이 아직 없다"를 가를 수 없기 때문이다. 호스트 시험 벡터 9 ~ 11 이 문턱보다 긴 나이 · 같은 나이 · 한 번도 없었던 샘플로 이것을 채점한다.</p></div></details>
       <details class="quiz"><summary>4. 계약의 fault 비트를 하나도 배정하지 않은 채 굽고 달리면 어떻게 되는가</summary>
         <div class="ans"><p><strong>로봇은 정상적으로 멈춘다.</strong> 끊는 것은 <code>cut[]</code> 이고 <code>cut[]</code> 은 <code>bit[]</code> 을 거치지 않는다(§2-3). 듀티 0 은 fault 의 정의라 어떤 배정과도 무관하다.</p>
-        <p>달라지는 것은 <strong>Pi 가 보는 세계</strong>다. 0x81 의 <code>fault</code> 는 계속 0 이므로 상위는 "아무 문제 없는데 로봇이 안 움직인다"를 보게 된다. 이것이 06a §2-6 의 상자가 경고한 바로 그 상황("왜 안 움직이지"가 침묵이 되는 것)이다.
+        <p>달라지는 것은 <strong>Pi 가 보는 세계</strong>다. <code>TYPE_STATE</code> (0x81) 의 <code>fault</code> 는 계속 0 이므로 상위는 "아무 문제 없는데 로봇이 안 움직인다"를 보게 된다. 이것이 06a §2-6 의 상자가 경고한 바로 그 상황("왜 안 움직이지"가 침묵이 되는 것)이다.
         이벤트도 <code>code[i]</code> 가 0 이면 나가지 않으므로 사건 기록조차 없다.</p>
         <p>그래서 이것은 <strong>버그가 아니라 미완성</strong>이다. 그리고 미완성인 채로도 로봇이 안전하게 멈추는 것이 이 설계의 요점이다 — 배정을 안 했다고 안전 장치가 꺼지지는 않는다.
-        벤치에서는 TEXT 의 <code>fault stat</code> 이 일곱 칸을 낱낱이 보여 주므로 진단이 막히지도 않는다.</p></div></details>
+        벤치에서는 TEXT 의 <code>fault stat</code> 이 여섯 칸을 낱낱이 보여 주므로 진단이 막히지도 않는다.</p></div></details>
       <details class="quiz"><summary>5. <code>RELEASE_HOLD_MS</code> 에만 <code>_Static_assert</code> 가드를 두지 않은 이유는</summary>
         <div class="ans"><p>0 이 <strong>뜻 있는 선택</strong>이기 때문이다 — "조건이 사라진 첫 틱에 해제한다"는 §2-4 의 세 정책 가운데 하나다. 가드를 두면 그 정책을 <strong>표현할 수 없게</strong> 된다.</p>
-        <p>나머지 넷은 다르다. <code>BATT_MIN_MV</code> 가 0 이면 저전압을 전혀 판정하지 않는다. 경고 없이 안전 장치가 꺼진 것이고, 그런 0 은 <strong>위험한 쪽으로 동작하는 0</strong> 이다. 그런 0 은 컴파일러가 막는다.</p>
+        <p>나머지 셋은 다르다. <code>BATT_MIN_MV</code> 가 0 이면 저전압을 전혀 판정하지 않는다. 경고 없이 안전 장치가 꺼진 것이고, 그런 0 은 <strong>위험한 쪽으로 동작하는 0</strong> 이다. 그런 0 은 컴파일러가 막는다.</p>
         <p>대가는 있다. 가드가 없으면 <strong>빌드가 나를 막아 주지 않으므로</strong> "정해서 0"과 "안 정한 0"이 소스에서 똑같이 보인다. 가르는 수단은 <strong>같은 줄의 주석</strong>뿐이다 —
-        <code>____</code> 가 남아 있으면 빈칸, 내가 고쳐 쓴 문장이면 선택이다. <a href="fw-11-power-sequence.html#s3-1-2">fw-11 §3-1-2</a> 의 <code>MOTOR_SIGN_*</code> 가 같은 자리에 있었고, <a href="fw-13-pid-protection.html#s3-3-3">fw-13 §3-3-3</a> 의 게이트 문턱 둘도 같은 문제를 안고 있다.</p></div></details>
+        <code>____</code> 가 남아 있으면 빈칸, 학습자가 고쳐 쓴 문장이면 선택이다. <a href="fw-11-power-sequence.html#s3-1-2">fw-11 §3-1-2</a> 의 <code>MOTOR_SIGN_*</code> 가 같은 자리에 있었고, <a href="fw-13-pid-protection.html#s3-3-3">fw-13 §3-3-3</a> 의 게이트 문턱 둘도 같은 문제를 안고 있다.</p></div></details>
       <details class="quiz"><summary>6. (안전 규칙) USB 케이블을 뽑았더니 바퀴가 멈췄다. 이것으로 200 ms 명령 워치독이 확인됐는가</summary>
         <div class="ans"><p>아니다. 지금 이 보드는 ST-LINK USB 로 급전되므로(JP2 = <code>5V_USB_STLK</code>) 케이블을 뽑으면 <strong>MCU 가 꺼진다</strong> — 200 ms 를 세는 코드도 함께 사라진다.
         그때 바퀴를 정지시키는 것은 펌웨어가 아니라 <strong>IBT-2 모듈 안의 30 kΩ 풀다운</strong>이다(§2-13).</p>
-        <p>명령 워치독은 <strong>MCU 가 동작하는 채로</strong> 명령만 끊겨야 시험된다 — 그 조건을 만드는 것이 probe 의 <code>--mute-after</code>(0x01 송신만 멈춤)다. 그래서 이 쪽의 체크 항목이 <code>cmd-watchdog-by-mcu-tick</code> 과 <code>usb-unplug-is-power-loss</code> 로 갈려 있다.</p>
+        <p>명령 워치독은 <strong>MCU 가 동작하는 채로</strong> 명령만 끊겨야 시험된다 — 그 조건을 만드는 것이 probe 의 <code>--mute-after</code>(<code>TYPE_VELOCITY</code> 0x01 송신만 멈춤)다. 그래서 이 쪽의 체크 항목이 <code>cmd-watchdog-by-mcu-tick</code> 과 <code>usb-unplug-is-power-loss</code> 로 갈려 있다.</p>
         <p>한 가지 더: 전원 상실 시험의 판정도 전압 한 번으로 끝나지 않는다. DMM 의 10 MΩ 입력 자체가 풀다운으로 동작해서 <strong>부유 핀도 0 V 로 읽히기</strong> 때문이다(<a href="fw-08-pwm-safe-output.html#s2-6">fw-08 §2-6</a>).
         전원을 끈 채 잰 <strong>저항</strong>과 뽑은 뒤의 <strong>전압</strong>을 짝으로 적는 것이 그래서다. 그리고 이 문장 전체가 <strong>급전 구성이 지금 그대로일 때만</strong> 참이다 — 조립 후에는 달라진다.</p></div></details>
-      <details class="quiz"><summary>7. 왜 이 상태기계의 입력(전압 · 전류 · 기울기)을 1 kHz ISR 안에서 직접 읽지 않는가</summary>
-        <div class="ans"><p>셋 다 다른 이유로 안 된다(§2-10). <strong>전압</strong>은 I2C 트랜잭션이라 HAL 의 타임아웃 루프가 들어 있는데, TIM6(선점 1) 안에서는 SysTick(15)이 실행되지 못해 <code>HAL_GetTick()</code> 이 멈춘다. 그래서 타임아웃 루프가 끝나지 않는다.
-        <strong>IMU 샘플</strong>은 센서 ISR(선점 5 · 7)이 쓰는 여러 칸짜리 구조체인데 1 kHz ISR 이 센서 ISR 을 <em>선점</em>하므로 반쯤 갱신된 값을 읽을 수 있다.
-        <strong>기울기</strong>는 <code>atan2f</code> · <code>sqrtf</code> 인데, 센서가 100~200 Hz(10~5 ms)라 1 ms 마다 다시 계산해도 같은 값이 나온다 — <code>exec_us_max</code> 만 소비한다.</p>
+      <details class="quiz"><summary>7. 왜 이 상태기계의 입력(버스 전압 · IMU 샘플)을 1 kHz ISR 안에서 직접 읽지 않는가</summary>
+        <div class="ans"><p>둘 다 다른 이유로 안 된다(§2-10). <strong>전압</strong>은 I2C 트랜잭션이라 HAL 의 타임아웃 루프가 들어 있는데, TIM6(선점 1) 안에서는 SysTick(15)이 실행되지 못해 <code>HAL_GetTick()</code> 이 멈춘다. 그래서 타임아웃 루프가 끝나지 않는다.
+        <strong>IMU 샘플</strong>은 센서 ISR(선점 5 · 7)이 쓰는 여러 칸짜리 구조체인데 1 kHz ISR 이 센서 ISR 을 <em>선점</em>하므로 반쯤 갱신된 값을 읽을 수 있다.</p>
         <p>그래서 <a href="fw-11-power-sequence.html#s2-6">fw-11 §2-6</a> 과 같은 분할 방식을 쓴다: 모으는 것은 주 루프, 판정하는 것은 ISR. 대가는 <strong>판정에 쓰는 입력이 주 루프 한 바퀴만큼 지난 값일 수 있다</strong>는 것이고, 그 크기는 <code>stat</code> 의 <code>loop_us_max</code> 로 잰다.</p>
         <p>예외 둘은 <code>ms_since_cmd</code> 와 <code>protect_bits</code> 다 — 이미 1 kHz 쪽에 있는 값이라 지난 값이 될 여지가 없다.</p></div></details>
 
@@ -1827,10 +1776,10 @@ grep -rln "HAL_TIMEx_BreakCallback" $FW_H7/Projects | head       # (4) ST 예제
       <div class="callout tip"><span class="ct">여기까지 했으면</span>
         <ul>
           <li><strong>부품이 다 있으면</strong> → <a href="fw-19-bench-acceptance.html">fw-19</a> — 모듈 정리와 벤치 수용 시험. 이 쪽이 낸 두 행(fault → 이벤트 · USB 분리)과 명령 워치독 행(B18)의 절반이 거기 DoD-Bench 표로 모인다.</li>
-          <li><strong>센서가 아직 없으면</strong> → 실습 A · B · D 까지는 Nucleo 와 Mac 만으로 끝난다. <code>imu-unplug-raises-fault</code> · <code>tilt-by-hand-raises-fault</code> 를 남긴 채 <a href="fw-14-wt901.html">fw-14</a> 또는 <a href="fw-15-bno055.html">fw-15</a> 를 끝내고 돌아온다.</li>
-          <li><strong>배터리 · 모터가 아직 없으면</strong> → 실습 C-2 의 두 항목만 남는다. 여기서 정한 임계값 다섯은 <code>robot_params.h</code> 의 <code>#define</code> 이라, fw-20 에서 실측으로 바꿀 때도 소스를 고치고 다시 굽는다(fw-20 §2-5). 값을 보드에 저장하는 기능은 없다(<a href="fw-16-flash-store.html">fw-16</a> 제거됨).</li>
-          <li><strong>임계값 다섯은 아직 벤치 값이다.</strong> 바닥에서 부하 상태로 확정하는 것은 <a href="fw-20-after-assembly.html">fw-20</a> 이고, 그때 <code>____</code> 가 <code>MEASURED(</code> 로 바뀐다. 지금 <code>hardware/INVENTORY.md</code> 에 적을 칸은 없다.</li>
-          <li>§2-3 에서 만든 <strong>배정표 일곱 줄</strong>(안쪽 조건 ↔ 계약 비트 · 이벤트 코드)을 저장소의 <code>protocol.md</code> 나 <code>hardware/INVENTORY.md</code> 2절에 옮겨 적었는가. <strong>펌웨어와 브리지가 같은 표를 보고 있어야 한다</strong>(06a §4-2).</li>
+          <li><strong>센서가 아직 없으면</strong> → 실습 A · B · D 까지는 Nucleo 와 Mac 만으로 끝난다. <code>imu-unplug-raises-fault</code> · <code>tilt-by-hand-no-fault</code> 를 남긴 채 <a href="fw-14-wt901.html">fw-14</a> 를 끝내고 돌아온다.</li>
+          <li><strong>배터리 · 모터가 아직 없으면</strong> → 실습 C-2 의 두 항목만 남는다. 여기서 정한 임계값 넷은 <code>robot_params.h</code> 의 <code>#define</code> 이라, fw-20 에서 실측으로 바꿀 때도 소스를 고치고 다시 굽는다(fw-20a §2-5). 값을 보드에 저장하는 기능은 없다(<a href="fw-16-flash-store.html">fw-16</a> 제거됨).</li>
+          <li><strong>임계값 넷은 아직 벤치 값이다.</strong> 바닥에서 부하 상태로 확정하는 것은 <a href="fw-20e-thresholds.html">fw-20e</a> 이고, 그때 <code>____</code> 가 <code>MEASURED(</code> 로 바뀐다. 지금 <code>hardware/INVENTORY.md</code> 에 적을 칸은 없다.</li>
+          <li>§2-3 에서 만든 <strong>배정표 여섯 줄</strong>(안쪽 조건 ↔ 계약 비트 · 이벤트 코드)을 저장소의 <code>protocol.md</code> 나 <code>hardware/INVENTORY.md</code> 2절에 옮겨 적었는가. <strong>펌웨어와 브리지가 같은 표를 보고 있어야 한다</strong>(06a §4-2).</li>
         </ul>
       </div>
 
@@ -1838,8 +1787,8 @@ grep -rln "HAL_TIMEx_BreakCallback" $FW_H7/Projects | head       # (4) ST 예제
       <p class="small">본문의 작은 번호를 누르면 여기로 온다. 근거 문서 · 핀 목록 · 1세대 기록 · 확인한 날짜를 모았다. ↩ 를 누르면 본문으로 돌아간다.</p>
       <ol class="footnotes">
           <li id="fn-1">1세대 회로 기록 <code>~/ros2/hardware/circuit_ai.md:536-537</code>, 2026-07-07. <a class="fn-back" href="#fnref-1" aria-label="본문으로">↩</a></li>
-          <li id="fn-2">06 의 코드: <code>if (ms_since_imu &gt; …) … else if (tilt_deg(imu) &gt; …)</code>. 그 줄의 주석은 IMU 가 고장 나면 기울기 판정도 쓸 수 없다는 내용이다. <a class="fn-back" href="#fnref-2" aria-label="본문으로">↩</a></li>
-          <li id="fn-3"><code>facts</code> 의 gen1 시트에 각도 임계의 실측이 없다. <a class="fn-back" href="#fnref-3" aria-label="본문으로">↩</a></li>
+          <li id="fn-2">본편 06 §3-6-7 의 초안 코드: <code>if (ms_since_imu[IMU_PRIMARY] &gt; IMU_TIMEOUT_MS) now |= FAULT_IMU;</code>. <a class="fn-back" href="#fnref-2" aria-label="본문으로">↩</a></li>
+          <li id="fn-3">1세대 기록 정리(gen1 시트)에 각도 임계의 실측이 없다. <a class="fn-back" href="#fnref-3" aria-label="본문으로">↩</a></li>
           <li id="fn-4">같은 06 안에서도 이미 모순이었다 — 주변장치 표의 IBT-2 주의 상자는 fault 의 흔적을 IS 핀의 포화로 적었다. <a class="fn-back" href="#fnref-4" aria-label="본문으로">↩</a></li>
           <li id="fn-5"><code>~/ros2/datasheet/BTS7960_Infineon_motordriver.pdf</code>, Infineon Rev 1.1 2004-12-07. §4.3.13 표 행 <code>treset</code>, 16쪽. <a class="fn-back" href="#fnref-5" aria-label="본문으로">↩</a></li>
           <li id="fn-6">데이터시트 §4.3.3 의 문장. <a class="fn-back" href="#fnref-6" aria-label="본문으로">↩</a></li>
@@ -1852,13 +1801,14 @@ grep -rln "HAL_TIMEx_BreakCallback" $FW_H7/Projects | head       # (4) ST 예제
           <li id="fn-13">1세대 FW <code>core/user_appli.c:335-372</code>. <a class="fn-back" href="#fnref-13" aria-label="본문으로">↩</a></li>
           <li id="fn-14"><code>~/ros2/docs/bench/motor_bench_findings_2026-07-17.md:11,18</code> — 2026-07-19 세션까지의 기록. <a class="fn-back" href="#fnref-14" aria-label="본문으로">↩</a></li>
           <li id="fn-15">2026-07-18 의 백스톱. 출처는 <code>~/ros2/docs/bench/motor_bench_findings_2026-07-17.md</code> 계열 기록이다. <a class="fn-back" href="#fnref-15" aria-label="본문으로">↩</a></li>
-          <li id="fn-16">사용자 결정 z, 2026-10-14. <a class="fn-back" href="#fnref-16" aria-label="본문으로">↩</a></li>
+          <li id="fn-16">사용자 결정, 2026-10-14. <a class="fn-back" href="#fnref-16" aria-label="본문으로">↩</a></li>
           <li id="fn-17">1세대 회로 기록 <code>~/ros2/hardware/circuit_ai.md:269</code>. <a class="fn-back" href="#fnref-17" aria-label="본문으로">↩</a></li>
-          <li id="fn-18">계약 문서의 이전 판은 "200 ms 무<em>프레임</em>", 본편 06 §1-1 의 표는 "200 ms 무<em>명령</em>"이라 적어 두 쪽이 갈려 있었다(06a §4-3 의 상자). <a class="fn-back" href="#fnref-18" aria-label="본문으로">↩</a></li>
+          <li id="fn-18">계약 문서의 이전 판은 "200 ms 무<em>프레임</em>", 본편 06 §1-1 의 표는 "200 ms 무<em>명령</em>"이라 적어 두 쪽이 갈려 있었다. 사용자 결정(2026-10-16)으로 (가) 를 골랐다(06a §4-3 의 상자). <a class="fn-back" href="#fnref-18" aria-label="본문으로">↩</a></li>
           <li id="fn-19">UM2407(Nucleo 보드의 사용자 설명서). <a class="fn-back" href="#fnref-19" aria-label="본문으로">↩</a></li>
           <li id="fn-20">집필 중 확인, 2026-10-03. <a class="fn-back" href="#fnref-20" aria-label="본문으로">↩</a></li>
-          <li id="fn-21"><code>hardware/pinmap-h723.md</code> §5-5. <a class="fn-back" href="#fnref-21" aria-label="본문으로">↩</a></li>
-          <li id="fn-22">2026-10-12 결정: ESTOP_SENSE 는 쓰지 않는다 — INVENTORY 2절 (c). <a class="fn-back" href="#fnref-22" aria-label="본문으로">↩</a></li>
+          <li id="fn-21">사용자 결정, 2026-11-07. <a class="fn-back" href="#fnref-21" aria-label="본문으로">↩</a></li>
+          <li id="fn-22"><code>hardware/pinmap-h723.md</code> §5-5. <a class="fn-back" href="#fnref-22" aria-label="본문으로">↩</a></li>
+          <li id="fn-23">2026-10-12 결정: ESTOP_SENSE 는 쓰지 않는다 — INVENTORY 2절 (c). <a class="fn-back" href="#fnref-23" aria-label="본문으로">↩</a></li>
       </ol>
 
       <div class="pager"></div>

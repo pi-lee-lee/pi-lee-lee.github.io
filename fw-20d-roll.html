@@ -1,0 +1,1537 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F20d · 기울기 대응(롤) — MCU 펌웨어 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="fw-20d">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">F20d · 기울기 대응(롤)</p>
+      <h1>옆 기울기 · 회전 · 급정지의 하중도 본다</h1>
+      <p class="lead">fw-20 묶음(<a href="fw-20a-route-gain-traction.html">fw-20a</a> · <a href="fw-20b-slope-mix.html">fw-20b</a> · <a href="fw-20c-yaw-rate.html">fw-20c</a> · <a href="fw-20d-roll.html">fw-20d</a> · <a href="fw-20e-thresholds.html">fw-20e</a>)의 넷째 쪽이다. 옆 기울기 · 회전 · 급정지에 대응하는 층(실습 I)을 만든다 — 경사 상태를 기울기 크기로 넓히고, 합력점의 들림 여유로 회전을 줄이고, 명령의 변화율을 제한한다.
+      Mac 의 호스트 시험으로 <code>slope.h</code> 의 아래쪽 · <code>guard.h</code> · <code>mix.h</code> 의 적분 차이 줄이기를 채우고, 바닥 시험은 평평한 방 하나에서 끝난다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>이 쪽이 끝나면 다음이 보인다.</p>
+        <ul>
+          <li>한쪽 바퀴 둘을 받침에 올리면 경사 상태 bit0 이 서고 0x85 의 들림 여유가 <strong>들린 반대쪽 변</strong>을 가리키며, 평지 회전 · 급정지에서는 bit0 이 서지 않고 목표가 정한 기울기로 바뀐다(실습 I).</li>
+        </ul>
+        <p><strong>이 쪽에 필요한 것</strong></p>
+        <ul>
+          <li><strong>조립된 차체</strong> · <strong>배터리</strong> · <strong>평평한 방</strong> · 한쪽 바퀴 아래에 괼 받침 · 줄자 · Pi · Mac</li>
+          <li><a href="fw-20c-yaw-rate.html">fw-20c</a> 의 실습 H 를 마친 펌웨어</li>
+        </ul>
+        <p><strong>없으면</strong></p>
+        <ul>
+          <li>호스트 시험(<code>test_roll.c</code> · <code>test_guard.c</code> · <code>test_integ_eq.c</code>)은 Mac 만으로 끝난다. 경사판 시험은 이 쪽에 없다.</li>
+        </ul>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag mac">Mac</span> <span class="tag asm">조립 후</span> <span class="tag power">모터 전원</span></div>
+        <div><span class="k">선행</span><a href="fw-20b-slope-mix.html">fw-20b</a>(비력 · 무게중심) · <a href="fw-20c-yaw-rate.html">fw-20c</a>(자세 추정 · 0x85) — 이 층은 둘 다 켜져 있어야 빌드된다</div>
+        <div><span class="k">채우는 INVENTORY 칸</span><code>hardware/INVENTORY.md</code> 6절 — 기하 트랙 폭과 기울기 대응 키. <span class="small">(아직 표에 없으면 행을 만들어 적는다.)</span></div>
+        <div><span class="k">소요</span>예상 ____ h · 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
+      </div>
+
+      <h2 id="overview">1. 개요 — 옆으로 기울거나 돌 때의 하중도 본다</h2>
+      <p><a href="fw-20b-slope-mix.html">fw-20b</a> 의 경사 상태는 앞뒤 기울기만 본다. 옆으로만 기운 바닥, 회전의 구심 가속, 급정지는 그 판정에 들어가지 않는다. 이 쪽은 경사 상태의 입력을 기울기 크기로 넓히고, 바퀴와 자이로로 아는 가속을 빼서 출발 · 정지 · 회전이 기울기로 보이지 않게 한다.
+      그리고 합력점에서 네 변까지의 여유로 회전을 줄이고, 롤 들림을 판정하고, 명령의 변화율을 제한하고, 강체 섀시에서 바퀴 사이에 남는 적분 차이를 줄인다.</p>
+      <p>새로 쓰는 코드는 <code>slope.h</code> 의 아래쪽 · <code>guard.h</code> · <code>mix.h</code> 의 적분 차이 줄이기와 <code>control.c</code> 의 한 층이다. 묶음 전체의 순서는 <a href="fw-20a-route-gain-traction.html#overview">fw-20a §1</a> 에 있다.</p>
+      <h2 id="why">2. 원리 — 기울기 크기 · 들림 여유 · 변화율 상한</h2>
+      <h3 id="s2-12">2-12. 기울기 대응(롤) — 옆으로 기울거나 돌 때의 하중도 본다</h3>
+      <p><a href="fw-20b-slope-mix.html#s2-10">fw-20b §2-10</a> 의 경사 층은 앞뒤(피치)만 본다. 이 절은 옆(롤)을 더한다. 옆 힘은 경사로에서만 생기지 않는다 — 한쪽 바퀴만 오르는 작은 둔덕, 회전, 급정지에서도 생긴다. 평평한 바닥에서는 이 층이 하는 일이 없거나 작다. 실습 I(<a href="#s3-i">§3-I</a>)가 만든다. 쓰는 곳은 경사 층(1 kHz, IMU 새 샘플마다 거르기)과 명령 단계 두 곳이다. ⑧ 의 적분 차이 줄이기는 바퀴 루프 뒤에 한 줄로 더한다.</p>
+
+      <h4 id="s2-12-1">① 경사 상태 bit0 = 기울기 크기, 가속을 뺀 뒤</h4>
+      <p>fw-20b §2-10 ④ 의 경사 상태는 걸러진 <code>|f_fwd / f_up|</code> 하나로 정했다. 이 값으로는 두 가지가 틀린다.</p>
+      <ul>
+        <li><strong>옆으로만 기울면 켜지지 않는다</strong> — 롤 8° 로 서 있어도 <code>f_fwd</code> 는 0 이다.</li>
+        <li><strong>평지의 가감속 · 회전이 기울기로 보인다</strong> — 가속도계는 기울기와 가속을 구분하지 못한다(fw-20b §2-10 ①). 시뮬레이터에서는 평지 감속 정지 때 경사 상태와 버팀이 약 0.4 초 켜졌다.<sup class="fn"><a href="#fn-1" id="fnref-1">1</a></sup> 옆 성분까지 보면 회전의 구심 가속도 기울기로 보인다(0.5 m/s 로 1 rad/s 회전 = 약 2.9° 에 해당).</li>
+      </ul>
+      <p>그래서 경사 상태의 입력만 바꾼다. 히스테리시스 구조와 문턱(<code>SLOPE_ON</code> · <code>SLOPE_OFF</code>)은 그대로다.</p>
+      <pre><code class="lang-text">기울기 비   = √(f_fwd² + f_lat²) / f_up = tan(전체 기울기)       f_lat = 차체 왼쪽방향 성분
+보상 뒤 입력 = (f_fwd − a_fwd,  f_lat − a_lat,  f_up)
+  a_fwd = 차체 속도의 변화율           차체 속도 = 네 바퀴 속도의 중앙값
+  a_lat = v · ω                       ω = 수직축 회전 속도(fw-20c §2-11 ④), 반시계 +. 왼쪽으로 돌면 +</code></pre>
+      <ul>
+        <li><strong>중앙값</strong> — 넷 가운데 가장 큰 값과 가장 작은 값을 뺀 두 값의 평균이다. 한 바퀴가 턱에 걸리거나 헛돌아도 차체 속도가 그 바퀴를 따라가지 않는다.</li>
+        <li><strong>같은 필터</strong> — 차체 속도를 비력과 <strong>같은 저역 통과 계수</strong>로 거른 뒤 미분한다. 그러면 "거른 비력 − 아는 가속"이 "실제 가속을 뺀 비력을 거른 값"과 같아져 두 신호의 늦음이 맞는다. 다른 필터를 쓰면 가감속 순간에 펄스가 남아 경사 상태를 켠다.</li>
+        <li><strong>슬립 억제가 동작하는 동안</strong>(어느 바퀴든 계수 &lt; 1) 바퀴 속도는 차체 속도가 아니다. 그동안 <code>a_fwd</code> · <code>a_lat</code> 을 직전 값으로 둔다. 거른 속도는 계속 따라가게 둔다 — 풀리는 순간 미분이 튀지 않게 하려는 것이다.</li>
+        <li>위 성분 <code>f_up</code> 은 고치지 않는다.</li>
+      </ul>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w28"><col class="w32"><col class="w40"></colgroup>
+        <thead><tr><th>판정</th><th>쓰는 비력</th><th>이유</th></tr></thead>
+        <tbody>
+          <tr><td>경사 상태 bit0</td><td>보상 뒤, 기울기 크기</td><td>가감속 · 회전을 기울기로 읽지 않게</td></tr>
+          <tr><td>주행 불가 40°</td><td>보상 전, 피치 비(그대로)</td><td>가속에 의한 하중 이동도 실제 힘이다</td></tr>
+          <tr><td>하중 몫 · 가중치</td><td>보상 전(그대로)</td><td>같은 이유</td></tr>
+          <tr><td>들림 여유(②)</td><td>보상 전</td><td>넘어짐은 실제 힘으로 정해진다</td></tr>
+        </tbody>
+      </table></div>
+      <p>상태 프레임의 형식은 그대로이고, bit0 의 뜻만 "피치 경사"에서 "기울기 크기(가속 보상 뒤)"로 넓어진다(<a href="06a-mcu-protocol.html">06a</a> §4-2 의 표).</p>
+
+      <h4 id="s2-12-2">② 합력점과 들림 여유</h4>
+      <p><strong>합력점</strong>은 무게중심에 걸린 중력과 관성의 합력을 따라 내려가 바닥에 닿는 점이다. 무게중심 바로 아래를 원점으로, 앞과 왼쪽을 + 로 둔다.</p>
+      <pre><code class="lang-text">p_x = −h · f_fwd / f_up        앞이 들리면(f_fwd &gt; 0) 하중이 뒤로 가므로 p 는 뒤(−)로 간다
+p_y = −h · f_lat / f_up        왼쪽이 들리거나 왼쪽으로 돌면(f_lat &gt; 0) p 는 오른쪽(−)으로 간다
+접지 사각형 = [−l_r, l_f] × [−b/2, b/2]          b = 좌우 바퀴 접지 중심 사이의 기하 폭(TRACK_GEOM_MM)
+들림 여유  = p 에서 네 변까지의 거리 가운데 가장 작은 값. 사각형 밖이면 음수</code></pre>
+      <ul>
+        <li>p 가 사각형 안에 있으면 네 바퀴가 다 눌린다. p 가 한 변에 닿으면 <strong>그 반대쪽 바퀴</strong>가 뜬다 — 뒤 변이면 앞바퀴, 오른쪽 변이면 왼쪽 바퀴다. 0x85 의 <code>margin_edge</code> 는 p 가 다가간 변(0 앞 · 1 뒤 · 2 왼쪽 · 3 오른쪽)이다.</li>
+        <li>fw-20b §2-10 ① 과 같은 계통의 식이다 — 뒤 변 여유 = 앞축 몫 × (l_f + l_r). 주행 불가 40° 는 뒤 변 쪽의 한 경우이고, 그 판정은 그대로 둔다. 새로 생기는 것은 옆 두 변이다.</li>
+        <li><strong>b 는 유효 트랙 폭(<code>TRACK_WIDTH_MM</code>)이 아니다.</strong> 유효 폭은 미끄러지며 도는 회전을 맞추려고 거꾸로 구한 값이라 기하 폭보다 크다(fw-20a §1 의 용어). 넘어짐은 바퀴가 실제로 닿는 자리로 정해진다.</li>
+        <li><code>h</code> · <code>l_f</code> · <code>l_r</code> 은 빈 차체 값이다(실습 G). 짐을 높이 실으면 실제 <code>h</code> 가 커져 실제 여유가 계산보다 작다. 이 계산은 빈 차체 기하의 한계를 보는 보조이고, 짐에 대한 보호는 ④ 의 롤 들림 판정이 맡는다.</li>
+        <li>IMU 샘플이 오래되면 여유를 계산하지 않는다 — 0x85 에는 "계산하지 않음" 값(32767 · 0xFF)이 나간다.</li>
+      </ul>
+
+      <h4 id="s2-12-3">③ 회전 제한 — 옆 여유가 줄면 회전과 속도를 줄인다</h4>
+      <p><strong>옆 여유</strong>는 왼쪽 · 오른쪽 변까지의 여유 가운데 작은 쪽이다. 이 값이 <code>TURN_SOFT_MM</code> 아래로 내려가면 회전 제한이 켜진다. 회전 배율 k 를 좌우 목표의 회전 성분(좌우 차)에 곱하고, 속도 배율을 전진 성분에 곱한다.</p>
+      <pre><code class="lang-text">k        = (옆 여유 − HARD) / (SOFT − HARD)  를 [0, 1] 로 자른 값      SOFT 에서 1, HARD 이하에서 0
+속도 배율 = V_MIN + (1 − V_MIN) · k                                    k = 0 이어도 0 까지 줄이지 않는다</code></pre>
+      <ul>
+        <li><strong>회전을 줄이는 이유</strong> — 회전의 구심 가속이 p 를 바깥 변 쪽으로 민다. 옆 기울기에 회전이 더해지면 여유가 더 빨리 준다.</li>
+        <li><strong>속도를 0 까지 줄이지 않는 이유</strong> — 기운 채 멈춰 있는 것보다 천천히라도 그 자리를 빠져나가는 편이 낫다.</li>
+        <li><strong>조이기는 바로, 풀기는 천천히</strong> — 켜진 동안 k 는 본 것 가운데 가장 작은 값을 지킨다. 옆 여유가 <code>TURN_RELEASE_MM</code>(SOFT 보다 큼) 이상인 채로 <code>TURN_HOLD_MS</code> 이어지면 꺼진다. 줄이는 것은 그 틱에 하고, 회전이 돌아오는 빠르기는 ⑤ 의 회전 변화율 상한이 정한다.</li>
+        <li>여유를 모를 때(IMU 끊김)는 상태를 그대로 둔다 — 경사 상태 · 주행 불가와 같은 약속이다.</li>
+        <li>앞 · 뒤 변에는 새 동작이 없다. 앞뒤는 지금처럼 들림 방지(fw-20b §2-10 ③)와 주행 불가(fw-20b §2-10 ④)가 맡는다.</li>
+        <li>0x85 flags bit6 이 이 상태다.</li>
+      </ul>
+
+      <h4 id="s2-12-4">④ 롤 들림 — 지금 롤에서 ±5° 를 넘는 빠른 변화</h4>
+      <p>서스펜션이 없는 강체 섀시라, 한 바퀴만 턱에 오르면 세 바퀴가 닿고 한 바퀴가 뜬다(대각 하중 빠짐). 이것은 들림이 아니다. 옆으로 넘어지기 시작하면 <strong>같은 쪽 두 바퀴</strong>가 함께 뜬다. 이것을 <strong>롤 들림</strong>이라고 부른다.<sup class="fn"><a href="#fn-2" id="fnref-2">2</a></sup></p>
+      <p>판정은 fw-20b §2-10 ③ 의 <code>slope_lift_step()</code> 을 그대로 쓰고 입력만 롤 각속도(왼쪽이 들리면 +)로 바꾼다. 새 함수는 없다 — 상태와 설정을 하나씩 더 둔다.</p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w28"><col class="w36"><col class="w36"></colgroup>
+        <thead><tr><th>상황</th><th>롤 변화</th><th>걸러 내는 조건</th></tr></thead>
+        <tbody>
+          <tr><td>한쪽 판자 · 턱</td><td>몇 도 바뀌고 멈춘다</td><td>누적 변화 ≤ ±5°(<code>ROLL_LIFT_DMAX_DDEG</code>)</td></tr>
+          <tr><td>비스듬한 진입 · 기운 채 방향 바로잡기</td><td>가면서 천천히 바뀐다</td><td>거리당 변화 ≤ <code>ROLL_LIFT_PER_M_MAX_DDEG</code></td></tr>
+          <tr><td>롤 들림</td><td>거의 제자리에서 빠르게 계속 바뀐다</td><td>각속도 · 누적 · 거리당 셋을 다 넘는다</td></tr>
+        </tbody>
+      </table></div>
+      <ul>
+        <li><strong>기준은 절대 롤이 아니다.</strong> 각속도가 문턱을 넘은 순간의 롤이 기준이다. 롤 20° 로 기운 채 방향을 바로잡는 동안에도 좌우에 바퀴가 하나씩은 닿아 있다. 그때의 롤에서 ±5° 를 넘는 빠른 변화만 들림으로 본다.</li>
+        <li>±5° 가 허용 턱 높이를 대신한다 — 평지에서 b · tan 5° 높이의 턱이다.</li>
+        <li><strong>동작</strong> — 회전 0, 목표 0. ⑤ 의 감속 상한으로 선다. 피치 들림처럼 축의 출력을 묶지 않는다 — 옆 힘의 원인이 회전과 옆 기울기이기 때문이다.</li>
+        <li><strong>알림</strong> — 0x85 flags bit7 하나다. 상태 프레임의 <code>drive_state</code> bit2(들림 묶음)는 피치 들림의 축 묶기 뜻이라 켜지 않는다.</li>
+        <li>롤 들림은 정상 주행에서 나오면 안 된다. 그래서 각속도 문턱은 정상 주행에서 잰 롤 각속도의 최댓값 바로 위에 둔다(§3-I-1).</li>
+      </ul>
+
+      <h4 id="s2-12-5">⑤ 명령 변화율 상한 — <code>guard.h</code></h4>
+      <p>Pi 가 보낸 좌우 목표를 전진 성분 v 와 회전 성분 ω 로 나누고, 한 틱에 바뀌는 양을 자른다.</p>
+      <pre><code class="lang-text">v = (v_L + v_R) / 2,   ω = (v_R − v_L) / W          W = 유효 트랙 폭(TRACK_WIDTH_MM, fw-20c §2-11 과 같은 값)
+틱마다  v 는 0 에서 멀어지면 ACC × dt, 0 쪽으로 가면 DEC × dt,  ω 는 ALPHA × dt 까지만 바뀐다</code></pre>
+      <ul>
+        <li><strong>이유</strong> — 급출발 · 급정지 · 급회전의 계단 명령은 무게중심 높이에 관성 모멘트를 걸어 바퀴를 띄운다. Pi 의 속도 다듬기(Nav2 의 <code>velocity_smoother</code>)도 같은 일을 하지만, teleop 처럼 그것을 거치지 않는 명령도 있다. MCU 는 무엇이 오든 지키는 마지막 층이다.</li>
+        <li>상한은 Pi 의 정상 한계 바로 위에 둔다 — 정상 주행에서는 걸리지 않고 계단만 다듬는다.</li>
+        <li>감속(DEC)을 가속(ACC)과 따로 둔다. 0 을 지나 반대로 갈 때는 0 까지 DEC, 그 뒤 ACC 다.</li>
+        <li>③ · ④ 가 회전을 줄일 때는 상태의 ω 를 그 틱에 자른다(<code>guard_cap_turn()</code>). 줄이기는 바로, 되돌리기는 ALPHA 로다.</li>
+        <li>명령 워치독 · ARMED 아님 · 지난 틱의 안전 조건에서는 상태를 0 으로 둔다(<code>guard_reset()</code>). 이 층이 정지를 늦추지 않는다.</li>
+      </ul>
+
+      <h4 id="s2-12-6">⑥ 순서 — 경사 층과 명령 단계</h4>
+      <pre><code class="lang-text"> 0) 명령 워치독 - 목표 0
+ 1) 엔코더 넷
+2a) 기울기 대응 - (새 샘플이면) 옆 비력 거르기 · 가속 보상 -&gt; 들림 여유(보상 전) -&gt; 회전 제한
+                  -&gt; 롤 들림 -&gt; (켰으면) 바퀴별 가중치
+ 2) 경사 층(T7(fw-20b)) - 하중 몫 · 가중치 · 경사 상태(보상 뒤 기울기 크기) · 주행 불가(보상 전 피치) · 피치 들림
+3a) 정지 조건이면 변화율 상한의 상태를 0 으로. 아니면 롤 들림(목표 0 · 회전 0) 또는
+    회전 제한(회전 x k · 전진 x 속도 배율) -&gt; 변화율 상한
+ 3) 목표 정리 - 버팀(목표 0) · 저전압과 주행 불가(내려가는 직진만)
+3b) 회전 속도 되먹임 Δ (fw-20c §2-11 - Δ 는 이미 자기 상한 안)
+ 4) ~ 10) fw-20b §2-10 ⑤ 그대로. 단 5) 다음에 한 걸음:
+5a) (켰으면) 적분 차이 줄이기(⑧) - 1차 게이트에서 끊긴 바퀴가 없는 틱만</code></pre>
+      <ul>
+        <li>2a) 를 경사 층 앞에 둔다 — 경사 상태를 정할 때 같은 샘플의 보상 값을 쓰게 하려는 것이다. 가속 보상이 쓰는 수직축 회전 속도는 3b) 가 지난 샘플에서 낸 값이다(5 ms 안의 늦음).</li>
+        <li>변화율 상한을 주행 불가 가공 앞에 둔다 — 주행 불가에서 회전 성분을 버리는 것은 그 틱에 바로 일어나야 한다.</li>
+        <li>회전 속도 되먹임은 맨 뒤다 — 다듬어진 명령을 기준으로 차체 회전을 맞춘다.</li>
+      </ul>
+
+      <h4 id="s2-12-7">⑦ 좌우 하중 몫 — 스위치 하나, 기본은 끔</h4>
+      <p>fw-20b §2-10 ① 의 앞축 몫과 같은 식을 좌우로 돌리면 왼쪽 두 바퀴의 몫이 나온다. 앞뒤 몫과 곱하면 바퀴 하나하나의 몫이 된다.</p>
+      <pre><code class="lang-text">w_left   = (f_up · b/2 − f_lat · h) / (f_up · b),   w_right = 1 − w_left        b = TRACK_GEOM_MM
+바퀴 몫   = 앞뒤 몫 × 좌우 몫 (넷의 합 = 1),   가중치 = 4 × 바퀴 몫 (아래로 MIX_W_MIN 에서 자름, 평지 = 넷 다 1)</code></pre>
+      <ul>
+        <li>함수는 <code>slope_left_share()</code>(slope.h) · <code>mix_wheel_weights()</code>(mix.h) 이고, 시험은 저장소의 <code>test_wheel_weight.c</code> 다.</li>
+        <li>스위치는 <code>SLOPE_LR_ENABLE</code> 이다. 0 이면 실습 G 의 축 가중치(앞 · 뒤 두 값) 그대로다. 기하 폭 <code>TRACK_GEOM_MM</code> 을 재기 전에는 0 으로 둔다 — 가드가 막는다(롤 층과 함께만 켜진다).</li>
+        <li>시뮬레이터 비교에서 켬과 끔의 결과는 각주에 있다.<sup class="fn"><a href="#fn-3" id="fnref-3">3</a></sup> 켜면 가중치가 4 까지 갈 수 있는데, 0x85 의 <code>weight_pct</code>(× 100, 1 바이트)는 255(2.55)에서 잘린다.</li>
+      </ul>
+
+      <h4 id="s2-12-8">⑧ 적분 차이 줄이기 — 세 바퀴로 선 동안 서로 버티는 적분을 푼다</h4>
+      <p>④ 에서 본 대로 강체 섀시는 한 바퀴만 턱에 오르면 세 바퀴로 선다. 오른쪽 앞바퀴가 턱을 오르는 동안 그 바퀴는 느려져 속도 PID 의 적분이 + 로 쌓이고, 대각의 왼쪽 뒷바퀴는 차체에 밀려 빨라져 적분이 − 로 쌓인다. 다 오른 뒤에는 네 바퀴가 차체에 묶여 같은 속도로 돈다. 바퀴마다 오차가 0 이라 적분은 더도 덜도 바뀌지 않는다 — <strong>쌓인 적분이 풀릴 길이 없다</strong>.</p>
+      <p>남은 적분은 그대로 토크가 된다. 한 바퀴는 앞으로, 대각 바퀴는 뒤로 민다. 두 토크는 서로 지워져 차체를 밀지 않고, 모터 전류 · 열 · 타이어 마모만 남긴다. 이것을 <strong>버팀 토크</strong>라고 부르고, Σ|τ<sub>i</sub>| − |Σ τ<sub>i</sub>| 로 잰다(서로 지워지는 몫). 그래서 적분의 <strong>차이</strong>만 천천히 줄인다.</p>
+      <pre><code class="lang-text">평균 m = (I_FL + I_FR + I_RL + I_RR) / 4                I = 바퀴 PID 의 적분 [mm/s · s]
+틱마다  I_i ← I_i + a · (m − I_i),   a = dt / (τ + dt)       τ ≈ 1 s, dt = 1 ms
+회전 중(|v_L − v_R| &gt; 문턱): 왼쪽 쌍(FL · RL) · 오른쪽 쌍(FR · RR) 을 각 쌍의 평균으로</code></pre>
+      <ul>
+        <li><strong>평균은 두는 이유</strong> — 평균은 네 바퀴가 함께 미는 몫이다. 경사를 오르거나 경사에서 멈춰 버틸 때 드는 힘이 여기 있다. 평균까지 0 쪽으로 줄이면 경사에 멈춘 로봇이 밀려 내려간다. 넷에 같은 a 를 쓰므로 (m − I<sub>i</sub>) 의 합은 0 이고, 평균은 바뀌지 않는다.</li>
+        <li><strong>차이만 줄이는 이유</strong> — 바퀴 사이에 힘을 나누는 일은 하중 가중치 w<sub>i</sub>(fw-20b §2-10 ②, ⑦)가 맡는다. 적분이 차이를 오래 들고 있을 까닭이 없다. 한 바퀴가 실제로 더 느리면 그 바퀴의 속도 오차가 적분을 다시 쌓는다. 바퀴 PID 의 적분 시간(kp ÷ ki, 벤치 값 4 ÷ 200 = 0.02 s)은 τ 1 s 보다 50 배 짧다.</li>
+        <li><strong>달리는 동안 필요한 차이는 남는다</strong> — 차체가 그 움직임에 실제로 요구하는 바퀴 사이의 힘 차이는, 줄이면 그만큼 바퀴 속도가 목표에서 벗어나고 PID 가 다시 쌓는다. 그 바퀴의 차이는 τ × 오차에서 멈춘다(1 s × 2 mm/s = 2 mm, ki 200 이면 u 로 400 permille). 그래서 이 규칙이 확실히 푸는 것은 <strong>멈춘 뒤에 남은</strong> 차이다. 시뮬레이터에서는 세 바퀴로 선 채 직진하는 동안의 대각 버팀이 켬 · 끔에서 같았고, 그 자리에 멈춘 뒤에는 켬에서만 약 1 초의 시정수로 사라졌다.</li>
+        <li><strong>회전 예외</strong> — 회전할 때는 좌우 바퀴의 미끄러짐과 하중이 달라, 좌우 적분의 차가 회전에 필요한 몫이다. 그래서 좌우 목표의 차가 문턱(<code>MIX_IEQ_TURN_MM_S</code>)보다 크면 좌우 차는 두고 같은 쪽 앞뒤만 줄인다. 문턱은 직진 중 방향 유지 보정이 만드는 좌우 차보다 위, 실제 회전 명령보다 아래에 둔다. 회전 중에는 대각 버팀(FR + · RL −)이 풀리지 않는다 — 같은 쪽 앞뒤를 맞추면 그 차가 좌우 차로 바뀌어 남는다. 회전이 끝나면 직진 규칙이 마저 푼다.</li>
+        <li><strong>범위</strong> — 옮긴 적분은 ki × I 가 그 바퀴의 이번 틱 PID 범위(<code>out_min</code> · <code>out_max</code>) 안에 있게 자른다. 네 바퀴의 범위가 같으면 평균 쪽으로 옮긴 값은 늘 그 안이라 자를 일이 없다. 가중치가 바퀴마다 달라 범위가 다를 때만 잘리고, 그때 평균이 잘린 몫 ÷ 4 만큼 바뀐다. 이미 범위 밖에 있던 값은 안쪽으로만 옮긴다.</li>
+        <li><strong>네 바퀴가 다 돈 틱에만</strong> — 1차 게이트(fw-20b §2-10 ⑤ 의 5)에서 끊긴 바퀴는 적분이 0 으로 지워진다. 그 0 쪽으로 나머지를 끌면 평균이 빠지므로, 끊긴 바퀴가 있는 틱은 건너뛴다.</li>
+        <li>함수는 <code>mix_integ_equalize()</code>(mix.h), 시험은 저장소의 <code>test_integ_eq.c</code>, 키는 <code>MIX_IEQ_ENABLE</code> · <code>MIX_IEQ_TAU_MS</code> · <code>MIX_IEQ_TURN_MM_S</code> 다. 기본은 끔(0)이다 — 실물에서 재기 전에는 다른 새 층처럼 끈 채로 둔다. 시뮬레이터에서 켬과 끔을 견준 결과는 각주에 있다.<sup class="fn"><a href="#fn-4" id="fnref-4">4</a></sup></li>
+      </ul>
+
+      <h2 id="lab">3. 실습</h2>
+      <p>실습 I 는 평평한 방(09a 세팅 D)에서, fw-20c 의 실습 H 뒤에 한다. 호스트 시험은 차체가 없는 날 Mac 에서 먼저 해 둔다.</p>
+      <div class="callout tip"><span class="ct">채울 자리마다 힌트 카드가 있다 — 읽는 순서</span>
+        <p>골격의 채울 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 붙어 있고(이 쪽은 T1 ~ T8 — <code>slope.h</code> · <code>guard.h</code> · <code>mix.h</code> · <code>control.c</code>), 그 주석 안에 <strong>번호 걸음</strong>이 있다. 먼저 걸음을 보고 직접 써 본다.
+        막히면 "직접 채우기" 절(§3-I-3)에서 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인.</p>
+        <p>Mac 의 호스트 시험은 <code>PASS roll 66 cases</code> · <code>PASS guard 22 cases</code> · <code>PASS integ_eq 31 cases</code> 이고, <code>-fsanitize=undefined,address</code> 를 붙여도 경고와 오류가 없다. <code>arm-none-eabi-gcc</code> 컴파일(<code>-c -Wall -Wextra</code>)은 경고 0 이다. T1 ~ T4 · T7 은 <strong>순수 파일</strong>이라 보드 없이 Mac 에서 끝까지 채점된다. T5 · T6 · T8 은 펌웨어 빌드와 보드의 관찰로 확인한다.<sup class="fn"><a href="#fn-5" id="fnref-5">5</a></sup></p>
+        <p>붙여 넣는 것으로 끝내지 않는다 — 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
+      </div>
+
+      <h3 id="s3-i">3-I. 실습 I — 기울기 대응(롤): Mac 에서 먼저, 그다음 평평한 방에서 <span class="tag mac">Mac</span> <span class="tag asm">조립 후</span> <span class="tag power">모터 전원</span></h3>
+      <p>실습 H 뒤, 실습 D 앞에 한다. 이 층이 명령을 다듬으므로(변화율 상한 · 회전 제한) 목표와 듀티의 관계 위에 긋는 실습 D 의 보호 문턱은 그 뒤에 긋는다. 원리는 <a href="#s2-12">§2-12</a> 다.</p>
+      <ul>
+        <li><strong>Mac 에서 끝나는 것</strong> — <code>slope.h</code> 의 아래쪽 · <code>guard.h</code> · <code>mix.h</code> 의 적분 차이 줄이기와 세 호스트 시험. 저장소의 <code>firmware/</code> 에는 <code>slope.h</code> · <code>mix.h</code> · <code>guard.h</code> · <code>test_roll.c</code> · <code>test_guard.c</code> · <code>test_integ_eq.c</code> 의 완결판이 이미 들어 있다. 직접 써 보려면 아래 골격으로 바꿔 놓고 채운다.</li>
+        <li><strong>보드에서 하는 것</strong> — <code>robot_params.h</code> 의 키, <code>control.c</code> 의 층과 부르는 자리. 키는 <code>ROLL_ENABLE 0</code> · <code>MIX_IEQ_ENABLE 0</code> 으로 시작하므로 넣는 즉시 빌드되고, 동작은 실습 H 까지와 같다.</li>
+        <li><strong>바닥 시험은 평평한 방 하나에서 끝난다</strong> — 손으로 기울이기, 한쪽 바퀴 아래 받침, 회전, 급정지. 경사판 시험은 이 실습에 없다.</li>
+      </ul>
+      <div class="callout warn"><span class="ct">STOP — 실습 I 의 입구 조건 (fw-20a §3-2 의 목록에 더한다)</span>
+        <ol>
+          <li><strong>실습 G · H 가 끝났고 <code>SLOPE_ENABLE 1</code> · <code>YAW_ENABLE 1</code> 로 구워져 있다</strong> — 이 층은 실습 G 의 걸러진 비력 · 무게중심 키와 실습 H 의 자세 추정 · 수직축 회전 속도를 쓴다. 둘 중 하나가 0 이면 <code>ROLL_ENABLE 1</code> 의 빌드를 가드가 막는다.</li>
+          <li><strong><code>IMU_AX_LEFT</code> · <code>IMU_GY_ROLL</code> 이 실습 H 에서 정해져 있다</strong> — 이 층의 옆 비력과 롤 각속도가 이 두 키를 그대로 쓴다(새 축 키는 없다). 부호가 틀리면 들림 여유의 변이 반대로 나오고 롤 들림의 방향이 뒤집힌다 — §3-I-4 의 3번에서 확인한다.</li>
+          <li><strong>Pi 에서 0x85 를 볼 수 있다</strong> — <code>mcu_probe.py</code> 의 <code>margin=</code> 칸, 또는 브리지(<a href="06-mcu-bridge.html">06</a>)의 <code>/mcu/control</code> 의 칸 26 · 27 · 28.</li>
+          <li><strong>받침</strong> — 한쪽 두 바퀴를 함께 올릴 판자나 블록. 높이는 §3-I-4 의 3번 식으로 정한다. 실습 H 의 판자 둔덕(약 5 cm)도 쓴다.</li>
+          <li><strong>로봇을 넘어뜨리는 시험은 하지 않는다.</strong> 손으로 드는 시험은 ARMED · 목표 0 에서 하고, 한쪽을 10 cm 넘게 들지 않는다(<code>TRACK_GEOM_MM</code> 이 700 mm 를 넘어 8° 가 10 cm 를 넘으면 들기 시험은 하지 않는다고 적는다). 주행 시험은 06b 에서 정한 <code>max_vel</code> 이하로 한다.</li>
+          <li>fw-20a §3-2 의 STOP 열한 항목이 <strong>그대로 참</strong>이다.</li>
+        </ol>
+      </div>
+
+      <h4 id="s3-i-1">3-I-1. 빈 표 — 재는 값</h4>
+      <p>각 줄에 <strong>잰 값</strong>과 <strong>정한 값</strong>을 따로 적는다. "시뮬레이터 시작값"은 가상봇(크기가 실제와 다르다)에서 같은 방법으로 고른 값이라 이 로봇의 값이 아니다 — 방법을 보여 주는 예다.<sup class="fn"><a href="#fn-6" id="fnref-6">6</a></sup></p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w24"><col class="w44"><col class="w16"><col class="w16"></colgroup>
+        <thead><tr><th>키</th><th>재는 법</th><th>잰 값</th><th>정한 값</th></tr></thead>
+        <tbody>
+          <tr><td><code>TRACK_GEOM_MM</code></td><td>줄자로 왼쪽 · 오른쪽 바퀴의 접지 중심(타이어 폭의 가운데) 사이를 앞축 · 뒤축에서 하나씩 재어 평균한다. 유효 폭 <code>TRACK_WIDTH_MM</code> 과 다른 값이다 — 유효 폭이 더 크다</td><td>앞 ____ · 뒤 ____ mm</td><td>____</td></tr>
+          <tr><td><code>TURN_SOFT_MM</code> · <code>TURN_RELEASE_MM</code></td><td>재기 빌드(§3-I-4 의 2번)로 정상 주행(teleop 최대 회전 · 한쪽 판자 넘기 · 급정지)을 기록하고, <code>/mcu/control</code> 의 칸 27(들림 여유) 가운데 <strong>칸 28(변)이 2 · 3 인 값의 최솟값</strong>을 읽는다. SOFT 는 그 아래, RELEASE 는 SOFT 보다 15 mm 쯤 위. 시뮬레이터 시작값 275 · 290(정상 주행 최솟값 285)</td><td>최솟값 ____ mm</td><td>____ · ____</td></tr>
+          <tr><td><code>TURN_HARD_MM</code></td><td>계산 — <code>TRACK_GEOM_MM</code> ÷ 4. 합력점이 바퀴 선까지 반쯤 간 자리다. 시뮬레이터 시작값 165</td><td>—</td><td>____</td></tr>
+          <tr><td><code>TURN_HOLD_MS</code> · <code>TURN_V_MIN_MILLI</code></td><td>고르는 값 — 끄기 전에 기다리는 시간, 회전 0 일 때의 속도 배율. 시뮬레이터 시작값 500 · 500</td><td>—</td><td>____ · ____</td></tr>
+          <tr><td><code>ROLL_LIFT_RATE_DDPS</code></td><td>같은 기록에서 롤 각속도의 최댓값을 읽는다 — <code>/imu/data_raw</code> 의 각속도 가운데 <code>IMU_GY_ROLL</code> 이 고른 축의 절댓값 최댓값. 이 토픽은 <strong>rad/s</strong> 라 × 57.3 으로 °/s, 키에는 × 10 해서 넣는다. 문턱은 그 바로 위. 시뮬레이터: 정상 최댓값 10.6 °/s → 시작값 120</td><td>최댓값 ____ °/s</td><td>____</td></tr>
+          <tr><td><code>ROLL_LIFT_PER_M_MAX_DDEG</code> · <code>ROLL_LIFT_RELEASE_MS</code></td><td>고르는 값 — 시작값 400(실습 G 의 피치 들림 <code>LIFT_DPITCH_PER_M_MAX_DDEG</code> 와 같은 값. 롤에 대한 근거 자료는 아직 없다) · 300. §3-I-4 의 4번 양쪽 시험으로 고친다</td><td>—</td><td>____ · ____</td></tr>
+          <tr><td><code>MIX_IEQ_TURN_MM_S</code></td><td>재기 빌드(§3-I-4 의 2번)의 같은 기록에서 <strong>직진하는 동안</strong>(teleop 직진 · 한쪽 판자 넘기) 0x85 의 좌우 목표 차 |칸 1 − 칸 6| 의 최댓값을 읽는다 — 방향 유지 보정이 만드는 차다. 문턱은 그 위, 쓰는 가장 완만한 회전 명령의 좌우 차(ω × <code>TRACK_WIDTH_MM</code>) 아래. 시뮬레이터: 턱 위 직진 최댓값 12 mm/s → 시작값 30</td><td>최댓값 ____ mm/s</td><td>____</td></tr>
+          <tr><td><code>GUARD_ACC_MM_S2</code> · <code>GUARD_DEC_MM_S2</code> · <code>GUARD_ALPHA_MRAD_S2</code></td><td>Pi 의 속도 다듬기 상한 × 1.2 — <code>nav2_params.yaml</code> 의 <code>velocity_smoother</code> 의 <code>max_accel</code> · <code>max_decel</code> 이다.<sup class="fn"><a href="#fn-7" id="fnref-7">7</a></sup> 지금 값(0.5 m/s² · 2.0 rad/s²)이면 600 · 600 · 2400</td><td>Pi 상한 ____ · ____</td><td>____ · ____ · ____</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small"><code>ROLL_LIFT_DMAX_DDEG</code> 는 재지 않는다 — ±5°(50) 로 정한 값이다(§2-12 ④). 실습 G 의 <code>SLOPE_LIMIT_MILLI</code>(839)와 같은 꼴이다. <code>MIX_IEQ_TAU_MS</code> 도 재지 않는다 — 약 1 s(1000)로 정한 값이다(§2-12 ⑧).</p>
+
+      <h4 id="s3-i-2">3-I-2. 골격</h4>
+      <p><code>robot_params.h</code> 에 더하는 블록이다(전량). <code>ROLL_ENABLE</code> 이 0 인 동안은 가드가 빈칸을 막지 않는다 — 1 로 바꾸는 순간 빈칸이 있으면 빌드가 멈춘다.</p>
+      <pre><code class="lang-c">/* robot_params.h - 이 블록을 파일 끝(#endif 가 있으면 그 앞)에 더한다. 다른 키는 그대로 둔다. */
+/* ---- fw-20 실습 I: 기울기 대응(롤). ROLL_ENABLE 0 이면 층이 빠진다 = 실습 H 까지와 같다
+ *      (경사 상태 bit0 은 피치 비 · 0x85 의 들림 여유는 "계산하지 않음" · 명령 변화율 상한 없음).
+ *      1 로 바꾸려면 실습 G 의 SLOPE_ENABLE 과 실습 H 의 YAW_ENABLE 이 1 이어야 한다(자세 추정 · 수직축 회전 속도를 쓴다).
+ *      폭이 둘이다: TRACK_GEOM_MM = 바퀴 접지 중심 사이의 기하 폭(들림 여유 · 좌우 몫), TRACK_WIDTH_MM = 유효 폭(회전 성분) ---- */
+#define ROLL_ENABLE                0     /* ____ 0 = 층 없음, 1 = 층 있음 */
+#define TRACK_GEOM_MM              0     /* ____ 좌우 바퀴 접지 중심 사이 [mm] - 줄자로 잰다. TRACK_WIDTH_MM(유효 폭)이 아니다 */
+#define ROLL_LIFT_RATE_DDPS        0     /* ____ 롤 들림 판정의 롤 각속도 문턱 [0.1 deg/s] */
+#define ROLL_LIFT_DMAX_DDEG        50    /* 지금 롤에서 이만큼 넘게 바뀌면 들림 후보 = ±5 deg (정한 값) [0.1 deg] */
+#define ROLL_LIFT_PER_M_MAX_DDEG   0     /* ____ 비스듬한 진입 · 기운 채 방향 바로잡기의 거리당 최대 롤 변화 [0.1 deg/m] */
+#define ROLL_LIFT_RELEASE_MS       0     /* ____ 롤 각속도가 문턱 아래로 이만큼 이어지면 풀린다 [ms] */
+#define TURN_SOFT_MM               0     /* ____ 옆 여유가 이 아래로 내려가면 회전 제한을 켠다 [mm] */
+#define TURN_HARD_MM               0     /* ____ 옆 여유가 이 이하면 회전 0 [mm] - SOFT 보다 작게 */
+#define TURN_RELEASE_MM            0     /* ____ 옆 여유가 이 이상인 채 TURN_HOLD_MS 이어지면 끈다 [mm] - SOFT 보다 크게 */
+#define TURN_HOLD_MS               0     /* ____ 끄기 전에 기다리는 시간 [ms] */
+#define TURN_V_MIN_MILLI           0     /* ____ 회전 0 일 때의 전진 속도 배율 [0.001 x] (1 ~ 1000) */
+#define GUARD_ACC_MM_S2            0     /* ____ 전진 성분이 0 에서 멀어지는 쪽의 변화율 상한 [mm/s^2] */
+#define GUARD_DEC_MM_S2            0     /* ____ 전진 성분이 0 쪽으로 가는 쪽의 변화율 상한 [mm/s^2] */
+#define GUARD_ALPHA_MRAD_S2        0     /* ____ 회전 성분의 변화율 상한 [0.001 rad/s^2] */
+#define SLOPE_LR_ENABLE            0     /* 좌우 하중 몫(바퀴별 가중치). 0 = 실습 G 의 축 가중치. TRACK_GEOM_MM 을 재기 전에는 0 */
+#define MIX_IEQ_ENABLE             0     /* 바퀴 적분 차이 줄이기(§2-12 ⑧). 0 = 하지 않음. 실물에서 재기 전에는 0 */
+#define MIX_IEQ_TAU_MS             1000  /* 차이가 줄어드는 시정수 [ms] (정한 값, 약 1 s) */
+#define MIX_IEQ_TURN_MM_S          0     /* ____ 좌우 목표의 차가 이보다 크면 회전 - 좌우 차는 두고 같은 쪽 앞뒤만 줄인다 [mm/s] */</code></pre>
+      <p><code>control.c</code> 의 가드 블록이다(전량). 실습 H 의 가드 블록 다음에 둔다.</p>
+      <pre><code class="lang-c">/* ---- fw-20 실습 I: 기울기 대응의 키 가드. ROLL_ENABLE 1 일 때만 빈칸을 막는다 ---- */
+_Static_assert((ROLL_ENABLE) == 0 || (ROLL_ENABLE) == 1, "robot_params.h: ROLL_ENABLE must be 0 or 1");
+_Static_assert(!(ROLL_ENABLE) || ((SLOPE_ENABLE) &amp;&amp; (YAW_ENABLE)), "robot_params.h: ROLL needs SLOPE_ENABLE (lab G) and YAW_ENABLE (lab H)");
+_Static_assert(!(ROLL_ENABLE) || (TRACK_GEOM_MM) &gt; 0, "robot_params.h: TRACK_GEOM_MM is still EMPTY");
+_Static_assert(!(ROLL_ENABLE) || ((ROLL_LIFT_RATE_DDPS) &gt; 0 &amp;&amp; (ROLL_LIFT_DMAX_DDEG) &gt; 0 &amp;&amp; (ROLL_LIFT_PER_M_MAX_DDEG) &gt; 0 &amp;&amp; (ROLL_LIFT_RELEASE_MS) &gt; 0), "robot_params.h: ROLL_LIFT_* is still EMPTY");
+_Static_assert(!(ROLL_ENABLE) || ((TURN_HARD_MM) &gt; 0 &amp;&amp; (TURN_SOFT_MM) &gt; (TURN_HARD_MM) &amp;&amp; (TURN_RELEASE_MM) &gt; (TURN_SOFT_MM) &amp;&amp; (TURN_HOLD_MS) &gt; 0), "robot_params.h: TURN_* is still EMPTY or not HARD &lt; SOFT &lt; RELEASE");
+_Static_assert(!(ROLL_ENABLE) || ((TURN_V_MIN_MILLI) &gt; 0 &amp;&amp; (TURN_V_MIN_MILLI) &lt;= 1000), "robot_params.h: TURN_V_MIN_MILLI is still EMPTY or out of range");
+_Static_assert(!(ROLL_ENABLE) || ((GUARD_ACC_MM_S2) &gt; 0 &amp;&amp; (GUARD_DEC_MM_S2) &gt; 0 &amp;&amp; (GUARD_ALPHA_MRAD_S2) &gt; 0), "robot_params.h: GUARD_* is still EMPTY");
+_Static_assert((SLOPE_LR_ENABLE) == 0 || (SLOPE_LR_ENABLE) == 1, "robot_params.h: SLOPE_LR_ENABLE must be 0 or 1");
+_Static_assert(!(SLOPE_LR_ENABLE) || (ROLL_ENABLE), "robot_params.h: SLOPE_LR_ENABLE needs ROLL_ENABLE (TRACK_GEOM_MM, side force)");
+_Static_assert((MIX_IEQ_ENABLE) == 0 || (MIX_IEQ_ENABLE) == 1, "robot_params.h: MIX_IEQ_ENABLE must be 0 or 1");
+_Static_assert(!(MIX_IEQ_ENABLE) || ((MIX_IEQ_TAU_MS) &gt; 0 &amp;&amp; (MIX_IEQ_TURN_MM_S) &gt; 0), "robot_params.h: MIX_IEQ_* is still EMPTY");</code></pre>
+      <pre><code class="lang-text">(ROLL_ENABLE 1 로 바꾸고 키를 비워 둔 채 빌드하면 이렇게 멈춘다 - arm-none-eabi-gcc 의 실제 메시지다:
+control.c: error: static assertion failed: "robot_params.h: TRACK_GEOM_MM is still EMPTY"
+control.c: error: static assertion failed: "robot_params.h: ROLL_LIFT_* is still EMPTY"
+control.c: error: static assertion failed: "robot_params.h: TURN_* is still EMPTY or not HARD &lt; SOFT &lt; RELEASE"
+control.c: error: static assertion failed: "robot_params.h: TURN_V_MIN_MILLI is still EMPTY or out of range"
+control.c: error: static assertion failed: "robot_params.h: GUARD_* is still EMPTY"
+ YAW_ENABLE 이 0 이면 첫 줄이 이것이다:
+control.c: error: static assertion failed: "robot_params.h: ROLL needs SLOPE_ENABLE (lab G) and YAW_ENABLE (lab H)")</code></pre>
+      <p><code>User/Inc/Control/slope.h</code> 에 더하는 부분 — 실습 G 의 마지막 함수 <code>slope_lift_step()</code> 다음, <code>#endif</code> 앞까지다. 골격(채울 자리 T1 ~ T3)이고, 나머지 함수는 전량이다. 맨 앞의 <code>slope_left_share()</code> 는 ⑦ 의 좌우 몫이고, 합력점 여유의 시험(벡터 7)도 이 함수와 견준다.</p>
+      <pre><code class="lang-c">/* User/Inc/Control/slope.h - 실습 G 의 slope_lift_step() 다음, #endif 앞에 더한다 */
+/* 왼쪽 두 바퀴 수직항력의 몫 [0..1] - 앞축 몫과 같은 식을 좌우로 돌린 것. b_mm = 좌우 바퀴 접지 중심 사이의 기하 폭.
+ *   f_lat = 차체 왼쪽방향 성분. 왼쪽이 들리면(오른쪽이 내려가면) +, 왼쪽으로 돌면 + 가 된다(가속도계는 회전 중심 쪽 = 왼쪽의
+ *           구심 가속 v · ω 를 잰다. 몸이 오른쪽으로 쏠리는 느낌과 반대 부호)
+ *   w_left = (f_up * b/2 - f_lat * h) / (f_up * b),   w_right = 1 - w_left
+ * 무게중심은 좌우 가운데로 둔다(가속도계로는 옆으로 쏠린 짐이 보이지 않는다). 내려간 쪽 · 바깥쪽이 무거워진다.
+ * f_up &lt;= 0 이거나 b &lt;= 0 이면 -1(판정하지 않음). [0, 1] 로 자른다: 0 아래는 왼쪽 두 바퀴가 이미 떴다는 뜻이다. */
+static inline float slope_left_share(const slope_cfg_t *c, float b_mm, float f_lat, float f_up)
+{
+  if (f_up &lt;= 0.0f || b_mm &lt;= 0.0f) { return -1.0f; }
+  float w = (f_up * 0.5f * b_mm - f_lat * c-&gt;h_mm) / (f_up * b_mm);
+  if (w &lt; 0.0f) { w = 0.0f; }
+  if (w &gt; 1.0f) { w = 1.0f; }
+  return w;
+}
+
+/* ======== 롤 대응(fw-20 실습 I): 기울기 크기 · 가속 보상 · 합력점 들림 여유 · 회전 제한 ========
+ * 위의 함수는 앞뒤(피치)만 본다. 아래는 옆(롤)까지 넣는다. 쓰는 곳은 같은 경사 층(IMU 샘플마다)과 명령 단계다.
+ * 무엇에 어느 값을 쓰나:
+ *   경사 상태 bit0            = 기울기 크기, 가속 보상 "후" 비력 (가감속 · 회전의 가속이 기울기로 보이지 않게)
+ *   주행 불가 40° · 하중 몫   = 보상 "전" 비력 그대로 (가속에 의한 하중 이동도 실제 힘이다)
+ *   합력점 들림 여유          = 보상 "전" 비력 (넘어짐은 실제 힘으로 정해진다)
+ * sqrtf 를 쓴다(math.h). FPU 가 있는 Cortex-M7 에서는 명령 하나(vsqrt.f32)다. */
+#include &lt;math.h&gt;
+
+#define SLOPE_MM_S2_PER_MG  9.80665f   /* 1 mg = 9.80665 mm/s² */
+#define SLOPE_DEG2RAD       0.017453292519943f
+
+/* 기울기 비 √(f_fwd² + f_lat²) / f_up = tan(전체 기울기). 앞뒤 · 옆 어느 쪽으로 기울어도 같은 값이다.
+ * f_up &lt;= 0 이면 -1(판정하지 않음) - slope_ratio() 와 같은 약속 */
+static inline float slope_tilt_ratio(float f_fwd, float f_lat, float f_up)
+{
+  return (f_up &lt;= 0.0f) ? -1.0f : sqrtf(f_fwd * f_fwd + f_lat * f_lat) / f_up;
+}
+
+/* 네 바퀴 속도의 중앙값 = 가장 큰 값과 가장 작은 값을 뺀 가운데 둘의 평균.
+ * 한 바퀴가 헛돌거나 끌려도(턱 · 들림) 차체 속도로 쓸 값이 그 바퀴를 따라가지 않는다 */
+static inline float slope_median4(const float v[4])
+{
+  float lo = v[0], hi = v[0], sum = v[0];
+  for (int i = 1; i &lt; 4; i++) {
+    if (v[i] &lt; lo) { lo = v[i]; }
+    if (v[i] &gt; hi) { hi = v[i]; }
+    sum += v[i];
+  }
+  return (sum - lo - hi) * 0.5f;
+}
+
+/* ---- 가속 보상: 가속도계 값에서 "바퀴와 자이로로 아는 가속"을 뺀다 ----
+ *   a_fwd = 차체 속도(바퀴 속도 중앙값)의 변화율          - 출발 · 정지
+ *   a_lat = v · ω  (ω = 수직축 회전 속도, 반시계 +)      - 회전의 구심 가속. 왼쪽으로 돌면 + (f_lat 과 같은 부호)
+ * 비력(f)과 같은 저역 통과 계수 alpha 로 거른다: 속도를 거른 뒤 미분한 값 = 미분한 뒤 거른 값이므로
+ * LPF(f) − a = LPF(f − 실제 가속) 이 되어 위상이 맞는다. 다른 필터를 쓰면 가감속 순간에 남는 펄스가 bit0 을 켠다.
+ * 슬립 억제가 동작 중이면(hold) 바퀴 속도가 차체 속도가 아니다 -&gt; a_fwd · a_lat 을 직전 값으로 둔다.
+ * 거른 속도는 hold 중에도 따라간다 - 풀리는 순간 미분이 튀지 않게. */
+typedef struct {
+  bool  init;
+  float v_lpf_mm_s;       /* 거른 차체 속도 [mm/s] */
+  float a_fwd_mg;         /* 아는 앞방향 가속 [mg] */
+  float a_lat_mg;         /* 아는 옆방향 가속 [mg], 왼쪽 + */
+  bool  held;             /* 이번 샘플에 값을 유지했는가(관측용) */
+} slope_comp_t;
+
+static inline void slope_comp_step(slope_comp_t *c, float v_mm_s, float yaw_dps, float alpha, float dt_s, bool hold)
+{
+  /* TODO(you) [T1]: 아는 가속 셈 - 힌트 T1
+   *   1) 첫 호출(init 거짓)이면 init = true, 거른 속도 = v_mm_s, a_fwd · a_lat = 0, held = false 로 두고 끝낸다
+   *   2) 지난 거른 속도를 v_prev 에 두고, 거른 속도 = slope_lpf(v_prev, v_mm_s, alpha) - hold 여도 한다
+   *   3) held = hold. hold 이거나 dt_s &lt;= 0 이면 a_fwd · a_lat 을 그대로 두고 끝낸다
+   *   4) a_fwd = (거른 속도 - v_prev) / dt_s / SLOPE_MM_S2_PER_MG
+   *   5) a_lat = slope_lpf(a_lat, v_mm_s * yaw_dps * SLOPE_DEG2RAD / SLOPE_MM_S2_PER_MG, alpha) */
+  (void)c; (void)v_mm_s; (void)yaw_dps; (void)alpha; (void)dt_s; (void)hold;
+}
+
+/* 보상 후 기울기 비 - 경사 상태 bit0 의 히스테리시스 입력. f 는 거른 비력 [mg]. 위 성분(f_up)은 고치지 않는다 */
+static inline float slope_comp_ratio(const slope_comp_t *c, float f_fwd, float f_lat, float f_up)
+{
+  return slope_tilt_ratio(f_fwd - c-&gt;a_fwd_mg, f_lat - c-&gt;a_lat_mg, f_up);
+}
+
+/* ---- 합력점 들림 여유 ----
+ * 합력점 p = 무게중심에서 (중력 + 관성)의 합력이 바닥에 닿는 점, 무게중심 바로 아래를 원점으로:
+ *   p_x = −h · f_fwd / f_up   (앞 +)   앞이 들리면(f_fwd &gt; 0) 하중이 뒤로 가므로 p 는 뒤(−)로 간다
+ *   p_y = −h · f_lat / f_up   (왼쪽 +) 왼쪽이 들리거나 왼쪽으로 돌면(f_lat &gt; 0) p 는 오른쪽(−)으로 간다
+ * 바퀴 접지 사각형 [−lr, lf] × [−b/2, b/2] 안이면 네 바퀴가 다 눌린다. 변까지의 거리가 여유, 밖이면 음수.
+ * "변" = p 가 다가간 변 = 그 반대쪽 바퀴가 뜬다(뒤 변 -&gt; 앞바퀴가 뜬다, 오른쪽 변 -&gt; 왼쪽 바퀴가 뜬다).
+ * 기존 식과 같은 계통이다: 뒤 변 여유 = slope_front_share() × (lf + lr), 오른쪽 변 여유 = slope_left_share() × b (자르기 전).
+ * b_mm = 좌우 바퀴 접지 중심 사이의 기하 폭(TRACK_WIDTH_MM 이 아니다). h · lf · lr 은 빈 차체 설정값 -
+ * 짐이 있으면 여유를 크게 계산한다(짐에 대한 보호는 롤 들림 판정이 맡는다). */
+#define SLOPE_EDGE_FRONT  0u
+#define SLOPE_EDGE_REAR   1u
+#define SLOPE_EDGE_LEFT   2u
+#define SLOPE_EDGE_RIGHT  3u
+
+typedef struct {
+  bool    valid;          /* false = 계산 안 함(f_up &lt;= 0 또는 기하 없음) */
+  float   margin_mm;      /* 네 변 중 최소 여유 */
+  uint8_t edge;           /* 그 변 SLOPE_EDGE_* */
+  float   side_mm;        /* 왼쪽 · 오른쪽 변 중 작은 여유 - 회전 제한의 입력 */
+  uint8_t side_edge;      /* 그 변 (LEFT / RIGHT) */
+} slope_margin_t;
+
+static inline bool slope_margin(const slope_cfg_t *c, float b_mm, float f_fwd, float f_lat, float f_up, slope_margin_t *m)
+{
+  /* TODO(you) [T2]: 합력점 들림 여유 - 힌트 T2
+   *   1) m-&gt;valid = false. f_up &lt;= 0 이거나 b_mm &lt;= 0 이거나 lf + lr &lt;= 0 이면 false 를 돌려준다
+   *   2) px = -h * f_fwd / f_up,  py = -h * f_lat / f_up
+   *   3) 네 변까지 거리 d[4] = { lf - px, px + lr, b/2 - py, py + b/2 }  (앞 · 뒤 · 왼 · 오)
+   *   4) 가장 작은 d 의 번호를 edge 에, 그 값을 margin_mm 에 (같으면 번호가 작은 쪽)
+   *   5) 왼 · 오 가운데 작은 쪽을 side_edge · side_mm 에 (같으면 왼쪽)
+   *   6) valid = true, true 를 돌려준다 */
+  m-&gt;valid = false;
+  (void)c; (void)b_mm; (void)f_fwd; (void)f_lat; (void)f_up;
+  return false;
+}
+
+/* ---- 회전 제한: 옆 여유가 줄면 회전 성분(좌우 차)과 속도를 줄인다 ----
+ * 옆 여유 side 가 soft 아래로 내려가면 켜진다. 회전 배율 k = (side − hard) / (soft − hard) 를 [0, 1] 로 자른 값:
+ * soft 에서 1(그대로), hard 이하에서 0(회전 없음). 속도 배율 = v_min + (1 − v_min) · k (0 까지 줄이지 않는다 -
+ * 기운 채 멈추는 것보다 천천히라도 빠져나가는 것이 낫다).
+ * 조이기는 바로, 풀기는 천천히: 켜진 동안 k 는 본 것 중 가장 작은 값을 유지하고, side &gt;= release 가 hold_ms 이어지면
+ * 꺼지며 k = 1 로 돌아간다(돌아가는 속도는 명령 단계의 변화율 상한이 정한다). 여유를 계산하지 못하면(valid 아님) 상태를 그대로 둔다.
+ * cut = 1 − k 로 둔다 - 구조체를 0 으로 초기화하면 "제한 없음"이 된다. */
+typedef struct {
+  float    soft_mm;       /* 이 아래로 내려가면 켜지고 줄이기 시작 */
+  float    hard_mm;       /* 이 이하에서 회전 0 */
+  float    release_mm;    /* 꺼짐: 이 이상이 hold_ms 이어지면 (&gt; soft) */
+  uint32_t hold_ms;
+  float    v_min_scale;   /* k = 0 일 때의 속도 배율 (0..1] */
+} slope_turn_cfg_t;
+
+typedef struct {
+  bool     on;
+  float    cut;           /* 1 − k */
+  uint32_t calm_ms;
+} slope_turn_t;
+
+static inline float slope_turn_step(slope_turn_t *t, const slope_turn_cfg_t *c, float side_mm, bool valid, uint32_t dt_ms)
+{
+  /* TODO(you) [T3]: 회전 제한 한 걸음 - 힌트 T3
+   *   1) valid 가 거짓이면 아무것도 바꾸지 않고 1 - cut 을 돌려준다
+   *   2) k = (side - hard) / (soft - hard) 를 [0, 1] 로 자른다 (soft - hard &lt;= 0 이면 side &gt; hard 일 때 1, 아니면 0)
+   *   3) side &lt; soft 면: on = true, calm_ms = 0, cut 은 지금 값과 1 - k 가운데 큰 쪽 (조이기는 바로)
+   *   4) 아니고 켜져 있으면: side &gt;= release 일 때 calm_ms 에 dt_ms 를 더해 hold_ms 에 닿으면 끈다(on 거짓, cut 0, calm 0).
+   *      release 아래면 calm_ms = 0 (풀기는 천천히)
+   *   5) 1 - cut 을 돌려준다 */
+  (void)c; (void)side_mm; (void)valid; (void)dt_ms;
+  return 1.0f - t-&gt;cut;
+}
+
+/* 회전 배율 k 에서 속도 배율 */
+static inline float slope_turn_v_scale(const slope_turn_cfg_t *c, float k)
+{
+  return c-&gt;v_min_scale + (1.0f - c-&gt;v_min_scale) * k;
+}
+
+/* ---- 롤 들림: slope_lift_step() 을 롤 입력으로 하나 더 ----
+ * 입력 = 롤 각속도(왼쪽이 들리면 +), dmax = 5°(현재 롤 기준 ±5°), 거리당 조건 = 비스듬한 진입 · 정렬로
+ * 생기는 거리당 롤 변화보다 빠를 때. 롤 각속도가 문턱을 넘은 구간의 시작 롤이 기준이므로 "지금 롤 20° 에서 정렬 중"이어도
+ * 그 자리에서 ±5° 를 넘는 변화만 본다. 반환 +1 = 왼쪽이 들림, −1 = 오른쪽이 들림.
+ * 동작(명령 단계): 회전 0 · 정지까지 감속(피치 들림처럼 축을 묶지 않는다), 0x85 flags bit7. drive_state bit2(들림 묶음)는
+ * 피치 들림의 축 묶기 뜻이라 켜지 않는다. 별도 함수가 없다 - slope_lift_t · slope_lift_cfg_t 를 하나 더 두고 같은 함수를 부른다. */
+
+#endif /* SLOPE_H */</code></pre>
+      <p><code>User/Inc/Control/mix.h</code> 에 더하는 부분 — <code>mix_duty()</code> 다음, <code>#endif</code> 앞이다(전량). <code>SLOPE_LR_ENABLE 0</code> 이면 쓰이지 않는다.</p>
+      <pre><code class="lang-c">/* User/Inc/Control/mix.h - mix_duty() 다음, #endif 앞에 더한다 */
+/* 바퀴 넷의 가중치(FL FR RL RR 순). front = 앞축 몫(slope_front_share), left = 왼쪽 몫(slope_left_share).
+ *   lr == false : 축 가중치 - 앞 두 바퀴 = mix_weight(front), 뒤 두 바퀴 = mix_weight(1 - front). 좌우는 보지 않는다
+ *   lr == true  : 바퀴 몫 = 앞뒤 몫 x 좌우 몫(넷의 합 = 1), 가중치 = 4 x 바퀴 몫, 아래로 w_min 에서 자름. 평지 = 넷 다 1
+ * front 가 음수(판정 불가)면 넷 다 1. left 가 음수면 좌우를 보지 않는다(축 가중치) */
+static inline void mix_wheel_weights(float front, float left, bool lr, float w_min, float w[4])
+{
+  const float rear = (front &lt; 0.0f) ? -1.0f : 1.0f - front;
+  if (!lr || front &lt; 0.0f || left &lt; 0.0f) {
+    w[0] = mix_weight(front, w_min); w[1] = w[0];
+    w[2] = mix_weight(rear,  w_min); w[3] = w[2];
+    return;
+  }
+  const float s[4] = { front * left, front * (1.0f - left), rear * left, rear * (1.0f - left) };
+  for (uint8_t i = 0u; i &lt; 4u; i++) {
+    w[i] = 4.0f * s[i];
+    if (w[i] &lt; w_min) { w[i] = w_min; }
+  }
+}</code></pre>
+      <p><code>User/Inc/Control/mix.h</code> 에 더하는 부분 둘째 — 위 <code>mix_wheel_weights()</code> 다음, <code>#endif</code> 앞이다. 적분 차이 줄이기(§2-12 ⑧)이고, 골격(채울 자리 T7)이다. 나머지는 전량이다. <code>MIX_IEQ_ENABLE 0</code> 이면 쓰이지 않는다. 이 부분은 바퀴 PID 의 상태를 만지므로 <code>pid.h</code> 를 include 한다.</p>
+      <pre><code class="lang-c">/* User/Inc/Control/mix.h - mix_wheel_weights() 다음, #endif 앞에 더한다 */
+/* ---- 적분 차이 줄이기: 세 바퀴로 선 동안 서로 반대로 버티는 적분을 푼다(fw-20 실습 I) ----
+ * 강체 4륜이 한 바퀴만 턱에 오르면 세 바퀴로 선다. 오르는 동안 쌓인 적분(한 바퀴 +, 대각 바퀴 -)은 오른 뒤에도 남는다 -
+ * 네 바퀴가 차체에 묶여 같은 속도로 돌면 바퀴마다 오차가 0 이라 적분이 더도 덜도 바뀌지 않는다.
+ * 그래서 넷의 평균은 두고, 평균에서 떨어진 몫(차이)만 시정수 tau 로 줄인다.
+ *   integ_i += a x (평균 - integ_i),   a = dt / (tau + dt)       평균은 그대로다(넷에 같은 a 를 쓰므로 차이의 합이 0 으로 남는다)
+ *   평균 = 경사를 오르거나 버티는 데 드는 공통의 밀기. 바퀴 사이의 하중 배분은 가중치 w_i 가 맡는다(mix_wheel_weights)
+ *   회전 중(|tl - tr| &gt; turn_mm_s): 좌우 차는 회전에 드는 것이라 두고, 같은 쪽 앞뒤(FL-RL, FR-RR)만 그 쌍의 평균으로 줄인다
+ * 범위: 줄인 값이 그 바퀴의 출력 범위 밖으로 나가지 않게 한다 - ki x integ 가 [out_min, out_max] 안(이번 틱의 PID 범위).
+ *   범위가 넷 다 같으면(평지 · 같은 가중치) 평균 쪽으로 옮긴 값은 늘 그 안이라 자를 일이 없다. 가중치가 다르면 범위가 달라
+ *   잘릴 수 있고, 그때 잘린 몫은 다른 바퀴로 넘기지 않으므로 평균이 (잘린 몫 / 넷) 만큼 바뀐다. 원래 범위 밖에 있던 값은
+ *   줄이는 쪽으로만 움직이게 둔다(더 밖으로는 보내지 않는다). ki &lt;= 0 이면 범위를 보지 않는다.
+ * tau &lt;= 0 또는 dt &lt;= 0 이면 아무것도 바꾸지 않는다. 부르는 곳은 control_step_1khz() - 네 바퀴의 pid_step() 다음, 틱마다 한 번 */
+#include "Control/pid.h"
+
+typedef struct {
+  float tau_s;       /* 차이가 줄어드는 시정수 [s]. 0 이하 = 하지 않음 */
+  float turn_mm_s;   /* 좌우 목표의 차가 이보다 크면 회전 - 좌우 차는 두고 같은 쪽 앞뒤만 줄인다 [mm/s] */
+} mix_ieq_cfg_t;
+
+/* 한 무리(바퀴 번호 idx[0..n-1])의 적분을 그 무리의 평균 쪽으로 a 만큼 옮긴다 */
+static inline void mix_ieq_group(speed_pid_t p[4], const uint8_t *idx, uint8_t n, float a)
+{
+  /* TODO(you) [T7]: 무리의 평균 쪽으로 a 만큼 옮기기 - 힌트 T7
+   *   1) m = idx[0..n-1] 이 가리키는 바퀴들의 integ 평균. 옮기기 전에 다 더해 한 번에 셈한다
+   *   2) 바퀴마다 old = integ, v = old + a * (m - old)
+   *   3) ki &gt; 0 이면 hi = out_max / ki, lo = out_min / ki.
+   *      v 가 hi 보다 크고 old 보다도 크면(위로 옮기다 넘음) v = (old &gt; hi) ? old : hi. lo 쪽도 같은 꼴
+   *   4) integ = v */
+  (void)p; (void)idx; (void)n; (void)a;
+}
+
+/* 바퀴 넷(FL FR RL RR 순)의 적분 차이를 한 틱만큼 줄인다. tl · tr = 이번 틱의 좌우 목표 [mm/s], dt_s = 틱 길이 [s] */
+static inline void mix_integ_equalize(speed_pid_t p[4], float tl, float tr, const mix_ieq_cfg_t *c, float dt_s)
+{
+  if (!(c-&gt;tau_s &gt; 0.0f) || !(dt_s &gt; 0.0f)) { return; }
+  const float a = dt_s / (c-&gt;tau_s + dt_s);
+  const float d = tl - tr;
+  if (d &gt; c-&gt;turn_mm_s || -d &gt; c-&gt;turn_mm_s) {                  /* 회전: 왼쪽 앞뒤 · 오른쪽 앞뒤 따로 */
+    static const uint8_t L[2] = { 0u, 2u }, R[2] = { 1u, 3u };
+    mix_ieq_group(p, L, 2u, a);
+    mix_ieq_group(p, R, 2u, a);
+  } else {
+    static const uint8_t ALL[4] = { 0u, 1u, 2u, 3u };
+    mix_ieq_group(p, ALL, 4u, a);
+  }
+}</code></pre>
+      <p><code>User/Inc/Control/guard.h</code> — 새 파일, 골격(채울 자리 T4). 나머지 함수는 전량이다.</p>
+      <pre><code class="lang-c">/* User/Inc/Control/guard.h - 명령 변화율 상한: Pi 가 보낸 좌우 목표 속도의 전진 성분(v)과 회전 성분(ω)이 바뀌는 빠르기를 자른다.
+ * 순수: HAL 도 robot_params.h 도 없다 - 값은 전부 cfg 구조체로 들어온다(slope.h · yaw.h 와 같은 꼴).
+ * host_tests/test_guard.c 가 이 .h 하나만으로 Mac 에서 빌드된다. 쓰는 곳은 control_step_1khz() 의 명령 단계 -
+ * 회전 제한 · 롤 들림이 목표를 줄인 뒤, 주행 불가 가공(slope_clamp_downhill) 앞이다(fw-20 실습 I).
+ *
+ *   v = (v_L + v_R) / 2,   ω = (v_R − v_L) / W       W = 유효 트랙 폭(yaw.h 와 같은 TRACK_WIDTH_MM)
+ *   틱마다 v 는 acc(멀어지는 쪽) · dec(0 쪽) × dt, ω 는 alpha × dt 만큼만 목표로 다가간다.
+ * 왜: 계단 명령(급출발 · 급정지 · 급회전)은 무게중심 높이에 관성 모멘트를 걸어 바퀴를 띄운다. Pi 의 속도 다듬기
+ * (Nav2 velocity_smoother)가 같은 일을 하지만, MCU 는 Pi 가 무엇을 보내든 지켜야 하는 마지막 층이다.
+ * 상한은 Pi 의 정상 주행 한계 바로 위로 둔다 - 정상 주행에서는 걸리지 않고 계단만 다듬는다.
+ *
+ * 보호 층이 회전을 줄일 때는 바로 줄여야 한다(옆 힘의 원인을 바로 없앤다): guard_cap_turn() 이 상태의 ω 를 그 크기로
+ * 자른다. 그러면 줄이기는 그 틱에, 되돌리기(풀린 뒤 다시 도는 것)는 alpha 로 천천히 된다.
+ * 명령 워치독 · 정지 조건에서는 guard_reset() 으로 상태를 0 으로 - 이 층이 정지를 늦추지 않는다. */
+#ifndef GUARD_H
+#define GUARD_H
+#include &lt;stdint.h&gt;
+#include &lt;stdbool.h&gt;
+
+typedef struct {
+  float w_mm;              /* 유효 트랙 폭 W [mm]. 0 이하 = 모름 -&gt; ω 를 따로 보지 않고 v 만 자른다 */
+  float acc_mm_s2;         /* v 가 0 에서 멀어지는 쪽 상한 [mm/s²] */
+  float dec_mm_s2;         /* v 가 0 쪽으로 가는 쪽 상한 [mm/s²] */
+  float alpha_rad_s2;      /* ω 변화 상한 [rad/s²] (양쪽 같음) */
+} guard_cfg_t;
+
+typedef struct {
+  float v_mm_s;            /* 지금 내보내는 v */
+  float w_rad_s;           /* 지금 내보내는 ω */
+  bool  limited;           /* 이번 틱에 v 나 ω 를 잘랐는가(관측용) */
+} guard_t;
+
+static inline float guard_absf(float x) { return (x &lt; 0.0f) ? -x : x; }   /* libm 없이 */
+
+static inline void guard_reset(guard_t *g) { g-&gt;v_mm_s = 0.0f; g-&gt;w_rad_s = 0.0f; g-&gt;limited = false; }
+
+/* x 를 target 쪽으로 최대 step 만큼 */
+static inline float guard_toward(float x, float target, float step, bool *cut)
+{
+  const float d = target - x;
+  if (d &gt; step)  { *cut = true; return x + step; }
+  if (d &lt; -step) { *cut = true; return x - step; }
+  return target;
+}
+
+static inline int16_t guard_i16(float x)   /* 반올림 + int16 범위로 자름 */
+{
+  if (x &gt;  32767.0f) { return  32767; }
+  if (x &lt; -32768.0f) { return -32768; }
+  return (int16_t)((x &lt; 0.0f) ? (x - 0.5f) : (x + 0.5f));
+}
+
+/* 한 틱. *vl · *vr [mm/s] 를 받아 자른 값으로 바꿔 쓴다. dt_s = 틱 길이 [s] */
+static inline void guard_step(guard_t *g, const guard_cfg_t *c, int16_t *vl, int16_t *vr, float dt_s)
+{
+  /* TODO(you) [T4]: 변화율 상한 한 틱 - 힌트 T4
+   *   1) 목표 v_t = (vl + vr) / 2, w_t = (vr - vl) / W (W &lt;= 0 이면 0)
+   *   2) 지금 v 가 0 쪽으로 가는 중이면(+ 인데 목표가 더 작거나, - 인데 더 큼) dec, 아니면 acc 로 guard_toward()
+   *   3) w 는 alpha 로 guard_toward(). 어느 쪽이든 잘랐으면 limited = true, 아니면 false
+   *   4) 좌우 차의 절반 half = w * W / 2 (W 를 모르면 목표의 좌우 차 절반 그대로)
+   *   5) *vl = guard_i16(v - half), *vr = guard_i16(v + half) */
+  (void)g; (void)c; (void)vl; (void)vr; (void)dt_s;
+}
+
+/* 보호 층이 회전을 줄였을 때: 상태의 |ω| 를 w_abs_max 로 바로 자른다(부호는 그대로). guard_step() 앞에 부른다 */
+static inline void guard_cap_turn(guard_t *g, float w_abs_max)
+{
+  if (w_abs_max &lt; 0.0f) { w_abs_max = 0.0f; }
+  if (g-&gt;w_rad_s &gt;  w_abs_max) { g-&gt;w_rad_s =  w_abs_max; }
+  if (g-&gt;w_rad_s &lt; -w_abs_max) { g-&gt;w_rad_s = -w_abs_max; }
+}
+
+#endif /* GUARD_H */</code></pre>
+      <p><code>control.c</code> 의 골격(채울 자리 T5 · T6 · T8). 그대로 빌드된다.</p>
+      <pre><code class="lang-c">/* control.c - 머리의 include 들 끝에 한 줄, 실습 H 의 블록(T3(fw-20c)) 다음 · T7(fw-20b) 앞에 아래 주석 */
+#include "Control/guard.h"   /* 명령 변화율 상한 (fw-20 실습 I) */
+
+/* TODO(you) [T5]: 기울기 대응 층 - 힌트 카드 T5
+ *   1) 상태 · 설정: s_fy · s_roll_seq · s_ww[NW] · s_comp · s_margin · s_turn · s_rlift · s_guard · s_trac_prev, 키 -&gt; cfg 셋
+ *   2) roll_layer_step(meas) - (ROLL_ENABLE 일 때) 새 샘플이면 옆 가속도 거르기 · 가속 보상 -&gt; 들림 여유(보상 전)
+ *      -&gt; 회전 제한 -&gt; 롤 들림 -&gt; (SLOPE_LR_ENABLE 일 때) 바퀴별 가중치
+ *   3) roll_cmd_step(stop, &amp;tl, &amp;tr) - 정지 조건이면 변화율 상한 상태를 0 으로. 아니면 롤 들림(목표 0 · 회전 0)
+ *      또는 회전 제한(회전 x k · 전진 x 속도 배율) -&gt; 변화율 상한
+ *   4) roll_snapshot() - 0x85 의 들림 여유 · 변 · bit6 · bit7 (· 바퀴별 가중치)
+ * TODO(you) [T6]: 부르는 자리 넷과 바꾸는 줄 둘 - 힌트 카드 T6 */
+
+/* TODO(you) [T8]: 적분 차이 줄이기를 부르는 자리 - 힌트 카드 T8
+ *   1) T5 의 블록 끝에 설정 하나: s_ieq_cfg = { MIX_IEQ_TAU_MS / 1000 [s], MIX_IEQ_TURN_MM_S }
+ *   2) T8(fw-20b) 의 5) 1차 게이트 반복문 바로 다음(5a): 켰고 · ARMED · EN 넷 다 HIGH · 지난 틱의 조건으로 끊지 않았으면
+ *      mix_integ_equalize(s_pid, tl, tr, &amp;s_ieq_cfg, PID_DT_S) */</code></pre>
+      <p class="small">이 골격 그대로(T1 ~ T8 을 비운 채) 펌웨어가 경고 없이 빌드된다 — <code>ROLL_ENABLE 0</code> · <code>MIX_IEQ_ENABLE 0</code> 이므로 이 실습 전과 같다.<sup class="fn"><a href="#fn-5">5</a></sup></p>
+
+      <h4 id="s3-i-3">3-I-3. 직접 채우기 — 정답 대신 벡터</h4>
+      <p>세 시험 파일은 저장소에 이미 있다(<code>firmware/host_tests/</code>). 전량을 아래에 둔다. 기댓값은 딱 떨어지는 수를 넣어 고른 것이다(h = l_f = l_r = 200 mm, b = 400 mm 이면 평지에서 네 변 여유가 모두 200 mm). 실습 G 의 <code>test_slope.c</code> 와 따로 둔 것은 그 파일이 실습 G 의 코드 블록과 같게 남게 하려는 것이다.</p>
+      <pre><code class="lang-c">/* firmware/host_tests/test_roll.c - 롤 대응(slope.h 아래쪽: 기울기 크기 · 가속 보상 · 합력점 들림 여유 · 회전 제한 · 롤 들림)을 Mac 에서.
+ * 가이드 실습 G 의 test_slope.c 와 따로 두어 그 파일이 가이드의 코드 블록과 같게 남는다. MCU 도 HAL 도 없다. */
+#include &lt;stdio.h&gt;
+#include "Control/slope.h"
+
+static int cases = 0;
+#define CHECK(c) do { cases++; if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); return 1; } } while (0)
+#define NEAR(a, b) ((a) - (b) &lt; 1e-4f &amp;&amp; (b) - (a) &lt; 1e-4f)
+#define NEAR3(a, b) ((a) - (b) &lt; 1e-3f &amp;&amp; (b) - (a) &lt; 1e-3f)
+
+/* 시험용 고정값이지 권고가 아니다. h = lf = lr = 200 mm, b = 400 mm 이면 평지에서 네 변 여유가 모두 200 mm */
+static const slope_cfg_t CFG = { .h_mm = 200.0f, .lf_mm = 200.0f, .lr_mm = 200.0f };
+#define B_MM 400.0f
+/* 경사 상태 히스테리시스(시뮬레이터 임시값과 같은 꼴) */
+static const slope_hyst_cfg_t ON = { .on = 0.070f, .off = 0.035f, .off_hold_ms = 300u };
+#define DT_S   0.005f       /* 200 Hz IMU */
+#define DT_MS  5u
+#define ALPHA  (5.0f / (50.0f + 5.0f))   /* 50 ms 저역 통과 */
+
+int main(void)
+{
+  /* ---- 1. 기울기 비: 3-4-5 ---- */
+  CHECK(NEAR(slope_tilt_ratio(300.0f, 400.0f, 1000.0f), 0.5f));
+  CHECK(NEAR(slope_tilt_ratio(-300.0f, -400.0f, 1000.0f), 0.5f));       /* 방향과 무관 */
+  CHECK(NEAR(slope_tilt_ratio(300.0f, 0.0f, 1000.0f), slope_ratio(300.0f, 1000.0f)));   /* 롤 0 이면 옛 값과 같다 */
+  CHECK(slope_tilt_ratio(1.0f, 1.0f, 0.0f) &lt; 0.0f);                     /* f_up &lt;= 0: 판정 안 함 */
+
+  /* ---- 2. 중앙값 ---- */
+  { const float a[4] = { 1.0f, 2.0f, 3.0f, 100.0f }; CHECK(NEAR(slope_median4(a), 2.5f)); }
+  { const float a[4] = { 400.0f, -5.0f, 402.0f, 398.0f }; CHECK(NEAR(slope_median4(a), 399.0f)); }   /* 한 바퀴가 끌려도 */
+  { const float a[4] = { 7.0f, 7.0f, 7.0f, 7.0f }; CHECK(NEAR(slope_median4(a), 7.0f)); }
+
+  /* ---- 3. 순수 롤 8° 정지: 옛 비(앞뒤만)는 0, 기울기 크기는 tan 8° -&gt; bit0 켜짐 ---- */
+  {
+    slope_comp_t c = {0};
+    slope_hyst_t h = {0};
+    const float f_lat = 139.17f, f_up = 990.27f;                        /* 1000 mg × (sin 8°, cos 8°) */
+    for (int i = 0; i &lt; 10; i++) {
+      slope_comp_step(&amp;c, 0.0f, 0.0f, ALPHA, DT_S, false);
+      (void)slope_hyst_step(&amp;h, &amp;ON, slope_comp_ratio(&amp;c, 0.0f, f_lat, f_up), DT_MS);
+    }
+    CHECK(h.on);
+    CHECK(NEAR3(slope_comp_ratio(&amp;c, 0.0f, f_lat, f_up), 0.14054f));
+    CHECK(NEAR(slope_ratio(0.0f, f_up), 0.0f));                         /* 옛 판정은 이 경사를 못 본다 */
+  }
+
+  /* ---- 4. 평지 출발 · 정지 펄스: 50 Hz 계단(20 ms 마다 +10 mm/s)으로 0 -&gt; 400 -&gt; 급정지 0.2 s.
+   *      가속도계 = 실제 가속(바퀴 속도의 샘플 차분)과 같다고 두고, f 와 a 를 같은 계수로 거른다 -&gt; 보상 후 비는 0 근처 ---- */
+  {
+    slope_comp_t c = {0};
+    slope_hyst_t h = {0}, h_raw = {0};
+    float v = 0.0f, v_prev = 0.0f, fx = 0.0f, max_comp = 0.0f, max_raw = 0.0f;
+    const float f_up = 1000.0f;
+    int k = 0;
+    slope_comp_step(&amp;c, 0.0f, 0.0f, ALPHA, DT_S, false);                /* 첫 샘플 = 정지에서 시작 */
+    for (; k &lt; 4 * 40; k++) {                                           /* 40 계단 × 4 샘플 = 0.8 s */
+      if ((k % 4) == 0) { v += 10.0f; }
+      fx = slope_lpf(fx, (v - v_prev) / DT_S / SLOPE_MM_S2_PER_MG, ALPHA);
+      v_prev = v;
+      slope_comp_step(&amp;c, v, 0.0f, ALPHA, DT_S, false);
+      const float r = slope_comp_ratio(&amp;c, fx, 0.0f, f_up), rr = slope_tilt_ratio(fx, 0.0f, f_up);
+      if (r &gt; max_comp) { max_comp = r; }
+      if (rr &gt; max_raw) { max_raw = rr; }
+      (void)slope_hyst_step(&amp;h, &amp;ON, r, DT_MS);
+      (void)slope_hyst_step(&amp;h_raw, &amp;ON, rr, DT_MS);
+    }
+    for (int j = 0; j &lt; 40; j++) {                                      /* 급정지 2 m/s² (0.2 s) */
+      v -= 10.0f;
+      fx = slope_lpf(fx, (v - v_prev) / DT_S / SLOPE_MM_S2_PER_MG, ALPHA);
+      v_prev = v;
+      slope_comp_step(&amp;c, v, 0.0f, ALPHA, DT_S, false);
+      const float r = slope_comp_ratio(&amp;c, fx, 0.0f, f_up), rr = slope_tilt_ratio(fx, 0.0f, f_up);
+      if (r &gt; max_comp) { max_comp = r; }
+      if (rr &gt; max_raw) { max_raw = rr; }
+      (void)slope_hyst_step(&amp;h, &amp;ON, r, DT_MS);
+      (void)slope_hyst_step(&amp;h_raw, &amp;ON, rr, DT_MS);
+    }
+    CHECK(!h.on);
+    CHECK(max_comp &lt; 0.001f);                                           /* 같은 필터라 거의 정확히 지워진다 */
+    CHECK(h_raw.on);                                                    /* 보상이 없으면 급정지가 경사로 보인다 */
+    CHECK(max_raw &gt; 0.15f);
+  }
+
+  /* ---- 5. 평지 회전 v = 500 mm/s, ω = 2 rad/s: 구심 가속 1000 mm/s² = 102 mg (왼쪽 +) -&gt; 보상 후 0 ---- */
+  {
+    slope_comp_t c = {0};
+    slope_hyst_t h = {0};
+    const float w_dps = 2.0f / SLOPE_DEG2RAD, f_lat_true = 500.0f * 2.0f / SLOPE_MM_S2_PER_MG;
+    float fy = 0.0f;
+    for (int i = 0; i &lt; 400; i++) {
+      fy = slope_lpf(fy, f_lat_true, ALPHA);
+      slope_comp_step(&amp;c, 500.0f, w_dps, ALPHA, DT_S, false);
+      (void)slope_hyst_step(&amp;h, &amp;ON, slope_comp_ratio(&amp;c, 0.0f, fy, 1000.0f), DT_MS);
+    }
+    CHECK(!h.on);
+    CHECK(NEAR3(c.a_lat_mg, 101.9716f));
+    CHECK(slope_comp_ratio(&amp;c, 0.0f, fy, 1000.0f) &lt; 0.001f);
+    CHECK(slope_tilt_ratio(0.0f, fy, 1000.0f) &gt; ON.on);                 /* 보상 없으면 켜진다 */
+    /* 오른쪽으로 돌면(ω &lt; 0) a_lat 도 - */
+    slope_comp_t c2 = {0};
+    for (int i = 0; i &lt; 400; i++) { slope_comp_step(&amp;c2, 500.0f, -w_dps, ALPHA, DT_S, false); }
+    CHECK(NEAR3(c2.a_lat_mg, -101.9716f));
+  }
+
+  /* ---- 6. 슬립 억제 동작 중: 아는 가속을 직전 값으로 유지, 거른 속도는 계속 따라간다 ---- */
+  {
+    slope_comp_t c = {0};
+    float v = 0.0f;
+    for (int i = 0; i &lt; 200; i++) { v += 5.0f; slope_comp_step(&amp;c, v, 0.0f, ALPHA, DT_S, false); }   /* 1000 mm/s² 일정 */
+    const float a_before = c.a_fwd_mg;
+    CHECK(NEAR3(a_before, 1000.0f / SLOPE_MM_S2_PER_MG));
+    for (int i = 0; i &lt; 20; i++) { v += 100.0f; slope_comp_step(&amp;c, v, 30.0f, ALPHA, DT_S, true); } /* 헛돎: 바퀴만 빨라짐 */
+    CHECK(c.held);
+    CHECK(NEAR(c.a_fwd_mg, a_before));                                  /* 유지 */
+    CHECK(NEAR(c.a_lat_mg, 0.0f));
+    for (int i = 0; i &lt; 200; i++) { slope_comp_step(&amp;c, v, 0.0f, ALPHA, DT_S, false); }             /* 풀린 뒤 일정 속도 */
+    CHECK(!c.held);
+    CHECK(c.a_fwd_mg &lt; 1.0f &amp;&amp; c.a_fwd_mg &gt; -1.0f);                     /* 따라간 덕에 풀린 뒤 0 으로 */
+  }
+
+  /* ---- 7. 합력점 들림 여유 ---- */
+  {
+    slope_margin_t m;
+    CHECK(slope_margin(&amp;CFG, B_MM, 0.0f, 0.0f, 1000.0f, &amp;m));
+    CHECK(m.valid &amp;&amp; NEAR(m.margin_mm, 200.0f) &amp;&amp; NEAR(m.side_mm, 200.0f));
+    /* 앞이 들리는 경계 f_fwd / f_up = lr / h: 뒤 변 여유 0 */
+    CHECK(slope_margin(&amp;CFG, B_MM, 1000.0f, 0.0f, 1000.0f, &amp;m));
+    CHECK(m.edge == SLOPE_EDGE_REAR &amp;&amp; NEAR(m.margin_mm, 0.0f));
+    /* 기존 식과 같다: 뒤 변 = 앞 몫 × (lf + lr) */
+    CHECK(slope_margin(&amp;CFG, B_MM, 300.0f, 0.0f, 1000.0f, &amp;m));
+    CHECK(m.edge == SLOPE_EDGE_REAR &amp;&amp; NEAR3(m.margin_mm, slope_front_share(&amp;CFG, 300.0f, 1000.0f) * 400.0f));
+    /* 내리막(앞이 숙여짐): 앞 변 */
+    CHECK(slope_margin(&amp;CFG, B_MM, -300.0f, 0.0f, 1000.0f, &amp;m));
+    CHECK(m.edge == SLOPE_EDGE_FRONT &amp;&amp; NEAR3(m.margin_mm, 140.0f));
+    /* 왼쪽이 들림(f_lat +): 오른쪽 변, = 왼쪽 몫 × b */
+    CHECK(slope_margin(&amp;CFG, B_MM, 0.0f, 300.0f, 1000.0f, &amp;m));
+    CHECK(m.edge == SLOPE_EDGE_RIGHT &amp;&amp; m.side_edge == SLOPE_EDGE_RIGHT);
+    CHECK(NEAR3(m.margin_mm, slope_left_share(&amp;CFG, B_MM, 300.0f, 1000.0f) * B_MM));
+    CHECK(NEAR3(m.side_mm, 140.0f));
+    /* 왼쪽으로 회전(구심 가속 왼쪽 = f_lat +): 바깥 = 오른쪽 변 */
+    CHECK(slope_margin(&amp;CFG, B_MM, 0.0f, 100.0f, 1000.0f, &amp;m));
+    CHECK(m.side_edge == SLOPE_EDGE_RIGHT &amp;&amp; NEAR3(m.side_mm, 180.0f));
+    /* 오른쪽이 들림: 왼쪽 변 */
+    CHECK(slope_margin(&amp;CFG, B_MM, 0.0f, -300.0f, 1000.0f, &amp;m));
+    CHECK(m.edge == SLOPE_EDGE_LEFT &amp;&amp; NEAR3(m.margin_mm, 140.0f));
+    /* 사각형 밖: 음수 */
+    CHECK(slope_margin(&amp;CFG, B_MM, 0.0f, 1500.0f, 1000.0f, &amp;m));
+    CHECK(NEAR3(m.margin_mm, -100.0f) &amp;&amp; m.edge == SLOPE_EDGE_RIGHT);
+    /* 앞뒤가 옆보다 좁은 차체: 피치 + 롤에서 작은 쪽을 고른다 */
+    const slope_cfg_t narrow = { .h_mm = 200.0f, .lf_mm = 100.0f, .lr_mm = 300.0f };
+    CHECK(slope_margin(&amp;narrow, B_MM, -200.0f, 200.0f, 1000.0f, &amp;m));   /* 앞 변 100 − 40 = 60, 오른쪽 200 − 40 = 160 */
+    CHECK(m.edge == SLOPE_EDGE_FRONT &amp;&amp; NEAR3(m.margin_mm, 60.0f) &amp;&amp; NEAR3(m.side_mm, 160.0f));
+    /* 계산 안 함 */
+    CHECK(!slope_margin(&amp;CFG, B_MM, 0.0f, 0.0f, 0.0f, &amp;m) &amp;&amp; !m.valid);
+    CHECK(!slope_margin(&amp;CFG, 0.0f, 0.0f, 0.0f, 1000.0f, &amp;m));
+  }
+
+  /* ---- 8. 회전 제한 ---- */
+  {
+    const slope_turn_cfg_t tc = { .soft_mm = 150.0f, .hard_mm = 50.0f, .release_mm = 170.0f, .hold_ms = 100u, .v_min_scale = 0.5f };
+    slope_turn_t t = {0};
+    float k;   /* NEAR 는 인자를 두 번 평가한다 - 상태를 바꾸는 호출은 먼저 변수에 */
+    k = slope_turn_step(&amp;t, &amp;tc, 200.0f, true, 20u); CHECK(NEAR(k, 1.0f) &amp;&amp; !t.on);   /* 여유 충분 */
+    k = slope_turn_step(&amp;t, &amp;tc, 100.0f, true, 20u);
+    CHECK(t.on &amp;&amp; NEAR(k, 0.5f) &amp;&amp; NEAR(slope_turn_v_scale(&amp;tc, k), 0.75f));
+    k = slope_turn_step(&amp;t, &amp;tc, 120.0f, true, 20u); CHECK(NEAR(k, 0.5f));            /* 조금 나아져도 풀지 않는다 */
+    k = slope_turn_step(&amp;t, &amp;tc, 160.0f, true, 20u); CHECK(NEAR(k, 0.5f) &amp;&amp; t.on);    /* soft 와 release 사이: 유지 */
+    k = slope_turn_step(&amp;t, &amp;tc, 180.0f, true, 60u); CHECK(NEAR(k, 0.5f) &amp;&amp; t.on);    /* release 위 60 ms */
+    k = slope_turn_step(&amp;t, &amp;tc, 160.0f, true, 20u); CHECK(NEAR(k, 0.5f) &amp;&amp; t.calm_ms == 0u);   /* 끊기면 처음부터 */
+    k = slope_turn_step(&amp;t, &amp;tc, 180.0f, true, 60u); CHECK(NEAR(k, 0.5f) &amp;&amp; t.on);
+    k = slope_turn_step(&amp;t, &amp;tc, 180.0f, true, 30u); CHECK(NEAR(k, 0.5f) &amp;&amp; t.on);    /* 90 ms */
+    k = slope_turn_step(&amp;t, &amp;tc, 180.0f, true, 10u); CHECK(NEAR(k, 1.0f) &amp;&amp; !t.on);   /* 100 ms 이어짐 -&gt; 꺼짐 */
+    k = slope_turn_step(&amp;t, &amp;tc, 40.0f, true, 20u);                           /* hard 아래: 회전 0, 속도 v_min */
+    CHECK(t.on &amp;&amp; NEAR(k, 0.0f) &amp;&amp; NEAR(slope_turn_v_scale(&amp;tc, k), 0.5f));
+    k = slope_turn_step(&amp;t, &amp;tc, 300.0f, false, 500u); CHECK(NEAR(k, 0.0f) &amp;&amp; t.on);  /* 여유 모름: 그대로 */
+    k = slope_turn_step(&amp;t, &amp;tc, -80.0f, true, 20u); CHECK(NEAR(k, 0.0f));           /* 밖(음수)도 0 */
+  }
+
+  /* ---- 9. 롤 들림: slope_lift_step() 을 롤 입력으로 (dmax 5°) ---- */
+  {
+    const slope_lift_cfg_t rc = { .rate_th_dps = 20.0f, .dpitch_max_deg = 5.0f, .dpitch_per_m_max = 20.0f, .release_ms = 300u };
+    slope_lift_t l = {0};
+    int8_t s = 0;
+    /* 한쪽 판자: 60 °/s 로 0.07 s = 4.2° 에서 멈춤 -&gt; 들림 아님 */
+    for (int i = 0; i &lt; 14; i++) { s = slope_lift_step(&amp;l, &amp;rc, 60.0f, 0.001f, DT_S, DT_MS); }
+    CHECK(s == 0);
+    for (int i = 0; i &lt; 20; i++) { s = slope_lift_step(&amp;l, &amp;rc, 0.0f, 0.001f, DT_S, DT_MS); }
+    CHECK(s == 0 &amp;&amp; !l.tracking);
+    /* 같은 자리(롤 4.2° 인 채)에서 다시 30 °/s 로 0.2 s = 6° -&gt; 지금 롤 기준 ±5° 를 넘음: 왼쪽 들림 */
+    for (int i = 0; i &lt; 40; i++) { s = slope_lift_step(&amp;l, &amp;rc, 30.0f, 0.0005f, DT_S, DT_MS); }
+    CHECK(s == 1);
+    /* 풀림: 각속도 문턱 아래 300 ms */
+    for (int i = 0; i &lt; 59; i++) { s = slope_lift_step(&amp;l, &amp;rc, 0.0f, 0.0f, DT_S, DT_MS); }
+    CHECK(s == 1);
+    s = slope_lift_step(&amp;l, &amp;rc, 0.0f, 0.0f, DT_S, DT_MS);
+    CHECK(s == 0);
+    /* 오른쪽 들림은 -1 */
+    for (int i = 0; i &lt; 40; i++) { s = slope_lift_step(&amp;l, &amp;rc, -30.0f, 0.0f, DT_S, DT_MS); }
+    CHECK(s == -1);
+    /* 비스듬한 진입: 25 °/s 로 0.4 s = 10° 지만 그 사이 1 m 를 감(거리당 20 °/m 상한 = 20°) -&gt; 들림 아님 */
+    slope_lift_t e = {0};
+    for (int i = 0; i &lt; 80; i++) { s = slope_lift_step(&amp;e, &amp;rc, 25.0f, 1.0f / 80.0f, DT_S, DT_MS); }
+    CHECK(s == 0);
+  }
+
+  printf("PASS roll %d cases\n", cases);
+  return 0;
+}</code></pre>
+      <p><code>firmware/host_tests/test_guard.c</code> — 전량. 기준은 1 kHz(dt = 1 ms)이고, 벡터 9 만 시뮬레이터의 50 Hz 명령 단계를 본다.</p>
+      <pre><code class="lang-c">/* firmware/host_tests/test_guard.c - 명령 변화율 상한(guard.h)을 Mac 에서. MCU 도 HAL 도 없다. */
+#include &lt;stdio.h&gt;
+#include "Control/guard.h"
+
+static int cases = 0;
+#define CHECK(c) do { cases++; if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); return 1; } } while (0)
+#define NEAR(a, b) ((a) - (b) &lt; 1e-3f &amp;&amp; (b) - (a) &lt; 1e-3f)
+
+/* 시험용 고정값이지 권고가 아니다: W 400 mm, 가속 500 · 감속 1000 mm/s², 회전 2 rad/s², 1 kHz */
+static const guard_cfg_t CFG = { .w_mm = 400.0f, .acc_mm_s2 = 500.0f, .dec_mm_s2 = 1000.0f, .alpha_rad_s2 = 2.0f };
+#define DT 0.001f
+
+static void run(guard_t *g, const guard_cfg_t *c, int16_t l, int16_t r, int n, int16_t *ol, int16_t *or_, float dt)
+{
+  for (int i = 0; i &lt; n; i++) { *ol = l; *or_ = r; guard_step(g, c, ol, or_, dt); }
+}
+
+int main(void)
+{
+  guard_t g = {0};
+  int16_t l = 0, r = 0;
+
+  /* 1. 범위 안의 작은 변화는 그대로 지나간다 */
+  run(&amp;g, &amp;CFG, 0, 0, 1, &amp;l, &amp;r, DT);
+  CHECK(l == 0 &amp;&amp; r == 0 &amp;&amp; !g.limited);
+  l = 0; r = 0;
+
+  /* 2. 계단 0 -&gt; 400 mm/s: 0.1 s 뒤 50, 0.8 s 뒤 400 */
+  run(&amp;g, &amp;CFG, 400, 400, 100, &amp;l, &amp;r, DT);
+  CHECK(l == 50 &amp;&amp; r == 50 &amp;&amp; g.limited);
+  run(&amp;g, &amp;CFG, 400, 400, 700, &amp;l, &amp;r, DT);
+  CHECK(l == 400 &amp;&amp; r == 400);
+  run(&amp;g, &amp;CFG, 400, 400, 1, &amp;l, &amp;r, DT);
+  CHECK(!g.limited);
+
+  /* 3. 급정지 400 -&gt; 0: 감속 상한 1000 -&gt; 0.2 s 뒤 200, 0.4 s 뒤 0 */
+  run(&amp;g, &amp;CFG, 0, 0, 200, &amp;l, &amp;r, DT);
+  CHECK(l == 200 &amp;&amp; r == 200);
+  run(&amp;g, &amp;CFG, 0, 0, 200, &amp;l, &amp;r, DT);
+  CHECK(l == 0 &amp;&amp; r == 0);
+
+  /* 4. 후진 쪽도 같은 규칙: 0 -&gt; -100 은 가속(500) -&gt; 0.1 s 뒤 -50 */
+  run(&amp;g, &amp;CFG, -100, -100, 100, &amp;l, &amp;r, DT);
+  CHECK(l == -50 &amp;&amp; r == -50);
+  run(&amp;g, &amp;CFG, -100, -100, 200, &amp;l, &amp;r, DT);
+  CHECK(l == -100 &amp;&amp; r == -100);
+  /* -100 -&gt; +100: 0 까지는 감속(1000, 0.1 s), 그 뒤 가속(500) */
+  run(&amp;g, &amp;CFG, 100, 100, 100, &amp;l, &amp;r, DT);
+  CHECK(l == 0 &amp;&amp; r == 0);
+  run(&amp;g, &amp;CFG, 100, 100, 100, &amp;l, &amp;r, DT);
+  CHECK(l == 50 &amp;&amp; r == 50);
+  guard_reset(&amp;g);
+
+  /* 5. 계단 회전 ±200 mm/s = 1 rad/s: 2 rad/s² -&gt; 0.25 s 뒤 0.5 rad/s = ±100. 평균(전진)은 0 그대로 */
+  run(&amp;g, &amp;CFG, -200, 200, 250, &amp;l, &amp;r, DT);
+  CHECK(l == -100 &amp;&amp; r == 100 &amp;&amp; NEAR(g.w_rad_s, 0.5f));
+  run(&amp;g, &amp;CFG, -200, 200, 250, &amp;l, &amp;r, DT);
+  CHECK(l == -200 &amp;&amp; r == 200);
+
+  /* 6. 보호 층이 회전을 줄임: 상태를 바로 자르면 그 틱에 줄어든다(되돌리기는 alpha) */
+  guard_cap_turn(&amp;g, 0.25f);
+  run(&amp;g, &amp;CFG, -50, 50, 1, &amp;l, &amp;r, DT);                 /* 줄인 목표 0.25 rad/s = ±50 */
+  CHECK(l == -50 &amp;&amp; r == 50 &amp;&amp; !g.limited);
+  run(&amp;g, &amp;CFG, -200, 200, 125, &amp;l, &amp;r, DT);             /* 풀림: 0.125 s 뒤 0.5 rad/s */
+  CHECK(l == -100 &amp;&amp; r == 100);
+  guard_cap_turn(&amp;g, 0.0f);                              /* 롤 들림: 회전 0 */
+  run(&amp;g, &amp;CFG, 0, 0, 1, &amp;l, &amp;r, DT);
+  CHECK(l == 0 &amp;&amp; r == 0 &amp;&amp; NEAR(g.w_rad_s, 0.0f));
+  g.w_rad_s = -0.8f;                                     /* 부호는 그대로, 크기만 */
+  guard_cap_turn(&amp;g, 0.3f);
+  CHECK(NEAR(g.w_rad_s, -0.3f));
+  guard_cap_turn(&amp;g, 1.0f);                              /* 이미 작으면 그대로 */
+  CHECK(NEAR(g.w_rad_s, -0.3f));
+
+  /* 7. 곡선(전진 + 회전)을 함께: v 와 ω 를 따로 자른다 */
+  guard_reset(&amp;g);
+  run(&amp;g, &amp;CFG, 300, 500, 100, &amp;l, &amp;r, DT);              /* v 400 · ω 0.5: 0.1 s 뒤 v 50 · ω 0.2 */
+  CHECK(l == 10 &amp;&amp; r == 90);
+
+  /* 8. 워치독 · 정지: reset 은 그 틱에 0 */
+  guard_reset(&amp;g);
+  CHECK(NEAR(g.v_mm_s, 0.0f) &amp;&amp; NEAR(g.w_rad_s, 0.0f) &amp;&amp; !g.limited);
+
+  /* 9. 50 Hz 명령 단계(시뮬레이터) - 같은 상한이 틱 길이만큼 */
+  guard_t s = {0};
+  run(&amp;s, &amp;CFG, 400, 400, 1, &amp;l, &amp;r, 0.02f);
+  CHECK(l == 10 &amp;&amp; r == 10);
+
+  /* 10. W 모름: ω 는 보지 않고 v 만 */
+  const guard_cfg_t nw = { .w_mm = 0.0f, .acc_mm_s2 = 500.0f, .dec_mm_s2 = 1000.0f, .alpha_rad_s2 = 2.0f };
+  guard_t u = {0};
+  run(&amp;u, &amp;nw, -100, 300, 1, &amp;l, &amp;r, 0.1f);              /* v 100 -&gt; 50, 좌우 차 400 은 그대로 */
+  CHECK(l == -150 &amp;&amp; r == 250);
+
+  /* 11. int16 범위 */
+  CHECK(guard_i16(40000.0f) == 32767 &amp;&amp; guard_i16(-40000.0f) == -32768 &amp;&amp; guard_i16(-1.5f) == -2 &amp;&amp; guard_i16(1.49f) == 1);
+
+  printf("PASS guard %d cases\n", cases);
+  return 0;
+}</code></pre>
+      <p><code>test_integ_eq.c</code> 는 <code>pid.c</code> 와 함께 빌드한다 — 벡터 7 이 <code>pid_step()</code> 으로 "묶인 바퀴의 적분은 혼자 풀리지 않는다"를 먼저 보이고, 같은 조건에서 이 함수가 푸는 것을 본다. 기댓값은 시정수의 정의다 — 차이가 τ 마다 1/e 로 준다.</p>
+      <pre><code class="lang-c">/* firmware/host_tests/test_integ_eq.c - 적분 차이 줄이기(mix.h 의 mix_integ_equalize)를 Mac 에서. MCU 도 HAL 도 없다.
+ * pid.c 를 함께 빌드한다(벡터 7 이 pid_step() 으로 "묶인 바퀴의 적분은 혼자 풀리지 않는다"를 보인다). */
+#include &lt;math.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include "Control/mix.h"
+
+static int cases = 0;
+#define CHECK(c) do { cases++; if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); return 1; } } while (0)
+#define NEAR(a, b) ((a) - (b) &lt; 1e-4f &amp;&amp; (b) - (a) &lt; 1e-4f)
+
+/* 시험용 고정값이지 권고가 아니다: ki 200(fw-13 벤치 값), 출력 범위 ±1000, tau 1 s, 회전 문턱 30 mm/s, 1 kHz */
+static const mix_ieq_cfg_t CFG = { .tau_s = 1.0f, .turn_mm_s = 30.0f };
+#define DT 0.001f
+
+static void set4(speed_pid_t p[4], float a, float b, float c, float d)
+{
+  const float v[4] = { a, b, c, d };
+  for (int i = 0; i &lt; 4; i++) {
+    p[i] = (speed_pid_t){ .kp = 4.0f, .ki = 200.0f, .kd = 0.0f, .integ = v[i], .prev_err = 0.0f,
+                          .out_min = -1000.0f, .out_max = 1000.0f };
+  }
+}
+static float mean4(const speed_pid_t p[4]) { return (p[0].integ + p[1].integ + p[2].integ + p[3].integ) / 4.0f; }
+static void run(speed_pid_t p[4], float tl, float tr, const mix_ieq_cfg_t *c, int n)
+{
+  for (int i = 0; i &lt; n; i++) { mix_integ_equalize(p, tl, tr, c, DT); }
+}
+
+int main(void)
+{
+  speed_pid_t p[4], q[4];
+
+  /* 1. 끔: tau 0 · dt 0 이면 한 비트도 바뀌지 않는다 */
+  { const mix_ieq_cfg_t off = { .tau_s = 0.0f, .turn_mm_s = 30.0f };
+    set4(p, 1.5f, -0.25f, -1.0f, 0.75f); memcpy(q, p, sizeof p);
+    run(p, 200.0f, 200.0f, &amp;off, 1000);
+    CHECK(memcmp(p, q, sizeof p) == 0);
+    mix_integ_equalize(p, 200.0f, 200.0f, &amp;CFG, 0.0f);
+    CHECK(memcmp(p, q, sizeof p) == 0); }
+
+  /* 2. 직진, 대각으로 버티는 적분(FR +, RL -): 평균은 그대로, 차이는 1 s 에 1/e, 3 s 에 1/e^3 */
+  set4(p, 0.0f, 2.0f, -2.0f, 0.0f);
+  run(p, 200.0f, 200.0f, &amp;CFG, 1);
+  CHECK(NEAR(mean4(p), 0.0f));
+  CHECK(NEAR(p[1].integ, 2.0f * (1.0f - DT / (1.0f + DT))));        /* 한 틱 = a 만큼 */
+  run(p, 200.0f, 200.0f, &amp;CFG, 999);
+  CHECK(NEAR(mean4(p), 0.0f));
+  CHECK(fabsf(p[1].integ / 2.0f - expf(-1.0f)) &lt; 1e-3f);           /* (1 - a)^1000 = e^-0.9995 */
+  CHECK(fabsf(p[2].integ / -2.0f - expf(-1.0f)) &lt; 1e-3f);
+  run(p, 200.0f, 200.0f, &amp;CFG, 2000);
+  CHECK(fabsf(p[1].integ / 2.0f - expf(-3.0f)) &lt; 1e-3f);
+
+  /* 3. 평균이 0 이 아니어도 평균은 그대로(경사에서 버티는 공통의 밀기), 넷 다 처음 값들의 범위 안에 남는다 */
+  set4(p, 3.0f, 1.0f, 2.5f, 0.5f);
+  { const float m0 = mean4(p);
+    int out = 0;
+    for (int k = 0; k &lt; 5000; k++) {
+      run(p, 0.0f, 0.0f, &amp;CFG, 1);
+      for (int i = 0; i &lt; 4; i++) { if (p[i].integ &gt; 3.0f + 1e-6f || p[i].integ &lt; 0.5f - 1e-6f) { out++; } }
+    }
+    CHECK(out == 0);
+    CHECK(fabsf(mean4(p) - m0) &lt; 1e-4f);
+    CHECK(fabsf(p[0].integ - m0) &lt; 0.01f * 3.0f); }                /* 5 s 뒤 차이 &lt; 1 % */
+
+  /* 4. 회전(좌우 목표 차 200 &gt; 30): 좌우 차는 두고, 같은 쪽 앞뒤만 쌍의 평균으로 */
+  set4(p, 1.0f, 3.0f, -1.0f, 5.0f);                              /* 왼쪽 쌍 평균 0, 오른쪽 쌍 평균 4 */
+  run(p, 100.0f, 300.0f, &amp;CFG, 3000);
+  CHECK(fabsf((p[0].integ + p[2].integ) / 2.0f - 0.0f) &lt; 1e-4f);
+  CHECK(fabsf((p[1].integ + p[3].integ) / 2.0f - 4.0f) &lt; 1e-4f);
+  CHECK(fabsf(p[0].integ - p[2].integ - 2.0f * expf(-3.0f)) &lt; 1e-3f);   /* 앞뒤 차 2 -&gt; 2 e^-3 */
+  CHECK(fabsf(p[3].integ - p[1].integ - 2.0f * expf(-3.0f)) &lt; 1e-3f);
+  CHECK(NEAR(mean4(p), 2.0f));
+  set4(q, 1.0f, 3.0f, -1.0f, 5.0f);
+  run(q, 300.0f, 100.0f, &amp;CFG, 3000);                            /* 반대 방향 회전도 같다 */
+  for (int i = 0; i &lt; 4; i++) { CHECK(NEAR(p[i].integ, q[i].integ)); }
+
+  /* 5. 문턱: 차가 문턱과 같으면 직진(넷이 함께), 넘으면 회전 */
+  set4(p, 1.0f, 3.0f, -1.0f, 5.0f);
+  run(p, 200.0f, 230.0f, &amp;CFG, 3000);
+  CHECK(fabsf(p[0].integ - p[1].integ) &lt; 4.0f * expf(-3.0f) + 1e-3f);   /* 좌우 차도 줄었다 */
+  set4(p, 1.0f, 3.0f, -1.0f, 5.0f);
+  run(p, 200.0f, 230.1f, &amp;CFG, 3000);
+  CHECK(fabsf((p[1].integ + p[3].integ) / 2.0f - 4.0f) &lt; 1e-4f);         /* 좌우 차는 그대로 */
+
+  /* 6. 범위: 바퀴마다 출력 범위가 다르면(가중치가 다를 때) 넘는 몫은 잘리고, 평균이 잘린 몫 / 4 만큼 바뀐다 */
+  { const mix_ieq_cfg_t fast = { .tau_s = DT, .turn_mm_s = 30.0f };   /* a = 0.5 - 한 틱에 반 */
+    set4(p, 0.4f, 2.0f, 2.0f, 2.0f);
+    p[0].out_max = 100.0f;                                        /* FL 의 위 경계 = 100 / 200 = 0.5 */
+    mix_integ_equalize(p, 0.0f, 0.0f, &amp;fast, DT);                 /* 평균 1.6: FL 은 1.0 이 될 것을 0.5 에서 멈춘다 */
+    CHECK(NEAR(p[0].integ, 0.5f));
+    CHECK(NEAR(p[1].integ, 1.8f) &amp;&amp; NEAR(p[2].integ, 1.8f) &amp;&amp; NEAR(p[3].integ, 1.8f));
+    CHECK(NEAR(mean4(p), 1.6f - (1.0f - 0.5f) / 4.0f));
+    /* 이미 경계 밖이면 더 밖으로는 보내지 않고, 안쪽으로는 옮긴다 */
+    set4(p, 0.8f, 2.0f, 2.0f, 2.0f);
+    p[0].out_max = 100.0f;
+    mix_integ_equalize(p, 0.0f, 0.0f, &amp;fast, DT);
+    CHECK(NEAR(p[0].integ, 0.8f));
+    set4(p, 0.8f, 0.4f, 0.4f, 0.4f);
+    p[0].out_max = 100.0f;
+    mix_integ_equalize(p, 0.0f, 0.0f, &amp;fast, DT);                 /* 평균 0.5 쪽으로: 0.8 -&gt; 0.65 (아직 경계 밖이어도 그대로 둔다) */
+    CHECK(NEAR(p[0].integ, 0.65f) &amp;&amp; NEAR(mean4(p), 0.5f));
+    /* 아래 경계도 같다 */
+    set4(p, -0.4f, -2.0f, -2.0f, -2.0f);
+    p[0].out_min = -100.0f;
+    mix_integ_equalize(p, 0.0f, 0.0f, &amp;fast, DT);
+    CHECK(NEAR(p[0].integ, -0.5f));
+    /* ki 0 이면 범위를 보지 않는다 */
+    set4(p, 0.4f, 2.0f, 2.0f, 2.0f);
+    p[0].out_max = 100.0f; p[0].ki = 0.0f;
+    mix_integ_equalize(p, 0.0f, 0.0f, &amp;fast, DT);
+    CHECK(NEAR(p[0].integ, 1.0f) &amp;&amp; NEAR(mean4(p), 1.6f)); }
+
+  /* 7. 묶인 바퀴: 넷의 오차가 0 이면 pid_step() 만으로는 적분이 그대로 남는다(버팀 토크가 계속된다).
+   *    차이 줄이기를 함께 부르면 3 s 뒤 u 의 차이가 e^-3 로 준다 */
+  set4(p, 0.0f, 0.05f, -0.05f, 0.0f); memcpy(q, p, sizeof p);
+  for (int k = 0; k &lt; 3000; k++) {
+    for (int i = 0; i &lt; 4; i++) { (void)pid_step(&amp;p[i], 0.0f); (void)pid_step(&amp;q[i], 0.0f); }
+    mix_integ_equalize(q, 200.0f, 200.0f, &amp;CFG, DT);
+  }
+  CHECK(NEAR(p[1].integ, 0.05f) &amp;&amp; NEAR(p[2].integ, -0.05f));      /* 혼자서는 풀리지 않는다 */
+  { const float u1 = pid_step(&amp;q[1], 0.0f), u2 = pid_step(&amp;q[2], 0.0f);
+    CHECK(fabsf((u1 - u2) / 20.0f - expf(-3.0f)) &lt; 1e-3f); }        /* 처음 u 차 = 200 x 0.1 = 20 permille */
+
+  printf("PASS integ_eq %d cases\n", cases);
+  return 0;
+}</code></pre>
+      <pre><code class="lang-bash">cd firmware
+cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_roll.c -o /tmp/test_roll -lm &amp;&amp; /tmp/test_roll
+cc -std=c11 -Wall -Wextra -fsanitize=undefined,address -Ih723zg/User/Inc host_tests/test_roll.c -o /tmp/test_roll_ub -lm &amp;&amp; /tmp/test_roll_ub
+cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_guard.c -o /tmp/test_guard &amp;&amp; /tmp/test_guard
+cc -std=c11 -Wall -Wextra -fsanitize=undefined,address -Ih723zg/User/Inc host_tests/test_guard.c -o /tmp/test_guard_ub &amp;&amp; /tmp/test_guard_ub
+cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_integ_eq.c h723zg/User/Src/Control/pid.c -o /tmp/test_integ_eq -lm &amp;&amp; /tmp/test_integ_eq
+cc -std=c11 -Wall -Wextra -fsanitize=undefined,address -Ih723zg/User/Inc host_tests/test_integ_eq.c h723zg/User/Src/Control/pid.c -o /tmp/test_integ_eq_ub -lm &amp;&amp; /tmp/test_integ_eq_ub
+# 실습 G 의 두 시험도 다시 - slope.h 아래쪽과 mix.h 아래쪽을 더해도 그대로여야 한다
+cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_slope.c -o /tmp/test_slope -lm &amp;&amp; /tmp/test_slope
+cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_mix.c -o /tmp/test_mix &amp;&amp; /tmp/test_mix</code></pre>
+      <ol class="steps">
+        <li><strong>T1</strong> 부터 — 벡터 3 ~ 6 이 가속 보상을 본다. 벡터 4 가 "출발 · 급정지가 기울기로 보이지 않는다", 벡터 5 가 "회전의 구심 가속이 기울기로 보이지 않는다"이다.</li>
+        <li><strong>T2</strong> — 벡터 7. 부호와 변의 번호가 핵심이다.</li>
+        <li><strong>T3</strong> — 벡터 8. 벡터 9(롤 들림)는 실습 G 의 <code>slope_lift_step()</code> 을 그대로 쓰므로 T3 까지 채우면 함께 통과한다.</li>
+        <li><strong>T4</strong> — <code>test_guard</code> 의 벡터 1 ~ 11.</li>
+        <li><strong>T7</strong> — <code>test_integ_eq</code> 의 벡터 1 ~ 7. 벡터 2 가 "평균은 그대로, 차이는 τ 마다 1/e", 벡터 4 가 회전 예외, 벡터 6 이 범위다.</li>
+        <li><strong>T5 · T6 · T8</strong> — 보드 쪽. <code>ROLL_ENABLE 0</code> · <code>MIX_IEQ_ENABLE 0</code> 인 채로 채우고 빌드한다. 경고가 없어야 한다. 그다음 3-I-1 의 값을 넣고 <code>ROLL_ENABLE 1</code> 로 한 번 더 빌드한다. <code>MIX_IEQ_ENABLE</code> 은 §3-I-4 의 7번에서 켠다.</li>
+      </ol>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w40"><col class="w60"></colgroup>
+          <thead><tr><th>여기까지 채웠다</th><th>호스트 시험의 마지막 줄</th></tr></thead>
+          <tbody>
+            <tr><td>골격 그대로 (<code>test_roll</code>)</td><td><code>FAIL line 78: !h.on</code></td></tr>
+            <tr><td>T1</td><td><code>FAIL line 124: slope_margin(&amp;CFG, B_MM, 0.0f, 0.0f, 1000.0f, &amp;m)</code></td></tr>
+            <tr><td>T1 · T2</td><td><code>FAIL line 165: t.on &amp;&amp; NEAR(k, 0.5f) &amp;&amp; NEAR(slope_turn_v_scale(&amp;tc, k), 0.75f)</code></td></tr>
+            <tr><td>T1 ~ T3</td><td><code>PASS roll 66 cases</code></td></tr>
+            <tr><td>골격 그대로 (<code>test_guard</code>)</td><td><code>FAIL line 30: l == 50 &amp;&amp; r == 50 &amp;&amp; g.limited</code></td></tr>
+            <tr><td>T4</td><td><code>PASS guard 22 cases</code></td></tr>
+            <tr><td>골격 그대로 (<code>test_integ_eq</code>)</td><td><code>FAIL line 46: NEAR(p[1].integ, 2.0f * (1.0f - DT / (1.0f + DT)))</code></td></tr>
+            <tr><td>T7</td><td><code>PASS integ_eq 31 cases</code></td></tr>
+          </tbody>
+        </table></div>
+      <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>slope_comp_step()</code> · 바퀴와 자이로로 아는 가속</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 입력은 상태 <code>c</code>, 차체 속도 <code>v_mm_s</code>(네 바퀴의 중앙값 [mm/s]), 수직축 회전 속도 <code>yaw_dps</code>(반시계 +), 비력과 같은 저역 통과 계수 <code>alpha</code>, 샘플 간격 <code>dt_s</code>, 슬립 억제 동작 여부 <code>hold</code>. 이 함수가 바꾸는 것은 <code>c</code> 안의 거른 속도와 아는 가속 둘(<code>a_fwd_mg</code> · <code>a_lat_mg</code>, 단위 mg)이다. 부르는 곳은 T19(IMU 새 샘플마다)와 호스트 시험.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T1 - User/Inc/Control/slope.h */
+static inline void slope_comp_step(slope_comp_t *c, float v_mm_s, float yaw_dps, float alpha, float dt_s, bool hold)
+{
+  if (!c-&gt;init) { c-&gt;init = true; c-&gt;v_lpf_mm_s = v_mm_s; c-&gt;a_fwd_mg = 0.0f; c-&gt;a_lat_mg = 0.0f; c-&gt;held = false; return; }
+  const float v_prev = c-&gt;v_lpf_mm_s;
+  c-&gt;v_lpf_mm_s = slope_lpf(v_prev, v_mm_s, alpha);
+  c-&gt;held = hold;
+  if (hold || dt_s &lt;= 0.0f) { return; }
+  c-&gt;a_fwd_mg = (c-&gt;v_lpf_mm_s - v_prev) / dt_s / SLOPE_MM_S2_PER_MG;
+  c-&gt;a_lat_mg = slope_lpf(c-&gt;a_lat_mg, v_mm_s * yaw_dps * SLOPE_DEG2RAD / SLOPE_MM_S2_PER_MG, alpha);
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul><li>첫 호출은 거른 속도를 지금 속도로 맞추고 끝낸다 — 0 에서 시작하면 첫 샘플 사이에 큰 가속이 생긴 것처럼 보인다.</li><li><code>v_prev</code> 를 남기고 거른 속도를 갱신하는 두 줄은 <code>hold</code> 앞에 있다 — 슬립 억제 동작 중에도 거른 속도는 따라간다. 풀리는 순간의 미분이 그동안 쌓인 차이로 튀지 않는다.</li><li><code>hold</code> 이면 두 가속을 그대로 둔다 — 헛도는 바퀴의 속도 변화는 차체의 가속이 아니다.</li><li><code>a_fwd</code> = 거른 속도의 차분 ÷ dt. <strong>거른 뒤 미분</strong>이라 비력을 거른 것과 늦음이 같다(§2-12 ①). 단위를 mm/s² 에서 mg 로 바꾸려고 9.80665 로 나눈다.</li><li><code>a_lat</code> = v · ω. ω 는 deg/s 로 들어오므로 라디안으로 바꾼다(<code>SLOPE_DEG2RAD</code>). 미분이 없으므로 같은 계수로 한 번 거른다.</li></ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 함수). 같은 파일의 <code>slope_lpf()</code>.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w36"><col class="w36"><col class="w28"></colgroup><thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead><tbody>
+<tr><td><code>v_mm_s * yaw_dps / SLOPE_MM_S2_PER_MG</code>(라디안으로 안 바꿈)</td><td><code>FAIL line 95: !h.on</code> — 구심 가속이 57.3 배로 셈해져 평지 회전에서 경사 상태가 켜진다</td><td><code>* SLOPE_DEG2RAD</code></td></tr>
+<tr><td>거르지 않은 속도의 차분을 따로 걸러 <code>a_fwd</code> 로</td><td><code>FAIL line 78: !h.on</code> — 필터 위치가 달라 출발 · 급정지 순간에 펄스가 남는다</td><td>속도를 같은 <code>alpha</code> 로 거른 <strong>뒤</strong> 미분</td></tr>
+</tbody></table></div>
+        <p><strong>확인</strong> — 벡터 1 ~ 6 이 통과하고 다음 FAIL 은 T2 의 벡터 7 이다(위 걸음 표).</p>
+        </div></details>
+      <details class="hint" id="hint-t2"><summary>힌트 T2 — <code>slope_margin()</code> · 합력점과 네 변까지의 여유</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 입력은 무게중심 설정 <code>c</code>(h · l_f · l_r), 기하 폭 <code>b_mm</code>, 보상 전 비력 셋 [mg]. 출력은 <code>m</code> 의 다섯 칸(계산했는가 · 최소 여유 · 그 변 · 옆 여유 · 그 옆 변)과 반환값(계산했는가). 부르는 곳은 T19(1 kHz)와 호스트 시험.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T2 - User/Inc/Control/slope.h */
+static inline bool slope_margin(const slope_cfg_t *c, float b_mm, float f_fwd, float f_lat, float f_up, slope_margin_t *m)
+{
+  m-&gt;valid = false;
+  if (f_up &lt;= 0.0f || b_mm &lt;= 0.0f || (c-&gt;lf_mm + c-&gt;lr_mm) &lt;= 0.0f) { return false; }
+  const float px = -c-&gt;h_mm * f_fwd / f_up;
+  const float py = -c-&gt;h_mm * f_lat / f_up;
+  const float d[4] = { c-&gt;lf_mm - px, px + c-&gt;lr_mm, 0.5f * b_mm - py, py + 0.5f * b_mm };   /* 앞 · 뒤 · 왼 · 오 */
+  uint8_t k = 0u;
+  for (uint8_t i = 1u; i &lt; 4u; i++) { if (d[i] &lt; d[k]) { k = i; } }
+  m-&gt;margin_mm = d[k];
+  m-&gt;edge      = k;
+  m-&gt;side_edge = (d[SLOPE_EDGE_LEFT] &lt;= d[SLOPE_EDGE_RIGHT]) ? SLOPE_EDGE_LEFT : SLOPE_EDGE_RIGHT;
+  m-&gt;side_mm   = d[m-&gt;side_edge];
+  m-&gt;valid     = true;
+  return true;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul><li>맨 앞에서 <code>valid = false</code> — 계산하지 못하고 돌아가는 모든 길에서 "모름"이 남는다. 0x85 는 이때 "계산하지 않음"을 보낸다.</li><li><code>px</code> · <code>py</code> 의 <strong>마이너스</strong> — 앞이 들리면(<code>f_fwd</code> &gt; 0) 하중이 뒤로 가서 합력점도 뒤로 간다(§2-12 ②). 부호를 빼면 변이 반대로 나온다(흔한 실수 첫 줄).</li><li><code>d[4]</code> 의 순서가 변 번호다 — 0 앞 · 1 뒤 · 2 왼쪽 · 3 오른쪽. 0x85 계약의 <code>margin_edge</code> 와 같은 번호다.</li><li>옆 두 변은 <code>b/2</code> 에서 잰다 — 무게중심을 좌우 가운데로 둔다(가속도계로는 옆으로 쏠린 짐이 보이지 않는다).</li><li>최소를 찾는 반복은 앞 변(0)에서 시작해 더 작을 때만 바꾼다 — 같은 값이면 번호가 작은 변이 남는다.</li><li>옆 여유는 따로 남긴다 — 회전 제한(T3)은 앞뒤 변이 아니라 옆 변만 본다.</li></ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 함수).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w36"><col class="w36"><col class="w28"></colgroup><thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead><tbody>
+<tr><td><code>px = c-&gt;h_mm * f_fwd / f_up</code>(마이너스 없음)</td><td><code>FAIL line 128: m.edge == SLOPE_EDGE_REAR &amp;&amp; NEAR(m.margin_mm, 0.0f)</code></td><td>p = −h · f / f_up</td></tr>
+<tr><td>옆 변을 <code>b_mm - py</code> · <code>py + b_mm</code> 로(절반이 아님)</td><td><code>FAIL line 125: m.valid &amp;&amp; NEAR(m.margin_mm, 200.0f) &amp;&amp; NEAR(m.side_mm, 200.0f)</code></td><td><code>0.5f * b_mm</code></td></tr>
+<tr><td>끝의 <code>m-&gt;valid = true</code> 를 빠뜨림</td><td><code>FAIL line 125: …</code>(같은 줄) — 반환은 true 인데 칸은 "모름"이다</td><td>다 채운 뒤 <code>valid = true</code></td></tr>
+</tbody></table></div>
+        <p><strong>확인</strong> — 벡터 7 이 통과하고 다음 FAIL 은 T3 의 벡터 8 이다.</p>
+        </div></details>
+      <details class="hint" id="hint-t3"><summary>힌트 T3 — <code>slope_turn_step()</code> · 회전 제한 한 걸음</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 입력은 상태 <code>t</code>, 설정 <code>c</code>(SOFT · HARD · RELEASE · HOLD · V_MIN), 옆 여유 <code>side_mm</code>, 여유를 계산했는가 <code>valid</code>, 지난 시간 <code>dt_ms</code>. 반환은 회전 배율 k ∈ [0, 1]. 상태 <code>t</code> 의 <code>on</code> · <code>cut</code>(= 1 − k) · <code>calm_ms</code> 를 바꾼다. 부르는 곳은 T19(1 kHz)와 호스트 시험.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T3 - User/Inc/Control/slope.h */
+static inline float slope_turn_step(slope_turn_t *t, const slope_turn_cfg_t *c, float side_mm, bool valid, uint32_t dt_ms)
+{
+  if (!valid) { return 1.0f - t-&gt;cut; }
+  const float span = c-&gt;soft_mm - c-&gt;hard_mm;
+  float k = (span &gt; 0.0f) ? (side_mm - c-&gt;hard_mm) / span : ((side_mm &gt; c-&gt;hard_mm) ? 1.0f : 0.0f);
+  if (k &lt; 0.0f) { k = 0.0f; }
+  if (k &gt; 1.0f) { k = 1.0f; }
+  if (side_mm &lt; c-&gt;soft_mm) {
+    t-&gt;on = true;
+    t-&gt;calm_ms = 0u;
+    if (1.0f - k &gt; t-&gt;cut) { t-&gt;cut = 1.0f - k; }
+  } else if (t-&gt;on) {
+    if (side_mm &gt;= c-&gt;release_mm) {
+      t-&gt;calm_ms += dt_ms;
+      if (t-&gt;calm_ms &gt;= c-&gt;hold_ms) { t-&gt;on = false; t-&gt;cut = 0.0f; t-&gt;calm_ms = 0u; }
+    } else {
+      t-&gt;calm_ms = 0u;
+    }
+  }
+  return 1.0f - t-&gt;cut;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul><li><code>valid</code> 가 아니면 아무것도 바꾸지 않는다 — 여유를 모르는 동안 켜고 끄지 않는다(벡터 8 의 끝에서 둘째 줄).</li><li>k 는 SOFT 에서 1, HARD 에서 0 인 직선이다. <code>span</code> 이 0 이하인 설정(SOFT = HARD)에서도 0 으로 나누지 않게 따로 셈한다. 가드가 SOFT &gt; HARD 를 막지만 순수 함수는 혼자서도 정의돼야 한다.</li><li>SOFT 아래면 켜고 <code>cut</code> 을 <strong>더 큰 쪽으로만</strong> 바꾼다 — 조이기는 바로, 조금 나아져도 풀지 않는다(벡터 8 의 셋째 줄).</li><li>켜진 채 SOFT 이상이면: RELEASE 이상이 이어지는 시간만 센다. 그 사이에 RELEASE 아래로 한 번이라도 오면 처음부터 센다. HOLD 에 닿으면 한 번에 끄고 k = 1 로 돌린다 — 돌아가는 빠르기는 명령 단계의 회전 변화율 상한이 정한다.</li><li><code>cut</code> 으로 두는 이유 — 구조체를 0 으로 초기화하면 "제한 없음"(k = 1)이 된다.</li></ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 함수).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w36"><col class="w36"><col class="w28"></colgroup><thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead><tbody>
+<tr><td>켜진 동안 <code>t-&gt;cut = 1.0f - k</code>(지금 값을 그대로 따라감)</td><td><code>FAIL line 166: NEAR(k, 0.5f)</code></td><td>더 클 때만 바꾼다</td></tr>
+<tr><td>RELEASE 이상이면 기다리지 않고 바로 끔</td><td><code>FAIL line 168: NEAR(k, 0.5f) &amp;&amp; t.on</code></td><td><code>calm_ms</code> 가 <code>hold_ms</code> 에 닿을 때</td></tr>
+<tr><td>RELEASE 대신 SOFT 와 견주어 셈을 시작함</td><td><code>FAIL line 169: NEAR(k, 0.5f) &amp;&amp; t.calm_ms == 0u</code></td><td>SOFT 와 RELEASE 사이는 유지(셈 0)</td></tr>
+<tr><td><code>valid</code> 가 아니면 끔</td><td><code>FAIL line 175: NEAR(k, 0.0f) &amp;&amp; t.on</code></td><td>상태를 그대로 두고 1 − cut</td></tr>
+</tbody></table></div>
+        <p><strong>확인</strong> — <code>PASS roll 66 cases</code>. 진단 빌드(<code>-fsanitize=undefined,address</code>)도 같은 줄이다.</p>
+        </div></details>
+      <details class="hint" id="hint-t4"><summary>힌트 T4 — <code>guard_step()</code> · 변화율 상한 한 틱</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 입력은 상태 <code>g</code>(지금 내보내는 v · ω), 설정 <code>c</code>(W · ACC · DEC · ALPHA), 이번 틱의 좌우 목표 <code>*vl</code> · <code>*vr</code> [mm/s], 틱 길이 <code>dt_s</code>. 출력은 자른 좌우 목표를 <code>*vl</code> · <code>*vr</code> 에 다시 쓰는 것. 부르는 곳은 T5 의 <code>roll_cmd_step()</code>(1 kHz)과 호스트 시험.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T4 - User/Inc/Control/guard.h */
+static inline void guard_step(guard_t *g, const guard_cfg_t *c, int16_t *vl, int16_t *vr, float dt_s)
+{
+  const float v_t = 0.5f * ((float)*vl + (float)*vr);
+  const float w_t = (c-&gt;w_mm &gt; 0.0f) ? ((float)*vr - (float)*vl) / c-&gt;w_mm : 0.0f;
+  bool cut = false;
+  /* v: 0 쪽으로 가는 중(지금 값과 변화의 부호가 반대)이면 dec, 아니면 acc */
+  const bool toward_zero = (g-&gt;v_mm_s &gt; 0.0f &amp;&amp; v_t &lt; g-&gt;v_mm_s) || (g-&gt;v_mm_s &lt; 0.0f &amp;&amp; v_t &gt; g-&gt;v_mm_s);
+  g-&gt;v_mm_s  = guard_toward(g-&gt;v_mm_s, v_t, (toward_zero ? c-&gt;dec_mm_s2 : c-&gt;acc_mm_s2) * dt_s, &amp;cut);
+  g-&gt;w_rad_s = guard_toward(g-&gt;w_rad_s, w_t, c-&gt;alpha_rad_s2 * dt_s, &amp;cut);
+  g-&gt;limited = cut;
+  const float half = (c-&gt;w_mm &gt; 0.0f) ? 0.5f * g-&gt;w_rad_s * c-&gt;w_mm : 0.5f * ((float)*vr - (float)*vl);
+  *vl = guard_i16(g-&gt;v_mm_s - half);
+  *vr = guard_i16(g-&gt;v_mm_s + half);
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul><li>좌우 목표를 v · ω 로 바꾼다. W 를 모르면 ω 를 따로 보지 않는다(벡터 10).</li><li><code>toward_zero</code> — 지금 v 가 + 인데 목표가 더 작거나, − 인데 더 크면 0 쪽으로 가는 중이다. 그때 DEC, 아니면 ACC. 0 을 지나 반대로 갈 때는 0 에 닿을 때까지 DEC 이고, 그 뒤 v 의 부호가 바뀌면 ACC 가 된다(벡터 4 의 둘째 묶음).</li><li><code>guard_toward()</code> 가 한 틱 최대 변화를 지키고, 잘랐으면 <code>cut</code> 을 세운다. <code>limited</code> 는 이번 틱의 값으로 <strong>덮어쓴다</strong> — 지난 틱의 표시가 남지 않게(벡터 2 의 마지막 확인).</li><li>되돌릴 때 좌우 차의 <strong>절반</strong>을 빼고 더한다 — ω · W 가 좌우 차 전체다.</li><li><code>guard_i16()</code> — 반올림하고 int16 범위로 자른다. 그냥 형 변환하면 0 쪽으로 버려 1 mm/s 씩 모자란다.</li></ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 함수). 같은 파일의 <code>guard_toward()</code> · <code>guard_i16()</code>.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w36"><col class="w36"><col class="w28"></colgroup><thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead><tbody>
+<tr><td>v 에 늘 <code>acc_mm_s2</code>(감속을 따로 두지 않음)</td><td><code>warning: unused variable 'toward_zero'</code>, 그리고 <code>FAIL line 38: l == 200 &amp;&amp; r == 200</code></td><td>0 쪽이면 <code>dec_mm_s2</code></td></tr>
+<tr><td><code>half = g-&gt;w_rad_s * c-&gt;w_mm</code>(절반이 아님)</td><td><code>FAIL line 56: l == -100 &amp;&amp; r == 100 &amp;&amp; NEAR(g.w_rad_s, 0.5f)</code></td><td><code>0.5f * g-&gt;w_rad_s * c-&gt;w_mm</code></td></tr>
+<tr><td><code>if (cut) { g-&gt;limited = true; }</code>(지우지 않음)</td><td><code>FAIL line 34: !g.limited</code></td><td><code>g-&gt;limited = cut;</code></td></tr>
+</tbody></table></div>
+        <p><strong>확인</strong> — <code>PASS guard 22 cases</code>. 진단 빌드도 같은 줄이다.</p>
+        </div></details>
+      <details class="hint" id="hint-t5"><summary>힌트 T5 — <code>control.c</code> · 기울기 대응 층 · 명령 단계 · 스냅숏</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 상태 아홉과 설정 셋을 두고, 함수 셋을 쓴다. <code>roll_layer_step(meas)</code> 는 이번 틱의 바퀴 속도 넷으로 보상 · 여유 · 회전 제한 · 롤 들림 · 바퀴별 가중치를 갱신한다. <code>roll_cmd_step(stop, &amp;tl, &amp;tr)</code> 는 좌우 목표를 고쳐 쓴다. <code>roll_snapshot()</code> 은 0x85 스냅숏의 들림 여유 · 변 · bit6 · bit7 을 채운다. 부르는 곳은 T6 이 정한다(모두 1 kHz ISR).</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T5 - User/Src/Control/control.c. include 는 파일 머리의 include 들 끝에, 나머지는 실습 H 의 블록(T3(fw-20c)) 다음 · T7(fw-20b) 앞에 */
+#include "Control/guard.h"
+
+static float            s_fy;                     /* 걸러진 차체 왼쪽 가속도 [mg] - s_fx · s_fz 와 같은 저역 통과 */
+static uint16_t         s_roll_seq;               /* 이 층이 마지막으로 거른 샘플의 seq */
+static float            s_ww[NW] = { 1.0f, 1.0f, 1.0f, 1.0f };   /* 바퀴별 가중치 (FL FR RL RR) - SLOPE_LR_ENABLE 일 때만 쓴다 */
+static slope_comp_t     s_comp;                   /* 가속 보상 - T7(fw-20b) 의 경사 상태가 읽는다 */
+static slope_margin_t   s_margin;                 /* 합력점 들림 여유 */
+static slope_turn_t     s_turn;                   /* 회전 제한 */
+static slope_lift_t     s_rlift;                  /* 롤 들림 */
+static guard_t          s_guard;                  /* 명령 변화율 상한 */
+static bool             s_trac_prev;              /* 지난 틱에 슬립 억제가 출력을 줄였는가 - 가속 보상을 멈춘다 */
+static const slope_lift_cfg_t s_rlift_cfg = { (float)ROLL_LIFT_RATE_DDPS / 10.0f, (float)ROLL_LIFT_DMAX_DDEG / 10.0f,
+                                              (float)ROLL_LIFT_PER_M_MAX_DDEG / 10.0f, ROLL_LIFT_RELEASE_MS };
+static const slope_turn_cfg_t s_turn_cfg  = { (float)TURN_SOFT_MM, (float)TURN_HARD_MM, (float)TURN_RELEASE_MM, TURN_HOLD_MS,
+                                              (float)TURN_V_MIN_MILLI / 1000.0f };
+static const guard_cfg_t      s_guard_cfg = { (float)TRACK_WIDTH_MM, (float)GUARD_ACC_MM_S2, (float)GUARD_DEC_MM_S2,
+                                              (float)GUARD_ALPHA_MRAD_S2 / 1000.0f };
+
+/* 1 kHz. T8(fw-20b) 의 2) 경사 층 바로 앞(2a)에서 부른다 - T7(fw-20b) 이 경사 상태를 정할 때 같은 샘플의 보상 값을 쓰게 */
+static void roll_layer_step(const float meas[NW])
+{
+#if ROLL_ENABLE
+  imu_sample_t im;
+  control_get_imu(&amp;im, 0u);
+  const uint32_t age   = (uint32_t)(tick_get_ms() - im.tick_ms);
+  const bool     fresh = (im.seq != 0u) &amp;&amp; (age &lt;= (uint32_t)(IMU_TIMEOUT_MS));   /* T7(fw-20b) 과 같은 기준 */
+  float roll_dps = 0.0f;
+  if (fresh) {
+    if (im.seq != s_roll_seq) {                                   /* 새 샘플마다(200 Hz) - T7(fw-20b) 의 s_fx · s_fz 와 같은 alpha */
+      const float alpha = 5.0f / ((float)SLOPE_LPF_TAU_MS + 5.0f);
+      s_fy = slope_lpf(s_fy, slope_axis(IMU_AX_LEFT, im.ax_mg, im.ay_mg, im.az_mg), alpha);
+      slope_comp_step(&amp;s_comp, slope_median4(meas), s_vert_dps, alpha, 0.005f, s_trac_prev);
+      s_roll_seq = im.seq;
+    }
+    roll_dps = slope_axis(IMU_GY_ROLL, im.gx_ddps, im.gy_ddps, im.gz_ddps) / 10.0f;   /* 왼쪽이 들리면 + (실습 H 의 키) */
+    (void)slope_margin(&amp;s_slope_cfg, (float)TRACK_GEOM_MM, s_fx, s_fy, s_fz, &amp;s_margin);   /* 보상 전 비력 */
+  } else {
+    s_margin.valid = false;                                       /* 샘플이 오래됐다 - 여유를 모른다 */
+  }
+  (void)slope_turn_step(&amp;s_turn, &amp;s_turn_cfg, s_margin.side_mm, s_margin.valid, 1u);   /* 모르면 상태를 그대로 둔다 */
+
+  float vmin = meas[0] &lt; 0.0f ? -meas[0] : meas[0];              /* 가장 느린 바퀴 - T7(fw-20b) 의 피치 들림과 같은 거리 */
+  for (uint8_t i = 1u; i &lt; (uint8_t)NW; i++) { const float a = meas[i] &lt; 0.0f ? -meas[i] : meas[i]; if (a &lt; vmin) { vmin = a; } }
+  (void)slope_lift_step(&amp;s_rlift, &amp;s_rlift_cfg, roll_dps, vmin * PID_DT_S / 1000.0f, PID_DT_S, 1u);
+
+  for (uint8_t i = 0u; i &lt; (uint8_t)NW; i++) { s_ww[i] = 1.0f; }   /* 샘플이 오래됐을 때의 값 = 평지 */
+#if SLOPE_LR_ENABLE
+  if (fresh) {
+    mix_wheel_weights(slope_front_share(&amp;s_slope_cfg, s_fx, s_fz),
+                      slope_left_share(&amp;s_slope_cfg, (float)TRACK_GEOM_MM, s_fy, s_fz),
+                      true, (float)MIX_W_MIN_MILLI / 1000.0f, s_ww);
+  }
+#endif
+#else
+  (void)meas; (void)s_roll_seq; (void)s_margin; (void)s_turn; (void)s_rlift; (void)s_rlift_cfg; (void)s_turn_cfg;   /* 층 없음 */
+#endif
+}
+
+/* 1 kHz. T8(fw-20b) 의 3) 에서 목표 둘을 읽은 줄 바로 다음(3a)에서 부른다 - 버팀 · 주행 불가 가공보다 앞.
+ * stop = 워치독 정지 · ARMED 아님 · 지난 틱의 안전 조건. 이때는 상태를 0 으로 두고 목표를 건드리지 않는다 */
+static void roll_cmd_step(bool stop, int16_t *tl, int16_t *tr)
+{
+#if ROLL_ENABLE
+  if (stop) { guard_reset(&amp;s_guard); return; }                    /* 이 층이 정지를 늦추지 않는다 */
+  if (s_rlift.lifted != 0) {                                      /* 롤 들림: 회전 0 · 목표 0 - 감속 상한으로 선다 */
+    *tl = 0;
+    *tr = 0;
+    guard_cap_turn(&amp;s_guard, 0.0f);
+  } else if (s_turn.on) {                                         /* 회전 제한: 회전 성분 x k, 전진 성분 x 속도 배율 */
+    const float k    = 1.0f - s_turn.cut;
+    const float v    = 0.5f * ((float)*tl + (float)*tr) * slope_turn_v_scale(&amp;s_turn_cfg, k);
+    const float half = 0.5f * ((float)*tr - (float)*tl) * k;      /* 좌우 차의 절반 */
+    *tl = guard_i16(v - half);
+    *tr = guard_i16(v + half);
+    guard_cap_turn(&amp;s_guard, guard_absf(2.0f * half) / (float)TRACK_WIDTH_MM);   /* 줄인 회전은 이 틱에 - 되돌리기만 천천히 */
+  }
+  guard_step(&amp;s_guard, &amp;s_guard_cfg, tl, tr, PID_DT_S);
+#else
+  (void)stop; (void)tl; (void)tr; (void)s_guard; (void)s_guard_cfg;
+#endif
+}
+
+/* 1 kHz. T8(fw-20b) 의 8b) ctrl_snapshot_fill() 다음(8c)에서 부른다 - 실습 H 가 넣은 "계산하지 않음" 을 이 층의 값으로 바꾼다 */
+static void roll_snapshot(void)
+{
+#if ROLL_ENABLE
+  if (s_margin.valid) {
+    const float m = (s_margin.margin_mm &gt; 32766.0f) ? 32766.0f : s_margin.margin_mm;   /* 32767 은 "계산하지 않음" 자리 */
+    s_ctrl.margin_mm   = guard_i16(m);
+    s_ctrl.margin_edge = s_margin.edge;
+  }
+  if (s_turn.on)           { s_ctrl.flags = (uint16_t)(s_ctrl.flags | CONTROL_CTRL_TURN_LIMIT); }
+  if (s_rlift.lifted != 0) { s_ctrl.flags = (uint16_t)(s_ctrl.flags | CONTROL_CTRL_ROLL_LIFT); }
+#if SLOPE_LR_ENABLE
+  for (uint8_t i = 0u; i &lt; (uint8_t)NW; i++) { s_ctrl.weight[i] = s_ww[i]; }   /* 0x85 의 weight_pct 는 2.55 에서 잘린다 */
+#endif
+#endif
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul><li><strong>자리</strong> — 실습 H 의 블록(T3(fw-20c)) 다음 · T7(fw-20b) 앞. 이 블록은 실습 G 의 상태(<code>s_fx</code> · <code>s_fz</code> · <code>s_w</code> · <code>s_slope_cfg</code>)와 실습 H 의 <code>s_vert_dps</code> · <code>s_ctrl</code> 을 쓰고, T7(fw-20b) · T8(fw-20b) 이 이 블록의 이름을 쓴다. C 는 쓰기 전에 선언돼 있어야 한다.</li><li><code>s_guard_cfg</code> 의 W 는 <code>TRACK_WIDTH_MM</code>(유효 폭)이고, <code>slope_margin()</code> · <code>slope_left_share()</code> 의 b 는 <code>TRACK_GEOM_MM</code>(기하 폭)이다. 앞은 회전 성분을 셈하는 폭, 뒤는 바퀴가 닿는 자리다(§2-12 ②).</li><li><code>roll_layer_step()</code> 의 새 샘플 가지 — T7(fw-20b) 과 같은 <code>alpha</code>(dt 5 ms)로 옆 비력을 거르고, 같은 샘플에서 가속 보상을 한 걸음 셈한다. 차체 속도는 <code>slope_median4(meas)</code>, ω 는 실습 H 가 낸 <code>s_vert_dps</code>(수직축 회전 속도, 반시계 +), 멈춤 조건은 지난 틱의 슬립 억제(<code>s_trac_prev</code>)다. 슬립 억제는 이 함수보다 뒤에서 돌기 때문에 지난 틱 값을 쓴다.</li><li>롤 각속도는 실습 H 의 키 <code>IMU_GY_ROLL</code>(오른쪽이 내려가는 쪽 = 왼쪽이 들리는 쪽이 +)을 그대로 쓴다 — <code>slope_lift_step()</code> 의 +1 이 "왼쪽이 들림"인 것과 같은 부호라 부호 키를 따로 두지 않는다.</li><li>여유는 보상 전 비력(<code>s_fx</code> · <code>s_fy</code> · <code>s_fz</code>)으로 셈한다. 샘플이 오래되면 <code>valid = false</code> 로 두고, 회전 제한은 그 동안 상태를 그대로 둔다.</li><li>롤 들림의 거리는 T7(fw-20b) 의 피치 들림과 같이 가장 느린 바퀴의 1 ms 이동 거리다. dt 는 1 ms(<code>PID_DT_S</code>) — 각속도는 샘플 사이에도 마지막 값을 1 kHz 로 적분한다.</li><li>바퀴별 가중치 <code>s_ww</code> 는 <code>SLOPE_LR_ENABLE 1</code> 일 때만 쓰인다(T6 의 (4)). 끄면 T8(fw-20b) 은 실습 G 의 <code>s_w</code> 를 그대로 쓴다.</li><li><code>roll_cmd_step()</code> — <code>stop</code> 이면 변화율 상한의 상태만 0 으로 두고 목표를 건드리지 않는다. 그래야 워치독 · 버팀이 만든 0 이 그 틱에 나가고, 다시 출발할 때 상한이 0 에서 시작한다. 롤 들림이면 목표 0 과 회전 상태 0, 회전 제한이면 회전 성분 × k · 전진 성분 × 속도 배율로 바꾸고 상태의 |ω| 를 그 틱에 자른다. 마지막에 <code>guard_step()</code>.</li><li><code>roll_snapshot()</code> — 실습 H 의 <code>ctrl_snapshot_fill()</code> 이 넣은 "계산하지 않음"을 덮어쓴다. 여유를 32766 에서 자르는 것은 32767 이 "계산하지 않음" 자리이기 때문이다.</li><li><code>#if ROLL_ENABLE</code> 의 <code>#else</code> 쪽 <code>(void)</code> 줄 — 층이 빠진 빌드에서 "쓰지 않는 변수" 경고를 막는다. <code>ROLL_ENABLE 0</code> 이면 세 함수가 아무것도 하지 않아 동작이 실습 H 까지와 같다.</li></ul>
+        <p><strong>쓰는 API</strong> — <code>void control_get_imu(imu_sample_t *out, uint8_t sensor_id)</code>(fw-17) · <code>uint32_t tick_get_ms(void)</code>(fw-06) · <code>float slope_axis(int8_t sel, float x, float y, float z)</code>(실습 G) · T1 ~ T4 의 함수와 <code>slope_lift_step()</code>(실습 G).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w36"><col class="w36"><col class="w28"></colgroup><thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead><tbody>
+<tr><td>이 블록을 T7(fw-20b) 뒤에 둠</td><td><code>control.c: error: 's_comp' undeclared (first use in this function); did you mean 's_cap'?</code> (그리고 <code>s_fy</code>) — T6 의 (1) 이 T7(fw-20b) 안에서 쓴다</td><td>실습 H 의 블록 다음 · T7(fw-20b) 앞</td></tr>
+<tr><td><code>#include "Control/guard.h"</code> 를 빠뜨림</td><td><code>control.c: error: unknown type name 'guard_t'</code></td><td>파일 머리의 include 끝에</td></tr>
+<tr><td><code>s_guard_cfg</code> 의 W 에 <code>TRACK_GEOM_MM</code></td><td>빌드는 된다 — 회전 성분을 기하 폭으로 셈해 회전 변화율 상한이 다른 값이 된다(실습 H 의 ω 와 맞지 않는다)</td><td><code>TRACK_WIDTH_MM</code></td></tr>
+<tr><td><code>stop</code> 에서 <code>guard_step()</code> 까지 그대로 돎</td><td>빌드는 된다 — 워치독이 걸려도 목표가 DEC 기울기로 줄어 정지가 늦어진다(§3-I-4 의 5번에서 보인다)</td><td><code>guard_reset()</code> 하고 바로 돌아간다</td></tr>
+</tbody></table></div>
+        <p><strong>확인</strong> — <code>ROLL_ENABLE 0</code> 으로 빌드한다. 경고가 없어야 한다. 3-I-1 의 값을 넣고 <code>ROLL_ENABLE 1</code> 로 빌드해도 경고가 없어야 한다.</p>
+        </div></details>
+      <details class="hint" id="hint-t6"><summary>힌트 T6 — <code>control.c</code> · 부르는 자리 넷과 바꾸는 줄 둘</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — T7(fw-20b) · T8(fw-20b) · T3(fw-20c) 에 이 층을 끼운다. 바꾸는 줄은 둘(경사 상태의 입력, 바퀴의 가중치), 더하는 줄은 넷이다. 순서는 §2-12 ⑥ 이다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T6 - User/Src/Control/control.c. 부르는 자리 넷과 바꾸는 줄 둘 */
+
+/* (1) T7(fw-20b) 안 - 경사 상태 줄 하나를 바꾼다. 켜면 보상 뒤 기울기 크기, 끄면 실습 G 그대로(피치 비) */
+    (void)slope_hyst_step(&amp;s_on,   &amp;s_on_cfg,   (ROLL_ENABLE) ? slope_comp_ratio(&amp;s_comp, s_fx, s_fy, s_fz) : r, 1u);
+
+/* (2) T8(fw-20b) 의 2) 바로 앞 */
+  /* 2a) 기울기 대응 (실습 I) - 옆 가속도 · 가속 보상 · 들림 여유 · 회전 제한 · 롤 들림 */
+  roll_layer_step(meas);
+
+/* (3) T8(fw-20b) 의 3) 안, int16_t tl = ..., tr = ...; 줄 바로 다음 */
+  /* 3a) 롤 들림 · 회전 제한 · 명령 변화율 상한 (실습 I). 버팀 · 주행 불가 가공보다 앞 */
+  roll_cmd_step((s_wd_stopped != 0u) || !armed || (s_cond_prev != 0u), &amp;tl, &amp;tr);
+
+/* (4) T8(fw-20b) 의 4) 안 - 가중치 줄의 s_w[i &gt;&gt; 1] 을 괄호째 바꾼다(실습 C 의 * trac[i] 를 곱했다면 닫는 괄호 뒤에 그대로 둔다) */
+    const float   w   = ((SLOPE_LR_ENABLE) ? s_ww[i] : s_w[i &gt;&gt; 1]);   /* 좌우 몫을 켜면 바퀴별 */
+
+/* (5) T3(fw-20c) 의 3b) - trac_active 를 센 반복문 바로 다음 */
+  s_trac_prev = trac_active;                                        /* 다음 샘플의 가속 보상이 쓴다 (실습 I) */
+
+/* (6) T3(fw-20c) 의 8b) - ctrl_snapshot_fill() 줄 바로 다음 */
+  roll_snapshot();                                                  /* 8c) 들림 여유 · bit6 · bit7 (실습 I) */</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul><li>(1) 경사 상태 — <code>ROLL_ENABLE 1</code> 이면 보상 뒤 기울기 크기, 0 이면 옛 피치 비 <code>r</code>. 주행 불가 줄(<code>s_nogo</code>)은 바꾸지 않는다 — 보상 전 피치 그대로다(§2-12 ① 의 표).</li><li>(2) 2a) 는 2) <strong>앞</strong>이다 — T7(fw-20b) 이 경사 상태를 정할 때 같은 샘플의 보상 값을 쓴다.</li><li>(3) 3a) 는 목표를 읽은 바로 뒤, 버팀 · 주행 불가 가공 앞이다. <code>stop</code> 은 실습 H 의 3b) 가 쓰는 끊는 조건과 같은 식이다. 지난 틱의 안전 조건이 서 있으면(버팀 포함) 변화율 상한은 쉬고, 3) 이 만든 목표가 그대로 나간다.</li><li>(4) <code>SLOPE_LR_ENABLE 0</code> 이면 식이 <code>s_w[i &gt;&gt; 1]</code> 그대로다. 실습 C 의 슬립 억제 계수를 곱해 두었다면 <code>((SLOPE_LR_ENABLE) ? s_ww[i] : s_w[i &gt;&gt; 1]) * trac[i]</code> 처럼 괄호 뒤에 남긴다. 조건 연산자는 곱셈보다 늦게 묶이므로 괄호가 없으면 곱이 뒤 가지에만 붙는다.</li><li>(5) 이번 틱의 슬립 억제 상태를 남긴다 — 다음 샘플의 가속 보상이 쓴다.</li><li>(6) 스냅숏을 채운 <strong>뒤</strong>에 부른다 — 실습 H 가 넣은 "계산하지 않음"과 플래그 위에 덮어쓴다.</li></ul>
+        <p><strong>쓰는 API</strong> — T5 의 세 함수.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w36"><col class="w36"><col class="w28"></colgroup><thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead><tbody>
+<tr><td>(1) 에서 주행 불가 줄까지 보상 뒤 값으로 바꿈</td><td>빌드는 된다 — 급가속 때의 하중 이동(실제 힘)을 주행 불가 판정이 보지 못한다</td><td>경사 상태 줄 하나만</td></tr>
+<tr><td>(3) 을 버팀 · 주행 불가 가공 뒤에 둠</td><td>빌드는 된다 — 주행 불가에서 버린 회전 성분이 변화율 상한 때문에 천천히 사라진다</td><td>목표를 읽은 바로 뒤</td></tr>
+<tr><td>(4) 를 괄호 없이 <code>(SLOPE_LR_ENABLE) ? s_ww[i] : s_w[i &gt;&gt; 1] * trac[i]</code></td><td>빌드는 된다 — 좌우 몫을 켜면 슬립 억제 계수가 곱해지지 않는다(곱이 뒤 가지에만 붙는다)</td><td>조건 연산자 전체를 괄호로 묶고 그 뒤에 곱한다</td></tr>
+<tr><td>(6) 을 <code>ctrl_snapshot_fill()</code> 앞에 둠</td><td>빌드는 된다 — 0x85 의 여유가 늘 <code>margin=-</code> 이고 bit6 · bit7 이 서지 않는다</td><td>스냅숏을 채운 뒤</td></tr>
+</tbody></table></div>
+        <p><strong>확인</strong> — <code>ROLL_ENABLE 0</code> 으로 빌드 · 굽고 실습 H 와 같은 <code>step</code> CSV 를 찍어 견준다(§3-I-4 의 1번). 컴파일러 메시지의 줄 번호는 파일마다 다르다.</p>
+        </div></details>
+      <details class="hint" id="hint-t7"><summary>힌트 T7 — <code>mix_ieq_group()</code> · 한 무리의 적분을 그 평균 쪽으로</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 입력은 바퀴 PID 넷 <code>p</code>, 무리의 바퀴 번호 <code>idx</code>, 무리 크기 <code>n</code>(직진 4, 회전 중 2), 이번 틱에 옮기는 몫 <code>a</code>(0 과 1 사이). 바꾸는 것은 무리 안 바퀴들의 <code>integ</code> 하나씩이다. 부르는 곳은 같은 파일의 <code>mix_integ_equalize()</code> — 직진이면 넷을 한 무리로, 회전 중이면 왼쪽 쌍(FL · RL)과 오른쪽 쌍(FR · RR)을 따로 부른다.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T7 - User/Inc/Control/mix.h */
+static inline void mix_ieq_group(speed_pid_t p[4], const uint8_t *idx, uint8_t n, float a)
+{
+  float m = 0.0f;
+  for (uint8_t k = 0u; k &lt; n; k++) { m += p[idx[k]].integ; }
+  m /= (float)n;
+  for (uint8_t k = 0u; k &lt; n; k++) {
+    speed_pid_t *q = &amp;p[idx[k]];
+    const float old = q-&gt;integ;
+    float v = old + a * (m - old);
+    if (q-&gt;ki &gt; 0.0f) {
+      const float hi = q-&gt;out_max / q-&gt;ki, lo = q-&gt;out_min / q-&gt;ki;
+      if (v &gt; hi &amp;&amp; v &gt; old) { v = (old &gt; hi) ? old : hi; }    /* 위로 옮기다 범위를 넘으면 경계(또는 제자리)에서 멈춘다 */
+      if (v &lt; lo &amp;&amp; v &lt; old) { v = (old &lt; lo) ? old : lo; }
+    }
+    q-&gt;integ = v;
+  }
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul><li>평균을 <strong>먼저</strong> 다 셈하고 나서 옮긴다. 옮기면서 평균을 다시 셈하면 앞에서 옮긴 바퀴가 뒤의 평균을 바꿔 평균이 지켜지지 않는다(흔한 실수 첫 줄).</li><li><code>a * (m - old)</code> — 무리 안 모두에 같은 a 를 쓰면 옮긴 양의 합이 0 이다. 그래서 평균이 그대로 남고, 평균에서 떨어진 몫만 틱마다 (1 − a) 배가 된다. 1 ms 틱에 a = dt ÷ (τ + dt) 이면 τ 동안 약 1/e 로 준다.</li><li>범위는 ki × integ 가 [<code>out_min</code>, <code>out_max</code>] 안이다. integ 의 단위로 바꾸면 out ÷ ki 다. 이 범위는 이번 틱의 <code>pid_step()</code> 앞에서 <code>mix_pid_limits()</code> 가 넣은 값이다.</li><li><code>v &gt; old</code> 조건 — 이번에 옮기는 쪽이 바깥일 때만 자른다. 원래 범위 밖이던 값이 안쪽으로 오는 것은 막지 않는다(벡터 6 의 0.8 → 0.65). 자르면 평균이 잘린 몫 ÷ n 만큼 바뀐다 — 범위가 바퀴마다 다를 때만 생긴다.</li><li><code>ki &gt; 0</code> 일 때만 범위를 본다. 0 으로 나누지 않고, 적분이 출력에 쓰이지 않는 PID 에는 범위가 뜻이 없다.</li></ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 함수). <code>pid.h</code> 의 <code>speed_pid_t</code> 칸 넷(<code>integ</code> · <code>ki</code> · <code>out_min</code> · <code>out_max</code>).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w36"><col class="w36"><col class="w28"></colgroup><thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead><tbody>
+<tr><td>바퀴마다 평균을 다시 셈(옮기는 반복 안에서)</td><td><code>FAIL line 63: fabsf(mean4(p) - m0) &lt; 1e-4f</code></td><td>평균은 옮기기 전에 한 번</td></tr>
+<tr><td><code>m /= (float)n;</code> 을 빠뜨림(합을 평균으로 씀)</td><td><code>FAIL line 62: out == 0</code></td><td>합을 n 으로 나눈다</td></tr>
+<tr><td>늘 자름 <code>if (v &gt; hi) { v = hi; }</code></td><td><code>FAIL line 98: NEAR(p[0].integ, 0.8f)</code></td><td>바깥으로 옮길 때만 — <code>v &gt; hi &amp;&amp; v &gt; old</code></td></tr>
+<tr><td>범위를 보지 않음</td><td><code>FAIL line 91: NEAR(p[0].integ, 0.5f)</code></td><td>3) 의 두 줄</td></tr>
+</tbody></table></div>
+        <p><strong>확인</strong> — <code>PASS integ_eq 31 cases</code>. 진단 빌드(<code>-fsanitize=undefined,address</code>)도 같은 줄이다.</p>
+        </div></details>
+      <details class="hint" id="hint-t8"><summary>힌트 T8 — <code>control.c</code> · 적분 차이 줄이기를 부르는 자리</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 키를 cfg 하나로 바꾸고, T8(fw-20b) 의 5) 다음에 부르는 줄을 더한다. 입력은 이번 틱의 정리된 목표 <code>tl</code> · <code>tr</code> 와 바퀴 PID 넷, 바꾸는 것은 PID 넷의 적분이다. 부르는 곳은 1 kHz ISR 의 <code>control_step_1khz()</code> 다(§2-12 ⑥ 의 5a).</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T8 - User/Src/Control/control.c. (1) 은 T5 의 블록 끝, (2) 는 T8(fw-20b) 의 5) 반복문 바로 다음 */
+/* (1) 키 -&gt; cfg. MIX_IEQ_ENABLE 0 이어도 (2) 의 식이 이 이름을 쓰므로 "쓰지 않는 변수" 경고가 없다 */
+static const mix_ieq_cfg_t s_ieq_cfg = { .tau_s = (float)(MIX_IEQ_TAU_MS) / 1000.0f, .turn_mm_s = (float)(MIX_IEQ_TURN_MM_S) };
+
+/* (2) 5a) 적분 차이 줄이기(§2-12 ⑧). 네 바퀴가 다 돈 틱만 - 끊긴 바퀴의 적분은 0 으로 지워졌으므로 그쪽으로 끌지 않는다 */
+  const uint8_t all_en = (uint8_t)((1u &lt;&lt; NW) - 1u);
+  const bool    all_run = armed &amp;&amp; (en_mask &amp; all_en) == all_en &amp;&amp; !((s_cond_prev != 0u) &amp;&amp; !hold_ok_prev);
+  if ((MIX_IEQ_ENABLE) &amp;&amp; all_run) { mix_integ_equalize(s_pid, (float)tl, (float)tr, &amp;s_ieq_cfg, PID_DT_S); }</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul><li><strong>자리</strong> — 5) 의 반복문 다음이다. 4) 의 반복이 넷의 <code>pid_step()</code> 을 다 부른 뒤라 이번 틱의 범위가 들어 있고, 5) 가 끊은 바퀴를 알 수 있다. 바뀐 적분은 다음 틱의 출력부터 쓰인다(1 ms 늦음).</li><li><code>all_run</code> — 5) 의 끊는 조건(지난 틱의 조건 · ARMED 아님 · EN LOW)을 네 바퀴 모두에 대해 뒤집은 것이다. 하나라도 끊겼으면 그 바퀴의 적분은 0 으로 지워졌다. 그쪽으로 나머지를 끌면 평균이 빠진다(§2-12 ⑧).</li><li><code>tl</code> · <code>tr</code> — 3b) 의 회전 속도 되먹임 Δ 까지 더한 최종 목표다. 직진 중 Δ 가 만드는 좌우 차가 문턱 아래여야 넷이 함께 줄어든다(3-I-1 의 <code>MIX_IEQ_TURN_MM_S</code> 행).</li><li><code>(MIX_IEQ_ENABLE) &amp;&amp;</code> — 0 이면 컴파일러가 이 줄을 지운다. <code>#if</code> 로 감싸지 않은 것은 그렇게 하면 <code>s_ieq_cfg</code> 가 쓰이지 않아 경고가 나기 때문이다.</li><li>dt 는 <code>PID_DT_S</code> — PID 와 같은 1 kHz 틱이다.</li></ul>
+        <p><strong>쓰는 API</strong> — T7 의 파일에 있는 <code>mix_integ_equalize()</code>. 실습 G 의 T8(fw-20b) 이 이미 <code>mix.h</code> 를 include 하고, <code>mix.h</code> 가 <code>pid.h</code> 를 include 한다.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w36"><col class="w36"><col class="w28"></colgroup><thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead><tbody>
+<tr><td><code>&amp;s_ieq_cfg</code> 대신 <code>s_ieq_cfg</code></td><td><code>control.c: error: incompatible type for argument 4 of 'mix_integ_equalize'</code></td><td>설정은 주소로 넘긴다</td></tr>
+<tr><td>(1) 을 <code>control_step_1khz()</code> 아래에 둠</td><td><code>control.c: error: 's_ieq_cfg' undeclared (first use in this function); did you mean 's_lift_cfg'?</code></td><td>T5 의 블록 끝 — 쓰기 전에 선언</td></tr>
+<tr><td>(2) 를 4) 의 바퀴 반복문 안에 둠</td><td>빌드는 된다 — 틱마다 네 번 불려 차이가 τ ÷ 4 로 빨리 준다. 끊긴 바퀴를 아직 모른다</td><td>5) 의 반복문 다음</td></tr>
+</tbody></table></div>
+        <p><strong>확인</strong> — <code>MIX_IEQ_ENABLE 0</code> 으로 빌드하면 경고가 없고 동작은 이 줄이 없을 때와 같다. 1 로 바꿨는데 <code>MIX_IEQ_TURN_MM_S</code> 가 0 이면 가드가 멈춘다(<code>MIX_IEQ_* is still EMPTY</code>). 컴파일러 메시지의 줄 번호는 파일마다 다르다.</p>
+        </div></details>
+      <h4 id="s3-i-4">3-I-4. 굽고 보기 — 끈 채 같은지 보고, 재고, 켠다</h4>
+      <p>0x85 는 Pi 쪽에서 본다 — <code>mcu_probe.py</code> 의 <code>CTRL</code> 둘째 줄 끝 <code>flags=…(turn-limit, roll-lift)</code> · <code>margin= +123mm right</code>(계산하지 않으면 <code>margin=-</code>), 또는 브리지의 <code>/mcu/control</code>(칸 26 플래그 · 27 들림 여유 · 28 그 변). 경사 상태는 <code>drive=</code> 의 bit0 또는 <code>/mcu/drive_state</code> 다.</p>
+      <ol class="steps">
+        <li><strong><code>ROLL_ENABLE 0</code> 으로 굽고 실습 H 와 같은지 본다.</strong> 실습 H 와 같은 <code>step</code> CSV 를 찍어 견준다 — 같은 모양이어야 한다. <code>stat</code> 의 <code>exec_us_max</code> 를 적는다. 0x85 는 <code>margin=-</code> 이고 bit6 · bit7 은 0 이다. 아래 3번의 받침 위에 한쪽 바퀴 둘을 올려 서 있어도 <code>drive=</code> 의 bit0 은 0 이다 — 옛 경사 상태는 옆 기울기를 보지 못한다(§2-12 ①). 이 값을 적어 두고 3번과 견준다.</li>
+        <li><strong>재기 빌드 — 판정이 서지 않게 두고 값을 읽는다.</strong> <code>TRACK_GEOM_MM</code> 은 잰 값, 나머지는 판정이 서지 않는 값으로 <code>ROLL_ENABLE 1</code> 로 굽는다: <code>TURN_HARD_MM 1</code> · <code>TURN_SOFT_MM 2</code> · <code>TURN_RELEASE_MM 3</code>(회전 제한이 켜지지 않는다), <code>ROLL_LIFT_RATE_DDPS 32000</code>(롤 들림이 서지 않는다), <code>ROLL_LIFT_PER_M_MAX_DDEG 400</code> · <code>ROLL_LIFT_RELEASE_MS 300</code> · <code>TURN_HOLD_MS 500</code> · <code>TURN_V_MIN_MILLI 1000</code>, <code>GUARD_*</code> 는 <code>100000</code> 셋(변화율 상한이 걸리지 않는다).
+          <ul>
+            <li>평지 정지에서 0x85 의 들림 여유를 읽는다. 계산값 = <code>COM_LF_MM</code> · <code>COM_LR_MM</code> · <code>TRACK_GEOM_MM</code> ÷ 2 가운데 가장 작은 값과 견준다(수 mm 차이는 가속도계 축이 조금 기운 것이다).</li>
+            <li>Pi 에서 <code>ros2 bag record /mcu/control /imu/data_raw</code> 를 켜 두고 teleop 의 최대 회전(제자리 · 곡선 둘 다), 한쪽 판자 넘기(직진 · 비스듬히), 정속에서 급정지를 한다. probe 는 0.5 초에 한 줄만 찍어 짧은 순간을 놓치므로 기록에서 읽는다. 칸 28 이 2 · 3 인 행의 칸 27 최솟값이 옆 여유의 최솟값이다. 0x85 는 네 변 가운데 가장 작은 하나만 싣는다 — 앞뒤 여유가 더 작아 변이 0 · 1 로만 나오면, 같은 기록의 IMU 로 옆 여유 = <code>TRACK_GEOM_MM</code> ÷ 2 − <code>COM_H_MM</code> × |f_옆| ÷ f_위 를 셈한다(<code>IMU_AX_LEFT</code> · <code>IMU_AX_UP</code> 이 고른 축). 롤 각속도의 최댓값도 같은 기록에서 읽는다(3-I-1).</li>
+            <li>같은 동안 <code>drive=</code> 의 bit0 이 0 인 것을 본다 — 회전 · 급정지가 기울기로 보이지 않는다(가속 보상). 1 이 되면 증상 표의 "평지에서 회전 · 급정지 때 bit0" 줄로 간다.</li>
+          </ul></li>
+        <li><strong>3-I-1 의 값을 채우고 <code>ROLL_ENABLE 1</code> 로 다시 굽는다. 옆 기울기와 변.</strong> 받침 높이 = <code>TRACK_GEOM_MM</code> × <code>SLOPE_ON_MILLI</code> ÷ 1000 × 1.3 이상(예: 450 mm · 70 이면 41 mm 이상). 왼쪽 바퀴 둘을 받침에 올리고 멈춘다 — bit0 이 1, 0x85 의 변이 <strong>3(오른쪽)</strong>이다. 왼쪽이 들려 합력점이 오른쪽으로 갔다. 오른쪽 바퀴 둘을 올리면 변이 2(왼쪽)다. 반대로 나오면 <code>IMU_AX_LEFT</code> 의 부호가 거꾸로다. 받침에서 내려오면 <code>SLOPE_OFF_HOLD_MS</code> 뒤 bit0 이 0 이다.</li>
+        <li><strong>롤 들림 양쪽 시험.</strong>
+          <ul>
+            <li>(가) 운용 속도로 한쪽 판자를 넘는다(직진 · 비스듬히) → bit7 은 <strong>0 이어야 한다</strong>.</li>
+            <li>(나) ARMED · 목표 0 에서 차체 한쪽 옆을 손으로 빠르게 든다 — 높이는 <code>TRACK_GEOM_MM</code> × 0.14(tan 8°) 이상, 10 cm 안 → bit7 이 <strong>1 이어야 한다</strong>. 내려놓으면 <code>ROLL_LIFT_RELEASE_MS</code> 뒤 0 이다. 상태 프레임의 bit2 는 0 그대로다(§2-12 ④).</li>
+          </ul>
+          (가) 가 걸리면 <code>ROLL_LIFT_RATE_DDPS</code> · <code>ROLL_LIFT_PER_M_MAX_DDEG</code> 를 올리고, (나) 가 안 걸리면 내린다. 둘을 함께 만족하는 값이 없으면 그 속도에서는 한계라고 적는다 — 속도를 낮춰 다시 본다.</li>
+        <li><strong>변화율 상한과 워치독.</strong> teleop 으로 정속 주행 중 키를 떼어(목표 0) 급정지한다 — 0x85 의 바퀴별 목표(칸 1 · 6 · 11 · 16)가 계단이 아니라 <code>GUARD_DEC_MM_S2</code> 의 기울기로 0 이 된다. 출발과 제자리 회전 시작도 같은 식으로 본다. 그다음 달리는 중에 브리지의 송신을 멈춘다 — 명령 워치독이 걸리는 틱에 목표가 바로 0 이다(이 층이 정지를 늦추지 않는다). bit0 은 내내 0 이다.</li>
+        <li><strong>회전 제한 — 시험 빌드.</strong> 평지의 옆 여유(<code>TRACK_GEOM_MM</code> ÷ 2)보다 <code>TURN_SOFT_MM</code> 을 50 mm 크게, <code>TURN_RELEASE_MM</code> 을 그보다 15 mm 크게 바꿔 굽는다(<code>TURN_HARD_MM</code> 은 그대로). 평지에 서 있기만 해도 bit6 이 1 이다. 굽고 첫 완만한 회전 명령에서 0x85 의 좌우 목표 차가 명령의 좌우 차 × k, 평균이 명령 × 속도 배율인지 본다(평지라면 k = (b/2 − HARD) ÷ (SOFT − HARD)). 이 빌드는 RELEASE 가 평지 여유보다 커서 풀리지 않는다 — 급회전으로 옆 여유가 더 줄면 k 는 그때 본 가장 작은 값에 머문다. 끝나면 정한 값으로 되돌려 다시 굽는다.</li>
+        <li><strong>적분 차이 줄이기 — 끔 / 켬.</strong> 실습 H 의 판자 둔덕(약 5 cm)을 <strong>오른쪽 앞바퀴가 지나갈 자리에만</strong> 놓는다 — 길이는 축간거리보다 짧게 해서, 오른쪽 앞바퀴가 올라선 동안 오른쪽 뒷바퀴는 아직 바닥에 있게 한다. Pi 에서 <code>/mcu/control</code> 을 기록하며 teleop 으로 천천히 직진해 오른쪽 앞바퀴만 올리고, 올라선 채 키를 떼어 멈춘 뒤 3 초 서 있는다. 0x85 의 바퀴별 PID 몫 u 는 칸 3 · 8 · 13 · 18 이다.
+          <ul>
+            <li><code>MIX_IEQ_ENABLE 0</code>: 달리는 동안과 멈춘 뒤의 u 넷을 적는다. 오른쪽 앞과 왼쪽 뒤처럼 대각의 두 u 가 서로 반대 부호로 벌어지고, 멈춘 뒤에도 그대로 남는지 본다(§2-12 ⑧). 같은 동안의 배터리 전류(<code>adc</code>, fw-12 의 ACS758 채널)도 적는다.</li>
+            <li>3-I-1 의 <code>MIX_IEQ_TURN_MM_S</code> 를 넣고 <code>MIX_IEQ_ENABLE 1</code> 로 다시 굽는다. 같은 길을 간다. 멈춘 뒤 벌어진 u 의 차이가 약 1 초에 1/e 로 줄고, 네 u 의 평균은 그대로인지 본다. 3 초 동안 차체가 밀리지 않고 다시 출발하는지 본다. 달리는 동안의 u 차이는 적기만 한다 — 차체가 필요로 하는 차이라면 켬에서도 남는다(§2-12 ⑧).</li>
+            <li>제자리 회전 · 곡선에서는 좌우 u 의 차가 남는 것이 맞다(회전 예외). 회전 비(명령 대비 실제 회전, 실습 H 의 방법)가 끔과 같은지 본다.</li>
+          </ul>
+          시뮬레이터에서 같은 시험을 한 결과는 각주에 있다.<sup class="fn"><a href="#fn-4">4</a></sup> 실물 섀시는 조금 비틀려 시뮬레이터와 다르게 나올 수 있다.</li>
+      </ol>
+
+      <h4 id="s3-i-5">3-I-5. 보고 판정하기</h4>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w40"><col class="w30"><col class="w30"></colgroup>
+        <thead><tr><th>확인</th><th>기대</th><th>관찰</th></tr></thead>
+        <tbody>
+          <tr><td>끔 상태의 <code>step</code> CSV · <code>exec_us_max</code> · 0x85</td><td>H 의 CSV 와 같은 모양 · <code>margin=-</code></td><td>____ · ____ µs · ____</td></tr>
+          <tr><td>끔 상태, 한쪽 받침 위 bit0</td><td>0</td><td>____</td></tr>
+          <tr><td>평지 정지의 들림 여유 (잰 값 / 계산값)</td><td>수 mm 안</td><td>____ / ____ mm</td></tr>
+          <tr><td>정상 주행 중 옆 여유 최솟값 · 롤 각속도 최댓값</td><td>— (3-I-1 로 옮긴다)</td><td>____ mm · ____ °/s</td></tr>
+          <tr><td>켬 상태, 왼쪽 받침 / 오른쪽 받침의 bit0 · 변</td><td>1 · 3 / 1 · 2</td><td>____ / ____</td></tr>
+          <tr><td>회전 · 급정지 중 bit0</td><td>0</td><td>____</td></tr>
+          <tr><td>롤 들림 (가) 판자 넘기 · (나) 손으로 들기</td><td>0 · 1</td><td>____ · ____</td></tr>
+          <tr><td>급정지의 목표 기울기 · 워치독 정지</td><td>DEC 기울기 · 그 틱에 0</td><td>____ · ____</td></tr>
+          <tr><td>회전 제한 시험 빌드: bit6 · 좌우 차 비 · 속도 비</td><td>1 · k · 배율</td><td>____ · ____ · ____</td></tr>
+          <tr><td>적분 차이 줄이기 끔: 둔덕 위 세 바퀴로 달리는 동안 · 멈춘 뒤 3 초의 u 넷 · 전류</td><td>대각 두 u 가 반대 부호, 멈춘 뒤에도 남음</td><td>____ / ____ · ____ mA</td></tr>
+          <tr><td>켬: 달리는 동안의 u 넷</td><td>— (적는다)</td><td>____</td></tr>
+          <tr><td>켬: 멈춘 뒤 u 차이가 1/e 로 준 시간 · u 평균 · 멈춘 뒤 전류</td><td>약 1 s · 끔과 같음 · 끔보다 작음</td><td>____ s · ____ · ____ mA</td></tr>
+          <tr><td>켬: 둔덕 위 3 초 정지 뒤 밀림 · 재출발 · 회전 비</td><td>밀림 없음 · 출발함 · 끔과 같음</td><td>____ · ____ · ____</td></tr>
+          <tr><td>켬 상태의 <code>exec_us_max</code></td><td>H 의 값보다 조금 크다</td><td>____ µs</td></tr>
+        </tbody>
+      </table></div>
+      <p>값이 기대와 다르면 다르다고 적는다. 고친 키는 상태 낱말을 <code>MEASURED(&lt;날짜&gt;, &lt;방법&gt; — &lt;바닥&gt;)</code> 로 바꾼다. <code>SLOPE_LR_ENABLE</code> 은 이 실습에서 켜지 않는다(§2-12 ⑦). <code>MIX_IEQ_ENABLE</code> 은 7번의 결과로 정한다 — 켬이 나아지는 곳이 있고 나빠지는 곳이 없으면 1 로 두고, 근거를 상태 낱말에 적는다.</p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="roll-host-pass"><span><strong>경로 통과</strong> — <code>test_roll.c</code> · <code>test_guard.c</code> 가 Mac 에서 통과한다(<code>PASS roll 66 cases</code> · <code>PASS guard 22 cases</code>). 진단 빌드에서도 경고와 오류가 없고, 실습 G 의 <code>PASS slope 309 cases</code> 도 그대로다
+          <span class="sub">판정 수단: 호스트 시험 출력 · §3-I-3 · 특히 벡터 4 · 5(출발 · 급정지 · 회전이 기울기로 보이지 않음)와 벡터 7(합력점 부호와 변 번호)이 통과해야 한다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="roll-off-unchanged"><span><strong>경로 통과</strong> — <code>ROLL_ENABLE 0</code> 으로 T5 · T6 을 넣고 구운 펌웨어에서, 실습 H 와 같은 <code>step</code> 명령의 바닥 CSV 가 H 의 CSV 와 같은 모양이고 0x85 가 <code>margin=-</code> · bit6 · bit7 0 이다. 한쪽 받침 위에서 bit0 이 0 인 것을 적었다
+          <span class="sub">판정 수단: 두 CSV · <code>stat</code> · probe 의 <code>CTRL</code> 줄 · §3-I-4 의 1번</span></span></label></li>
+        <li><label><input type="checkbox" data-key="roll-keys-measured"><span><strong>경로 통과</strong> — 3-I-1 표가 "잰 값"과 "정한 값"을 따로 채운 채 완성됐다. <code>TRACK_GEOM_MM</code> 은 줄자로 잰 값이고, 옆 여유의 최솟값과 롤 각속도의 최댓값은 재기 빌드에서 정상 주행으로 읽은 값이다
+          <span class="sub">판정 수단: 표 + <code>robot_params.h</code> 의 상태 낱말 · §3-I-4 의 2번 · 평지 정지의 들림 여유가 계산값과 수 mm 안이다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="roll-flat-room"><span><strong>경로 통과</strong> — <code>ROLL_ENABLE 1</code> 로 구운 뒤 평평한 방에서: 한쪽 받침에서 bit0 이 1 이고 변이 들린 반대쪽이다(왼쪽을 올리면 3), 회전 · 급정지에서 bit0 이 0 이다, 판자 넘기에서 bit7 이 0 이고 손으로 든 동안 1 이다, 급정지의 목표가 DEC 기울기로 줄고 워치독 정지는 그 틱에 0 이다. 회전 제한 시험 빌드를 정한 값으로 되돌려 다시 구웠다
+          <span class="sub">판정 수단: §3-I-5 의 표 · probe 의 <code>CTRL</code> 줄 · <code>drive=</code> · 경사판은 쓰지 않는다. 롤 들림의 두 쪽을 함께 만족하는 값이 없으면 그 속도의 한계로 적은 것이 통과다</span></span></label></li>
+        <li><label><input type="checkbox" data-key="integ-eq-host-floor"><span><strong>경로 통과</strong> — <code>test_integ_eq.c</code> 가 Mac 에서 통과한다(<code>PASS integ_eq 31 cases</code>, 진단 빌드 포함). 한쪽 둔덕에 오른쪽 앞바퀴만 올린 세 바퀴 구간에서 끔 / 켬의 u 넷과 전류를 달리는 동안 · 멈춘 뒤로 나눠 §3-I-5 표에 적었고, 켬에서 멈춘 뒤 u 의 차이가 줄고 평균은 그대로이며, 둔덕 위 3 초 정지 뒤 밀림 없이 다시 출발했다. <code>MIX_IEQ_ENABLE</code> 을 그 결과로 정해 다시 구웠다
+          <span class="sub">판정 수단: §3-I-4 의 7번 · §3-I-5 의 표 · <code>/mcu/control</code> 기록의 칸 3 · 8 · 13 · 18. 켬이 나아지는 곳이 없거나 나빠지는 곳이 있으면 0 으로 두고 그 관찰을 적은 것이 통과다</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <div class="tbl"><table class="fixed"><colgroup><col class="w24"><col class="w36"><col class="w24"><col class="w16"></colgroup>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td><code>ROLL_ENABLE 1</code> 로 바꿨더니 빌드가 <code>static assertion failed … ROLL needs SLOPE_ENABLE (lab G) and YAW_ENABLE (lab H)</code> 에서 멈춘다</td><td>정상이다 — 이 층은 실습 G 의 비력 · 무게중심과 실습 H 의 자세 추정을 쓴다. 둘이 켜진 빌드에서만 켤 수 있다</td><td><code>grep -n '^#define SLOPE_ENABLE\|^#define YAW_ENABLE' robot_params.h</code></td><td>§3-I 의 STOP 1번</td></tr>
+          <tr><td>평지에서 회전 · 급정지 때 bit0 이 켜진다(<code>ROLL_ENABLE 1</code>)</td><td>가속 보상이 맞지 않는다 — <code>IMU_GY_YAW</code> 의 부호가 거꾸로면 v · ω 가 구심 가속과 반대 부호가 되어 두 배로 보이고, <code>IMU_AX_FWD</code> 의 부호가 거꾸로면 가감속이 두 배로 보인다. 또는 T1 의 라디안 변환 · 필터 위치가 틀렸다</td><td>호스트 시험의 벡터 4 · 5 · 제자리 반시계 회전에서 <code>yaw</code> 의 <code>rate_ddps</code> 가 + 인가</td><td>힌트 T1 · 축 키</td></tr>
+          <tr><td>왼쪽 바퀴를 받침에 올렸는데 0x85 의 변이 2(왼쪽)다</td><td><code>IMU_AX_LEFT</code> 의 부호가 거꾸로다 — 합력점이 들린 쪽으로 간다고 셈한다. 또는 T2 에서 마이너스를 빠뜨렸다</td><td>호스트 시험의 벡터 7 · 받침 위에서 <code>wt stat</code> 의 가속도와 축 키</td><td>실습 H 의 <code>IMU_AX_LEFT</code> · 힌트 T2</td></tr>
+          <tr><td>정상 회전에서 bit6(회전 제한)이 선다</td><td><code>TURN_SOFT_MM</code> 이 정상 주행의 옆 여유 최솟값보다 높다. 또는 <code>TRACK_GEOM_MM</code> 을 작게 쟀거나 <code>COM_H_MM</code> 이 크다(여유를 작게 셈한다)</td><td>재기 빌드로 같은 회전의 옆 여유를 다시 읽는다</td><td>§3-I-1 의 TURN 행</td></tr>
+          <tr><td>판자를 넘을 때 bit7(롤 들림)이 선다</td><td><code>ROLL_LIFT_RATE_DDPS</code> · <code>ROLL_LIFT_PER_M_MAX_DDEG</code> 가 낮다 — 그 순간 목표가 0 이 되어 차체가 판자 위에서 선다</td><td>§3-I-4 의 4번 (가)</td><td>§3-I-1 의 ROLL_LIFT 행</td></tr>
+          <tr><td>출발이 굼뜨고 멈출 때 미끄러지듯 길게 선다</td><td><code>GUARD_*</code> 가 Pi 의 속도 다듬기 상한보다 낮다 — 정상 명령까지 자른다</td><td>0x85 의 목표 기울기와 <code>nav2_params.yaml</code> 의 <code>max_accel</code> · <code>max_decel</code></td><td>§3-I-1 의 GUARD 행</td></tr>
+          <tr><td>한 바퀴만 둔덕에 오른 채 멈춘 뒤 u 둘이 반대 부호로 벌어진 채 남고 전류가 크다</td><td>적분 차이 줄이기가 꺼져 있거나(<code>MIX_IEQ_ENABLE 0</code>), T8 의 <code>all_run</code> 이 거짓이다 — ARMED 가 아니거나 EN 하나가 LOW 이거나 지난 틱의 조건이 서 있다</td><td><code>robot_params.h</code> · <code>pwr</code> · <code>fault stat</code></td><td>§2-12 ⑧ · 힌트 T8</td></tr>
+          <tr><td>적분 차이 줄이기를 켠 뒤 경사 · 둔덕 위에 멈추면 천천히 밀려 내려간다</td><td>평균까지 줄이고 있다(바퀴마다 평균을 다시 셈) 또는 끊긴 바퀴가 있는 틱에도 부른다 — 0 이 된 적분 쪽으로 끌려 평균이 빠진다</td><td><code>test_integ_eq</code> 벡터 3 · T8 의 <code>all_run</code></td><td>힌트 T7 · T8</td></tr>
+          <tr><td><code>ROLL_ENABLE 1</code> 인데 0x85 가 늘 <code>margin=-</code> 다</td><td><code>roll_snapshot()</code> 을 <code>ctrl_snapshot_fill()</code> 앞에서 부르거나 부르지 않는다. 또는 IMU 샘플이 오래됐다(<code>IMU_TIMEOUT_MS</code>)</td><td>T8(fw-20b) 의 8b) 자리 · <code>wt stat</code></td><td>힌트 T6 의 (6)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. 롤 8° 로 서 있을 때 실습 H 까지의 경사 상태 bit0 은 왜 0 인가? 실습 I 는 무엇을 바꿔 1 이 되게 하는가?</summary>
+        <div class="ans"><p>실습 G 의 경사 상태는 <code>|f_fwd / f_up|</code> 만 본다. 옆으로만 기울면 중력이 차체 왼쪽 성분 <code>f_lat</code> 에만 나뉘어 들어가고 <code>f_fwd</code> 는 0 이라 비도 0 이다.
+        실습 I 는 입력을 기울기 크기 <code>√(f_fwd² + f_lat²) / f_up</code> 로 바꾼다. 롤 8° 면 tan 8° ≈ 0.14 라 <code>SLOPE_ON</code> 을 넘는다. 상태 프레임의 형식은 그대로이고 bit0 의 뜻만 넓어진다(§2-12 ①, 호스트 시험 벡터 3).</p></div></details>
+      <details class="quiz"><summary>2. 평지에서 급정지하면 가속도계의 앞 성분이 크게 바뀌는데 실습 I 의 bit0 은 왜 켜지지 않는가? 같은 급정지에서 하중 몫은 왜 보상하지 않은 값을 쓰는가?</summary>
+        <div class="ans"><p>바퀴 속도 넷의 중앙값을 비력과 같은 저역 통과로 거른 뒤 미분해 아는 가속 <code>a_fwd</code> 를 만들고, 그것을 뺀 값으로 판정한다. 두 신호의 늦음이 같으므로 감속으로 생긴 몫이 거의 그대로 지워지고 기울기만 남는다(벡터 4).
+        하중 몫은 바퀴가 실제로 받는 힘을 나누는 데 쓴다. 급정지 때 앞축으로 옮겨 가는 하중은 실제 힘이므로 지우면 안 된다 — 그래서 하중 몫 · 주행 불가 · 들림 여유는 보상 전 값을 쓴다(§2-12 ① 의 표).</p></div></details>
+      <details class="quiz"><summary>3. 왼쪽 바퀴 둘 아래에 받침을 괴어 왼쪽이 들렸다. 0x85 의 <code>margin_edge</code> 는 몇인가? 그 변의 여유가 0 이 되면 어느 바퀴가 뜨는가?</summary>
+        <div class="ans"><p>왼쪽이 들리면 <code>f_lat</code> &gt; 0 이고 <code>p_y = −h · f_lat / f_up</code> 는 음수다. 합력점이 오른쪽으로 가므로 가장 가까운 변은 오른쪽, <code>margin_edge</code> = 3 이다.
+        여유가 0 이면 합력점이 오른쪽 바퀴 선 위에 있다는 뜻이고, 그 반대쪽인 <strong>왼쪽 두 바퀴</strong>가 뜬다(§2-12 ②, §3-I-4 의 3번).</p></div></details>
+      <details class="quiz"><summary>4. 들림 여유의 b 에 <code>TRACK_WIDTH_MM</code> 을 쓰면 무엇이 틀리는가? 반대로 변화율 상한의 W 에는 왜 <code>TRACK_WIDTH_MM</code> 을 쓰는가?</summary>
+        <div class="ans"><p>유효 트랙 폭은 미끄러지며 도는 회전을 맞추려고 거꾸로 구한 값이라 기하 폭보다 크다. 그 값을 b 로 쓰면 옆 여유를 실제보다 크게 셈해 회전 제한이 늦게 켜진다 — 위험한 쪽으로 틀린다. 넘어짐은 바퀴가 실제로 닿는 자리, 곧 기하 폭으로 정해진다.
+        변화율 상한의 ω 는 좌우 목표에서 회전 성분을 셈하는 값이다. 회전 속도 되먹임(fw-20c §2-11)이 같은 목표에서 ω 를 셈할 때 쓰는 폭과 같아야 두 층이 같은 회전을 본다(§2-12 ② · ⑤).</p></div></details>
+      <details class="quiz"><summary>5. (일부러 틀리기) 롤 들림의 기준을 "절대 롤 5° 를 넘으면"으로 바꾸면 무슨 일이 생기는가?</summary>
+        <div class="ans"><p>롤 6° 로 기운 채 정상적으로 서 있거나 방향을 바로잡는 동안에도 늘 들림으로 판정돼 목표가 0 이 된다 — 그 자리를 빠져나갈 수 없다. 이미 크게 기운 상태에서 더 빠르게 기우는 실제 들림도 "늘 켜져 있는" 판정과 구분되지 않는다.
+        그래서 각속도가 문턱을 넘은 순간의 롤을 기준으로 ±5° 를 넘는 변화만 본다. 호스트 시험 벡터 9 가 그 경우다 — 판자로 4.2° 기운 자리에서 다시 6° 가 빠르게 바뀌면 들림이다(§2-12 ④).</p></div></details>
+      <details class="quiz"><summary>6. 회전 제한이 켜져도 전진 속도를 0 까지 줄이지 않는 이유는? 회전 제한은 어떤 조건에서 풀리는가?</summary>
+        <div class="ans"><p>기운 채 멈춰 있는 것보다 천천히라도 그 자리를 빠져나가는 편이 낫기 때문이다. 그래서 속도 배율은 회전 배율이 0 이어도 <code>TURN_V_MIN_MILLI</code> 아래로 내려가지 않는다.
+        풀림은 옆 여유가 <code>TURN_RELEASE_MM</code>(SOFT 보다 큼) 이상인 채로 <code>TURN_HOLD_MS</code> 이어질 때다. 조이기는 바로, 풀기는 천천히 하고, 회전이 돌아오는 빠르기는 변화율 상한의 ALPHA 가 정한다(§2-12 ③ · ⑤, 벡터 8).</p></div></details>
+      <details class="quiz"><summary>7. 한 바퀴만 턱에 올라선 뒤 네 바퀴의 속도가 같아졌는데도 PID 적분이 풀리지 않는 이유는? 적분 차이 줄이기가 네 적분의 평균은 건드리지 않는 이유는?</summary>
+        <div class="ans"><p>강체 섀시라 네 바퀴가 차체에 묶여 같은 속도로 돈다. 그러면 바퀴마다 오차가 0 이고, 적분은 오차를 더하는 것이라 더도 덜도 바뀌지 않는다. 오르는 동안 쌓인 + 와 − 가 그대로 남아 대각 바퀴끼리 서로 반대로 민다.
+        평균은 네 바퀴가 함께 미는 몫 — 경사를 오르거나 경사에서 멈춰 버티는 데 드는 힘이다. 평균까지 줄이면 경사에 멈춘 로봇이 밀려 내려간다. 바퀴 사이에 힘을 나누는 일은 하중 가중치가 맡으므로, 줄이는 것은 평균에서 떨어진 몫(차이)뿐이다(§2-12 ⑧).</p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>모든 항목이 통과됐으면</strong> → <a href="fw-20e-thresholds.html">fw-20e</a> 의 실습 D(임계값 확정)로 간다. 출력을 바꾸는 층이 이제 다 들어 있다.</li>
+          <li><strong>바닥을 바꾸게 되면</strong> → 옆 여유 · 롤 각속도 문턱은 운용 속도와 그 바닥의 턱으로 정한 값이라, 바닥이 바뀌면 재기 빌드로 다시 읽는다.</li>
+          <li>기하 트랙 폭과 기울기 대응 키를 <code>hardware/INVENTORY.md</code> 6절에 적었는가.</li>
+        </ul>
+      </div>
+
+      <h2 id="footnotes">각주</h2>
+      <p class="small">본문의 작은 번호를 누르면 여기로 온다. 근거 문서 · 핀 목록 · 1세대 기록 · 확인한 날짜를 모았다. ↩ 를 누르면 본문으로 돌아간다.</p>
+      <ol class="footnotes">
+          <li id="fn-1">시뮬레이터(Gazebo, 가상봇 빈 차체, 2026-11-12)의 평지 감속 정지에서 본 값이다. 가속 보상을 넣은 뒤의 평가(2026-11-15, 출발 · 정지와 회전 시나리오 다섯)에서는 경사 상태가 헛켜진 일이 0 이었다. 같은 날의 기록 가운데, 정답 기울기가 2° 아래인 평지 곡선 계단 입력과 판자 구역에서 보상 뒤 비가 0.072 · 0.089 까지 올라간 일이 있다(켜짐 문턱 0.070). 원인(바퀴 미끄러짐, 판자에서 내려올 때의 저역 통과 늦음)은 확인되지 않았다 — §3-I-4 의 2번이 평지 주행 중 bit0 을 보는 이유다. <a class="fn-back" href="#fnref-1" aria-label="본문으로">↩</a></li>
+          <li id="fn-2">사용자 결정, 2026-11-12 — 롤 들림은 왼쪽 또는 오른쪽 두 바퀴가 함께 뜨는 것이고, 판정 기준은 절대 롤이 아니라 현재 롤 기준 ±5° 다. 섀시는 알루미늄 강체이고 서스펜션이 없다. <a class="fn-back" href="#fnref-2" aria-label="본문으로">↩</a></li>
+          <li id="fn-3"><code>sim/README.md</code> 7-2(2026-11-13, 바퀴 힘 모드, 끔 / 켬 각 3 회): 켬에서 가벼운 바퀴의 미끄러짐은 조금 작았지만 회차 사이 흩어짐 안이었고, 방향 오차 · 옆 밀림 · 바퀴 PID 몫의 합은 끔보다 컸다. 최종 평가(2026-11-15)는 구현된 항목을 판정하려고 켬으로 돌렸다. <a class="fn-back" href="#fnref-3" aria-label="본문으로">↩</a></li>
+          <li id="fn-4">시뮬레이터(Gazebo, 가상봇 빈 차체, 바퀴 힘 모드, 2026-11-16, τ 1 s · 회전 문턱 30 mm/s — 턱 위 직진의 좌우 목표 차 최댓값 12 mm/s 위, 시험 회전 명령의 좌우 차 약 500 mm/s 아래). 한쪽 턱(5 cm)에 오른쪽 앞바퀴만 올라선 세 바퀴 접지(왼쪽 앞바퀴가 뜸)를 0.2 m/s 로 지나는 동안의 버팀 토크 평균은 끔 12.29 · 켬 12.46 N·m 로 같았다(평지 0). 켬에서는 오른쪽 앞 · 왼쪽 뒤에 +1.7 · −1.6 mm/s 의 속도 오차가 남아 PID 가 차이를 다시 쌓았다. 진단으로 τ 를 0.1 s 로 줄이면 오차가 ±9 mm/s 로 커지고 버팀은 9.0 N·m 였다 — 이 자세로 곧게 가는 데 이 짝 토크가 쓰인다고 읽었다. 같은 자리에 멈춘 뒤에는 끔에서 12.0 N·m 가 4 초 동안 그대로였고, 켬에서는 12.0 → 0.2 N·m 로 약 1 초 시정수로 줄었다. 바닥 경사 A(10°) 를 오르다 멈춘 3 초의 밀림은 끔 · 켬 모두 0.0 mm, 재출발 거리 0.60 m 로 같았다. 회전 비 0.93 · 0.93, 경사 인식의 출발 · 정지 · 회전 헛켜짐 0 도 끔과 같았다. 호스트 시험은 Mac <code>cc</code> 와 <code>-fsanitize=undefined,address</code> 에서 <code>PASS integ_eq 31 cases</code> 이고 <code>test_mix</code> · <code>test_slope</code> · <code>test_wheel_weight</code> 는 그대로다. 펌웨어는 실습 G 의 T8(fw-20b) 에 T8 을 넣어 <code>arm-none-eabi-gcc</code>(<code>-Wall -Wextra -Wdouble-promotion</code>)로 <code>MIX_IEQ_ENABLE</code> 0 · 1 × <code>SLOPE_ENABLE</code> · <code>SLOPE_LR_ENABLE</code> 네 조합을 빌드해 모두 경고 0 이다. 보드에서 돌린 확인은 아직 없다. <a class="fn-back" href="#fnref-4" aria-label="본문으로">↩</a></li>
+          <li id="fn-5">2026-11-15 에 확인했다. 호스트 시험은 Mac <code>cc</code> 와 <code>-fsanitize=undefined,address</code> 에서 <code>PASS roll 66 cases</code> · <code>PASS guard 22 cases</code> 이고, 실습 G 의 <code>PASS slope 284 cases</code> · <code>PASS mix 23 cases</code> 와 좌우 몫의 <code>PASS wheel_weight 383 cases</code> 도 그대로다. 걸음 표의 FAIL 줄과 흔한 실수 표는 그 코드를 실제로 넣어 돌린 결과다. 펌웨어는 저장소 사본에 실습 G · H · I 의 블록을 넣어 <code>arm-none-eabi-gcc</code>(<code>-Wall -Wextra -Wdouble-promotion</code>)로 빌드했다 — 실습 I 골격 그대로, 그리고 완결 코드를 <code>SLOPE_ENABLE</code> · <code>YAW_ENABLE</code> · <code>ROLL_ENABLE</code> · <code>SLOPE_LR_ENABLE</code> 의 다섯 조합(0000 · 1000 · 1100 · 1110 · 1111)으로 넣은 것이 모두 경고 0 이다. 보드에서 돌린 확인은 아직 없다. <a class="fn-back" href="#fnref-5" aria-label="본문으로">↩</a></li>
+          <li id="fn-6">가상봇은 기하 트랙 660 mm · 축간거리 675 mm · 무게중심 높이 200 mm(추정)다. 고른 법(2026-11-15): 문턱이 닿지 않게 둔 채 정상 주행 시나리오(평지 곡선 계단 · 한쪽 판자 · 가로 기울기 8° 와 회전)를 돌려 옆 여유의 최솟값 285 mm 와 롤 각속도의 최댓값 10.6 °/s 를 읽고, 그 바로 아래 · 위로 정했다. <code>TURN_SOFT_MM</code> 275 는 이 가상봇에서 롤 약 15° 에 해당한다. <a class="fn-back" href="#fnref-6" aria-label="본문으로">↩</a></li>
+          <li id="fn-7"><code>ros2_ws/src/rpi5_bringup/config/nav2_params.yaml</code> 의 <code>velocity_smoother</code>: <code>max_accel: [0.5, 0.0, 2.0]</code> · <code>max_decel: [-0.5, 0.0, -2.0]</code>. teleop 명령은 이 다듬기를 거치지 않는다. <a class="fn-back" href="#fnref-7" aria-label="본문으로">↩</a></li>
+      </ol>
+
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

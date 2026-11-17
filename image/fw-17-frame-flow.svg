@@ -1,0 +1,330 @@
+<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="0 0 1600 1766" width="1600" height="1766">
+<defs><style>
+text { font-family: "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif; fill: #1f2937; }
+.title { font-size: 32px; font-weight: 800; fill: #111827; }
+.subtitle { font-size: 15px; fill: #4b5563; }
+.sec2 { font-size: 21px; font-weight: 800; fill: #111827; }
+.colhead { font-size: 14.5px; font-weight: 700; fill: #ffffff; }
+.coltag { font-size: 11.5px; font-weight: 700; fill: #ffffff; opacity: 0.9; }
+.lbl { font-size: 13px; font-weight: 700; fill: #111827; }
+.lblsub { font-size: 12.5px; fill: #374151; }
+.small { font-size: 11.5px; fill: #4b5563; }
+.code { font-size: 12.5px; fill: #111827; }
+.code2 { font-size: 12px; fill: #1f2937; }
+.num { font-size: 11.5px; font-weight: 800; fill: #ffffff; }
+.mono { font-family: Menlo, Consolas, monospace; white-space: pre; }
+</style>
+<marker id="a_pi" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6b7280"/></marker>
+<marker id="a_isr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker>
+<marker id="a_main" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+<marker id="a_tick" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ea580c"/></marker>
+<marker id="a_ctl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker>
+<marker id="a_v2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0891b2"/></marker>
+</defs>
+<rect x="0" y="0" width="1600" height="1766" fill="#f4f6fb"/>
+<rect x="30" y="28" width="8" height="56" rx="3" fill="#0891b2" stroke="#0891b2" stroke-width="0"/>
+<text x="52" y="62" class="title" text-anchor="start">계약 v2 프레임 흐름 — 함수가 불리는 순서 (fw-17)</text>
+<text x="54" y="90" class="subtitle" text-anchor="start">프레임 = AA 55 TYPE LEN PAYLOAD CRC8 · CRC 범위는 TYPE 부터 PAYLOAD 끝까지 · 받기는 main, 보내기는 1 kHz ISR 이 맡는다 · 번호는 실제 호출 순서</text>
+<rect x="54" y="112" width="16" height="16" rx="4" fill="#f3f4f6" stroke="#6b7280" stroke-width="2"/>
+<text x="78" y="125" class="lblsub" text-anchor="start">Pi · 선 (USB VCP)</text>
+<rect x="262" y="112" width="16" height="16" rx="4" fill="#ecfdf5" stroke="#059669" stroke-width="2"/>
+<text x="286" y="125" class="lblsub" text-anchor="start">UART · DMA ISR</text>
+<rect x="452" y="112" width="16" height="16" rx="4" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+<text x="476" y="125" class="lblsub" text-anchor="start">main 문맥 (주 루프)</text>
+<rect x="642" y="112" width="16" height="16" rx="4" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+<text x="666" y="125" class="lblsub" text-anchor="start">1 kHz ISR (TIM6, 선점 1)</text>
+<rect x="904" y="112" width="16" height="16" rx="4" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2"/>
+<text x="928" y="125" class="lblsub" text-anchor="start">제어 · 센서 모듈</text>
+<rect x="1058" y="112" width="16" height="16" rx="4" fill="#ecfeff" stroke="#0891b2" stroke-width="2"/>
+<text x="1082" y="125" class="lblsub" text-anchor="start">모드 전환 신호 (volatile)</text>
+<rect x="30" y="180" width="8" height="40" rx="3" fill="#111827" stroke="#111827" stroke-width="0"/>
+<text x="52" y="208" class="sec2" text-anchor="start">① 받기 — Pi → MCU   (TYPE_VELOCITY 0x01 · TYPE_POWER 0x10 · TYPE_TO_TEXT 0x11)</text>
+<text x="52" y="232" class="subtitle" text-anchor="start">바이트가 ISR 에서 링에 쌓이고, main 이 꺼내 파서에 한 바이트씩 넣는다. 프레임이 완성되면 TYPE 으로 가른다.</text>
+<rect x="40" y="254" width="284" height="252" rx="10" fill="#f3f4f6" stroke="#6b7280" stroke-width="1.5"/>
+<path d="M40,264 a10,10 0 0 1 10,-10 h264 a10,10 0 0 1 10,10 v26 h-284 z" fill="#6b7280"/>
+<text x="54" y="277" class="colhead" text-anchor="start">1 · 선 위의 바이트</text>
+<text x="312" y="277" class="coltag" text-anchor="end">Pi</text>
+<text x="56" y="325" class="lbl" text-anchor="start">Pi 브리지 / mcu_probe.py</text>
+<text x="56" y="346" class="code mono" text-anchor="start">AA 55 01 04 F4 01 F4 01 CRC</text>
+<text x="56" y="367" class="small" text-anchor="start">TYPE_VELOCITY: vl = vr = 500 mm/s</text>
+<path d="M70,376 v9" stroke="#6b7280" stroke-width="1.8" marker-end="url(#a_pi)"/>
+<text x="56" y="402" class="code mono" text-anchor="start">USB CDC → ST-LINK/V3 VCP</text>
+<path d="M70,414 v9" stroke="#6b7280" stroke-width="1.8" marker-end="url(#a_pi)"/>
+<text x="56" y="440" class="code mono" text-anchor="start">USART3 RX (PD9) 460800</text>
+<path d="M70,452 v9" stroke="#6b7280" stroke-width="1.8" marker-end="url(#a_pi)"/>
+<text x="56" y="478" class="code mono" text-anchor="start">DMA → s_rx_dma[] (RAM_D2)</text>
+<text x="56" y="499" class="small" text-anchor="start">CPU 는 아직 아무것도 안 한다</text>
+<rect x="354" y="254" width="284" height="266" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+<path d="M354,264 a10,10 0 0 1 10,-10 h264 a10,10 0 0 1 10,10 v26 h-284 z" fill="#059669"/>
+<text x="368" y="277" class="colhead" text-anchor="start">2 · 수신 이벤트</text>
+<text x="626" y="277" class="coltag" text-anchor="end">ISR</text>
+<text x="370" y="323" class="small" text-anchor="start">IDLE(선이 쉼) · DMA HT · TC 때</text>
+<text x="370" y="342" class="code mono" text-anchor="start">HAL_UARTEx_RxEventCallback()</text>
+<text x="370" y="363" class="small" text-anchor="start">huart-&gt;Instance == USART3</text>
+<path d="M384,372 v9" stroke="#059669" stroke-width="1.8" marker-end="url(#a_isr)"/>
+<text x="370" y="398" class="code mono" text-anchor="start">console_rx_callback(huart, Size)</text>
+<path d="M384,410 v9" stroke="#059669" stroke-width="1.8" marker-end="url(#a_isr)"/>
+<text x="370" y="436" class="code mono" text-anchor="start">stream_rx_advance(&amp;s_rx, Size)</text>
+<text x="370" y="457" class="small" text-anchor="start">Size = 위치. 새 구간만 넘긴다</text>
+<path d="M384,466 v9" stroke="#059669" stroke-width="1.8" marker-end="url(#a_isr)"/>
+<text x="370" y="492" class="code mono" text-anchor="start">rx_feed(p, n)</text>
+<text x="370" y="513" class="small" text-anchor="start">rx_ring[rx_head] 에 쌓는다 (256 B)</text>
+<rect x="668" y="254" width="284" height="252" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+<path d="M668,264 a10,10 0 0 1 10,-10 h264 a10,10 0 0 1 10,10 v26 h-284 z" fill="#2563eb"/>
+<text x="682" y="277" class="colhead" text-anchor="start">3 · 링에서 꺼내기</text>
+<text x="940" y="277" class="coltag" text-anchor="end">main</text>
+<text x="684" y="324" class="code mono" text-anchor="start">app_loop()</text>
+<path d="M698,336 v9" stroke="#2563eb" stroke-width="1.8" marker-end="url(#a_main)"/>
+<text x="684" y="362" class="code mono" text-anchor="start">app_cli_cycle()</text>
+<path d="M698,374 v9" stroke="#2563eb" stroke-width="1.8" marker-end="url(#a_main)"/>
+<text x="684" y="400" class="code mono" text-anchor="start">while (console_rx_pop(&amp;ch))</text>
+<path d="M698,412 v9" stroke="#2563eb" stroke-width="1.8" marker-end="url(#a_main)"/>
+<text x="684" y="438" class="code mono" text-anchor="start">comm_link_mode() == LINK_V2 ?</text>
+<text x="684" y="461" class="lbl" text-anchor="start">V2   → comm_frame_feed(ch)</text>
+<text x="684" y="481" class="small" text-anchor="start">TEXT → cli_feed(ch)  (명령 창)</text>
+<text x="684" y="499" class="small" text-anchor="start">같은 바이트, 받는 쪽만 다르다</text>
+<rect x="982" y="254" width="284" height="254" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+<path d="M982,264 a10,10 0 0 1 10,-10 h264 a10,10 0 0 1 10,10 v26 h-284 z" fill="#2563eb"/>
+<text x="996" y="277" class="colhead" text-anchor="start">4 · 파서 (바이트 하나씩)</text>
+<text x="1254" y="277" class="coltag" text-anchor="end">main</text>
+<text x="998" y="324" class="code mono" text-anchor="start">frame_parser_push(&amp;s_parser,</text>
+<text x="998" y="346" class="code mono" text-anchor="start">                  b, &amp;f)</text>
+<text x="998" y="367" class="small" text-anchor="start">H0: AA 아니면 dropped++</text>
+<text x="998" y="385" class="small" text-anchor="start">H1: 55 아니면 dropped++</text>
+<text x="998" y="403" class="small" text-anchor="start">TYPE → LEN (&gt; 64 면 bad_len++)</text>
+<text x="998" y="421" class="small" text-anchor="start">PAYLOAD: LEN 바이트를 모은다</text>
+<text x="998" y="439" class="small" text-anchor="start">CRC: crc8(TYPE..PAYLOAD) 와 비교</text>
+<text x="998" y="458" class="code mono" text-anchor="start">  다르면 bad_crc++ → false</text>
+<text x="998" y="480" class="code mono" text-anchor="start">  같으면 frames_ok++ → true</text>
+<text x="998" y="501" class="small" text-anchor="start">true 일 때만 f 가 채워진다</text>
+<rect x="1296" y="254" width="284" height="266" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<path d="M1296,264 a10,10 0 0 1 10,-10 h264 a10,10 0 0 1 10,10 v26 h-284 z" fill="#7c3aed"/>
+<text x="1310" y="277" class="colhead" text-anchor="start">5 · TYPE 으로 가르기</text>
+<text x="1568" y="277" class="coltag" text-anchor="end">main → 제어</text>
+<text x="1312" y="325" class="lbl" text-anchor="start">TYPE_VELOCITY  (0x01, LEN 4)</text>
+<text x="1312" y="346" class="code mono" text-anchor="start">memcpy(&amp;v, f.payload, 4)</text>
+<text x="1312" y="368" class="code mono" text-anchor="start">control_set_target(vl, vr)</text>
+<text x="1312" y="389" class="small" text-anchor="start">→ s_target_packed 한 워드 (T15)</text>
+<text x="1312" y="407" class="small" text-anchor="start">→ s_last_cmd_ms = 지금 (워치독)</text>
+<text x="1312" y="427" class="lbl" text-anchor="start">TYPE_POWER  (0x10, LEN 1)</text>
+<text x="1312" y="448" class="code mono" text-anchor="start">control_power_request(on)</text>
+<text x="1312" y="471" class="lbl" text-anchor="start">TYPE_TO_TEXT  (0x11, LEN 0)</text>
+<text x="1312" y="492" class="code mono" text-anchor="start">s_text_req = 1  (ARMED 면 2)</text>
+<text x="1312" y="513" class="small" text-anchor="start">→ ③ 의 V2 → TEXT 로 이어진다</text>
+<line x1="326" y1="272" x2="350" y2="272" stroke="#059669" stroke-width="2.2" marker-end="url(#a_isr)"/>
+<line x1="640" y1="272" x2="664" y2="272" stroke="#2563eb" stroke-width="2.2" marker-end="url(#a_main)"/>
+<line x1="954" y1="272" x2="978" y2="272" stroke="#2563eb" stroke-width="2.2" marker-end="url(#a_main)"/>
+<line x1="1268" y1="272" x2="1292" y2="272" stroke="#7c3aed" stroke-width="2.2" marker-end="url(#a_ctl)"/>
+<rect x="30" y="570" width="8" height="40" rx="3" fill="#111827" stroke="#111827" stroke-width="0"/>
+<text x="52" y="598" class="sec2" text-anchor="start">② 보내기 — MCU → Pi   (TYPE_STATE 0x81 · TYPE_IMU 0x82 · TYPE_EVENT 0x83 · TYPE_TEXT_ACK 0x90)</text>
+<text x="52" y="622" class="subtitle" text-anchor="start">1 kHz 틱마다 comm_frame_step_1khz() 가 위에서 아래로 한 번 돈다. 값은 제어 모듈에서 끌어오고(pull), 프레임을 지어 큐에 넣고, 마지막에 DMA 로 내보낸다.</text>
+<rect x="40" y="644" width="300" height="380" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+<path d="M40,654 a10,10 0 0 1 10,-10 h280 a10,10 0 0 1 10,10 v26 h-300 z" fill="#ea580c"/>
+<text x="54" y="667" class="colhead" text-anchor="start">TIM6 1 ms 콜백</text>
+<text x="328" y="667" class="coltag" text-anchor="end">ISR · 선점 1</text>
+<text x="56" y="714" class="code mono" text-anchor="start">HAL_TIM_PeriodElapsedCallback()</text>
+<text x="56" y="735" class="small" text-anchor="start">htim-&gt;Instance == TIM6</text>
+<path d="M70,744 v9" stroke="#ea580c" stroke-width="1.8" marker-end="url(#a_tick)"/>
+<text x="56" y="770" class="code mono" text-anchor="start">++s_tick_ms</text>
+<path d="M70,782 v9" stroke="#ea580c" stroke-width="1.8" marker-end="url(#a_tick)"/>
+<text x="56" y="808" class="code mono" text-anchor="start">power_step_1khz()</text>
+<text x="56" y="829" class="small" text-anchor="start">전원 상태기계 (fw-11)</text>
+<path d="M70,838 v9" stroke="#ea580c" stroke-width="1.8" marker-end="url(#a_tick)"/>
+<text x="56" y="864" class="code mono" text-anchor="start">control_step_1khz()</text>
+<text x="56" y="885" class="small" text-anchor="start">s_target_packed 를 한 번 읽어 PID</text>
+<path d="M70,894 v9" stroke="#ea580c" stroke-width="1.8" marker-end="url(#a_tick)"/>
+<text x="56" y="921" class="lbl" text-anchor="start">comm_frame_step_1khz()  →</text>
+<text x="56" y="941" class="small" text-anchor="start">오른쪽 1 ~ 8 이 이 안이다</text>
+<path d="M70,950 v9" stroke="#ea580c" stroke-width="1.8" marker-end="url(#a_tick)"/>
+<text x="56" y="976" class="code mono" text-anchor="start">motor_step_1khz()</text>
+<path d="M70,988 v9" stroke="#ea580c" stroke-width="1.8" marker-end="url(#a_tick)"/>
+<text x="56" y="1014" class="code mono" text-anchor="start">wdg_checkin_tick()</text>
+<rect x="370" y="644" width="790" height="670" rx="10" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
+<path d="M370,654 a10,10 0 0 1 10,-10 h770 a10,10 0 0 1 10,10 v26 h-790 z" fill="#ea580c"/>
+<text x="384" y="667" class="colhead" text-anchor="start">comm_frame_step_1khz()  — 한 틱 안에서 위에서 아래로</text>
+<text x="1148" y="667" class="coltag" text-anchor="end">Comm/comm_frame.c</text>
+<rect x="384" y="702" width="762" height="66" rx="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.2"/>
+<circle cx="406" cy="724" r="11" fill="#0891b2"/>
+<text x="406" y="728" class="num" text-anchor="middle">1</text>
+<text x="426" y="728" class="lbl" text-anchor="start">s_mode != LINK_V2 ?</text>
+<text x="426" y="747" class="code2 mono" text-anchor="start">return  — TEXT 에서는 큐 · DMA 를 건드리지 않는다</text>
+<text x="426" y="763" class="code2 mono" text-anchor="start">아니면 ++s_ticks</text>
+<path d="M406,768 v10" stroke="#9ca3af" stroke-width="1.5"/>
+<rect x="384" y="778" width="762" height="66" rx="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.2"/>
+<circle cx="406" cy="800" r="11" fill="#0891b2"/>
+<text x="406" y="804" class="num" text-anchor="middle">2</text>
+<text x="426" y="804" class="lbl" text-anchor="start">s_text_req != 0 ?   (TYPE_TO_TEXT 의 답이 가장 먼저)</text>
+<text x="426" y="823" class="code2 mono" text-anchor="start">frame_build(TYPE_TEXT_ACK, &amp;ap, 1, out) → tx_enqueue(out, n)</text>
+<text x="426" y="839" class="code2 mono" text-anchor="start">result = TEXT_ACK_OK (바꾼다) 이면 s_closing = 1 — 이것이 V2 의 마지막 프레임</text>
+<rect x="1036" y="788" width="96" height="24" rx="12" fill="#0891b2" stroke="#0891b2" stroke-width="0"/>
+<text x="1084" y="805" class="num" text-anchor="middle">TEXT_ACK</text>
+<text x="1084" y="828" class="small mono" text-anchor="middle">선 위 0x90</text>
+<path d="M406,844 v10" stroke="#9ca3af" stroke-width="1.5"/>
+<rect x="384" y="854" width="762" height="66" rx="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.2"/>
+<circle cx="406" cy="876" r="11" fill="#0891b2"/>
+<text x="406" y="880" class="num" text-anchor="middle">3</text>
+<text x="426" y="880" class="lbl" text-anchor="start">s_closing != 0 ?   (닫는 중)</text>
+<text x="426" y="899" class="code2 mono" text-anchor="start">tx_pump() — 새 프레임 없이 비우기만</text>
+<text x="426" y="915" class="code2 mono" text-anchor="start">큐 · DMA 가 다 비면 s_drained = 1 → return</text>
+<path d="M406,920 v10" stroke="#9ca3af" stroke-width="1.5"/>
+<rect x="384" y="930" width="762" height="66" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.2"/>
+<circle cx="406" cy="952" r="11" fill="#7c3aed"/>
+<text x="406" y="956" class="num" text-anchor="middle">4</text>
+<text x="426" y="956" class="lbl" text-anchor="start">링크 끊김 셈</text>
+<text x="426" y="975" class="code2 mono" text-anchor="start">link_lost_tick(&amp;s_quiet_ms, ARMED?, control_cmd_stale(), 10000)</text>
+<text x="426" y="991" class="code2 mono" text-anchor="start">true → control_power_request(false)  — V2 · ARMED 에서 명령이 10 s 끊기면</text>
+<path d="M406,996 v10" stroke="#9ca3af" stroke-width="1.5"/>
+<rect x="384" y="1006" width="762" height="66" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.2"/>
+<circle cx="406" cy="1028" r="11" fill="#7c3aed"/>
+<text x="406" y="1032" class="num" text-anchor="middle">5</text>
+<text x="426" y="1032" class="lbl" text-anchor="start">s_ticks % 20 == 0 ?   (50 Hz)</text>
+<text x="426" y="1051" class="code2 mono" text-anchor="start">control_get_state(&amp;st) → st 를 state_payload_t 로 필드마다 옮긴다</text>
+<text x="426" y="1067" class="code2 mono" text-anchor="start">frame_build(TYPE_STATE, &amp;sp, 18, out) → tx_enqueue(out, n)</text>
+<rect x="1036" y="1016" width="96" height="24" rx="12" fill="#7c3aed" stroke="#7c3aed" stroke-width="0"/>
+<text x="1084" y="1033" class="num" text-anchor="middle">STATE</text>
+<text x="1084" y="1056" class="small mono" text-anchor="middle">선 위 0x81</text>
+<path d="M406,1072 v10" stroke="#9ca3af" stroke-width="1.5"/>
+<rect x="384" y="1082" width="762" height="66" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.2"/>
+<circle cx="406" cy="1104" r="11" fill="#7c3aed"/>
+<text x="406" y="1108" class="num" text-anchor="middle">6</text>
+<text x="426" y="1108" class="lbl" text-anchor="start">sid = 0, 1 마다   (센서가 새 값을 낼 때)</text>
+<text x="426" y="1127" class="code2 mono" text-anchor="start">control_get_imu(&amp;im, sid) → sid 0: wt901_get_sample() (두 벌의 앞 칸)</text>
+<text x="426" y="1143" class="code2 mono" text-anchor="start">seq == 0 이거나 지난번과 같으면 건너뜀 → frame_build(TYPE_IMU, &amp;ip, 17, out) → tx_enqueue()</text>
+<rect x="1036" y="1092" width="96" height="24" rx="12" fill="#7c3aed" stroke="#7c3aed" stroke-width="0"/>
+<text x="1084" y="1109" class="num" text-anchor="middle">IMU</text>
+<text x="1084" y="1132" class="small mono" text-anchor="middle">선 위 0x82</text>
+<path d="M406,1148 v10" stroke="#9ca3af" stroke-width="1.5"/>
+<rect x="384" y="1158" width="762" height="66" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.2"/>
+<circle cx="406" cy="1180" r="11" fill="#7c3aed"/>
+<text x="406" y="1184" class="num" text-anchor="middle">7</text>
+<text x="426" y="1184" class="lbl" text-anchor="start">while (control_pop_event(&amp;ev))</text>
+<text x="426" y="1203" class="code2 mono" text-anchor="start">frame_build(TYPE_EVENT, &amp;ep, 7, out) → tx_enqueue(out, n)</text>
+<text x="426" y="1219" class="code2 mono" text-anchor="start">큐가 빌 때까지. fw-18 전에는 0 건</text>
+<rect x="1036" y="1168" width="96" height="24" rx="12" fill="#7c3aed" stroke="#7c3aed" stroke-width="0"/>
+<text x="1084" y="1185" class="num" text-anchor="middle">EVENT</text>
+<text x="1084" y="1208" class="small mono" text-anchor="middle">선 위 0x83</text>
+<path d="M406,1224 v10" stroke="#9ca3af" stroke-width="1.5"/>
+<rect x="384" y="1234" width="762" height="66" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.2"/>
+<circle cx="406" cy="1256" r="11" fill="#ea580c"/>
+<text x="406" y="1260" class="num" text-anchor="middle">8</text>
+<text x="426" y="1260" class="lbl" text-anchor="start">tx_pump()   (틱의 마지막)</text>
+<text x="426" y="1279" class="code2 mono" text-anchor="start">앞 DMA 가 끝났으면(gState READY) s_tail 을 옮긴다 → 꼬리부터 이어진 구간 하나를</text>
+<text x="426" y="1295" class="code2 mono" text-anchor="start">HAL_UART_Transmit_DMA(&amp;huart3, &amp;s_txq[s_tail], n) — 끝날 때까지 건드리지 않는다</text>
+<line x1="342" y1="919" x2="366" y2="919" stroke="#ea580c" stroke-width="2.2" marker-end="url(#a_tick)"/>
+<rect x="1190" y="644" width="370" height="434" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+<path d="M1190,654 a10,10 0 0 1 10,-10 h350 a10,10 0 0 1 10,10 v26 h-370 z" fill="#ea580c"/>
+<text x="1204" y="667" class="colhead" text-anchor="start">프레임 짓기 · 큐 · 내보내기</text>
+<text x="1548" y="667" class="coltag" text-anchor="end">1 kHz</text>
+<text x="1206" y="715" class="lbl" text-anchor="start">frame_build(type, &amp;p, len, out)</text>
+<text x="1206" y="735" class="small" text-anchor="start">frames.h 의 static inline</text>
+<text x="1206" y="754" class="code mono" text-anchor="start">out[0..1] = AA 55</text>
+<text x="1206" y="776" class="code mono" text-anchor="start">out[2] = TYPE   out[3] = LEN</text>
+<text x="1206" y="798" class="code mono" text-anchor="start">out[4..] = PAYLOAD (pack 1)</text>
+<text x="1206" y="820" class="code mono" text-anchor="start">out[4+LEN] = crc8(out+2, 2+LEN)</text>
+<text x="1206" y="841" class="small" text-anchor="start">돌려주는 값 = 6 + LEN 바이트</text>
+<path d="M1220,850 v9" stroke="#ea580c" stroke-width="1.8" marker-end="url(#a_tick)"/>
+<text x="1206" y="877" class="lbl" text-anchor="start">tx_enqueue(out, n)</text>
+<text x="1206" y="897" class="small" text-anchor="start">s_txq[256] 링 (RAM_D2 · DMA 가 읽는다)</text>
+<text x="1206" y="915" class="small" text-anchor="start">빈자리 &lt; n 이면 한 바이트도 넣지 않고</text>
+<text x="1206" y="934" class="code mono" text-anchor="start">  ++s_tx_drop → false</text>
+<text x="1206" y="955" class="small" text-anchor="start">넣으면 s_head 만 옮긴다</text>
+<path d="M1220,964 v9" stroke="#ea580c" stroke-width="1.8" marker-end="url(#a_tick)"/>
+<text x="1206" y="991" class="lbl" text-anchor="start">tx_pump() → DMA</text>
+<text x="1206" y="1012" class="code mono" text-anchor="start">USART3 TX (PD8) → VCP → USB</text>
+<path d="M1220,1024 v9" stroke="#ea580c" stroke-width="1.8" marker-end="url(#a_tick)"/>
+<text x="1206" y="1050" class="code mono" text-anchor="start">Pi /dev/mcu → 파서 (06 FrameParser)</text>
+<text x="1206" y="1071" class="small" text-anchor="start">같은 상태기계 · 같은 crc8</text>
+<line x1="1162" y1="804" x2="1186" y2="715" stroke="#ea580c" stroke-width="1.6" marker-end="url(#a_tick)" stroke-dasharray="5 4"/>
+<line x1="1162" y1="1260" x2="1186" y2="989" stroke="#ea580c" stroke-width="2.2" marker-end="url(#a_tick)"/>
+<rect x="30" y="1364" width="8" height="40" rx="3" fill="#111827" stroke="#111827" stroke-width="0"/>
+<text x="52" y="1392" class="sec2" text-anchor="start">③ 모드 전환 — TEXT ↔ V2   (같은 USART3 를 글자 창과 계약이 나눠 쓴다)</text>
+<text x="52" y="1416" class="subtitle" text-anchor="start">두 문맥 사이를 오가는 값은 volatile 넷뿐이다: s_mode · s_text_req · s_closing · s_drained. 다시 굽거나 리셋하지 않고 오간다.</text>
+<rect x="40" y="1438" width="136" height="132" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+<text x="108" y="1490" class="lbl" text-anchor="middle">TEXT → V2</text>
+<text x="108" y="1512" class="lbl" text-anchor="middle">(main)</text>
+<rect x="190" y="1438" width="253" height="132" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+<circle cx="210" cy="1460" r="11" fill="#2563eb"/>
+<text x="210" y="1464" class="num" text-anchor="middle">1</text>
+<text x="228" y="1465" class="lbl" text-anchor="start">명령 창</text>
+<text x="204" y="1490" class="code2 mono" text-anchor="start">&gt; link v2</text>
+<text x="204" y="1508" class="code2 mono" text-anchor="start">cmd_link(argc, argv)</text>
+<text x="204" y="1526" class="small" text-anchor="start">TEXT 에서만 실행된다</text>
+<line x1="445" y1="1504" x2="465" y2="1504" stroke="#2563eb" stroke-width="2.2" marker-end="url(#a_main)"/>
+<rect x="469" y="1438" width="253" height="132" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+<circle cx="489" cy="1460" r="11" fill="#2563eb"/>
+<text x="489" y="1464" class="num" text-anchor="middle">2</text>
+<text x="507" y="1465" class="lbl" text-anchor="start">ARMED 검사</text>
+<text x="483" y="1490" class="code2 mono" text-anchor="start">control_power_state()</text>
+<text x="483" y="1508" class="code2 mono" text-anchor="start">  == ARMED → ERR link armed</text>
+<text x="483" y="1526" class="small" text-anchor="start">무장 중에는 바꾸지 않는다</text>
+<line x1="724" y1="1504" x2="744" y2="1504" stroke="#2563eb" stroke-width="2.2" marker-end="url(#a_main)"/>
+<rect x="748" y="1438" width="253" height="132" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+<circle cx="768" cy="1460" r="11" fill="#2563eb"/>
+<text x="768" y="1464" class="num" text-anchor="middle">3</text>
+<text x="786" y="1465" class="lbl" text-anchor="start">마지막 글자</text>
+<text x="762" y="1490" class="code2 mono" text-anchor="start">printf("OK link v2\r\n")</text>
+<text x="762" y="1508" class="code2 mono" text-anchor="start">fflush(stdout)</text>
+<text x="762" y="1526" class="small" text-anchor="start">바꾸기 전에 선에 내보낸다</text>
+<line x1="1003" y1="1504" x2="1023" y2="1504" stroke="#2563eb" stroke-width="2.2" marker-end="url(#a_main)"/>
+<rect x="1027" y="1438" width="253" height="132" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+<circle cx="1047" cy="1460" r="11" fill="#2563eb"/>
+<text x="1047" y="1464" class="num" text-anchor="middle">4</text>
+<text x="1065" y="1465" class="lbl" text-anchor="start">비우기</text>
+<text x="1041" y="1490" class="code2 mono" text-anchor="start">frame_parser_reset()</text>
+<text x="1041" y="1508" class="code2 mono" text-anchor="start">queue_clear()</text>
+<text x="1041" y="1526" class="small" text-anchor="start">틱은 TEXT 라 큐를 안 만진다</text>
+<line x1="1282" y1="1504" x2="1302" y2="1504" stroke="#0891b2" stroke-width="2.2" marker-end="url(#a_v2)"/>
+<rect x="1306" y="1438" width="253" height="132" rx="10" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<circle cx="1326" cy="1460" r="11" fill="#0891b2"/>
+<text x="1326" y="1464" class="num" text-anchor="middle">5</text>
+<text x="1344" y="1465" class="lbl" text-anchor="start">모드 쓰기</text>
+<text x="1320" y="1490" class="code2 mono" text-anchor="start">__DMB()</text>
+<text x="1320" y="1508" class="code2 mono" text-anchor="start">s_mode = LINK_V2</text>
+<text x="1320" y="1526" class="small" text-anchor="start">다음 틱부터 ② 가 돈다</text>
+<text x="1320" y="1544" class="small" text-anchor="start">_write() 는 글자를 버린다</text>
+<rect x="40" y="1594" width="136" height="132" rx="10" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="108" y="1646" class="lbl" text-anchor="middle">V2 → TEXT</text>
+<text x="108" y="1668" class="lbl" text-anchor="middle">(Pi 의 TO_TEXT)</text>
+<rect x="190" y="1594" width="253" height="132" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+<circle cx="210" cy="1616" r="11" fill="#2563eb"/>
+<text x="210" y="1620" class="num" text-anchor="middle">1</text>
+<text x="228" y="1621" class="lbl" text-anchor="start">TO_TEXT 받음</text>
+<text x="204" y="1646" class="code2 mono" text-anchor="start">comm_frame_feed()</text>
+<text x="204" y="1664" class="code2 mono" text-anchor="start">s_text_req = 1</text>
+<text x="204" y="1682" class="small" text-anchor="start">ARMED 면 2 → TEXT_ACK_ARMED,</text>
+<text x="204" y="1700" class="small" text-anchor="start">모드 그대로</text>
+<line x1="445" y1="1660" x2="465" y2="1660" stroke="#ea580c" stroke-width="2.2" marker-end="url(#a_tick)"/>
+<rect x="469" y="1594" width="253" height="132" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+<circle cx="489" cy="1616" r="11" fill="#ea580c"/>
+<text x="489" y="1620" class="num" text-anchor="middle">2</text>
+<text x="507" y="1621" class="lbl" text-anchor="start">답 넣기</text>
+<text x="483" y="1646" class="code2 mono" text-anchor="start">frame_build(TEXT_ACK,</text>
+<text x="483" y="1664" class="code2 mono" text-anchor="start">  TEXT_ACK_OK) → tx_enqueue()</text>
+<text x="483" y="1682" class="code2 mono" text-anchor="start">s_closing = 1</text>
+<text x="483" y="1700" class="small" text-anchor="start">이 뒤로 새 프레임 없음</text>
+<line x1="724" y1="1660" x2="744" y2="1660" stroke="#ea580c" stroke-width="2.2" marker-end="url(#a_tick)"/>
+<rect x="748" y="1594" width="253" height="132" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+<circle cx="768" cy="1616" r="11" fill="#ea580c"/>
+<text x="768" y="1620" class="num" text-anchor="middle">3</text>
+<text x="786" y="1621" class="lbl" text-anchor="start">비우기</text>
+<text x="762" y="1646" class="code2 mono" text-anchor="start">tx_pump()</text>
+<text x="762" y="1664" class="code2 mono" text-anchor="start">큐 · DMA 가 다 비면</text>
+<text x="762" y="1682" class="code2 mono" text-anchor="start">s_drained = 1</text>
+<line x1="1003" y1="1660" x2="1023" y2="1660" stroke="#2563eb" stroke-width="2.2" marker-end="url(#a_main)"/>
+<rect x="1027" y="1594" width="253" height="132" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+<circle cx="1047" cy="1616" r="11" fill="#2563eb"/>
+<text x="1047" y="1620" class="num" text-anchor="middle">4</text>
+<text x="1065" y="1621" class="lbl" text-anchor="start">돌아오기</text>
+<text x="1041" y="1646" class="code2 mono" text-anchor="start">comm_frame_service_main()</text>
+<text x="1041" y="1664" class="code2 mono" text-anchor="start">s_mode = LINK_TEXT</text>
+<text x="1041" y="1682" class="code2 mono" text-anchor="start">s_closing = s_drained = 0</text>
+<line x1="1282" y1="1660" x2="1302" y2="1660" stroke="#2563eb" stroke-width="2.2" marker-end="url(#a_main)"/>
+<rect x="1306" y="1594" width="253" height="132" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+<circle cx="1326" cy="1616" r="11" fill="#2563eb"/>
+<text x="1326" y="1620" class="num" text-anchor="middle">5</text>
+<text x="1344" y="1621" class="lbl" text-anchor="start">TEXT</text>
+<text x="1320" y="1646" class="code2 mono" text-anchor="start">printf("OK link text")</text>
+<text x="1320" y="1664" class="small" text-anchor="start">프롬프트 &gt; 가 다시 나온다</text>
+<text x="1320" y="1682" class="small" text-anchor="start">app_cli_cycle() 이 cli_feed()</text>
+<text x="1560" y="1750" class="small" text-anchor="end">guide/image/fw-17-frame-flow.svg · 코드 기준: firmware/h723zg/User/Src/Comm/comm_frame.c · Tools/console.c · System/tick.c · app.c (2026-11-05)</text>
+</svg>

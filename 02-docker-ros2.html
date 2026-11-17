@@ -25,7 +25,7 @@
           <li>Pi 의 컨테이너 안에서 <code>ros2 topic list</code> 가 실행된다.</li>
           <li>두 컨테이너의 talker/listener 가 서로를 찾아 통신한다.</li>
           <li>Mac 의 Foxglove 가 Pi 의 ROS 그래프에 연결된다.</li>
-          <li><strong>03~10 단계에서 필요한 apt 패키지가 전부 이미지 안에 들어가</strong> 있다. 그래서 이후 단계에서 이미지를 다시 빌드할 일은 08(camera_ros)·08c(HailoRT) 두 번뿐이다.</li>
+          <li><strong>02~11 단계에서 필요한 apt 패키지가 전부 이미지 안에 들어가</strong> 있다. 그래서 이후 단계에서 이미지를 다시 빌드할 일은 08(camera_ros)·08c(HailoRT) 두 번뿐이다.</li>
         </ul>
       </div>
 
@@ -49,7 +49,7 @@
                                          └──────────────────────────────────────┘</code></pre>
       <p>이 단계에서 만드는 것은 셋이다.</p>
       <ol class="steps">
-        <li><strong>이미지</strong> <code>rpi5-ros2:humble</code> — <code>docker/Dockerfile</code> 로 정의. ROS 2 Humble + 이 학습에 필요한 패키지 + 호스트와 UID 가 같은 비root 사용자.</li>
+        <li><strong>이미지</strong> <code>rpi5-ros2:humble</code> — <code>docker/Dockerfile</code> 로 정의. ROS 2 Humble + 이 학습에 필요한 패키지 + 호스트와 UID(리눅스 사용자 번호)가 같은 비root 사용자.</li>
         <li><strong>서비스 3개</strong> — <code>docker/docker-compose.yml</code> 의 <code>dev</code>(일회성 개발 셸), <code>foxglove</code>(상시 브리지), <code>bringup</code>(로봇 본체, 06 단계부터).</li>
         <li><strong>동기화 흐름</strong> — Mac 에서 편집 → <code>scripts/sync-to-pi.sh</code> → Pi 의 <code>~/ros2_rpi5</code> → 컨테이너의 <code>/ros2_ws</code> 로 마운트.</li>
       </ol>
@@ -79,7 +79,7 @@
         <li>환경을 <code>Dockerfile</code> 한 장으로 재현할 수 있다 → "내 Pi 에서만 되는" 현상이 없다</li>
         <li>나중에 Jazzy 로 옮길 때 베이스 이미지 한 줄만 바꾸면 된다</li>
       </ul>
-      <p class="small"><strong>참고(비차단):</strong> Humble 은 2027년 5월 EOL, Jazzy(Ubuntu 24.04 기반)가 현행 LTS 다. 지금은 자료가 압도적으로 많은 Humble 로 배우고, 개념을 익힌 뒤 옮기는 것이 낫다. 개념은 그대로이고 바뀌는 것은 일부 API 이름 정도다.</p>
+      <p class="small"><strong>참고(비차단):</strong> Humble 은 2027년 5월 EOL(지원 종료), Jazzy(Ubuntu 24.04 기반)가 현행 LTS(장기 지원판)다. 지금은 자료가 압도적으로 많은 Humble 로 배우고, 개념을 익힌 뒤 옮기는 것이 낫다. 개념은 그대로이고 바뀌는 것은 일부 API 이름 정도다.</p>
 
       <h3>2-2. 이미지·컨테이너·볼륨 — 쓰기 레이어는 저장소가 아니다</h3>
       <pre class="diagram"><code>   Dockerfile ──(docker compose build)──► 이미지 rpi5-ros2:humble   ← 영구. 읽기 전용 레이어들
@@ -125,9 +125,9 @@
           <tr><td>07</td><td><code>ros-humble-rplidar-ros</code></td><td>§3-3 블록</td></tr>
           <tr><td>08</td><td><code>camera_ros</code> + Raspberry Pi 포크 libcamera</td><td>소스 빌드. 08 단계에서 Dockerfile 에 별도 단계를 추가하고 재빌드</td></tr>
           <tr><td>08a·08b</td><td><code>ros-humble-cv-bridge</code>, <code>image-transport(-plugins)</code>, <code>vision-msgs</code>, <code>libopencv-dev</code>, <code>python3-opencv</code></td><td>§3-3 블록</td></tr>
-          <tr><td>08b (Python 트랙)</td><td><code>ultralytics</code> (PyTorch 포함, 수 GB)</td><td><strong>Mac 의 venv</strong>. 모델 확인·ONNX 내보내기는 Mac 에서 하고 결과 파일만 Pi 로</td></tr>
+          <tr><td>08b (Python 트랙)</td><td><code>ultralytics</code> (PyTorch 포함, 수 GB)</td><td><strong>Mac 의 venv</strong>. 모델 확인·ONNX(신경망 모델 교환 형식) 내보내기는 Mac 에서 하고 결과 파일만 Pi 로</td></tr>
           <tr><td>08c</td><td>HailoRT .deb (C++ 노드) + Python wheel (Python 판 08c-1 · 08d-1 만) — <strong>호스트 드라이버와 같은 버전</strong></td><td>Dockerfile 의 3-B 블록 주석 해제 (08c 단계). §2-5 참조</td></tr>
-          <tr><td>09</td><td><code>ros-humble-slam-toolbox</code>, <code>navigation2</code>, <code>nav2-bringup</code></td><td>§3-3 블록</td></tr>
+          <tr><td>09 ~ 11</td><td><code>ros-humble-slam-toolbox</code>, <code>navigation2</code>, <code>nav2-bringup</code></td><td>§3-3 블록</td></tr>
           <tr><td>수시</td><td>Python 패키지 (<code>pyserial</code> 등)</td><td>Dockerfile 의 <code>pip3 install</code> 줄</td></tr>
         </tbody>
       </table></div>
@@ -137,20 +137,94 @@
       <div class="tbl"><table>
         <thead><tr><th>항목</th><th>왜 필요한가</th><th>빠지면 나타나는 증상</th></tr></thead>
         <tbody>
-          <tr><td><code>network_mode: host</code></td><td>ROS 2 는 DDS 위에서 동작하고, DDS 는 <strong>UDP 멀티캐스트</strong>로 서로를 찾는다(디스커버리). Docker 기본 bridge 네트워크는 멀티캐스트를 NAT 너머로 전달하지 못한다</td><td>노드는 실행 중인데 다른 컨테이너에서 <code>ros2 topic list</code> 에 아무것도 안 나온다</td></tr>
-          <tr><td><code>ipc: host</code></td><td>Humble 기본 RMW(Fast DDS)는 같은 머신 안 통신에 <strong>공유 메모리(<code>/dev/shm</code>)</strong> 를 쓴다. IPC 네임스페이스가 분리되면 오류 표시 없이 루프백 UDP 로 전환된다</td><td>이미지·포인트클라우드 같은 큰 메시지에서 프레임 드롭</td></tr>
+          <tr><td><code>network_mode: host</code></td><td>ROS 2 는 DDS 위에서 동작하고, DDS 는 <strong>UDP 멀티캐스트</strong>(한 번 보낸 UDP 패킷을 같은 네트워크의 여러 수신자가 받는 방식)로 서로를 찾는다(디스커버리). Docker 기본 bridge 네트워크는 멀티캐스트를 NAT(컨테이너 주소를 호스트 주소로 바꾸는 변환) 너머로 전달하지 못한다</td><td>노드는 실행 중인데 다른 컨테이너에서 <code>ros2 topic list</code> 에 아무것도 안 나온다</td></tr>
+          <tr><td><code>ipc: host</code></td><td>Humble 기본 RMW(ROS 2 와 DDS 구현을 잇는 계층 — 기본은 Fast DDS)는 같은 머신 안 통신에 <strong>공유 메모리(<code>/dev/shm</code>)</strong> 를 쓴다. IPC(프로세스 사이 통신) 네임스페이스가 분리되면 오류 표시 없이 루프백 UDP 로 전환된다</td><td>이미지·포인트클라우드 같은 큰 메시지에서 프레임 드롭</td></tr>
+          <tr><td><code>FASTRTPS_DEFAULT_PROFILES_FILE</code> 과 <code>./fastdds_profile.xml</code> 마운트</td><td>Fast DDS 의 공유 메모리 구획은 기본 512 KB 다. 이보다 큰 메시지는 <code>ipc: host</code> 가 있어도 UDP 로 간다. 설정 파일로 구획을 16 MB 로 키운다 (아래 상자)</td><td>카메라 영상이 초당 30 장 중 일부만 도착한다. 받기만 하는 노드에서도 생기고, CPU 부하가 오르면 초당 몇 장까지 줄어든다</td></tr>
           <tr><td><code>volumes: ../ros2_ws:/ros2_ws</code></td><td>소스는 <strong>호스트</strong>에 두고 컨테이너가 빌드한다</td><td>(없으면) 컨테이너를 지울 때 코드와 빌드 결과가 함께 사라진다</td></tr>
-          <tr><td><code>/dev:/dev</code>, <code>device_cgroup_rules</code></td><td><code>/dev</code> 를 통째로 마운트해도 cgroup 규칙이 없으면 장치 접근이 막힌다. major 번호가 동적인 <code>dma_heap</code>·<code>hailo0</code> 은 01 에서 확인한 값을 직접 적는다</td><td>카메라/Hailo 가 "컨테이너에서만" 인식되지 않는다</td></tr>
-          <tr><td><code>ROS_DOMAIN_ID</code></td><td>같은 네트워크에 여러 ROS 시스템이 있으면 서로 섞인다. 도메인 ID(0~101)로 격리한다</td><td>남의 로봇 토픽이 내 목록에 섞여 나온다</td></tr>
+          <tr><td><code>/dev:/dev</code>, <code>device_cgroup_rules</code></td><td><code>/dev</code> 를 통째로 마운트해도 cgroup 규칙이 없으면 장치 접근이 막힌다. 규칙은 경로가 아니라 major 번호로 장치를 허용한다. 부팅마다 번호가 바뀔 수 있는 <code>media</code>·<code>dma_heap</code>·<code>hailo</code> 은 <code>.env</code> 의 값을 읽는다 (아래 상자)</td><td>카메라/Hailo 가 "컨테이너에서만" 인식되지 않는다. 장치 파일은 보이는데 열 때 <code>Operation not permitted</code></td></tr>
+          <tr><td><code>ROS_DOMAIN_ID</code></td><td>같은 네트워크에 여러 ROS 시스템이 있으면 서로 섞인다. 도메인 ID(0~101)로 격리한다</td><td>다른 로봇의 토픽이 이 로봇의 토픽 목록에 섞여 나온다</td></tr>
           <tr><td><code>ROS_LOCALHOST_ONLY: "0"</code></td><td>1 이면 localhost 로만 통신한다</td><td>Mac 에서 토픽이 안 보인다 (단, Foxglove 는 WebSocket 이라 영향이 없다)</td></tr>
         </tbody>
       </table></div>
       <p class="small">Mac 의 Foxglove 는 WebSocket 으로 연결하므로 도메인 ID 와 무관하다. 나중에 Mac 에 ROS 를 설치해 직접 DDS 로 통신할 계획이라면 양쪽 도메인 ID 를 같게 맞춰야 한다.</p>
 
+      <div class="callout note"><span class="ct">큰 메시지와 Fast DDS 공유 메모리 구획 — 왜 설정 파일이 필요한가</span>
+        <p><strong>구획</strong>은 노드 프로세스가 보내는 메시지를 담아 두는 <code>/dev/shm</code> 의 파일이다. 노드 프로세스마다 하나씩 만들어진다. 받는 쪽은 이 파일에서 메시지를 읽는다.</p>
+        <p>메시지 한 개가 구획보다 크면 공유 메모리를 쓰지 못하고 UDP 로 간다. UDP 로 가면 메시지는 여러 조각으로 나뉜다. 받는 쪽 소켓의 기본 수신 버퍼는 212,992 B 다. 조각이 하나라도 버퍼에서 넘쳐 버려지면 메시지 전체를 버린다. 커널은 이 경우를 <code>/proc/net/snmp</code> 의 <code>Udp</code> 줄 <code>RcvbufErrors</code> 칸에 센다.</p>
+        <div class="tbl"><table>
+          <colgroup><col class="w40"><col class="w20"><col class="w40"></colgroup>
+          <thead><tr><th>메시지</th><th>크기</th><th>기본 구획 512 KB (524,288 B) 에</th></tr></thead>
+          <tbody>
+            <tr><td>640×480 RGB 영상 한 장 (08 단계의 카메라 영상)</td><td>921,600 B</td><td>들어가지 않는다 → UDP</td></tr>
+            <tr><td>1280×720 RGB 영상 한 장</td><td>2,764,800 B</td><td>들어가지 않는다 → UDP</td></tr>
+            <tr><td><code>/rosout</code> 로그, <code>camera_info</code> 같은 작은 메시지</td><td>수백 B ~ 수 KB</td><td>들어간다</td></tr>
+          </tbody>
+        </table></div>
+        <p>이 프로젝트의 Pi 실측(<code>hardware/INVENTORY.md</code> 4절): 기본 설정에서는 카메라 영상을 받기만 하는 노드도 초당 30 장 중 20 ~ 22 장만 받았다(CPU 두 코어에 부하를 건 상태). 설정 파일을 적용한 뒤에는 CPU 네 코어에 부하를 걸어도 30.0 장을 받았고 <code>RcvbufErrors</code> 는 늘지 않았다.</p>
+        <p><strong>16 MB 의 근거</strong>: 구획에는 보낸 메시지 가운데 받는 쪽이 아직 다 읽지 않은 것이 남는다. 카메라 노드(<code>camera_ros</code>)의 발행 보관 깊이는 1 장이지만, 구독하는 노드가 여럿이고 각자 몇 장씩 쌓아 두면 그만큼 구획에 남는다. 16 MB 는 640×480 영상 약 17 장 분량이고, 위 실측에서 손실이 없었다. 1280×720 이면 약 5 장 분량이라 구독 노드가 늘면 모자랄 수 있다. 해상도를 올리면 수신 수와 <code>RcvbufErrors</code> 를 다시 확인하고, 모자라면 32 MB 로 올린다.</p>
+        <p><strong>메모리 비용</strong>: 구획 파일은 크기만큼 메모리를 실제로 차지한다. 16 MB × 노드 프로세스 수다. 노드 20 개면 약 320 MB 다.</p>
+        <p><strong>적용 범위</strong>: compose 의 공통 블록(<code>x-ros-common</code>)에 있으므로 이 compose 로 띄우는 모든 컨테이너의 모든 노드에 적용된다. 카메라, Hailo, Foxglove 브리지 단계에서 따로 설정하지 않는다. 적용되지 않는 경우는 둘이다. compose 를 거치지 않고 띄운 ROS 프로세스, 그리고 <code>RMW_IMPLEMENTATION</code> 을 <code>rmw_cyclonedds_cpp</code> 로 바꾼 경우다(이 파일은 Fast DDS 전용이다).</p>
+        <p><strong>UDP 버퍼 4 MB</strong>: Pi 안의 노드끼리는 공유 메모리로 전달되므로 UDP 를 쓰지 않는다. UDP 는 Pi 밖의 기기와 DDS 로 직접 통신할 때 쓰인다. 설정값은 호스트의 <code>net.core.rmem_max</code>(이 Pi 실측 4,194,304 B)를 넘을 수 없다.</p>
+      </div>
+      <p><code>docker/fastdds_profile.xml</code> (compose 가 컨테이너의 <code>/etc/fastdds/profile.xml</code> 로 마운트한다):</p>
+      <pre><code class="lang-xml">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!-- Fast DDS transport profile, applied to every node via FASTRTPS_DEFAULT_PROFILES_FILE --&gt;
+&lt;profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles"&gt;
+  &lt;transport_descriptors&gt;
+    &lt;!-- shared memory between processes on this Pi: segment large enough for camera images --&gt;
+    &lt;transport_descriptor&gt;
+      &lt;transport_id&gt;shm_large&lt;/transport_id&gt;
+      &lt;type&gt;SHM&lt;/type&gt;
+      &lt;segment_size&gt;16777216&lt;/segment_size&gt;
+    &lt;/transport_descriptor&gt;
+    &lt;!-- UDP for other machines; socket buffers capped by the host's net.core.rmem_max --&gt;
+    &lt;transport_descriptor&gt;
+      &lt;transport_id&gt;udp_large_buf&lt;/transport_id&gt;
+      &lt;type&gt;UDPv4&lt;/type&gt;
+      &lt;sendBufferSize&gt;4194304&lt;/sendBufferSize&gt;
+      &lt;receiveBufferSize&gt;4194304&lt;/receiveBufferSize&gt;
+    &lt;/transport_descriptor&gt;
+  &lt;/transport_descriptors&gt;
+  &lt;participant profile_name="default_participant" is_default_profile="true"&gt;
+    &lt;rtps&gt;
+      &lt;!-- replace the built-in transports (default SHM 512 KB + UDP) with the two above --&gt;
+      &lt;useBuiltinTransports&gt;false&lt;/useBuiltinTransports&gt;
+      &lt;userTransports&gt;
+        &lt;transport_id&gt;shm_large&lt;/transport_id&gt;
+        &lt;transport_id&gt;udp_large_buf&lt;/transport_id&gt;
+      &lt;/userTransports&gt;
+    &lt;/rtps&gt;
+  &lt;/participant&gt;
+&lt;/profiles&gt;</code></pre>
+      <p>compose 쪽은 공통 블록의 두 줄이다.</p>
+      <pre><code class="lang-yaml">  environment:
+    FASTRTPS_DEFAULT_PROFILES_FILE: /etc/fastdds/profile.xml
+  volumes:
+    - ./fastdds_profile.xml:/etc/fastdds/profile.xml:ro</code></pre>
+
+      <div class="callout note"><span class="ct">major 번호는 왜 compose 에 적지 않는가</span>
+        <p><strong>major 번호</strong>는 <code>ls -l /dev/media0</code> 의 <code>238, 0</code> 에서 쉼표 앞 숫자다. 이 장치 파일을 어느 드라이버가 맡는지를 나타낸다. 번호를 정하는 방식은 둘이다.</p>
+        <div class="tbl"><table>
+          <colgroup><col class="w20"><col class="w50"><col class="w30"></colgroup>
+          <thead><tr><th>방식</th><th>번호</th><th>이 프로젝트의 장치</th></tr></thead>
+          <tbody>
+            <tr><td>고정</td><td>커널의 공식 목록에 정해져 있어 어느 부팅이든 같다</td><td><code>/dev/video*</code> 81, i2c 89, <code>ttyUSB</code> 188, <code>ttyACM</code> 166</td></tr>
+            <tr><td>동적</td><td>드라이버가 올라올 때 커널이 빈 번호를 골라 준다. 어느 번호가 되는지는 그 부팅에서 드라이버가 올라온 순서에 달려 있다</td><td><code>/dev/media*</code>, <code>/dev/hailo0</code>, <code>/dev/dma_heap</code></td></tr>
+          </tbody>
+        </table></div>
+        <p>이 프로젝트의 Pi 는 같은 커널에서도 media 가 511, 237, 238 로, hailo 가 510, 238 로 바뀌었다(<code>hardware/INVENTORY.md</code> 8절). 그래서 compose 에는 번호 대신 변수를 쓴다.</p>
+        <pre><code class="lang-yaml">  device_cgroup_rules:
+    - 'c 81:* rmw'                       # /dev/video* — fixed
+    - 'c ${MEDIA_MAJOR:?...}:* rmw'      # /dev/media* — dynamic, value from docker/.env
+    - 'c ${DMA_HEAP_MAJOR:?...}:* rmw'   # /dev/dma_heap
+    - 'c ${HAILO_MAJOR:?...}:* rmw'      # /dev/hailo0</code></pre>
+        <p><code>docker/majors.sh</code> 가 <code>/proc/devices</code> 에서 드라이버 이름(<code>media</code>, <code>hailo</code>, <code>dma_heap</code>)으로 이번 부팅의 번호를 읽어 <code>.env</code> 에 적는다. 드라이버가 없으면(HAT 미장착) 0 을 적는다 — 0 번 규칙은 어떤 장치에도 맞지 않아 해가 없다. 부팅마다 자동으로 실행되도록 systemd 유닛으로 설치한다(§3-4). <code>${…:?…}</code> 는 값이 없으면 compose 가 그 문구를 내고 멈추게 한다 — 조용히 틀린 규칙으로 뜨지 않는다.</p>
+      </div>
+
       <h3>2-4. 비root 사용자와 <code>HOST_UID</code></h3>
       <p>컨테이너를 root 로 실행하면 마운트된 <code>ros2_ws</code> 에 colcon 이 만드는 <code>build/ install/ log/</code> 가 전부 <strong>root 소유</strong>가 된다.
       그러면 호스트에서 편집·삭제할 때마다 sudo 가 필요하고, git·rsync 를 쓸 때도 권한 문제가 생긴다.
-      그래서 Dockerfile 은 빌드 인자로 호스트 UID/GID 를 받아 같은 번호의 사용자를 만든다.</p>
+      그래서 Dockerfile 은 빌드 인자로 호스트 UID/GID(사용자 번호 · 그룹 번호)를 받아 같은 번호의 사용자를 만든다.</p>
       <div class="callout warn"><span class="ct">왜 변수명이 <code>UID</code> 가 아니라 <code>HOST_UID</code> 인가</span>
         <p>bash 에서 <code>UID</code> 는 <strong>읽기 전용 변수</strong>라 <code>export UID=$(id -u)</code> 가 오류를 낸다. 게다가 export 가 실패해도 compose 는 기본값 1000 으로 오류 표시 없이 진행해서,
         <strong>명령은 실패했는데 결과는 맞아 보이는</strong>(첫 사용자의 UID 가 우연히 1000 인) 최악의 상황이 된다. 변수명을 바꾸고 <code>docker/.env</code> 파일로 관리해 이 함정을 피한다.</p>
@@ -179,10 +253,9 @@ hailortcli fw-control identify | grep -i version
 hailortcli fw-control identify                                   # 호스트
 docker compose run --rm dev hailortcli fw-control identify       # 컨테이너 → 두 출력의 버전이 같아야 한다</code></pre>
       <div class="callout note"><span class="ct"><code>devices:</code> 로 <code>/dev/hailo0</code> 을 명시하지 않은 것은 의도적이다</span>
-        <p>compose 는 <code>/dev</code> 전체를 마운트하므로 노드 자체는 보인다. <code>devices:</code> 에 명시하면 HAT 을 아직 장착하지 않았거나 DKMS 빌드가 실패한 상태에서
+        <p>compose 는 <code>/dev</code> 전체를 마운트하므로 노드 자체는 보인다. <code>devices:</code> 에 명시하면 HAT(Hailo-8 이 달린 AI HAT+ 확장 기판)을 아직 장착하지 않았거나 DKMS(커널 모듈을 새 커널에 맞춰 다시 빌드하는 도구) 빌드가 실패한 상태에서
         <code>dev</code>, <code>foxglove</code> 를 포함한 <strong>모든 서비스가 시작되지 않는다</strong>. compose 의 오류 메시지는 원인을 알려 주지 않는다.</p>
-        <p>컨테이너에서 장치가 인식되지 않으면 <code>ls -l /dev/hailo0</code> 의 major 번호를 <code>device_cgroup_rules</code> 에 추가한다. 이 보드의 실측은 <code>238, 0</code> → <code>'c 238:* rmw'</code> 이고,
-        media 237·dma_heap 252 와 함께 compose 에 이미 들어 있다 (INVENTORY 8절). 셋 다 부팅 시 동적으로 배정되므로 호스트 커널이 업데이트되면 다시 확인한다.</p>
+        <p>대신 <code>device_cgroup_rules</code> 의 <code>'c ${HAILO_MAJOR}:* rmw'</code> 로 연다. 번호는 부팅 때 <code>docker/majors.sh</code> 가 <code>.env</code> 에 적는다(§2-3 상자). 컨테이너에서만 장치가 열리지 않으면 <code>./majors.sh --check</code> 로 <code>.env</code> 의 값이 지금 값과 같은지 본다.</p>
       </div>
       <p class="small">대안(더 단순하지만 덜 깔끔한 구성): 추론을 <strong>호스트에서</strong> 실행하고 결과만 ROS 로 넘기는 방법도 있다. 버전 락이 사라지지만 시스템이 컨테이너 안팎으로 나뉜다. 08c 에서 두 방식을 비교한다.</p>
 
@@ -219,7 +292,7 @@ docker info --format '{{.Architecture}}'     # aarch64 확인</code></pre>
       </div>
 
       <h3>3-3. 학습 단계 패키지 추가 <span class="tag mac">Mac</span></h3>
-      <p>03~09 단계에서 쓸 apt 패키지를 <strong>지금 한 번에</strong> 넣는다(§2-2). 아래는 A(Dockerfile) 절차다 — <code>docker/Dockerfile</code> 을 열고, <code># ── 2. ROS 2 공통 패키지</code> 블록의 끝(<code># ── 3. 파이썬 의존성</code> 바로 앞)에 아래 블록을 추가한다.
+      <p>02~11 단계에서 쓸 apt 패키지를 <strong>지금 한 번에</strong> 넣는다(§2-2). 아래는 A(Dockerfile) 절차다 — <code>docker/Dockerfile</code> 을 열고, <code># ── 2. ROS 2 공통 패키지</code> 블록의 끝(<code># ── 3. 파이썬 의존성</code> 바로 앞)에 아래 블록을 추가한다.
       B(시스템 경로 볼륨)를 쓴다면 §3-4 빌드 후 컨테이너에서 같은 목록을 <code>sudo apt-get update &amp;&amp; sudo apt-get install -y …</code> 로 설치한다.</p>
       <pre><code class="lang-bash"># ── 2-B. 학습 단계별 추가 패키지 (02단계에서 한 번에 넣고 재빌드) ─────────
 RUN apt-get update &amp;&amp; apt-get install -y --no-install-recommends \
@@ -239,7 +312,7 @@ RUN apt-get update &amp;&amp; apt-get install -y --no-install-recommends \
           <tr><td><code>robot-localization, imu-tools</code></td><td>06 (IMU 융합 EKF)</td><td>EKF 없음 → 브리지 TF 만 쓴다</td></tr>
           <tr><td><code>rplidar-ros</code></td><td>07</td><td>라이다 드라이버 없음</td></tr>
           <tr><td><code>cv-bridge, image-transport(-plugins), vision-msgs, libopencv-dev, python3-opencv</code></td><td>08a, 08b, 08c</td><td>C++ 영상 노드가 빌드되지 않음, 압축 영상 토픽 없음</td></tr>
-          <tr><td><code>slam-toolbox, navigation2, nav2-bringup</code></td><td>09, 10 (03 에서 <code>nav2_msgs</code> 인터페이스 조회에도 쓴다)</td><td>SLAM/Nav2 없음</td></tr>
+          <tr><td><code>slam-toolbox, navigation2, nav2-bringup</code></td><td>09 ~ 11 (03 에서 <code>nav2_msgs</code> 인터페이스 조회에도 쓴다)</td><td>SLAM/Nav2 없음</td></tr>
         </tbody>
       </table></div>
       <p class="small">A 에서는 이미지가 1 GB 남짓 커진다. 학습 중에는 그 비용이 "단계마다 20분씩 재빌드"보다 훨씬 싸다. 완성 후 운용 이미지를 줄이고 싶으면 그때 빼면 된다.</p>
@@ -253,6 +326,10 @@ cd ~/ros2_rpi5/docker
 cp .env.example .env
 printf 'HOST_UID=%s\nHOST_GID=%s\n' "$(id -u)" "$(id -g)" &gt;&gt; .env
 cat .env                       # HOST_UID/HOST_GID 가 id -u / id -g 와 같은지 눈으로 확인
+
+# 동적 장치 major 번호를 .env 에 적고, 부팅마다 다시 적도록 systemd 유닛을 설치한다 (§2-3 상자)
+sudo ./majors.sh --install     # 끝에 MEDIA_MAJOR= · HAILO_MAJOR= · DMA_HEAP_MAJOR= 세 줄이 출력된다
+systemctl is-enabled rpi5-device-majors.service   # enabled
 
 docker compose build           # Pi 5 에서 10~20분</code></pre>
       <p>빌드가 끝나면:</p>
@@ -276,6 +353,8 @@ docker compose build           # Pi 5 에서 10~20분</code></pre>
 docker compose run --rm dev</code></pre>
       <p>프롬프트가 <code>humble:/ros2_ws$</code> 로 바뀌면 컨테이너 안이다.</p>
       <pre><code class="lang-bash">printenv | grep ROS          # ROS_DISTRO=humble, ROS_DOMAIN_ID=30 확인
+printenv | grep FASTRTPS     # FASTRTPS_DEFAULT_PROFILES_FILE=/etc/fastdds/profile.xml (§2-3)
+ls -l /etc/fastdds/profile.xml   # 마운트된 설정 파일이 보인다
 whoami &amp;&amp; id -u              # root 가 아니고, 호스트의 id -u 와 같은 번호
 ros2 --help
 ros2 topic list              # /parameter_events, /rosout 두 개가 기본</code></pre>
@@ -288,6 +367,12 @@ ros2 topic list              # /parameter_events, /rosout 두 개가 기본</cod
 ros2 run demo_nodes_py listener</code></pre>
       <p>B 에 <code>I heard: [Hello World: 1]</code> 이 출력되면 <strong>서로 다른 두 컨테이너의 노드가 DDS 로 서로를 찾은 것</strong>이다. 안 되면 <code>network_mode: host</code> 와 양쪽의 <code>ROS_DOMAIN_ID</code> 를 확인한다 (§2-3).</p>
       <p>C++ 발행자와 Python 구독자가 통신하고 있다는 점도 눈여겨 둔다 — DDS 위에서는 노드의 구현 언어가 통신에 영향을 주지 않는다.</p>
+      <p>talker 와 listener 가 도는 동안 <span class="tag pi">Pi 호스트</span> 의 세 번째 터미널에서 공유 메모리 구획의 크기를 본다 (§2-3 상자).</p>
+      <pre><code class="lang-bash">ls -l /dev/shm/fastrtps_*
+#   16802336 바이트 파일이 노드 프로세스 수만큼 보이면 설정 파일이 적용된 것 (16 MB + 관리 영역)
+#   549408 바이트 파일은 기본 구획 512 KB — 그 프로세스에는 설정 파일이 적용되지 않았다
+#   크기가 0 인 *_el 파일은 짝이 되는 잠금 파일이다
+#   강제로 종료된 프로세스의 파일이 남아 있을 수 있다 — ls -l 의 시각으로 지금 실행한 것을 구분한다</code></pre>
 
       <h3>3-8. Foxglove 연결 — Mac 에서 Pi 의 데이터 보기</h3>
       <p><span class="tag pi">Pi 호스트</span> 브리지를 백그라운드로 상시 실행한다.</p>
@@ -333,12 +418,14 @@ docker compose --profile robot up      # 로봇 본체 기동 (bringup 서비스
         <li><label><input type="checkbox" data-key="cp0"><span><span class="tag pi">Pi</span> <code>docker run --rm hello-world</code> 가 동작하고 <code>docker info --format '{{.Architecture}}'</code> 가 aarch64 다</span></label></li>
         <li><label><input type="checkbox" data-key="cp1"><span>§3-3 의 학습 패키지를 넣었다 (A: <code>Dockerfile</code> 2-B 블록 추가 + <code>sync-to-pi.sh</code>, B: 컨테이너에서 설치)</span></label></li>
         <li><label><input type="checkbox" data-key="cp2"><span><span class="tag pi">Pi</span> <code>docker/.env</code> 의 HOST_UID/HOST_GID 가 <code>id -u</code>/<code>id -g</code> 와 같다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp13"><span><span class="tag pi">Pi</span> <code>./majors.sh --check</code> 가 "같다" 를 출력하고, <code>systemctl is-enabled rpi5-device-majors.service</code> 가 enabled 다</span></label></li>
         <li><label><input type="checkbox" data-key="cp3"><span><span class="tag pi">Pi</span> <code>docker images | grep rpi5-ros2</code> — 이미지가 있다</span></label></li>
         <li><label><input type="checkbox" data-key="cp4"><span><span class="tag cli">컨테이너</span> <code>ros2 topic list</code> 에 <code>/rosout</code> 이 보인다</span></label></li>
         <li><label><input type="checkbox" data-key="cp5"><span><span class="tag cli">컨테이너</span> <code>whoami &amp;&amp; id -u</code> — root 가 아니고 UID 가 호스트와 같다</span></label></li>
         <li><label><input type="checkbox" data-key="cp6"><span><span class="tag cli">컨테이너</span> <code>/ros2_ws</code> 에 만든 파일이 호스트에서 내 계정 소유로 보인다 (root 면 실패)</span></label></li>
         <li><label><input type="checkbox" data-key="cp7"><span><span class="tag cli">컨테이너</span> <code>ls -l /dev/lidar /dev/mcu /dev/video* /dev/hailo0 /dev/dma_heap/</code> — 장치가 보인다</span></label></li>
         <li><label><input type="checkbox" data-key="cp8"><span>서로 다른 두 컨테이너에서 <code>demo_nodes_cpp talker</code> 와 <code>demo_nodes_py listener</code> 가 통신한다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp12"><span><span class="tag pi">Pi</span> talker · listener 실행 중 <code>ls -l /dev/shm/fastrtps_*</code> — 지금 실행한 프로세스의 구획 파일이 16802336 바이트다 (549408 이면 설정 파일 미적용)</span></label></li>
         <li><label><input type="checkbox" data-key="cp9"><span><code>ros2 pkg list | grep -E 'rplidar|slam_toolbox|nav2_bringup|cv_bridge|vision_msgs|robot_localization'</code> — §3-3 목록의 패키지가 전부 나온다</span></label></li>
         <li><label><input type="checkbox" data-key="cp10"><span><span class="tag mac">Mac</span> Foxglove 가 <code>ws://192.168.50.97:8765</code> 에 연결되어 토픽 목록과 <code>/rosout</code> 이 보인다</span></label></li>
         <li><label><input type="checkbox" data-key="cp11"><span>(시스템 경로 볼륨이 없는 기본 구성에서) 컨테이너 안에서 <code>sudo apt install</code> 한 것이 <code>exit</code> 후 새 컨테이너에서 사라지는 것을 직접 확인했다. 예: <code>sudo apt install -y sl</code> → exit → 재진입 → <code>which sl</code></span></label></li>
@@ -369,6 +456,9 @@ docker compose --profile robot up      # 로봇 본체 기동 (bringup 서비스
       <details class="quiz"><summary>7. 호스트를 <code>apt upgrade</code> 한 뒤 컨테이너에서 Hailo 가 "No Hailo device found" 를 낸다. ROS 코드는 안 건드렸다. 무엇을 보는가?</summary>
         <div class="ans">호스트의 <code>hailo_pci</code> 드라이버/HailoRT 가 업그레이드됐지만 컨테이너의 <code>libhailort</code> 는 그대로라 버전이 어긋난 것. 호스트와 컨테이너에서 각각 <code>hailortcli fw-control identify</code> 를 쳐 비교하고,
         다르면 컨테이너 쪽을 호스트 버전으로 맞춘다 — A: Dockerfile 의 <code>HAILORT_VERSION</code> 을 새 값으로 바꿔 재빌드, B: 컨테이너에서 같은 버전 .deb/.whl 설치. <code>/dev/hailo0</code> 이 보이는 것과 장치를 "인식"하는 것은 다른 문제다.</div></details>
+      <details class="quiz"><summary>8. compose 에 <code>ipc: host</code> 가 있는데도 640×480 카메라 영상이 초당 30 장 중 일부만 도착한다. <code>camera_info</code> 는 30 장 다 온다. 왜이고, 무엇을 확인하는가?</summary>
+        <div class="ans">영상 한 장(921,600 B)이 Fast DDS 의 기본 공유 메모리 구획(512 KB)보다 커서 UDP 로 갔고, 소켓 수신 버퍼(기본 212,992 B)에서 조각이 넘쳐 영상째 버려진 것이다. <code>camera_info</code> 는 작아서 구획에 들어가므로 영향이 없다.
+        확인은 셋이다 — 컨테이너에서 <code>printenv | grep FASTRTPS</code> 로 설정 파일 경로가 잡혔는지, 호스트에서 <code>ls -l /dev/shm/fastrtps_*</code> 의 크기가 16802336 인지, <code>/proc/net/snmp</code> 의 <code>Udp</code> 줄 <code>RcvbufErrors</code> 가 영상을 받는 동안 늘어나는지. 이미 떠 있던 컨테이너는 compose 를 바꿔도 그대로이므로 다시 만들어야 적용된다.</div></details>
 
       <div class="pager"></div>
     </div>

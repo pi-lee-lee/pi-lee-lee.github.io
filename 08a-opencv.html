@@ -15,7 +15,7 @@
 
       <p class="kicker">08a · OpenCV와 cv_bridge</p>
       <h1>영상을 <code>cv::Mat</code> 로 받아 처리하고 다시 내보내기 — C++ 영상 처리 노드</h1>
-      <p class="lead">08 단계에서 <code>/camera/image_raw</code> 가 흐르기 시작했다. 이 단계는 그 영상을 <strong>내 C++ 코드 안으로 가져와서</strong>
+      <p class="lead">08 단계에서 <code>/stereo/left/image_raw</code> 가 흐르기 시작했다. 이 단계는 그 영상을 <strong>학습자가 작성한 C++ 코드 안으로 가져와서</strong>
       OpenCV 로 처리하고, 다시 ROS 토픽으로 내보내는 경로를 만든다. 이 경로(<code>cv_bridge</code> + <code>image_transport</code>)는
       08b 의 YOLO 검출기와 08c 의 Hailo 검출기, 10 단계의 감독 노드가 전부 그대로 쓴다.</p>
 
@@ -24,15 +24,15 @@
         <p>이 쪽이 끝나면 다음 넷을 할 수 있다.</p>
         <ul>
           <li><code>sensor_msgs/Image</code> 를 <code>cv_bridge</code> 로 <code>cv::Mat</code> 로 바꾸고, 언제 복사가 일어나는지 안다.</li>
-          <li>리사이즈·그레이·블러·Canny·컨투어를 적용해 <code>/camera/image_proc</code> 로 재발행하는 <code>image_proc_node</code> 를 C++ 로 작성·빌드·측정한다.</li>
+          <li>리사이즈·그레이·블러·Canny·컨투어를 적용해 <code>/stereo/left/image_proc</code> 로 재발행하는 <code>image_proc_node</code> 를 C++ 로 작성·빌드·측정한다.</li>
           <li>같은 노드를 Python 으로 써서 처리 시간을 비교한다.</li>
           <li><code>/detections</code> 를 영상 위에 그리는 <code>detection_overlay</code> 노드를 만들어 08b 의 검출 결과를 그릴 준비를 끝낸다.</li>
         </ul>
       </div>
 
       <div class="meta">
-        <div><span class="k">그래프에서의 위치</span><code>image_proc_node</code> 상자(인지 계층) — <code>/camera/image_raw</code> 를 받아 <code>/camera/image_proc</code> 를 발행한다</div>
-        <div><span class="k">전제</span>04 (C++ 패키지 빌드), 08 (<code>/camera/image_raw</code> 가 흐름)</div>
+        <div><span class="k">그래프에서의 위치</span><code>image_proc_node</code> 상자(인지 계층) — <code>/stereo/left/image_raw</code> 를 받아 <code>/stereo/left/image_proc</code> 를 발행한다</div>
+        <div><span class="k">전제</span>04 (C++ 패키지 빌드), 08 (<code>/stereo/left/image_raw</code> 가 흐름)</div>
         <div><span class="k">예상 소요</span>4~6시간</div>
         <div><span class="k">언어</span><span class="tag cpp">C++</span> (cv_bridge + OpenCV) 주 · <span class="tag py">Python</span> 비교</div>
       </div>
@@ -53,12 +53,12 @@ cd ~/ros2_rpi5/docker &amp;&amp; docker compose run --rm dev</code></pre>
         </tbody>
       </table></div>
       <p>이 단계에서 만드는 노드는 두 개다.</p>
-      <pre class="diagram"><code>  camera ──/camera/image_raw──► image_proc_node ──/camera/image_proc──► Foxglove (눈으로 확인)
-  (08)                            (08a §3-2)          리사이즈·엣지·컨투어
+      <pre class="diagram"><code>  camera ──/stereo/left/image_raw──► image_proc_node ──/stereo/left/image_proc──► Foxglove (눈으로 확인)
+  (08)                                 (08a §3-2)          리사이즈·엣지·컨투어
 
                                   ┌─► detector ──/detections───┐       (08b YOLO / 08c Hailo)
-  /camera/image_raw ──────────────┤                            ▼
-                                  └─────────────────► detection_overlay ──/camera/annotated──► Foxglove
+  /stereo/left/image_raw ─────────┤                            ▼
+                                  └─────────────────► detection_overlay ──/stereo/left/annotated──► Foxglove
                                                       (08a §3-6)  박스 + 라벨 + 지연(ms)</code></pre>
       <ul>
         <li><strong><code>image_proc_node</code></strong> — 영상 파이프라인의 기본형. 받는다 → <code>cv::Mat</code> → 처리 → 다시 메시지 → 발행. 처리 시간을 재는 습관을 여기서 들인다.</li>
@@ -70,7 +70,7 @@ cd ~/ros2_rpi5/docker &amp;&amp; docker compose run --rm dev</code></pre>
 
       <h3>2-1. <code>sensor_msgs/Image</code> 는 무엇인가</h3>
       <pre><code class="lang-bash">ros2 interface show sensor_msgs/msg/Image</code></pre>
-      <pre class="diagram"><code>std_msgs/Header header    # stamp = 촬영 시각, frame_id = camera_optical_link (05 단계의 광학 좌표계)
+      <pre class="diagram"><code>std_msgs/Header header    # stamp = 촬영 시각, frame_id = stereo_left_optical_link (05 단계의 광학 좌표계)
 uint32 height             # 행 수
 uint32 width              # 열 수
 string encoding           # ★ 픽셀 해석법: "rgb8", "bgr8", "mono8", "16UC1" …
@@ -79,8 +79,8 @@ uint32 step               # 한 행의 바이트 수 (= width × 채널 × 바�
 uint8[] data              # step × height 바이트. 그냥 바이트 덩어리다</code></pre>
       <p>메시지 자체는 <strong>해석법(encoding)이 붙은 바이트 배열</strong>일 뿐이다. 같은 바이트를 rgb8 로 읽으면 빨강이, bgr8 로 읽으면 파랑이 된다.
       OpenCV 의 관례는 <strong>BGR</strong> 이다(역사적 이유). 카메라 드라이버가 무엇을 보내는지는 <em>확인</em>하는 것이지 추측하는 것이 아니다.</p>
-      <pre><code class="lang-bash">ros2 topic echo /camera/image_raw --field encoding --once      # bgr8 이 나와야 한다 (아래 노트). 추측하지 말고 직접 본다
-ros2 topic echo /camera/image_raw --field step --once          # 640 폭 × 3 채널이면 1920</code></pre>
+      <pre><code class="lang-bash">ros2 topic echo /stereo/left/image_raw --field encoding --once      # bgr8 이 나와야 한다 (아래 노트). 추측하지 말고 직접 본다
+ros2 topic echo /stereo/left/image_raw --field step --once          # 640 폭 × 3 채널이면 1920</code></pre>
       <div class="tbl"><table class="compact">
         <thead><tr><th>encoding</th><th>채널·타입</th><th><code>cv::Mat</code> 타입</th><th>어디서 만나는가</th></tr></thead>
         <tbody>
@@ -93,7 +93,7 @@ ros2 topic echo /camera/image_raw --field step --once          # 640 폭 × 3 �
         </tbody>
       </table></div>
       <div class="callout note"><span class="ct">libcamera 의 포맷 이름과 ROS 인코딩 이름은 1:1 이 아니다 — 우리 카메라는 <code>bgr8</code> 로 온다</span>
-        <p>08 단계에서 <code>format: "RGB888"</code> 을 지정했지만 <code>camera_ros</code> 는 encoding 을 <strong><code>bgr8</code></strong> 로 설정한다. libcamera 의 포맷 이름은 DRM fourcc 의 리틀엔디안 명명을 따르므로
+        <p>08 단계에서 <code>format: "RGB888"</code> 을 지정했지만 <code>camera_ros</code> 는 encoding 을 <strong><code>bgr8</code></strong> 로 설정한다. DRM fourcc 는 리눅스 그래픽 서브시스템(DRM)이 픽셀 포맷에 붙이는 네 글자 이름이다. libcamera 의 포맷 이름은 DRM fourcc 의 리틀엔디안 명명을 따르므로
         <code>RGB888</code> 은 메모리 바이트 순서로는 B,G,R 이다. <code>bgr8</code> 은 <code>camera_ros</code> 의 포맷 매핑이 이 바이트 순서를 ROS 이름으로 바르게 옮긴 결과다. 즉 <strong>OpenCV 관례와 이미 같다.</strong></p>
         <p>그래도 위 명령으로 <strong>실제 값을 확인</strong>하는 것이 규칙이다. 코드에서는 <strong>원하는 인코딩을 항상 명시</strong>한다 — 드라이버나 설정이 바뀌어도 <code>cv_bridge</code> 가 그 인코딩으로 변환해 주기 때문이다.</p>
       </div>
@@ -125,7 +125,7 @@ cv::resize(src, dst, ...);       // 출력 인자 dst 는 필요하면 함수가
       </div>
 
       <h3>2-4. <code>image_transport</code> — 왜 그냥 <code>create_publisher</code> 를 안 쓰는가</h3>
-      <p>쓸 수는 있다. 하지만 <code>image_transport</code> 로 발행하면 <code>image_transport_plugins</code> 가 설치된 환경에서 <code>/camera/image_proc/compressed</code>(JPEG) 토픽이 <strong>자동으로 같이</strong> 생긴다.
+      <p>쓸 수는 있다. 하지만 <code>image_transport</code> 로 발행하면 <code>image_transport_plugins</code> 가 설치된 환경에서 <code>/stereo/left/image_proc/compressed</code>(JPEG) 토픽이 <strong>자동으로 같이</strong> 생긴다.
       Pi 안의 노드끼리는 raw 로 받고(압축 비용 없음), Mac 의 Foxglove 는 compressed 로 받는다(Wi-Fi 로는 raw 27 MB/s 를 전송하지 못한다). 어느 쪽을 받을지는 구독자가 고른다.
       구독 쪽도 마지막 인자 <code>"raw"</code> / <code>"compressed"</code> 로 전송 방식을 고른다.</p>
       <div class="callout why"><span class="ct"><code>ImageTransport</code> 클래스가 아니라 자유 함수를 쓰는 이유</span>
@@ -225,15 +225,15 @@ public:
     this-&gt;declare_parameter&lt;int&gt;("canny_high", 150);
 
     // 발행자를 구독자보다 먼저 만든다: 첫 콜백이 도는 순간 pub_ 가 존재해야 한다.
-    pub_ = image_transport::create_publisher(this, "/camera/image_proc", rmw_qos_profile_sensor_data);
+    pub_ = image_transport::create_publisher(this, "/stereo/left/image_proc", rmw_qos_profile_sensor_data);
 
     // 구독. ImageTransport 클래스가 아니라 자유 함수를 쓰는 이유는 §2-4.
     sub_ = image_transport::create_subscription(
-      this, "/camera/image_raw",
-      std::bind(&amp;ImageProcNode::on_image, this, std::placeholders::_1),
+      this, "/stereo/left/image_raw",
+      [this](const sensor_msgs::msg::Image::ConstSharedPtr &amp; msg) { on_image(msg); },
       "raw", rmw_qos_profile_sensor_data);
 
-    RCLCPP_INFO(this-&gt;get_logger(), "image_proc_node: /camera/image_raw -&gt; /camera/image_proc");
+    RCLCPP_INFO(this-&gt;get_logger(), "image_proc_node: /stereo/left/image_raw -&gt; /stereo/left/image_proc");
   }
 
 private:
@@ -332,19 +332,19 @@ colcon build --symlink-install --packages-select rpi5_vision --parallel-workers 
     --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash</code></pre>
       <div class="callout warn"><span class="ct"><code>-DCMAKE_BUILD_TYPE=Release</code> 는 영상 노드부터 필수다</span>
-        <p>Debug 빌드는 최적화가 꺼져 OpenCV 호출을 감싸는 내 코드(루프, <code>cv::Mat</code> 접근)가 수 배 느리다. "C++ 인데 Python 보다 느리다"의 가장 흔한 원인이 Debug 빌드다.
+        <p>Debug 빌드는 최적화가 꺼져 OpenCV 호출을 감싸는 직접 작성한 코드(루프, <code>cv::Mat</code> 접근)가 수 배 느리다. "C++ 인데 Python 보다 느리다"의 가장 흔한 원인이 Debug 빌드다.
         빌드 타입을 바꾸면 <code>build/rpi5_vision</code> 을 지우고 다시 빌드해야 확실히 적용된다.</p>
       </div>
       <p>카메라 노드를 실행한 상태(08 단계)에서: <span class="tag cli">컨테이너</span></p>
       <pre><code class="lang-bash">ros2 run rpi5_vision image_proc_node
 # 다른 터미널
-ros2 topic hz /camera/image_raw            # 카메라 fps
-ros2 topic hz /camera/image_proc           # 같거나 약간 낮아야 한다. 훨씬 낮으면 처리가 병목
-ros2 topic list | grep image_proc          # /camera/image_proc, /camera/image_proc/compressed 가 같이 있다
-ros2 topic echo /camera/image_proc --field header.frame_id --once   # camera_optical_link — header 를 복사한 결과
-ros2 topic echo /camera/image_proc --field encoding --once          # bgr8</code></pre>
-      <p>Foxglove: Image 패널 두 개를 만들어 <code>/camera/image_raw</code> 와 <code>/camera/image_proc</code> 를 나란히 둔다 (둘 다 QoS <code>Best Effort</code>).
-      Wi-Fi 대역폭이 부족하면 <code>/camera/image_proc/compressed</code> 를 고른다. 이 토픽은 <code>image_transport</code> 가 자동으로 만든 것이다.</p>
+ros2 topic hz /stereo/left/image_raw            # 카메라 fps
+ros2 topic hz /stereo/left/image_proc           # 같거나 약간 낮아야 한다. 훨씬 낮으면 처리가 병목
+ros2 topic list | grep image_proc          # /stereo/left/image_proc, /stereo/left/image_proc/compressed 가 같이 있다
+ros2 topic echo /stereo/left/image_proc --field header.frame_id --once   # stereo_left_optical_link — header 를 복사한 결과
+ros2 topic echo /stereo/left/image_proc --field encoding --once          # bgr8</code></pre>
+      <p>Foxglove: Image 패널 두 개를 만들어 <code>/stereo/left/image_raw</code> 와 <code>/stereo/left/image_proc</code> 를 나란히 둔다 (둘 다 QoS <code>Best Effort</code>).
+      Wi-Fi 대역폭이 부족하면 <code>/stereo/left/image_proc/compressed</code> 를 고른다. 이 토픽은 <code>image_transport</code> 가 자동으로 만든 것이다.</p>
       <p>재빌드 없이 동작을 바꿔 본다:</p>
       <pre><code class="lang-bash">ros2 param set /image_proc_node mode contours
 ros2 param set /image_proc_node canny_low 30
@@ -352,7 +352,7 @@ ros2 param set /image_proc_node scale 1.0
 ros2 param dump /image_proc_node                    # 현재 값 전체를 YAML 로</code></pre>
 
       <h3>3-4. 성능 측정 — 숫자로 말하기</h3>
-      <p>로그의 ms 값을 읽어 아래 표를 <strong>직접 채운다.</strong> 640×480 입력, Pi 5, Release 빌드 기준의 참고 범위를 옆에 두었다. 내 값이 범위를 크게 벗어나면 빌드 타입이나 카메라 해상도부터 확인한다.</p>
+      <p>로그의 ms 값을 읽어 아래 표를 <strong>직접 채운다.</strong> 640×480 입력, Pi 5, Release 빌드 기준의 참고 범위를 옆에 두었다. 측정한 값이 범위를 크게 벗어나면 빌드 타입이나 카메라 해상도부터 확인한다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th><code>mode</code></th><th><code>scale 1.0</code> (ms)</th><th><code>scale 0.5</code> (ms)</th><th>참고 범위 (scale 1.0)</th></tr></thead>
         <tbody>
@@ -386,9 +386,9 @@ class ImageProcPy(Node):
         super().__init__('image_proc_py')
         self.declare_parameter('scale', 0.5)
         self.bridge = CvBridge()
-        self.pub = self.create_publisher(Image, '/camera/image_proc', qos_profile_sensor_data)
+        self.pub = self.create_publisher(Image, '/stereo/left/image_proc', qos_profile_sensor_data)
         self.sub = self.create_subscription(
-            Image, '/camera/image_raw', self.on_image, qos_profile_sensor_data)
+            Image, '/stereo/left/image_raw', self.on_image, qos_profile_sensor_data)
 
     def on_image(self, msg: Image):
         t0 = time.perf_counter()
@@ -423,8 +423,8 @@ if __name__ == '__main__':
     main()</code></pre>
       <pre><code class="lang-bash"># C++ 노드를 끄고 (같은 토픽을 두 노드가 내면 Foxglove 가 번갈아 받는다)
 python3 /ros2_ws/src/rpi5_vision/scripts/image_proc_py.py</code></pre>
-      <p>같은 <code>edges</code> 처리의 ms 를 C++ 값 옆에 적어 보십시오. <strong>OpenCV 함수 자체는 같은 C++ 코드</strong>라 큰 차이가 없을 것이다 — 차이는 메시지 ↔ numpy 변환, Python 루프, GC 에서 난다.</p>
-      <p>함수 몇 개를 차례로 호출하는 수준이면 Python 이 충분하고, 픽셀 루프·고정 주기·복사 회피가 필요하면 C++ 이다. 이 프로젝트가 검출기를 C++ 로 쓰는 이유는 08b 의 <strong>8400행 후처리 루프</strong> 때문이다.</p>
+      <p>같은 <code>edges</code> 처리의 ms 를 C++ 값 옆에 적어 보십시오. <strong>OpenCV 함수 자체는 같은 C++ 코드</strong>라 큰 차이가 없을 것이다 — 차이는 메시지 ↔ numpy 변환, Python 루프, GC 에서 난다. GC(가비지 컬렉션)는 쓰지 않는 메모리를 Python 이 자동으로 회수하는 일이다.</p>
+      <p>함수 몇 개를 차례로 호출하는 수준이면 Python 이 충분하고, 픽셀 루프·고정 주기·복사 회피가 필요하면 C++ 이다. 이 프로젝트가 검출기를 C++ 로 쓰는 이유는 08b 의 <strong>8400행 후처리 루프</strong> 때문이다. 이 루프는 YOLO 출력의 후보 행을 하나씩 읽어 점수가 낮은 것을 거른다.</p>
 
       <h3>3-6. <code>detection_overlay</code> — 검출 결과를 영상 위에 그리기</h3>
       <p>08b/08c 의 검출기는 <code>vision_msgs/msg/Detection2DArray</code> 를 <code>/detections</code> 로 발행한다. 그 안의 좌표는 <strong>픽셀</strong>이다. 먼저 필드 경로를 눈으로 확인한다 — 코드는 이 경로를 그대로 쓴다.</p>
@@ -458,7 +458,7 @@ public:
   DetectionOverlay()
   : Node("detection_overlay")
   {
-    pub_ = image_transport::create_publisher(this, "/camera/annotated", rmw_qos_profile_sensor_data);
+    pub_ = image_transport::create_publisher(this, "/stereo/left/annotated", rmw_qos_profile_sensor_data);
 
     // 검출 결과는 "최신 것 하나"만 있으면 된다 → depth 1, BEST_EFFORT (검출기도 그렇게 발행한다)
     det_sub_ = this-&gt;create_subscription&lt;vision_msgs::msg::Detection2DArray&gt;(
@@ -469,8 +469,8 @@ public:
       });
 
     sub_ = image_transport::create_subscription(
-      this, "/camera/image_raw",
-      std::bind(&amp;DetectionOverlay::on_image, this, std::placeholders::_1),
+      this, "/stereo/left/image_raw",
+      [this](const sensor_msgs::msg::Image::ConstSharedPtr &amp; msg) { on_image(msg); },
       "raw", rmw_qos_profile_sensor_data);
   }
 
@@ -561,25 +561,25 @@ colcon build --symlink-install --packages-select rpi5_vision --parallel-workers 
     --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
 ros2 run rpi5_vision detection_overlay</code></pre>
-      <p>아직 <code>/detections</code> 를 발행하는 노드가 없으므로 <code>/camera/annotated</code> 는 원본과 같은 영상이다 — <strong>정상이다.</strong> 가짜 검출을 하나 발행해 그리기 경로를 검증한다.</p>
+      <p>아직 <code>/detections</code> 를 발행하는 노드가 없으므로 <code>/stereo/left/annotated</code> 는 원본과 같은 영상이다 — <strong>정상이다.</strong> 가짜 검출을 하나 발행해 그리기 경로를 검증한다.</p>
       <pre><code class="lang-bash">ros2 topic pub -r 2 /detections vision_msgs/msg/Detection2DArray \
-  "{header: {frame_id: camera_optical_link}, detections: [{bbox: {center: {position: {x: 320.0, y: 240.0}}, size_x: 100.0, size_y: 80.0}, results: [{hypothesis: {class_id: person, score: 0.9}}]}]}"</code></pre>
-      <p>Foxglove Image 패널에서 <code>/camera/annotated</code> 를 열면 화면 중앙에 <code>person 0.90</code> 박스가 보인다. <code>ros2 topic pub</code> 은 RELIABLE 로 발행하고 우리 구독자는 BEST_EFFORT 이므로 연결된다(03 §2-7 의 호환 규칙 — 반대 조합이면 연결되지 않는다).
+  "{header: {frame_id: stereo_left_optical_link}, detections: [{bbox: {center: {position: {x: 320.0, y: 240.0}}, size_x: 100.0, size_y: 80.0}, results: [{hypothesis: {class_id: person, score: 0.9}}]}]}"</code></pre>
+      <p>Foxglove Image 패널에서 <code>/stereo/left/annotated</code> 를 열면 화면 중앙에 <code>person 0.90</code> 박스가 보인다. <code>ros2 topic pub</code> 은 RELIABLE 로 발행하고 우리 구독자는 BEST_EFFORT 이므로 연결된다(03 §2-7 의 호환 규칙 — 반대 조합이면 연결되지 않는다).
       가짜 메시지의 <code>stamp</code> 는 0 이라 <code>lag</code> 가 매우 큰 숫자로 나오는 것도 정상이다.</p>
 
       <h2>✅ 검증 체크포인트</h2>
       <ul class="checklist">
         <li><label><input type="checkbox" data-key="cp0"><span>컨테이너 안에서 <code>ros2 pkg list | grep -E 'cv_bridge|image_transport|vision_msgs'</code> 가 세 패키지를 보인다. <code>pkg-config --modversion opencv4</code> 도 버전을 출력한다</span></label></li>
-        <li><label><input type="checkbox" data-key="cp1"><span><code>ros2 topic echo /camera/image_raw --field encoding --once</code> 가 <code>bgr8</code> 을 출력하는 것을 확인했다. 그래서 <code>toCvShare(msg, "bgr8")</code> 은 복사 없이 공유되고 <code>"mono8"</code> 을 요청하면 복사가 일어난다는 것을 설명할 수 있다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp1"><span><code>ros2 topic echo /stereo/left/image_raw --field encoding --once</code> 가 <code>bgr8</code> 을 출력하는 것을 확인했다. 그래서 <code>toCvShare(msg, "bgr8")</code> 은 복사 없이 공유되고 <code>"mono8"</code> 을 요청하면 복사가 일어난다는 것을 설명할 수 있다</span></label></li>
         <li><label><input type="checkbox" data-key="cp2"><span><code>rpi5_vision</code> 을 만들고 <code>CMakeLists.txt</code> 에 <code>find_package(OpenCV)</code> + <code>target_link_libraries(${OpenCV_LIBS})</code> 를 넣어 Release 로 빌드했다</span></label></li>
-        <li><label><input type="checkbox" data-key="cp3"><span><code>ros2 topic hz /camera/image_proc</code> 가 <code>/camera/image_raw</code> 와 비슷한 fps 를 보인다</span></label></li>
-        <li><label><input type="checkbox" data-key="cp4"><span><code>ros2 topic echo /camera/image_proc --field header.frame_id --once</code> 가 원본과 같은 frame_id 를 보인다 (header 복사 확인)</span></label></li>
-        <li><label><input type="checkbox" data-key="cp5"><span>Foxglove Image 패널 두 개(QoS Best Effort)에 <code>/camera/image_raw</code> 와 <code>/camera/image_proc</code> 가 나란히 보인다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp3"><span><code>ros2 topic hz /stereo/left/image_proc</code> 가 <code>/stereo/left/image_raw</code> 와 비슷한 fps 를 보인다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp4"><span><code>ros2 topic echo /stereo/left/image_proc --field header.frame_id --once</code> 가 원본과 같은 frame_id 를 보인다 (header 복사 확인)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp5"><span>Foxglove Image 패널 두 개(QoS Best Effort)에 <code>/stereo/left/image_raw</code> 와 <code>/stereo/left/image_proc</code> 가 나란히 보인다</span></label></li>
         <li><label><input type="checkbox" data-key="cp6"><span><code>ros2 param set /image_proc_node mode contours</code> 로 재빌드 없이 처리가 바뀌는 것을 봤다</span></label></li>
         <li><label><input type="checkbox" data-key="cp7"><span>§3-4 의 표를 실측값으로 채웠고, <code>scale 0.5</code> 가 약 1/4 시간인 이유를 설명할 수 있다</span></label></li>
         <li><label><input type="checkbox" data-key="cp8"><span>Python 판을 실행해 같은 <code>edges</code> 처리의 ms 를 C++ 과 비교했다</span></label></li>
-        <li><label><input type="checkbox" data-key="cp9"><span><code>detection_overlay</code> 를 빌드하고, 가짜 <code>/detections</code> 를 <code>ros2 topic pub</code> 으로 발행해 <code>/camera/annotated</code> 에 박스와 라벨이 그려지는 것을 봤다</span></label></li>
-        <li><label><input type="checkbox" data-key="cp10"><span><code>ros2 topic list | grep compressed</code> 에 <code>/camera/image_proc/compressed</code> 와 <code>/camera/annotated/compressed</code> 가 있다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp9"><span><code>detection_overlay</code> 를 빌드하고, 가짜 <code>/detections</code> 를 <code>ros2 topic pub</code> 으로 발행해 <code>/stereo/left/annotated</code> 에 박스와 라벨이 그려지는 것을 봤다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp10"><span><code>ros2 topic list | grep compressed</code> 에 <code>/stereo/left/image_proc/compressed</code> 와 <code>/stereo/left/annotated/compressed</code> 가 있다</span></label></li>
       </ul>
       <p class="progress-line"></p>
       <div class="progress-bar"><span></span></div>
@@ -592,8 +592,8 @@ ros2 run rpi5_vision detection_overlay</code></pre>
         <div class="ans"><code>stamp</code> 는 <strong>촬영 시각</strong>이고 <code>frame_id</code> 는 <strong>광학 좌표계 이름</strong>이다. 뒤의 노드(검출기, 융합, TF 조회)는 "이 영상이 언제 어느 좌표계에서 찍혔는가"를 header 에서 읽는다.
         처리 시각으로 바꿔 버리면 로봇이 움직인 만큼 위치 계산에 오차가 생기고, frame_id 를 비우면 TF 트리에 연결되지 않는다.</div></details>
       <details class="quiz"><summary>3. Release 빌드가 영상 노드에서 특히 중요한 이유는?</summary>
-        <div class="ans">OpenCV 라이브러리 자체는 이미 최적화된 바이너리지만, <strong>내 코드</strong>(픽셀 루프, <code>cv::Mat</code> 접근, 컨테이너 조작)는 Debug 에서 최적화가 꺼져 수 배 느리다.
-        08b 의 8400행 후처리 루프처럼 내 코드 비중이 큰 노드일수록 차이가 크다. "C++ 인데 Python 보다 느리다"면 먼저 빌드 타입을 본다.</div></details>
+        <div class="ans">OpenCV 라이브러리 자체는 이미 최적화된 바이너리지만, <strong>직접 작성한 코드</strong>(픽셀 루프, <code>cv::Mat</code> 접근, 컨테이너 조작)는 Debug 에서 최적화가 꺼져 수 배 느리다.
+        08b 의 8400행 후처리 루프처럼 직접 작성한 코드의 비중이 큰 노드일수록 차이가 크다. "C++ 인데 Python 보다 느리다"면 먼저 빌드 타입을 본다.</div></details>
       <details class="quiz"><summary>4. 이 노드는 큐 깊이 5 로 구독해도 되는데 08b 의 검출기는 왜 1 이어야 하는가?</summary>
         <div class="ans">큐는 "처리 못 한 프레임을 몇 장 쌓아 둘 것인가"다. 처리(수 ms)가 프레임 간격(33 ms)보다 빠르면 큐는 비어 있어 깊이가 무의미하다.
         검출기는 처리(수백 ms)가 훨씬 느려서 큐가 항상 차고, 그러면 <strong>항상 큐 길이만큼 옛 프레임</strong>을 처리하게 된다. 깊이 1 이면 밀린 프레임은 버려지고 최신 프레임만 처리한다.</div></details>
@@ -606,6 +606,15 @@ ros2 run rpi5_vision detection_overlay</code></pre>
       <details class="quiz"><summary>7. <code>cv::Mat out = work;</code> 뒤에 <code>cv::rectangle(out, …)</code> 을 하면 <code>work</code> 는 어떻게 되는가?</summary>
         <div class="ans"><code>work</code> 도 같이 바뀐다. <code>=</code> 는 헤더만 복사하고 픽셀 버퍼는 공유하기 때문이다. 원본을 보존하려면 <code>out = work.clone()</code> 이 필요하고, <code>contours</code> 모드가 그렇게 되어 있다.
         <code>passthrough</code> 처럼 그리지 않는 경로에서는 공유가 오히려 원하는 동작(복사 없음)이다.</div></details>
+
+      <div class="callout tip"><span class="ct">다음 행선지</span>
+        <p><strong>번호순 다음은 <a href="08b-yolo.html">08b · YOLO 객체 검출</a></strong>이다. 08b 의 검출기가 <code>/detections</code> 를 발행하면 이 쪽의 <code>detection_overlay</code> 가 그 박스를 그린다. 08b 는 건너뛰지 않는다 — 08c(Hailo)의 전제가 08b 의 <code>/detections</code> 인터페이스와 overlay 다.</p>
+        <ul>
+          <li><strong>08b 를 시작하기 전에</strong> — Mac 에 ultralytics 를 설치할 Python 가상 환경(venv)이 있어야 한다. 모델 확인과 ONNX 내보내기를 Mac 에서 한다(02 §2-2 표의 "08b (Python 트랙)" 행).</li>
+          <li><strong>주행 쪽을 먼저 가고 싶다면</strong> — 09 는 08 계열을 전제로 하지 않는다. 다만 09 앞에는 <a href="09a-assembly-gate.html">09a</a>가 있고, 09a 앞에 <a href="06b-bench-integration.html">06b</a>(실물 MCU 벤치 통합)가 있다.</li>
+          <li><strong>펌웨어 차선(<a href="fw-00-map.html">F0</a> ~ F19, Mac)과의 관계</strong> — 서로 기다리지 않는다. 08 계열은 MCU 없이 끝난다.</li>
+        </ul>
+      </div>
 
       <div class="pager"></div>
     </div>

@@ -15,7 +15,7 @@
 
       <p class="kicker">03 · ROS 2 핵심 개념</p>
       <h1>노드·토픽·서비스·액션·파라미터 — 그래프의 화살표를 읽는 법</h1>
-      <p class="lead">이 단계는 코드를 거의 쓰지 않는다. <strong>CLI 명령을 직접 실행해 보면서 구조를 익히는 단계</strong>다.
+      <p class="lead">이 단계는 코드를 거의 쓰지 않는다. <strong>CLI 명령(<code>ros2</code> 명령줄 도구)을 직접 실행해 보면서 구조를 익히는 단계</strong>다.
       이 단계를 충분히 익히지 않으면 06 단계 이후 "왜 안 되는지 모르겠는" 상황이 계속 반복된다. 그리고 여기서 배우는 것이 곧 <a href="rosproject.html">로드맵</a> 그래프의 화살표 전부다.</p>
 
       <div class="goal">
@@ -66,7 +66,7 @@
         <thead><tr><th>추상 단위</th><th>통신 방식</th><th>실제 이름</th><th>왜 그 방식인가</th></tr></thead>
         <tbody>
           <tr><td>① 라이다로 공간 스캔</td><td><strong>토픽</strong></td><td><code>/scan</code> → <code>/map</code></td><td>초당 5~10번 끊임없이 흐른다. 받는 쪽이 몇 개든 상관없다</td></tr>
-          <tr><td>② 카메라로 물체 판정</td><td><strong>토픽</strong></td><td><code>/camera/image_raw</code> → <code>/detections</code></td><td>영상과 검출 결과도 스트림이다. 놓친 프레임은 재전송받을 가치가 없다 (QoS)</td></tr>
+          <tr><td>② 카메라로 물체 판정</td><td><strong>토픽</strong></td><td><code>/stereo/left/image_raw</code> → <code>/detections</code></td><td>영상과 검출 결과도 스트림이다. 놓친 프레임은 재전송받을 가치가 없다 (QoS)</td></tr>
           <tr><td>③ 요청에 대한 계획</td><td><strong>액션</strong> (goal)</td><td><code>/navigate_to_pose</code></td><td>"저기로 가라"는 수십 초가 걸리고 중간에 취소할 수 있어야 한다</td></tr>
           <tr><td>④ 이동 (세부는 MCU)</td><td><strong>토픽</strong></td><td><code>/cmd_vel</code>, <code>/odom</code></td><td>속도 명령과 위치 추정값이 초당 수십 번 흐른다</td></tr>
           <tr><td>⑤ 수행 정도의 지속 판정</td><td><strong>액션</strong> (feedback · result · cancel)</td><td><code>distance_remaining</code>, <code>number_of_recoveries</code></td><td>진행 상황을 받아 판단하고, 필요하면 취소한다 — 10 단계의 감독 노드가 하는 일</td></tr>
@@ -84,9 +84,9 @@
         <tbody>
           <tr><td><code>mcu_bridge</code></td><td>시리얼로 MCU 와 통신, <code>/cmd_vel</code> ↔ <code>/odom</code></td><td>06</td></tr>
           <tr><td><code>lidar_node</code></td><td>라이다에서 스캔을 읽어 <code>/scan</code> 발행</td><td>07</td></tr>
-          <tr><td><code>camera</code></td><td>카메라 프레임을 <code>/camera/image_raw</code> 로 발행</td><td>08</td></tr>
+          <tr><td><code>/stereo/left</code> · <code>/stereo/right</code></td><td>스테레오 카메라 두 대(<code>camera_ros</code>). 왼쪽은 프레임을 <code>/stereo/left/image_raw</code> 로 발행</td><td>08</td></tr>
           <tr><td><code>image_proc_node</code>, <code>yolo_detector</code>, <code>hailo_detect</code></td><td>프레임 처리 / 객체 검출 → <code>/detections</code></td><td>08a~08c</td></tr>
-          <tr><td><code>robot_state_publisher</code></td><td>URDF 로 TF 발행</td><td>05</td></tr>
+          <tr><td><code>robot_state_publisher</code></td><td>URDF 로 TF(좌표계 사이의 변환) 발행</td><td>05</td></tr>
           <tr><td><code>slam_toolbox</code></td><td>지도 작성, <code>map→odom</code> TF</td><td>09</td></tr>
           <tr><td><code>controller_server</code> 등</td><td>Nav2 구성요소들</td><td>09</td></tr>
           <tr><td><code>mission_supervisor</code></td><td>목표 지시, 수행 판정</td><td>10</td></tr>
@@ -110,7 +110,7 @@
       <pre class="diagram"><code>Vector3 linear    # x(앞뒤) y(좌우) z(상하)  [m/s]
 Vector3 angular   # x(roll) y(pitch) z(yaw)  [rad/s]</code></pre>
       <p>차동구동 로봇은 <code>linear.x</code> 와 <code>angular.z</code> <strong>두 개만</strong> 쓴다. 옆으로 못 가고 날지 못하기 때문이다. 메카넘 휠이면 <code>linear.y</code> 도 쓴다. 이 두 숫자가 06 단계에서 좌/우 바퀴 속도로 변환된다.</p>
-      <p class="small"><strong>C++ 에서는:</strong> <code>create_publisher&lt;geometry_msgs::msg::Twist&gt;("cmd_vel", 10)</code>, <code>create_subscription&lt;sensor_msgs::msg::LaserScan&gt;("scan", qos, callback)</code>. 메시지 헤더는 <code>&lt;pkg&gt;/msg/&lt;snake_case&gt;.hpp</code> (04, <a href="ref-rclcpp.html">부록 A</a>).</p>
+      <p class="small"><strong>C++ 에서는:</strong> 발행자를 <code>create_publisher&lt;geometry_msgs::msg::Twist&gt;("cmd_vel", 10)</code> 로 만든다. 구독자는 <code>create_subscription&lt;sensor_msgs::msg::LaserScan&gt;("scan", qos, callback)</code> 로 만든다. 메시지 헤더는 <code>&lt;pkg&gt;/msg/&lt;snake_case&gt;.hpp</code> (04, <a href="ref-rclcpp.html">부록 A</a>).</p>
 
       <h3>2-3. 서비스 (Service) — 요청과 응답</h3>
       <p><strong>양방향, 1:1, 동기.</strong> 전화 통화와 같다.</p>
@@ -135,7 +135,7 @@ Vector3 angular   # x(roll) y(pitch) z(yaw)  [rad/s]</code></pre>
         <li>사람이 뛰어들면 취소해야 한다</li>
       </ul>
       <p>→ 서비스로는 불가능하다. 그래서 액션이다. 액션은 내부적으로 <strong>서비스 3개(goal/cancel/result) + 토픽 2개(feedback/status)</strong> 로 구현되어 있다. <code>ros2 topic list</code> 에 <code>/navigate_to_pose/_action/feedback</code> 같은 이름이 보이는 이유다.</p>
-      <p class="small"><strong>C++ 에서는:</strong> <code>rclcpp_action::create_client&lt;nav2_msgs::action::NavigateToPose&gt;(this, "navigate_to_pose")</code> → <code>async_send_goal(goal, options)</code>. options 에 feedback/result 콜백을 등록한다. 10 단계의 <code>mission_supervisor</code> 가 정확히 이 방식으로 액션 클라이언트를 쓴다 (<a href="ref-rclcpp.html">부록 A</a>).</p>
+      <p class="small"><strong>C++ 에서는:</strong> 클라이언트를 <code>rclcpp_action::create_client&lt;nav2_msgs::action::NavigateToPose&gt;(this, "navigate_to_pose")</code> 로 만든다. 목표는 <code>async_send_goal(goal, options)</code> 로 보낸다. options 에 feedback/result 콜백을 등록한다. 10 단계의 <code>mission_supervisor</code> 가 정확히 이 방식으로 액션 클라이언트를 쓴다 (<a href="ref-rclcpp.html">부록 A</a>).</p>
 
       <h3>2-5. 세 가지 통신 방식 — 언제 무엇을?</h3>
       <div class="tbl"><table>
@@ -158,7 +158,7 @@ Vector3 angular   # x(roll) y(pitch) z(yaw)  [rad/s]</code></pre>
       </div>
 
       <h3 id="params">2-6. 파라미터 (Parameter)</h3>
-      <p><strong>노드의 설정값.</strong> 코드를 고치지 않고 동작을 바꾸는 수단. 우리 프로젝트에서는 <code>rpi5_bringup/config/robot_params.yaml</code> 이 이 역할을 한다. 바퀴 반지름을 바꿀 때 코드를 건드리지 않고 YAML 만 고친다.</p>
+      <p><strong>노드의 설정값.</strong> 코드를 고치지 않고 동작을 바꾸는 수단. 우리 프로젝트에서는 <code>rpi5_bringup/config/robot_params.yaml</code> 이 이 역할을 한다. 바퀴 반지름을 바꿀 때 코드를 건드리지 않고 YAML(들여쓰기로 구조를 적는 설정 파일 형식) 만 고친다.</p>
       <div class="callout why"><span class="ct">왜 하드코딩하면 안 되는가</span>
         <p>바퀴를 갈아 끼웠는데 소스를 고치고 다시 빌드해야 한다면, 로봇 위에서 튜닝을 할 수 없다. 파라미터는 "현장에서 조절할 것"을 담는다.</p>
         <p>ROS 2 는 <strong>선언하지 않은 파라미터를 거부한다</strong> — 선언이 곧 그 노드의 설정 인터페이스다. YAML 은 <strong>노드 이름</strong>을 키로 매칭되므로 노드 이름이 어긋나면 파라미터가 오류 표시 없이 통째로 무시된다 (07 단계에서 실제로 겪는다).</p>
@@ -204,16 +204,16 @@ depth 1:   [ 15 ]                          항상 최신 하나만. 밀린 것�
         <div class="tbl"><table class="compact">
           <thead><tr><th>발행자 Durability</th><th>구독자</th><th>결과</th></tr></thead>
           <tbody>
-            <tr><td>TRANSIENT_LOCAL</td><td>VOLATILE</td><td>✓</td></tr>
-            <tr><td>TRANSIENT_LOCAL</td><td>TRANSIENT_LOCAL</td><td>✓ (마지막 값 수신)</td></tr>
-            <tr><td><strong>VOLATILE</strong></td><td><strong>TRANSIENT_LOCAL</strong></td><td><strong>✗ 연결 안 됨</strong></td></tr>
+            <tr><td>TRANSIENT_<wbr>LOCAL</td><td>VOLATILE</td><td>✓</td></tr>
+            <tr><td>TRANSIENT_<wbr>LOCAL</td><td>TRANSIENT_<wbr>LOCAL</td><td>✓ (마지막 값 수신)</td></tr>
+            <tr><td><strong>VOLATILE</strong></td><td><strong>TRANSIENT_<wbr>LOCAL</strong></td><td><strong>✗ 연결 안 됨</strong></td></tr>
             <tr><td>VOLATILE</td><td>VOLATILE</td><td>✓</td></tr>
           </tbody>
         </table></div>
       </div>
       <div class="callout note"><span class="ct">관례 — 무엇을 어느 QoS 로</span>
         <ul>
-          <li><strong>센서 스트림</strong>(<code>/scan</code>, <code>/camera/image_raw</code>, <code>/detections</code>) → <code>BEST_EFFORT</code>. 재전송된 옛 프레임은 쓸모없고 지연만 늘린다. C++ 프리셋 <code>rclcpp::SensorDataQoS()</code>.</li>
+          <li><strong>센서 스트림</strong>(<code>/scan</code>, <code>/stereo/left/image_raw</code>, <code>/detections</code>) → <code>BEST_EFFORT</code>. 재전송된 옛 프레임은 쓸모없고 지연만 늘린다. C++ 프리셋 <code>rclcpp::SensorDataQoS()</code>.</li>
           <li><strong>명령·상태</strong>(<code>/cmd_vel</code>, <code>/odom</code>) → <code>RELIABLE</code>. 작은 메시지라 비용이 없고, Nav2 의 구독자가 RELIABLE 을 요구한다. 참고 구현 <code>mcu_bridge_node.py</code> 의 주석에 이 이유가 적혀 있다.</li>
           <li><strong>가끔 바뀌는 큰 것</strong>(<code>/map</code>, <code>/robot_description</code>, <code>/tf_static</code>) → <code>TRANSIENT_LOCAL</code>. 늦게 시작한 노드도 마지막 값을 받아야 한다.</li>
         </ul>
@@ -230,7 +230,7 @@ depth 1:   [ 15 ]                          항상 최신 하나만. 밀린 것�
       <h3>2-9. 이름 — 네임스페이스와 리매핑</h3>
       <p>같은 노드를 여러 개 실행하거나, 토픽 이름을 바꿀 때 쓴다. 노드 이름·토픽 이름은 전부 <strong>실행 시점에</strong> 바꿀 수 있다 — 코드를 고치지 않고.
       로봇 두 대를 같은 네트워크에서 운용할 때, 실제 카메라와 녹화 재생을 동시에 비교할 때 이름 충돌을 피한다. 런치파일에서 자주 쓴다.</p>
-      <p>08 단계의 <code>camera</code> 노드는 <code>~/image_raw</code>(노드 이름 기준 상대 경로) 로 발행하므로 노드 이름이 <code>camera</code> 일 때 <code>/camera/image_raw</code> 가 된다 — 이름이 곧 토픽 경로인 예다.</p>
+      <p>08 단계의 카메라 노드는 <code>~/image_raw</code>(노드 이름 기준 상대 경로) 로 발행하므로 네임스페이스 <code>stereo</code>, 노드 이름 <code>left</code> 로 띄우면 <code>/stereo/left/image_raw</code> 가 된다 — 이름이 곧 토픽 경로인 예다. 같은 실행 파일을 이름 <code>right</code> 로 하나 더 띄우면 <code>/stereo/right/image_raw</code> 가 되어, 같은 노드를 여러 개 실행해도 이름이 겹치지 않는다.</p>
 
       <h3>2-10. rosbag — 기록과 재생</h3>
       <p><strong>rosbag 은 로봇 디버깅의 핵심 도구다.</strong> 로봇이 복도에서 이상하게 움직였을 때, 그 상황을 재현하기는 거의 불가능하다. 하지만 bag 이 있으면 책상에서 100번이고 재생하며 분석할 수 있다.

@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C0 · 카메라 가이드 — 지도와 준비 — 카메라 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="c-00">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">C0 · 지도와 준비</p>
+      <h1>카메라 가이드 — 지도와 준비</h1>
+<p class="lead">이 가이드(C0 ~ C8)는 카메라 영상이 ROS 2 토픽이 되고, OpenCV 로 가공되고, YOLO 가 물체를 찾고, 그 계산을 Hailo-8 가속기로 옮기는 데까지를 아홉 쪽으로 다룬다.
+학습 단계 08 · 08a · 08b · 08c 와 같은 범위다. 차이는 둘이다. 코드는 빠진 곳 없이 전부 적혀 있고, 설명은 실행에 필요한 것만 적었다. 두 가이드 중 하나로 진행하면 된다.</p>
+<div class="goal">
+<span class="label">이 쪽이 끝나면 보이는 것</span>
+<ul>
+  <li>아홉 쪽이 각각 무엇을 만들고 어떤 순서로 이어지는지 안다.</li>
+  <li>Pi 호스트에서 확인 명령 다섯 개가 기대한 출력을 낸다 — 카메라 인식, Hailo 인식, 장치 파일, 컨테이너 이미지, 설치 버전.</li>
+  <li>Mac 의 Foxglove Studio 가 Pi 에 연결된다.</li>
+  <li>값을 적을 자리(<code>hardware/INVENTORY.md</code> 4절 · 5절)를 확인했다.</li>
+</ul>
+<p><strong>필요한 것</strong></p>
+<ul>
+  <li>Raspberry Pi 5, Camera Module 3 일반 모델 두 대(스테레오 한 쌍 — 왼쪽은 CAM/DISP 0, 오른쪽은 CAM/DISP 1 커넥터. C1 ~ C8 은 왼쪽 한 대로 진행한다), AI HAT+(Hailo-8, C7 부터 쓴다).</li>
+  <li>Mac — 코드 편집, 모델 내보내기(C5), 보정 계산(C3), Foxglove Studio 로 영상 보기.</li>
+  <li>프린터로 뽑은 체커보드 한 장(C3). 종이는 판판한 판에 붙인다.</li>
+</ul>
+<p><strong>끝나 있어야 하는 것</strong></p>
+<ul>
+  <li>학습 단계 <a href="01-os-setup.html">01</a> — OS 설치, <code>hailo-all</code> 설치, 호스트에서 카메라 인식.</li>
+  <li>학습 단계 <a href="02-docker-ros2.html">02</a> — 컨테이너 이미지 빌드, Foxglove 연결.</li>
+  <li>학습 단계 <a href="04-workspace-packages.html">04</a> 와 <a href="05-tf2-urdf.html">05</a> 는 권장이다. 04 는 C++ 패키지의 구조를, 05 는 카메라 좌표계 이름 <code>stereo_left_optical_link</code> 를 설명한다. 하지 않았어도 이 가이드의 코드는 그대로 동작한다.</li>
+</ul>
+</div>
+<div class="meta">
+<div><span class="k">환경</span><span class="tag pi">Pi 호스트</span> <span class="tag mac">Mac</span></div>
+<div><span class="k">선행</span>학습 단계 01 · 02</div>
+<div><span class="k">만드는 것</span>없음 — 확인만 한다</div>
+<div><span class="k">적는 곳</span><code>hardware/INVENTORY.md</code> 4절 · 5절. 이 쪽에서는 읽기만 한다</div>
+</div>
+<h2 id="overview">1. 개요</h2>
+<h3 id="s1-1">1-1. 아홉 쪽의 흐름</h3>
+<p>한 쪽이 끝나면 토픽이나 파일이 하나 늘어난다. 뒤 쪽은 앞 쪽의 토픽을 입력으로 쓴다.</p>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w24"><col class="w56"><col class="w20"></colgroup>
+<thead><tr><th>쪽</th><th>끝나면 보이는 것</th><th>어디서</th></tr></thead>
+<tbody>
+<tr><td>C0 지도와 준비</td><td>(이 쪽) 확인 명령의 출력, 값을 적을 자리</td><td><span class="tag pi">Pi 호스트</span> <span class="tag mac">Mac</span></td></tr>
+<tr><td><a href="c-01-host-camera.html">C1</a> 호스트에서 카메라 확인</td><td>Pi 호스트 명령으로 찍은 사진 한 장. 센서 모드와 초점을 고정하는 법</td><td><span class="tag pi">Pi 호스트</span></td></tr>
+<tr><td><a href="c-02-camera-topic.html">C2</a> 컨테이너에서 영상 토픽</td><td><code>/stereo/left/image_raw</code> 가 초당 30 장(주기 33 ms)으로 발행되고 Foxglove 에 보인다</td><td><span class="tag cli">컨테이너</span> <span class="tag bench">벤치</span></td></tr>
+<tr><td><a href="c-03-calibration.html">C3</a> 카메라 보정</td><td><code>/stereo/left/camera_info</code> 에 초점거리 · 주점이 실린다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag mac">Mac</span> <span class="tag py">Python</span></td></tr>
+<tr><td><a href="c-04-opencv-node.html">C4</a> OpenCV 전처리 노드</td><td><code>/stereo/left/image_proc</code> — 크기 축소 · 흑백 · 흐림 · 에지 · 윤곽선을 C++ 노드가 발행한다</td><td><span class="tag cli">컨테이너</span> <span class="tag cpp">C++</span></td></tr>
+<tr><td><a href="c-05-yolo-model.html">C5</a> YOLO 모델 준비</td><td>Mac 에서 만든 <code>yolov8n.onnx</code> 와 클래스 이름 파일, 기준 검출 결과</td><td><span class="tag mac">Mac</span> <span class="tag py">Python</span></td></tr>
+<tr><td><a href="c-06-yolo-node.html">C6</a> YOLO 추론 노드(CPU)</td><td><code>/detections</code> 와 박스를 그린 <code>/stereo/left/annotated</code>. Pi 의 CPU 로 초당 1 ~ 3 장</td><td><span class="tag cli">컨테이너</span> <span class="tag cpp">C++</span></td></tr>
+<tr><td><a href="c-07-hailo-setup.html">C7</a> Hailo 준비</td><td>호스트와 컨테이너의 HailoRT 버전이 같고, 컨테이너에서 Hailo-8 과 모델 파일이 보인다</td><td><span class="tag pi">Pi 호스트</span> <span class="tag cli">컨테이너</span></td></tr>
+<tr><td><a href="c-08-hailo-node.html">C8</a> Hailo 추론 노드</td><td>같은 <code>/detections</code> 를 Hailo-8 이 카메라 속도로 발행한다. CPU 사용률은 절반 아래</td><td><span class="tag cli">컨테이너</span> <span class="tag cpp">C++</span></td></tr>
+</tbody></table></div>
+<pre class="diagram"><code>/stereo/left/image_raw  (C2)
+   ├──► C4  image_proc_node     ──► /stereo/left/image_proc
+   ├──► C6  yolo_detector (CPU) ──► /detections ──┐
+   └──► C8  hailo_detect        ──► /detections ──┤   같은 이름 · 같은 메시지
+                                                  └──► detection_overlay ──► /stereo/left/annotated</code></pre>
+<p>C6 와 C8 은 같은 토픽 이름, 같은 메시지, 같은 파라미터 이름을 쓴다. 그래서 박스를 그리는 노드와 뒤의 소비자는 어느 쪽이 발행하는지 구분하지 않는다. C8 은 새 기능이 아니라 C6 의 계산을 다른 장치로 옮기는 쪽이다.</p>
+<h3 id="s1-2">1-2. 다른 가이드와의 관계</h3>
+<ul>
+  <li><strong>학습 단계 08 ~ 08c</strong> 와 범위가 같다. 둘 다 할 필요는 없다. 학습 단계 쪽은 원리 설명이 길고 코드 일부를 직접 채운다. 이 가이드는 코드 전량과 짧은 설명이다.</li>
+  <li><strong>학습 단계 08d</strong>(물체 추적과 거리 추정)는 이 가이드의 끝(C8 의 <code>/detections</code>)에서 이어진다. 이 가이드는 08d 를 다루지 않는다.</li>
+  <li><strong>라이다 가이드(L)</strong> · <strong>MCU 펌웨어 가이드(F)</strong> 와는 장비가 겹치지 않는다. 서로 기다리지 않고 진행한다.</li>
+</ul>
+<h3 id="s1-3">1-3. 이 가이드에서 쓰는 용어</h3>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w22"><col class="w78"></colgroup>
+<thead><tr><th>용어</th><th>뜻</th></tr></thead>
+<tbody>
+<tr><td>호스트</td><td>Pi 5 의 리눅스(Raspberry Pi OS). 카메라 드라이버와 Hailo 드라이버가 여기에 있다. 명령은 <code>ssh</code> 로 접속한 셸에서 친다</td></tr>
+<tr><td>컨테이너</td><td>Docker 안의 Ubuntu 22.04 + ROS 2 Humble. 노드는 전부 여기서 빌드하고 실행한다. <code>cd ~/ros2_rpi5/docker &amp;&amp; docker compose run --rm dev</code> 로 들어간다</td></tr>
+<tr><td>노드 / 토픽</td><td>노드는 실행 파일 하나. 토픽은 노드 사이에 메시지가 흐르는 이름. 이 가이드의 토픽은 <code>/stereo/left/image_raw</code> · <code>/stereo/left/camera_info</code> · <code>/stereo/left/image_proc</code> · <code>/detections</code> · <code>/stereo/left/annotated</code> 다섯이다</td></tr>
+<tr><td>프레임 id</td><td>메시지의 <code>header.frame_id</code>. 영상이 어느 좌표계에서 찍혔는지 적는 이름. 이 프로젝트의 카메라는 <code>stereo_left_optical_link</code> 다</td></tr>
+<tr><td>보정(캘리브레이션)</td><td>카메라의 초점거리와 주점(광축이 지나는 픽셀)을 구하는 일. 결과가 <code>camera_info</code> 메시지에 실린다. 화면의 픽셀을 방향(각도)으로 바꿀 때 쓴다</td></tr>
+<tr><td>검출 / 추론</td><td>검출은 영상 한 장에서 물체의 종류와 박스를 찾는 일. 추론은 학습된 신경망을 실행하는 일. 이 가이드의 검출은 추론으로 한다</td></tr>
+<tr><td>모델 파일</td><td>학습된 신경망을 담은 파일. CPU 에서는 ONNX 형식(<code>.onnx</code>), Hailo-8 에서는 Hailo 실행 파일 형식(<code>.hef</code>)을 쓴다</td></tr>
+<tr><td>벤치</td><td>책상 위. 카메라는 차체에 달려 있지 않다. 이 가이드의 실습은 전부 벤치에서 끝난다</td></tr>
+</tbody></table></div>
+<h2 id="why">2. 전제 — 이 가이드 전체를 관통하는 사실 하나</h2>
+<p>카메라 드라이버(<code>imx708</code>)와 Hailo 드라이버(<code>hailo_pci</code>)는 <strong>호스트 커널</strong>에 있다. 그 드라이버를 쓰는 라이브러리 — 카메라는 libcamera, Hailo 는 HailoRT — 는 <strong>컨테이너</strong>에 있다. 컨테이너는 호스트와 커널만 공유하므로, 라이브러리는 컨테이너에 따로 넣어야 하고 <strong>호스트 드라이버와 같은 세대</strong>여야 한다.</p>
+<ul>
+  <li>libcamera 는 C2 에서 호스트와 같은 판으로 소스 빌드한다.</li>
+  <li>HailoRT 는 C7 에서 호스트와 정확히 같은 버전의 패키지를 컨테이너에 설치한다. 조금이라도 다르면 장치 파일이 보여도 "No Hailo device found" 가 난다.</li>
+  <li>호스트를 <code>apt full-upgrade</code> 하면 호스트 쪽만 올라간다. 그 뒤에는 이 쪽의 확인 명령을 다시 실행하고, 값이 바뀌었으면 컨테이너 이미지를 다시 빌드한다.</li>
+</ul>
+<h3 id="s2-1">2-1. 이 프로젝트의 Pi 에서 확인한 값</h3>
+<p>2026-09-13 에 이 프로젝트의 Pi 에서 확인한 값이다(카메라 행만 새 카메라를 꽂은 뒤 채운다). 뒤 쪽의 설정 파일에 이 값이 그대로 들어간다. 내 Pi 의 값이 다르면 내 값을 쓴다.</p>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w30"><col class="w48"><col class="w22"></colgroup>
+<thead><tr><th>항목</th><th>값</th><th>쓰는 쪽</th></tr></thead>
+<tbody>
+<tr><td>카메라 센서 이름</td><td><code>imx708</code> 두 대 (Camera Module 3 일반 모델, 4608 × 2592) — 실제 목록은 <code>____</code></td><td>C1 · C2</td></tr>
+<tr><td>호스트 libcamera 패키지 판</td><td><code>0.7.2+rpt20260817-1</code> → 소스 태그 <code>v0.7.2+rpt20260817</code></td><td>C2 (Dockerfile)</td></tr>
+<tr><td>호스트 libpisp 판</td><td><code>v1.7.0</code></td><td>C2 (Dockerfile)</td></tr>
+<tr><td>rpicam-apps 판</td><td><code>1.13.0-1</code></td><td>C1</td></tr>
+<tr><td>HailoRT 판(호스트 라이브러리 · 드라이버 · 펌웨어)</td><td><code>4.23.0</code> — 셋이 같다</td><td>C7 · C8</td></tr>
+<tr><td>장치 파일 major 번호</td><td><code>/dev/video*</code> 81 고정. <code>/dev/media*</code> · <code>/dev/dma_heap</code> · <code>/dev/hailo0</code> 은 부팅마다 바뀔 수 있다(media 511 · 237 · 238 실측) — <code>docker/majors.sh</code> 가 부팅 때 <code>docker/.env</code> 에 적는다</td><td>C2 · C7 (compose 의 장치 규칙)</td></tr>
+</tbody></table></div>
+<h3 id="s2-2">2-2. 이 가이드가 쓰는 공통 값</h3>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w20"><col class="w36"><col class="w44"></colgroup>
+<thead><tr><th>항목</th><th>값</th><th>이유</th></tr></thead>
+<tbody>
+<tr><td>출력 해상도</td><td>640 × 480</td><td>검출에 충분하고, 30 fps(주기 33 ms)에서 전송량이 약 27 MB/s 다</td></tr>
+<tr><td>센서 모드</td><td>2304 × 1296</td><td>센서 전체 시야를 쓰는 모드 가운데 프레임 상한(56 fps)이 30 fps 를 넘는 것. 보정과 운용에 같은 모드를 쓴다(C1 · C3)</td></tr>
+<tr><td>색 형식</td><td>libcamera <code>RGB888</code> → ROS 인코딩 <code>bgr8</code></td><td>OpenCV 의 기본 바이트 순서와 같아 변환 없이 쓴다(C4)</td></tr>
+<tr><td>토픽 · 프레임 id</td><td><code>/stereo/left/…</code> · <code>stereo_left_optical_link</code> (스테레오의 왼쪽)</td><td>학습 단계 05 의 URDF 에 있는 이름. 오른쪽은 <code>/stereo/right/…</code> · <code>stereo_right_optical_link</code></td></tr>
+<tr><td>초점</td><td>수동, 렌즈 위치 0.5(2 m 에 초점)</td><td>자동초점이 렌즈를 움직이면 보정값이 바뀐다(C1 · C3)</td></tr>
+</tbody></table></div>
+<h2 id="lab">3. 실습</h2>
+<h3 id="s3-1">3-1. Pi 호스트에서 확인 <span class="tag pi">Pi 호스트</span></h3>
+<p><code>ssh pi5</code> 로 접속한 셸에서 실행한다. 주석이 기대한 출력의 모양이다.</p>
+<pre><code class="lang-bash">rpicam-hello --list-cameras
+#   0 : imx708 [4608x2592 10-bit RGGB] (…/i2c@88000/imx708@1a)
+#       Modes: 'SRGGB10_CSI2P' : 1536x864 [120.13 fps ...]  2304x1296 [56.03 fps ...]  4608x2592 [14.35 fps ...]
+#   1 : imx708 [4608x2592 10-bit RGGB] (…)          ← 오른쪽. 모드 목록은 위와 같다
+
+hailortcli fw-control identify
+#   Firmware Version: 4.23.0 (release,app,extended context switch buffer)
+#   Device Architecture: HAILO8          ← HAILO8L 이면 AI Kit(13 TOPS)다. 모델 파일이 다르다
+
+ls -l /dev/dma_heap/system /dev/media0 /dev/hailo0
+#   crw-rw---- 1 root video 252,   0 ...  /dev/dma_heap/system     ← 쉼표 앞 숫자가 major
+#   crw-rw---- 1 root video 238,   0 ...  /dev/media0               ← 부팅마다 바뀔 수 있다
+#   crw-rw-rw- 1 root root  510,   0 ...  /dev/hailo0
+cd ~/ros2_rpi5/docker &amp;&amp; ./majors.sh --check
+#   ✓ .env 의 major 번호가 지금 값과 같다   ← compose 의 장치 규칙이 이 값을 쓴다 (학습 단계 02 §2-3)
+
+docker image inspect rpi5-ros2:humble --format '{{.Id}}'
+#   sha256:...                           ← 이미지가 있다. 없으면 학습 단계 02 §3-4 로
+
+dpkg -l hailort libcamera0.7 rpicam-apps 2&gt;/dev/null | awk '/^ii/{print $2, $3}'
+#   hailort 4.23.0
+#   libcamera0.7 0.7.2+rpt20260817-1
+#   rpicam-apps 1.13.0-1</code></pre>
+<p>세 장치 파일의 major 번호는 부팅마다 바뀔 수 있어 노트에 적어 두지 않는다. compose 의 장치 규칙은 부팅 때 <code>docker/majors.sh</code> 가 <code>docker/.env</code> 에 적은 값을 쓴다. <code>--check</code> 가 다르다고 하면 <code>./majors.sh</code> 를 실행한다. "같다" 가 나오지 않고 <code>.env</code> 에 값이 없다고 나오면 학습 단계 02 §3-4 의 설치를 하지 않은 것이다.</p>
+<h3 id="s3-2">3-2. Mac 의 Foxglove 연결 <span class="tag mac">Mac</span></h3>
+<p>Pi 에서 Foxglove 브리지를 띄우고, Mac 의 Foxglove Studio 에서 <strong>Open connection → Foxglove WebSocket</strong> 에 <code>ws://&lt;Pi 주소&gt;:8765</code> 를 넣는다. 학습 단계 02 에서 했던 것과 같다.</p>
+<pre><code class="lang-bash"># Pi 호스트
+cd ~/ros2_rpi5/docker &amp;&amp; docker compose up -d foxglove
+docker compose ps        # ros2_foxglove 가 running 이면 된다</code></pre>
+<p>연결되면 왼쪽 패널 목록에 토픽이 (아직 없으므로) 비어 있는 상태로 보인다. 연결 자체가 되는 것만 확인한다.</p>
+<h3 id="s3-3">3-3. 값을 적을 자리</h3>
+<p><code>hardware/INVENTORY.md</code> 를 Mac 에서 연다. 이 가이드가 채우는 칸은 다음 둘이다. 지금은 빈칸(<code>____</code>)인 것을 확인만 한다.</p>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w18"><col class="w60"><col class="w22"></colgroup>
+<thead><tr><th>절</th><th>칸</th><th>채우는 쪽</th></tr></thead>
+<tbody>
+<tr><td>4절 카메라</td><td>캘리브레이션 행 — fx · fy · cx · cy · 계산한 수평 시야각, 그리고 촬영 조건(센서 모드 · 초점 · 촬영 경로)</td><td>C3</td></tr>
+<tr><td>5절 Hailo</td><td>사용할 모델(.hef) · 입력 해상도 · 목표 / 실측 추론 FPS</td><td>C8</td></tr>
+</tbody></table></div>
+<p>가이드의 빈칸은 화면에서 채울 수 없다(정적 HTML). 값은 INVENTORY 파일이나 노트에 직접 적는다. 체크박스만 브라우저에 저장된다.</p>
+<h2 id="checkpoints">✅ 검증 체크포인트</h2>
+<p>직접 실행해서 확인한 것만 체크한다. 체크 기록은 이 브라우저에만 저장된다.</p>
+<ul class="checklist">
+  <li><label><input type="checkbox" data-key="c00-cameras-listed"><span><code>rpicam-hello --list-cameras</code> 에 <code>imx708</code> 두 대와 세 가지 모드가 보인다<span class="sub">§3-1</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c00-hailo-identify"><span><code>hailortcli fw-control identify</code> 가 버전 4.23.0 과 <code>HAILO8</code> 을 보인다. 다르면 그 값을 적었다<span class="sub">§3-1</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c00-device-majors"><span><code>./majors.sh --check</code> 가 "같다" 를 출력한다<span class="sub">§3-1</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c00-image-present"><span>컨테이너 이미지 <code>rpi5-ros2:humble</code> 이 있다<span class="sub">§3-1</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c00-foxglove-connected"><span>Mac 의 Foxglove Studio 가 <code>ws://&lt;Pi 주소&gt;:8765</code> 에 연결된다<span class="sub">§3-2</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c00-inventory-slots"><span>INVENTORY 4절 · 5절에서 이 가이드가 채울 칸을 봤다<span class="sub">§3-3</span></span></label></li>
+</ul>
+<p class="progress-line"></p>
+<div class="progress-bar"><span></span></div>
+<h2 id="symptoms">증상과 원인</h2>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w28"><col class="w30"><col class="w42"></colgroup>
+<thead><tr><th>증상</th><th>원인</th><th>조치</th></tr></thead>
+<tbody>
+<tr><td><code>--list-cameras</code> 에 아무것도 안 나온다</td><td>카메라 케이블 접촉, 또는 <code>config.txt</code> 설정</td><td>학습 단계 01 §3-5 로 돌아간다. Pi 5 는 22핀 미니 케이블이고 접점 방향이 있다</td></tr>
+<tr><td><code>hailortcli</code> 가 없다</td><td><code>hailo-all</code> 미설치</td><td>학습 단계 01 §3-4. <code>sudo apt install hailo-all</code> 뒤 재부팅</td></tr>
+<tr><td><code>identify</code> 가 "No Hailo device found"</td><td>HAT 접촉 불량, 또는 드라이버 미적재</td><td>전원을 끄고 HAT 를 다시 꽂는다. <code>lspci | grep -i hailo</code> 로 PCIe 인식부터 본다</td></tr>
+<tr><td>이미지가 없다</td><td>학습 단계 02 를 아직 안 했다</td><td>02 §3-4 의 <code>docker compose build</code></td></tr>
+</tbody></table></div>
+<h2 id="quiz">🤔 이해 확인</h2>
+<p>이 쪽에서 설명한 내용만으로 답할 수 있다. 답을 펼치기 전에 먼저 말로 답해 본다.</p>
+<details class="quiz"><summary>1. 카메라 드라이버와 libcamera 는 각각 어디에 있는가. 둘의 세대가 같아야 하는 이유는 무엇인가.</summary>
+  <div class="ans"><p>드라이버는 호스트 커널에, libcamera 는 컨테이너에 있다. 컨테이너는 커널만 호스트와 공유한다. libcamera 는 커널 드라이버가 내놓는 장치 구조를 그대로 읽으므로, 드라이버와 다른 세대의 libcamera 는 카메라를 열지 못한다. Hailo 도 같은 구조다 — 드라이버는 호스트, HailoRT 는 컨테이너.</p></div></details>
+<details class="quiz"><summary>2. 아홉 쪽 가운데 Mac 에서 하는 일은 무엇이고, 왜 Pi 가 아니라 Mac 인가.</summary>
+  <div class="ans"><p>C3 의 보정 계산과 C5 의 모델 준비(ultralytics 로 확인하고 ONNX 로 내보내기)다. ultralytics 는 PyTorch 를 함께 설치해 용량이 크고, Pi 의 CPU 에서는 느리다. 결과 파일(<code>camera_info.yaml</code>, <code>yolov8n.onnx</code>)만 Pi 로 보낸다.</p></div></details>
+<details class="quiz"><summary>3. C6 와 C8 이 같은 토픽 이름 <code>/detections</code> 를 쓰는 이유는 무엇인가.</summary>
+  <div class="ans"><p>박스를 그리는 노드와 뒤의 소비자가 검출기를 구분하지 않게 하기 위해서다. 토픽 이름 · 메시지 형식 · 파라미터 이름이 같으면 CPU 검출기를 Hailo 검출기로 바꿔도 다른 노드는 한 줄도 고치지 않는다.</p></div></details>
+<h2 id="next">다음</h2>
+<div class="callout tip"><span class="ct">여기까지 했으면</span>
+<ul>
+  <li>번호순 다음은 <a href="c-01-host-camera.html">C1 호스트에서 카메라 확인</a> 이다. 컨테이너 없이 Pi 호스트 명령만으로 사진을 찍고, 센서 모드와 초점을 고정하는 법을 익힌다.</li>
+  <li>AI HAT+ 가 아직 없으면 C1 ~ C6 까지 진행할 수 있다. C7 · C8 만 HAT 가 필요하다.</li>
+</ul>
+</div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

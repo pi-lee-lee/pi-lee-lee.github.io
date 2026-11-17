@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C8 · Hailo 추론 노드 — 같은 /detections 를 Hailo-8 로 — 카메라 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="c-08">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">C8 · Hailo 추론 노드</p>
+      <h1>Hailo 추론 노드 — 같은 /detections 를 Hailo-8 로</h1>
+<p class="lead">C6 와 같은 토픽 · 같은 메시지 · 같은 파라미터 이름으로 발행하는 검출기를 하나 더 만든다. 다른 것은 추론을 Hailo-8 이 한다는 것뿐이다.
+그리기 노드도, 뒤의 소비자도 바뀌지 않는다. 끝나면 <code>/detections</code> 가 카메라 속도로 나오고 CPU 사용률은 절반 아래가 된다.</p>
+<div class="goal">
+<span class="label">이 쪽이 끝나면 보이는 것</span>
+<ul>
+  <li>패키지 <code>rpi5_hailo_detect</code> 가 <code>find_package(HailoRT 4.23.0 EXACT)</code> 로 빌드된다.</li>
+  <li><code>hailo_detect</code> 가 <code>/detections</code> 를 카메라 fps 근처로 발행하고, C6 의 그리기 노드가 수정 없이 박스를 그린다.</li>
+  <li>추론 중 노드의 CPU 사용률이 50 % 아래다.</li>
+  <li>런치 파일 하나로 카메라 + 검출기(Hailo 또는 CPU) + 그리기 노드가 뜬다.</li>
+  <li>모델 이름 · 입력 해상도 · 실측 fps 를 INVENTORY 5절에 적었다.</li>
+</ul>
+<p><strong>필요한 것</strong> — C7 을 통과한 컨테이너, C5 의 <code>coco.names</code> 와 <code>test.jpg</code>, C6 의 그리기 노드.</p>
+</div>
+<div class="meta">
+<div><span class="k">환경</span><span class="tag cli">컨테이너</span> <span class="tag cpp">C++</span> <span class="tag bench">벤치</span></div>
+<div><span class="k">선행</span><a href="c-07-hailo-setup.html">C7</a>(버전 · 모델 확인), <a href="c-06-yolo-node.html">C6</a>(그리기 노드 · 메시지 구조)</div>
+<div><span class="k">만드는 것</span>패키지 <code>ros2_ws/src/rpi5_hailo_detect</code>, <code>rpi5_vision/launch/perception.launch.py</code>, <code>rpi5_vision/config/detector.yaml</code></div>
+<div><span class="k">적는 곳</span>INVENTORY 5절 — 사용할 모델 · 입력 해상도 · 실측 추론 fps</div>
+</div>
+<h2 id="overview">1. 개요</h2>
+<pre class="diagram"><code>                         C6                                                C8
+/stereo/left/image_raw ──► yolo_detector (OpenCV DNN · CPU) ──┐   /stereo/left/image_raw ──► hailo_detect (HailoRT · /dev/hailo0) ──┐
+                                                              ▼                                                                     ▼
+                                                      /detections  (vision_msgs/Detection2DArray)  ← 같은 토픽 · 같은 메시지 · 같은 파라미터 이름
+                                                              │
+                                               detection_overlay (C6) · 뒤의 소비자 — 어느 쪽이 발행하는지 모른다</code></pre>
+<p>노드는 두 층이다. ROS 배선(구독 · 발행 · 프레임 버리기 · header 복사)은 C6 와 같고, 백엔드(프레임 → 박스 목록)만 HailoRT 호출로 바뀐다. 백엔드가 지키는 계약은 하나다 — <strong>원본 프레임의 픽셀 좌표로 박스 목록을 돌려준다.</strong></p>
+<h2 id="why">2. 원리</h2>
+<h3 id="s2-1">2-1. HailoRT 호출 순서 — 다섯 단계</h3>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w16"><col class="w44"><col class="w40"></colgroup>
+<thead><tr><th>단계</th><th>호출</th><th>뜻</th></tr></thead>
+<tbody>
+<tr><td>① 장치 열기</td><td><code>VDevice::create()</code></td><td><code>/dev/hailo0</code> 을 여는 핸들. 노드 수명 동안 하나</td></tr>
+<tr><td>② 모델 읽기</td><td><code>vdevice-&gt;create_infer_model(hef_path)</code></td><td>.hef 파일을 읽어 입력 · 출력의 이름 · 모양 · 형식을 안다</td></tr>
+<tr><td>③ 형식 지정</td><td><code>input().set_format_type(UINT8)</code>, <code>output().set_format_type(FLOAT32)</code></td><td>내가 넣고 받을 형식. 입력은 8비트 RGB, 출력은 32비트 실수</td></tr>
+<tr><td>④ 구성과 버퍼</td><td><code>configure()</code> → <code>create_bindings()</code> → <code>set_buffer()</code></td><td>모델을 칩에 올리고, 입력 · 출력 버퍼의 메모리를 등록한다. 버퍼 크기는 <code>get_frame_size()</code> 가 알려 준다</td></tr>
+<tr><td>⑤ 실행</td><td><code>run(bindings, 1000 ms)</code></td><td>입력 버퍼를 보내고 출력 버퍼가 채워질 때까지 기다린다. 매 프레임 반복</td></tr>
+</tbody></table></div>
+<p>①~④ 는 생성자에서 한 번, ⑤ 는 콜백마다다. 모든 호출은 성공 여부를 돌려준다. 실패를 무시하면 "박스가 안 나온다" 로만 보이므로, 실패마다 예외로 바꿔 로그에 이유를 남긴다.</p>
+<h3 id="s2-2">2-2. 출력 버퍼의 배치 — 클래스별 박스 목록</h3>
+<pre class="diagram"><code>출력 버퍼 (160 320 바이트) = 클래스 0 묶음 | 클래스 1 묶음 | ... | 클래스 79 묶음
+
+클래스 c 의 묶음 = count (float32, 박스 개수)  |  박스 0  |  박스 1  | ... |  박스 count-1
+박스 하나 (20 바이트)  = y_min, x_min, y_max, x_max, score   (전부 float32, 좌표는 0 ~ 1 — 640 × 640 입력 기준)
+
+최대 크기 = 80 × (4 + 100 × 20) = 160 320        count 가 0 인 클래스는 4 바이트만 차지한다</code></pre>
+<p>좌표 순서가 <strong>y 가 먼저</strong>이고 0 ~ 1 로 정규화되어 있다. 640 을 곱해 레터박스 입력의 픽셀로 만든 뒤, C6 과 같은 식으로 원본 좌표로 되돌린다. 이 두 가지(순서 · 정규화)를 틀리면 박스가 한쪽으로 몰리거나 화면 밖으로 나간다.</p>
+<h3 id="s2-3">2-3. 입력 — 같은 레터박스, RGB 8비트</h3>
+<p>모델 입력은 640 × 640 × 3, 8비트 RGB 다. 카메라는 <code>bgr8</code> 로 보내므로 <code>cv_bridge</code> 에 <code>rgb8</code> 을 요청해 변환시킨다(복사 한 번). 레터박스는 C6 의 식 그대로이고, 결과를 입력 버퍼에 직접 그려 복사를 줄인다. 버퍼는 페이지 경계(4096 바이트)에 맞춰 할당한다 — 칩이 메모리를 직접 읽는 장치라 정렬된 버퍼가 빠르다.</p>
+<h3 id="s2-4">2-4. 임계값은 두 곳에 있다</h3>
+<p>.hef 안의 NMS 가 점수 임계값과 겹침 임계값을 갖고 있고, 노드의 <code>conf_threshold</code> 가 그 위에서 한 번 더 거른다. 코드는 <code>set_nms_score_threshold()</code> 로 .hef 쪽 점수 임계값도 <code>conf_threshold</code> 로 맞춘다. 그래서 C6 와 검출 개수가 다르면 그 원인은 임계값이 아니라 모델(yolov8n 대 yolov8s)이다.</p>
+<h2 id="lab">3. 실습</h2>
+<h3 id="s3-1">3-1. 패키지 <span class="tag cli">컨테이너</span></h3>
+<p>HailoRT 가 필요한 노드를 별도 패키지에 둔다. 그래야 <code>rpi5_vision</code> 은 HailoRT 없이도 빌드된다.</p>
+<pre><code class="lang-bash">cd /ros2_ws/src
+ros2 pkg create rpi5_hailo_detect --build-type ament_cmake --license Apache-2.0 --node-name hailo_detect</code></pre>
+<p><code>rpi5_hailo_detect/package.xml</code>. HailoRT 는 ROS 패키지가 아니므로 여기에 적지 않는다 — C7 의 .deb 가 공급하고 CMake 가 찾는다.</p>
+<pre><code class="lang-xml">&lt;?xml version="1.0"?&gt;
+&lt;?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?&gt;
+&lt;package format="3"&gt;
+  &lt;name&gt;rpi5_hailo_detect&lt;/name&gt;
+  &lt;version&gt;0.1.0&lt;/version&gt;
+  &lt;description&gt;Camera guide: YOLOv8 detector on Hailo-8 (HailoRT), same interface as rpi5_vision yolo_detector&lt;/description&gt;
+  &lt;maintainer email="you@example.com"&gt;you&lt;/maintainer&gt;
+  &lt;license&gt;Apache-2.0&lt;/license&gt;
+
+  &lt;buildtool_depend&gt;ament_cmake&lt;/buildtool_depend&gt;
+
+  &lt;depend&gt;rclcpp&lt;/depend&gt;
+  &lt;depend&gt;sensor_msgs&lt;/depend&gt;
+  &lt;depend&gt;vision_msgs&lt;/depend&gt;
+  &lt;depend&gt;cv_bridge&lt;/depend&gt;
+  &lt;depend&gt;image_transport&lt;/depend&gt;
+  &lt;depend&gt;libopencv-dev&lt;/depend&gt;
+
+  &lt;export&gt;
+    &lt;build_type&gt;ament_cmake&lt;/build_type&gt;
+  &lt;/export&gt;
+&lt;/package&gt;</code></pre>
+<p><code>rpi5_hailo_detect/CMakeLists.txt</code>. C6 의 파일과 다른 것은 HailoRT 두 줄이다.</p>
+<pre><code class="lang-cmake">cmake_minimum_required(VERSION 3.8)
+project(rpi5_hailo_detect)
+
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(vision_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(image_transport REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(HailoRT 4.23.0 EXACT REQUIRED)     # same version as the host (C7). The build stops here if not.
+
+add_executable(hailo_detect src/hailo_detect.cpp)
+ament_target_dependencies(hailo_detect rclcpp sensor_msgs vision_msgs cv_bridge image_transport)
+target_include_directories(hailo_detect PUBLIC ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(hailo_detect ${OpenCV_LIBS} HailoRT::libhailort)
+
+install(TARGETS hailo_detect
+  DESTINATION lib/${PROJECT_NAME})
+
+ament_package()</code></pre>
+<h3 id="s3-2">3-2. 노드 소스 <span class="tag cpp">C++</span></h3>
+<p><code>rpi5_hailo_detect/src/hailo_detect.cpp</code>. <code>ros2 pkg create</code> 가 만든 파일을 이것으로 바꾼다. 위쪽 절반이 백엔드(HailoRT), 아래쪽 절반이 C6 와 같은 ROS 배선이다.</p>
+<pre><code class="lang-cpp">// hailo_detect -- /stereo/left/image_raw -&gt; YOLOv8 on Hailo-8 (HailoRT) -&gt; /detections   (camera guide C8)
+//
+// Same topic, message and parameter names as rpi5_vision/yolo_detector (C6).
+// Verified against HailoRT 4.23.0 (hailo/hailort.hpp): VDevice, InferModel, ConfiguredInferModel.
+#include &lt;algorithm&gt;
+#include &lt;atomic&gt;
+#include &lt;chrono&gt;
+#include &lt;cmath&gt;
+#include &lt;cstdlib&gt;
+#include &lt;cstring&gt;
+#include &lt;fstream&gt;
+#include &lt;memory&gt;
+#include &lt;stdexcept&gt;
+#include &lt;string&gt;
+#include &lt;vector&gt;
+
+#include &lt;unistd.h&gt;          // sysconf(_SC_PAGESIZE)
+
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/image.hpp"
+#include "vision_msgs/msg/detection2_d_array.hpp"
+#include "cv_bridge/cv_bridge.h"
+#include "image_transport/image_transport.hpp"
+#include "opencv2/imgcodecs.hpp"
+#include "opencv2/imgproc.hpp"
+#include "hailo/hailort.hpp"
+
+namespace
+{
+
+// One detection in original-frame pixel coordinates (the backend contract).
+struct Box
+{
+  cv::Rect2f rect;
+  float score;
+  int class_id;
+};
+
+// Throw with the HailoRT status text instead of silently continuing.
+void check(hailo_status status, const char * what)
+{
+  if (status != HAILO_SUCCESS) {
+    throw std::runtime_error(std::string(what) + " failed: " + hailo_get_status_message(status));
+  }
+}
+
+// Page-aligned buffer: the chip reads memory directly, aligned buffers avoid an extra copy.
+class AlignedBuffer
+{
+public:
+  explicit AlignedBuffer(size_t size)
+  : size_(size)
+  {
+    const size_t page = static_cast&lt;size_t&gt;(sysconf(_SC_PAGESIZE));
+    const size_t rounded = ((size + page - 1) / page) * page;
+    if (posix_memalign(&amp;ptr_, page, rounded) != 0) {
+      throw std::bad_alloc();
+    }
+    std::memset(ptr_, 0, rounded);
+  }
+  ~AlignedBuffer() { std::free(ptr_); }
+  AlignedBuffer(const AlignedBuffer &amp;) = delete;
+  AlignedBuffer &amp; operator=(const AlignedBuffer &amp;) = delete;
+  uint8_t * data() { return static_cast&lt;uint8_t *&gt;(ptr_); }
+  size_t size() const { return size_; }
+
+private:
+  void * ptr_{nullptr};
+  size_t size_;
+};
+
+// --- pure logic begin ---
+struct Letterbox
+{
+  float scale;
+  int pad_x;
+  int pad_y;
+};
+
+// Resize keeping the aspect ratio into dst (already allocated, size x size, 3 channels) and pad with gray.
+// Same formula as C6; here the result is written straight into the model's input buffer.
+Letterbox letterbox_into(const cv::Mat &amp; src, cv::Mat &amp; dst)
+{
+  Letterbox lb;
+  lb.scale = std::min(static_cast&lt;float&gt;(dst.cols) / src.cols, static_cast&lt;float&gt;(dst.rows) / src.rows);
+  const int new_w = static_cast&lt;int&gt;(std::round(src.cols * lb.scale));
+  const int new_h = static_cast&lt;int&gt;(std::round(src.rows * lb.scale));
+  lb.pad_x = (dst.cols - new_w) / 2;
+  lb.pad_y = (dst.rows - new_h) / 2;
+  dst.setTo(cv::Scalar(114, 114, 114));
+  cv::Mat roi = dst(cv::Rect(lb.pad_x, lb.pad_y, new_w, new_h));
+  cv::resize(src, roi, roi.size(), 0, 0, cv::INTER_LINEAR);     // same size and type -&gt; writes into dst
+  return lb;
+}
+
+// Parse the "NMS by class" output (C8 section 2-2):
+//   for each class: float32 count, then count x { y_min, x_min, y_max, x_max, score } (float32, 0..1).
+// Coordinates are relative to the letterboxed model input; map them back to the original frame.
+std::vector&lt;Box&gt; parse_nms_by_class(const uint8_t * buf, size_t buf_size, uint32_t num_classes,
+                                    int input_w, int input_h, const Letterbox &amp; lb, int orig_w, int orig_h)
+{
+  std::vector&lt;Box&gt; boxes;
+  const uint8_t * p = buf;
+  const uint8_t * end = buf + buf_size;
+  const cv::Rect2f frame(0.f, 0.f, static_cast&lt;float&gt;(orig_w), static_cast&lt;float&gt;(orig_h));
+  for (uint32_t c = 0; c &lt; num_classes; ++c) {
+    if (p + sizeof(float) &gt; end) {
+      break;
+    }
+    float count_f = 0.f;
+    std::memcpy(&amp;count_f, p, sizeof(float));
+    p += sizeof(float);
+    const uint32_t count = static_cast&lt;uint32_t&gt;(count_f);
+    for (uint32_t i = 0; i &lt; count; ++i) {
+      if (p + sizeof(hailo_bbox_float32_t) &gt; end) {
+        return boxes;
+      }
+      hailo_bbox_float32_t bb;
+      std::memcpy(&amp;bb, p, sizeof(bb));
+      p += sizeof(bb);
+      const float x1 = (bb.x_min * input_w - lb.pad_x) / lb.scale;
+      const float y1 = (bb.y_min * input_h - lb.pad_y) / lb.scale;
+      const float x2 = (bb.x_max * input_w - lb.pad_x) / lb.scale;
+      const float y2 = (bb.y_max * input_h - lb.pad_y) / lb.scale;
+      Box b;
+      b.rect = cv::Rect2f(x1, y1, x2 - x1, y2 - y1) &amp; frame;    // clip to the frame
+      b.score = bb.score;
+      b.class_id = static_cast&lt;int&gt;(c);
+      if (b.rect.width &gt; 0.f &amp;&amp; b.rect.height &gt; 0.f) {
+        boxes.push_back(b);
+      }
+    }
+  }
+  return boxes;
+}
+// --- pure logic end ---
+
+// HailoRT backend: steps 1-4 of section 2-1 in the constructor, step 5 in infer().
+class HailoBackend
+{
+public:
+  HailoBackend(const std::string &amp; hef_path, float score_threshold)
+  {
+    using hailort::VDevice;
+    using hailort::MemoryView;
+
+    // 1. device
+    vdevice_ = VDevice::create().expect(
+      "VDevice::create -- is /dev/hailo0 visible in the container and the HailoRT version equal to the host?");
+    // 2. model
+    model_ = vdevice_-&gt;create_infer_model(hef_path).expect("create_infer_model -- check model_path");
+
+    // 3. formats (before configure)
+    auto input = model_-&gt;input().expect("the model must have exactly one input");
+    auto output = model_-&gt;output().expect("the model must have exactly one output");
+    input.set_format_type(HAILO_FORMAT_TYPE_UINT8);        // we feed 8-bit RGB
+    if (!output.is_nms()) {
+      throw std::runtime_error("this HEF has no NMS output -- this guide expects a yolov8 HEF with NMS (C7 section 2-1)");
+    }
+    output.set_format_type(HAILO_FORMAT_TYPE_FLOAT32);
+    output.set_nms_score_threshold(score_threshold);       // the HEF-side score filter follows conf_threshold
+
+    const hailo_3d_image_shape_t shape = input.shape();    // height, width, features
+    input_h_ = static_cast&lt;int&gt;(shape.height);
+    input_w_ = static_cast&lt;int&gt;(shape.width);
+    if (shape.features != 3) {
+      throw std::runtime_error("model input is not 3-channel");
+    }
+    const hailo_format_order_t order = output.format().order;
+    if (order != HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS &amp;&amp; order != HAILO_FORMAT_ORDER_HAILO_NMS) {
+      throw std::runtime_error("output is not 'NMS by class' -- this guide parses only that layout (check parse-hef)");
+    }
+    num_classes_ = output.get_nms_shape().expect("get_nms_shape").number_of_classes;
+
+    // 4. configure and bind page-aligned buffers (sizes depend on the format types set above)
+    input_buf_ = std::make_unique&lt;AlignedBuffer&gt;(input.get_frame_size());
+    output_buf_ = std::make_unique&lt;AlignedBuffer&gt;(output.get_frame_size());
+    configured_ = model_-&gt;configure().expect("configure");
+    bindings_ = configured_.create_bindings().expect("create_bindings");
+    check(bindings_.input()-&gt;set_buffer(MemoryView(input_buf_-&gt;data(), input_buf_-&gt;size())), "set input buffer");
+    check(bindings_.output()-&gt;set_buffer(MemoryView(output_buf_-&gt;data(), output_buf_-&gt;size())), "set output buffer");
+
+    // the model input, viewed as an OpenCV image: letterbox draws directly into the input buffer
+    input_mat_ = cv::Mat(input_h_, input_w_, CV_8UC3, input_buf_-&gt;data());
+  }
+
+  int input_width() const { return input_w_; }
+  int input_height() const { return input_h_; }
+  uint32_t num_classes() const { return num_classes_; }
+
+  // 5. one frame (RGB, 8-bit) -&gt; boxes in original pixel coordinates
+  std::vector&lt;Box&gt; infer(const cv::Mat &amp; rgb)
+  {
+    const Letterbox lb = letterbox_into(rgb, input_mat_);
+    check(configured_.run(bindings_, std::chrono::milliseconds(1000)), "run");
+    return parse_nms_by_class(output_buf_-&gt;data(), output_buf_-&gt;size(), num_classes_,
+                              input_w_, input_h_, lb, rgb.cols, rgb.rows);
+  }
+
+private:
+  std::unique_ptr&lt;hailort::VDevice&gt; vdevice_;
+  std::shared_ptr&lt;hailort::InferModel&gt; model_;
+  std::unique_ptr&lt;AlignedBuffer&gt; input_buf_;
+  std::unique_ptr&lt;AlignedBuffer&gt; output_buf_;
+  hailort::ConfiguredInferModel configured_;
+  hailort::ConfiguredInferModel::Bindings bindings_;
+  cv::Mat input_mat_;
+  int input_w_{0};
+  int input_h_{0};
+  uint32_t num_classes_{0};
+};
+
+struct BusyGuard
+{
+  explicit BusyGuard(std::atomic&lt;bool&gt; &amp; flag) : flag_(flag) {}
+  ~BusyGuard() { flag_ = false; }
+  std::atomic&lt;bool&gt; &amp; flag_;
+};
+
+}  // namespace
+
+class HailoDetect : public rclcpp::Node
+{
+public:
+  HailoDetect()
+  : Node("hailo_detect")
+  {
+    // Same parameter names as yolo_detector (C6). input_size and nms_threshold are accepted for
+    // compatibility: the input size comes from the HEF and NMS already ran inside the HEF.
+    this-&gt;declare_parameter&lt;std::string&gt;("model_path", "");
+    this-&gt;declare_parameter&lt;std::string&gt;("names_path", "");
+    this-&gt;declare_parameter&lt;double&gt;("conf_threshold", 0.4);
+    this-&gt;declare_parameter&lt;double&gt;("nms_threshold", 0.5);
+    this-&gt;declare_parameter&lt;int&gt;("input_size", 640);
+    this-&gt;declare_parameter&lt;std::vector&lt;std::string&gt;&gt;("class_filter", std::vector&lt;std::string&gt;{});
+    this-&gt;declare_parameter&lt;std::string&gt;("test_image", "");
+
+    const auto model_path = this-&gt;get_parameter("model_path").as_string();
+    conf_thr_ = static_cast&lt;float&gt;(this-&gt;get_parameter("conf_threshold").as_double());
+    class_filter_ = this-&gt;get_parameter("class_filter").as_string_array();
+    class_filter_.erase(std::remove(class_filter_.begin(), class_filter_.end(), std::string{}),
+                        class_filter_.end());
+    load_names(this-&gt;get_parameter("names_path").as_string());
+
+    backend_ = std::make_unique&lt;HailoBackend&gt;(model_path, conf_thr_);    // steps 1-4, once
+    RCLCPP_INFO(this-&gt;get_logger(), "model loaded: %s  input %dx%d  classes %u",
+                model_path.c_str(), backend_-&gt;input_width(), backend_-&gt;input_height(), backend_-&gt;num_classes());
+    if (backend_-&gt;num_classes() != names_.size()) {
+      RCLCPP_WARN(this-&gt;get_logger(), "names file has %zu lines but the model has %u classes",
+                  names_.size(), backend_-&gt;num_classes());
+    }
+
+    const auto test_image = this-&gt;get_parameter("test_image").as_string();
+    if (!test_image.empty()) {
+      run_test_image(test_image);
+      return;
+    }
+
+    pub_ = this-&gt;create_publisher&lt;vision_msgs::msg::Detection2DArray&gt;(
+      "/detections", rclcpp::QoS(1).best_effort());
+    auto qos = rmw_qos_profile_sensor_data;
+    qos.depth = 1;                                   // newest frame only
+    sub_ = image_transport::create_subscription(
+      this, "/stereo/left/image_raw",
+      [this](const sensor_msgs::msg::Image::ConstSharedPtr &amp; msg) { on_image(msg); }, "raw", qos);
+  }
+
+  bool test_mode() const { return test_mode_; }
+
+private:
+  void load_names(const std::string &amp; path)
+  {
+    std::ifstream f(path);
+    for (std::string line; std::getline(f, line);) {
+      if (!line.empty()) {
+        names_.push_back(line);
+      }
+    }
+    if (names_.empty()) {
+      RCLCPP_FATAL(this-&gt;get_logger(), "cannot read names_path '%s'", path.c_str());
+      throw std::runtime_error("names file");
+    }
+  }
+
+  std::string class_name(int id) const
+  {
+    return (id &gt;= 0 &amp;&amp; static_cast&lt;size_t&gt;(id) &lt; names_.size()) ? names_[id] : std::to_string(id);
+  }
+
+  bool passes_filter(const std::string &amp; name) const
+  {
+    return class_filter_.empty() ||
+           std::find(class_filter_.begin(), class_filter_.end(), name) != class_filter_.end();
+  }
+
+  void on_image(const sensor_msgs::msg::Image::ConstSharedPtr &amp; msg)
+  {
+    bool expected = false;
+    if (!busy_.compare_exchange_strong(expected, true)) {
+      dropped_++;
+      return;
+    }
+    BusyGuard guard(busy_);
+
+    cv_bridge::CvImageConstPtr cv_ptr;
+    try {
+      cv_ptr = cv_bridge::toCvShare(msg, "rgb8");    // camera sends bgr8; the model wants RGB -&gt; converted copy
+    } catch (const cv_bridge::Exception &amp; e) {
+      RCLCPP_ERROR_THROTTLE(this-&gt;get_logger(), *this-&gt;get_clock(), 2000, "cv_bridge: %s", e.what());
+      return;
+    }
+
+    const auto t0 = std::chrono::steady_clock::now();
+    std::vector&lt;Box&gt; boxes;
+    try {
+      boxes = backend_-&gt;infer(cv_ptr-&gt;image);
+    } catch (const std::exception &amp; e) {
+      RCLCPP_ERROR_THROTTLE(this-&gt;get_logger(), *this-&gt;get_clock(), 2000, "inference: %s", e.what());
+      return;
+    }
+    const double ms =
+      std::chrono::duration&lt;double, std::milli&gt;(std::chrono::steady_clock::now() - t0).count();
+
+    vision_msgs::msg::Detection2DArray arr;
+    arr.header = msg-&gt;header;        // capture time and frame id -- not the inference time
+    for (const Box &amp; b : boxes) {
+      if (b.score &lt; conf_thr_) {
+        continue;
+      }
+      const std::string name = class_name(b.class_id);
+      if (!passes_filter(name)) {
+        continue;
+      }
+      vision_msgs::msg::Detection2D det;
+      det.header = msg-&gt;header;
+      det.bbox.center.position.x = b.rect.x + b.rect.width / 2.0;
+      det.bbox.center.position.y = b.rect.y + b.rect.height / 2.0;
+      det.bbox.size_x = b.rect.width;
+      det.bbox.size_y = b.rect.height;
+      vision_msgs::msg::ObjectHypothesisWithPose hyp;
+      hyp.hypothesis.class_id = name;
+      hyp.hypothesis.score = b.score;
+      det.results.push_back(hyp);
+      arr.detections.push_back(det);
+    }
+    pub_-&gt;publish(arr);
+
+    RCLCPP_INFO_THROTTLE(this-&gt;get_logger(), *this-&gt;get_clock(), 2000,
+      "%zu det  %.1f ms  dropped=%zu", arr.detections.size(), ms, dropped_.load());
+  }
+
+  void run_test_image(const std::string &amp; path)
+  {
+    test_mode_ = true;
+    cv::Mat bgr = cv::imread(path);
+    if (bgr.empty()) {
+      RCLCPP_FATAL(this-&gt;get_logger(), "cannot read test_image '%s'", path.c_str());
+      throw std::runtime_error("test image");
+    }
+    cv::Mat rgb;
+    cv::cvtColor(bgr, rgb, cv::COLOR_BGR2RGB);
+    const auto boxes = backend_-&gt;infer(rgb);
+    RCLCPP_INFO(this-&gt;get_logger(), "test_image %s: %zu det", path.c_str(), boxes.size());
+    for (const Box &amp; b : boxes) {
+      if (b.score &lt; conf_thr_) {
+        continue;
+      }
+      RCLCPP_INFO(this-&gt;get_logger(), "  %-12s %.2f  x=%.0f y=%.0f w=%.0f h=%.0f",
+                  class_name(b.class_id).c_str(), b.score, b.rect.x, b.rect.y, b.rect.width, b.rect.height);
+    }
+  }
+
+  std::unique_ptr&lt;HailoBackend&gt; backend_;
+  std::vector&lt;std::string&gt; names_;
+  std::vector&lt;std::string&gt; class_filter_;
+  float conf_thr_{0.4f};
+  bool test_mode_{false};
+  std::atomic&lt;bool&gt; busy_{false};
+  std::atomic&lt;size_t&gt; dropped_{0};
+
+  image_transport::Subscriber sub_;
+  rclcpp::Publisher&lt;vision_msgs::msg::Detection2DArray&gt;::SharedPtr pub_;
+};
+
+int main(int argc, char ** argv)
+{
+  rclcpp::init(argc, argv);
+  auto node = std::make_shared&lt;HailoDetect&gt;();
+  if (!node-&gt;test_mode()) {
+    rclcpp::spin(node);
+  }
+  rclcpp::shutdown();
+  return 0;
+}</code></pre>
+<h3 id="s3-3">3-3. 빌드 <span class="tag cli">컨테이너</span></h3>
+<pre><code class="lang-bash">cd /ros2_ws
+colcon build --symlink-install --packages-select rpi5_hailo_detect --parallel-workers 2 \
+    --cmake-args -DCMAKE_BUILD_TYPE=Release
+source install/setup.bash</code></pre>
+<p><code>find_package(HailoRT …)</code> 에서 멈추면 컨테이너에 HailoRT 가 없거나 버전이 다른 것이다. C7 §3-5 로 돌아간다.</p>
+<h3 id="s3-4">3-4. 사진 한 장으로 먼저 <span class="tag cli">컨테이너</span></h3>
+<pre><code class="lang-bash">MODELS=$(ros2 pkg prefix rpi5_vision)/share/rpi5_vision/models
+ros2 run rpi5_hailo_detect hailo_detect --ros-args \
+    -p model_path:=/usr/share/hailo-models/yolov8s_h8.hef -p names_path:=$MODELS/coco.names \
+    -p test_image:=$MODELS/test.jpg
+#   [INFO] model loaded: /usr/share/hailo-models/yolov8s_h8.hef  input 640x640  classes 80
+#   [INFO] test_image .../test.jpg: 2 det
+#   [INFO]   person       0.91  x=208 y=92 w=186 h=426</code></pre>
+<p>C5 · C6 와 같은 물체가 비슷한 자리에 나오면 좌표 변환이 맞다. 모델이 다르므로(yolov8n 대 yolov8s) 점수와 좌표가 몇 픽셀 다른 것은 정상이다. 박스가 세로로 뭉개지거나 한쪽에 몰리면 §2-2 의 좌표 순서(y 먼저)와 정규화 해제를 의심한다.</p>
+<h3 id="s3-5">3-5. 카메라로 실행 <span class="tag cli">컨테이너</span> <span class="tag pi">Pi 호스트</span> <span class="tag mac">Mac</span></h3>
+<p>카메라 노드와 C6 의 그리기 노드를 띄운 상태에서 실행한다. C6 의 검출기는 끈다 — 둘 다 <code>/detections</code> 로 발행하면 결과가 섞인다.</p>
+<pre><code class="lang-bash">ros2 run rpi5_hailo_detect hailo_detect --ros-args \
+    -p model_path:=/usr/share/hailo-models/yolov8s_h8.hef -p names_path:=$MODELS/coco.names
+#   [INFO] 2 det  11.3 ms  dropped=0
+
+# 다른 터미널 (컨테이너)
+ros2 topic hz /detections                    # 카메라 fps 근처 (30)
+ros2 topic echo /detections --field header.stamp --once      # 입력 영상의 stamp 와 같다
+ros2 run rpi5_vision detection_overlay       # C6 의 노드 — 한 줄도 고치지 않았다
+
+# Pi 호스트 (다른 ssh)
+top -p $(pgrep -f hailo_detect)              # %CPU 가 50 아래여야 한다
+vcgencmd measure_temp                        # 70 ℃ 아래</code></pre>
+<p>Foxglove 의 <code>/stereo/left/annotated/compressed</code> 에서 박스가 사람을 실시간으로 따라가고, 왼쪽 위 <code>lag</code> 가 C6 때보다 크게 줄어든 것을 본다. Hailo 칩의 사용률은 호스트에서 <code>HAILO_MONITOR=1</code> 환경 변수를 노드에 주고 <code>hailortcli monitor</code> 를 실행하면 보인다.</p>
+<h3 id="s3-6">3-6. 비교 — 같은 장면, 두 검출기</h3>
+<p>카메라를 같은 자리에 두고 C6 의 <code>yolo_detector</code> 와 <code>hailo_detect</code> 를 번갈아 실행해 적는다.</p>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w26"><col class="w22"><col class="w24"><col class="w28"></colgroup>
+<thead><tr><th>측정값</th><th>yolo_detector (C6, CPU)</th><th>hailo_detect (C8, Hailo-8)</th><th>기대</th></tr></thead>
+<tbody>
+<tr><td><code>/detections</code> Hz</td><td>____</td><td>____</td><td>1 ~ 3 Hz(주기 330 ~ 1000 ms) → 30 Hz(33 ms)</td></tr>
+<tr><td>노드 CPU %</td><td>____</td><td>____</td><td>300 이상 → 50 아래</td></tr>
+<tr><td><code>lag</code> (ms)</td><td>____</td><td>____</td><td>수백 → 수십</td></tr>
+<tr><td>같은 장면의 검출 개수 · 종류</td><td>____</td><td>____</td><td>비슷하다. 차이는 모델(n 대 s)에서 온다</td></tr>
+<tr><td>온도 (℃)</td><td>____</td><td>____</td><td>70 아래</td></tr>
+</tbody></table></div>
+<h3 id="s3-7">3-7. 런치 파일 하나로 <span class="tag cli">컨테이너</span></h3>
+<p>카메라 + 검출기 + 그리기 노드를 한 번에 띄운다. 두 검출기를 같은 이름 <code>detector</code> 로 띄우므로 설정 파일 하나가 둘 다에 적용된다 — 파라미터 이름을 같게 맞춘 이유다. <code>rpi5_vision/config/detector.yaml</code>:</p>
+<pre><code class="lang-yaml">detector:                        # both detectors are launched with name 'detector'
+  ros__parameters:
+    conf_threshold: 0.4
+    nms_threshold: 0.5           # used by yolo_detector only (the HEF already did NMS)
+    input_size: 640              # used by yolo_detector only (hailo_detect reads the size from the HEF)
+    class_filter: [""]           # [""] = no filter. Example: ["person", "chair"]</code></pre>
+<p><code>rpi5_vision/launch/perception.launch.py</code>:</p>
+<pre><code class="lang-python">"""Camera + detector + overlay (camera guide C8).
+
+    ros2 launch rpi5_vision perception.launch.py                    # Hailo-8 detector (default)
+    ros2 launch rpi5_vision perception.launch.py detector:=yolo     # CPU detector (C6)
+    ros2 launch rpi5_vision perception.launch.py overlay:=false     # no drawing node (saves CPU)
+    ros2 launch rpi5_vision perception.launch.py hef:=/usr/share/hailo-models/other_h8.hef
+"""
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
+from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
+
+
+def generate_launch_description():
+    share = FindPackageShare('rpi5_vision')
+    camera_params = PathJoinSubstitution([share, 'config', 'camera.yaml'])
+    detector_params = PathJoinSubstitution([share, 'config', 'detector.yaml'])
+    names_path = PathJoinSubstitution([share, 'models', 'coco.names'])
+    onnx_path = PathJoinSubstitution([share, 'models', 'yolov8n.onnx'])
+    detector = LaunchConfiguration('detector')
+
+    return LaunchDescription([
+        DeclareLaunchArgument('detector', default_value='hailo', description='hailo | yolo'),
+        DeclareLaunchArgument('hef', default_value='/usr/share/hailo-models/yolov8s_h8.hef'),
+        DeclareLaunchArgument('overlay', default_value='true'),
+
+        Node(package='camera_ros', executable='camera_node', namespace='stereo', name='left',
+             output='screen', parameters=[camera_params]),
+
+        Node(package='rpi5_vision', executable='yolo_detector', name='detector', output='screen',
+             parameters=[detector_params, {'model_path': onnx_path, 'names_path': names_path}],
+             condition=IfCondition(PythonExpression(["'", detector, "' == 'yolo'"]))),
+
+        Node(package='rpi5_hailo_detect', executable='hailo_detect', name='detector', output='screen',
+             parameters=[detector_params, {'model_path': LaunchConfiguration('hef'), 'names_path': names_path}],
+             condition=IfCondition(PythonExpression(["'", detector, "' == 'hailo'"]))),
+
+        Node(package='rpi5_vision', executable='detection_overlay', name='detection_overlay', output='screen',
+             condition=IfCondition(LaunchConfiguration('overlay'))),
+    ])</code></pre>
+<pre><code class="lang-bash">cd /ros2_ws &amp;&amp; colcon build --symlink-install --packages-select rpi5_vision &amp;&amp; source install/setup.bash
+ros2 launch rpi5_vision perception.launch.py
+ros2 node list          # /stereo/left  /detector  /detection_overlay</code></pre>
+<h3 id="s3-8">3-8. 기록 <span class="tag mac">Mac</span></h3>
+<p><code>hardware/INVENTORY.md</code> 5절의 표에 적는다.</p>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w34"><col class="w66"></colgroup>
+<thead><tr><th>항목</th><th>값</th></tr></thead>
+<tbody>
+<tr><td>사용할 모델 (.hef)</td><td><code>yolov8s_h8.hef</code> (<code>hailo-models</code> 패키지가 설치한 파일)</td></tr>
+<tr><td>입력 해상도</td><td>640 × 640 (카메라 640 × 480 을 레터박스로)</td></tr>
+<tr><td>목표 / 실측 추론 FPS</td><td>카메라 fps(30) / ____</td></tr>
+<tr><td>HailoRT 버전 (호스트 = 컨테이너)</td><td>4.23.0</td></tr>
+</tbody></table></div>
+<h2 id="checkpoints">✅ 검증 체크포인트</h2>
+<p>직접 실행해서 확인한 것만 체크한다. 체크 기록은 이 브라우저에만 저장된다.</p>
+<ul class="checklist">
+  <li><label><input type="checkbox" data-key="c08-built-exact"><span><code>rpi5_hailo_detect</code> 가 <code>find_package(HailoRT 4.23.0 EXACT)</code> 로 빌드됐다<span class="sub">§3-3</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c08-test-image"><span><code>test_image</code> 로 실행한 결과가 C5 · C6 와 같은 물체 · 비슷한 자리다<span class="sub">§3-4</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c08-camera-fps"><span>카메라로 실행했을 때 <code>/detections</code> 가 카메라 fps 근처로 나온다<span class="sub">§3-5</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c08-stamp-is-capture"><span><code>header.stamp</code> 가 입력 영상의 시각과 같다<span class="sub">§3-5</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c08-cpu-under-50"><span>추론 중 노드의 CPU 사용률이 50 % 아래다<span class="sub">§3-5</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c08-overlay-unchanged"><span>C6 의 그리기 노드를 고치지 않고 박스가 그려지며 <code>lag</code> 가 줄었다<span class="sub">§3-5</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c08-compare-table"><span>§3-6 의 비교 표를 채웠다<span class="sub">§3-6</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c08-launch-works"><span><code>perception.launch.py</code> 로 세 노드가 뜨고 <code>detector:=yolo</code> 로 바꿔도 뜬다<span class="sub">§3-7</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c08-inventory"><span>INVENTORY 5절에 모델 · 입력 해상도 · 실측 fps 를 적었다<span class="sub">§3-8</span></span></label></li>
+</ul>
+<p class="progress-line"></p>
+<div class="progress-bar"><span></span></div>
+<h2 id="symptoms">증상과 원인</h2>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w30"><col class="w30"><col class="w40"></colgroup>
+<thead><tr><th>증상</th><th>원인</th><th>조치</th></tr></thead>
+<tbody>
+<tr><td>빌드가 <code>find_package(HailoRT …)</code> 에서 멈춘다</td><td>컨테이너에 HailoRT 가 없거나 버전이 다르다</td><td>C7 §3-5</td></tr>
+<tr><td><code>VDevice::create</code> 실패, "No Hailo device found"</td><td>호스트 · 컨테이너 버전 불일치, 장치 규칙, 권한</td><td>C7 §3-1 · §3-4 · §3-5 의 순서로 확인</td></tr>
+<tr><td><code>create_infer_model</code> 실패, "HEF file length does not match"</td><td>복사 중 잘린 파일, 또는 다른 칩(<code>_h8l</code>)용 파일</td><td><code>ls -l</code> 로 크기 확인. <code>identify</code> 의 칩과 파일 이름 끝을 맞춘다</td></tr>
+<tr><td>"output is not NMS by class"</td><td>다른 출력 형식의 모델</td><td><code>parse-hef</code> 로 확인. 이 가이드의 코드는 클래스별 목록만 읽는다</td></tr>
+<tr><td>박스가 세로로 뭉개지거나 한쪽에 몰린다</td><td>좌표 순서(y 먼저) · 정규화 해제 · 레터박스 역변환</td><td>§2-2 와 코드의 <code>parse_nms_by_class</code> 를 대조. <code>test_image</code> 로 먼저 본다</td></tr>
+<tr><td>검출이 하나도 없다</td><td>입력 색 순서, 또는 임계값이 너무 높다</td><td><code>toCvShare(msg, "rgb8")</code> 인지 확인. <code>conf_threshold:=0.2</code> 로 낮춰 본다</td></tr>
+<tr><td>CPU 가 여전히 높다</td><td>전처리(색 변환 · 리사이즈)가 병목</td><td>카메라 해상도를 낮추거나 <code>cv::INTER_NEAREST</code> 로. 백엔드보다 전처리 시간을 먼저 잰다</td></tr>
+<tr><td><code>/detections</code> 가 섞여서 깜빡인다</td><td>C6 의 검출기와 동시에 떠 있다</td><td>하나만 띄운다. 런치의 <code>detector:=</code> 인자로 고른다</td></tr>
+</tbody></table></div>
+<h2 id="quiz">🤔 이해 확인</h2>
+<p>이 쪽에서 설명한 내용만으로 답할 수 있다. 답을 펼치기 전에 먼저 말로 답해 본다.</p>
+<details class="quiz"><summary>1. 출력 버퍼의 최대 크기 160 320 바이트는 어떻게 나오는 숫자인가.</summary>
+  <div class="ans"><p>클래스 80 개 × (박스 개수 4 바이트 + 클래스당 최대 100 개 × 박스 20 바이트) = 80 × 2004 = 160 320 이다. 박스 하나는 float32 다섯 개(y_min, x_min, y_max, x_max, score)다. 실제로 채워지는 양은 검출 수에 따라 다르고, 코드는 클래스마다 count 를 읽어 그만큼만 읽는다.</p></div></details>
+<details class="quiz"><summary>2. Hailo 를 쓰는 목표가 fps 가 아니라 CPU 사용률인 이유는 무엇인가.</summary>
+  <div class="ans"><p>자율주행은 인지 · 지도 작성 · 경로 계획 · 제어가 동시에 실행되어야 한다. CPU 로 추론하면 4 코어가 포화되어 나머지가 CPU 시간을 얻지 못하고 전체가 멈춘다. 추론을 전용 칩으로 옮겨 CPU 를 나머지 일에 쓰는 것이 목표이고, fps 는 그 결과다.</p></div></details>
+<details class="quiz"><summary>3. 이 쪽에서 그리기 노드를 한 줄도 고치지 않은 것이 왜 중요한가.</summary>
+  <div class="ans"><p>토픽 이름 · 메시지 형식 · 파라미터 이름이 계약이고 검출기는 그 구현이기 때문이다. 소비자가 구현에 의존하지 않으므로 CPU 와 Hailo 를 런치 인자 하나로 바꿀 수 있고, 다른 가속기로 옮겨도 소비자는 그대로다.</p></div></details>
+<details class="quiz"><summary>4. C6 와 C8 의 검출 개수가 다르다. 임계값은 같게 맞췄다. 남는 원인은 무엇인가.</summary>
+  <div class="ans"><p>모델이 다르다 — C6 는 yolov8n(가장 작은 판), C8 은 yolov8s(더 큰 판)다. 더 큰 모델이 작은 물체를 더 찾는다. 같은 모델로 비교하려면 Mac 에서 yolov8s ONNX 를 내보내 C6 에 쓰거나, Hailo 용 yolov8n 모델 파일을 구해 C8 에 쓴다.</p></div></details>
+<h2 id="next">다음</h2>
+<div class="callout tip"><span class="ct">여기까지 했으면 — 이 가이드의 끝</span>
+<ul>
+  <li>카메라 영상이 토픽이 되고(C2), 보정값이 실리고(C3), OpenCV 로 가공되고(C4), YOLO 가 물체를 찾고(C6), 그 계산이 Hailo-8 로 옮겨졌다(C8). <code>perception.launch.py</code> 한 줄이 전부를 띄운다.</li>
+  <li>이어지는 것은 학습 단계 <a href="08d-tracking-fusion.html">08d</a> — <code>/detections</code> 에 번호를 붙여 따라가고(추적), 라이다와 합쳐 거리를 잰다. 08d 에서 C3 의 <code>camera_info</code> 가 쓰인다.</li>
+  <li>모델을 바꾸려면: CPU 쪽은 C5 를 다른 모델로 다시, Hailo 쪽은 Hailo-8 용 <code>.hef</code> 를 <code>/usr/share/hailo-models/</code> 에 두고 <code>hef:=</code> 인자로 준다. 출력이 "NMS by class" 인 yolov8 계열이면 코드는 그대로다.</li>
+</ul>
+</div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

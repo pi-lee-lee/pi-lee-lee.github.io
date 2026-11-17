@@ -21,6 +21,8 @@
       Mac 에서 Python(ultralytics)으로 <em>정답</em>을 확인하고 ONNX 를 내보낸 뒤, Pi 의 C++ 노드가 OpenCV DNN 으로 같은 모델을 실행해
       표준 메시지 <code>vision_msgs/Detection2DArray</code> 를 발행한다. Pi 5 의 CPU 라 느리지만, <strong>출력 텐서를 직접 해석해 본 사람만이</strong>
       08c 에서 Hailo 가 무엇을 대신해 주는지 안다.</p>
+      <p>ONNX 는 학습한 신경망을 프레임워크와 관계없이 담는 모델 파일 형식이다. OpenCV DNN 은 OpenCV 라이브러리의 신경망 추론 모듈이다.
+      Hailo 는 Pi 5 에 얹는 신경망 추론 가속 칩이다(08c).</p>
 
       <div class="goal">
         <span class="label">이 쪽이 끝나면 보이는 것</span>
@@ -34,7 +36,7 @@
       </div>
 
       <div class="meta">
-        <div><span class="k">그래프에서의 위치</span><code>detector</code> 상자(인지 계층) — <code>/camera/image_raw</code> → <code>/detections</code></div>
+        <div><span class="k">그래프에서의 위치</span><code>detector</code> 상자(인지 계층) — <code>/stereo/left/image_raw</code> → <code>/detections</code></div>
         <div><span class="k">전제</span>08a (<code>rpi5_vision</code> 패키지, <code>detection_overlay</code>)</div>
         <div><span class="k">예상 소요</span>5~8시간</div>
         <div><span class="k">언어</span><span class="tag cpp">C++</span> (OpenCV DNN, Pi) 주 · <span class="tag py">Python</span> (ultralytics, Mac) 보조</div>
@@ -43,7 +45,7 @@
       <h2>1. 개요 — 두 트랙, 하나의 인터페이스</h2>
       <pre class="diagram"><code>  Mac 트랙 (Python, ultralytics)                      Pi 트랙 (C++, OpenCV DNN)
   ─────────────────────────────                      ─────────────────────────────
-  yolov8n.pt 로 사진 한 장 검출  ← "정답"             /camera/image_raw
+  yolov8n.pt 로 사진 한 장 검출  ← "정답"             /stereo/left/image_raw
         │                                                   │
         ▼                                                   ▼
   ONNX 로 내보내기 (opset 12)   ──scp──►   yolo_detector: 레터박스 → 추론 → 후처리
@@ -52,14 +54,14 @@
   출력 shape 확인 [1,84,8400]                          /detections (vision_msgs/Detection2DArray)
                                                             │
                                                             ▼
-                                                   detection_overlay (08a) → /camera/annotated</code></pre>
+                                                   detection_overlay (08a) → /stereo/left/annotated</code></pre>
       <p>목표는 <strong>"무엇이 어디에 보이는가"를 표준 메시지로 발행하는 것</strong>이다. 그 메시지를 받는 쪽(overlay, 10 단계의 감독 노드)은 검출기가 CPU 에서 실행되는지 Hailo 에서 실행되는지 구분하지 않는다.
       08c 는 이 단계의 노드를 <em>같은 토픽·같은 메시지</em>로 실시간화하는 것뿐이다.</p>
       <div class="callout why"><span class="ct">왜 Python 트랙은 Mac 에서 하는가</span>
         <p>ultralytics 는 PyTorch 를 의존성으로 함께 설치한다. 컨테이너에 넣으면 이미지가 1 GB 이상 커지고, Pi 5 에서 torch 로 추론하면 어차피 CPU 검출기보다도 느리다.
         모델을 <em>고르고·확인하고·내보내는</em> 일은 Mac(또는 x86)이 빠르고, Pi 에는 <strong>결과물(.onnx)만</strong> 옮긴다. 커스텀 학습도 같은 이유로 Pi 밖에서 한다(부록 <a href="ref-yolo.html">C</a>).</p>
       </div>
-      <p><strong>Pi 5 CPU 에서 기대할 것:</strong> yolov8n 을 640 입력으로 실행하면 한 프레임에 수백 ms — 1~3 FPS 급이다. 주행용으로는 부족하지만 파이프라인(전처리·후처리·메시지·overlay)을 검증하기엔 충분하고,
+      <p><strong>Pi 5 CPU 에서 기대할 것:</strong> yolov8n 을 640 입력으로 실행하면 한 프레임에 수백 ms — 1~3 FPS(초당 처리 프레임 수) 급이다. 주행용으로는 부족하지만 파이프라인(전처리·후처리·메시지·overlay)을 검증하기엔 충분하고,
       <em>그 느림을 직접 재 보는 것</em>이 08c 의 동기가 된다. 실측값은 §3-4 에서 표에 적는다.</p>
 
       <h2>2. 원리 — 왜</h2>
@@ -76,7 +78,7 @@
           <tr><td>YOLO11 / YOLO26 …</td><td>—</td><td>ultralytics 의 후속 세대. API 는 같고 출력 형식이 다를 수 있다</td><td>이 페이지의 파서는 <em>출력 shape 를 먼저 로그로 확인하고</em> 맞춘다 (§3-2)</td></tr>
         </tbody>
       </table></div>
-      <p>기본 가중치는 <strong>COCO</strong> 데이터셋의 80 클래스(person, bicycle, car, …, chair, couch, potted plant, …)로 학습되어 있다. 실내 주행에 당장 필요한 것은 <code>person</code>, <code>chair</code>, <code>couch</code>, <code>dog</code>, <code>cat</code> 정도다.
+      <p>기본 가중치는 <strong>COCO</strong> 데이터셋(공개된 물체 검출용 사진 모음)의 80 클래스(person, bicycle, car, …, chair, couch, potted plant, …)로 학습되어 있다. 실내 주행에 당장 필요한 것은 <code>person</code>, <code>chair</code>, <code>couch</code>, <code>dog</code>, <code>cat</code> 정도다.
       전용 클래스(우리 집 문턱, 충전 독)가 필요해지면 그때 커스텀 학습을 한다 — 지금은 아니다.</p>
 
       <h3>2-2. 입력 전처리 — 레터박스와 좌표 복원</h3>
@@ -100,7 +102,7 @@
       <ul>
         <li>① 픽셀을 0~255 에서 0~1 로(<code>1/255</code>)</li>
         <li>② BGR→RGB 로(<code>swapRB</code>). 모델은 RGB 로 학습됐는데 카메라는 <code>bgr8</code> 로 보내고, <code>toCvShare(msg, "bgr8")</code> 은 이 bgr8 버퍼를 복사 없이 그대로 넘긴다(08a §2-2).</li>
-        <li>③ HWC → NCHW 배열 <code>[1, 3, 640, 640]</code> 로</li>
+        <li>③ HWC(높이·폭·채널 순) → NCHW(묶음·채널·높이·폭 순) 배열 <code>[1, 3, 640, 640]</code> 로</li>
       </ul>
       <p>채널 순서 변환을 <code>cv_bridge</code> 가 아니라 여기서 하는 이유는 복사를 한 번으로 끝내기 위해서다. 이 세 가지 중 하나만 틀려도 <strong>오류 없이 점수만 낮게</strong> 나온다 — 특히 <code>swapRB</code> 가 빠지면 모델이 빨강과 파랑이 바뀐 영상을 입력받아 점수가 조금씩 떨어지는데, 알아차리기 어렵다.</p>
 
@@ -135,15 +137,20 @@
       </table></div>
 
       <h3>2-5. 프레임 드롭 — 큐 1 + busy 플래그</h3>
-      <p>카메라 30 fps, 추론 300 ms. 들어오는 프레임을 <em>전부</em> 처리하려 하면 초당 27 장이 밀리고, 1분 뒤에는 <strong>30초 전 영상</strong>을 보고 판단한다. 주행 중이면 사고로 이어진다.</p>
+      <p>카메라 30 fps, 추론 300 ms 인 경우를 본다. 추론이 처리하는 양은 초당 1 ÷ 0.3 s ≈ 3.3 장이다. 들어오는 프레임을 <em>전부</em> 처리하려 하면 초당 30 − 3.3 ≈ 27 장이 밀린다.</p>
+      <ul>
+        <li>1분 뒤 밀린 양: (30 − 3.3) 장/s × 60 s ≈ 1600 장</li>
+        <li>그 1600 장이 덮는 촬영 시간: 1600 ÷ 30 fps ≈ 53 s</li>
+      </ul>
+      <p>그래서 1분 뒤에는 <strong>약 53초 전 영상</strong>을 보고 판단한다. 주행 중이면 사고로 이어진다.</p>
       <p>해법은 두 가지다. ① 구독 큐 깊이를 1 로 둔다 — 밀린 프레임은 DDS 층에서 버린다. ② 처리 중이면 콜백 진입 즉시 반환한다(<code>busy_</code>) — 영상 콜백을 Reentrant 그룹에 넣고 멀티스레드 실행기로 돌려도 두 추론이 겹치지 않는다. 기본 그룹은 MutuallyExclusive 라 그 전에는 원래 겹치지 않는다(부록 A §10).
       정석은 추론을 별도 스레드/콜백 그룹으로 분리해 다른 콜백(파라미터, 감시)이 계속 실행될 수 있게 하는 것이다 — 부록 <a href="ref-rclcpp.html">A</a> 의 <code>MultiThreadedExecutor</code>.</p>
 
       <h3>2-6. <code>header.stamp</code> 는 촬영 시각</h3>
-      <p>검출 메시지의 시각은 <strong>추론이 끝난 시각이 아니라 입력 이미지가 찍힌 시각</strong>이어야 한다. TF 는 "그 시각의 로봇 자세"를 조회한다. 추론에 300 ms 걸렸는데 완료 시각을 넣으면, 0.3 m/s 로 달리던 로봇은 검출된 사람의 위치를 <strong>9 cm 어긋난 곳</strong>으로 계산한다. 코드에서는 <code>arr.header = msg-&gt;header</code> 한 줄이다. 한 줄이지만 원리를 알고 써야 한다.</p>
+      <p>검출 메시지의 시각은 <strong>추론이 끝난 시각이 아니라 입력 이미지가 찍힌 시각</strong>이어야 한다. TF(ROS 의 좌표 변환 체계)는 "그 시각의 로봇 자세"를 조회한다. 추론에 300 ms 걸렸는데 완료 시각을 넣으면, 0.3 m/s 로 달리던 로봇은 검출된 사람의 위치를 <strong>9 cm 어긋난 곳</strong>으로 계산한다. 코드에서는 <code>arr.header = msg-&gt;header</code> 한 줄이다. 한 줄이지만 원리를 알고 써야 한다.</p>
 
       <h3>2-7. OpenCV 버전 — 추측하지 말고 로드해 보고 판단한다</h3>
-      <p>jammy(컨테이너)의 apt OpenCV 는 <strong>4.5.4</strong> 다. YOLOv8 ONNX 는 최신 opset 으로 내보내면 이 버전의 DNN 모듈이 지원하지 않는 연산자가 들어갈 수 있다. 그래서 내보낼 때 <code>opset=12, simplify=True, dynamic=False</code> 로 고정한다.
+      <p>jammy(컨테이너의 Ubuntu 판 이름)의 apt OpenCV 는 <strong>4.5.4</strong> 다. YOLOv8 ONNX 는 최신 opset(ONNX 연산자 집합의 판 번호)으로 내보내면 이 버전의 DNN 모듈이 지원하지 않는 연산자가 들어갈 수 있다. 그래서 내보낼 때 <code>opset=12, simplify=True, dynamic=False</code> 로 고정한다.
       그래도 <code>readNetFromONNX</code> 가 실패하면 그때 아래 표로 판단한다 — <em>먼저 로드해 보고 오류 문구로</em>. 미리 OpenCV 를 소스 빌드하는 것은 시간 낭비일 수 있다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>선택지</th><th>비용</th><th>고르는 기준</th></tr></thead>
@@ -164,7 +171,7 @@ pip install ultralytics onnxruntime         # torch 가 같이 들어온다 (수
 # Pi 에서 테스트 사진 한 장 가져오기 (08 단계에서 찍은 것, 사람이 있는 장면이 좋다)
 scp pi5:/tmp/test.jpg ~/yolo/test.jpg
 cd ~/yolo</code></pre>
-      <p>CLI 로 한 번:</p>
+      <p>명령줄 도구(CLI — ultralytics 가 설치하는 <code>yolo</code> 명령)로 한 번 실행한다:</p>
       <pre><code class="lang-bash">yolo predict model=yolov8n.pt source=test.jpg conf=0.25 save=True
 #   처음 실행 시 yolov8n.pt (약 6 MB) 를 내려받는다
 #   결과 이미지: runs/detect/predict/test.jpg  → open 으로 확인</code></pre>
@@ -304,8 +311,8 @@ public:
     auto qos = rmw_qos_profile_sensor_data;   // BEST_EFFORT + VOLATILE …
     qos.depth = 1;                            // … 그리고 큐는 1: 처리 못 한 프레임은 버린다 (§2-5)
     sub_ = image_transport::create_subscription(
-      this, "/camera/image_raw",
-      std::bind(&amp;YoloDetector::on_image, this, std::placeholders::_1), "raw", qos);
+      this, "/stereo/left/image_raw",
+      [this](const sensor_msgs::msg::Image::ConstSharedPtr &amp; msg) { on_image(msg); }, "raw", qos);
   }
 
 private:
@@ -456,7 +463,7 @@ int main(int argc, char ** argv)
         <ul>
           <li><code>out.reshape(1, 84).t()</code> — 3차원 <code>cv::Mat</code> 을 2차원(84×8400)으로 보고 전치한다. <code>.t()</code> 는 새 행렬을 만든다(복사). 8400×84 float = 2.7 MB, 프레임당 한 번이라 괜찮다.</li>
           <li><code>cv::Mat scores(1, num_classes, CV_32F, ptr)</code> — 외부 버퍼를 <em>가리키는</em> Mat. 복사가 없다. 8400 번 반복되는 곳이라 중요하다.</li>
-          <li><p><code>busy_</code> 를 false 로 되돌리는 <code>return</code> 경로가 세 곳이다. 하나라도 빠뜨리면 노드가 <strong>계속 busy</strong> 상태로 남는다. 이런 실수를 막으려고 C++ 에서 RAII(스코프 가드)를 쓴다.</p>
+          <li><p><code>busy_</code> 를 false 로 되돌리는 <code>return</code> 경로가 세 곳이다. 하나라도 빠뜨리면 노드가 <strong>계속 busy</strong> 상태로 남는다. 이런 실수를 막으려고 C++ 에서 RAII 를 쓴다. RAII 는 정리 작업을 객체의 소멸자에 맡기는 기법이고, 스코프 가드가 그 예다.</p>
           <p><code>// TODO(you):</code> 소멸자에서 <code>busy_ = false</code> 를 되돌리는 작은 가드 구조체로 바꿔 보십시오.</p></li>
           <li>결과 박스가 화면 밖으로 나갈 수 있다(음수 좌표). overlay 는 그려도 문제없지만, 10 단계에서 "화면 중앙 1/3 안에 사람" 같은 판정을 할 때는 <code>cv::Rect &amp; cv::Rect(0,0,w,h)</code> 로 잘라야 한다.</li>
         </ul>
@@ -487,10 +494,15 @@ ls $(ros2 pkg prefix rpi5_vision)/share/rpi5_vision/models/      # yolov8n.onnx 
 ros2 run rpi5_vision yolo_detector --ros-args \
     -p model_path:=$MODELS/yolov8n.onnx \
     -p names_path:=$MODELS/coco.names</code></pre>
-      <p>첫 두 줄의 로그가 이 단계의 첫 체크포인트다.</p>
+      <p>첫 두 줄의 로그가 이 단계의 첫 체크포인트다. 셋째 줄의 <code>dropped</code> 는 이 실행 방식에서 0 이다.</p>
+      <ul>
+        <li><code>rclcpp::spin</code> 은 단일 스레드 실행기이고 영상 콜백은 기본(MutuallyExclusive) 그룹이라, <code>busy_</code> 가 true 인 동안 콜백이 다시 들어오지 않는다(§2-5).</li>
+        <li>밀린 프레임은 큐 깊이 1 에서 DDS 층이 버린다. 이 카운터에는 더해지지 않는다.</li>
+        <li>영상 콜백을 Reentrant 그룹에 넣고 <code>MultiThreadedExecutor</code> 로 돌릴 때만 0 이 아닌 값이 나온다.</li>
+      </ul>
       <pre class="diagram"><code>[INFO] [yolo_detector]: model loaded: .../yolov8n.onnx (80 classes, input 640, OpenCV 4.5.4)
 [INFO] [yolo_detector]: output dims=3 shape=[1 x 84 x 8400]          ← Mac 에서 본 것과 같은가?
-[INFO] [yolo_detector]: 2 det (37 before NMS)  412 ms  dropped=11     ← 2초마다</code></pre>
+[INFO] [yolo_detector]: 2 det (37 before NMS)  412 ms  dropped=0      ← 2초마다</code></pre>
       <div class="tbl"><table class="compact">
         <thead><tr><th>로드 실패 문구</th><th>뜻</th><th>조치</th></tr></thead>
         <tbody>
@@ -505,7 +517,7 @@ ros2 run rpi5_vision yolo_detector --ros-args \
       <pre><code class="lang-bash">ros2 topic hz /detections                    # 2~3 Hz 면 정상 (느린 것이 정상이다)
 ros2 topic echo /detections --once           # detections[0].bbox.center.position.x … results[0].hypothesis.class_id
 ros2 topic info /detections -v               # 발행자 QoS BEST_EFFORT, depth 1</code></pre>
-      <p>08a 의 overlay 를 실행하고 Foxglove 에서 <code>/camera/annotated</code> 를 본다.</p>
+      <p>08a 의 overlay 를 실행하고 Foxglove 에서 <code>/stereo/left/annotated</code> 를 본다.</p>
       <pre><code class="lang-bash">ros2 run rpi5_vision detection_overlay</code></pre>
       <p>카메라 앞을 걸어 보십시오. 박스가 <strong>사람보다 조금 늦게</strong> 따라온다. 화면 왼쪽 위의 <code>lag</code> 가 그 지연이다 — 추론 시간 + 프레임 간격. 이 숫자를 기억해 두면 08c 가 무엇을 바꾸는지 확인할 수 있다.</p>
       <pre><code class="lang-bash"># person 만 남기기 (10 단계의 감독 노드가 쓸 형태)
@@ -572,7 +584,7 @@ for i in np.array(keep).flatten():                          # 버전에 따라 [
 
       <h3>3-6. 런치는 아직 만들지 않는다</h3>
       <p>지금은 <code>ros2 run</code> 으로 실행한다. 카메라·검출기·overlay 를 한 번에 실행하는 <code>rpi5_bringup/launch/perception.launch.py</code> 는 <a href="10-autonomy.html">10 단계</a>에서 계층화된 런치를 설계하면서 직접 만든다.
-      그때 <code>model_path</code> 같은 파라미터가 왜 YAML 로 가야 하는지(03 §2-6) 다시 다룬다.</p>
+      그때 <code>model_path</code> 같은 파라미터가 왜 YAML(설정 값을 적는 글자 파일 형식)로 가야 하는지(03 §2-6) 다시 다룬다.</p>
 
       <h2>✅ 검증 체크포인트</h2>
       <ul class="checklist">
@@ -580,12 +592,12 @@ for i in np.array(keep).flatten():                          # 버전에 따라 [
         <li><label><input type="checkbox" data-key="cp1"><span>Mac: <code>opset=12, simplify=True, dynamic=False</code> 로 <code>yolov8n.onnx</code> 를 내보냈다</span></label></li>
         <li><label><input type="checkbox" data-key="cp2"><span>Mac: onnxruntime 으로 입력 <code>[1, 3, 640, 640]</code> / 출력 <code>[1, 84, 8400]</code> 을 확인했다 (다르면 그 값을 적어 두었다)</span></label></li>
         <li><label><input type="checkbox" data-key="cp3"><span><code>coco.names</code> 가 80 줄이고, <code>.onnx</code> 와 함께 <code>rpi5_vision/models/</code> 로 Pi 에 동기화됐다 (<code>*.onnx</code> 는 <code>.gitignore</code>)</span></label></li>
-        <li><label><input type="checkbox" data-key="cp4"><span>Pi: <code>ros2 topic echo /camera/image_raw --field encoding --once</code> 가 <code>bgr8</code> 임을 확인했다. <code>bgr8</code> 이어야 <code>toCvShare(msg, "bgr8")</code> 이 복사 없이 공유되고 <code>swap_rb:=true</code> 가 맞다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp4"><span>Pi: <code>ros2 topic echo /stereo/left/image_raw --field encoding --once</code> 가 <code>bgr8</code> 임을 확인했다. <code>bgr8</code> 이어야 <code>toCvShare(msg, "bgr8")</code> 이 복사 없이 공유되고 <code>swap_rb:=true</code> 가 맞다</span></label></li>
         <li><label><input type="checkbox" data-key="cp5"><span>Pi: <code>yolo_detector</code> 가 Release 로 빌드되고 <code>model loaded</code> 로그에 OpenCV 버전이 출력된다</span></label></li>
         <li><label><input type="checkbox" data-key="cp6"><span>Pi: 첫 프레임의 <code>output shape</code> 로그가 Mac 에서 본 shape 와 같다</span></label></li>
         <li><label><input type="checkbox" data-key="cp7"><span><code>ros2 topic hz /detections</code> 가 값을 보인다. <code>ros2 topic echo /detections --once</code> 에서 <code>results[0].hypothesis.class_id</code> 와 <code>bbox.center.position</code> 경로를 확인했다</span></label></li>
         <li><label><input type="checkbox" data-key="cp8"><span><code>ros2 topic echo /detections --field header.stamp --once</code> 의 시각이 추론 완료 시각이 아니라 입력 이미지의 stamp 와 같다</span></label></li>
-        <li><label><input type="checkbox" data-key="cp9"><span>Foxglove <code>/camera/annotated</code> 에서 사람이 지나가면 박스가 따라오고, <code>lag</code> 값을 기록했다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp9"><span>Foxglove <code>/stereo/left/annotated</code> 에서 사람이 지나가면 박스가 따라오고, <code>lag</code> 값을 기록했다</span></label></li>
         <li><label><input type="checkbox" data-key="cp10"><span><code>class_filter:="[person]"</code> 으로 사람만 남는 것을 확인했다</span></label></li>
         <li><label><input type="checkbox" data-key="cp11"><span>§3-4 의 표(640 vs 320: ms, Hz, CPU, 3 m 사람)를 실측으로 채웠다</span></label></li>
         <li><label><input type="checkbox" data-key="cp12"><span><code>top</code> 으로 검출 중 CPU 가 어느 정도 포화되는지 봤고, 이 포화가 08c 가 필요한 이유임을 설명할 수 있다</span></label></li>
@@ -619,6 +631,15 @@ for i in np.array(keep).flatten():                          # 버전에 따라 [
       <details class="quiz"><summary>8. <code>conf_threshold</code> 를 0.05 로 내리면 추론 시간은 그대로인데 왜 전체 처리 시간이 늘어나는가?</summary>
         <div class="ans">신경망 추론(<code>forward</code>) 시간은 입력 크기로만 정해진다. 그러나 점수 필터를 통과하는 후보가 수십 배 늘어 NMS 입력이 커지고, NMS 의 계산량은 후보 수의 대략 제곱으로 늘어난다.
         로그의 <code>before NMS</code> 개수와 ms 를 같이 보면 확인된다.</div></details>
+
+      <div class="callout tip"><span class="ct">다음 행선지</span>
+        <p><strong>번호순 다음은 <a href="08c-hailo.html">08c · Hailo-8 가속</a></strong>이다. 08c 는 이 쪽의 노드를 같은 토픽(<code>/detections</code>) · 같은 메시지로 Hailo 칩에서 실행하는 C++ 노드로 바꾼다. 같은 내용의 Python 판은 <a href="08c-1-hailo-python.html">08c-1</a>이다.</p>
+        <ul>
+          <li><strong>08c 의 시작 조건</strong> — 01 §3-4 의 <code>hailo-all</code> 설치와 데모 성공, 02 §2-5 의 버전 고정(호스트 드라이버와 컨테이너 HailoRT 가 같은 버전)이다. §3-4 의 표(640 vs 320)는 08c 와 비교할 기준이므로 먼저 채운다.</li>
+          <li><strong>ONNX 로드가 OpenCV 4.5.4 에서 계속 실패하면</strong> — §3-3 표대로 08c 로 먼저 넘어가도 된다. Hailo 는 ONNX 를 쓰지 않는다.</li>
+          <li><strong>주행 쪽을 먼저 가고 싶다면</strong> — 09 는 08 계열을 전제로 하지 않는다. 다만 09 앞에는 <a href="09a-assembly-gate.html">09a</a>가 있고, 09a 앞에 <a href="06b-bench-integration.html">06b</a>(실물 MCU 벤치 통합)가 있다.</li>
+        </ul>
+      </div>
 
       <div class="pager"></div>
     </div>

@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F20c · 회전 속도 되먹임 — MCU 펌웨어 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="fw-20c">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">F20c · 회전 속도 되먹임</p>
+      <h1>바퀴 속도가 아니라 차체의 회전을 맞춘다</h1>
+      <p class="lead">fw-20 묶음(<a href="fw-20a-route-gain-traction.html">fw-20a</a> · <a href="fw-20b-slope-mix.html">fw-20b</a> · <a href="fw-20c-yaw-rate.html">fw-20c</a> · <a href="fw-20d-roll.html">fw-20d</a> · <a href="fw-20e-thresholds.html">fw-20e</a>)의 셋째 쪽이다. 차체의 <strong>회전 속도</strong>를 재서 좌우 목표를 고치는 층(실습 H)을 만든다 — 한 바퀴가 걸리거나 미끄러져도 차체는 명령한 만큼만 돈다.
+      Mac 의 호스트 시험으로 <code>yaw.h</code> · <code>attitude.h</code> 를 먼저 채우고, 그다음 바닥과 판자 둔덕에서 출력 제어 프레임 0x85 로 확인한다.</p>
+
+      <div class="goal">
+        <span class="label">이 쪽이 끝나면 보이는 것</span>
+        <p>이 쪽이 끝나면 다음이 보인다.</p>
+        <ul>
+          <li>판자 둔덕에 한쪽 바퀴만 올라가는 직진에서 <code>yaw on</code> 이 <code>yaw off</code> 보다 <strong>끝 방향 오차와 옆 밀림이 작고</strong>, 0x85 의 Δ 와 적분 몫이 둔덕에서 섰다가 지난 뒤 0 으로 돌아온다.</li>
+        </ul>
+        <p><strong>이 쪽에 필요한 것</strong></p>
+        <ul>
+          <li><strong>조립된 차체</strong> · <strong>배터리</strong> · <strong>평평한 바닥</strong> · <strong>판자 둔덕</strong> · Pi(0x85 를 받아 본다) · Mac</li>
+          <li><a href="fw-20b-slope-mix.html">fw-20b</a> 의 실습 G 를 마친 펌웨어</li>
+        </ul>
+        <p><strong>없으면</strong></p>
+        <ul>
+          <li>호스트 시험(<code>test_yaw.c</code> · <code>test_attitude.c</code>)은 Mac 만으로 끝난다.</li>
+        </ul>
+      </div>
+
+      <div class="meta">
+        <div><span class="k">환경</span><span class="tag mac">Mac</span> <span class="tag asm">조립 후</span> <span class="tag power">모터 전원</span></div>
+        <div><span class="k">선행</span><a href="fw-20b-slope-mix.html">fw-20b</a> — 실제로 쓰는 것: 실습 G 의 경사 층과 루프 순서. 그리고 <a href="fw-20a-route-gain-traction.html">fw-20a</a> 의 <code>TRACK_WIDTH_MM</code></div>
+        <div><span class="k">소요</span>예상 ____ h · 실제로 걸린 시간 ____ h <span class="small">(이 쪽은 입력을 저장하지 못한다 — 노트에 적는다)</span></div>
+      </div>
+
+      <h2 id="overview">1. 개요 — 차체가 명령한 만큼만 돌게 한다</h2>
+      <p>바퀴 속도 PID 는 바퀴마다 목표를 맞출 뿐, 한 바퀴가 걸리거나 미끄러져 차체가 틀어지는 것은 보지 못한다. 이 쪽은 자이로로 차체의 수직축 회전 속도를 재고, 명령한 회전 속도와의 차이를 좌우 목표에 Δ 로 더하는 고리를 만든다.
+      롤 · 피치가 있는 바닥에서도 수직축 회전을 바르게 읽도록 자세 추정(<code>attitude.h</code>)을 함께 넣고, 이 층이 한 일을 출력 제어 프레임 0x85 로 Pi 에 보낸다.</p>
+      <p>새로 쓰는 코드는 <code>yaw.h</code> · <code>attitude.h</code> 와 <code>control.c</code> 의 한 층 · 스냅숏 · CLI 다. 묶음 전체의 순서는 <a href="fw-20a-route-gain-traction.html#overview">fw-20a §1</a> 에 있다.</p>
+      <h2 id="why">2. 원리 — 회전 속도 고리와 자세 추정</h2>
+      <h3 id="s2-11">2-11. 회전 속도 되먹임 — 바퀴 속도가 아니라 차체 회전을 맞춘다</h3>
+      <p><strong>회전 속도 되먹임</strong>은 좌우 목표 속도가 뜻하는 회전 속도를 자이로로 잰 차체의 실제 회전 속도와 견주고, 그 차이만큼 좌우 목표에 반대로 보정을 더하는 층이다. 쓰는 곳은 1 kHz 루프의 목표 정리 뒤, 바퀴 반복 앞이다. 실습 H(<a href="#s3-h">§3-H</a>)가 만든다.</p>
+      <p>바퀴 PID 넷은 <strong>바퀴마다 속도</strong>만 맞춘다. 차체가 어느 쪽을 보고 있는지는 모른다. 그래서 다음 경우에는 네 바퀴가 다 목표 속도로 돌아도 차체가 돈다.</p>
+      <ul>
+        <li><strong>한 바퀴가 무언가에 걸린다</strong> — 그 바퀴가 순간 느려지는 동안 반대쪽이 앞서 나가 차체가 틀어진다. PID 가 바퀴 속도를 되찾아도 틀어진 각은 남는다.</li>
+        <li><strong>한쪽 바퀴만 둔덕에 오른다</strong> — 서스펜션이 없는 강체 섀시라 대각 위치의 바퀴 하중이 빠진다. 하중이 빠진 바퀴는 같은 속도로 돌아도 땅을 덜 민다.</li>
+        <li><strong>짐이 한쪽으로 쏠린다</strong> — 무거운 쪽 바퀴가 더 큰 힘을 써야 같은 속도가 나온다. 쏠림은 가속도계에 나타나지 않는다(가속도계는 움직임만 잰다).</li>
+        <li><strong>완만하게 회전한다</strong> — 스키드 스티어는 바퀴를 옆으로 끌며 돌기 때문에, 바퀴 속도로 계산한 것보다 덜 돈다.</li>
+      </ul>
+      <pre><code class="lang-text">ω_명령 = (v_R − v_L) / W                 W = 유효 트랙 폭(슬립 억제와 같은 TRACK_WIDTH_MM)
+e      = ω_명령 − (ψ' − 치우침)          [deg/s], 반시계가 +   ψ' = 수직축(중력 축) 회전 속도 — ④
+Δ      = kp · e  +  ki · ∫e dt
+v_L'   = v_L − Δ/2,   v_R' = v_R + Δ/2    평균(전진 성분)은 바뀌지 않는다</code></pre>
+      <ul>
+        <li><strong>P 몫</strong> — 지금 생기고 있는 회전에 맞선다. 틀어지는 양을 줄이지만, 이미 틀어진 각은 되돌리지 않는다.</li>
+        <li><strong>I 몫</strong> — <code>∫e dt</code> 는 "명령한 방향 변화 − 실제 방향 변화", 곧 <strong>방향 오차</strong>다. 걸려서 0.5 초 동안 10 °/s 로 틀어지면 적분은 −5° 가 되고, 걸림이 끝나 오차가 0 이 돼도 <code>ki × (−5°)</code> 가 남아 <strong>틀어진 각만큼 되돌린다</strong>. 되돌아가는 동안 반대 오차가 쌓여 적분이 0 으로 돌아온다(§3-H-3 의 벡터 5).</li>
+        <li><strong>평균을 바꾸지 않는다</strong> — 보정을 좌우에 반대로 나누므로 전진 속도는 명령 그대로다. 이 층은 방향만 다룬다.</li>
+      </ul>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w18"><col class="w20"><col class="w30"><col class="w32"></colgroup>
+        <thead><tr><th>고리</th><th>주기</th><th>맞추는 것</th><th>모르는 것</th></tr></thead>
+        <tbody>
+          <tr><td>안쪽 — 이 층(MCU)</td><td>1 kHz</td><td>회전 속도, 그리고 적분 상한 안의 방향 오차</td><td>옆으로 밀린 거리, 지도 위의 위치</td></tr>
+          <tr><td>바깥 — Pi(Nav2 · EKF · AMCL)</td><td>10 ~ 20 Hz</td><td>위치와 방향을 경로에 맞춘다</td><td>1 ms 단위의 틀어짐</td></tr>
+        </tbody>
+      </table></div>
+      <p>안쪽 고리가 틀어짐을 빨리 잡으므로 옆으로 밀리는 거리 자체가 작아지고, 남은 위치 오차는 바깥 고리가 경로로 되돌린다.</p>
+
+      <h4 id="s2-11-1">① 슬립 억제와의 관계 — 상충이 아니라 순서</h4>
+      <p>슬립 억제(<a href="fw-20a-route-gain-traction.html#s2-2">fw-20a §2-2</a>)는 <strong>바퀴 하나</strong>가 땅을 잡고 있는지 보고 헛도는 바퀴의 출력을 줄인다. 회전 속도 되먹임은 <strong>차체 전체</strong>가 명령만큼 도는지 보고 좌우 목표를 고친다. 평소(접지가 충분할 때)에는 슬립 억제가 쉬고 이 층은 작은 보정만 한다.</p>
+      <p>둘이 엇갈리는 것은 명령한 회전이 바닥 마찰로 낼 수 있는 것보다 클 때 한 경우다: 이 층이 좌우 차이를 키우고 → 바퀴가 미끄러지고 → 슬립 억제가 출력을 줄이고 → 이 층이 차이를 더 키운다. 그때 맞는 답은 "덜 도는 것을 받아들인다"이다. 그래서 <strong>슬립 억제가 어느 바퀴든 출력을 줄이는 동안 이 층은 적분을 멈추고</strong>, Δ 는 상한 안에 둔다. 남은 방향 오차는 바퀴가 다시 접지한 뒤 이어서 되돌리거나 바깥 고리가 맡는다.</p>
+
+      <h4 id="s2-11-2">② 치우침 · 불감대 · 끄는 조건</h4>
+      <ul>
+        <li><strong>치우침</strong> — 자이로는 멈춰 있어도 0 이 아닌 값을 낸다. 그 값이 남으면 적분이 그것까지 쌓아 방향이 천천히 흐른다. 그래서 목표 둘이 0 이고 네 바퀴가 멈춘 상태가 <code>YAW_STILL_MS</code> 이어질 때마다 치우침을 저역 통과로 다시 잰다. 멈춘 직후는 차체가 흔들리므로 그 시간만큼 건너뛴다.</li>
+        <li><strong>불감대</strong> — 치우침을 빼고도 남는 잡음 폭보다 작은 오차는 P 몫에서 0 으로 본다. Δ 가 잡음에 떨지 않게 한다. 적분에는 쓰지 않는다 — 적분이 불감대보다 느린 틀어짐까지 쌓아야 원래 방향으로 돌아온다. 잡음은 평균이 0 이라 적분에서 거의 지워지고, 남는 것은 치우침이다(위 줄).</li>
+        <li><strong>끄는 조건</strong> — 꺼짐(<code>yaw off</code>) · 명령 워치독 정지 · ARMED 아님 · 지난 틱의 안전 조건 · IMU 샘플 끊김(<code>IMU_TIMEOUT_MS</code>) · 목표 둘이 0. 이때 Δ = 0 이고 적분을 버린다. 멈추라는 명령에서 적분을 버리므로, 다음 출발은 그때의 방향을 새 기준으로 삼는다.</li>
+      </ul>
+      <div class="callout warn"><span class="ct">받침대(바퀴를 띄운 상태)에서는 켜지 않는다</span>
+        <p>바퀴가 공중에 있으면 차체가 돌지 않으므로 <code>ω_자이로</code> 는 늘 0 이다. 회전 명령이 오면 오차가 줄지 않아 적분이 상한까지 차고, Δ 가 상한에 붙어 좌우 차이가 명령보다 훨씬 커진다. 그래서 부팅하면 이 층은 <strong>늘 꺼져 있고</strong>, 켜는 것은 바닥에 내린 뒤의 CLI <code>yaw on</code> 이다(RAM, 다시 부팅하면 꺼짐).</p>
+      </div>
+
+      <h4 id="s2-11-3">③ 출력 제어 프레임 0x85 — MCU 가 바꾼 것을 Pi 가 본다</h4>
+      <p>Pi 는 명령(0x01)과 결과(0x81 엔코더 · 0x82 IMU)만 본다. MCU 안에서 출력을 바꾸는 층 — 이 층, 슬립 억제, 경사 가중치, 주행 불가 가공, 버팀 — 이 이번 틱에 무엇을 했는지는 보이지 않는다. 그래서 실습 H 는 계약에 <code>TYPE_CTRL</code> (0x85) 를 더한다.<sup class="fn"><a href="#fn-1" id="fnref-1">1</a></sup> 50 Hz 로 바퀴별 최종 목표 · 듀티 · PID 몫 · 가중치 · 슬립 억제 계수와 이 층의 명령 · 수직축 회전 속도(④) · 치우침 · Δ · 적분 몫 · 플래그, 그리고 실습 I 가 채우는 들림 여유와 그 변을 싣는다(<a href="06a-mcu-protocol.html">06a</a> §4-2 의 표). 브리지는 이것을 <code>/mcu/control</code> 로 내고(<a href="06-mcu-bridge.html">06</a> §3-4), probe 는 0.5 초에 한 줄씩 찍는다. 링크 여유가 문제될 때는 <code>link ctrl off</code> 로 끈다. 460800 bps 에서 링크 사용률은 14 % 에서 20 % 가 된다(06a 의 대역폭 계산).</p>
+
+      <h4 id="s2-11-4">④ 기울어진 차체에서는 z 자이로가 수직축 회전이 아니다 — 자세 추정과 수직축 회전 속도</h4>
+      <p><strong>수직축 회전 속도</strong> ψ' 는 중력 방향을 축으로 차체가 도는 속도, 곧 지도 위에서 방향이 바뀌는 속도다. 차체가 평평하면 z 자이로와 같다. 롤 φ · 피치 θ 가 있으면 자이로의 y 축(q)과 z 축(r)이 섞여 들어온다.</p>
+      <pre><code class="lang-text">ψ' = (q · sinφ + r · cosφ) / cosθ          p q r = 차체 x(앞) · y(왼쪽) · z(위) 축 자이로
+예: 롤 20° 로 기운 채 수직축으로 30 °/s → r = 30 × cos20° = 28.2 °/s, ψ' = 30.0 °/s</code></pre>
+      <p>그래서 φ · θ 가 필요하다. 이 값은 <code>attitude.h</code> 의 <strong>상보 필터</strong>가 낸다.<sup class="fn"><a href="#fn-2" id="fnref-2">2</a></sup></p>
+      <ul>
+        <li><strong>자이로로 이어 간다</strong> — 샘플마다 φ · θ 를 각속도로 적분한다. 충격에도 흔들리지 않지만, 자이로 치우침만큼 천천히 흐른다.</li>
+        <li><strong>가속도로 천천히 바로잡는다</strong> — 멈춰 있거나 일정하게 움직일 때 가속도계는 중력 방향을 가리킨다. 그 방향의 롤 · 피치 쪽으로 시간 상수 <code>ATT_TAU_MS</code> 만큼 천천히 끌어온다. 흐름을 지우는 쪽이다.</li>
+        <li><strong>가속도 크기가 1 g 에서 멀면 바로잡기를 줄인다</strong> — 판자 쐐기에 부딪힐 때 · 급가감속 때 가속도계는 중력이 아닌 방향을 가리킨다. 크기가 <code>ATT_ACC_DEV_LO</code> 안이면 가중치 1, <code>ATT_ACC_DEV_HI</code> 밖이면 0, 사이는 직선이다. 그 순간은 자이로로만 이어 간다.</li>
+      </ul>
+      <p>시뮬레이터(Gazebo, 한쪽 바퀴만 5 cm 판자를 넘는 직진, 방향 유지 없음, 끔 / 켬 각 3 회 평균)에서 잰 값이다. 가상봇의 크기는 아직 자리 채움값이다(바퀴 반지름 3.25 cm 가 판자 5 cm 보다 작아 롤이 약 20° 까지 튄다) — 실제 로봇의 수치가 아니라 방식 사이의 비교로 읽는다.</p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w28"><col class="w18"><col class="w18"><col class="w18"><col class="w18"></colgroup>
+        <thead><tr><th>회전 속도 원천</th><th>방향 최대 [°]</th><th>방향 최종 [°]</th><th>옆 밀림 최종 [mm]</th><th>적분한 방향 − 정답 [°]</th></tr></thead>
+        <tbody>
+          <tr><td>끔(되먹임 없음)</td><td>4.23</td><td>1.86</td><td>58</td><td>—</td></tr>
+          <tr><td>z 자이로</td><td>3.98</td><td>2.76</td><td>188</td><td>3.28</td></tr>
+          <tr><td><strong>수직축 회전 속도</strong></td><td><strong>2.90</strong></td><td><strong>0.20</strong></td><td><strong>37</strong></td><td><strong>0.04</strong></td></tr>
+          <tr><td>수직축 + 충격 순간 적분 멈춤</td><td>2.84</td><td>0.80</td><td>76</td><td>0.07</td></tr>
+        </tbody>
+      </table></div>
+      <ul>
+        <li>z 자이로로 적분한 방향은 정답에서 약 3° 벗어났다. I 몫은 그 틀린 방향 오차를 0 으로 돌려놓으므로, 켰을 때 오히려 더 틀어졌다.</li>
+        <li>수직축 회전 속도로 적분한 방향은 정답과 0.1° 안이고, 켰을 때 최종 방향 오차와 옆 밀림이 가장 작다.</li>
+        <li>충격 순간 적분을 멈추는 것을 더해도 나아지지 않았다 — 측정이 이미 맞으므로 멈추면 되돌리는 힘만 줄어든다. 그래서 쓰지 않는다(충격 판정은 관측용으로만 남긴다).</li>
+        <li>평지 직진 · 곡선 · 제자리 회전에서 나빠지지 않았다. 곡선(명령 138°)은 끔 118° → 켬 138°, 제자리 회전(명령 229°)은 끔 194° → 켬 224° 로 명령에 가까워졌다.</li>
+      </ul>
+      <p>WT901 도 자체 융합 각도(0x53)를 낸다. 이 펌웨어는 그 프레임을 받지만 벤치 관찰용 변수에만 두고 <code>imu_sample_t</code> 로는 넘기지 않는다. 쓰려면 샘플 구조체 · 더블 버퍼 · 축 변환을 더해야 하고, 모듈 안의 융합 방식(충격 때 가속도를 어떻게 다루는지)은 공개돼 있지 않아 시뮬레이터로 확인할 수 없다. 그래서 동작을 시험으로 확인한 상보 필터를 쓴다.<sup class="fn"><a href="#fn-3" id="fnref-3">3</a></sup></p>
+
+      <h2 id="lab">3. 실습</h2>
+      <p>실습 H 는 바닥(09a 세팅 D)에서, fw-20b 의 실습 G 뒤에 한다. 호스트 시험은 차체가 없는 날 Mac 에서 먼저 해 둔다.</p>
+      <div class="callout tip"><span class="ct">채울 자리마다 힌트 카드가 있다 — 읽는 순서</span>
+        <p>골격의 채울 자리에는 <code>TODO(you) [T1]</code> 처럼 번호가 붙어 있고(이 쪽은 T1 ~ T4 — <code>yaw.h</code> · <code>control.c</code>), 그 주석 안에 <strong>번호 걸음</strong>이 있다. 먼저 걸음을 보고 직접 써 본다.
+        막히면 "직접 채우기" 절(§3-H-3)에서 같은 번호의 <strong>힌트 카드</strong>를 연다. 카드에는 그 자리의 <strong>완결 코드</strong>와, 그 코드를 <strong>줄마다 풀어 쓴 설명</strong>이 있다. 칸은 언제나 같다: 할 일 · 완결 코드 · 코드 설명 · 쓰는 API · 흔한 실수 · 확인.</p>
+        <p>Mac 의 호스트 시험은 <code>PASS yaw 38 cases</code> · <code>PASS attitude 17 cases</code> 이고, <code>-fsanitize=undefined,address</code> 를 붙여도 경고와 오류가 없다. <code>arm-none-eabi-gcc</code> 컴파일(<code>-c -Wall -Wextra</code>)은 경고 0 이다. T1 · T2 는 <strong>순수 파일</strong>이라 보드 없이 Mac 에서 끝까지 채점된다. T3 · T4 는 펌웨어 빌드와 보드의 관찰로 확인한다.</p>
+        <p>붙여 넣는 것으로 끝내지 않는다 — 설명을 읽고 <strong>줄마다 "왜 이 줄이 여기 있는가"</strong>를 말할 수 있게 된 뒤, 카드를 접고 직접 친다.</p>
+      </div>
+
+      <h3 id="s3-h">3-H. 실습 H — 회전 속도 되먹임: Mac 에서 먼저, 그다음 바닥 · 판자 둔덕 <span class="tag mac">Mac</span> <span class="tag asm">조립 후</span> <span class="tag power">모터 전원</span></h3>
+      <p>실습 G 뒤, 실습 D 앞에 한다. 이 층이 좌우 목표를 고치므로, 목표와 듀티의 관계 위에 긋는 실습 D 의 보호 문턱은 그 뒤에 긋는다. 원리는 <a href="#s2-11">§2-11</a> 이다.</p>
+      <ul>
+        <li><strong>Mac 에서 끝나는 것</strong> — <code>yaw.h</code> · <code>attitude.h</code> 와 호스트 시험, 그리고 출력 제어 프레임 0x85 의 채점 벡터. 저장소의 <code>firmware/</code> 에는 <code>yaw.h</code> · <code>test_yaw.c</code> · <code>attitude.h</code> · <code>test_attitude.c</code> 의 완결판과 0x85 를 보내는 <code>frames.h</code> · <code>comm_frame.c</code> · <code>control.h</code> 가 이미 들어 있다. 직접 써 보려면 <code>yaw.h</code> 를 아래 골격으로 바꿔 놓고 채운다.</li>
+        <li><strong>보드에서 하는 것</strong> — <code>robot_params.h</code> 의 키, <code>control.c</code> 의 층 · 스냅숏 · CLI. 키는 <code>YAW_ENABLE 0</code> 으로 시작하므로 넣는 즉시 빌드되고, 동작은 이 실습 전과 같다. <code>YAW_ENABLE 1</code> 로 구워도 부팅하면 고리는 꺼져 있다 — 켜는 것은 바닥에서의 <code>yaw on</code> 이다.</li>
+      </ul>
+      <div class="callout warn"><span class="ct">STOP — 실습 H 의 입구 조건 (fw-20a §3-2 의 목록에 더한다)</span>
+        <ol>
+          <li><strong><code>TRACK_WIDTH_MM</code> 이 <code>MEASURED(</code> 다</strong> — 실습 C 와 같은 조건, 같은 <code>grep</code> 으로 확인한다(<a href="fw-20a-route-gain-traction.html#s3-3-3">fw-20a §3-3-3</a> 의 4번). 이 층의 <code>ω_명령</code> 이 이 폭으로 계산된다.</li>
+          <li><strong>09a 의 회전 부호 항목이 통과돼 있다</strong> — 반시계 회전에서 + 가 되는 자이로 축과 부호를 <code>IMU_GY_YAW</code> 에 옮긴다(<a href="fw-20a-route-gain-traction.html#s2-7">fw-20a §2-7</a>). 부호가 틀리면 보정이 틀어짐을 키운다. 자세 추정은 차체 세 축이 다 필요하다 — 실습 G 의 <code>IMU_AX_FWD</code> · <code>IMU_AX_UP</code> · <code>IMU_GY_PITCH</code> 에 더해 왼쪽 가속도 축(<code>IMU_AX_LEFT</code>)과 롤 각속도 축(<code>IMU_GY_ROLL</code>)을 09a 의 IMU 축 항목과 같은 방법(차체를 왼쪽 · 오른쪽으로 기울여 본다)으로 정한다.</li>
+          <li><strong>실습 C · G 가 끝났다</strong> — 이 층은 실습 G 의 루프 순서(<a href="fw-20b-slope-mix.html#hint-t8">힌트 T8(fw-20b)</a>)에 끼워 넣고, 실습 C 의 슬립 억제 계수로 적분을 멈춘다.</li>
+          <li><strong>Pi 에서 0x85 를 볼 수 있다</strong> — <code>mcu_probe.py</code> 를 돌리거나, 브리지(<a href="06-mcu-bridge.html">06</a>)의 <code>/mcu/control</code> 을 Foxglove 그래프로 연다.</li>
+          <li><strong>판자 둔덕</strong> — 높이 약 5 cm, 길이 1 m 쯤의 판자(또는 같은 높이의 띠). 한쪽 바퀴만 올라가도록 직진 경로 옆에 놓는다. 넓은 바닥(직진 3 m 이상).</li>
+          <li>fw-20a §3-2 의 STOP 열한 항목이 <strong>그대로 참</strong>이다.</li>
+        </ol>
+      </div>
+
+      <h4 id="s3-h-1">3-H-1. 빈 표 — 재는 값</h4>
+      <p>각 줄에 <strong>잰 값</strong>과 <strong>정한 값</strong>을 따로 적는다. 게인의 시작값은 계산으로 잡고, 바닥 시험(§3-H-4)으로 고친다.<sup class="fn"><a href="#fn-4" id="fnref-4">4</a></sup></p>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w24"><col class="w44"><col class="w16"><col class="w16"></colgroup>
+        <thead><tr><th>키</th><th>재는 법</th><th>잰 값</th><th>정한 값</th></tr></thead>
+        <tbody>
+          <tr><td><code>IMU_GY_YAW</code></td><td>09a 회전 부호 항목의 결과 — 반시계 회전에서 + 가 되는 자이로 축과 부호(±1 x · ±2 y · ±3 z)</td><td>____</td><td>____</td></tr>
+          <tr><td><code>IMU_GY_ROLL</code> · <code>IMU_AX_LEFT</code></td><td>차체 오른쪽을 내리며(오른쪽이 내려가는 쪽이 롤 +) 어느 자이로 축이 + 가 되는지, 같은 자세(오른쪽이 내려가고 왼쪽이 들림)에서 어느 가속도 축이 + 가 되는지(±1 x · ±2 y · ±3 z) — 가속도계는 중력의 반대 방향(비력)을 재므로, 들린 쪽을 가리키는 축이 + 를 읽는다</td><td>____</td><td>____</td></tr>
+          <tr><td><code>ATT_TAU_MS</code></td><td>고르는 값 — 정지한 채 <code>wt</code> 의 자이로 치우침(°/s) × 시간 상수 [s] 가 허용할 자세 오차(°)보다 작게. 시뮬레이터 시작값 1000</td><td>치우침 ____ °/s</td><td>____</td></tr>
+          <tr><td><code>ATT_ACC_DEV_LO_MILLI</code> · <code>ATT_ACC_DEV_HI_MILLI</code></td><td>평지 정속 주행 중 가속도 크기가 1 g 에서 벗어나는 폭보다 LO 를 넓게, 판자 쐐기 충격의 폭보다 HI 를 좁게. 시뮬레이터 시작값 50 · 300</td><td>정속 ____ · 충격 ____</td><td>____</td></tr>
+          <tr><td><code>YAW_STILL_MS</code></td><td>바닥에서 멈춘 직후 <code>wt</code> 의 <code>gz</code> 가 가라앉기까지의 시간 위</td><td>____ ms</td><td>____</td></tr>
+          <tr><td><code>YAW_BIAS_ALPHA_MILLI</code></td><td>고르는 값 — 클수록 치우침을 빨리 따라가고, 작을수록 잡음에 덜 흔들린다. 1 kHz 에서 1 이면 시간 상수 약 1 초</td><td>—</td><td>____</td></tr>
+          <tr><td><code>YAW_DEADBAND_CDPS</code></td><td>정지한 채 <code>yaw</code> 의 <code>rate_ddps</code>(치우침을 뺀 수직축 회전 속도)가 흔들리는 폭의 최댓값 위</td><td>____</td><td>____</td></tr>
+          <tr><td><code>YAW_KP_MILLI</code></td><td>시작 = (W × π ÷ 180) 의 절반 — 회전 속도 오차 1 °/s 를 메우는 좌우 차이의 절반. 판자 둔덕 시험에서 올리고 내린다</td><td>W ____ mm</td><td>____</td></tr>
+          <tr><td><code>YAW_KI_MILLI</code></td><td>시작 = 방향 오차 5° 에서 Δ 가 20 mm/s 쯤 되는 값(4000). 둔덕 뒤 되돌아오는 시간을 보고 고친다</td><td>—</td><td>____</td></tr>
+          <tr><td><code>YAW_I_MAX_DDEG</code></td><td>고르는 값 — 되돌려 줄 최대 방향 오차. 그보다 큰 틀어짐은 Pi 가 경로로 되돌린다</td><td>—</td><td>____</td></tr>
+          <tr><td><code>YAW_DELTA_MAX_MM_S</code></td><td>고르는 값 — 슬립 억제가 뜨지 않는 범위의 좌우 차이. 06b 의 <code>max_angular_vel</code> × W ÷ 2 보다 작게</td><td>—</td><td>____</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4 id="s3-h-2">3-H-2. 골격</h4>
+      <p><code>robot_params.h</code> 에 더하는 블록이다(전량). <code>YAW_ENABLE</code> 이 0 인 동안은 가드가 빈칸을 막지 않는다 — 1 로 바꾸는 순간 빈칸이 있으면 빌드가 멈춘다.</p>
+      <pre><code class="lang-c">/* robot_params.h - 이 블록을 파일 끝(#endif 가 있으면 그 앞)에 더한다. 다른 키는 그대로 둔다. */
+/* ---- fw-20 실습 H: 회전 속도 되먹임. YAW_ENABLE 0 이면 층이 빠진다 = Δ 0 · yaw on 거절 - 이 실습 전과 같다.
+ *      값을 다 재고 나서 1 로 바꾼다. 1 이어도 부팅하면 고리는 꺼져 있고, 켜는 것은 CLI 의 yaw on 이다(RAM).
+ *      W 는 슬립 억제와 같은 TRACK_WIDTH_MM 을 쓴다 ---- */
+#define YAW_ENABLE              0     /* ____ 0 = 층 없음, 1 = 층 있음(켜기는 yaw on) */
+#define IMU_GY_YAW              0     /* ____ 요 각속도(위에서 볼 때 반시계가 +) = WT901 의 어느 자이로 축 (±1 x · ±2 y · ±3 z) */
+#define IMU_GY_ROLL             0     /* ____ 롤 각속도(오른쪽이 내려가는 쪽이 +) = WT901 의 어느 자이로 축 */
+#define IMU_AX_LEFT             0     /* ____ 차체 왼쪽방향 가속도(왼쪽이 들리면 +) = WT901 의 어느 축 - 실습 G 의 IMU_AX_FWD · IMU_AX_UP 과 함께 쓴다 */
+#define ATT_TAU_MS              0     /* ____ 자세 추정: 가속도로 바로잡는 시간 상수 [ms] */
+#define ATT_ACC_DEV_LO_MILLI    0     /* ____ 자세 추정: 가속도 크기가 1 g 에서 이만큼 안이면 바로잡기 가중치 1 [0.001 g] */
+#define ATT_ACC_DEV_HI_MILLI    0     /* ____ 자세 추정: 이만큼 밖이면 가중치 0 - 충격 · 가감속 중에는 자이로로만 이어 간다 [0.001 g] */
+#define YAW_KP_MILLI            0     /* ____ 비례 [0.001 (mm/s)/(deg/s)] */
+#define YAW_KI_MILLI            0     /* ____ 적분 [0.001 (mm/s)/deg] */
+#define YAW_I_MAX_DDEG          0     /* ____ 기억하는 방향 오차의 상한 [0.1 deg] */
+#define YAW_DELTA_MAX_MM_S      0     /* ____ 좌우 보정 Δ 의 상한 [mm/s] */
+#define YAW_DEADBAND_CDPS       0     /* ____ 이보다 작은 회전 속도 오차는 0 으로 본다 [0.01 deg/s] */
+#define YAW_BIAS_ALPHA_MILLI    0     /* ____ 정지 중 치우침 저역 통과 계수 [0.001] (1 ~ 1000) */
+#define YAW_STILL_MS            0     /* ____ 정지가 이만큼 이어져야 치우침을 잰다 [ms] */</code></pre>
+      <p><code>control.c</code> 의 가드 블록이다(전량). 실습 G 의 가드 블록 다음에 둔다.</p>
+      <pre><code class="lang-c">/* ---- fw-20 실습 H: 회전 속도 되먹임의 키 가드. YAW_ENABLE 1 일 때만 빈칸을 막는다 ---- */
+_Static_assert((YAW_ENABLE) == 0 || (YAW_ENABLE) == 1, "robot_params.h: YAW_ENABLE must be 0 or 1");
+_Static_assert(!(YAW_ENABLE) || (TRACK_WIDTH_MM) &gt; 0, "robot_params.h: YAW needs TRACK_WIDTH_MM (lab C)");
+_Static_assert(!(YAW_ENABLE) || ((IMU_GY_YAW) != 0 &amp;&amp; (IMU_GY_YAW) &gt;= -3 &amp;&amp; (IMU_GY_YAW) &lt;= 3), "robot_params.h: IMU_GY_YAW is still EMPTY or out of range");
+_Static_assert(!(YAW_ENABLE) || ((IMU_GY_ROLL) != 0 &amp;&amp; (IMU_GY_ROLL) &gt;= -3 &amp;&amp; (IMU_GY_ROLL) &lt;= 3), "robot_params.h: IMU_GY_ROLL is still EMPTY or out of range");
+_Static_assert(!(YAW_ENABLE) || ((IMU_AX_LEFT) != 0 &amp;&amp; (IMU_AX_LEFT) &gt;= -3 &amp;&amp; (IMU_AX_LEFT) &lt;= 3), "robot_params.h: IMU_AX_LEFT is still EMPTY or out of range");
+_Static_assert(!(YAW_ENABLE) || ((ATT_TAU_MS) &gt; 0 &amp;&amp; (ATT_ACC_DEV_LO_MILLI) &gt; 0 &amp;&amp; (ATT_ACC_DEV_HI_MILLI) &gt; (ATT_ACC_DEV_LO_MILLI)), "robot_params.h: ATT_* is still EMPTY or LO &gt;= HI");
+_Static_assert(!(YAW_ENABLE) || ((YAW_KP_MILLI) &gt; 0 &amp;&amp; (YAW_KI_MILLI) &gt; 0), "robot_params.h: YAW_KP/KI_MILLI is still EMPTY");
+_Static_assert(!(YAW_ENABLE) || ((YAW_I_MAX_DDEG) &gt; 0 &amp;&amp; (YAW_DELTA_MAX_MM_S) &gt; 0), "robot_params.h: YAW_I_MAX_DDEG / YAW_DELTA_MAX_MM_S is still EMPTY");
+_Static_assert(!(YAW_ENABLE) || (YAW_DEADBAND_CDPS) &gt; 0, "robot_params.h: YAW_DEADBAND_CDPS is still EMPTY");
+_Static_assert(!(YAW_ENABLE) || ((YAW_BIAS_ALPHA_MILLI) &gt; 0 &amp;&amp; (YAW_BIAS_ALPHA_MILLI) &lt;= 1000), "robot_params.h: YAW_BIAS_ALPHA_MILLI is still EMPTY or out of range");
+_Static_assert(!(YAW_ENABLE) || (YAW_STILL_MS) &gt; 0, "robot_params.h: YAW_STILL_MS is still EMPTY");</code></pre>
+      <pre><code class="lang-text">(YAW_ENABLE 1 로 바꾸고 키를 비워 둔 채 빌드하면 이렇게 멈춘다 - arm-none-eabi-gcc 의 실제 메시지다:
+control.c: error: static assertion failed: "robot_params.h: IMU_GY_YAW is still EMPTY or out of range"
+control.c: error: static assertion failed: "robot_params.h: YAW_KP/KI_MILLI is still EMPTY")</code></pre>
+      <p><code>User/Inc/Control/yaw.h</code> — 골격(채울 자리 T1 · T2). 나머지 함수는 전량이다.</p>
+      <pre><code class="lang-c">/* User/Inc/Control/yaw.h - 회전 속도 되먹임: 좌우 목표 속도로 명령한 회전 속도를 자이로로 잰 차체 회전 속도에 맞춘다.
+ * 순수: HAL 도 robot_params.h 도 없다 - 값은 전부 cfg 구조체로 들어온다(slope.h · mix.h 와 같은 꼴).
+ * host_tests/test_yaw.c 가 이 .h 하나만으로 Mac 에서 빌드된다. 쓰는 곳은 control_step_1khz() 의 명령 가공 뒤 · 바퀴 반복 앞이다(fw-20).
+ *
+ *   ω_명령 = (v_R - v_L) / W                    W = 유효 트랙 폭(슬립 억제와 같은 TRACK_WIDTH_MM)
+ *   e      = ω_명령 - (ω_측정 - 치우침)         [deg/s], REP-103: 반시계가 +
+ *            ω_측정 = 수직축(중력 축) 회전 속도 - attitude.h 의 att_yaw_rate_dps(). 기울어진 차체의 z 자이로가 아니다
+ *   Δ      = kp · e + ki · ∫e dt                ∫e 는 "명령한 방향 변화 - 실제 방향 변화" = 방향 오차 [deg]
+ *   v_L'   = v_L - Δ/2,  v_R' = v_R + Δ/2       평균 속도(전진 성분)는 바뀌지 않는다
+ * P 몫은 지금 생기는 회전에 맞서고, I 몫은 이미 틀어진 각도를 기억해 그만큼 되돌린다.
+ * 끄는 조건(꺼짐 · ARMED 아님 · 안전 조건 · IMU 끊김 · 명령 워치독 · 정지)은 호출자가 enable 로 넘긴다 - 꺼지면 Δ = 0, 적분 리셋.
+ * 슬립 억제가 동작하는 동안은 freeze_i 로 적분만 멈춘다(슬립 억제가 우선 - 마찰 한계 이상으로 밀지 않는다). */
+#ifndef YAW_H
+#define YAW_H
+#include &lt;stdint.h&gt;
+#include &lt;stdbool.h&gt;
+
+#define YAW_RAD2DEG  57.29577951f
+
+typedef struct {
+  float    w_mm;            /* 유효 트랙 폭 W [mm]. 0 이하 = 모름 -&gt; 고리는 늘 Δ = 0 */
+  float    kp;              /* 비례 [(mm/s) / (deg/s)] */
+  float    ki;              /* 적분 [(mm/s) / deg] - ∫e 의 단위가 deg 다 */
+  float    i_max_deg;       /* 기억하는 방향 오차의 상한 [deg] - 큰 오차를 한 번에 되돌리려 급회전하지 않게 */
+  float    delta_max_mm_s;  /* Δ 의 상한 [mm/s] - 접지를 잃은 바퀴를 끝없이 밀지 않게 */
+  float    deadband_dps;    /* |e| 가 이보다 작으면 P 몫을 0 으로 본다 [deg/s] - 자이로 잡음에 Δ 가 떨지 않게. 적분에는 쓰지 않는다 */
+  float    bias_alpha;      /* 정지 중 치우침 저역 통과 계수 (0..1] */
+  uint32_t still_ms;        /* 정지가 이만큼 이어져야 치우침을 잰다 [ms] - 멈춘 직후의 흔들림을 빼려고 */
+  uint32_t imu_timeout_ms;  /* IMU seq 가 이만큼 그대로면 끊긴 것으로 본다 [ms] */
+} yaw_cfg_t;
+
+typedef struct {
+  float    i_deg;           /* ∫e = 기억하는 방향 오차 [deg] */
+  float    bias_dps;        /* 자이로 치우침 [deg/s] */
+  uint32_t still_cnt_ms;    /* 정지가 이어진 시간 */
+  uint16_t last_seq;        /* 마지막으로 본 IMU seq */
+  uint32_t seq_age_ms;      /* seq 가 그대로인 시간 */
+  /* 관측용(원격 측정 0x84) - 마지막 yaw_step() 의 값 */
+  float    cmd_dps;         /* ω_명령 */
+  float    rate_dps;        /* ω_측정(수직축 회전 속도) - 치우침 */
+  float    delta_mm_s;      /* Δ */
+  bool     enabled;         /* 이번 틱에 고리가 돌았는가 */
+  bool     saturated;       /* Δ 가 상한에 걸렸는가 */
+  bool     frozen;          /* 적분을 멈췄는가 */
+} yaw_t;
+
+static inline float yaw_absf(float x) { return (x &lt; 0.0f) ? -x : x; }   /* libm 없이 */
+
+static inline void yaw_reset(yaw_t *y)   /* 적분만 버린다. 치우침 · seq 감시는 남긴다 */
+{
+  y-&gt;i_deg = 0.0f; y-&gt;delta_mm_s = 0.0f; y-&gt;saturated = false; y-&gt;frozen = false; y-&gt;enabled = false;
+}
+
+/* 좌우 목표 [mm/s] -&gt; 명령 회전 속도 [deg/s]. W 를 모르면 0 */
+static inline float yaw_cmd_dps(const yaw_cfg_t *c, float vl_mm_s, float vr_mm_s)
+{
+  if (c-&gt;w_mm &lt;= 0.0f) { return 0.0f; }
+  return (vr_mm_s - vl_mm_s) / c-&gt;w_mm * YAW_RAD2DEG;
+}
+
+/* IMU 끊김 감시. 틱마다 부른다. seq 가 바뀌면 나이를 0 으로, 0(샘플 없음)이거나 그대로면 나이를 올린다.
+ * 반환: 살아 있으면 true */
+static inline bool yaw_imu_fresh(yaw_t *y, const yaw_cfg_t *c, uint16_t seq, uint32_t dt_ms)
+{
+  if (seq != 0u &amp;&amp; seq != y-&gt;last_seq) { y-&gt;last_seq = seq; y-&gt;seq_age_ms = 0u; }
+  else if (y-&gt;seq_age_ms &lt; 0xFFFF0000u) { y-&gt;seq_age_ms += dt_ms; }
+  return (seq != 0u) &amp;&amp; (y-&gt;seq_age_ms &lt; c-&gt;imu_timeout_ms);
+}
+
+/* 정지 중 치우침 추정. still = 네 바퀴 목표 · 측정이 모두 0 인가(호출자가 판정).
+ * 정지가 still_ms 이어진 뒤부터만 저역 통과로 따라간다. 움직이면 셈을 처음부터 */
+static inline void yaw_bias_step(yaw_t *y, const yaw_cfg_t *c, float gyro_dps, bool still, uint32_t dt_ms)
+{
+  /* TODO(you) [T2]: 정지 중 치우침 추정 - 힌트 T2
+   *   1) still 이 아니면 still_cnt_ms = 0 으로 하고 끝낸다
+   *   2) still_cnt_ms 가 still_ms 보다 작으면 dt_ms 를 더하고 끝낸다 - 멈춘 직후의 흔들림을 건너뛴다
+   *   3) 그 뒤로는 bias_dps += bias_alpha * (gyro_dps - bias_dps) */
+  (void)y; (void)c; (void)gyro_dps; (void)still; (void)dt_ms;
+}
+
+/* 고리 한 틱. 반환 = Δ [mm/s].
+ * enable == false 면 Δ = 0 이고 적분을 버린다. freeze_i == true 면 P 는 계속, 적분만 멈춘다.
+ * 포화 중에는 Δ 를 더 키우는 쪽으로 적분하지 않는다(조건부 적분 - 와인드업 방지) */
+static inline float yaw_step(yaw_t *y, const yaw_cfg_t *c, float cmd_dps, float gyro_dps,
+                             bool enable, bool freeze_i, float dt_s)
+{
+  /* TODO(you) [T1]: 고리 한 틱 - 힌트 T1
+   *   1) y-&gt;cmd_dps 와 y-&gt;rate_dps(= 자이로 - 치우침)를 남긴다 - 꺼져 있어도 관측값은 남긴다
+   *   2) enable 이 거짓이거나 W 를 모르면(c-&gt;w_mm &lt;= 0) yaw_reset(y) 하고 0 을 돌려준다
+   *   3) y-&gt;enabled = true, y-&gt;frozen = freeze_i
+   *   4) e = 명령 - rate. P 몫에 쓸 e_p 는 |e| 가 불감대보다 작으면 0, 아니면 e (적분은 e 를 그대로)
+   *   5) 적분 전의 값을 i_prev 에 두고, freeze_i 가 아니면 i_deg += e * dt_s 를 ±i_max_deg 로 자른다
+   *   6) d = kp * e + ki * i_deg. 상한 밖이면 saturated = true, e 와 d 가 같은 쪽이면 i_deg = i_prev, d 를 상한으로
+   *   7) delta_mm_s 에 d 를 남기고 돌려준다 */
+  (void)y; (void)c; (void)cmd_dps; (void)gyro_dps; (void)enable; (void)freeze_i; (void)dt_s;
+  return 0.0f;
+}
+
+static inline int16_t yaw_sat16(float v)   /* 반올림 + int16 범위로 자름 */
+{
+  v += (v &gt;= 0.0f) ? 0.5f : -0.5f;
+  if (v &gt;  32767.0f) { return  32767; }
+  if (v &lt; -32768.0f) { return -32768; }
+  return (int16_t)v;
+}
+
+/* Δ 를 좌우에 반대로 나눠 더한다. 평균은 그대로 */
+static inline void yaw_apply(float delta_mm_s, int16_t *vl, int16_t *vr)
+{
+  const float l = (float)*vl - 0.5f * delta_mm_s;
+  const float r = (float)*vr + 0.5f * delta_mm_s;
+  *vl = yaw_sat16(l);
+  *vr = yaw_sat16(r);
+}
+
+#endif /* YAW_H */</code></pre>
+      <p><code>User/Inc/Control/attitude.h</code> — 전량(채울 자리 없음). 원리는 <a href="#s2-11-4">§2-11 ④</a>. 그대로 옮겨 적고, 아래 호스트 시험으로 확인한다.</p>
+      <pre><code class="lang-c">/* User/Inc/Control/attitude.h - 롤 · 피치 자세 추정(상보 필터)과 수직축(중력 축) 회전 속도. 순수: HAL 도 robot_params.h 도 없다.
+ * host_tests/test_attitude.c 가 이 .h 하나만으로 Mac 에서 빌드된다. 쓰는 곳은 회전 속도 되먹임(yaw.h)의 측정값이다(fw-20 실습 H).
+ *
+ * 차체 축: x 앞 · y 왼쪽 · z 위(REP-103). 자이로 p q r = x y z 축 각속도, 가속도계 = 비력(정지면 z 에 +1 g).
+ *   자세 이어 가기(오일러 ZYX):  φ' = p + (q·sinφ + r·cosφ)·tanθ,   θ' = q·cosφ − r·sinφ
+ *   가속도로 바로잡기:           φ_a = atan2(f_y, f_z),   θ_a = atan2(−f_x, √(f_y² + f_z²))
+ *                               φ += k·w·(φ_a − φ),  k = dt / (τ + dt),  w = 가속도 크기가 1 g 에 가까울수록 1, 멀면 0
+ *   수직축 회전 속도:            ψ' = (q·sinφ + r·cosφ) / cosθ
+ * 기울어진 차체에서 z 자이로(r)는 수직축 회전이 아니다 - 롤 · 피치가 있으면 q 와 r 이 섞인다. ψ' 가 "지도 위에서 방향이 바뀌는 속도"다.
+ * 가속도 가중치 w: 충격 · 가감속 중에는 가속도계가 중력 방향을 가리키지 않는다. 그 순간 바로잡기를 줄이고 자이로로만 이어 간다.
+ * 충격 판정: 가속도 크기 편차 또는 롤 · 피치 각속도가 문턱을 넘으면 hold_ms 동안 shock = true - 회전 되먹임의 적분을 멈추는 데 쓴다. */
+#ifndef ATTITUDE_H
+#define ATTITUDE_H
+#include &lt;stdint.h&gt;
+#include &lt;stdbool.h&gt;
+#include &lt;math.h&gt;
+
+#define ATT_DEG2RAD  0.017453292519943f
+#define ATT_RAD2DEG  57.29577951308232f
+
+typedef struct {
+  float    tau_s;           /* 가속도 바로잡기의 시간 상수 [s] - 길수록 충격에 덜 흔들리고, 짧을수록 자이로 치우침을 빨리 지운다 */
+  float    acc_dev_lo;      /* |a|/g − 1 의 절댓값이 이보다 작으면 가중치 1 */
+  float    acc_dev_hi;      /* 이보다 크면 가중치 0 (사이는 직선) */
+  float    shock_dev;       /* 충격 판정: 가속도 크기 편차 문턱 */
+  float    shock_rate_dps;  /* 충격 판정: 롤 · 피치 각속도(|p| 또는 |q|) 문턱 [deg/s] */
+  uint32_t shock_hold_ms;   /* 충격이 끝난 뒤에도 이만큼 shock 을 유지 [ms] */
+} att_cfg_t;
+
+typedef struct {
+  float    roll_rad, pitch_rad;   /* 추정 자세 */
+  bool     init;                  /* 첫 샘플에서 가속도로 바로 맞춘다 */
+  float    acc_w;                 /* 마지막 가속도 가중치 (관측용) */
+  bool     shock;                 /* 충격 중 (hold 포함) */
+  uint32_t shock_left_ms;
+} att_t;
+
+static inline float att_clampf(float x, float lo, float hi) { return (x &lt; lo) ? lo : ((x &gt; hi) ? hi : x); }
+
+static inline float att_wrap(float a)   /* (−π, π] */
+{
+  while (a &gt;   3.14159265f) { a -= 6.28318531f; }
+  while (a &lt;= -3.14159265f) { a += 6.28318531f; }
+  return a;
+}
+
+/* 한 샘플. 자이로 [deg/s], 가속도 [어떤 단위든, g_ref 와 같은 단위 - mg 면 1000], dt [s], dt_ms [ms].
+ * 가속도가 0(샘플 없음)이면 자이로로만 이어 간다 */
+static inline void att_step(att_t *a, const att_cfg_t *c, float p_dps, float q_dps, float r_dps,
+                            float fx, float fy, float fz, float g_ref, float dt, uint32_t dt_ms)
+{
+  const float p = p_dps * ATT_DEG2RAD, q = q_dps * ATT_DEG2RAD, r = r_dps * ATT_DEG2RAD;
+  const float n = sqrtf(fx * fx + fy * fy + fz * fz);
+  const float dev = (g_ref &gt; 0.0f &amp;&amp; n &gt; 0.0f) ? fabsf(n / g_ref - 1.0f) : 1.0f;
+  const float ra = atan2f(fy, fz);
+  const float pa = atan2f(-fx, sqrtf(fy * fy + fz * fz));
+  if (!a-&gt;init) {
+    if (n &lt;= 0.0f) { return; }
+    a-&gt;roll_rad = ra; a-&gt;pitch_rad = pa; a-&gt;init = true; a-&gt;acc_w = 1.0f;
+    return;
+  }
+  /* 1) 자이로로 이어 간다 */
+  const float sr = sinf(a-&gt;roll_rad), cr = cosf(a-&gt;roll_rad);
+  const float cp = cosf(a-&gt;pitch_rad);
+  const float tp = (fabsf(cp) &gt; 1e-3f) ? sinf(a-&gt;pitch_rad) / cp : 0.0f;
+  a-&gt;roll_rad  = att_wrap(a-&gt;roll_rad + (p + (q * sr + r * cr) * tp) * dt);
+  a-&gt;pitch_rad = a-&gt;pitch_rad + (q * cr - r * sr) * dt;
+  a-&gt;pitch_rad = att_clampf(a-&gt;pitch_rad, -1.55f, 1.55f);
+  /* 2) 가속도로 천천히 바로잡는다 - 크기가 1 g 에서 멀면 가중치를 줄인다 */
+  float w = 0.0f;
+  if (dev &lt;= c-&gt;acc_dev_lo) { w = 1.0f; }
+  else if (dev &lt; c-&gt;acc_dev_hi) { w = (c-&gt;acc_dev_hi - dev) / (c-&gt;acc_dev_hi - c-&gt;acc_dev_lo); }
+  const float k = (c-&gt;tau_s &gt; 0.0f) ? dt / (c-&gt;tau_s + dt) : 1.0f;
+  a-&gt;acc_w = w;
+  a-&gt;roll_rad  = att_wrap(a-&gt;roll_rad + k * w * att_wrap(ra - a-&gt;roll_rad));
+  a-&gt;pitch_rad = a-&gt;pitch_rad + k * w * (pa - a-&gt;pitch_rad);
+  /* 3) 충격 판정 - 이번 샘플이 크면 hold 를 다시 채운다 */
+  const bool hit = (dev &gt; c-&gt;shock_dev) || (fabsf(p_dps) &gt; c-&gt;shock_rate_dps) || (fabsf(q_dps) &gt; c-&gt;shock_rate_dps);
+  if (hit) { a-&gt;shock_left_ms = c-&gt;shock_hold_ms; }
+  else if (a-&gt;shock_left_ms &gt; dt_ms) { a-&gt;shock_left_ms -= dt_ms; }
+  else { a-&gt;shock_left_ms = 0u; }
+  a-&gt;shock = hit || (a-&gt;shock_left_ms &gt; 0u);
+}
+
+/* 수직축 회전 속도 [deg/s] = (q·sinφ + r·cosφ) / cosθ. 자세가 아직 없으면 r 그대로 */
+static inline float att_yaw_rate_dps(const att_t *a, float q_dps, float r_dps)
+{
+  if (!a-&gt;init) { return r_dps; }
+  const float cp = cosf(a-&gt;pitch_rad);
+  if (fabsf(cp) &lt; 1e-3f) { return r_dps; }
+  return (q_dps * sinf(a-&gt;roll_rad) + r_dps * cosf(a-&gt;roll_rad)) / cp;
+}
+
+#endif /* ATTITUDE_H */</code></pre>
+      <p><code>control.c</code> 의 골격(채울 자리 T3 · T4). 그대로 빌드된다.</p>
+      <pre><code class="lang-c">/* control.c - 머리의 include 들 끝에 한 줄, static 변수들 뒤에 아래 블록 */
+#include "Control/yaw.h"   /* 회전 속도 되먹임 (fw-20 실습 H) */
+
+/* TODO(you) [T3]: 회전 속도 되먹임 층과 0x85 스냅숏 - 힌트 카드 T3
+ *   1) s_yaw_cfg · s_yaw · s_yaw_on 을 둔다
+ *   2) yaw_cfg_init() - 키를 실수 단위로 바꿔 s_yaw_cfg 를 채우고 s_yaw_on = 0. control_init() 끝에서 부른다
+ *   3) yaw_layer_step(meas, cut, trac_active, &amp;tl, &amp;tr) - IMU 끊김 감시 -&gt; 자이로(IMU_GY_YAW) -&gt; 정지면 치우침
+ *      -&gt; 켤지 판정 -&gt; yaw_step() -&gt; yaw_apply(). YAW_ENABLE 0 이면 아무것도 하지 않는다
+ *   4) ctrl_snapshot_fill(tl, tr, duty, trac, flags) - 바퀴별 칸 · 회전 칸 · 플래그
+ *   5) control_step_1khz() 의 3) 과 4) 사이에 3b), 8) 과 9) 사이에 8b)
+ * 아래 두 줄은 0x85 를 보내는 통신 모듈이 링크되게 하는 자리다 - 완결 코드 T3 이 이 두 줄을 포함하므로, 채울 때 함께 바꾼다 */
+static ctrl_snapshot_t s_ctrl;   /* 0x85 스냅숏 - 채우기 전에는 0 */
+void control_get_ctrl(ctrl_snapshot_t *out) { if (out == NULL) { return; } *out = s_ctrl; }</code></pre>
+      <pre><code class="lang-c">/* control.c - 다른 HELP_* 와 명령 함수들 옆에 */
+/* TODO(you) [T4]: yaw 명령 - 힌트 카드 T4
+ *   1) "yaw" - 상태 한 줄. 실수는 정수로 바꿔 찍는다(pid 명령과 같은 방법)
+ *   2) "yaw on" · "yaw off" - YAW_ENABLE 0 이면 거절, 아니면 s_yaw_on 을 바꾼다
+ *   3) "yaw set kp|ki &lt;milli&gt;" - RAM 게인
+ *   4) control_cli_register() 에 등록 한 줄 */</code></pre>
+      <p>출력 제어 프레임 0x85 를 보내는 쪽이다(전량). 계약이라 <strong>06a §4-2 의 표 · Pi 의 <code>protocol.hpp</code> · probe · 이 파일들</strong>이 바이트 단위로 같아야 한다(<a href="fw-17-link-v2.html">fw-17</a> 이해 확인 8). 번호 0x84 는 설정 응답 자리로 남겨 두었으므로 0x85 를 쓴다.</p>
+      <pre><code class="lang-c">/* frames.h - TYPE_EVENT 줄 다음에 두 줄 */
+/* 0x84 - 설정 응답 자리(선택, 0x02 의 짝 - 처음에는 구현하지 않는다). 다른 뜻으로 쓰지 않는다 */
+#define TYPE_CTRL      0x85u   /* MCU -&gt; Pi , 50 Hz (20 ms, 0x81 과 10 틱 어긋나게). 출력을 바꾸는 층들이 한 일 (fw-20 실습 H) */
+
+/* frames.h - text_ack_payload_t 줄 다음, #pragma pack(pop) 앞에 */
+typedef struct { int16_t target_mm_s;  /* 모든 가공 뒤 이 바퀴의 최종 목표 [mm/s] */
+                 int16_t duty_pm;      /* 실제로 낸 듀티 [permille] - 끊긴 바퀴는 0 */
+                 int16_t u_dpm;        /* PID 몫 [0.1 permille] - 앞먹임(속도 몫)은 빠진 값 */
+                 uint8_t weight_pct;   /* 하중 가중치 x 100 (경사 층 전 = 100) */
+                 uint8_t trac_q8;      /* 슬립 억제 x 255 (실습 C 전 = 255) */
+               } ctrl_wheel_t;                                                             /*  8 B */
+typedef struct { uint32_t tick_ms;
+                 ctrl_wheel_t wheel[4];                                                    /* FL FR RL RR */
+                 int16_t yaw_cmd_ddps;    /* ω_명령 [0.1 deg/s] */
+                 int16_t yaw_rate_ddps;   /* 수직축 회전 속도 - 치우침 [0.1 deg/s] */
+                 int16_t yaw_bias_cdps;   /* 치우침 [0.01 deg/s] */
+                 int16_t yaw_delta_mm_s;  /* Δ [mm/s] */
+                 int16_t yaw_i_mm_s;      /* Δ 안의 적분 몫 ki x ∫e [mm/s] */
+                 uint16_t flags;          /* CTRL_F_* */
+                 int16_t margin_mm;       /* 최소 들림 여유 [mm] - 합력점에서 접지 사각형의 가장 가까운 변까지, 밖이면 - . 실습 I 전 = CTRL_MARGIN_NONE */
+                 uint8_t margin_edge;     /* 그 변 CTRL_EDGE_* - 합력점이 다가간 변(반대쪽 바퀴가 뜬다). 실습 I 전 = CTRL_EDGE_NONE */
+               } ctrl_payload_t;                                                           /* 51 B */
+
+/* frames.h - 다른 _Static_assert 들 다음에 */
+_Static_assert(sizeof(ctrl_payload_t)     == 51, "frames.h: ctrl payload must be 51 bytes");
+_Static_assert(sizeof(ctrl_payload_t) &lt;= FRAME_MAX_PAYLOAD, "frames.h: ctrl payload over the contract limit");
+
+/* frames.h - DRIVE_* 블록 다음에 */
+/* 0x85 의 flags - 출력 제어 층이 이번 틱에 무엇을 했나 */
+#define CTRL_F_YAW_ON      (1u &lt;&lt; 0)   /* 회전 속도 되먹임이 돌았다 */
+#define CTRL_F_YAW_SAT     (1u &lt;&lt; 1)   /* Δ 가 상한에 걸렸다 */
+#define CTRL_F_YAW_FROZEN  (1u &lt;&lt; 2)   /* 적분을 멈췄다(슬립 억제 동작 중) */
+#define CTRL_F_TRAC        (1u &lt;&lt; 3)   /* 슬립 억제가 어느 바퀴든 출력을 줄이고 있다 */
+#define CTRL_F_NO_GO_CLAMP (1u &lt;&lt; 4)   /* 주행 불가 가공 - 회전 · 오르는 성분을 잘랐다 */
+#define CTRL_F_HOLD        (1u &lt;&lt; 5)   /* 경사 버팀 */
+#define CTRL_F_TURN_LIMIT  (1u &lt;&lt; 6)   /* 회전 제한 - 실습 I 가 켠다(그 전에는 0) */
+#define CTRL_F_ROLL_LIFT   (1u &lt;&lt; 7)   /* 롤 들림 - 실습 I 가 켠다(그 전에는 0) */
+/* bit8 ~ 15 예약 */
+
+/* 0x85 의 margin_mm · margin_edge. 합력점 p = -h x (f_앞, f_옆) / f_위 - 무게중심에서 중력 + 관성의 합력이 바닥에 닿는 점 */
+#define CTRL_MARGIN_NONE   INT16_MAX   /* margin_mm - 계산하지 않음(실습 I 전, IMU 끊김) */
+#define CTRL_EDGE_FRONT    0u
+#define CTRL_EDGE_REAR     1u
+#define CTRL_EDGE_LEFT     2u
+#define CTRL_EDGE_RIGHT    3u
+#define CTRL_EDGE_NONE     0xFFu       /* margin_edge - 계산하지 않음 */</code></pre>
+      <pre><code class="lang-c">/* control.h - event_t 줄 다음에 */
+/* 출력 제어 스냅숏 - 출력을 바꾸는 층들이 이번 틱에 한 일(fw-20 실습 H). 와이어 형식이 아니다:
+ * comm_frame.c 가 frames.h 의 ctrl_payload_t(0x85)로 바꾼다. 아직 없는 층의 칸은 "아무것도 안 함" 값이다 */
+#define CONTROL_CTRL_YAW_ON      (1u &lt;&lt; 0)   /* 아래 여덟은 frames.h 의 CTRL_F_* 와 같은 비트 - comm_frame.c 의 _Static_assert 가 묶는다 */
+#define CONTROL_CTRL_YAW_SAT     (1u &lt;&lt; 1)
+#define CONTROL_CTRL_YAW_FROZEN  (1u &lt;&lt; 2)
+#define CONTROL_CTRL_TRAC        (1u &lt;&lt; 3)
+#define CONTROL_CTRL_NO_GO_CLAMP (1u &lt;&lt; 4)
+#define CONTROL_CTRL_HOLD        (1u &lt;&lt; 5)
+#define CONTROL_CTRL_TURN_LIMIT  (1u &lt;&lt; 6)
+#define CONTROL_CTRL_ROLL_LIFT   (1u &lt;&lt; 7)
+#define CONTROL_EDGE_NONE        0xFFu       /* margin_edge 의 "계산하지 않음" - frames.h 의 CTRL_EDGE_NONE 과 같은 값. 0 앞 · 1 뒤 · 2 왼 · 3 오른도 같다 */
+typedef struct {
+  uint32_t tick_ms;
+  int16_t  target_mm_s[4];   /* 모든 가공 뒤 바퀴별 최종 목표 (FL FR RL RR) */
+  int16_t  duty_pm[4];       /* 실제로 낸 듀티 */
+  float    u_pm[4];          /* PID 몫 [permille] */
+  float    weight[4];        /* 하중 가중치 (경사 층 전 = 1) */
+  float    trac[4];          /* 슬립 억제 (실습 C 전 = 1) */
+  float    yaw_cmd_dps, yaw_rate_dps, yaw_bias_dps, yaw_delta_mm_s, yaw_i_mm_s;   /* 실습 H 전 = 0 */
+  uint16_t flags;            /* CONTROL_CTRL_* */
+  int16_t  margin_mm;        /* 최소 들림 여유 [mm], 밖이면 - . 실습 I 전 = INT16_MAX */
+  uint8_t  margin_edge;      /* 가장 가까운 변 (0 앞 · 1 뒤 · 2 왼 · 3 오른). 실습 I 전 = CONTROL_EDGE_NONE */
+} ctrl_snapshot_t;
+
+/* control.h - 공개 묶음의 control_pop_event() 줄 다음에 */
+void    control_get_ctrl(ctrl_snapshot_t *out);   /* 마지막 1 kHz 틱의 출력 제어 스냅숏 (0x85, fw-20 실습 H) */</code></pre>
+      <pre><code class="lang-c">/* comm_frame.c - N_SENSORS 줄 다음에 */
+#define CTRL_PHASE   10u    /* 0x85 는 0x81 과 10 틱 어긋난 틱에 - 한 틱에 큐가 몰리지 않게 (fw-20 실습 H) */
+
+_Static_assert(CONTROL_CTRL_YAW_ON == CTRL_F_YAW_ON &amp;&amp; CONTROL_CTRL_YAW_SAT == CTRL_F_YAW_SAT &amp;&amp;
+               CONTROL_CTRL_YAW_FROZEN == CTRL_F_YAW_FROZEN &amp;&amp; CONTROL_CTRL_TRAC == CTRL_F_TRAC &amp;&amp;
+               CONTROL_CTRL_NO_GO_CLAMP == CTRL_F_NO_GO_CLAMP &amp;&amp; CONTROL_CTRL_HOLD == CTRL_F_HOLD &amp;&amp;
+               CONTROL_CTRL_TURN_LIMIT == CTRL_F_TURN_LIMIT &amp;&amp; CONTROL_CTRL_ROLL_LIFT == CTRL_F_ROLL_LIFT,
+               "comm_frame.c: control.h CONTROL_CTRL_* must match frames.h CTRL_F_*");
+_Static_assert(CONTROL_EDGE_NONE == CTRL_EDGE_NONE, "comm_frame.c: control.h CONTROL_EDGE_NONE must match frames.h CTRL_EDGE_NONE");
+
+/* comm_frame.c - s_drained 줄 다음에 */
+static volatile uint8_t s_ctrl_on = 1u;          /* main(link ctrl) 이 쓰고 틱이 읽는다. 1 = 0x85 를 보낸다 (기본) */
+
+/* comm_frame.c - tx_pump() 위에 */
+/* 반올림 + 범위 자르기 - 0x85 의 정수 스케일 (float 을 정수로 넘길 때 넘쳐서 부호가 뒤집히지 않게) */
+static int16_t sat_i16(float v)
+{
+  v += (v &gt;= 0.0f) ? 0.5f : -0.5f;
+  if (v &gt;  32767.0f) { return  32767; }
+  if (v &lt; -32768.0f) { return -32768; }
+  return (int16_t)v;
+}
+static uint8_t sat_u8(float v)
+{
+  v += 0.5f;
+  if (v &gt; 255.0f) { return 255u; }
+  if (v &lt; 0.0f)   { return 0u; }
+  return (uint8_t)v;
+}
+
+/* comm_frame.c - comm_frame_step_1khz() 안, 0x81 블록 다음 · 0x82 반복 앞에 */
+  if (s_ctrl_on != 0u &amp;&amp; (s_ticks % STATE_EVERY) == CTRL_PHASE) {  /* 20 틱마다 0x85 - 0x81 과 다른 틱 */
+    ctrl_snapshot_t cs;
+    ctrl_payload_t  cp;
+    control_get_ctrl(&amp;cs);
+    cp.tick_ms = cs.tick_ms;
+    for (uint8_t i = 0u; i &lt; 4u; ++i) {                            /* MCU 안의 단위 -&gt; 와이어의 정수 스케일 */
+      cp.wheel[i].target_mm_s = cs.target_mm_s[i];
+      cp.wheel[i].duty_pm     = cs.duty_pm[i];
+      cp.wheel[i].u_dpm       = sat_i16(cs.u_pm[i] * 10.0f);
+      cp.wheel[i].weight_pct  = sat_u8(cs.weight[i] * 100.0f);
+      cp.wheel[i].trac_q8     = sat_u8(cs.trac[i] * 255.0f);
+    }
+    cp.yaw_cmd_ddps   = sat_i16(cs.yaw_cmd_dps * 10.0f);
+    cp.yaw_rate_ddps  = sat_i16(cs.yaw_rate_dps * 10.0f);
+    cp.yaw_bias_cdps  = sat_i16(cs.yaw_bias_dps * 100.0f);
+    cp.yaw_delta_mm_s = sat_i16(cs.yaw_delta_mm_s);
+    cp.yaw_i_mm_s     = sat_i16(cs.yaw_i_mm_s);
+    cp.flags          = cs.flags;
+    cp.margin_mm      = cs.margin_mm;                              /* 이미 와이어의 단위 [mm] - 계산하지 않음 = INT16_MAX 그대로 */
+    cp.margin_edge    = cs.margin_edge;
+    (void)tx_enqueue(out, (uint16_t)frame_build(TYPE_CTRL, &amp;cp, (uint8_t)sizeof cp, out));
+  }
+
+/* comm_frame.c - cmd_link() 안, argc == 1 가지 다음에. 카운터 줄 끝에 ctrl=%s 를 더하는 것은 선택 */
+  if (argc == 3 &amp;&amp; strcmp(argv[1], "ctrl") == 0) {   /* 0x85 켜고 끄기 - 링크 여유가 문제될 때 */
+    if (strcmp(argv[2], "on") == 0)  { s_ctrl_on = 1u; printf("OK link ctrl on\r\n");  return; }
+    if (strcmp(argv[2], "off") == 0) { s_ctrl_on = 0u; printf("OK link ctrl off\r\n"); return; }
+  }</code></pre>
+      <pre><code class="lang-c">/* host_tests/test_frame_parser.c - 2묶음(프레임 만들기)의 끝, want_e 검사 다음에 */
+  /* 0x85 출력 제어 (fw-20 실습 H): 06 3-2 의 기대 출력 ctrl frame 과 같은 값 */
+  ctrl_payload_t c = { 123456u,
+                       { { 200, 310, 123, 100u, 255u }, { 220, 330, -45, 120u, 200u },
+                         { 200, 0, 0, 80u, 255u },      { -220, -330, 9, 100u, 128u } },
+                       286, 250, 12, 37, 15, (uint16_t)(CTRL_F_YAW_ON | CTRL_F_TRAC), -300, CTRL_EDGE_LEFT };
+  const uint8_t want_c[56] = { 0xAA,0x55,0x85,0x33,0x40,0xE2,0x01,0x00,0xC8,0x00,0x36,0x01,0x7B,0x00,0x64,0xFF,
+                               0xDC,0x00,0x4A,0x01,0xD3,0xFF,0x78,0xC8,0xC8,0x00,0x00,0x00,0x00,0x00,0x50,0xFF,
+                               0x24,0xFF,0xB6,0xFE,0x09,0x00,0x64,0x80,0x1E,0x01,0xFA,0x00,0x0C,0x00,0x25,0x00,
+                               0x0F,0x00,0x09,0x00,0xD4,0xFE,0x02,0xCF };
+  CHECK(frame_build(TYPE_CTRL, &amp;c, (uint8_t)sizeof c, f) == 56);
+  CHECK(same(f, want_c, 56));</code></pre>
+      <pre><code class="lang-python"># scripts/mcu_probe.py - T_STATE 줄 다음에 세 줄
+T_CTRL = 0x85                                  # 출력 제어 (fw-20 실습 H). 0x84 는 설정 응답 자리(선택, 미구현)
+CTRL_FLAG = ['yaw', 'yaw-sat', 'yaw-frozen', 'trac', 'no-go-clamp', 'hold', 'turn-limit', 'roll-lift']   # 0x85 flags bit0..7
+CTRL_EDGE = {0: 'front', 1: 'rear', 2: 'left', 3: 'right'}   # 0x85 margin_edge. 0xFF = 아직 계산하지 않음
+
+# scripts/mcu_probe.py - show() 안, T_TEXT_ACK 가지 앞에
+    elif ftype == T_CTRL and len(p) == 51:
+        n_imu['ctrl'] = n_imu.get('ctrl', 0) + 1
+        if n_imu['ctrl'] % 25 == 0:                 # 50 Hz 를 다 찍지 않는다 - 0.5 s 에 한 줄
+            tick, = struct.unpack_from('&lt;I', p, 0)
+            wh = [struct.unpack_from('&lt;hhhBB', p, 4 + 8 * i) for i in range(4)]
+            cmd_d, rate_d, bias_c, delta, i_mm, flags = struct.unpack_from('&lt;hhhhhH', p, 36)
+            margin, edge = struct.unpack_from('&lt;hB', p, 48)
+            lift = '-' if margin == 32767 else f'{margin:+5d}mm {CTRL_EDGE.get(edge, "?")}'   # 32767 = 아직 계산하지 않음
+            names = ','.join(n for b, n in enumerate(CTRL_FLAG) if flags &amp; (1 &lt;&lt; b)) or '-'
+            w = ' '.join(f'{t:+5d}/{d:+5d}/{u / 10:+6.1f}/w{wt / 100:.2f}/t{tr / 255:.2f}' for t, d, u, wt, tr in wh)
+            print(f'CTRL  tgt/duty/u/w/trac FL FR RL RR: {w}')
+            print(f'      yaw cmd={cmd_d / 10:+6.1f} rate={rate_d / 10:+6.1f} bias={bias_c / 100:+5.2f} deg/s'
+                  f'  delta={delta:+4d} i={i_mm:+4d} mm/s  flags=0x{flags:04X}({names}) margin={lift} t={tick}')</code></pre>
+
+      <h4 id="s3-h-3">3-H-3. 직접 채우기 — 정답 대신 벡터</h4>
+      <p>시험 파일은 저장소에 이미 있다(<code>firmware/host_tests/test_yaw.c</code>). 전량을 아래에 둔다. 기댓값은 딱 떨어지는 수를 넣어 고른 것이다(W 400 mm 에서 좌우 ±100 mm/s = 0.5 rad/s = 28.648 °/s).</p>
+      <pre><code class="lang-c">/* firmware/host_tests/test_yaw.c - 회전 속도 되먹임(yaw.h)을 Mac 에서. MCU 도 HAL 도 없다. */
+#include &lt;stdio.h&gt;
+#include "Control/yaw.h"
+
+static int cases = 0;
+#define CHECK(c) do { cases++; if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); return 1; } } while (0)
+#define NEAR(a, b, t) ((a) - (b) &lt; (t) &amp;&amp; (b) - (a) &lt; (t))
+
+/* 시험용 고정값이지 권고가 아니다 */
+static const yaw_cfg_t C = { 400.0f,   /* W [mm] */
+                             2.0f,     /* kp [(mm/s)/(deg/s)] */
+                             4.0f,     /* ki [(mm/s)/deg] */
+                             10.0f,    /* i_max [deg] */
+                             60.0f,    /* Δ 상한 [mm/s] */
+                             0.2f,     /* 불감대 [deg/s] */
+                             0.01f,    /* 치우침 계수 */
+                             500u,     /* 정지 판정 [ms] */
+                             50u };    /* IMU 끊김 [ms] */
+
+int main(void)
+{
+  const float dt = 0.001f;
+  yaw_t y = { 0 };
+
+  /* 1. 명령 회전 속도: 좌 -100 · 우 +100, W 400 -&gt; 0.5 rad/s = 28.648 deg/s(반시계 +). W 모름 = 0 */
+  CHECK(NEAR(yaw_cmd_dps(&amp;C, -100.0f, 100.0f), 28.6479f, 1e-3f));
+  CHECK(NEAR(yaw_cmd_dps(&amp;C, 100.0f, 100.0f), 0.0f, 1e-6f));
+  { yaw_cfg_t z = C; z.w_mm = 0.0f;
+    CHECK(NEAR(yaw_cmd_dps(&amp;z, -100.0f, 100.0f), 0.0f, 1e-6f));
+    CHECK(NEAR(yaw_step(&amp;y, &amp;z, 10.0f, 0.0f, true, false, dt), 0.0f, 1e-6f)); }
+
+  /* 2. 직진 유지: 명령 0, 차체가 반시계로 +2 deg/s 돈다 -&gt; e = -2 -&gt; Δ &lt; 0 -&gt; 오른쪽을 줄이고 왼쪽을 올려 시계로 되돌린다 */
+  yaw_reset(&amp;y);
+  { float d = yaw_step(&amp;y, &amp;C, 0.0f, 2.0f, true, false, dt);
+    CHECK(d &lt; 0.0f);
+    CHECK(NEAR(d, 2.0f * -2.0f + 4.0f * (-2.0f * dt), 1e-4f)); }
+
+  /* 3. 회전 추종: 반시계 명령인데 덜 돈다(회전 미끄러짐) -&gt; Δ &gt; 0 -&gt; 좌우 차이를 키운다 */
+  yaw_reset(&amp;y);
+  CHECK(yaw_step(&amp;y, &amp;C, 28.6f, 20.0f, true, false, dt) &gt; 0.0f);
+
+  /* 4. 불감대는 P 몫에만: |e| &lt; 0.2 -&gt; P 몫 0, 적분은 그대로 쌓는다(i = -0.1 x dt) */
+  yaw_reset(&amp;y);
+  { const float d = yaw_step(&amp;y, &amp;C, 0.0f, 0.1f, true, false, dt);   /* NEAR 은 인자를 두 번 계산한다 - 먼저 받아 둔다 */
+    CHECK(NEAR(d, C.ki * -0.1f * dt, 1e-6f)); CHECK(NEAR(y.i_deg, -0.1f * dt, 1e-9f)); }
+
+  /* 5. I 는 방향 오차를 기억한다: 걸려서 0.5 s 동안 +10 deg/s 로 틀어졌다가 멈추면 i = -5 deg,
+        틀어짐이 끝난 뒤(e = 0)에도 Δ = ki · i 가 남아 되돌리는 쪽으로 민다 */
+  yaw_reset(&amp;y);
+  for (int k = 0; k &lt; 500; ++k) { (void)yaw_step(&amp;y, &amp;C, 0.0f, 10.0f, true, false, dt); }
+  CHECK(NEAR(y.i_deg, -5.0f, 1e-2f));
+  { float d = yaw_step(&amp;y, &amp;C, 0.0f, 0.0f, true, false, dt);
+    CHECK(NEAR(d, 4.0f * -5.0f, 0.05f));            /* -20 mm/s: 오른쪽 -10 · 왼쪽 +10 -&gt; 시계로 되돌림 */
+    CHECK(d &lt; 0.0f); }
+  /* 되돌아가는 동안(-10 deg/s) 오차를 갚아 i 가 0 으로 */
+  for (int k = 0; k &lt; 500; ++k) { (void)yaw_step(&amp;y, &amp;C, 0.0f, -10.0f, true, false, dt); }
+  CHECK(NEAR(y.i_deg, 0.0f, 0.05f));
+
+  /* 6. I 상한: 오래 틀어져도 ±10 deg 에서 멈춘다(Δ 상한 안인 동안) */
+  { yaw_cfg_t wide = C; wide.delta_max_mm_s = 1000.0f;
+    yaw_reset(&amp;y);
+    for (int k = 0; k &lt; 5000; ++k) { (void)yaw_step(&amp;y, &amp;wide, 0.0f, 5.0f, true, false, dt); }
+    CHECK(NEAR(y.i_deg, -10.0f, 1e-3f)); }
+
+  /* 7. Δ 상한 + 조건부 적분: 상한에 걸린 채 같은 쪽 오차가 이어지면 적분이 더 자라지 않는다 */
+  yaw_reset(&amp;y);
+  { float d = yaw_step(&amp;y, &amp;C, 0.0f, 100.0f, true, false, dt);    /* P 만 -200 -&gt; -60 으로 자름 */
+    CHECK(NEAR(d, -60.0f, 1e-4f));
+    CHECK(y.saturated);
+    CHECK(NEAR(y.i_deg, 0.0f, 1e-9f)); }                          /* 포화라 이번 틱 적분을 되돌렸다 */
+
+  /* 8. 적분 동결(슬립 억제 동작 중): P 는 그대로, i 는 그대로 */
+  yaw_reset(&amp;y);
+  (void)yaw_step(&amp;y, &amp;C, 0.0f, 2.0f, true, false, dt);
+  { const float i0 = y.i_deg;
+    float d = yaw_step(&amp;y, &amp;C, 0.0f, 2.0f, true, true, dt);
+    CHECK(NEAR(y.i_deg, i0, 1e-9f));
+    CHECK(y.frozen);
+    CHECK(NEAR(d, 2.0f * -2.0f + 4.0f * i0, 1e-4f)); }
+
+  /* 9. 꺼짐: Δ = 0, 적분을 버린다 */
+  (void)yaw_step(&amp;y, &amp;C, 0.0f, 2.0f, true, false, dt);
+  CHECK(NEAR(yaw_step(&amp;y, &amp;C, 0.0f, 2.0f, false, false, dt), 0.0f, 1e-9f));
+  CHECK(NEAR(y.i_deg, 0.0f, 1e-9f));
+  CHECK(!y.enabled);
+
+  /* 10. 치우침: 정지 500 ms 뒤부터만 따라간다. 움직이면 셈을 처음부터 */
+  { yaw_t b = { 0 };
+    for (int k = 0; k &lt; 400; ++k) { yaw_bias_step(&amp;b, &amp;C, 0.3f, true, 1u); }
+    CHECK(NEAR(b.bias_dps, 0.0f, 1e-9f));                         /* 아직 정지 판정 전 */
+    yaw_bias_step(&amp;b, &amp;C, 0.3f, false, 1u);
+    CHECK(b.still_cnt_ms == 0u);
+    for (int k = 0; k &lt; 3000; ++k) { yaw_bias_step(&amp;b, &amp;C, 0.3f, true, 1u); }
+    CHECK(NEAR(b.bias_dps, 0.3f, 1e-3f));
+    /* 치우침을 뺀 뒤에는 명령 0 · 자이로 0.3 이 오차 0 이다 */
+    CHECK(NEAR(yaw_step(&amp;b, &amp;C, 0.0f, 0.3f, true, false, dt), 0.0f, 1e-3f)); }
+
+  /* 11. 적용: Δ = 20 -&gt; 왼쪽 -10 · 오른쪽 +10, 평균 그대로. int16 끝에서 자른다 */
+  { int16_t l = 200, r = 200;
+    yaw_apply(20.0f, &amp;l, &amp;r);
+    CHECK(l == 190 &amp;&amp; r == 210);
+    CHECK((l + r) == 400);
+    l = -32760; r = 32760;
+    yaw_apply(40.0f, &amp;l, &amp;r);
+    CHECK(l == -32768 &amp;&amp; r == 32767); }
+
+  /* 12. IMU 끊김: seq 가 50 ms 그대로면 끊김, 바뀌면 다시 살아남. seq 0 = 샘플 없음 */
+  { yaw_t m = { 0 };
+    CHECK(!yaw_imu_fresh(&amp;m, &amp;C, 0u, 1u));
+    CHECK(yaw_imu_fresh(&amp;m, &amp;C, 7u, 1u));
+    bool f = true;
+    for (int k = 0; k &lt; 49; ++k) { f = yaw_imu_fresh(&amp;m, &amp;C, 7u, 1u); }
+    CHECK(f);
+    CHECK(!yaw_imu_fresh(&amp;m, &amp;C, 7u, 1u));                        /* 50 ms */
+    CHECK(yaw_imu_fresh(&amp;m, &amp;C, 8u, 1u)); }
+
+  /* 13. 부호 대칭: 시계 명령에서 덜 돌면 Δ &lt; 0 */
+  yaw_reset(&amp;y);
+  CHECK(yaw_step(&amp;y, &amp;C, -28.6f, -20.0f, true, false, dt) &lt; 0.0f);
+
+  /* 14. 불감대보다 느린 틀어짐도 기억한다: 0.16 deg/s 로 10 s 돌면 i = -1.6 deg -&gt; 되돌리는 쪽 Δ &lt; 0
+         (적분까지 불감대로 0 으로 만들면 i = 0 으로 남아 끝없이 돈다) */
+  yaw_reset(&amp;y);
+  for (int k = 0; k &lt; 10000; ++k) { (void)yaw_step(&amp;y, &amp;C, 0.0f, 0.16f, true, false, dt); }
+  CHECK(NEAR(y.i_deg, -1.6f, 1e-2f));
+  CHECK(y.delta_mm_s &lt; 0.0f);
+
+  printf("PASS yaw %d cases\n", cases);
+  return 0;
+}</code></pre>
+      <p><code>firmware/host_tests/test_attitude.c</code> — 전량. 입력은 알려진 자세 · 회전에서 계산한 정답 자이로 · 가속도다(벡터 3 이 "롤 20° 로 기운 채 30 °/s" — z 자이로는 28.19, 수직축 회전 속도는 30.0).</p>
+      <pre><code class="lang-c">/* firmware/host_tests/test_attitude.c - 자세 추정 · 수직축 회전 속도(attitude.h)를 Mac 에서. MCU 도 HAL 도 없다.
+ * 입력은 알려진 자세 · 회전에서 계산한 "정답 자이로 · 가속도"다(강체, 오일러 ZYX). 단위: 자이로 deg/s, 가속도 mg. */
+#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+#include "Control/attitude.h"
+
+static int cases = 0;
+#define CHECK(c) do { cases++; if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); return 1; } } while (0)
+#define NEAR(a, b, t) (fabsf((float)(a) - (float)(b)) &lt; (t))
+
+/* 시험용 고정값이지 권고가 아니다 */
+static const att_cfg_t C = { 1.0f, 0.05f, 0.30f, 0.30f, 60.0f, 200u };
+
+/* 자세 (φ, θ) 로 정지한 차체가 받는 비력 [mg] */
+static void force_of(float roll_deg, float pitch_deg, float *fx, float *fy, float *fz)
+{
+  const float r = roll_deg * ATT_DEG2RAD, p = pitch_deg * ATT_DEG2RAD;
+  *fx = -1000.0f * sinf(p);
+  *fy =  1000.0f * sinf(r) * cosf(p);
+  *fz =  1000.0f * cosf(r) * cosf(p);
+}
+
+/* 자세 (φ, θ) 를 유지한 채 수직축으로 ψ' [deg/s] 도는 차체의 자이로 */
+static void rates_of(float roll_deg, float pitch_deg, float yaw_rate_dps, float *p, float *q, float *r)
+{
+  const float rr = roll_deg * ATT_DEG2RAD, pp = pitch_deg * ATT_DEG2RAD;
+  *p = -yaw_rate_dps * sinf(pp);
+  *q =  yaw_rate_dps * sinf(rr) * cosf(pp);
+  *r =  yaw_rate_dps * cosf(rr) * cosf(pp);
+}
+
+static void run(att_t *a, int n, float roll, float pitch, float yaw_rate, float dfx)
+{
+  float fx, fy, fz, p, q, r;
+  force_of(roll, pitch, &amp;fx, &amp;fy, &amp;fz);
+  rates_of(roll, pitch, yaw_rate, &amp;p, &amp;q, &amp;r);
+  for (int k = 0; k &lt; n; ++k) { att_step(a, &amp;C, p, q, r, fx + dfx, fy, fz, 1000.0f, 0.005f, 5u); }
+}
+
+int main(void)
+{
+  /* 1. 평지 정지: 0, 0. 회전 속도 0 */
+  { att_t a = { 0 };
+    run(&amp;a, 400, 0.0f, 0.0f, 0.0f, 0.0f);
+    CHECK(NEAR(a.roll_rad * ATT_RAD2DEG, 0.0f, 0.01f) &amp;&amp; NEAR(a.pitch_rad * ATT_RAD2DEG, 0.0f, 0.01f));
+    CHECK(NEAR(att_yaw_rate_dps(&amp;a, 0.0f, 0.0f), 0.0f, 1e-4f)); }
+
+  /* 2. 기울어진 정지(롤 20 · 피치 10): 첫 샘플에서 바로 맞추고 그대로 */
+  { att_t a = { 0 };
+    run(&amp;a, 400, 20.0f, 10.0f, 0.0f, 0.0f);
+    CHECK(NEAR(a.roll_rad * ATT_RAD2DEG, 20.0f, 0.05f) &amp;&amp; NEAR(a.pitch_rad * ATT_RAD2DEG, 10.0f, 0.05f)); }
+
+  /* 3. 기울어진 채 수직축으로 30 deg/s 회전: 수직축 회전 속도 = 30. z 자이로만 보면 28.19 (롤 20, 피치 0) */
+  { att_t a = { 0 };
+    run(&amp;a, 2000, 20.0f, 0.0f, 30.0f, 0.0f);
+    float p, q, r;
+    rates_of(20.0f, 0.0f, 30.0f, &amp;p, &amp;q, &amp;r);
+    CHECK(NEAR(a.roll_rad * ATT_RAD2DEG, 20.0f, 0.2f));
+    CHECK(NEAR(att_yaw_rate_dps(&amp;a, q, r), 30.0f, 0.1f));
+    CHECK(NEAR(r, 28.19f, 0.01f));                         /* 이 차이가 바로 z 자이로의 오차 */
+    (void)p; }
+  { att_t a = { 0 };                                       /* 롤 15 + 피치 10 */
+    run(&amp;a, 2000, 15.0f, 10.0f, 30.0f, 0.0f);
+    float p, q, r;
+    rates_of(15.0f, 10.0f, 30.0f, &amp;p, &amp;q, &amp;r);
+    CHECK(NEAR(att_yaw_rate_dps(&amp;a, q, r), 30.0f, 0.2f));
+    (void)p; }
+
+  /* 4. 충격: 평지 정지 중 앞뒤로 2 g 펄스 50 ms - 가중치가 0 이 되어 자세가 거의 안 움직이고, shock 이 hold 까지 선다 */
+  { att_t a = { 0 };
+    run(&amp;a, 200, 0.0f, 0.0f, 0.0f, 0.0f);
+    run(&amp;a, 10, 0.0f, 0.0f, 0.0f, 2000.0f);
+    CHECK(fabsf(a.pitch_rad * ATT_RAD2DEG) &lt; 0.05f);
+    CHECK(a.shock &amp;&amp; a.acc_w == 0.0f);
+    run(&amp;a, 30, 0.0f, 0.0f, 0.0f, 0.0f);                   /* 150 ms 뒤: 아직 hold 안 */
+    CHECK(a.shock);
+    run(&amp;a, 20, 0.0f, 0.0f, 0.0f, 0.0f);                   /* 250 ms 뒤: 풀림 */
+    CHECK(!a.shock); }
+  /* 같은 펄스를 가중치 없이(문턱을 아주 크게) 받으면 자세가 끌려간다 - 비교용 */
+  { att_cfg_t raw = C; raw.acc_dev_lo = 10.0f; raw.acc_dev_hi = 20.0f;
+    att_t a = { 0 };
+    float fx, fy, fz;
+    force_of(0.0f, 0.0f, &amp;fx, &amp;fy, &amp;fz);
+    for (int k = 0; k &lt; 200; ++k) { att_step(&amp;a, &amp;raw, 0, 0, 0, fx, fy, fz, 1000.0f, 0.005f, 5u); }
+    for (int k = 0; k &lt; 10; ++k)  { att_step(&amp;a, &amp;raw, 0, 0, 0, fx + 2000.0f, fy, fz, 1000.0f, 0.005f, 5u); }
+    CHECK(fabsf(a.pitch_rad * ATT_RAD2DEG) &gt; 2.0f); }
+
+  /* 5. 롤 각속도 큰 순간도 충격으로 본다 */
+  { att_t a = { 0 };
+    run(&amp;a, 10, 0.0f, 0.0f, 0.0f, 0.0f);
+    float fx, fy, fz;
+    force_of(0.0f, 0.0f, &amp;fx, &amp;fy, &amp;fz);
+    att_step(&amp;a, &amp;C, 80.0f, 0.0f, 0.0f, fx, fy, fz, 1000.0f, 0.005f, 5u);
+    CHECK(a.shock); }
+
+  /* 6. 자이로 치우침 1 deg/s(롤 축)가 있어도 가속도가 오차를 τ 수준에서 붙잡는다 */
+  { att_t a = { 0 };
+    float fx, fy, fz;
+    force_of(0.0f, 0.0f, &amp;fx, &amp;fy, &amp;fz);
+    for (int k = 0; k &lt; 4000; ++k) { att_step(&amp;a, &amp;C, 1.0f, 0.0f, 0.0f, fx, fy, fz, 1000.0f, 0.005f, 5u); }
+    CHECK(fabsf(a.roll_rad * ATT_RAD2DEG) &lt; 1.2f); }
+
+  /* 7. 판자에 오르듯 0.5 s 동안 롤 0 -&gt; 20 (40 deg/s): 자이로가 이어 가므로 끝에서 1 도 안 */
+  { att_t a = { 0 };
+    run(&amp;a, 100, 0.0f, 0.0f, 0.0f, 0.0f);
+    float roll = 0.0f;
+    for (int k = 0; k &lt; 100; ++k) {
+      roll += 40.0f * 0.005f;
+      float fx, fy, fz;
+      force_of(roll, 0.0f, &amp;fx, &amp;fy, &amp;fz);
+      att_step(&amp;a, &amp;C, 40.0f, 0.0f, 0.0f, fx, fy, fz, 1000.0f, 0.005f, 5u);
+    }
+    CHECK(NEAR(a.roll_rad * ATT_RAD2DEG, 20.0f, 1.0f)); }
+
+  /* 8. 샘플 없음(가속도 0)이면 초기화하지 않는다 */
+  { att_t a = { 0 };
+    att_step(&amp;a, &amp;C, 0, 0, 0, 0.0f, 0.0f, 0.0f, 1000.0f, 0.005f, 5u);
+    CHECK(!a.init);
+    CHECK(NEAR(att_yaw_rate_dps(&amp;a, 3.0f, 7.0f), 7.0f, 1e-6f)); }
+
+  printf("PASS attitude %d cases\n", cases);
+  return 0;
+}</code></pre>
+      <pre><code class="lang-bash">cd firmware
+cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_yaw.c -o /tmp/test_yaw &amp;&amp; /tmp/test_yaw
+cc -std=c11 -Wall -Wextra -fsanitize=undefined,address -Ih723zg/User/Inc host_tests/test_yaw.c -o /tmp/test_yaw_ub &amp;&amp; /tmp/test_yaw_ub
+cc -std=c11 -Wall -Wextra -Ih723zg/User/Inc host_tests/test_attitude.c -o /tmp/test_attitude -lm &amp;&amp; /tmp/test_attitude
+# 0x85 의 채점 - frames.h 와 comm 쪽을 고쳤다면
+U=h723zg/User; cc -std=c11 -Wall -Wextra -I$U/Inc host_tests/test_frame_parser.c $U/Src/Comm/frame_parser.c $U/Src/Comm/crc8.c -o /tmp/test_frame_parser &amp;&amp; /tmp/test_frame_parser</code></pre>
+      <ol class="steps">
+        <li><strong>T1</strong> 부터 — 벡터 1 ~ 9 · 13 이 고리 한 틱을 여러 방향에서 본다. 벡터 5 가 "틀어진 각으로 되돌아감"이다.</li>
+        <li><strong>T2</strong> — 벡터 10.</li>
+        <li><strong><code>attitude.h</code></strong> — 전량이라 바로 <code>PASS attitude 17 cases</code> 다.</li>
+        <li><strong>0x85</strong> — <code>test_frame_parser</code> 가 <code>PASS frame_parser 70 cases</code> 를 낸다(이 블록 전은 68).</li>
+        <li><strong>T3 · T4</strong> — 보드 쪽. <code>YAW_ENABLE 0</code> 인 채로 채우고 빌드한다. 경고가 없어야 한다.</li>
+      </ol>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w40"><col class="w60"></colgroup>
+          <thead><tr><th>여기까지 채웠다</th><th>호스트 시험의 마지막 줄</th></tr></thead>
+          <tbody>
+            <tr><td>골격 그대로</td><td><code>FAIL line 35: d &lt; 0.0f</code></td></tr>
+            <tr><td>T1</td><td><code>FAIL line 94: NEAR(b.bias_dps, 0.3f, 1e-3f)</code></td></tr>
+            <tr><td>T1 · T2</td><td><code>PASS yaw 38 cases</code></td></tr>
+          </tbody>
+        </table></div>
+      <details class="hint" id="hint-t1"><summary>힌트 T1 — <code>yaw_step()</code> · 고리 한 틱</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 입력은 상태 <code>y</code>, 설정 <code>c</code>, 이번 틱의 명령 회전 속도 <code>cmd_dps</code> 와 자이로 <code>gyro_dps</code> [deg/s], 켤지(<code>enable</code>), 적분을 멈출지(<code>freeze_i</code>), 틱 길이 <code>dt_s</code>. 출력은 좌우에 나눠 더할 Δ [mm/s]. 부르는 곳은 T13(1 kHz)과 호스트 시험.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T1 - User/Inc/Control/yaw.h */
+static inline float yaw_step(yaw_t *y, const yaw_cfg_t *c, float cmd_dps, float gyro_dps,
+                             bool enable, bool freeze_i, float dt_s)
+{
+  y-&gt;cmd_dps  = cmd_dps;
+  y-&gt;rate_dps = gyro_dps - y-&gt;bias_dps;
+  if (!enable || c-&gt;w_mm &lt;= 0.0f) { yaw_reset(y); return 0.0f; }
+  y-&gt;enabled = true;
+  y-&gt;frozen  = freeze_i;
+
+  const float e   = cmd_dps - y-&gt;rate_dps;                         /* 적분은 이 값을 그대로 쌓는다 */
+  const float e_p = (yaw_absf(e) &lt; c-&gt;deadband_dps) ? 0.0f : e;     /* 불감대는 P 몫에만 - 적분까지 0 으로 하면 */
+                                                                     /* 불감대보다 느린 틀어짐을 기억하지 못한다 */
+
+  const float i_prev = y-&gt;i_deg;
+  if (!freeze_i) {
+    y-&gt;i_deg += e * dt_s;
+    if (y-&gt;i_deg &gt;  c-&gt;i_max_deg) { y-&gt;i_deg =  c-&gt;i_max_deg; }
+    if (y-&gt;i_deg &lt; -c-&gt;i_max_deg) { y-&gt;i_deg = -c-&gt;i_max_deg; }
+  }
+
+  float d = c-&gt;kp * e_p + c-&gt;ki * y-&gt;i_deg;
+  y-&gt;saturated = false;
+  if (d &gt; c-&gt;delta_max_mm_s || d &lt; -c-&gt;delta_max_mm_s) {
+    y-&gt;saturated = true;
+    const float lim = (d &gt; 0.0f) ? c-&gt;delta_max_mm_s : -c-&gt;delta_max_mm_s;
+    if ((e &gt; 0.0f &amp;&amp; d &gt; 0.0f) || (e &lt; 0.0f &amp;&amp; d &lt; 0.0f)) { y-&gt;i_deg = i_prev; }   /* 같은 쪽으로 더 쌓지 않는다 */
+    d = lim;
+  }
+  y-&gt;delta_mm_s = d;
+  return d;
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul><li>맨 앞의 두 줄(<code>cmd_dps</code> · <code>rate_dps</code> 남기기)은 꺼져 있어도 한다 — 0x85 로 Pi 가 "명령은 얼마였고 차체는 얼마나 돌았나"를 늘 볼 수 있게 하려는 것이다.</li><li>꺼짐 · W 모름 → <code>yaw_reset()</code> 과 0 — 적분을 버린다. 다시 켜질 때 옛 방향 오차를 들고 오지 않는다.</li><li><code>e = cmd - rate</code> — 덜 돌면 + 다. Δ 가 + 이면 오른쪽을 올리고 왼쪽을 내려 반시계로 더 돈다(REP-103 의 + 방향). 부호를 거꾸로 쓰면 보정이 틀어짐을 키운다(흔한 실수 첫 줄).</li><li>불감대 — 작은 오차를 0 으로 바꾼 값(<code>e_p</code>)은 P 몫에만 쓴다. 적분은 원래 오차 <code>e</code> 를 쌓는다. 적분까지 0 으로 바꾸면, 적분이 남긴 Δ 가 만드는 느린 회전이 불감대 안에 들어가 고리가 그 회전을 보지 못한다 — 바퀴 간격이 넓을수록 같은 Δ 가 느린 회전이 되므로 잘 생긴다.</li><li>적분은 <code>e × dt</code> — 단위가 deg 다. 이것이 방향 오차이고, <code>ki</code> 는 "방향 오차 1° 당 좌우 차이 [mm/s]" 다.</li><li>상한에 걸렸을 때 오차가 Δ 와 같은 쪽이면 이번 틱의 적분을 되돌린다(조건부 적분). 막힌 쪽으로 적분이 계속 자라면, 막힘이 풀린 순간 쌓인 만큼 크게 튄다(와인드업).</li><li><code>delta_mm_s</code> 에 남기는 값은 자른 뒤의 값이다 — 실제로 좌우에 더해지는 양.</li></ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 함수).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w36"><col class="w36"><col class="w28"></colgroup><thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead><tbody>
+<tr><td><code>e = y-&gt;rate_dps - cmd_dps</code>(부호 거꾸로)</td><td><code>FAIL line 35: d &lt; 0.0f</code></td><td>오차 = 명령 − 실제</td></tr>
+<tr><td>적분에도 불감대를 거친 오차를 씀(<code>i_deg += e_p * dt_s</code>)</td><td><code>FAIL line 45: NEAR(d, C.ki * -0.1f * dt, 1e-6f)</code></td><td>적분은 원래 오차 <code>e</code> 로 — 불감대는 P 몫에만</td></tr>
+<tr><td>포화 때 적분을 되돌리는 줄을 빠뜨림</td><td><code>FAIL line 70: NEAR(y.i_deg, 0.0f, 1e-9f)</code></td><td>상한에 걸리고 같은 쪽이면 <code>i_deg = i_prev</code></td></tr>
+<tr><td><code>freeze_i</code> 를 보지 않고 늘 적분</td><td><code>FAIL line 77: NEAR(y.i_deg, i0, 1e-9f)</code></td><td><code>if (!freeze_i)</code> 안에서만</td></tr>
+</tbody></table></div>
+        <p><strong>확인</strong> — 벡터 1 ~ 9 · 11 ~ 13 이 통과하고 다음 FAIL 은 T2 의 벡터 10 이다(위 걸음 표).</p>
+        </div></details>
+      <details class="hint" id="hint-t2"><summary>힌트 T2 — <code>yaw_bias_step()</code> · 정지 중 치우침</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 입력은 상태 <code>y</code>, 설정 <code>c</code>, 자이로 <code>gyro_dps</code>, 정지인지(<code>still</code> — 호출자가 판정), 지난 시간 <code>dt_ms</code>. 이 함수는 <code>y-&gt;bias_dps</code> 와 정지 시간 셈을 바꾼다. 부르는 곳은 T13(IMU 가 살아 있을 때만)과 호스트 시험.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T2 - User/Inc/Control/yaw.h */
+static inline void yaw_bias_step(yaw_t *y, const yaw_cfg_t *c, float gyro_dps, bool still, uint32_t dt_ms)
+{
+  if (!still) { y-&gt;still_cnt_ms = 0u; return; }
+  if (y-&gt;still_cnt_ms &lt; c-&gt;still_ms) { y-&gt;still_cnt_ms += dt_ms; return; }
+  y-&gt;bias_dps += c-&gt;bias_alpha * (gyro_dps - y-&gt;bias_dps);
+}</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul><li>정지가 아니면 셈을 0 으로 — 한 번이라도 움직이면 처음부터 다시 센다. 움직이는 동안의 자이로 값은 치우침이 아니다.</li><li><code>still_ms</code> 가 차기 전에는 더하기만 한다 — 멈춘 직후 차체가 흔들리는 동안을 건너뛴다.</li><li>그 뒤로는 저역 통과 — <code>bias += α × (gyro − bias)</code>. 정지가 이어지는 한 계속 따라가므로 온도로 치우침이 바뀌어도 다음 정지에서 다시 맞춰진다.</li></ul>
+        <p><strong>쓰는 API</strong> — 없다(순수 함수).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w36"><col class="w36"><col class="w28"></colgroup><thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead><tbody>
+<tr><td>움직일 때 셈을 0 으로 돌리지 않음</td><td><code>FAIL line 92: b.still_cnt_ms == 0u</code></td><td><code>if (!still) { y-&gt;still_cnt_ms = 0u; return; }</code></td></tr>
+<tr><td>기다리는 줄 없이 바로 저역 통과</td><td><code>FAIL line 90: NEAR(b.bias_dps, 0.0f, 1e-9f)</code> (그리고 <code>dt_ms</code> 를 안 써 경고)</td><td><code>still_cnt_ms &lt; still_ms</code> 동안은 더하기만</td></tr>
+</tbody></table></div>
+        <p><strong>확인</strong> — <code>PASS yaw 38 cases</code>. 진단 빌드(<code>-fsanitize=undefined,address</code>)도 같은 줄이다.</p>
+        </div></details>
+      <details class="hint" id="hint-t3"><summary>힌트 T3 — <code>control.c</code> · 층 · 스냅숏 · 부르는 자리</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 입력은 이번 틱의 바퀴 속도 넷과 정리된 목표 <code>tl</code> · <code>tr</code>, 끊김 여부, 슬립 억제 동작 여부. <code>yaw_layer_step()</code> 은 <code>tl</code> · <code>tr</code> 를 고쳐 쓰고, <code>ctrl_snapshot_fill()</code> 은 0x85 로 나갈 스냅숏을 채운다. 부르는 곳은 실습 G 의 <code>control_step_1khz()</code>(<a href="fw-20b-slope-mix.html#hint-t8">힌트 T8(fw-20b)</a>), <code>yaw_cfg_init()</code> 은 <code>control_init()</code> 끝.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T3 - User/Src/Control/control.c. include 는 파일 머리의 include 들 끝에, 나머지는 static 변수들 뒤에 */
+#include "Control/yaw.h"
+#include "Control/attitude.h"   /* 롤 · 피치 자세 추정과 수직축 회전 속도 */
+
+static yaw_cfg_t        s_yaw_cfg;   /* control_init() 끝에서 yaw_cfg_init() 이 키로 채운다 */
+static yaw_t            s_yaw;
+static volatile uint8_t s_yaw_on;    /* yaw on|off - main 이 쓰고 1 kHz 가 읽는다. 부팅하면 늘 0 */
+static ctrl_snapshot_t  s_ctrl;      /* 0x85 로 나갈 출력 제어 스냅숏 - 1 kHz 가 쓰고, 같은 ISR 안의 통신 모듈이 읽는다 */
+static att_cfg_t        s_att_cfg;   /* 자세 추정 설정 */
+static att_t            s_att;       /* 롤 · 피치 추정값 */
+static uint16_t         s_att_seq;   /* 자세 추정에 넣은 마지막 IMU seq - 같은 샘플을 두 번 넣지 않는다 */
+static float            s_vert_dps;  /* 마지막 수직축 회전 속도 [deg/s] - 샘플 사이의 틱도 이 값을 쓴다 */
+
+static void yaw_cfg_init(void)       /* control_init() 끝에서 한 번 */
+{
+  s_yaw_cfg.w_mm           = (float)TRACK_WIDTH_MM;
+  s_yaw_cfg.kp             = (float)YAW_KP_MILLI / 1000.0f;
+  s_yaw_cfg.ki             = (float)YAW_KI_MILLI / 1000.0f;
+  s_yaw_cfg.i_max_deg      = (float)YAW_I_MAX_DDEG / 10.0f;
+  s_yaw_cfg.delta_max_mm_s = (float)YAW_DELTA_MAX_MM_S;
+  s_yaw_cfg.deadband_dps   = (float)YAW_DEADBAND_CDPS / 100.0f;
+  s_yaw_cfg.bias_alpha     = (float)YAW_BIAS_ALPHA_MILLI / 1000.0f;
+  s_yaw_cfg.still_ms       = (uint32_t)YAW_STILL_MS;
+  s_yaw_cfg.imu_timeout_ms = (uint32_t)IMU_TIMEOUT_MS;   /* fw-18 의 IMU 침묵과 같은 기준 */
+  s_att_cfg.tau_s          = (float)ATT_TAU_MS / 1000.0f;
+  s_att_cfg.acc_dev_lo     = (float)ATT_ACC_DEV_LO_MILLI / 1000.0f;
+  s_att_cfg.acc_dev_hi     = (float)ATT_ACC_DEV_HI_MILLI / 1000.0f;
+  s_att_cfg.shock_dev      = s_att_cfg.acc_dev_hi;       /* 충격 판정은 관측용으로만 남긴다 - 적분을 멈추는 데 쓰지 않는다(§2-11 ④) */
+  s_att_cfg.shock_rate_dps = 1000.0f;
+  s_att_cfg.shock_hold_ms  = 0u;
+  s_yaw_on = 0u;
+}
+
+/* 1 kHz. 목표 정리 뒤 · 바퀴 반복 앞에서 부른다. *tl · *tr 를 고쳐 쓴다(평균은 그대로).
+ * cut = 워치독 정지 · ARMED 아님 · 지난 틱의 안전 조건 가운데 하나라도. trac_active = 슬립 억제가 출력을 줄이는 중 */
+static void yaw_layer_step(const float meas[NW], bool cut, bool trac_active, int16_t *tl, int16_t *tr)
+{
+#if YAW_ENABLE
+  imu_sample_t im;
+  control_get_imu(&amp;im, 0u);                                      /* 0 = WT901 - 더블 버퍼라 ISR 에서 읽어도 찢어지지 않는다 */
+  const bool  fresh = yaw_imu_fresh(&amp;s_yaw, &amp;s_yaw_cfg, im.seq, 1u);
+  if (fresh &amp;&amp; im.seq != s_att_seq) {                            /* 새 샘플마다 한 번(200 Hz, 5 ms) - 자세를 이어 가고 수직축 회전 속도를 낸다 */
+    const float p = slope_axis(IMU_GY_ROLL, im.gx_ddps, im.gy_ddps, im.gz_ddps) / 10.0f;     /* [0.1 deg/s] -&gt; [deg/s] */
+    const float q = -slope_axis(IMU_GY_PITCH, im.gx_ddps, im.gy_ddps, im.gz_ddps) / 10.0f;   /* 실습 G 의 키는 "앞이 들리면 +" - 차체 y 축 기준은 반대 */
+    const float r = slope_axis(IMU_GY_YAW, im.gx_ddps, im.gy_ddps, im.gz_ddps) / 10.0f;
+    att_step(&amp;s_att, &amp;s_att_cfg, p, q, r,
+             slope_axis(IMU_AX_FWD, im.ax_mg, im.ay_mg, im.az_mg),
+             slope_axis(IMU_AX_LEFT, im.ax_mg, im.ay_mg, im.az_mg),
+             slope_axis(IMU_AX_UP, im.ax_mg, im.ay_mg, im.az_mg), 1000.0f, 0.005f, 5u);   /* [mg] -&gt; 1 g = 1000 */
+    s_vert_dps = att_yaw_rate_dps(&amp;s_att, q, r);
+    s_att_seq = im.seq;
+  }
+  const float gyro  = s_vert_dps;                                /* 수직축 회전 속도 - 기울어진 차체에서 z 자이로 대신 */
+  const bool  cmd_zero = (*tl == 0 &amp;&amp; *tr == 0);
+  bool still = cmd_zero;                                         /* 정지 = 목표 둘이 0 이고 네 바퀴가 이번 틱에 안 움직였다 */
+  for (uint8_t i = 0u; i &lt; (uint8_t)NW; i++) { if (meas[i] != 0.0f) { still = false; } }
+  if (fresh) { yaw_bias_step(&amp;s_yaw, &amp;s_yaw_cfg, gyro, still, 1u); }
+  const bool  enable = (s_yaw_on != 0u) &amp;&amp; !cut &amp;&amp; fresh &amp;&amp; !cmd_zero;   /* 멈추라는 명령이면 끈다 = 적분을 버린다 */
+  const float cmd = yaw_cmd_dps(&amp;s_yaw_cfg, (float)*tl, (float)*tr);
+  const float d   = yaw_step(&amp;s_yaw, &amp;s_yaw_cfg, cmd, gyro, enable, trac_active, PID_DT_S);
+  yaw_apply(d, tl, tr);
+#else
+  (void)meas; (void)cut; (void)trac_active; (void)tl; (void)tr;  /* 층 없음 - 이 실습 전과 같다 */
+  (void)s_att; (void)s_att_seq; (void)s_vert_dps;
+#endif
+}
+
+/* 1 kHz. 출력 직전, 이번 틱에 최종으로 정해진 값으로 0x85 스냅숏을 채운다.
+ * w · u 는 실습 G 의 s_w · s_u, trac 는 실습 C 의 계수 배열(그 실습에서 붙인 이름을 넘긴다) */
+static void ctrl_snapshot_fill(int16_t tl, int16_t tr, const int16_t duty[NW], const float trac[NW], uint16_t flags)
+{
+  s_ctrl.tick_ms = tick_get_ms();
+  s_ctrl.margin_mm   = INT16_MAX;                                /* 들림 여유는 실습 I 가 채운다 - 0 은 "변 위" 라는 실제 값이라 0 으로 두지 않는다 */
+  s_ctrl.margin_edge = CONTROL_EDGE_NONE;
+  for (uint8_t i = 0u; i &lt; (uint8_t)NW; i++) {
+    s_ctrl.target_mm_s[i] = (i &amp; 1u) ? tr : tl;                  /* 짝수 = 왼쪽, 홀수 = 오른쪽 */
+    s_ctrl.duty_pm[i]     = duty[i];
+    s_ctrl.u_pm[i]        = s_u[i];
+    s_ctrl.weight[i]      = s_w[i &gt;&gt; 1];
+    s_ctrl.trac[i]        = trac[i];
+  }
+  s_ctrl.yaw_cmd_dps    = s_yaw.cmd_dps;
+  s_ctrl.yaw_rate_dps   = s_yaw.rate_dps;                       /* 수직축 회전 속도 - 치우침 */
+  s_ctrl.yaw_bias_dps   = s_yaw.bias_dps;
+  s_ctrl.yaw_delta_mm_s = s_yaw.delta_mm_s;
+  s_ctrl.yaw_i_mm_s     = s_yaw_cfg.ki * s_yaw.i_deg;           /* Δ 안의 적분 몫 */
+  if (s_yaw.enabled)                  { flags = (uint16_t)(flags | CONTROL_CTRL_YAW_ON); }
+  if (s_yaw.saturated)                { flags = (uint16_t)(flags | CONTROL_CTRL_YAW_SAT); }
+  if (s_yaw.enabled &amp;&amp; s_yaw.frozen)  { flags = (uint16_t)(flags | CONTROL_CTRL_YAW_FROZEN); }
+  s_ctrl.flags = flags;
+}
+
+void control_get_ctrl(ctrl_snapshot_t *out)   /* 1 kHz 문맥(통신 모듈) - control_step_1khz() 와 같은 ISR 안이라 찢어지지 않는다 */
+{
+  if (out == NULL) { return; }
+  *out = s_ctrl;
+}
+
+  /* T8(fw-20b) 의 3) 과 4) 사이에 - 실습 C 의 traction_step() 호출 다음 */
+  /* 3b) 회전 속도 되먹임 (실습 H). 슬립 억제가 이번 틱에 출력을 줄이고 있으면 적분만 멈춘다(슬립 억제가 우선) */
+  bool trac_active = false;
+  for (uint8_t i = 0u; i &lt; (uint8_t)NW; i++) { if (trac[i] &lt; 1.0f) { trac_active = true; } }   /* trac = 실습 C 의 계수 배열 이름 */
+  yaw_layer_step(meas, (s_wd_stopped != 0u) || !armed || (s_cond_prev != 0u), trac_active, &amp;tl, &amp;tr);
+
+  /* T8(fw-20b) 의 8) 과 9) 사이에 - 출력 직전 */
+  /* 8b) 0x85 스냅숏 */
+  uint16_t cflags = 0u;
+  if (trac_active)                  { cflags = (uint16_t)(cflags | CONTROL_CTRL_TRAC); }
+  if (clamped)                      { cflags = (uint16_t)(cflags | CONTROL_CTRL_NO_GO_CLAMP); }   /* 3) 의 else if 가지에서 true 로 */
+  if ((s_drive &amp; DRIVE_HOLD) != 0u) { cflags = (uint16_t)(cflags | CONTROL_CTRL_HOLD); }
+  ctrl_snapshot_fill(tl, tr, duty, trac, cflags);</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul><li><code>yaw_cfg_init()</code> — 키를 실수 단위로 바꿔 한 번 채운다. 적분 상한은 0.1 deg, 불감대는 0.01 deg/s 단위의 키라 나눈다. <code>s_yaw_on = 0</code> 이 "부팅하면 꺼짐"이다.</li><li><code>#if YAW_ENABLE</code> — 0 이면 층이 통째로 빠지고 목표를 건드리지 않는다. 그래서 키를 넣는 걸음에서 빌드와 동작이 이 실습 전과 같다.</li><li><code>yaw_imu_fresh()</code> — seq 가 <code>IMU_TIMEOUT_MS</code>(fw-18 과 같은 기준) 동안 그대로면 끊김. 끊긴 동안은 치우침도 재지 않고 고리도 끈다.</li><li>새 IMU 샘플(200 Hz)마다 한 번 — 자세를 <code>att_step()</code> 으로 이어 가고 <code>att_yaw_rate_dps()</code> 로 수직축 회전 속도를 낸다. 같은 샘플을 1 kHz 로 다섯 번 넣으면 자이로 적분이 다섯 배가 된다. 샘플 사이의 틱은 마지막 값을 쓴다.</li><li>축은 <code>slope_axis()</code>(실습 G)로 고른다. 자이로는 [0.1 deg/s] 라 10 으로 나눈다. 피치는 실습 G 의 키가 "앞이 들리면 +" 라 차체 y 축 기준(앞이 숙여지면 +)과 부호가 반대 — 그래서 <code>-slope_axis(IMU_GY_PITCH, …)</code> 다. 가속도는 [mg] 그대로 넘기고 1 g = 1000 을 알려 준다.</li><li>충격 판정(<code>shock</code>)은 적분을 멈추는 데 쓰지 않는다 — 시뮬레이터에서 도움이 되지 않았다(§2-11 ④). 설정만 채워 둔다.</li><li>정지 = 목표 둘이 0 이고 네 바퀴의 이번 틱 속도가 0 — 이때만 치우침을 잰다. 치우침도 수직축 회전 속도 기준이다.</li><li><code>enable</code> 에 <code>!cmd_zero</code> — 멈추라는 명령이면 끈다. 그 틱에 적분을 버리므로 다음 출발의 기준 방향은 그때의 방향이다.</li><li><code>dt</code> 는 1 ms(<code>PID_DT_S</code>) — 자이로 샘플은 5 ms 마다 새로 오지만 고리는 1 kHz 로 돌며 마지막 샘플을 쓴다. 적분은 틱의 시간으로 해야 맞다.</li><li>부르는 자리 3b) — 목표 정리(주행 불가 가공 · 버팀) <strong>뒤</strong>라서, 주행 불가 중 잘린 회전 성분을 이 층이 다시 만들지 않는다(직진 명령이므로 ω_명령 = 0, 직진 유지만 한다). 슬립 억제 <strong>뒤</strong>라서 이번 틱의 계수로 적분을 멈출 수 있다.</li><li><code>cut</code> — 워치독 정지 · ARMED 아님 · 지난 틱의 안전 조건. 경사 버팀(목표 0)은 <code>cmd_zero</code> 로 이미 꺼진다.</li><li>8b) 스냅숏은 출력 직전 — 실제로 나갈 듀티와 최종 목표를 싣는다. <code>clamped</code> 는 T8(fw-20b) 의 3) 에서 <code>slope_clamp_downhill()</code> 을 부른 가지에 <code>clamped = true;</code> 한 줄을 더해 만든다. <code>trac</code> 는 실습 C 에서 붙인 계수 배열 이름으로 바꾼다.</li><li><code>control_get_ctrl()</code> — 통신 모듈은 같은 TIM6 ISR 안에서 <code>control_step_1khz()</code> 다음에 불리므로 구조체 복사가 찢어지지 않는다(<code>tick.c</code> 의 호출 순서).</li></ul>
+        <p><strong>쓰는 API</strong> — <code>void control_get_imu(imu_sample_t *out, uint8_t sensor_id)</code>(fw-17) · <code>float slope_axis(int8_t sel, float x, float y, float z)</code>(실습 G) · <code>uint32_t tick_get_ms(void)</code>(fw-06).</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w36"><col class="w36"><col class="w28"></colgroup><thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead><tbody>
+<tr><td><code>yaw_cfg_init()</code> 을 부르지 않음</td><td>빌드는 된다 — <code>w_mm</code> 이 0 이라 <code>yaw_step()</code> 이 늘 0 을 돌려준다. <code>yaw on</code> 을 쳐도 <code>en=0</code></td><td><code>control_init()</code> 끝에서 한 번</td></tr>
+<tr><td>3b) 를 3) 앞에 둠</td><td>빌드는 된다 — 주행 불가 중 잘린 명령이 아니라 원래 명령의 회전을 따라가려 한다</td><td>목표 정리 뒤 · 바퀴 반복 앞</td></tr>
+<tr><td>스냅숏을 4) 앞에서 채움</td><td>빌드는 된다 — 0x85 의 듀티가 지난 틱 값이거나 0 이다</td><td>8) 과 9) 사이</td></tr>
+</tbody></table></div>
+        <p><strong>확인</strong> — <code>YAW_ENABLE 0</code> 으로 빌드 · 굽고 실습 G 와 같은 <code>step</code> CSV 를 찍어 견준다(§3-H-4 의 1번). Pi 에서 0x85 가 50 Hz 로 오고 <code>flags</code> 가 0 이다.</p>
+        </div></details>
+      <details class="hint" id="hint-t4"><summary>힌트 T4 — <code>yaw</code> 명령 · 켜기 · 끄기 · 게인</summary>
+        <div class="ans">
+        <p><strong>할 일</strong> — 입력은 명령 창의 인자. <code>yaw</code> 는 상태 한 줄, <code>yaw on|off</code> 는 고리를 켜고 끄고(RAM), <code>yaw set kp|ki &lt;milli&gt;</code> 는 게인을 RAM 에서 바꾼다. 부르는 곳은 main 의 명령 창.</p>
+        <p><strong>완결 코드</strong></p>
+        <pre><code class="lang-c">/* 완결 코드 T4 - User/Src/Control/control.c. 도움말은 다른 HELP_* 옆에, 등록 한 줄은 control_cli_register() 안에 */
+static const char HELP_YAW[] =
+  "yaw [on|off]            - show the yaw-rate loop, or turn it on/off (RAM - boots off)\r\n"
+  "yaw set &lt;kp|ki&gt; &lt;milli&gt; - change a gain in RAM\r\n"
+  "ex) yaw\r\n"
+  "    yaw on\r\n"
+  "    yaw set kp 3500\r\n";
+
+static void cmd_yaw(int argc, char *argv[])      /* main 문맥 */
+{
+  if (argc == 1) {                                                          /* "yaw" */
+    printf("yaw on=%u en=%u sat=%u frozen=%u kp_milli=%ld ki_milli=%ld bias_cdps=%ld cmd_ddps=%ld rate_ddps=%ld i_ddeg=%ld delta_mm_s=%ld\r\n",
+           (unsigned)s_yaw_on, (unsigned)s_yaw.enabled, (unsigned)s_yaw.saturated, (unsigned)s_yaw.frozen,
+           gain_milli(s_yaw_cfg.kp), gain_milli(s_yaw_cfg.ki),
+           (long)(s_yaw.bias_dps * 100.0f), (long)(s_yaw.cmd_dps * 10.0f), (long)(s_yaw.rate_dps * 10.0f),
+           (long)(s_yaw.i_deg * 10.0f), (long)s_yaw.delta_mm_s);
+    return;
+  }
+  if (argc == 2 &amp;&amp; (strcmp(argv[1], "on") == 0 || strcmp(argv[1], "off") == 0)) {   /* "yaw on" · "yaw off" */
+    if (!(YAW_ENABLE)) { printf("ERR yaw disabled-build\r\n"); return; }
+    s_yaw_on = (argv[1][1] == 'n') ? 1u : 0u;                               /* 다음 틱부터. 끄면 그 틱에 적분을 버린다 */
+    printf("OK yaw %s\r\n", argv[1]);
+    return;
+  }
+  if (argc == 4 &amp;&amp; strcmp(argv[1], "set") == 0) {                           /* "yaw set &lt;kp|ki&gt; &lt;milli&gt;" */
+    const bool is_kp = (strcmp(argv[2], "kp") == 0);
+    const bool is_ki = (strcmp(argv[2], "ki") == 0);
+    char *end = NULL;
+    long  m   = strtol(argv[3], &amp;end, 10);
+    if ((!is_kp &amp;&amp; !is_ki) || *end != '\0' || m &lt; 0) { printf("ERR yaw bad-arg\r\n"); return; }
+    if (is_kp) { s_yaw_cfg.kp = (float)m / 1000.0f; } else { s_yaw_cfg.ki = (float)m / 1000.0f; }
+    printf("OK yaw\r\n");
+    return;
+  }
+  printf("ERR yaw bad-arg\r\n");
+}
+
+/* control_cli_register() 안, "step" 등록 줄 다음에 */
+  FW_ASSERT(cli_register_help("yaw",  cmd_yaw,  HELP_YAW));</code></pre>
+        <p><strong>코드 설명</strong></p>
+        <ul><li>상태 줄은 정수로 찍는다 — 이 펌웨어는 <code>nano.specs</code> 로 링크해 <code>printf</code> 가 실수를 찍지 않으므로 <code>pid</code> 명령처럼 1000 배 · 10 배 · 100 배 정수로 바꾼다(<code>gain_milli()</code> 는 같은 파일에 있다).</li><li><code>yaw on</code> 은 <code>YAW_ENABLE 0</code> 빌드에서 거절한다 — 층이 빠진 빌드에서 켜진 것처럼 보이지 않게.</li><li><code>s_yaw_on</code> 은 main 이 쓰고 1 kHz 가 읽는 1 바이트라 그대로 쓴다. 끄면 다음 틱의 <code>yaw_step()</code> 이 적분을 버린다.</li><li>게인은 RAM 에서만 바뀐다 — 다시 구우면 <code>robot_params.h</code> 의 값이다(fw-20a §2-5 와 같은 규칙). 정한 값은 키에 적고 다시 굽는다.</li></ul>
+        <p><strong>쓰는 API</strong> — <code>bool cli_register_help(const char *name, cli_fn_t fn, const char *help)</code>(fw-05) · <code>long strtol(const char *s, char **end, int base)</code>.</p>
+        <p><strong>흔한 실수</strong></p>
+        <div class="tbl"><table class="compact fixed"><colgroup><col class="w36"><col class="w36"><col class="w28"></colgroup><thead><tr><th>쓴 것</th><th>컴파일러 · 시험이 하는 말</th><th>고치는 법</th></tr></thead><tbody>
+<tr><td>등록 줄을 빠뜨림</td><td>빌드는 된다 — 명령 창이 <code>ERR yaw unknown-command</code> 로 답한다</td><td><code>control_cli_register()</code> 에 한 줄</td></tr>
+<tr><td>상태 줄에 <code>%f</code></td><td>빌드는 된다 — 값 자리가 비어 찍힌다</td><td>정수로 바꿔 <code>%ld</code></td></tr>
+</tbody></table></div>
+        <p><strong>확인</strong> — <code>yaw</code> 가 <code>on=0 en=0</code> 으로 시작한다. <code>yaw set kp 3500</code> 뒤 <code>kp_milli=3500</code>.</p>
+        </div></details>
+
+      <h4 id="s3-h-4">3-H-4. 굽고 보기 — 끈 채 같은지 보고, 켜서 견준다</h4>
+      <p>0x85 는 Pi 쪽에서 본다 — <code>mcu_probe.py</code> 의 <code>CTRL</code> 두 줄(0.5 초마다), 또는 브리지의 <code>/mcu/control</code> 을 Foxglove 그래프로(칸 21 명령 · 22 자이로 · 24 Δ · 25 적분 몫 · 26 플래그 · 27 들림 여유 · 28 그 변 — 27 · 28 은 실습 I 전까지 32767 · 255). 같은 것을 TEXT 의 <code>yaw</code> 로도 본다.</p>
+      <ol class="steps">
+        <li><strong><code>YAW_ENABLE 0</code> 으로 굽고 전과 같은지 본다.</strong> 실습 G 와 같은 <code>step</code> CSV 를 찍어 견준다 — 같은 모양이어야 한다. <code>stat</code> 의 <code>exec_us_max</code> 를 적는다. Pi 에서 0x85 가 50 Hz 로 오고 <code>flags=0x0000</code> · <code>margin=-</code> 이다. 바퀴별 칸이 움직임을 따라 바뀐다.</li>
+        <li><strong>키를 채우고 <code>YAW_ENABLE 1</code> 로 다시 굽는다.</strong> 받침대에서는 <code>yaw on</code> 을 치지 않는다(§2-11 ②). 바닥에 내려 멈춘 채 <code>yaw</code> 를 몇 번 쳐 <code>bias_cdps</code> 가 자리 잡는 것과 <code>rate_ddps</code> 가 불감대 안인 것을 본다. 차체 한쪽을 손으로 들어 기울인 채 멈춰 두어도 <code>rate_ddps</code> 가 불감대 안이어야 한다(자세 추정이 기울기를 따라간다).</li>
+        <li><strong>판자 둔덕 직진 — 끔 / 켬 각 세 번.</strong> 한쪽 바퀴만 판자에 오르도록 놓고, 같은 속도로 3 m 직진한다. 끝에서 차체 방향(Foxglove 의 오도메트리 · 라이다, 또는 바닥 테이프 선과의 각)과 옆으로 밀린 거리를 적는다. 켬에서는 판자에 오르는 순간 Δ 가 서고, 판자를 지난 뒤 적분 몫이 0 으로 돌아오는 것을 그래프로 본다.</li>
+        <li><strong>완만한 회전.</strong> teleop 으로 0.3 rad/s 안팎을 10 초 낸다. 끔 / 켬에서 0x85 의 명령(칸 21)과 자이로(칸 22)의 차이를 견준다 — 켬에서 차이가 줄어야 한다.</li>
+        <li><strong>제자리 회전 속도.</strong> 같은 명령으로 한 바퀴(360°) 도는 데 걸린 시간을 끔 / 켬으로 잰다. 켬에서 명령한 속도에 가까워진다. 회전 중심(옆 밀림)은 이 층의 몫이 아니다.</li>
+        <li><strong>슬립 억제와 함께.</strong> 미끄러운 바닥(또는 한쪽 바퀴 아래 미끄러운 판)에서 회전을 걸어 <code>trac</code> 이 내려가는 동안 <code>flags</code> 의 bit3 · bit2(적분 멈춤)가 함께 서는 것을 본다.</li>
+        <li><strong>상한.</strong> 차체 한쪽을 손으로 잡아 직진을 막아 본다(저속). Δ 가 <code>YAW_DELTA_MAX_MM_S</code> 에 붙고 bit1(포화)이 선다. 브리지 로그에 포화 경고가 한 번 남는다.</li>
+      </ol>
+
+      <h4 id="s3-h-5">3-H-5. 보고 판정하기</h4>
+      <div class="tbl"><table class="compact fixed"><colgroup><col class="w40"><col class="w30"><col class="w30"></colgroup>
+        <thead><tr><th>확인</th><th>기대</th><th>관찰</th></tr></thead>
+        <tbody>
+          <tr><td>끔 상태의 <code>step</code> CSV · <code>exec_us_max</code></td><td>G 의 CSV 와 같은 모양</td><td>____ · ____ µs</td></tr>
+          <tr><td>0x85 의 주기 · 끔 상태 flags</td><td>50 Hz · 0x0000</td><td>____ · ____</td></tr>
+          <tr><td>정지 중 <code>rate_ddps</code> 의 흔들림</td><td>불감대 안</td><td>____</td></tr>
+          <tr><td>둔덕 직진 끝 방향 오차 (끔 / 켬, 세 번 평균)</td><td>켬이 작다</td><td>____ / ____ °</td></tr>
+          <tr><td>둔덕 직진 옆 밀림 (끔 / 켬)</td><td>켬이 작다</td><td>____ / ____ mm</td></tr>
+          <tr><td>완만한 회전: 명령 − 자이로 (끔 / 켬)</td><td>켬이 작다</td><td>____ / ____ °/s</td></tr>
+          <tr><td>제자리 한 바퀴 시간 (끔 / 켬 / 명령으로 계산한 시간)</td><td>켬이 명령에 가깝다</td><td>____ / ____ / ____ s</td></tr>
+          <tr><td>슬립 억제 동작 중 bit2 · bit3</td><td>함께 선다</td><td>____</td></tr>
+          <tr><td>막았을 때 Δ · bit1</td><td>상한 · 1</td><td>____ · ____</td></tr>
+        </tbody>
+      </table></div>
+      <p>값이 기대와 다르면 다르다고 적는다. 고친 키는 상태 낱말을 <code>MEASURED(&lt;날짜&gt;, &lt;방법&gt; — &lt;바닥&gt;)</code> 로 바꾼다. 켜 둘지(<code>yaw on</code> 을 운용 절차에 넣을지)는 이 표를 보고 정한다.</p>
+
+      <h2 id="checkpoints">✅ 검증 체크포인트</h2>
+      <p>보고 베끼지 말고 직접 쳐서 통과하십시오. 판정 수단은 항목마다 적혀 있습니다.</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-key="yaw-rate-loop-floor"><span><strong>경로 통과</strong> — <code>test_yaw.c</code> 가 <code>PASS yaw 38 cases</code> 이고, 0x85 를 더한 <code>test_frame_parser</code> 가 <code>PASS frame_parser 70 cases</code> 다. 바닥에서 판자 둔덕 직진을 끔 / 켬 세 번씩 해 끝 방향 오차와 옆 밀림을 §3-H-5 표에 적었다. Pi 에서 0x85 로 Δ 와 적분 몫이 둔덕에서 서고 지난 뒤 0 으로 돌아오는 것을 봤다
+          <span class="sub">판정 수단: 호스트 시험 두 줄 · §3-H-5 의 표 · probe 의 <code>CTRL</code> 줄 또는 <code>/mcu/control</code> 그래프 · 받침대에서는 <code>yaw on</code> 을 치지 않았다</span></span></label></li>
+      </ul>
+      <p class="progress-line"></p>
+      <div class="progress-bar"><span></span></div>
+
+      <h2 id="symptoms">증상 ↔ 원인</h2>
+      <div class="tbl"><table class="fixed"><colgroup><col class="w24"><col class="w36"><col class="w24"><col class="w16"></colgroup>
+        <thead><tr><th>증상</th><th>원인</th><th>확인하는 법</th><th>고치는 곳</th></tr></thead>
+        <tbody>
+          <tr><td><code>yaw on</code> 뒤 직진에서 차체가 점점 한쪽으로 돌고 Δ 가 상한에 붙는다</td><td><code>IMU_GY_YAW</code> 의 부호가 거꾸로다 — 보정이 틀어짐을 키운다(fw-20a §2-7). 또는 받침대 위라 차체가 돌지 않는다(§2-11 ②)</td><td>제자리 반시계 회전에서 <code>yaw</code> 의 <code>rate_ddps</code> 가 + 인가</td><td><code>robot_params.h</code> 의 <code>IMU_GY_YAW</code> · 바닥으로</td></tr>
+          <tr><td>멈춰 있다 출발할 때마다 차체가 천천히 한쪽으로 흐른다</td><td>치우침이 덜 빠졌다 — 정지 시간이 <code>YAW_STILL_MS</code> 보다 짧다. 적분은 치우침을 뺀 오차를 그대로 쌓으므로 남은 치우침만큼 돈다</td><td>정지 중 <code>yaw</code> 의 <code>bias_cdps</code> · <code>rate_ddps</code></td><td><code>YAW_STILL_MS</code></td></tr>
+          <tr><td>한쪽 바퀴가 둔덕을 넘은 뒤 켬이 끔보다 더 틀어진다</td><td>수직축 회전 속도가 틀렸다 — 롤 · 왼쪽 축 키(<code>IMU_GY_ROLL</code> · <code>IMU_AX_LEFT</code>)의 부호가 거꾸로이거나 피치 부호를 뒤집지 않았다(<code>-slope_axis(IMU_GY_PITCH, …)</code>)</td><td>차체를 롤 20° 쯤 기울인 채 제자리 회전 — 0x85 의 수직축 회전 속도가 명령과 맞는가</td><td><code>robot_params.h</code> 의 축 키</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="quiz">🤔 이해 확인</h2>
+      <details class="quiz"><summary>1. 회전 속도 되먹임에서 P 만 두면 안 되고 I 가 있어야 하는 이유는? I 가 기억하는 것은 무엇인가?</summary>
+        <div class="ans"><p>P 는 지금 생기고 있는 회전 속도 오차에만 맞선다. 한 바퀴가 걸려 차체가 틀어지는 동안에는 틀어짐을 줄이지만, 걸림이 끝나 오차가 0 이 되면 보정도 0 이 되어 <strong>이미 틀어진 각은 그대로 남는다</strong>.
+        I 는 회전 속도 오차를 시간으로 쌓는다. 쌓인 값은 "명령한 방향 변화 − 실제 방향 변화", 곧 <strong>방향 오차</strong>다. 그래서 걸림이 끝난 뒤에도 그 값만큼 보정이 남아 틀어진 각으로 되돌리고, 되돌아가는 동안 반대 오차가 쌓여 0 으로 돌아온다(§2-11, 호스트 시험 벡터 5).</p></div></details>
+      <details class="quiz"><summary>2. 받침대(바퀴를 띄운 상태)에서 이 층을 켜면 회전 명령에 무슨 일이 생기는가? 그리고 그것을 막는 장치 둘은?</summary>
+        <div class="ans"><p>차체가 돌지 않으므로 자이로는 늘 0 이다. 회전 명령이 오면 오차가 줄지 않아 적분이 상한까지 차고 Δ 가 상한에 붙어, 좌우 차이가 명령보다 훨씬 커진다.
+        막는 장치는 (1) 부팅하면 늘 꺼져 있고 바닥에서 <code>yaw on</code> 으로만 켜는 것, (2) 적분 상한과 Δ 상한이다(§2-11 ②).</p></div></details>
+      <details class="quiz"><summary>3. 롤 20° 로 기운 채 수직축으로 30 °/s 돌 때 z 자이로는 얼마를 읽는가? 그 값을 회전 속도 되먹임에 그대로 쓰면 무슨 일이 생기는가?</summary>
+        <div class="ans"><p>r = 30 × cos20° ≈ 28.2 °/s 다. 고리는 차체가 명령보다 덜 돈다고 보고 더 돌리려 한다. 둔덕을 넘는 동안처럼 롤 · 피치가 바뀌는 순간에는 y 축 회전이 섞여 들어와 적분한 방향이 정답에서 벗어나고, I 몫이 그 틀린 오차를 되돌리려다 오히려 더 틀어진다. 그래서 자세 추정으로 φ · θ 를 구해 ψ' = (q·sinφ + r·cosφ)/cosθ 를 쓴다(§2-11 ④).</p></div></details>
+
+      <h2 id="next">다음 행선지</h2>
+      <div class="callout tip"><span class="ct">여기까지 했으면</span>
+        <ul>
+          <li><strong>모든 항목이 통과됐으면</strong> → <a href="fw-20d-roll.html">fw-20d</a> 의 실습 I(기울기 대응)로 간다. 실습 I 는 이 쪽의 자세 추정과 0x85 를 쓴다.</li>
+        </ul>
+      </div>
+
+      <h2 id="footnotes">각주</h2>
+      <p class="small">본문의 작은 번호를 누르면 여기로 온다. 근거 문서 · 핀 목록 · 1세대 기록 · 확인한 날짜를 모았다. ↩ 를 누르면 본문으로 돌아간다.</p>
+      <ol class="footnotes">
+          <li id="fn-1">06a §4-2 의 표에서 0x84 는 설정 프레임 0x02 의 응답 자리로 적혀 있고 "처음에는 구현하지 않는다". 그 자리를 비워 두고 다음 빈 번호 0x85 를 쓴다. 출력 제어 프레임은 51 B(머리 · CRC 포함 56 B)로 계약 상한 64 B 안이다. 끝의 3 B(들림 여유 · 그 변)는 실습 I 가 채우고, 그 전에는 "계산하지 않음" 값(32767 · 0xFF)을 보낸다. <a class="fn-back" href="#fnref-1" aria-label="본문으로">↩</a></li>
+          <li id="fn-2">오일러 ZYX 각의 미분 관계: φ' = p + (q·sinφ + r·cosφ)·tanθ, θ' = q·cosφ − r·sinφ, ψ' = (q·sinφ + r·cosφ)/cosθ. 가속도로 구한 자세: φ = atan2(f_y, f_z), θ = atan2(−f_x, √(f_y² + f_z²)). 상보 필터는 둘을 시간 상수 τ 로 섞는다(k = dt/(τ + dt)). <a class="fn-back" href="#fnref-2" aria-label="본문으로">↩</a></li>
+          <li id="fn-3">WT901 의 0x53 각도는 <code>wt901.c</code> 가 <code>s_roll_ddeg</code> · <code>s_pitch_ddeg</code> 에 담아 <code>wt stat</code> 으로만 찍는다(fw-14). <a class="fn-back" href="#fnref-3" aria-label="본문으로">↩</a></li>
+          <li id="fn-4">비례 게인의 자연 배율: 회전 속도 1 °/s 는 좌우 속도 차 W × π ÷ 180 [mm/s] 에 해당한다(W 400 mm 면 약 7 mm/s). Δ 는 그 차이를 통째로 더하는 양이므로 kp = W × π ÷ 180 이면 오차 하나를 한 틱에 다 메우려 한다 — 그 절반에서 시작해 진동 없이 따라가는 값을 찾는다. 적분 게인 4000 milli 는 방향 오차 5° 에서 Δ 20 mm/s 다. <a class="fn-back" href="#fnref-4" aria-label="본문으로">↩</a></li>
+      </ol>
+
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C1 · 호스트에서 카메라 확인 — 사진 한 장, 센서 모드, 초점 — 카메라 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="c-01">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">C1 · 호스트에서 카메라 확인</p>
+      <h1>호스트에서 카메라 확인 — 사진 한 장, 센서 모드, 초점</h1>
+<p class="lead">컨테이너와 ROS 2 는 아직 쓰지 않는다. Pi 호스트의 <code>rpicam</code> 명령만으로 카메라가 동작하는지 확인하고, 뒤의 모든 쪽이 전제하는 두 설정 — <strong>센서 모드</strong>와 <strong>초점</strong> — 을 여기서 정한다.
+호스트에서 안 되는 것은 컨테이너에서도 안 된다. 그래서 호스트가 먼저다.</p>
+<div class="goal">
+<span class="label">이 쪽이 끝나면 보이는 것</span>
+<ul>
+  <li><code>rpicam-jpeg</code> 로 찍은 사진이 Mac 에서 열린다.</li>
+  <li>센서 모드 2304 × 1296 을 지정해 찍었을 때 로그에 그 모드가 보인다.</li>
+  <li>초점을 수동으로 고정해 찍은 사진이 2 m 앞에서 선명하다. 렌즈 위치 값을 적었다.</li>
+  <li>호스트의 libcamera · rpicam-apps 판을 <code>hardware/INVENTORY.md</code> 4절과 대조했다.</li>
+</ul>
+<p><strong>필요한 것</strong> — 카메라가 연결된 Pi, Mac. 2 m 앞에 글자가 있는 물건(책 표지, 상자 라벨)을 둔다.</p>
+</div>
+<div class="meta">
+<div><span class="k">환경</span><span class="tag pi">Pi 호스트</span> <span class="tag mac">Mac</span></div>
+<div><span class="k">선행</span><a href="c-00-map.html">C0</a> — <code>--list-cameras</code> 에 카메라가 보인다</div>
+<div><span class="k">만드는 것</span>사진 파일 <code>/tmp/test.jpg</code>(C5 의 시험 사진으로 다시 쓴다), 센서 모드 · 렌즈 위치 값 두 개</div>
+<div><span class="k">적는 곳</span>INVENTORY 4절 "호스트 libcamera" · "rpicam-apps" 행 — 이미 적혀 있으면 같은지 대조한다</div>
+</div>
+<h2 id="overview">1. 개요</h2>
+<p>Pi 5 의 카메라는 네 층으로 동작한다. 아래로 갈수록 하드웨어에 가깝다.</p>
+<pre class="diagram"><code>응용 프로그램      rpicam-apps (이 쪽)  ·  camera_ros 노드 (C2 부터)
+라이브러리         libcamera — 노출 · 화이트밸런스 · 색 보간을 여기서 한다 (사용자 공간)
+커널 드라이버      imx708 센서 드라이버 + PiSP 영상 처리기 드라이버
+장치 파일          /dev/video*   /dev/media*   /dev/dma_heap</code></pre>
+<p>셋째 층 위의 일(노출, 화이트밸런스, 색 보간)이 전부 libcamera 에 있다. 그래서 <code>/dev/video0</code> 을 직접 여는 ROS 드라이버(<code>v4l2_camera</code>)는 색 처리 전의 원시 센서 값만 받는다. 이 카메라는 libcamera 를 거쳐야만 영상이 된다.</p>
+<p>이 쪽은 첫째 층의 <code>rpicam-apps</code> 만 쓴다. 명령 셋을 익힌다.</p>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w36"><col class="w64"></colgroup>
+<thead><tr><th>명령</th><th>하는 일</th></tr></thead>
+<tbody>
+<tr><td><code>rpicam-hello --list-cameras</code></td><td>연결된 카메라와 센서 모드 목록을 보인다</td></tr>
+<tr><td><code>rpicam-jpeg</code></td><td>사진 한 장을 JPEG 파일로 저장한다</td></tr>
+<tr><td><code>rpicam-still</code></td><td>사진을 저장한다. 센서 모드 · 초점 · 시간 간격 촬영 옵션이 있어 C3 의 보정 촬영에 쓴다</td></tr>
+</tbody></table></div>
+<h2 id="why">2. 원리</h2>
+<h3 id="s2-1">2-1. 이 카메라는 일반 모델 두 대다</h3>
+<ul>
+  <li><strong>일반 모델</strong> = 적외선 차단 필터가 있고 렌즈가 표준형이다. 색은 눈으로 본 것과 비슷하게 나온다. 화이트밸런스는 센서 이름에 맞는 튜닝 파일(<code>imx708.json</code>)이 이미 처리하므로 손댈 것이 없다.</li>
+  <li><strong>표준 렌즈</strong> = 수평 시야각 약 66°, 수직 약 41°(제조사 사양). 가장자리의 휨은 작지만 0 은 아니다. 휘는 정도는 C3 의 보정이 왜곡 계수로 잰다.</li>
+  <li><strong>두 대</strong> = 판 하나에 좌우로 나란히 고정한 스테레오 한 쌍이다. 왼쪽이 CAM/DISP 0, 오른쪽이 CAM/DISP 1 이다. C1 ~ C8 은 왼쪽 한 대로 진행하고, 두 대를 함께 쓰는 일은 뒤에 이어지는 스테레오 쪽에서 다룬다. <code>rpicam</code> 명령은 <code>--camera 0</code> · <code>--camera 1</code> 로 고르고, 지정하지 않으면 0 번을 연다.</li>
+  <li>색보다 중요한 것은 노출이 안정된 것이다.</li>
+</ul>
+<p class="small">보유 중인 Camera Module 3 Wide NoIR(광각, 적외선 차단 필터 없음)은 이 로봇의 운용 카메라가 아니다. 이 쪽의 명령을 시험해 볼 때 벤치에서 바꿔 끼워 쓸 수는 있다. 그때는 센서 이름이 <code>imx708_wide_noir</code>, 수평 시야각이 약 102° 로 나오고 낮에 사진이 붉다. 보정값과 설정 파일의 값은 운용 카메라로 정한다.</p>
+<h3 id="s2-2">2-2. 센서 모드와 출력 해상도는 다른 것이다</h3>
+<p>센서 모드는 센서가 어느 영역을 몇 장씩 읽는가다. 출력 해상도는 그 영상을 축소해 내보내는 크기다. 이 카메라의 센서 모드는 셋이다.</p>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w20"><col class="w16"><col class="w32"><col class="w32"></colgroup>
+<thead><tr><th>센서 모드</th><th>프레임 상한</th><th>센서 영역</th><th>뜻</th></tr></thead>
+<tbody>
+<tr><td>1536 × 864</td><td>120 fps</td><td>중앙 3072 × 1728 (전체의 2/3)</td><td>시야가 좁다. 수평 약 47°(계산값)</td></tr>
+<tr><td>2304 × 1296</td><td>56 fps</td><td>전체 4608 × 2592</td><td><strong>이 가이드가 쓰는 모드.</strong> 전체 시야, 30 fps 가능</td></tr>
+<tr><td>4608 × 2592</td><td>14.35 fps</td><td>전체</td><td>30 fps 가 안 된다</td></tr>
+</tbody></table></div>
+<p>640 × 480 을 요청하면서 센서 모드를 지정하지 않으면 libcamera 가 모드를 자동으로 고른다. 그 모드가 1536 × 864 면 시야가 좁아지고 보정값(초점거리)이 1.5 배 달라진다. 그래서 <strong>항상 <code>2304:1296</code> 을 명시</strong>하고, 보정 촬영(C3)과 운용(C2)에 같은 모드를 쓴다.</p>
+<p>한 가지 더 있다. 센서 모드는 16:9 이고 출력 640 × 480 은 4:3 이다. 비율이 다르면 좌우가 잘려 수평 시야가 66° 보다 좁아진다. 실제 시야각은 C3 의 보정 결과가 알려 준다.</p>
+<h3 id="s2-3">2-3. 초점은 수동으로 고정한다</h3>
+<p>Camera Module 3 는 자동초점 카메라다. 초점을 맞춘다는 것은 렌즈를 앞뒤로 움직인다는 뜻이고, 보정이 구하는 초점거리는 렌즈 위치에 따라 변한다. 자동초점을 켠 채 운용하면 보정값이 장면마다 달라진다.</p>
+<p>그래서 렌즈 위치를 한 값에 고정하고, 보정 촬영과 운용에 같은 값을 쓴다. 단위는 디옵터 = 1 ÷ 초점을 맞출 거리(m) 다.</p>
+<ul>
+  <li>0 → 무한대, 0.5 → 2 m, 2 → 50 cm.</li>
+  <li>이 로봇이 보는 거리는 0.5 ~ 5 m 다. 이 가이드는 <strong>0.5(2 m)</strong>를 쓴다. 내 환경에서 더 선명한 값이 있으면 그 값을 쓰되, C2 의 설정 파일과 C3 의 촬영에 같은 값을 넣는다.</li>
+</ul>
+<h2 id="lab">3. 실습</h2>
+<p>전부 Pi 호스트의 셸에서 한다(<code>ssh pi5</code>). 카메라는 한 번에 한 프로세스만 열 수 있다. 컨테이너의 카메라 노드가 떠 있으면 먼저 내린다.</p>
+<h3 id="s3-1">3-1. 카메라와 모드 목록 <span class="tag pi">Pi 호스트</span></h3>
+<pre><code class="lang-bash">rpicam-hello --list-cameras</code></pre>
+<p>예상 형태다(경로 부분은 줄였다). 모드 목록은 IMX708 센서의 것이라 두 대가 같다.</p>
+<pre><code class="lang-text">Available cameras
+-----------------
+0 : imx708 [4608x2592 10-bit RGGB] (…/i2c@88000/imx708@1a)
+    Modes: 'SRGGB10_CSI2P' : 1536x864 [120.13 fps - (768, 432)/3072x1728 crop]
+                             2304x1296 [56.03 fps - (0, 0)/4608x2592 crop]
+                             4608x2592 [14.35 fps - (0, 0)/4608x2592 crop]
+
+1 : imx708 [4608x2592 10-bit RGGB] (…)
+    Modes: (위와 같다)</code></pre>
+<p>모드 줄의 괄호는 센서에서 읽는 영역이다. <code>(768, 432)/3072x1728</code> 은 센서 중앙의 3072 × 1728 만 읽는다는 뜻이고, <code>(0, 0)/4608x2592</code> 는 전체를 읽는다는 뜻이다.</p>
+<h3 id="s3-2">3-2. 사진 한 장 <span class="tag pi">Pi 호스트</span> <span class="tag mac">Mac</span></h3>
+<p>사람이나 의자가 있는 장면을 찍는다. 이 사진은 C5 에서 검출 모델의 시험 사진으로 다시 쓴다.</p>
+<pre><code class="lang-bash">rpicam-jpeg -n -t 2000 --width 1280 --height 720 -o /tmp/test.jpg
+#   -n : 미리보기 없음(화면이 없는 Pi 에서 필수)   -t 2000 : 2 초 뒤 촬영</code></pre>
+<p>Mac 으로 가져와 연다.</p>
+<pre><code class="lang-bash"># Mac
+scp pi5:/tmp/test.jpg /tmp/ &amp;&amp; open /tmp/test.jpg</code></pre>
+<p>붉은 색감과 가장자리의 휨이 보이면 2-1 의 설명대로 정상이다.</p>
+<h3 id="s3-3">3-3. 센서 모드를 지정해 찍는다 <span class="tag pi">Pi 호스트</span></h3>
+<p><code>--mode 가로:세로:비트:P</code> 로 지정한다. 비트는 10, <code>P</code> 는 압축 저장 형식이다. 로그에서 선택된 모드를 확인한다.</p>
+<pre><code class="lang-bash">rpicam-still -n -t 1000 --width 640 --height 480 --mode 2304:1296:10:P -o /tmp/mode_test.jpg 2&gt;&amp;1 \
+  | grep -i 'selected sensor format'
+#   ... Selected sensor format: 2304x1296-SRGGB10_1X10 - Selected CFE format: ...</code></pre>
+<p><code>2304x1296</code> 이 보이면 된다. 같은 명령에서 <code>--mode</code> 를 빼고 다시 실행해 어떤 모드가 자동으로 골라지는지도 본다. 다르게 나오면, 그 차이가 센서 모드를 명시하는 이유다.</p>
+<h3 id="s3-4">3-4. 초점을 고정해 찍는다 <span class="tag pi">Pi 호스트</span> <span class="tag mac">Mac</span></h3>
+<p>2 m 앞에 글자가 있는 물건을 두고 찍는다.</p>
+<pre><code class="lang-bash">rpicam-still -n -t 3000 --width 640 --height 480 --mode 2304:1296:10:P \
+  --autofocus-mode manual --lens-position 0.5 -o /tmp/focus_test.jpg
+# Mac
+scp pi5:/tmp/focus_test.jpg /tmp/ &amp;&amp; open /tmp/focus_test.jpg</code></pre>
+<p>글자가 읽히면 렌즈 위치 0.5 를 그대로 쓴다. 흐리면 값을 바꿔 다시 찍는다 — 더 가까운 곳이 선명하려면 값을 올리고(1.0 = 1 m), 더 먼 곳이면 내린다(0.25 = 4 m). 정한 값을 노트에 적는다. C2 의 <code>camera.yaml</code> 과 C3 의 촬영 명령에 같은 값을 넣는다.</p>
+<h3 id="s3-5">3-5. 판 기록 <span class="tag pi">Pi 호스트</span></h3>
+<pre><code class="lang-bash">dpkg -l libcamera0.7 libcamera-ipa rpicam-apps 2&gt;/dev/null | awk '/^ii/{print $2, $3}'
+#   libcamera0.7 0.7.2+rpt20260817-1
+#   libcamera-ipa 0.7.2+rpt20260817-1
+#   rpicam-apps 1.13.0-1</code></pre>
+<p><code>hardware/INVENTORY.md</code> 4절의 "호스트 libcamera" · "rpicam-apps" 행과 같은지 본다. 다르면 호스트가 업그레이드된 것이다. 새 값을 적고, C2 의 Dockerfile 태그도 새 값에 맞춘다.</p>
+<h2 id="checkpoints">✅ 검증 체크포인트</h2>
+<p>직접 실행해서 확인한 것만 체크한다. 체크 기록은 이 브라우저에만 저장된다.</p>
+<ul class="checklist">
+  <li><label><input type="checkbox" data-key="c01-photo-opened"><span><code>/tmp/test.jpg</code> 를 Mac 에서 열어 장면을 확인했다. 붉은 색감과 가장자리 휨이 정상임을 안다<span class="sub">§3-2</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c01-mode-log"><span><code>--mode 2304:1296:10:P</code> 로 찍었을 때 로그의 <code>Selected sensor format</code> 이 2304x1296 이다<span class="sub">§3-3</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c01-auto-mode-seen"><span><code>--mode</code> 없이 찍었을 때 어느 모드가 자동으로 골라지는지 봤다<span class="sub">§3-3</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c01-focus-fixed"><span>수동 초점으로 찍은 사진이 2 m 에서 선명하고, 쓸 렌즈 위치 값을 적었다<span class="sub">§3-4</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c01-versions-checked"><span>libcamera · rpicam-apps 판을 INVENTORY 4절과 대조했다<span class="sub">§3-5</span></span></label></li>
+</ul>
+<p class="progress-line"></p>
+<div class="progress-bar"><span></span></div>
+<h2 id="symptoms">증상과 원인</h2>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w28"><col class="w32"><col class="w40"></colgroup>
+<thead><tr><th>증상</th><th>원인</th><th>조치</th></tr></thead>
+<tbody>
+<tr><td><code>--list-cameras</code> 에 아무것도 없다</td><td>케이블 접촉 · 방향, 또는 <code>config.txt</code></td><td>학습 단계 01 §3-5. 전원을 끄고 22핀 케이블을 다시 끼운다</td></tr>
+<tr><td><code>Failed to acquire camera</code></td><td>다른 프로세스가 카메라를 열고 있다</td><td>컨테이너의 카메라 노드나 다른 <code>rpicam</code> 프로세스를 끝낸다. 카메라는 한 번에 한 프로세스만</td></tr>
+<tr><td>사진이 붉고 뿌옇다</td><td>적외선 차단 필터가 없는 NoIR 카메라가 꽂혀 있다</td><td>3-1 의 센서 이름이 <code>imx708</code> 인지 본다. <code>_noir</code> 가 붙어 있으면 운용 카메라로 바꾼다 (2-1)</td></tr>
+<tr><td>두 대 중 한 대만 보인다</td><td>보이지 않는 쪽의 케이블 접촉 · 방향</td><td>전원을 끄고 그쪽 케이블을 다시 끼운다. 두 카메라를 서로 바꿔 꽂아 보면 카메라 문제인지 커넥터 문제인지 가를 수 있다</td></tr>
+<tr><td><code>--mode</code> 를 줬는데 로그의 모드가 다르다</td><td>옵션 형식이 틀렸거나, 목록에 없는 해상도</td><td><code>가로:세로:비트:P</code> 꼴인지, 3-1 의 목록에 있는 해상도인지 확인한다</td></tr>
+<tr><td>수동 초점 사진이 전부 흐리다</td><td>렌즈 위치 값이 장면 거리와 맞지 않는다</td><td>값을 0.25 · 0.5 · 1.0 · 2.0 으로 바꿔 가며 찍어 비교한다</td></tr>
+</tbody></table></div>
+<h2 id="quiz">🤔 이해 확인</h2>
+<p>이 쪽에서 설명한 내용만으로 답할 수 있다. 답을 펼치기 전에 먼저 말로 답해 본다.</p>
+<details class="quiz"><summary>1. 출력 해상도 640 × 480 을 요청하면서 센서 모드를 따로 지정하는 이유는 무엇인가.</summary>
+  <div class="ans"><p>640 × 480 은 축소해 내보내는 크기일 뿐이고, 센서의 어느 영역을 읽을지는 센서 모드가 정한다. 지정하지 않으면 libcamera 가 자동으로 고르고, 중앙 2/3 만 읽는 1536 × 864 가 골라지면 시야가 좁아지고 보정값이 1.5 배 달라진다. 보정과 운용에 같은 모드(2304 × 1296)를 써야 보정값이 맞는다.</p></div></details>
+<details class="quiz"><summary>2. 렌즈 위치 0.5 는 무슨 뜻인가. 자동초점을 켠 채 운용하면 무엇이 문제인가.</summary>
+  <div class="ans"><p>단위가 디옵터(1 ÷ 거리 m)라서 0.5 는 2 m 에 초점을 맞춘다는 뜻이다. 자동초점은 장면에 따라 렌즈를 움직이고, 렌즈가 움직이면 보정이 구한 초점거리가 달라진다. 그래서 보정 촬영과 운용에 같은 값으로 고정한다.</p></div></details>
+<details class="quiz"><summary>3. 사진 전체가 붉다. 무엇을 먼저 확인하는가.</summary>
+  <div class="ans"><p>꽂힌 카메라가 운용 카메라(일반 모델)인지 본다. 적외선 차단 필터가 없는 NoIR 모듈은 적외선까지 센서에 들어와 낮에 붉게 나온다. <code>--list-cameras</code> 의 센서 이름이 <code>imx708</code> 이면 일반 모델이고, <code>imx708_wide_noir</code> 처럼 <code>_noir</code> 가 붙어 있으면 다른 카메라다.</p></div></details>
+<h2 id="next">다음</h2>
+<div class="callout tip"><span class="ct">여기까지 했으면</span>
+<ul>
+  <li>번호순 다음은 <a href="c-02-camera-topic.html">C2 컨테이너에서 영상 토픽</a> 이다. 여기서 정한 센서 모드 <code>2304:1296</code> 과 렌즈 위치 값이 C2 의 설정 파일에 들어간다.</li>
+  <li>C2 는 컨테이너 이미지 빌드에 20 ~ 40 분이 걸린다. 빌드를 걸어 두고 C3 의 체커보드를 인쇄해 두면 시간이 겹친다.</li>
+</ul>
+</div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>

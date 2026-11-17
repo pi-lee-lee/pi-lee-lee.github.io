@@ -69,6 +69,7 @@
 
       <h3>2-1. 왜 Ubuntu 가 아니라 Raspberry Pi OS 인가</h3>
       <p>처음 계획은 "최신 Ubuntu"였다. <strong>Hailo-8 AI HAT+ (26 TOPS)가 추가되면서 이 결정의 기준이 바뀌었다.</strong> 결론부터 쓰고 근거를 든다.</p>
+      <p>AI HAT+ 는 Pi 5 의 PCIe(고속 확장 버스) 커넥터에 연결하는 신경망 가속 확장 기판이다. TOPS 는 초당 연산 횟수를 조 단위로 적는 가속기 성능 지표다.</p>
       <div class="callout tip"><span class="ct">권장: Raspberry Pi OS Trixie (64-bit)</span>
         <p>02 단계에서 자세히 다루지만, ROS 2 는 어느 호스트에서든 컨테이너 안에서 똑같이 jammy + Humble 로 실행된다.
         즉 <strong>"ROS 에 좋은 OS"를 고를 이유가 없어졌다.</strong> 남은 기준은 하나 — <strong>하드웨어 드라이버가 가장 잘 지원되는 OS</strong>. 그리고 우리 하드웨어 3개 중 2개(카메라, Hailo)는 Raspberry Pi OS 에서 가장 잘 지원된다.</p>
@@ -77,10 +78,10 @@
         <thead><tr><th>항목</th><th><strong>Raspberry Pi OS Trixie</strong></th><th>Ubuntu 24.04 LTS</th></tr></thead>
         <tbody>
           <tr><td><strong>Hailo-8 드라이버</strong></td><td><code>sudo apt install dkms hailo-all</code> 한 줄로 설치된다</td><td><strong>소스 빌드.</strong> Canonical 가이드가 특정 커밋에 고정, <code>linux-headers-$(uname -r)</code> 필요</td></tr>
-          <tr><td><strong>커널 업데이트 후</strong></td><td>DKMS 가 자동 재빌드</td><td><code>apt upgrade</code> 로 <code>-raspi</code> 커널이 바뀌면 <strong>드라이버가 오류 표시 없이 멈춘다</strong> → 매번 수동 재빌드</td></tr>
-          <tr><td><strong>드라이버 ↔ HailoRT 버전</strong></td><td>apt 가 함께 맞춰 준다</td><td>수동 관리. <em>"사소한 버전 차이만 있어도 SDK 가 하드웨어를 감지하지 못한다"</em> (Canonical 문서 원문)</td></tr>
+          <tr><td><strong>커널 업데이트 후</strong></td><td>DKMS(커널 모듈을 새 커널에 맞춰 다시 빌드하는 도구)가 자동 재빌드</td><td><code>apt upgrade</code> 로 <code>-raspi</code> 커널이 바뀌면 <strong>드라이버가 오류 표시 없이 멈춘다</strong> → 매번 수동 재빌드</td></tr>
+          <tr><td><strong>드라이버 ↔ HailoRT 버전</strong></td><td>apt 가 함께 맞춰 준다</td><td>수동 관리. <em>"사소한 버전 차이만 있어도 SDK 가 하드웨어를 감지하지 못한다"</em>(Canonical 가이드 저장소의 README)<sup class="fn"><a href="#fn-1" id="fnref-1">1</a></sup></td></tr>
           <tr><td><strong>PCIe Gen 3</strong></td><td>AI HAT+ 는 <strong>자동 감지</strong></td><td>수동 설정</td></tr>
-          <tr><td><strong>카메라 (IMX708 Wide NoIR)</strong></td><td><code>rpicam-hello</code> 그대로 동작</td><td>모든 <code>rpicam-*</code> 명령에 <code>--qt-preview</code> 필요, 일부 예제에서 오토포커스 오류</td></tr>
+          <tr><td><strong>카메라 (IMX708, Camera Module 3 ×2)</strong></td><td><code>rpicam-hello</code> 그대로 동작</td><td>모든 <code>rpicam-*</code> 명령에 <code>--qt-preview</code> 필요, 일부 예제에서 오토포커스 오류</td></tr>
           <tr><td><strong>rpicam-apps Hailo 후처리</strong></td><td>내장 (<code>hailo-all</code> 에 포함)</td><td>별도 구성</td></tr>
           <tr><td><strong>ROS 2 자료</strong></td><td>(컨테이너 안이므로 <strong>무관</strong>)</td><td>(컨테이너 안이므로 <strong>무관</strong>)</td></tr>
         </tbody>
@@ -113,14 +114,14 @@
       <p>Trixie 를 쓴다. <strong>반드시 64-bit</strong> 여야 한다 (Hailo 필수 조건).</p>
 
       <h3>2-2. 왜 시간 동기화가 ROS 2 에서 중요한가</h3>
-      <p>ROS 2 의 모든 메시지에는 타임스탬프가 붙고, TF(05 단계)는 "<em>이 시각의</em> 변환"을 조회한다. 시계가 틀어지면 TF 조회가 실패하고
+      <p>ROS 2 의 모든 메시지에는 타임스탬프가 붙고, TF(좌표계 사이의 변환을 시각별로 관리하는 ROS 2 라이브러리, 05 단계)는 "<em>이 시각의</em> 변환"을 조회한다. 시계가 틀어지면 TF 조회가 실패하고
       SLAM/Nav2 가 센서 데이터를 아예 쓰지 못한다. 증상은 <code>extrapolation into the future</code> 같은 오류로 나타나고, 원인이 "시계"라는 것을 알아차리기 어렵다.
       그래서 §3-3 에서 <code>timedatectl</code> 의 <code>synchronized: yes</code> 를 확인한다.</p>
 
       <h3>2-3. 왜 장치 이름을 udev 로 고정하는가 — ttyUSB 와 ttyACM</h3>
       <p>커널은 USB 시리얼 장치에 <strong>인식된 순서대로</strong> 번호를 붙인다. 순서는 부팅마다, 케이블을 다시 꽂을 때마다 바뀔 수 있다.
       런치파일에 <code>/dev/ttyUSB0</code> 을 직접 적어 두면 "어제는 됐는데 오늘은 라이다가 모터 명령을 받는" 상황이 생긴다.
-      udev 규칙으로 VID/PID(+시리얼번호)에 이름을 묶어 <code>/dev/lidar</code>, <code>/dev/mcu</code> 로 고정한다.</p>
+      udev 규칙으로 VID/<span data-noabbr>PID</span>(+시리얼번호)에 이름을 묶어 <code>/dev/lidar</code>, <code>/dev/mcu</code> 로 고정한다.</p>
       <div class="tbl"><table class="compact">
         <thead><tr><th>장치</th><th>USB 칩</th><th>커널 이름</th><th>udev 심볼릭 링크</th></tr></thead>
         <tbody>
@@ -129,7 +130,7 @@
         </tbody>
       </table></div>
       <div class="callout warn"><span class="ct">ttyACM 에는 ModemManager 라는 함정이 하나 더 있다</span>
-        <p>ModemManager 는 새로 꽂힌 <code>/dev/ttyACM*</code> 을 모뎀 후보로 간주하고 AT 명령을 보내 탐색한다. 그 몇 초 동안 AT 명령이 MCU 프레임과 섞여
+        <p>ModemManager(리눅스의 모뎀 관리 서비스)는 새로 꽂힌 <code>/dev/ttyACM*</code> 을 모뎀 후보로 간주하고 AT 명령(모뎀을 제어하는 글자 명령)을 보내 탐색한다. 그 몇 초 동안 AT 명령이 MCU 프레임과 섞여
         <strong>간헐적 CRC 오류, 초기 연결 실패</strong>로 나타나고, 이 증상은 배선(GND) 문제와 구분되지 않는다. 저장소의 udev 규칙에 들어 있는 <code>ENV{ID_MM_DEVICE_IGNORE}="1"</code> 한 줄이 ModemManager 의 탐색을 막는다. 06 단계에서 다시 본다.</p>
       </div>
 
@@ -141,30 +142,32 @@
       <h3>2-5. 전원 — 모든 이상한 증상의 숨은 원인</h3>
       <p>이 프로젝트는 전원을 셋으로 나눈다(<code>hardware/INVENTORY.md</code> 1절 "전원" · 7절 "USB 허브").</p>
       <ul>
-        <li><strong>Pi 5 의 전원</strong> — 벤치에서는 AC 어댑터, 조립 후에는 배터리 → XL4015 #1 이다. Pi 본체 · Hailo-8(부하 시 수 W) · 카메라 · Pi 의 USB 포트에 직접 꽂은 장치가 이 전원을 쓴다.</li>
-        <li><strong>셀프 파워 USB 허브의 전원</strong> — LiDAR(시동 때 스캐너만 500 ~ 600 mA — A1M8 데이터시트 Figure 2-8)와 루트 SSD 를 허브에 꽂는다. 두 장치의 5 V 는 허브의 전원에서 온다.
-        벤치의 허브 전원은 27 W USB-C PD 어댑터다. <strong>이 어댑터는 Pi 의 전원이 아니다.</strong></li>
+        <li><strong>Pi 5 의 전원</strong> — 벤치에서는 AC 어댑터, 조립 후에는 배터리 → XL4015 #1 이다. XL4015 는 배터리 전압을 낮추는 강압 모듈이다. Pi 본체 · Hailo-8(부하 시 수 W) · 카메라 · Pi 의 USB 포트에 직접 꽂은 장치가 이 전원을 쓴다.</li>
+        <li><strong>셀프 파워 USB 허브의 전원</strong> — LiDAR(시동 때 스캐너만 500 ~ 600 mA<sup class="fn"><a href="#fn-2" id="fnref-2">2</a></sup>)와 루트 SSD 를 허브에 꽂는다. 두 장치의 5 V 는 허브의 전원에서 온다.
+        허브는 공식 Raspberry Pi USB 3 Hub 다.
+        벤치의 허브 전원은 27 W USB-C PD 어댑터다. PD(USB Power Delivery)는 연결할 때 전압·전류를 협상하는 USB 규격이다. <strong>이 어댑터는 Pi 의 전원이 아니다.</strong>
+        조립 후의 허브 전원은 배터리 → XL4015 #2 → 허브 5 V 입력이다. <strong>XL4015 #2 는 1세대 설정(3.3 V 출력)이 남아 있으므로 허브에 연결하기 전에 출력을 5 V 로 다시 맞춘다.</strong></li>
         <li><strong>배터리</strong> — 모터 쪽 전원이다.</li>
       </ul>
       <p>허브를 둔 이유는 Pi 혼자서 Pi · Hailo · 카메라 · SSD · LiDAR · MCU 의 전원을 다 대지 못하기 때문이다(INVENTORY 7절 "USB 허브").
-      Pi 의 USB 포트는 Pi 의 전원이 5 V/5 A 를 협상해도 합계 1.6 A 까지만 허용한다(백서 "USB Power Delivery on Raspberry Pi 5" 7쪽).</p>
-      <p>Pi 5 는 5 V 프로필만 요청하고, 5 V/5 A 가 협상되면 최대 25 W 를 받는다(백서 7쪽). 협상되지 않으면 두 가지가 바뀐다(백서 7쪽).</p>
+      Pi 의 USB 포트는 Pi 의 전원이 5 V/5 A 를 협상해도 합계 1.6 A 까지만 허용한다.<sup class="fn"><a href="#fn-3" id="fnref-3">3</a></sup></p>
+      <p>Pi 5 는 5 V 프로필만 요청하고, 5 V/5 A 가 협상되면 최대 25 W 를 받는다. 협상되지 않으면 두 가지가 바뀐다.<sup class="fn"><a href="#fn-3">3</a></sup></p>
       <ul>
         <li>USB 포트 전류 합계를 600 mA 로 제한한다. 허브 뒤의 장치는 이 한도와 무관하다.</li>
         <li>USB 부팅을 끈다(전원 버튼을 눌러 켠 경우는 예외). 루트가 USB SSD 인 이 구성에서는 부팅 여부가 여기에 달렸다.</li>
       </ul>
-      <p>PD 협상이 없는 전원이면 Pi 는 5 V/3 A 전원으로 간주한다(백서 8쪽). XL4015 #1 은 GPIO 헤더로 급전하든 USB-C 로 급전하든 이 경우다.
-      두 제한을 푸는 설정은 EEPROM 의 <code>PSU_MAX_CURRENT=5000</code> 과 <code>config.txt</code> 의 <code>usb_max_current_enable=1</code> 이다(백서 8쪽). 효과는 같다 — USB 합계 1.6 A, USB 부팅 켜짐.
-      <strong>이 프로젝트는 EEPROM 의 <code>PSU_MAX_CURRENT=5000</code> 을 쓴다</strong>(사용자 결정 2026-10-16, 설정은 §3-6). 이 값이 있으면 펌웨어가 PD 협상을 건너뛰고 전원을 5 A 로 간주하며, <code>usb_max_current_enable</code> 도 자동으로 켜진다(백서 8쪽).
+      <p>PD 협상이 없는 전원이면 Pi 는 5 V/3 A 전원으로 간주한다.<sup class="fn"><a href="#fn-4" id="fnref-4">4</a></sup> XL4015 #1 은 GPIO 헤더로 급전하든 USB-C 로 급전하든 이 경우다.
+      두 제한을 푸는 설정은 EEPROM(Pi 5 의 부트 설정이 저장된 칩)의 <code>PSU_MAX_CURRENT=5000</code> 과 <code>config.txt</code> 의 <code>usb_max_current_enable=1</code> 이다.<sup class="fn"><a href="#fn-4">4</a></sup> 효과는 같다 — USB 합계 1.6 A, USB 부팅 켜짐.
+      <strong>이 프로젝트는 EEPROM 의 <code>PSU_MAX_CURRENT=5000</code> 을 쓴다</strong>(설정은 §3-6).<sup class="fn"><a href="#fn-5" id="fnref-5">5</a></sup> 이 값이 있으면 펌웨어가 PD 협상을 건너뛰고 전원을 5 A 로 간주하며, <code>usb_max_current_enable</code> 도 자동으로 켜진다.<sup class="fn"><a href="#fn-4">4</a></sup>
       두 설정의 차이는 저장 위치다. EEPROM 의 값은 Pi 보드에 남아 OS 를 다시 설치해도 유지되고, <code>config.txt</code> 의 값은 SSD 의 부트 파티션에 있어 OS 를 새로 쓰면 사라진다.
       이 프로젝트의 기록은 INVENTORY 7절 "USB 전류 한도" 행에 있다.
       벤치 AC 어댑터가 5 V/5 A 를 협상하는지는 기록이 없다. 1절 "전원" 칸의 모델·정격이 빈칸이다.</p>
       <p>이 설정에서 알아 둘 것은 둘이다.</p>
       <ul>
-        <li><strong>허용이지 공급이 아니다.</strong> Pi 는 이 값을 그대로 믿고 USB 장치에 1.6 A 까지 허용한다. 그 전류를 실제로 내는 것은 전원이다. 이 구성에서 SSD · LiDAR 는 허브의 전원을 쓰므로, 설정을 바꿔도 Pi 의 USB 포트로 실제 흐르는 전류는 그대로다. 무거운 USB 장치는 Pi 의 포트에 직접 꽂지 않는다.</li>
+        <li><strong>허용이지 공급이 아니다.</strong> Pi 는 이 값을 실제 전원 용량으로 간주하고 USB 장치에 1.6 A 까지 허용한다. 그 전류를 실제로 내는 것은 전원이다. 이 구성에서 SSD · LiDAR 는 허브의 전원을 쓰므로, 설정을 바꿔도 Pi 의 USB 포트로 실제 흐르는 전류는 그대로다. 무거운 USB 장치는 Pi 의 포트에 직접 꽂지 않는다.</li>
         <li><strong>전원을 바꿔도 이 값은 남는다.</strong> 3 A 어댑터로 켜도 Pi 는 5 A 전원으로 간주한다. 벤치 AC 어댑터의 정격이 아직 빈칸이므로(1절 "전원"), 그 어댑터로 켜는 동안에도 Pi 의 포트에 무거운 USB 장치를 꽂지 않는다.</li>
       </ul>
-      <p class="small">27 W 는 정품 PD 어댑터의 모든 프로필에 공통인 상한이다(백서 9쪽). 허브가 그중 어느 프로필을 협상하는지는 INVENTORY 7절의 빈칸이다.</p>
+      <p class="small">27 W 는 정품 PD 어댑터의 모든 프로필에 공통인 상한이다.<sup class="fn"><a href="#fn-6" id="fnref-6">6</a></sup> 허브의 외부 전원 입력 정격은 5 V / 3 A 다.<sup class="fn"><a href="#fn-7" id="fnref-7">7</a></sup> 허브가 실제로 받는 전압 · 전류는 INVENTORY 7절의 빈칸이다.</p>
       <p>어느 전원이 모자라도 "추론을 켜면 라이다가 끊긴다", "모터가 도는 순간 리셋된다" 같은 재현 어려운 장애로 나타난다. 확인하는 곳은 전원마다 다르다.</p>
       <ul>
         <li>Pi 의 전원 — <code>vcgencmd get_throttled</code> 가 <code>0x0</code> 이 아니면 이쪽부터 의심한다(§3-6).</li>
@@ -181,12 +184,12 @@
           <strong>모니터가 없고 전부 ssh 로 작업하므로 Lite 를 고른다.</strong> 데스크톱 환경은 화면에 표시할 일이 없는데도 CPU·RAM 을 쓰고 열을 낸다. 이 로봇은 그 자원을 SLAM·Nav2·추론에 써야 한다.
           이 가이드의 모든 확인은 터미널 출력, 파일을 Mac 으로 가져와 보기, Foxglove 로 한다. 카메라 미리보기 창이 필요한 곳은 없다.
           Lite 에서 하나만 보충한다 — §3-3 의 <code>rpicam-apps</code> 교체.</li>
-        <li><strong>Storage</strong>: microSD 또는 NVMe. <strong>AI HAT+ 가 PCIe 커넥터를 점유한다.</strong> M.2 NVMe HAT 과 동시에 쓰려면 PCIe 분기/적층 구성이 필요하다. NVMe 와 AI HAT+ 의 동시 사용을 확인하지 못했다면 일단 microSD 로 시작한다.
+        <li><strong>Storage</strong>: microSD 또는 NVMe(PCIe 로 연결하는 SSD). <strong>AI HAT+ 가 PCIe 커넥터를 점유한다.</strong> M.2 NVMe HAT 과 동시에 쓰려면 PCIe 분기/적층 구성이 필요하다. NVMe 와 AI HAT+ 의 동시 사용을 확인하지 못했다면 일단 microSD 로 시작한다.
           <p><strong>이 프로젝트의 실제 구성은 USB 3 외장 SSD 부팅</strong>(<code>/dev/sda</code>, ASMedia ASM246X 브리지)이다. SSD 는 셀프 파워 USB 허브에 꽂혀 허브의 전원으로 동작한다(§2-5). 동작하지만 세 가지에 노출된다.</p>
           <ul>
             <li>Pi 의 전원이 5 V/5 A 를 협상하지 않으면 USB 부팅이 꺼진다(예외와 푸는 설정은 §2-5). 이 프로젝트는 EEPROM 설정으로 푼다(§3-6).</li>
             <li>허브의 전원이 빠지거나 Pi 보다 늦게 켜지면 루트 파일시스템이 사라진다(<code>hardware/INVENTORY.md</code> 7절 "USB 허브").</li>
-            <li>UAS 브리지 문제.</li>
+            <li>UAS(USB 저장장치용 전송 방식) 브리지 문제.</li>
           </ul>
           <p>업그레이드 도중 루트가 읽기 전용으로 바뀐 사고의 처리는 99 §5 "호스트 OS / 저장장치" 를 본다.</p></li>
         <li><strong>⚙️ 설정 편집</strong> — 모니터 없이 끝내기 위해 반드시 한다.</li>
@@ -253,7 +256,7 @@ groups</code></pre>
 
       <h3>3-4. Hailo-8 AI HAT+ 설치 <span class="tag hw">하드웨어</span> <span class="tag pi">Pi 호스트</span></h3>
       <h4>물리 장착</h4>
-      <p>전원을 <strong>완전히 끈 상태에서</strong> AI HAT+ 를 Pi 5 의 PCIe FFC 커넥터에 연결하고 스탠드오프로 고정한다. FFC 케이블의 접점 방향을 확인한다.</p>
+      <p>전원을 <strong>완전히 끈 상태에서</strong> AI HAT+ 를 Pi 5 의 PCIe FFC(얇은 평판 케이블) 커넥터에 연결하고 스탠드오프로 고정한다. FFC 케이블의 접점 방향을 확인한다.</p>
       <div class="callout warn"><span class="ct">전원</span>
         <p>Hailo-8 은 부하 시 수 W 를 소비하고, 그 전력은 <strong>Pi 의 전원</strong>에서 나온다. LiDAR · SSD 는 셀프 파워 허브의 전원을 쓰므로 이 합에 들지 않는다(§2-5).
         Pi 의 전원이 모자라면 추론 중 리셋된다. 장착한 뒤 §3-6 의 <code>get_throttled</code> 로 확인한다.</p>
@@ -273,7 +276,7 @@ sudo reboot</code></pre>
       <p class="small"><strong>PCIe Gen 3:</strong> AI HAT+ 는 자동 적용된다. (구형 AI Kit 은 <code>raspi-config</code> → <code>6 Advanced</code> → <code>A8 PCIe Speed</code> 에서 수동 설정이 필요했다.)</p>
       <h4>확인</h4>
       <pre><code class="lang-bash">lspci | grep -i hailo                 # PCIe 에 보이는가
-ls -l /dev/hailo0                     # 장치 노드가 생겼는가 — "238, 0" 의 앞 숫자가 major (02 의 cgroup 규칙)
+ls -l /dev/hailo0                     # 장치 노드가 생겼는가 — "510, 0" 의 앞 숫자가 major (부팅마다 바뀔 수 있다 — 02 §2-3)
 hailortcli fw-control identify        # 펌웨어/보드 정보 ← 이 출력을 INVENTORY.md 5절에 그대로 붙여넣는다
 hailortcli scan                       # 디바이스 목록
 hailortcli --version                  # HailoRT 런타임 버전 — Dockerfile 의 HAILORT_VERSION 에 들어갈 문자열
@@ -281,15 +284,15 @@ sudo /usr/sbin/modinfo hailo_pci | grep ^version      # 드라이버 버전 (mod
 sudo lspci -vv -s 0001:01:00.0 | grep LnkSta          # "Speed 8GT/s" 면 Gen 3. sudo 없이는 LnkSta 줄이 안 보인다</code></pre>
       <p><code>fw-control identify</code> 출력의 <strong>HailoRT 버전과 Firmware 버전을 기록해 둔다.</strong> 나중에 컨테이너 안 <code>libhailort</code> 를 <strong>정확히 같은 버전</strong>으로 맞춰야 한다 (§2-4, 08c 단계).</p>
       <div class="tbl"><table class="compact">
-        <thead><tr><th>이 프로젝트의 실측값 (2026-09-13)</th><th>값</th><th>쓰이는 곳</th></tr></thead>
+        <thead><tr><th>이 프로젝트의 실측값<sup class="fn"><a href="#fn-8" id="fnref-8">8</a></sup></th><th>값</th><th>쓰이는 곳</th></tr></thead>
         <tbody>
           <tr><td>PCIe 주소</td><td><code>0001:01:00.0</code> Hailo-8 (rev 01)</td><td>LnkSta 확인 명령</td></tr>
           <tr><td>HailoRT / 펌웨어 / 드라이버</td><td><strong>4.23.0</strong> / 4.23.0 / 4.23.0 (<code>hailo-all 5.1.1</code>)</td><td>08c Dockerfile <code>HAILORT_VERSION=4.23.0</code></td></tr>
-          <tr><td><code>/dev/hailo0</code> major</td><td><strong>238</strong></td><td>02 compose <code>c 238:* rmw</code></td></tr>
+          <tr><td><code>/dev/hailo0</code> major</td><td>510 · 238 (부팅마다 다르다)</td><td>02 compose <code>c ${HAILO_MAJOR}:* rmw</code> — <code>docker/majors.sh</code> 가 부팅 때 적는다</td></tr>
         </tbody>
       </table></div>
-      <div class="callout note"><span class="ct">HAT 의 주황 LED 는 전원 표시등이다</span>
-        <p>정상 동작 중 계속 켜져 있고, 추론이 실행돼도 깜빡이거나 색이 바뀌지 않는다. 공식 문서에 LED 설명이 없어 "주황불만 켜진다"는 질문이 많은데, 실제 원인은 대개 다른 곳이었다.</p>
+      <div class="callout note"><span class="ct">HAT 의 주황 LED 로는 동작 여부를 알 수 없다</span>
+        <p>이 프로젝트의 HAT 에서 주황 LED 는 정상 동작 중에도 계속 켜져 있고, 추론이 실행돼도 깜빡이거나 색이 바뀌지 않는다. Raspberry Pi 의 AI HAT+ 공식 문서에는 LED 설명이 없다.<sup class="fn"><a href="#fn-9" id="fnref-9">9</a></sup></p>
         <p>동작 여부는 LED 가 아니라 위의 <code>identify</code> 와 아래 데모로 판단한다. 추론 부하를 보고 싶으면 프로그램을 <code>HAILO_MONITOR=1</code> 로 실행하고 <code>hailortcli monitor</code> 를 본다.</p>
       </div>
       <h4>데모로 실제 동작 확인</h4>
@@ -305,7 +308,7 @@ rpicam-vid -n -t 10000 --width 1280 --height 720 \
       <p>(<code>hailo_yolov6/yolov8/yolox/yolov5_inference.json</code>, <code>hailo_yolov5_segmentation.json</code>, <code>hailo_yolov8_pose.json</code> 등이 함께 설치된다. 목록에 있는 것으로 실행한다.)</p>
       <div class="callout tip"><span class="ct">이 한 줄로 08 과 08c 의 전제 조건을 미리 확인한다</span>
         <p>녹화된 영상 위에 객체 박스가 그려져 있으면 <strong>카메라 + Hailo 가 동시에 정상</strong>이라는 뜻이다. 로그의 <code>Hailo device: HAILO8</code> 은 후처리 스테이지가 칩을 열었다는 뜻이다. <code>Reading post processing stage "object_detect_draw_cv"</code> 는 OpenCV 후처리가 설치됐다는 뜻이다.
-        박스가 없고 "stage … not found" 류의 메시지가 나오면 §3-3 의 <code>rpicam-apps</code> 교체를 빠뜨린 것이다. (2026-09-13 실측: 1280×720 에서 약 29 fps, 사람 박스 확인.)</p>
+        박스가 없고 "stage … not found" 류의 메시지가 나오면 §3-3 의 <code>rpicam-apps</code> 교체를 빠뜨린 것이다. 실측 결과는 1280×720 에서 약 29 fps 이고, 사람 박스를 확인했다.<sup class="fn"><a href="#fn-10" id="fnref-10">10</a></sup></p>
         <p>실시간으로 보고 싶다면 Pi 에서 <code>-o tcp://0.0.0.0:8888 --listen</code> 으로 스트림을 연다. Mac 에서는 <code>ffplay tcp://192.168.50.97:8888</code> 로 받는다(Mac 에 ffmpeg 필요).</p>
         <p>여기서 보는 것이 곧 08b 단계에서 배울 <strong>YOLOv8</strong> 이다 — 같은 모델을 08b 에서는 직접 실행하고, 08c 에서는 이 칩으로 실행한다.</p>
       </div>
@@ -313,29 +316,33 @@ rpicam-vid -n -t 10000 --width 1280 --height 720 \
       <h3>3-5. 카메라 확인 <span class="tag pi">Pi 호스트</span></h3>
       <pre><code class="lang-bash">rpicam-hello --list-cameras
 rpicam-hello -t 5000 -n 2&gt;&amp;1 | grep -E "libcamera v|libpisp|tuning file"   # 버전과 튜닝 파일 — INVENTORY 4절에 적는다</code></pre>
-      <p><code>imx708</code> 로 시작하는 이름이 보여야 한다. <strong>이 프로젝트에서는 <code>imx708_wide_noir</code> 로 나온다.</strong> 커널의 imx708 드라이버가 모듈 ID 레지스터를 읽어
-      광각이면 <code>_wide</code>, IR 필터가 없으면 <code>_noir</code> 를 이름에 붙이기 때문이다. 즉 이 카메라는 Camera Module 3 <strong>Wide NoIR</strong> 이고, libcamera 는 이 이름으로
-      튜닝 파일 <code>/usr/share/libcamera/ipa/rpi/pisp/imx708_wide_noir.json</code> 을 자동 선택한다. 같은 이유로 NoIR 용 별도 오버레이는 없다 — 아래 설정은 모든 변형에 공통이다.</p>
+      <p>이 로봇의 카메라는 Camera Module 3 일반 모델 <strong>두 대</strong>다(스테레오 한 쌍, 08 에서 설명). 두 대를 CAM/DISP 0 · CAM/DISP 1 커넥터에 하나씩 꽂으면 목록에 <strong><code>0 : imx708 …</code> 와 <code>1 : imx708 …</code> 두 줄</strong>이 보여야 한다.
+      이름에 접미어가 없는 것이 일반 모델이다. 커널의 imx708 드라이버가 모듈 ID 레지스터를 읽어 광각이면 <code>_wide</code>, 적외선 차단 필터가 없으면 <code>_noir</code> 를 이름에 붙이기 때문이다.
+      libcamera 는 이 이름으로 튜닝 파일 <code>/usr/share/libcamera/ipa/rpi/pisp/imx708.json</code> 을 자동 선택한다. 변형마다 별도 오버레이는 없다 — 아래 설정은 모든 변형에 공통이다.</p>
+      <pre><code class="lang-bash"># 예상 형태 (경로 부분은 줄였다)
+#   0 : imx708 [4608x2592 10-bit RGGB] (…/i2c@88000/imx708@1a)
+#   1 : imx708 [4608x2592 10-bit RGGB] (…)
+# 0 번이 CAM/DISP 0 에 꽂은 카메라다. 이 로봇은 0 번을 왼쪽, 1 번을 오른쪽에 둔다</code></pre>
       <div class="tbl"><table class="compact">
-        <thead><tr><th>이 프로젝트의 실측값 (2026-09-13)</th><th>값</th><th>쓰이는 곳</th></tr></thead>
+        <thead><tr><th>이 프로젝트의 실측값<sup class="fn"><a href="#fn-10">10</a></sup></th><th>값</th><th>쓰이는 곳</th></tr></thead>
         <tbody>
-          <tr><td>센서 이름 / 커넥터</td><td><code>imx708_wide_noir</code> / CAM/DISP 0 (<code>i2c@88000</code>)</td><td>08 의 <code>camera</code> 파라미터, INVENTORY 4절</td></tr>
+          <tr><td>센서 이름 / 커넥터</td><td>왼쪽 <code>____</code> / CAM/DISP 0 · 오른쪽 <code>____</code> / CAM/DISP 1 — 새 카메라를 꽂고 위 명령의 두 줄을 그대로 적는다</td><td>08 의 <code>camera</code> 파라미터, INVENTORY 4절</td></tr>
           <tr><td>libcamera / libpisp</td><td><strong>0.7.2+rpt20260817</strong> / v1.7.0</td><td>08 §3-4 Dockerfile <code>LIBCAMERA_TAG=v0.7.2+rpt20260817</code></td></tr>
-          <tr><td>렌즈</td><td>광각 — 수평 시야각 약 102° (표준형 66°)</td><td>08 §3-9 캘리브레이션 검증 기준</td></tr>
+          <tr><td>렌즈 (제조사 사양)</td><td>표준 — 수평 시야각 약 66°, 수직 약 41°</td><td>08 §3-9 캘리브레이션 검증 기준</td></tr>
         </tbody>
       </table></div>
-      <p class="small">로그의 <code>No static properties available for 'imx708_wide_noir'</code> 와 <code>Unsupported V4L2 pixel format Nc30/Nc12</code> 는 무시해도 되는 경고다. 앞의 것은 센서 속성 DB 에 이 변형의 항목이 없어 센서 지연 기본값을 쓴다는 뜻이고(튜닝 파일은 정상 로드), 뒤의 것은 libcamera 에 이름이 등록되지 않은 PiSP 포맷이 있다는 뜻이다.</p>
+      <p class="small">로그에 <code>No static properties available for '…'</code> 나 <code>Unsupported V4L2 pixel format Nc30/Nc12</code> 가 나오면 무시해도 되는 경고다. 앞의 것은 센서 속성 DB 에 그 변형의 항목이 없어 센서 지연 기본값을 쓴다는 뜻이고(튜닝 파일은 정상 로드), 뒤의 것은 libcamera 에 이름이 등록되지 않은 PiSP 포맷이 있다는 뜻이다.</p>
       <p>안 보이면 부트 설정을 확인한다.</p>
       <pre><code class="lang-bash">sudo vim /boot/firmware/config.txt</code></pre>
       <p><code>[all]</code> 섹션에:</p>
       <pre><code class="lang-ini">camera_auto_detect=1
-# 자동 감지 실패 시 명시적으로 (연결한 포트에 맞춰 하나만)
+# 자동 감지 실패 시 명시적으로 (카메라를 꽂은 포트마다 한 줄 — 두 대면 두 줄 다)
 # dtoverlay=imx708,cam0
 # dtoverlay=imx708,cam1</code></pre>
       <pre><code class="lang-bash">sudo reboot</code></pre>
       <div class="callout warn"><span class="ct">Pi 5 는 22핀 미니 FPC 케이블을 쓴다</span>
         <p>Pi 4 용 15핀은 물리적으로 맞지 않는다. <strong>여기서 카메라가 안 보이면 08 단계에서 절대 해결되지 않는다.</strong> 지금 해결한다.</p>
-        <p>Wide NoIR 은 IR 필터가 없어 낮에 영상이 붉게 나오고, 광각이라 가장자리가 휘어 보인다 — 둘 다 고장이 아니다.</p>
+        <p>두 대 중 한 대만 보이면 보이지 않는 쪽의 케이블과 커넥터 방향부터 본다. 커넥터 두 개는 같은 종류라 서로 바꿔 꽂아 보면 카메라 문제인지 포트 문제인지 가를 수 있다.</p>
       </div>
 
       <h3>3-6. 전원 확인 <span class="tag pi">Pi 호스트</span></h3>
@@ -349,7 +356,7 @@ vcgencmd measure_temp      # 발열 (액티브 쿨러 권장)</code></pre>
       <p class="small">그래서 <code>0x0</code> 이어도 저장장치가 끊길 수 있다(99 §5 "호스트 OS / 저장장치").</p>
 
       <h4>EEPROM 에 5 A 전원을 적는다 — <code>PSU_MAX_CURRENT=5000</code></h4>
-      <p>이 프로젝트의 결정이다(§2-5, 사용자 결정 2026-10-16). 넣기 전에 지금 들어 있는 설정부터 본다. 벤치에서 이미 버튼 없이 SSD 로 부팅되고 있다면, 두 설정 가운데 하나가 이미 있거나 벤치 어댑터가 5 V/5 A 를 협상하고 있는 것이다.</p>
+      <p>이 프로젝트의 결정이다(§2-5).<sup class="fn"><a href="#fn-11" id="fnref-11">11</a></sup> 넣기 전에 지금 들어 있는 설정부터 본다. 벤치에서 이미 버튼 없이 SSD 로 부팅되고 있다면, 두 설정 가운데 하나가 이미 있거나 벤치 어댑터가 5 V/5 A 를 협상하고 있는 것이다.</p>
       <pre><code class="lang-bash"># Pi 호스트에서 — 지금 상태
 rpi-eeprom-config | grep PSU_MAX_CURRENT                    # 아무것도 안 나오면 EEPROM 에는 없다
 grep -n usb_max_current_enable /boot/firmware/config.txt    # 있으면 그 줄이 나온다</code></pre>
@@ -359,7 +366,7 @@ sudo reboot</code></pre>
       <p>다시 접속해 두 값을 확인한다.</p>
       <pre><code class="lang-bash">rpi-eeprom-config | grep PSU_MAX_CURRENT        # PSU_MAX_CURRENT=5000
 vcgencmd get_config usb_max_current_enable      # usb_max_current_enable=1</code></pre>
-      <p class="small">실행 확인: 미확인. <code>config.txt</code> 에 <code>usb_max_current_enable=1</code> 이 이미 있어도 효과는 같다 — 그 줄을 남길지는 내가 정한다. 결과는 INVENTORY 7절 "USB 전류 한도" 행의 빈칸에 적는다.</p>
+      <p class="small">실행 확인: 미확인. <code>config.txt</code> 에 <code>usb_max_current_enable=1</code> 이 이미 있어도 효과는 같다 — 그 줄을 남길지는 학습자가 정한다. 결과는 INVENTORY 7절 "USB 전류 한도" 행의 빈칸에 적는다.</p>
 
       <h3>3-7. 하드웨어 식별 — 이 단계의 실제 산출물 <span class="tag mac">Mac</span></h3>
       <pre><code class="lang-bash">cd ~/ros2_rpi5
@@ -372,12 +379,12 @@ ssh pi5 'bash ~/detect-hardware.sh' | tee /tmp/hw-report.txt</code></pre>
         <li>3번의 VID:PID → <code>hardware/udev/99-ros2-devices.rules</code> 의 값과 대조 (CP2102 <code>10c4:ea60</code>, ST-LINK <code>0483:374x</code>)</li>
         <li>4-B ModemManager 가 <code>active</code> 인가 → udev 규칙 적용 후 다시 확인</li>
         <li>5번 카메라 인식 여부와 libcamera 버전, 5-B Hailo 버전 → INVENTORY.md 4절·5절</li>
-        <li>5번의 <code>/dev/dma_heap</code>, 5-B 의 <code>/dev/hailo0</code> major 번호 → 02 단계 compose 의 cgroup 규칙에 쓴다. 이 보드의 값은 media 237, hailo0 238, dma_heap 252 다(INVENTORY 8절).</li>
+        <li>5번의 <code>/dev/dma_heap</code>, 5-B 의 <code>/dev/hailo0</code> major 번호 → 02 단계 compose 의 cgroup 규칙이 쓴다. 이 번호는 부팅마다 바뀔 수 있어 손으로 적지 않고, 02 §3-4 에서 설치하는 <code>docker/majors.sh</code> 가 부팅 때 읽는다(INVENTORY 8절).</li>
         <li>리포트의 "(실패 또는 미설치)" 가운데 <code>libcamera-hello</code> 는 Trixie 에 없는 것이 정상(<code>rpicam-hello</code> 만 있다), <code>docker</code> 는 02 에서 설치한다</li>
       </ul>
 
       <h3>3-8. udev 규칙 적용 <span class="tag mac">Mac</span> → <span class="tag pi">Pi 호스트</span></h3>
-      <p>규칙 파일의 VID/PID 가 3-7 에서 확인한 값과 맞는지 보고, 다르면 Mac 에서 고친 뒤 복사한다.</p>
+      <p>규칙 파일의 VID/<span data-noabbr>PID</span> 가 3-7 에서 확인한 값과 맞는지 보고, 다르면 Mac 에서 고친 뒤 복사한다.</p>
       <pre><code class="lang-bash"># Mac 에서
 scp hardware/udev/99-ros2-devices.rules pi5:~/
 ssh pi5 'sudo cp ~/99-ros2-devices.rules /etc/udev/rules.d/ &amp;&amp; \
@@ -388,15 +395,23 @@ ssh pi5 'ls -l /dev/lidar /dev/mcu'</code></pre>
 udevadm info -q property -n /dev/mcu | grep ID_MM      # ID_MM_DEVICE_IGNORE=1 이 보여야 한다</code></pre>
 
       <h3>3-9. INVENTORY.md 채우기 <span class="tag mac">Mac</span></h3>
-      <p><code>hardware/INVENTORY.md</code> 를 열고 다음 다섯 절을 채운다.</p>
+      <p><code>hardware/INVENTORY.md</code> 를 열고 다음 여섯 절을 채운다.</p>
       <ul>
         <li>1절 — 보드/OS/커널/전원</li>
         <li>2절 — MCU by-id 경로, VID:PID</li>
         <li>3절 — LiDAR by-id 경로</li>
         <li>4절 — 카메라 인식, libcamera 버전, 오버레이</li>
-        <li>5절 — HailoRT·펌웨어·드라이버 버전, <code>/dev/hailo0</code> major</li>
+        <li>5절 — HailoRT·펌웨어·드라이버 버전</li>
+        <li>8절 — 장치 major 번호(<code>/dev/hailo0</code> · <code>/dev/media*</code> · <code>/dev/dma_heap</code> 등). 고정 번호는 그대로 적고, 부팅마다 바뀌는 번호는 실측 기록만 남긴다(compose 는 <code>docker/majors.sh</code> 가 읽은 값을 쓴다)</li>
       </ul>
-      <p>6절(섀시 실측)과 7절(배선)은 05·06 단계에서 채운다. <strong>모르는 값은 비워 둔다. 추측값은 빈칸보다 나쁘다</strong> — 나중에 "설정된 값"으로 보여 원인을 숨긴다.</p>
+      <p>6절(섀시 실측)과 7절(배선 · 전원)은 뒤 단계에서 채운다.</p>
+      <ul>
+        <li>05 는 섀시 값을 임의 값으로 두고 설명만 한다. 6절에 적지 않는다.</li>
+        <li>6절의 바퀴 간 거리(<code>wheel_separation</code>)는 06b §3-1 에서 줄자로 잰다. 나머지 섀시 값은 09a 에서 잰다.</li>
+        <li>센서 장착 값은 08d 에서 임시 지그 값을 INVENTORY 4절 장착 행에 적고, 09a 에서 최종 장착 값으로 바꾼다.</li>
+        <li>7절은 펌웨어 쪽(fw) 실습과 06b · 09a 에서 채운다.</li>
+      </ul>
+      <p><strong>모르는 값은 비워 둔다. 추측값은 빈칸보다 나쁘다</strong> — 나중에 "설정된 값"으로 보여 원인을 숨긴다.</p>
 
       <h2>✅ 검증 체크포인트</h2>
       <p>명령을 직접 치고, 기대한 출력이 나온 것만 체크하십시오.</p>
@@ -407,12 +422,12 @@ udevadm info -q property -n /dev/mcu | grep ID_MM      # ID_MM_DEVICE_IGNORE=1 �
         <li><label><input type="checkbox" data-key="cp3"><span><code>vcgencmd get_throttled</code> — <code>0x0</code></span></label></li>
         <li><label><input type="checkbox" data-key="psu-max-current-5000"><span><code>rpi-eeprom-config | grep PSU_MAX_CURRENT</code> — <code>PSU_MAX_CURRENT=5000</code>, <code>vcgencmd get_config usb_max_current_enable</code> — <code>usb_max_current_enable=1</code></span></label></li>
         <li><label><input type="checkbox" data-key="cp4"><span><code>timedatectl | grep synchronized</code> — yes</span></label></li>
-        <li><label><input type="checkbox" data-key="cp5"><span><code>rpicam-hello --list-cameras</code> — <code>imx708_wide_noir</code> 가 보인다</span></label></li>
+        <li><label><input type="checkbox" data-key="cp5"><span><code>rpicam-hello --list-cameras</code> — <code>imx708</code> 이 두 줄(0 · 1) 보인다</span></label></li>
         <li><label><input type="checkbox" data-key="cp6"><span><code>lspci | grep -i hailo</code> — Hailo 장치가 보이고, <code>hailortcli fw-control identify</code> 가 버전 정보를 출력한다</span></label></li>
         <li><label><input type="checkbox" data-key="cp7"><span><code>rpicam-vid -n … --post-process-file …hailo_yolov8_inference.json -o …mp4</code> 로 녹화한 영상을 Mac 에서 열어 객체 박스가 그려진 것을 확인했다</span></label></li>
         <li><label><input type="checkbox" data-key="cp8"><span><code>ls -l /dev/hailo0 /dev/lidar /dev/mcu</code> — 세 장치 모두 존재하고, 뽑았다 꽂아도 링크 이름이 유지된다</span></label></li>
         <li><label><input type="checkbox" data-key="cp9"><span><code>udevadm info -q property -n /dev/mcu | grep ID_MM</code> — <code>ID_MM_DEVICE_IGNORE=1</code></span></label></li>
-        <li><label><input type="checkbox" data-key="cp10"><span><code>hardware/INVENTORY.md</code> 의 1~5절 빈칸이 <code>detect-hardware.sh</code> 출력으로 채워졌다 (HailoRT 버전, <code>/dev/hailo0</code>·<code>dma_heap</code> major 포함)</span></label></li>
+        <li><label><input type="checkbox" data-key="cp10"><span><code>hardware/INVENTORY.md</code> 의 1~5절 · 8절 빈칸이 <code>detect-hardware.sh</code> 출력으로 채워졌다 (HailoRT 버전, 8절의 major 번호 포함)</span></label></li>
         <li><label><input type="checkbox" data-key="cp11"><span>Mac 에 Foxglove 를 설치하고 계정으로 한 번 로그인했다 — 무료 플랜으로 충분하다. 첫 실행 때 로그인을 요구하고 이후 오프라인에서도 동작한다 (02 단계에서 바로 쓴다)</span></label></li>
       </ul>
       <p class="progress-line"></p>
@@ -426,7 +441,7 @@ udevadm info -q property -n /dev/mcu | grep ID_MM      # ID_MM_DEVICE_IGNORE=1 �
         <div class="ans">DKMS 는 커널이 업데이트될 때마다 모듈을 <strong>자동으로 재빌드</strong>한다. 수동 빌드 방식이면 <code>apt upgrade</code> 한 번에 <code>/dev/hailo0</code> 이 사라지고,
         그 원인이 "커널이 바뀌어서"라는 걸 알아차리기 어렵다.</div></details>
       <details class="quiz"><summary>3. <code>/dev/ttyUSB0</code> 대신 <code>/dev/mcu</code> 를 쓰는 이유는?</summary>
-        <div class="ans">ttyUSB/ttyACM 번호는 커널이 장치를 인식한 <strong>순서</strong>대로 붙어서 부팅마다 뒤바뀔 수 있다. udev 로 VID/PID/시리얼번호에 이름을 묶으면 순서와 무관하게 고정된다.
+        <div class="ans">ttyUSB/ttyACM 번호는 커널이 장치를 인식한 <strong>순서</strong>대로 붙어서 부팅마다 뒤바뀔 수 있다. udev 로 VID/<span data-noabbr>PID</span>/시리얼번호에 이름을 묶으면 순서와 무관하게 고정된다.
         그리고 우리 MCU 는 <code>ttyUSB</code> 가 아니라 <code>ttyACM</code>(ST-LINK VCP 는 USB CDC-ACM 장치) 이라는 것도 여기서 알아 둔다.</div></details>
       <details class="quiz"><summary>4. 호스트의 HailoRT 버전을 기록해 두라고 한 이유는?</summary>
         <div class="ans">커널 드라이버(<code>hailo_pci</code>)는 <strong>호스트</strong>에, <code>libhailort</code> 는 <strong>컨테이너</strong>에 있다. 이 둘의 버전이 정확히 일치하지 않으면 컨테이너가 장치를 감지하지 못한다.
@@ -442,8 +457,24 @@ udevadm info -q property -n /dev/mcu | grep ID_MM      # ID_MM_DEVICE_IGNORE=1 �
         <div class="ans">빈칸은 "아직 모른다"는 표시라서 그 단계에서 멈추게 해 준다. 추측값은 "설정된 값"으로 보여서 오도메트리가 조금씩 틀어지거나(섀시 값), 라이다 최대 거리가 과대평가되어 유령 벽이 생기거나(<code>max_distance</code>), 버전 락에 걸리는(HailoRT) 원인을 숨긴다.
         실측·실행 결과만 적는다.</div></details>
       <details class="quiz"><summary>8. EEPROM 에 <code>PSU_MAX_CURRENT=5000</code> 을 넣으면 Pi 가 받을 수 있는 전력이 실제로 늘어나는가?</summary>
-        <div class="ans">아니다. 바뀌는 것은 Pi 가 USB 장치에 허용하는 한도(600 mA → 1.6 A)와 USB 부팅이다. 전류를 실제로 내는 것은 전원이고, Pi 는 이 값을 그대로 믿는다.
+        <div class="ans">아니다. 바뀌는 것은 Pi 가 USB 장치에 허용하는 한도(600 mA → 1.6 A)와 USB 부팅이다. 전류를 실제로 내는 것은 전원이고, Pi 는 이 값을 실제 전원 용량으로 간주할 뿐이다.
         그래서 전원을 바꿔도 이 값은 남는다 — 3 A 어댑터로 켜도 Pi 는 5 A 전원으로 간주한다. 무거운 USB 장치를 Pi 의 포트에 직접 꽂지 않는 이유다(§2-5).</div></details>
+
+      <h2 id="footnotes">각주</h2>
+      <p class="small">본문의 작은 번호를 누르면 여기로 온다. 근거 문서(백서 · 데이터시트) · 측정한 날짜 · 사용자 결정 날짜를 모았다. ↩ 를 누르면 본문으로 돌아간다.</p>
+      <ol class="footnotes">
+          <li id="fn-1">근거는 <code>canonical/pi-ai-kit-ubuntu</code> 저장소 README 의 9줄이다(2026-11-11 확인). 원문은 "Even a minor version difference will prevent the SDK from detecting the hardware." 다. Canonical 블로그 글 "Hacker's guide to the Raspberry Pi AI kit on Ubuntu" 에는 이 문장이 없다. 이 프로젝트도 같은 현상을 겪는다 — 호스트 드라이버와 컨테이너 HailoRT 의 버전이 다르면 <code>/dev/hailo0</code> 이 보여도 장치를 찾지 못한다(02 §2-5). <a class="fn-back" href="#fnref-1" aria-label="본문으로">↩</a></li>
+          <li id="fn-2">Slamtec RPLIDAR A1M8 데이터시트 Figure 2-8. <a class="fn-back" href="#fnref-2" aria-label="본문으로">↩</a></li>
+          <li id="fn-3">Raspberry Pi 백서 "USB Power Delivery on Raspberry Pi 5" 7쪽. <a class="fn-back" href="#fnref-3" aria-label="본문으로">↩</a></li>
+          <li id="fn-4">같은 백서 8쪽. <a class="fn-back" href="#fnref-4" aria-label="본문으로">↩</a></li>
+          <li id="fn-5">EEPROM 설정을 쓰기로 한 것은 사용자 결정(2026-10-16)이다. <a class="fn-back" href="#fnref-5" aria-label="본문으로">↩</a></li>
+          <li id="fn-6">같은 백서 9쪽. <a class="fn-back" href="#fnref-6" aria-label="본문으로">↩</a></li>
+          <li id="fn-7">Raspberry Pi USB 3 Hub 제품 페이지(raspberrypi.com/products/usb-3-hub, 2026-11-10 확인)의 "power input 5V @ 3A". 허브 모델과 조립 후 전원(XL4015 #2)은 사용자 확인(2026-10-16)이다. <a class="fn-back" href="#fnref-7" aria-label="본문으로">↩</a></li>
+          <li id="fn-8">PCIe 주소와 HailoRT · 펌웨어 · 드라이버 버전은 2026-09-13 에, <code>/dev/hailo0</code> major 는 이 프로젝트의 Pi 에서 같은 커널 6.18.50 으로 510(2026-11-10 · 11-15) · 238(11-13)이 나왔다. 커널이 부팅 때 빈 번호를 골라 주는 값이라 부팅마다 다를 수 있다(INVENTORY 8절). <a class="fn-back" href="#fnref-8" aria-label="본문으로">↩</a></li>
+          <li id="fn-9">Raspberry Pi 공식 문서의 AI HAT+ 쪽(raspberrypi.com/documentation/accessories/ai-hat-plus.html)에 LED 항목이 없다(2026-11-10 확인). LED 가 계속 켜져 있는 것은 이 프로젝트의 관찰 기록이다(INVENTORY 5절 "LED" 행). <a class="fn-back" href="#fnref-9" aria-label="본문으로">↩</a></li>
+          <li id="fn-10">2026-09-13 에 이 프로젝트의 Pi 에서 실측했다. <a class="fn-back" href="#fnref-10" aria-label="본문으로">↩</a></li>
+          <li id="fn-11">앞의 EEPROM 설정과 같은 사용자 결정(2026-10-16)이다. <a class="fn-back" href="#fnref-11" aria-label="본문으로">↩</a></li>
+      </ol>
 
       <div class="pager"></div>
     </div>

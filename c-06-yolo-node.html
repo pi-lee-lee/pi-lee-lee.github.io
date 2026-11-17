@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C6 · YOLO 추론 노드 (CPU) — /detections 를 만들고 느림을 잰다 — 카메라 가이드</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-stage="c-06">
+<div class="layout">
+  <nav class="sidebar" aria-label="학습 단계"></nav>
+  <main>
+    <div class="topbar"></div>
+    <div class="content">
+
+      <p class="kicker">C6 · YOLO 추론 노드 (CPU)</p>
+      <h1>YOLO 추론 노드 (CPU) — /detections 를 만들고 느림을 잰다</h1>
+<p class="lead">C5 의 모델 파일을 Pi 의 C++ 노드가 OpenCV DNN 모듈로 실행해 <code>/detections</code> 를 발행한다. 검출 결과를 영상 위에 그리는 노드도 함께 만든다.
+Pi 5 의 CPU 라 초당 1 ~ 3 장이다. 주행용으로는 부족하지만 전처리 · 후처리 · 메시지 · 그리기가 전부 맞는지 확인하기에는 충분하고, 이 느림이 C8 의 이유가 된다.</p>
+<div class="goal">
+<span class="label">이 쪽이 끝나면 보이는 것</span>
+<ul>
+  <li><code>yolo_detector</code> 가 <code>/detections</code>(<code>vision_msgs/Detection2DArray</code>)를 발행한다. 첫 로그의 출력 모양이 C5 에서 본 것과 같다.</li>
+  <li><code>detection_overlay</code> 가 박스와 이름을 그린 <code>/stereo/left/annotated</code> 를 발행하고 Foxglove 에 보인다.</li>
+  <li>시험 사진 한 장의 검출 결과가 C5 의 정답과 몇 픽셀 안에서 같다.</li>
+  <li>추론 시간 · fps · CPU 사용률을 표에 적었다.</li>
+</ul>
+<p><strong>필요한 것</strong> — C5 의 <code>yolov8n.onnx</code> · <code>coco.names</code> · <code>test.jpg</code>, C4 의 패키지.</p>
+</div>
+<div class="meta">
+<div><span class="k">환경</span><span class="tag cli">컨테이너</span> <span class="tag cpp">C++</span> <span class="tag bench">벤치</span></div>
+<div><span class="k">선행</span><a href="c-04-opencv-node.html">C4</a>(패키지 · 빌드), <a href="c-05-yolo-model.html">C5</a>(모델 파일 · 정답)</div>
+<div><span class="k">만드는 것</span><code>rpi5_vision/src/yolo_detector.cpp</code>, <code>src/detection_overlay.cpp</code>, <code>CMakeLists.txt</code> 교체</div>
+<div><span class="k">적는 곳</span>노트 — §3-8 의 측정 표</div>
+</div>
+<h2 id="overview">1. 개요</h2>
+<pre class="diagram"><code>/stereo/left/image_raw ──► yolo_detector ──► /detections ──► detection_overlay ──► /stereo/left/annotated ──► Foxglove
+                           레터박스 → blob → 추론 → 전치 → 점수 필터 → NMS → 좌표 복원 → 메시지</code></pre>
+<p>검출 메시지는 표준 형식 <code>vision_msgs/msg/Detection2DArray</code> 다. 박스 하나가 <code>Detection2D</code> 하나이고, 좌표는 픽셀이다. 그리기 노드가 읽는 필드 경로가 아래와 같다.</p>
+<pre><code class="lang-text">Detection2DArray
+├── header                              촬영 시각 · stereo_left_optical_link (입력 영상의 header 를 복사)
+└── detections[]  Detection2D
+    ├── bbox.center.position.x / .y     박스 중심 (픽셀)
+    ├── bbox.size_x / size_y            폭 / 높이 (픽셀)
+    └── results[0].hypothesis.class_id  "person"       results[0].hypothesis.score  0.87</code></pre>
+<p>그리기를 검출기 안에 넣지 않고 노드로 나눈 이유는 셋이다. C8 에서 검출기를 바꿔도 그리기 노드는 그대로다. 운용 중에는 그리기 노드를 실행하지 않아 CPU 를 아낀다. <code>/detections</code> 만 필요한 소비자는 영상 없이 구독한다.</p>
+<h2 id="why">2. 원리</h2>
+<h3 id="s2-1">2-1. 프레임을 버린다 — 큐 1 과 처리 중 표시</h3>
+<p>카메라는 초당 30 장, 추론은 300 ms 다. 들어오는 프레임을 전부 처리하려 하면 초당 27 장이 밀리고, 1 분 뒤에는 30 초 전 영상을 보고 판단한다. 두 가지로 막는다.</p>
+<ul>
+  <li>구독 큐 깊이 1 — 밀린 프레임은 전송 계층에서 버려지고 최신 것만 남는다.</li>
+  <li>처리 중 표시(<code>busy_</code>) — 처리 중에 콜백이 또 들어오면 즉시 돌아간다. 기본 실행기는 단일 스레드라 지금은 겹치지 않지만, 나중에 다중 스레드 실행기로 바꿔도 안전하도록 둔다.</li>
+</ul>
+<h3 id="s2-2">2-2. 검출 메시지의 시각은 촬영 시각이다</h3>
+<p>추론이 끝난 시각이 아니라 입력 영상의 <code>header</code> 를 그대로 복사한다. 좌표 변환은 "그 시각의 로봇 자세"를 조회한다. 300 ms 걸린 추론의 완료 시각을 넣으면 0.3 m/s 로 달리던 로봇은 사람의 위치를 9 cm 어긋난 곳으로 계산한다. 코드로는 <code>arr.header = msg-&gt;header</code> 한 줄이다.</p>
+<h3 id="s2-3">2-3. OpenCV 4.5.4 가 모델을 읽지 못할 때</h3>
+<p>C5 의 내보내기 옵션(<code>opset=12</code>)이면 대개 읽힌다. 실패하면 오류 문구로 판단한다 — 먼저 로드해 보고 판단하지, 미리 OpenCV 를 새로 빌드하지 않는다.</p>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w32"><col class="w20"><col class="w48"></colgroup>
+<thead><tr><th>오류 문구</th><th>뜻</th><th>조치</th></tr></thead>
+<tbody>
+<tr><td><code>Can't open file</code>, <code>No such file</code></td><td>경로</td><td><code>ls $MODELS</code>. CMake 의 <code>install(DIRECTORY models …)</code> 가 있고 다시 빌드했는가</td></tr>
+<tr><td><code>Unsupported … opset</code>, <code>Can't create layer … Split</code></td><td>연산자 미지원</td><td>Mac 에서 <code>opset=12, simplify=True, dynamic=False</code> 로 다시 내보낸다(C5 §3-4)</td></tr>
+<tr><td>위를 해도 같은 종류의 오류</td><td>OpenCV 4.5.4 의 한계</td><td>C7 · C8 로 먼저 넘어간다 — Hailo 는 ONNX 를 쓰지 않는다. CPU 검출기를 꼭 살리려면 ONNX Runtime C++ 로 바꾼다</td></tr>
+<tr><td>로드는 되는데 모양이 <code>[1 x 84 x 8400]</code> 이 아니다</td><td>모델 세대 · 입력 크기 차이</td><td>C5 §2-2. <code>[1 x N x 6]</code> 이면 <code>nms=True</code> 로 내보낸 것</td></tr>
+</tbody></table></div>
+<h2 id="lab">3. 실습</h2>
+<h3 id="s3-1">3-1. 검출 노드 소스 <span class="tag cpp">C++</span></h3>
+<p><code>rpi5_vision/src/yolo_detector.cpp</code>. 구조는 C4 의 노드와 같다 — 받는다 → <code>cv::Mat</code> → (전처리 → 추론 → 후처리) → 메시지 → 발행. 새로운 것은 가운데 괄호뿐이다. 파라미터 이름(<code>model_path</code> · <code>names_path</code> · <code>conf_threshold</code> · <code>nms_threshold</code> · <code>input_size</code> · <code>class_filter</code>)은 C8 의 Hailo 노드와 같다.</p>
+<pre><code class="lang-cpp">// yolo_detector -- /stereo/left/image_raw -&gt; YOLOv8 (ONNX, OpenCV DNN, CPU) -&gt; /detections   (camera guide C6)
+//
+// Same topic, message and parameter names as hailo_detect (C8): the overlay node and
+// later consumers do not need to know which backend is running.
+#include &lt;algorithm&gt;
+#include &lt;atomic&gt;
+#include &lt;chrono&gt;
+#include &lt;cmath&gt;
+#include &lt;fstream&gt;
+#include &lt;memory&gt;
+#include &lt;stdexcept&gt;
+#include &lt;string&gt;
+#include &lt;vector&gt;
+
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/image.hpp"
+#include "vision_msgs/msg/detection2_d_array.hpp"
+#include "cv_bridge/cv_bridge.h"
+#include "image_transport/image_transport.hpp"
+#include "opencv2/dnn.hpp"
+#include "opencv2/imgcodecs.hpp"
+#include "opencv2/imgproc.hpp"
+
+namespace
+{
+
+// One detection in original-frame pixel coordinates.
+struct Box
+{
+  cv::Rect rect;
+  float score;
+  int class_id;
+};
+
+// Resize keeping the aspect ratio into a size x size square and pad the rest with gray (114).
+// scale / pad_x / pad_y are needed to map the boxes back to the original frame (C5 section 2-1).
+cv::Mat letterbox(const cv::Mat &amp; src, int size, float &amp; scale, int &amp; pad_x, int &amp; pad_y)
+{
+  scale = std::min(static_cast&lt;float&gt;(size) / src.cols, static_cast&lt;float&gt;(size) / src.rows);
+  const int new_w = static_cast&lt;int&gt;(std::round(src.cols * scale));
+  const int new_h = static_cast&lt;int&gt;(std::round(src.rows * scale));
+  pad_x = (size - new_w) / 2;
+  pad_y = (size - new_h) / 2;
+  cv::Mat resized;
+  cv::resize(src, resized, cv::Size(new_w, new_h), 0, 0, cv::INTER_LINEAR);
+  cv::Mat canvas(size, size, src.type(), cv::Scalar(114, 114, 114));
+  resized.copyTo(canvas(cv::Rect(pad_x, pad_y, new_w, new_h)));   // the ROI is a view into canvas
+  return canvas;
+}
+
+// Clears the busy flag when the scope ends, whatever the return path.
+struct BusyGuard
+{
+  explicit BusyGuard(std::atomic&lt;bool&gt; &amp; flag) : flag_(flag) {}
+  ~BusyGuard() { flag_ = false; }
+  std::atomic&lt;bool&gt; &amp; flag_;
+};
+
+}  // namespace
+
+class YoloDetector : public rclcpp::Node
+{
+public:
+  YoloDetector()
+  : Node("yolo_detector")
+  {
+    this-&gt;declare_parameter&lt;std::string&gt;("model_path", "");
+    this-&gt;declare_parameter&lt;std::string&gt;("names_path", "");
+    this-&gt;declare_parameter&lt;int&gt;("input_size", 640);
+    this-&gt;declare_parameter&lt;double&gt;("conf_threshold", 0.25);
+    this-&gt;declare_parameter&lt;double&gt;("nms_threshold", 0.45);
+    this-&gt;declare_parameter&lt;std::vector&lt;std::string&gt;&gt;("class_filter", std::vector&lt;std::string&gt;{});
+    this-&gt;declare_parameter&lt;std::string&gt;("test_image", "");   // if set: detect once on this file, print, exit
+
+    const auto model_path = this-&gt;get_parameter("model_path").as_string();
+    input_size_ = this-&gt;get_parameter("input_size").as_int();
+    conf_thr_ = static_cast&lt;float&gt;(this-&gt;get_parameter("conf_threshold").as_double());
+    nms_thr_ = static_cast&lt;float&gt;(this-&gt;get_parameter("nms_threshold").as_double());
+    class_filter_ = this-&gt;get_parameter("class_filter").as_string_array();
+    class_filter_.erase(std::remove(class_filter_.begin(), class_filter_.end(), std::string{}),
+                        class_filter_.end());                   // YAML "class_filter: ['']" means no filter
+
+    load_names(this-&gt;get_parameter("names_path").as_string());
+
+    // Load the network once. Loading per frame would cost hundreds of ms every time.
+    try {
+      net_ = cv::dnn::readNetFromONNX(model_path);
+    } catch (const cv::Exception &amp; e) {
+      RCLCPP_FATAL(this-&gt;get_logger(),
+        "ONNX load failed: %s\n  check: (1) model_path  (2) exported with opset=12, simplify=True, dynamic=False"
+        "\n  (3) otherwise OpenCV %s does not support an operator in this model (C6 section 2-3)",
+        e.what(), CV_VERSION);
+      throw;
+    }
+    net_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
+    net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
+    RCLCPP_INFO(this-&gt;get_logger(), "model loaded: %s (%zu classes, input %d, OpenCV %s)",
+                model_path.c_str(), names_.size(), input_size_, CV_VERSION);
+
+    const auto test_image = this-&gt;get_parameter("test_image").as_string();
+    if (!test_image.empty()) {
+      run_test_image(test_image);
+      return;                            // main() sees test_mode() and exits without spinning
+    }
+
+    pub_ = this-&gt;create_publisher&lt;vision_msgs::msg::Detection2DArray&gt;(
+      "/detections", rclcpp::QoS(1).best_effort());
+    auto qos = rmw_qos_profile_sensor_data;   // BEST_EFFORT, VOLATILE ...
+    qos.depth = 1;                            // ... and a queue of one: unprocessed frames are dropped
+    sub_ = image_transport::create_subscription(
+      this, "/stereo/left/image_raw",
+      [this](const sensor_msgs::msg::Image::ConstSharedPtr &amp; msg) { on_image(msg); }, "raw", qos);
+  }
+
+  bool test_mode() const { return test_mode_; }
+
+private:
+  void load_names(const std::string &amp; path)
+  {
+    std::ifstream f(path);
+    for (std::string line; std::getline(f, line);) {
+      if (!line.empty()) {
+        names_.push_back(line);
+      }
+    }
+    if (names_.empty()) {
+      RCLCPP_FATAL(this-&gt;get_logger(), "cannot read names_path '%s'", path.c_str());
+      throw std::runtime_error("names file");
+    }
+  }
+
+  // Frame -&gt; boxes in original pixel coordinates. No ROS inside, so the callback and the
+  // test path share it.
+  std::vector&lt;Box&gt; detect(const cv::Mat &amp; bgr)
+  {
+    float scale = 1.f;
+    int pad_x = 0, pad_y = 0;
+    const cv::Mat lb = letterbox(bgr, input_size_, scale, pad_x, pad_y);
+    // 1/255 scaling, BGR -&gt; RGB (swapRB = true), HWC -&gt; NCHW [1, 3, S, S]
+    cv::Mat blob = cv::dnn::blobFromImage(lb, 1.0 / 255.0, cv::Size(input_size_, input_size_),
+                                          cv::Scalar(), true, false);
+    net_.setInput(blob);
+    std::vector&lt;cv::Mat&gt; outs;
+    net_.forward(outs, net_.getUnconnectedOutLayersNames());
+    cv::Mat out = outs[0];
+
+    if (!shape_logged_) {   // first frame: must match what onnxruntime showed on the Mac (C5 section 3-4)
+      RCLCPP_INFO(this-&gt;get_logger(), "output dims=%d shape=[%d x %d x %d]",
+                  out.dims, out.size[0], out.size[1], out.size[2]);
+      shape_logged_ = true;
+    }
+
+    const int num_classes = static_cast&lt;int&gt;(names_.size());
+    cv::Mat rows;
+    bool has_objectness = false;
+    if (out.dims == 3 &amp;&amp; out.size[1] == 4 + num_classes) {
+      rows = out.reshape(1, out.size[1]).t();     // [84 x 8400] -&gt; transpose -&gt; [8400 x 84]   (YOLOv8 / v11)
+    } else if (out.dims == 3 &amp;&amp; out.size[2] == 5 + num_classes) {
+      rows = out.reshape(1, out.size[1]);         // [25200 x 85]: already one row per candidate (YOLOv5)
+      has_objectness = true;
+    } else {
+      throw std::runtime_error("unexpected output shape -- does names_path match the model's class count?");
+    }
+    const int cls_offset = has_objectness ? 5 : 4;
+
+    std::vector&lt;cv::Rect&gt; boxes;
+    std::vector&lt;float&gt; confs;
+    std::vector&lt;int&gt; class_ids;
+    for (int i = 0; i &lt; rows.rows; ++i) {
+      const float * r = rows.ptr&lt;float&gt;(i);
+      // wrap the class-score section of this row without copying
+      cv::Mat scores(1, num_classes, CV_32F, const_cast&lt;float *&gt;(r + cls_offset));
+      cv::Point cls_pt;
+      double max_score = 0.0;
+      cv::minMaxLoc(scores, nullptr, &amp;max_score, nullptr, &amp;cls_pt);
+      if (has_objectness) {
+        max_score *= r[4];
+      }
+      if (max_score &lt; conf_thr_) {
+        continue;                                 // most of the 8400 candidates stop here
+      }
+      // (cx, cy, w, h) in letterbox coordinates -&gt; original frame (C5 section 2-1)
+      const float cx = (r[0] - pad_x) / scale;
+      const float cy = (r[1] - pad_y) / scale;
+      const float w = r[2] / scale;
+      const float h = r[3] / scale;
+      boxes.emplace_back(static_cast&lt;int&gt;(cx - w / 2), static_cast&lt;int&gt;(cy - h / 2),
+                         static_cast&lt;int&gt;(w), static_cast&lt;int&gt;(h));
+      confs.push_back(static_cast&lt;float&gt;(max_score));
+      class_ids.push_back(cls_pt.x);
+    }
+    candidates_before_nms_ = boxes.size();
+
+    std::vector&lt;int&gt; keep;
+    cv::dnn::NMSBoxes(boxes, confs, conf_thr_, nms_thr_, keep);
+
+    std::vector&lt;Box&gt; result;
+    for (int idx : keep) {
+      result.push_back(Box{boxes[idx], confs[idx], class_ids[idx]});
+    }
+    return result;
+  }
+
+  bool passes_filter(const std::string &amp; name) const
+  {
+    return class_filter_.empty() ||
+           std::find(class_filter_.begin(), class_filter_.end(), name) != class_filter_.end();
+  }
+
+  void on_image(const sensor_msgs::msg::Image::ConstSharedPtr &amp; msg)
+  {
+    // Drop this frame if the previous one is still being processed (section 2-1).
+    bool expected = false;
+    if (!busy_.compare_exchange_strong(expected, true)) {
+      dropped_++;
+      return;
+    }
+    BusyGuard guard(busy_);
+    const auto t0 = std::chrono::steady_clock::now();
+
+    cv_bridge::CvImageConstPtr cv_ptr;
+    try {
+      cv_ptr = cv_bridge::toCvShare(msg, "bgr8");   // camera sends bgr8 -&gt; shared, no copy
+    } catch (const cv_bridge::Exception &amp; e) {
+      RCLCPP_ERROR_THROTTLE(this-&gt;get_logger(), *this-&gt;get_clock(), 2000, "cv_bridge: %s", e.what());
+      return;
+    }
+
+    std::vector&lt;Box&gt; boxes;
+    try {
+      boxes = detect(cv_ptr-&gt;image);
+    } catch (const std::exception &amp; e) {
+      RCLCPP_ERROR_THROTTLE(this-&gt;get_logger(), *this-&gt;get_clock(), 2000, "detect: %s", e.what());
+      return;
+    }
+
+    vision_msgs::msg::Detection2DArray arr;
+    arr.header = msg-&gt;header;   // capture time and frame id, not the inference time (section 2-2)
+    for (const Box &amp; b : boxes) {
+      const std::string &amp; name = names_[b.class_id];
+      if (!passes_filter(name)) {
+        continue;
+      }
+      vision_msgs::msg::Detection2D det;
+      det.header = msg-&gt;header;
+      det.bbox.center.position.x = b.rect.x + b.rect.width / 2.0;
+      det.bbox.center.position.y = b.rect.y + b.rect.height / 2.0;
+      det.bbox.size_x = b.rect.width;
+      det.bbox.size_y = b.rect.height;
+      vision_msgs::msg::ObjectHypothesisWithPose hyp;
+      hyp.hypothesis.class_id = name;
+      hyp.hypothesis.score = b.score;
+      det.results.push_back(hyp);
+      arr.detections.push_back(det);
+    }
+    pub_-&gt;publish(arr);
+
+    const double ms =
+      std::chrono::duration&lt;double, std::milli&gt;(std::chrono::steady_clock::now() - t0).count();
+    RCLCPP_INFO_THROTTLE(this-&gt;get_logger(), *this-&gt;get_clock(), 2000,
+      "%zu det (%zu before NMS)  %.0f ms  dropped=%zu",
+      arr.detections.size(), candidates_before_nms_, ms, dropped_.load());
+  }
+
+  // test_image parameter: run the same pipeline on one file and print the boxes (compare with C5).
+  void run_test_image(const std::string &amp; path)
+  {
+    test_mode_ = true;
+    const cv::Mat img = cv::imread(path);
+    if (img.empty()) {
+      RCLCPP_FATAL(this-&gt;get_logger(), "cannot read test_image '%s'", path.c_str());
+      throw std::runtime_error("test image");
+    }
+    const auto boxes = detect(img);
+    RCLCPP_INFO(this-&gt;get_logger(), "test_image %s: %zu det (%zu before NMS)",
+                path.c_str(), boxes.size(), candidates_before_nms_);
+    for (const Box &amp; b : boxes) {
+      RCLCPP_INFO(this-&gt;get_logger(), "  %-12s %.2f  x=%d y=%d w=%d h=%d",
+                  names_[b.class_id].c_str(), b.score, b.rect.x, b.rect.y, b.rect.width, b.rect.height);
+    }
+  }
+
+  cv::dnn::Net net_;
+  std::vector&lt;std::string&gt; names_;
+  std::vector&lt;std::string&gt; class_filter_;
+  int input_size_{640};
+  float conf_thr_{0.25f};
+  float nms_thr_{0.45f};
+  bool shape_logged_{false};
+  bool test_mode_{false};
+  size_t candidates_before_nms_{0};
+  std::atomic&lt;bool&gt; busy_{false};
+  std::atomic&lt;size_t&gt; dropped_{0};
+
+  image_transport::Subscriber sub_;
+  rclcpp::Publisher&lt;vision_msgs::msg::Detection2DArray&gt;::SharedPtr pub_;
+};
+
+int main(int argc, char ** argv)
+{
+  rclcpp::init(argc, argv);
+  auto node = std::make_shared&lt;YoloDetector&gt;();
+  if (!node-&gt;test_mode()) {
+    rclcpp::spin(node);
+  }
+  rclcpp::shutdown();
+  return 0;
+}</code></pre>
+<h3 id="s3-2">3-2. 그리기 노드 소스 <span class="tag cpp">C++</span></h3>
+<p><code>rpi5_vision/src/detection_overlay.cpp</code>. 마지막 검출 결과를 현재 프레임 위에 그린다. 영상은 30 fps 로 오고 검출은 수백 ms 마다 오므로 박스가 물체보다 늦게 따라온다. 화면 왼쪽 위의 <code>lag</code> 가 그 지연(이 프레임의 촬영 시각 − 검출 결과의 촬영 시각)이다. C8 에서 이 숫자가 얼마나 줄어드는지 비교한다.</p>
+<pre><code class="lang-cpp">// detection_overlay -- draw /detections on /stereo/left/image_raw -&gt; /stereo/left/annotated   (camera guide C6)
+#include &lt;algorithm&gt;
+#include &lt;cstdio&gt;
+#include &lt;memory&gt;
+#include &lt;string&gt;
+
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/image.hpp"
+#include "vision_msgs/msg/detection2_d_array.hpp"   // Detection2DArray -&gt; detection2_d_array.hpp
+#include "cv_bridge/cv_bridge.h"
+#include "image_transport/image_transport.hpp"
+#include "opencv2/imgproc.hpp"
+
+class DetectionOverlay : public rclcpp::Node
+{
+public:
+  DetectionOverlay()
+  : Node("detection_overlay")
+  {
+    pub_ = image_transport::create_publisher(this, "/stereo/left/annotated", rmw_qos_profile_sensor_data);
+
+    // Only the newest detection result matters: depth 1, BEST_EFFORT (the detector publishes the same way).
+    det_sub_ = this-&gt;create_subscription&lt;vision_msgs::msg::Detection2DArray&gt;(
+      "/detections", rclcpp::QoS(1).best_effort(),
+      [this](const vision_msgs::msg::Detection2DArray &amp; msg) {
+        last_det_ = msg;             // cache only; drawing happens in the image callback
+        has_det_ = true;
+      });
+
+    sub_ = image_transport::create_subscription(
+      this, "/stereo/left/image_raw",
+      [this](const sensor_msgs::msg::Image::ConstSharedPtr &amp; msg) { on_image(msg); },
+      "raw", rmw_qos_profile_sensor_data);
+  }
+
+private:
+  void on_image(const sensor_msgs::msg::Image::ConstSharedPtr &amp; msg)
+  {
+    cv_bridge::CvImagePtr cv_ptr;
+    try {
+      cv_ptr = cv_bridge::toCvCopy(msg, "bgr8");   // we draw on it, so we need a copy (toCvShare is read-only)
+    } catch (const cv_bridge::Exception &amp; e) {
+      RCLCPP_ERROR_THROTTLE(this-&gt;get_logger(), *this-&gt;get_clock(), 2000, "cv_bridge: %s", e.what());
+      return;
+    }
+    cv::Mat &amp; img = cv_ptr-&gt;image;
+
+    if (has_det_) {
+      for (const auto &amp; det : last_det_.detections) {
+        const auto &amp; b = det.bbox;
+        const int x1 = static_cast&lt;int&gt;(b.center.position.x - b.size_x / 2.0);
+        const int y1 = static_cast&lt;int&gt;(b.center.position.y - b.size_y / 2.0);
+        const int x2 = static_cast&lt;int&gt;(b.center.position.x + b.size_x / 2.0);
+        const int y2 = static_cast&lt;int&gt;(b.center.position.y + b.size_y / 2.0);
+        cv::rectangle(img, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 255, 0), 2);
+
+        std::string label = "?";
+        if (!det.results.empty()) {
+          char buf[64];
+          std::snprintf(buf, sizeof(buf), "%s %.2f",
+                        det.results[0].hypothesis.class_id.c_str(), det.results[0].hypothesis.score);
+          label = buf;
+        }
+        cv::putText(img, label, cv::Point(x1, std::max(y1 - 6, 12)),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 0), 2);
+      }
+
+      // this frame's capture time - the detection's capture time = how old the boxes are
+      const double lag_ms =
+        (rclcpp::Time(msg-&gt;header.stamp) - rclcpp::Time(last_det_.header.stamp)).seconds() * 1000.0;
+      char info[96];
+      std::snprintf(info, sizeof(info), "det: %zu  lag: %.0f ms", last_det_.detections.size(), lag_ms);
+      cv::putText(img, info, cv::Point(8, 22), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 255), 2);
+    }
+
+    pub_.publish(cv_ptr-&gt;toImageMsg());   // header was copied by toCvCopy
+  }
+
+  // No mutex around last_det_: the default executor is single-threaded, so the two callbacks never overlap.
+  image_transport::Subscriber sub_;
+  image_transport::Publisher pub_;
+  rclcpp::Subscription&lt;vision_msgs::msg::Detection2DArray&gt;::SharedPtr det_sub_;
+  vision_msgs::msg::Detection2DArray last_det_;
+  bool has_det_{false};
+};
+
+int main(int argc, char ** argv)
+{
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared&lt;DetectionOverlay&gt;());
+  rclcpp::shutdown();
+  return 0;
+}</code></pre>
+<h3 id="s3-3">3-3. CMakeLists.txt 교체 <span class="tag cli">컨테이너</span></h3>
+<p>C4 의 파일을 아래로 바꾼다. 실행 파일 둘과 <code>models/</code> 설치 줄이 늘었다. 이것이 <code>rpi5_vision</code> 의 최종 CMakeLists.txt 다.</p>
+<pre><code class="lang-cmake">cmake_minimum_required(VERSION 3.8)
+project(rpi5_vision)
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(vision_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(image_transport REQUIRED)
+find_package(OpenCV REQUIRED)
+
+set(NODE_DEPS rclcpp sensor_msgs vision_msgs cv_bridge image_transport)
+
+add_executable(image_proc_node src/image_proc_node.cpp)
+ament_target_dependencies(image_proc_node ${NODE_DEPS})
+target_include_directories(image_proc_node PUBLIC ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(image_proc_node ${OpenCV_LIBS})
+
+add_executable(yolo_detector src/yolo_detector.cpp)
+ament_target_dependencies(yolo_detector ${NODE_DEPS})
+target_include_directories(yolo_detector PUBLIC ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(yolo_detector ${OpenCV_LIBS})
+
+add_executable(detection_overlay src/detection_overlay.cpp)
+ament_target_dependencies(detection_overlay ${NODE_DEPS})
+target_include_directories(detection_overlay PUBLIC ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(detection_overlay ${OpenCV_LIBS})
+
+install(TARGETS image_proc_node yolo_detector detection_overlay
+  DESTINATION lib/${PROJECT_NAME})
+
+install(DIRECTORY launch config models
+  DESTINATION share/${PROJECT_NAME})           # .onnx / .names / test.jpg -&gt; share/rpi5_vision/models/
+
+ament_package()</code></pre>
+<h3 id="s3-4">3-4. 빌드 <span class="tag cli">컨테이너</span></h3>
+<pre><code class="lang-bash">cd /ros2_ws
+colcon build --symlink-install --packages-select rpi5_vision --parallel-workers 2 \
+    --cmake-args -DCMAKE_BUILD_TYPE=Release
+source install/setup.bash
+ls $(ros2 pkg prefix rpi5_vision)/share/rpi5_vision/models/      # yolov8n.onnx  coco.names  test.jpg</code></pre>
+<h3 id="s3-5">3-5. 사진 한 장으로 먼저 — C5 의 정답과 비교 <span class="tag cli">컨테이너</span></h3>
+<p>카메라 없이 모델 로드와 파서를 확인한다. 출력이 C5 §3-3 · §3-5 와 같은 물체 · 비슷한 좌표면 통과다.</p>
+<pre><code class="lang-bash">MODELS=$(ros2 pkg prefix rpi5_vision)/share/rpi5_vision/models
+ros2 run rpi5_vision yolo_detector --ros-args \
+    -p model_path:=$MODELS/yolov8n.onnx -p names_path:=$MODELS/coco.names \
+    -p test_image:=$MODELS/test.jpg
+#   [INFO] model loaded: .../yolov8n.onnx (80 classes, input 640, OpenCV 4.5.4)
+#   [INFO] output dims=3 shape=[1 x 84 x 8400]          ← C5 와 같은가
+#   [INFO] test_image .../test.jpg: 2 det (37 before NMS)
+#   [INFO]   person       0.89  x=212 y=95 w=180 h=420  ← C5 의 숫자와 몇 픽셀 안</code></pre>
+<h3 id="s3-6">3-6. 카메라로 실행 <span class="tag cli">컨테이너</span> <span class="tag mac">Mac</span></h3>
+<p>카메라 노드가 떠 있는 상태에서(<code>ros2 launch rpi5_vision camera.launch.py</code>) 검출기와 그리기 노드를 각각 다른 터미널에 띄운다.</p>
+<pre><code class="lang-bash">MODELS=$(ros2 pkg prefix rpi5_vision)/share/rpi5_vision/models
+ros2 run rpi5_vision yolo_detector --ros-args \
+    -p model_path:=$MODELS/yolov8n.onnx -p names_path:=$MODELS/coco.names
+#   [INFO] 2 det (37 before NMS)  412 ms  dropped=11     ← 2 초마다 한 줄
+
+# 다른 터미널
+ros2 run rpi5_vision detection_overlay
+
+# 또 다른 터미널
+ros2 topic hz /detections                    # 2 ~ 3 Hz 면 정상 (주기 300 ~ 500 ms)
+ros2 topic echo /detections --once           # detections[0].bbox.center.position.x ... results[0].hypothesis.class_id
+ros2 topic echo /detections --field header.stamp --once   # 입력 영상의 stamp 와 같다 (추론 완료 시각이 아니다)
+ros2 topic info /detections -v               # 발행자 QoS BEST_EFFORT, depth 1</code></pre>
+<p>Foxglove Image 패널에서 <code>/stereo/left/annotated/compressed</code> 를 연다. 카메라 앞을 걸어 본다. 박스가 사람보다 조금 늦게 따라오고, 왼쪽 위의 <code>lag</code> 가 그 지연이다. 이 숫자를 적어 둔다.</p>
+<h3 id="s3-7">3-7. 사람만 남기기 <span class="tag cli">컨테이너</span></h3>
+<pre><code class="lang-bash">ros2 run rpi5_vision yolo_detector --ros-args \
+    -p model_path:=$MODELS/yolov8n.onnx -p names_path:=$MODELS/coco.names -p class_filter:="[person]"</code></pre>
+<h3 id="s3-8">3-8. 측정 — 얼마나 느린가 <span class="tag cli">컨테이너</span> <span class="tag pi">Pi 호스트</span></h3>
+<p>입력 크기는 파라미터지만, <code>dynamic=False</code> 로 내보낸 모델은 입력이 640 으로 고정되어 있어 320 은 실패할 수 있다. 그때는 Mac 에서 <code>imgsz=320</code> 으로 <code>yolov8n_320.onnx</code> 를 하나 더 내보낸다(C5 §3-4 의 <code>export.py</code> 에서 <code>imgsz</code> 만 바꾼다).</p>
+<pre><code class="lang-bash"># Pi 호스트 (다른 ssh) — 노드의 CPU %. 코어당 100 이므로 4 코어 포화 = 400 가까이
+top -p $(pgrep -f yolo_detector)</code></pre>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w14"><col class="w18"><col class="w24"><col class="w16"><col class="w28"></colgroup>
+<thead><tr><th>입력</th><th>추론 ms</th><th><code>/detections</code> Hz</th><th>CPU %</th><th>3 m 거리의 사람이 검출되는가</th></tr></thead>
+<tbody>
+<tr><td>640</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+<tr><td>320</td><td>____</td><td>____</td><td>____</td><td>____</td></tr>
+</tbody></table></div>
+<p>4 코어가 검출기에 포화되면 지도 작성과 제어 루프가 CPU 시간을 얻지 못한다. 검출 자체는 이미 된다. 남은 문제는 어디서 계산하느냐이고, C7 · C8 의 Hailo 가 그 문제를 해결한다.</p>
+<h2 id="checkpoints">✅ 검증 체크포인트</h2>
+<p>직접 실행해서 확인한 것만 체크한다. 체크 기록은 이 브라우저에만 저장된다.</p>
+<ul class="checklist">
+  <li><label><input type="checkbox" data-key="c06-release-built"><span><code>yolo_detector</code> · <code>detection_overlay</code> 가 Release 로 빌드되고 <code>models/</code> 가 설치됐다<span class="sub">§3-4</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c06-test-image-matches"><span><code>test_image</code> 로 실행한 결과가 C5 의 정답과 같은 물체 · 몇 픽셀 안의 좌표다<span class="sub">§3-5</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c06-shape-matches"><span>첫 프레임 로그의 출력 모양이 C5 에서 본 것과 같다<span class="sub">§3-5</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c06-detections-hz"><span><code>ros2 topic hz /detections</code> 가 값을 보이고, 필드 경로를 <code>echo</code> 로 확인했다<span class="sub">§3-6</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c06-stamp-is-capture"><span><code>/detections</code> 의 <code>header.stamp</code> 가 입력 영상의 시각과 같다<span class="sub">§3-6</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c06-overlay-lag"><span>Foxglove 의 <code>/stereo/left/annotated</code> 에 박스가 그려지고 <code>lag</code> 값을 적었다<span class="sub">§3-6</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c06-class-filter"><span><code>class_filter:="[person]"</code> 으로 사람만 남는다<span class="sub">§3-7</span></span></label></li>
+  <li><label><input type="checkbox" data-key="c06-table-filled"><span>§3-8 의 표를 내 값으로 채웠고, CPU 포화가 C8 의 이유임을 설명할 수 있다<span class="sub">§3-8</span></span></label></li>
+</ul>
+<p class="progress-line"></p>
+<div class="progress-bar"><span></span></div>
+<h2 id="symptoms">증상과 원인</h2>
+<div class="tbl"><table class="compact fixed">
+<colgroup><col class="w30"><col class="w30"><col class="w40"></colgroup>
+<thead><tr><th>증상</th><th>원인</th><th>조치</th></tr></thead>
+<tbody>
+<tr><td>모델 로드 실패</td><td>경로 · 내보내기 옵션 · OpenCV 판</td><td>§2-3 의 표. 오류 문구로 가른다</td></tr>
+<tr><td><code>unexpected output shape</code></td><td>클래스 수와 모델이 다르다</td><td><code>coco.names</code> 80 줄, 출력 모양 로그를 C5 와 대조</td></tr>
+<tr><td>검출이 하나도 없다</td><td>색 순서 · 임계값</td><td><code>test_image</code> 로 먼저 확인. 점수가 전체적으로 낮으면 <code>swapRB</code>(코드의 <code>true</code>)와 인코딩을 본다</td></tr>
+<tr><td>박스가 물체에서 한쪽으로 벗어난다</td><td>레터박스 역변환</td><td><code>pad_y</code> 80 을 빼고 있는지. C5 §2-1 의 식과 대조</td></tr>
+<tr><td><code>/detections</code> 가 2 Hz 인데 <code>lag</code> 가 수 초</td><td>구독 큐가 1 이 아니거나 프레임을 버리지 않는다</td><td><code>qos.depth = 1</code> 과 <code>busy_</code> 가 있는지 확인</td></tr>
+<tr><td>그리기 노드가 박스를 안 그린다</td><td>검출기가 안 떠 있거나 QoS 가 다르다</td><td><code>ros2 topic hz /detections</code>. 둘 다 BEST_EFFORT 여야 연결된다</td></tr>
+</tbody></table></div>
+<h2 id="quiz">🤔 이해 확인</h2>
+<p>이 쪽에서 설명한 내용만으로 답할 수 있다. 답을 펼치기 전에 먼저 말로 답해 본다.</p>
+<details class="quiz"><summary>1. 검출 메시지의 <code>header.stamp</code> 에 추론 완료 시각을 넣으면 무엇이 잘못되는가.</summary>
+  <div class="ans"><p>좌표 변환은 그 시각의 로봇 자세를 조회한다. 추론에 300 ms 걸렸다면 로봇은 그만큼 움직였고, 물체의 위치를 300 ms 뒤의 자세 기준으로 계산해 수 cm ~ 수십 cm 어긋난다. 입력 영상의 header 를 그대로 복사한다.</p></div></details>
+<details class="quiz"><summary>2. 큐 깊이 1 과 처리 중 표시(<code>busy_</code>)는 각각 무엇을 막는가.</summary>
+  <div class="ans"><p>큐 1 은 전송 계층에서 밀린 프레임을 버려 옛 프레임을 차례로 처리하는 지연 누적을 막는다. <code>busy_</code> 는 처리 중에 콜백이 또 실행되는 것(다중 스레드 실행기에서 가능)을 막아 추론 두 개가 겹치지 않게 한다.</p></div></details>
+<details class="quiz"><summary>3. <code>conf_threshold</code> 를 0.05 로 내리면 추론 시간은 그대로인데 왜 전체 처리 시간이 늘어나는가.</summary>
+  <div class="ans"><p>신경망 추론 시간은 입력 크기로만 정해진다. 그러나 점수 필터를 통과하는 후보가 수십 배 늘어 NMS 의 입력이 커지고, NMS 의 계산량은 후보 수의 대략 제곱으로 는다. 로그의 <code>before NMS</code> 개수와 ms 를 함께 보면 확인된다.</p></div></details>
+<details class="quiz"><summary>4. 그리기를 검출기 안에 넣지 않고 별도 노드로 둔 이유는 무엇인가.</summary>
+  <div class="ans"><p>검출기의 일은 <code>/detections</code> 를 발행하는 것뿐이어야 한다. 그리기를 나누면 C8 에서 검출기를 바꿔도 그리기 노드는 그대로 동작하고, 운용 중에는 그리기 노드를 끄고, <code>/detections</code> 만 필요한 소비자는 영상 없이 구독한다.</p></div></details>
+<h2 id="next">다음</h2>
+<div class="callout tip"><span class="ct">여기까지 했으면</span>
+<ul>
+  <li>번호순 다음은 <a href="c-07-hailo-setup.html">C7 Hailo 준비</a> 다. HailoRT 버전을 맞추고 모델 파일을 확인한다. AI HAT+ 가 필요하다.</li>
+  <li>이 쪽의 <code>/detections</code> 와 그리기 노드는 C8 에서 한 줄도 바뀌지 않는다. 검출기만 바뀐다.</li>
+</ul>
+</div>
+
+      <div class="pager"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/guide.js"></script>
+</body>
+</html>
