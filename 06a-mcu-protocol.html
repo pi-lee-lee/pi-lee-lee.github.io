@@ -168,7 +168,7 @@
    comm_microros.c (A)        ← micro-ROS 접착 코드. 위 함수만 호출한다      ← 둘 중 하나만 링크</code></pre>
       <p>A 로 옮길 때 바뀌는 것은 <code>comm_*.c</code> 한 파일과 빌드 설정이다. 다만 <strong>정직하게 적어 두면</strong>, 그때 메시지 모델이 ROS 타입으로 바뀌고 FreeRTOS 태스크 구조가 들어오므로 "프레임만 바꾸는 일"보다는 크다. 그래도 제어 모듈은 손대지 않는다.</p>
       <div class="callout note"><span class="ct">결정됨 — 이벤트(<code>TYPE_EVENT</code> 0x83)와 IMU 샘플(<code>TYPE_IMU</code> 0x82)이 통신 모듈에 전달되는 경로: (가) 끌어가기<sup class="fn"><a href="#fn-6" id="fnref-6">6</a></sup></span>
-        <p><code>control_pop_event()</code> 를 빼면 위의 네 함수만으로는 이벤트의 <code>code</code> · <code>detail</code> · <code>tick_ms</code> 를 통신 모듈이 꺼낼 방법이 없다. 그리고 06 §3-6 의 기존 코드에서는 안전·센서 코드가 <code>event_send()</code> · <code>imu_send()</code> 를 직접 부른다. 제어 쪽이 통신 쪽 함수를 호출하는 <em>역방향</em>이라 위 그림의 "위 함수만 호출한다"와 다르다. 방법은 셋이고, 와이어 계약(§4-2)은 어느 방법이든 <strong>동일</strong>하다.</p>
+        <p><code>control_pop_event()</code> 를 빼면 위의 네 함수만으로는 이벤트의 <code>code</code> · <code>detail</code> · <code>tick_ms</code> 를 통신 모듈이 꺼낼 방법이 없다. 그리고 06 의 옛 펌웨어 초안(지금은 지웠다)에서는 안전·센서 코드가 <code>event_send()</code> · <code>imu_send()</code> 를 직접 불렀다. 제어 쪽이 통신 쪽 함수를 호출하는 <em>역방향</em>이라 위 그림의 "위 함수만 호출한다"와 다르다. 방법은 셋이고, 와이어 계약(§4-2)은 어느 방법이든 <strong>동일</strong>하다.</p>
         <ul>
           <li>(가) <strong>끌어가기</strong> — 제어 모듈이 이벤트를 큐에 쌓고 통신 모듈이 <code>control_pop_event()</code> 로 꺼낸다. 공개 함수가 넷에서 다섯이 되고, 큐 메모리가 필요하고, 이벤트가 폴링 주기만큼 늦는다. 호출 방향은 통신 → 제어 한쪽뿐이다.</li>
           <li>(나) <strong>싱크 등록</strong> — 통신 모듈이 초기화 때 콜백을 넘긴다. 공개 함수가 하나 느는 것은 (가)와 동일, 지연은 없다. 콜백이 1 kHz 문맥에서 불리므로 통신 쪽의 넣기 동작이 그 문맥에서 안전해야 한다.</li>
