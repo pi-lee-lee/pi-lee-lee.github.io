@@ -603,7 +603,7 @@ _Static_assert(sizeof(imu_payload_t)      == 17, "frames.h: imu payload must be 
 _Static_assert(sizeof(event_payload_t)    == 7,  "frames.h: event payload must be 7 bytes");
 _Static_assert(sizeof(text_ack_payload_t) == 1,  "frames.h: text-ack payload must be 1 byte");
 
-/* (제안) - 06a 4-2 의 표가 "(제안)" 이다. 표를 확정하면 이 블록을 확정한 표에 맞춘다. */
+/* (제안) - 06a 4-2 의 표는 제안으로 시작했다. fw-18 에서 표를 확정하면 이 블록을 확정한 표에 맞춘다. */
 #define FAULT_WATCHDOG  (1u &lt;&lt; 0)
 #define FAULT_LOW_BATT  (1u &lt;&lt; 1)
 #define FAULT_OVERCURR  (1u &lt;&lt; 2)
@@ -640,7 +640,7 @@ static inline size_t frame_build(uint8_t type, const void *payload, uint8_t len,
 #endif /* FRAMES_H */</code></pre>
       <p>TYPE 은 일곱이다. 관리용 셋(<code>TYPE_POWER</code> 0x10 전원 · <code>TYPE_TO_TEXT</code> 0x11 TEXT 전환 요청 · <code>TYPE_TEXT_ACK</code> 0x90 그 답)은 <code>0x1_</code> / <code>0x9_</code> 로 묶어 제어용 <code>0x0_</code> / <code>0x8_</code> 와 가른다.
       <code>TYPE_TO_TEXT</code> 는 PAYLOAD 가 없어 구조체가 없고, 나머지 여섯에는 <code>_Static_assert</code> 가 하나씩 있다.</p>
-      <p><code>FAULT_*</code> 와 <code>EVT_*</code> 블록에 <strong>(제안)</strong> 이라고 적어 둔 것을 보라. 06a §4-2 의 그 표는 아직 <strong>제안</strong>이고,
+      <p><code>FAULT_*</code> 와 <code>EVT_*</code> 블록에 <strong>(제안)</strong> 이라고 적어 둔 것을 보라. 06a §4-2 의 그 표는 <strong>제안</strong>으로 시작했고 확정은 fw-18 에서 한다.
       비트와 코드의 배정은 <strong>네가 정한다</strong>(06a §4-2 마지막 문단). 정한 뒤 이 블록을 네 표에 맞추고, 같은 표를 Pi 쪽 <code>protocol.hpp</code> · probe 와 함께 고친다.
       이 가이드가 그 숫자를 정해 버리면 세 곳이 이미 정해진 것을 베끼게 되고, "계약은 사람이 정하고 코드가 따른다"는 순서가 뒤집힌다.</p>
       <div class="callout note"><span class="ct">06 의 <code>frames.h</code> 에 있던 것 중 옮기지 않은 셋</span>
@@ -2828,7 +2828,7 @@ grep -rln "HAL_UART_ErrorCallback" $FW_H7/Projects/NUCLEO-H723ZG        # ④ �
       <div class="callout tip"><span class="ct">여기까지 했으면</span>
         <ul>
           <li><strong>이 쪽에서 채운 <code>hardware/INVENTORY.md</code> 2절</strong> — "MCU가 제공해야 하는 최소 기능 (계약 v2)" 의 네 항목 중 <strong><code>TYPE_VELOCITY</code> (0x01) · <code>TYPE_STATE</code> (0x81)</strong> 는 이 쪽에서 확인된다. <strong><code>TYPE_IMU</code> (0x82)</strong> 는 센서(fw-14)와 T17 이 있어야 하고(<a href="#s3-2-4">§3-2-4</a> 단계 3), <strong><code>TYPE_EVENT</code> (0x83)</strong> 는 생산자를 더하는 <a href="fw-18-safety-fsm.html">fw-18</a> 뒤다. 안전 항목(무명령 정지 + IWDG)은 fw-06 · fw-13 에서 이미 동작하고 있고 계약 경로에서의 판정이 fw-18 이다.</li>
-          <li><strong>fault 비트 · 이벤트 코드는 아직 네가 정하지 않았다.</strong> 06a §4-2 의 표는 "(제안)" 이고, <code>frames.h</code> 의 두 블록에도 그렇게 적혀 있다. 정하는 자리는 fw-18 이고, 정하면 <strong>세 곳</strong>(06a 표 · <code>frames.h</code> · probe 의 <code>EVENT_NAME</code>)과 저장소의 <code>protocol.md</code> 를 <strong>한 번에</strong> 고친다. 그 순서를 지키는 연습이 이 쪽의 숨은 산출물이다.</li>
+          <li><strong>fault 비트 · 이벤트 코드는 아직 네가 정하지 않았다.</strong> 06a §4-2 의 표는 제안으로 시작했고, <code>frames.h</code> 의 두 블록에도 "(제안)" 이라고 적어 두었다. 정하는 자리는 fw-18 이고, 정하면 <strong>세 곳</strong>(06a 표 · <code>frames.h</code> · probe 의 <code>EVENT_NAME</code>)과 저장소의 <code>protocol.md</code> 를 <strong>한 번에</strong> 고친다. 그 순서를 지키는 연습이 이 쪽의 숨은 산출물이다.</li>
           <li><strong>다음은 <a href="fw-18-safety-fsm.html">fw-18</a> — 안전 상태기계</strong>다. 이 쪽이 만든 것을 그대로 쓴다. <code>control_pop_event()</code> 에 생산자가 더해져 <code>TYPE_EVENT</code> (0x83) 가 처음 흐르고, probe 의 <code>--mute-after</code> 로 200 ms 명령 워치독을 <strong>MCU 의 tick 으로</strong> 판정한다. 이 쪽에서 0 건이 정상이던 이벤트가 fw-18 에서 발동 확인이 된다.</li>
           <li><p><strong>남은 빈칸과 확인 과제</strong> — 다음 넷이다. 넷 다 <strong>학습자가 고르고 적어야</strong> 끝난다.</p>
             <ul>

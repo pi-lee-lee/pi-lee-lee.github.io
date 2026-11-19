@@ -548,20 +548,30 @@
         </tbody>
       </table></div>
       <div class="tbl"><table class="compact">
-        <thead><tr><th>fault 비트 (제안)</th><th>뜻</th><th>이벤트 code (제안)</th><th>뜻</th></tr></thead>
+        <thead><tr><th>fault 비트</th><th>뜻</th><th>이벤트 code</th><th>뜻</th></tr></thead>
         <tbody>
-          <tr><td>bit0</td><td>워치독 정지 중 (유효한 <code>TYPE_VELOCITY</code> 가 200 ms 끊겼다 — §4-3)</td><td><code>EVT_LOW_BATT</code> (0x01)</td><td>저전압 → 전원 차단</td></tr>
-          <tr><td>bit1</td><td>저전압</td><td><code>EVT_OVERCURR</code> (0x02)</td><td>과전류 → 정지 (detail = mA)</td></tr>
-          <tr><td>bit2</td><td>과전류</td><td>(0x03)</td><td>예약 — 과경사 정지를 없앴다. 다른 뜻으로 다시 쓰지 않는다</td></tr>
+          <tr><td>bit0 <code>FAULT_WATCHDOG</code></td><td>워치독 정지 중 (유효한 <code>TYPE_VELOCITY</code> 가 200 ms 끊겼다 — §4-3)</td><td><code>EVT_LOW_BATT</code> (0x01)</td><td>저전압 → 전원 차단 (detail = mV)</td></tr>
+          <tr><td>bit1 <code>FAULT_LOW_BATT</code></td><td>저전압</td><td><code>EVT_OVERCURR</code> (0x02)</td><td>과전류 → 정지 (detail = mA)</td></tr>
+          <tr><td>bit2 <code>FAULT_OVERCURR</code></td><td>과전류</td><td>(0x03)</td><td>예약 — 과경사 정지를 없앴다. 다른 뜻으로 다시 쓰지 않는다</td></tr>
           <tr><td>bit3</td><td>예약 — 과경사 정지를 없앴다. 다른 뜻으로 다시 쓰지 않는다</td><td><code>EVT_WATCHDOG</code> (0x04)</td><td>워치독 정지 (detail = 끊긴 ms)</td></tr>
-          <tr><td>bit4</td><td>IMU 통신 실패</td><td><code>EVT_IMU_FAIL</code> (0x05)</td><td>IMU 통신 실패 (detail = sensor_id)</td></tr>
-          <tr><td>bit5</td><td>모터 드라이버 fault 입력</td><td><code>EVT_RECOVER</code> (0x10)</td><td>정상 복귀 (어느 비트가 풀렸는가 = detail)</td></tr>
-          <tr><td>bit6 <code>FAULT_PROTECT</code></td><td>보호 3종 트립(fw-13), 어느 바퀴든 — <strong>이 프로젝트의 배정</strong>(fw-18).<sup class="fn"><a href="#fn-50" id="fnref-50">50</a></sup> (제안) 표에 없던 일곱째 조건이다</td><td><code>EVT_PROTECT</code> (0x06)</td><td>보호 트립 → 정지 (detail = 바퀴 i 의 <code>PROT_*</code>(STALL 1 · FBLOST 2 · FBSIGN 4)를 <code>3*i</code> 비트에, FL FR RL RR 순.<sup class="fn"><a href="#fn-51" id="fnref-51">51</a></sup> 예: RL FBLOST = <code>2 &lt;&lt; 6</code> = 0x0080) — 이 프로젝트의 배정</td></tr>
+          <tr><td>bit4 <code>FAULT_IMU</code></td><td>IMU 통신 실패</td><td><code>EVT_IMU_FAIL</code> (0x05)</td><td>IMU 통신 실패 (detail = sensor_id)</td></tr>
+          <tr><td>bit5 <code>FAULT_DRIVER</code></td><td>모터 드라이버 fault 입력 — 출처가 없어 늘 0 이다(아래 문단)</td><td><code>EVT_RECOVER</code> (0x10)</td><td>정상 복귀 (어느 비트가 풀렸는가 = detail)</td></tr>
+          <tr><td>bit6 <code>FAULT_PROTECT</code></td><td>보호 3종 트립(fw-13), 어느 바퀴든 — <strong>이 프로젝트의 배정</strong>(fw-18).<sup class="fn"><a href="#fn-50" id="fnref-50">50</a></sup> 처음 제안한 표에 없던 일곱째 조건이다</td><td><code>EVT_PROTECT</code> (0x06)</td><td>보호 트립 → 정지 (detail = 바퀴 i 의 <code>PROT_*</code>(STALL 1 · FBLOST 2 · FBSIGN 4)를 <code>3*i</code> 비트에, FL FR RL RR 순.<sup class="fn"><a href="#fn-51" id="fnref-51">51</a></sup> 예: RL FBLOST = <code>2 &lt;&lt; 6</code> = 0x0080) — 이 프로젝트의 배정</td></tr>
           <tr><td>bit7 <code>FAULT_LINK_LOST</code></td><td><strong>Pi 전용</strong> — 링크 끊김(§4-6). MCU 는 이 비트를 쓰지 않는다. 선 위의 <code>fault</code> 에는 없고, 브리지가 <code>/mcu/fault</code> 를 발행할 때만 붙인다. 붙어 있는 동안 bit0 ~ 5 는 끊기기 직전의 값이다</td><td></td><td></td></tr>
         </tbody>
       </table></div>
-      <p>비트와 코드의 배정은 학습자가 정하되, <strong>펌웨어와 브리지가 같은 표를 보고 있어야 한다.</strong> 이 표를 <code>hardware/INVENTORY.md</code> 2절이나 별도 <code>protocol.md</code> 로 저장소에 두고, 코드의 상수 이름을 표와 같게 한다.
-      정할 때 알아 둘 사실 하나: <strong>bit5 "모터 드라이버 fault 입력"은 출처가 없다.</strong> IBT-2 모듈에는 fault 를 알리는 출력 핀이 따로 없고 후보는 IS 핀의 포화뿐인데, IS 는 배선하지 않기로 정했다(INVENTORY 2절 (b), 2026-10-14). 그래서 bit5 는 늘 0 이다 — 자리를 남겨 둘지, 다른 뜻으로 쓸지도 학습자가 정한다.</p>
+      <p>이 표는 제안으로 시작했고, 이 프로젝트는 <a href="fw-18-safety-fsm.html">fw-18</a> 에서 위의 배정으로 확정했다(2026-11-07 — bit6 · 0x06 을 더하고, bit5 는 자리를 남겼다). 펌웨어의 <code>frames.h</code> 와 브리지의 <code>protocol.hpp</code>(06 §3-2)가 표와 같은 이름 · 같은 값의 상수를 쓴다.
+      비트와 코드의 배정은 학습자가 정하되, <strong>펌웨어와 브리지가 같은 표를 보고 있어야 한다.</strong> 다르게 배정하면 펌웨어 · 브리지 · probe 의 표를 함께 고치고, 이 표를 <code>hardware/INVENTORY.md</code> 2절이나 별도 <code>protocol.md</code> 로 저장소에 둔다.
+      bit5 에 대해 알아 둘 사실 하나: <strong>bit5 "모터 드라이버 fault 입력"은 출처가 없다.</strong> IBT-2 모듈에는 fault 를 알리는 출력 핀이 따로 없고 후보는 IS 핀의 포화뿐인데, IS 는 배선하지 않기로 정했다(INVENTORY 2절 (b), 2026-10-14). 그래서 bit5 는 늘 0 이고, 이벤트 코드도 배정하지 않았다.</p>
+      <p><strong>이벤트 코드를 더할 때</strong> — 지금 배정된 여섯 개로 끝까지 간다. 나중에 펌웨어가 새 사건을 보내기로 정하면 아래 순서로 더한다. 표를 먼저 고치고 코드는 그 뒤에 쓴다.</p>
+      <ol>
+        <li><strong>이 표</strong>에 줄을 더한다: 번호 · 이름 · detail 의 뜻과 단위. detail 은 <code>u16</code> 이라 그 안에 들어가야 한다. 0x03 은 예약이라 쓰지 않는다.</li>
+        <li><strong>펌웨어</strong> — <code>frames.h</code> 에 같은 이름 · 같은 값의 <code>#define EVT_…</code> 를 더하고, 보내는 자리에서 <code>control_post_event(code, detail)</code> 를 부른다. 펌웨어가 이벤트를 보내는 방법은 이 함수 하나다(<a href="fw-18-safety-fsm.html">fw-18</a>). 안전 조건이 내는 코드라면 fw-18 의 <code>safety_cfg_t</code> 에서 <code>code[]</code> 칸에 적는다.</li>
+        <li><strong>브리지</strong> — <code>protocol.hpp</code>(06 §3-2)에 <code>constexpr uint8_t EVT_…</code> 를 더하고, <code>event_name()</code> 에 <code>case</code> 한 줄을 더한다. <code>handle_event()</code> 는 고치지 않아도 된다. 어느 코드든 <code>"code:detail"</code> 로 발행하고 이름은 <code>event_name()</code> 이 붙인다.</li>
+        <li><strong>probe</strong> — <code>firmware/scripts/mcu_probe.py</code> 의 <code>EVENT_NAME</code> 사전에 한 줄을 더한다.</li>
+        <li><strong>저장소의 표</strong> — <code>hardware/INVENTORY.md</code> 2절이나 <code>protocol.md</code> 에 옮겨 둔 표도 같이 고친다.</li>
+        <li><strong>확인</strong> — 그 사건을 일으켜 probe 와 브리지 로그가 같은 이름을 찍는지 본다. probe 가 <code>?</code> 를, 브리지가 <code>unknown</code> 을 찍으면 4 나 3 이 빠진 것이다.</li>
+      </ol>
 
       <h3>4-3. 단위·시각·워치독</h3>
       <div class="tbl"><table class="fixed"><colgroup><col class="w12"><col class="w48"><col class="w40"></colgroup>
@@ -674,7 +684,7 @@
       <h2>5. 결정 기록</h2>
       <p>이 프로젝트에서 <strong>이미 내려진 결정</strong>은 날짜와 함께 채워 두었다. 근거는 위의 각 절과 <code>hardware/INVENTORY.md</code> 2절 · 6절 · 7절에 있다. 오른쪽 칸의 <code>____</code> 가 학습자가 채울 자리이고, 채우는 때가 둘로 나뉜다.</p>
       <ul>
-        <li><strong>표시가 없는 칸 — 지금 채운다.</strong> 이 쪽을 읽은 것만으로 채울 수 있는 칸이다: 이미 내려진 결정의 <em>이유를 학습자의 말로</em>, INVENTORY 에 이미 있는 값을 옮겨서, §4-2 의 제안 표를 그대로 쓸지 정해서.
+        <li><strong>표시가 없는 칸 — 지금 채운다.</strong> 이 쪽을 읽은 것만으로 채울 수 있는 칸이다: 이미 내려진 결정의 <em>이유를 학습자의 말로</em>, INVENTORY 에 이미 있는 값을 옮겨서, §4-2 의 표를 그대로 쓸지 정해서.
         <strong>이 칸들을 채우지 않은 채 06 단계와 펌웨어 가이드로 가지 않는다.</strong> 결정이 글로 남아 있어야 막혔을 때 "왜 이렇게 했더라"로 돌아올 수 있다.</li>
         <li><strong>"돌아와서" 표시가 붙은 칸 — 표시된 쪽을 끝낸 뒤에 채운다.</strong> 값이나 판단 재료가 그 쪽에서 나온다(보드에서 읽는 값, 그 쪽에서 하는 선택, 조립 후의 실측). 비어 있는 채로 다음 쪽으로 가도 되고, 06a 는 이 칸 없이 끝난다.
         가는 순서대로 모으면 fw-00 → fw-01 → fw-03 → fw-10 · fw-12 → fw-13 → fw-18 → fw-20 이다. 그 쪽을 끝낼 때 이 표로 돌아온다.</li>
@@ -699,7 +709,7 @@
           <tr><td>경사 출력 조정 — 무게중심 · 주행 불가 각도</td><td>과경사 정지는 두지 않는다. 주행 불가 각도는 짐 없는 차체 기준 40° 로 시작한다</td><td><strong>돌아와서</strong> — <a href="fw-20b-slope-mix.html">fw-20b</a>에서 실측으로 확정한 뒤: 무게중심 높이 · 앞축 · 뒤축 거리 <code>____</code> mm, 주행 불가 각도 <code>____</code> °</td></tr>
           <tr><td>보드레이트 / MCU 워치독 / Pi 워치독</td><td><strong>460800</strong> 8N1 / 200 ms / 0.5 s (2026-09-13, 계약 v2). MCU 워치독은 유효한 <code>TYPE_VELOCITY</code> (0x01) 만 되감는다 (2026-10-16, §4-3)</td><td>(나) "CRC 를 통과한 모든 프레임"을 고르지 않은 이유를 한 줄로: <code>____</code></td></tr>
           <tr><td>이벤트 · IMU 샘플이 통신 모듈에 전달되는 경로</td><td><strong>(가) 끌어가기</strong> (2026-09-23, fw-17 이 구현 — §2-5). 공개 함수는 <code>control_pop_event()</code> 를 더해 다섯</td><td><strong>돌아와서</strong> — <a href="fw-13-pid-protection.html">fw-13</a>에서 제어 모듈의 공개 함수를 만들기 전에: 끌어가기에서 호출 방향이 통신 → 제어 한쪽뿐인 이유 <code>____</code></td></tr>
-          <tr><td>fault 비트 · 이벤트 코드 배정</td><td>— (학습자가 정한다. §4-2 의 표는 제안이다)</td><td>4-2 표 그대로 쓸 것인가, 바꾼 곳: <code>____</code><br><strong>돌아와서</strong> — <a href="fw-18-safety-fsm.html">fw-18</a>에서(IS 미결선이라 bit5 는 출처가 없어 늘 0 이다): bit5 자리를 남겨 둘지, 다른 뜻으로 쓸지 <code>____</code></td></tr>
+          <tr><td>fault 비트 · 이벤트 코드 배정</td><td><strong>§4-2 의 표</strong> (2026-11-07, <a href="fw-18-safety-fsm.html">fw-18</a> 에서 확정 — bit6 <code>FAULT_PROTECT</code> · <code>EVT_PROTECT</code> (0x06) 을 더하고, bit5 는 자리만 남겨 늘 0)</td><td>4-2 표 그대로 쓸 것인가, 바꾼 곳: <code>____</code><br><strong>돌아와서</strong> — <a href="fw-18-safety-fsm.html">fw-18</a>에서(IS 미결선이라 bit5 는 출처가 없어 늘 0 이다): bit5 자리를 남겨 둘지, 다른 뜻으로 쓸지 <code>____</code></td></tr>
         </tbody>
       </table></div>
 
