@@ -1037,6 +1037,8 @@ private:
 #include &lt;chrono&gt;
 #include &lt;cmath&gt;
 #include &lt;cstdio&gt;
+#include &lt;cstdlib&gt;
+#include &lt;limits&gt;
 #include &lt;memory&gt;
 #include &lt;optional&gt;
 #include &lt;string&gt;
@@ -1448,12 +1450,16 @@ private:
     y_ += d_s * std::sin(theta_ + d_th / 2.0);
     theta_ = std::atan2(std::sin(theta_ + d_th), std::cos(theta_ + d_th));   // −π ~ π 정규화
 
-    publish_all(t, d_s / dt, d_th / dt, d_left_rad / dt, d_right_rad / dt, s);
+    // 바퀴마다 각속도 [rad/s] — /joint_states 의 velocity 로 바퀴별 기록을 남긴다 (오도메트리는 위의 쪽 평균)
+    std::array&lt;double, 4&gt; wheel_vel{};
+    for (size_t i = 0; i &lt; 4; ++i) { wheel_vel[i] = d_rad[i] / dt; }
+
+    publish_all(t, d_s / dt, d_th / dt, wheel_vel, s);
   }
 
   // ── /odom, TF, /joint_states, /battery_state ────────────────────────────
-  void publish_all(const rclcpp::Time &amp; t, double v, double w, double wl, double wr,
-                   const rpi5_mcu::McuState &amp; s)
+  void publish_all(const rclcpp::Time &amp; t, double v, double w,
+                   const std::array&lt;double, 4&gt; &amp; wheel_vel, const rpi5_mcu::McuState &amp; s)
   {
     tf2::Quaternion q;
     q.setRPY(0.0, 0.0, theta_);          // 평면 주행: yaw 만 변한다
@@ -1493,12 +1499,13 @@ private:
     // 이름은 05 의 xacro 가 만드는 관절 이름과 글자 하나까지 같아야 한다: ${prefix}_wheel_joint, prefix 는
     // front_left / front_right / rear_left / rear_right. 다르면 robot_state_publisher 가 그 관절을 모르는 이름으로 버리고
     // 바퀴 링크 4개가 TF 트리에서 빠진다. 0x81 이 바퀴 넷을 싣으므로 각 관절에 그 바퀴의 각도를 넣는다 —
-    // rosbag 에 /joint_states 를 남기면 바퀴별 기록이 된다. 속도는 쪽 평균(wl · wr)이다.
+    // rosbag 에 /joint_states 를 남기면 바퀴별 기록이 된다. 각도와 속도 모두 바퀴별 값이다 — 앞뒤 차이로 슬립이 보인다.
     js.name = {"front_left_wheel_joint", "rear_left_wheel_joint",
                "front_right_wheel_joint", "rear_right_wheel_joint"};
     js.position = {wheel_pos_[rpi5_mcu::WHEEL_FL], wheel_pos_[rpi5_mcu::WHEEL_RL],
                    wheel_pos_[rpi5_mcu::WHEEL_FR], wheel_pos_[rpi5_mcu::WHEEL_RR]};
-    js.velocity = {wl, wl, wr, wr};
+    js.velocity = {wheel_vel[rpi5_mcu::WHEEL_FL], wheel_vel[rpi5_mcu::WHEEL_RL],
+                   wheel_vel[rpi5_mcu::WHEEL_FR], wheel_vel[rpi5_mcu::WHEEL_RR]};
     pub_joints_-&gt;publish(js);
 
     sensor_msgs::msg::BatteryState batt;
@@ -1506,7 +1513,18 @@ private:
     batt.voltage = s.batt_mv / 1000.0f;
     batt.current = -static_cast&lt;float&gt;(s.current_ma) / 1000.0f;   // ROS 관례: 방전은 음수
     batt.present = true;
-    // TODO(you): 배터리 셀 수와 방전 곡선을 근거로 percentage 와 power_supply_status 를 채운다.
+    // 6S LiPo 16 Ah (INVENTORY 7절). 충전은 로봇 밖에서만 한다 → CHARGING · FULL 은 나오지 않는다
+    using BS = sensor_msgs::msg::BatteryState;
+    batt.power_supply_technology = BS::POWER_SUPPLY_TECHNOLOGY_LIPO;
+    batt.design_capacity = 16.0f;                              // [Ah]
+    // current_ma 는 방전 +, 회생 −. 회생 중에도 전압이 떠서 잔량이 틀리므로 "쉬는 상태" 는 절대값으로 본다
+    const bool loaded = std::abs(s.current_ma) &gt; kRestCurrentMa;
+    batt.power_supply_status = (s.current_ma &gt; kRestCurrentMa) ? BS::POWER_SUPPLY_STATUS_DISCHARGING
+                                                               : BS::POWER_SUPPLY_STATUS_NOT_CHARGING;
+    // 전압으로 잔량을 읽는 것은 쉬는 상태의 전압일 때만 맞다 — 주행 중에는 전류 × 내부 저항만큼 처진다.
+    // 그래서 쉬는 동안만 갱신하고, 주행 중에는 마지막 값을 유지한다. 첫 쉬는 순간 전까지는 NaN(모름)이다.
+    if (!loaded) { soc_ = soc_from_cell_v(batt.voltage / 6.0f); }
+    batt.percentage = soc_;                                    // 0 ~ 1 (ROS 규약), NaN = 모름
     pub_batt_-&gt;publish(batt);
   }
 
@@ -1548,6 +1566,8 @@ private:
   }
 
   // ── TEXT mode handling (TEXT -&gt; V2 by the line 'link v2', V2 -&gt; TEXT by frames 0x11 / 0x90) ──
+  // true = a valid frame arrived within the last 1 s, i.e. the MCU is in V2 (it sends 0x81 every 20 ms there).
+  // false before the first frame and after 1 s of silence (MCU reset to TEXT, cable out). 0x01 is sent only while true.
   bool link_up(const rclcpp::Time &amp; t) const
   {
     return got_frame_ &amp;&amp; (t - last_frame_time_).seconds() &lt;= 1.0;
@@ -1605,6 +1625,26 @@ private:
   static constexpr double kPi = 3.14159265358979323846;
   struct Prev { std::array&lt;int32_t, 4&gt; ticks; rclcpp::Time stamp; };   // FL FR RL RR
 
+  // 쉬는 상태로 보는 버스 전류 상한 [mA].
+  // 근거: fw-19 B11 실측(모터 전원 꺼짐, adc 200 번) — current_ma 와 같은 값(adc_get_batt_ma)의 흔들림이
+  // sd 384 · |i| 99 % 854 · 최대 1060 mA 였다. 최대보다 조금 높게 잡아 정지 중 판정이 흔들리지 않게 한다.
+  static constexpr int kRestCurrentMa = 1200;
+
+  // 셀 전압(쉬는 상태) → 잔량 0 ~ 1. 일반적인 LiPo 곡선이다 — 이 팩(Fullymax 6S 16 Ah)의 방전 곡선은 자료가 없다.
+  // 0 % = 20.0 V / 6 셀 = 펌웨어가 멈추는 전압(BATT_MIN_MV). 하드컷 19.8 V 가 아니다.
+  // TODO(you): 방전 시험(쉬는 상태 전압과 쓴 Ah 를 함께 기록)으로 V · P 표를 이 팩의 값으로 바꾼다.
+  static float soc_from_cell_v(float v)
+  {
+    static const float V[] = {3.333f, 3.69f, 3.75f, 3.80f, 3.84f, 3.91f, 3.98f, 4.08f, 4.20f};
+    static const float P[] = {0.0f, 0.10f, 0.25f, 0.40f, 0.50f, 0.65f, 0.75f, 0.85f, 1.0f};
+    if (v &lt;= V[0]) { return 0.0f; }
+    if (v &gt;= V[8]) { return 1.0f; }
+    int i = 1;
+    while (v &gt; V[i]) { ++i; }                // V[i-1] &lt; v &lt;= V[i]
+    const float r = (v - V[i - 1]) / (V[i] - V[i - 1]);
+    return P[i - 1] + r * (P[i] - P[i - 1]);   // 두 점 사이 직선 보간
+  }
+
   std::string port_;
   int baudrate_{460800};
   bool simulate_{true};
@@ -1619,6 +1659,7 @@ private:
   rclcpp::Time last_cmd_time_;
   double x_{0.0}, y_{0.0}, theta_{0.0};
   std::array&lt;double, 4&gt; wheel_pos_{};   // FL FR RL RR [rad]
+  float soc_{std::numeric_limits&lt;float&gt;::quiet_NaN()};   // 마지막으로 쉬는 동안 읽은 잔량 (0 ~ 1)
   std::optional&lt;Prev&gt; prev_;
   std::optional&lt;int64_t&gt; tick_offset_ns_;
   uint8_t fault_{0};

@@ -96,7 +96,8 @@
     { id: 'ref-opencv', file: 'ref-opencv.html', num: 'B', title: 'OpenCV 사용법', group: 'ref' },
     { id: 'ref-yolo', file: 'ref-yolo.html', num: 'C', title: 'YOLO 사용법', group: 'ref' },
     { id: 'ref-abbr', file: 'ref-abbr.html', num: 'D', title: '약어 모음 — 본편 · 펌웨어', group: 'ref' },
-    { id: 'ref-abbr-lidar', file: 'ref-abbr-lidar.html', num: 'E', title: '약어 모음 — 라이다 L 쪽', group: 'ref' }
+    { id: 'ref-abbr-lidar', file: 'ref-abbr-lidar.html', num: 'E', title: '약어 모음 — 라이다 L 쪽', group: 'ref' },
+    { id: 'ref-tf-topic', file: 'ref-tf-topic.html', num: 'F', title: '토픽과 TF', group: 'ref' }
   ];
 
   // 그룹: 배열 순서 = 사이드바에 그리는 순서. 이전/다음은 그룹 경계를 넘지 않는다.
